@@ -96,8 +96,74 @@ function getThemeColors() {
 // Active timezone (empty = browser default)
 let activeTimezone = '';
 
+// Legacy → canonical timezone aliases
+const TZ_ALIASES = {
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'US/Eastern': 'America/New_York',
+  'US/Central': 'America/Chicago',
+  'US/Mountain': 'America/Denver',
+  'US/Pacific': 'America/Los_Angeles',
+};
+
+function normalizeTz(tz) { return TZ_ALIASES[tz] || tz; }
+
+// Curated timezone list sorted by UTC offset (descending: east → west).
+// India (Asia/Kolkata) is always present.
+const TZ_LIST = (() => {
+  const base = [
+    { tz: 'Pacific/Auckland', label: 'Auckland' },
+    { tz: 'Australia/Sydney', label: 'Sydney' },
+    { tz: 'Asia/Tokyo', label: 'Tokyo' },
+    { tz: 'Asia/Shanghai', label: 'Shanghai' },
+    { tz: 'Asia/Singapore', label: 'Singapore' },
+    { tz: 'Asia/Kolkata', label: 'India' },
+    { tz: 'Asia/Dubai', label: 'Dubai' },
+    { tz: 'Europe/Moscow', label: 'Moscow' },
+    { tz: 'Europe/Istanbul', label: 'Istanbul' },
+    { tz: 'Europe/Berlin', label: 'Berlin' },
+    { tz: 'Europe/Paris', label: 'Paris' },
+    { tz: 'Europe/London', label: 'London' },
+    { tz: 'UTC', label: 'UTC' },
+    { tz: 'America/Sao_Paulo', label: 'Sao Paulo' },
+    { tz: 'America/New_York', label: 'New York' },
+    { tz: 'America/Chicago', label: 'Chicago' },
+    { tz: 'America/Denver', label: 'Denver' },
+    { tz: 'America/Los_Angeles', label: 'Los Angeles' },
+    { tz: 'Pacific/Honolulu', label: 'Honolulu' },
+  ];
+  // Insert user's browser timezone if not already in list (after normalization)
+  const browserTz = normalizeTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  if (!base.some(e => e.tz === browserTz)) {
+    const label = browserTz.split('/').pop().replace(/_/g, ' ');
+    const off = tzOffsetMin(browserTz);
+    let inserted = false;
+    for (let i = 0; i < base.length; i++) {
+      if (tzOffsetMin(base[i].tz) < off) {
+        base.splice(i, 0, { tz: browserTz, label });
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) base.push({ tz: browserTz, label });
+  }
+  return base;
+})();
+
+function tzOffsetMin(tz) {
+  try {
+    const d = new Date();
+    const parts = d.toLocaleString('en-US', { timeZone: tz, timeZoneName: 'shortOffset' }).split('GMT');
+    if (parts.length < 2 || !parts[1]) return 0;
+    const str = parts[1].trim();
+    const m = str.match(/^([+-]?)(\d{1,2})(?::(\d{2}))?$/);
+    if (!m) return 0;
+    const sign = m[1] === '-' ? -1 : 1;
+    return sign * (parseInt(m[2]) * 60 + parseInt(m[3] || '0'));
+  } catch (e) { return 0; }
+}
+
 function getEffectiveTimezone() {
-  return activeTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return activeTimezone || normalizeTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
 }
 
 function tzAbbr(tz) {
@@ -108,20 +174,23 @@ function tzAbbr(tz) {
   }
 }
 
+function findTzIndex(tz) {
+  const normalized = normalizeTz(tz);
+  const idx = TZ_LIST.findIndex(e => e.tz === normalized);
+  return idx >= 0 ? idx : 0;
+}
+
 function initTimezoneBadge() {
   const badge = document.getElementById('timezone-badge');
   if (!badge) return;
 
-  // Load saved timezone from API
   loadTimezoneFromAPI().then(() => {
-    updateTimezoneBadgeDisplay();
-  });
-
-  // Make badge clickable
-  badge.style.cursor = 'pointer';
-  badge.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleTimezoneDropdown();
+    updateBadgeText(badge);
+    badge.style.cursor = 'pointer';
+    badge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleTzPicker(badge);
+    });
   });
 }
 
@@ -131,128 +200,103 @@ async function loadTimezoneFromAPI() {
     if (!res.ok) return;
     const data = await res.json();
     if (data.timezone) {
-      activeTimezone = data.timezone;
+      activeTimezone = normalizeTz(data.timezone);
     }
-  } catch (e) {
-    // Silent fail — use browser default
-  }
+  } catch (e) {}
 }
 
-function updateTimezoneBadgeDisplay() {
-  const badge = document.getElementById('timezone-badge');
+function updateBadgeText(badge) {
+  if (!badge) badge = document.getElementById('timezone-badge');
   if (!badge) return;
   const tz = getEffectiveTimezone();
-  const abbr = tzAbbr(tz);
-  badge.textContent = abbr;
-  badge.title = tz + (activeTimezone ? ' (saved)' : ' (browser)');
+  const entry = TZ_LIST.find(e => e.tz === tz);
+  const label = entry ? entry.label : tz.split('/').pop().replace(/_/g, ' ');
+  badge.textContent = `${label} (${tzAbbr(tz)})`;
+  badge.title = tz;
 }
 
-function toggleTimezoneDropdown() {
-  let dropdown = document.getElementById('tz-dropdown');
-  if (dropdown) {
-    dropdown.remove();
-    return;
-  }
+function toggleTzPicker(badge) {
+  let existing = document.getElementById('tz-picker');
+  if (existing) { existing.remove(); return; }
 
-  const badge = document.getElementById('timezone-badge');
-  if (!badge) return;
-
-  // Get all IANA timezones
-  let tzList;
-  try {
-    tzList = Intl.supportedValuesOf('timeZone');
-  } catch (e) {
-    tzList = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-      'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Shanghai',
-      'Asia/Kolkata', 'Asia/Dubai', 'Australia/Sydney', 'Pacific/Auckland'];
-  }
-
-  dropdown = document.createElement('div');
-  dropdown.id = 'tz-dropdown';
-  dropdown.className = 'tz-dropdown';
-
-  const searchInput = document.createElement('input');
-  searchInput.type = 'text';
-  searchInput.placeholder = 'Search timezone...';
-  searchInput.className = 'tz-search';
-  dropdown.appendChild(searchInput);
-
-  // "Browser default" option
-  const defaultOpt = document.createElement('div');
-  defaultOpt.className = 'tz-option' + (!activeTimezone ? ' active' : '');
-  defaultOpt.textContent = 'Browser Default';
-  defaultOpt.dataset.tz = '';
-  dropdown.appendChild(defaultOpt);
+  const picker = document.createElement('div');
+  picker.id = 'tz-picker';
+  picker.className = 'tz-picker';
 
   const list = document.createElement('div');
-  list.className = 'tz-list';
-  dropdown.appendChild(list);
+  list.className = 'tz-picker-list';
 
-  function renderList(filter) {
-    const filtered = filter
-      ? tzList.filter(tz => tz.toLowerCase().includes(filter.toLowerCase()))
-      : tzList;
-    list.innerHTML = '';
-    filtered.slice(0, 50).forEach(tz => {
-      const opt = document.createElement('div');
-      opt.className = 'tz-option' + (tz === activeTimezone ? ' active' : '');
-      const abbr = tzAbbr(tz);
-      opt.innerHTML = `<span class="tz-name">${tz.replace(/_/g, ' ')}</span><span class="tz-abbr">${abbr}</span>`;
-      opt.dataset.tz = tz;
-      list.appendChild(opt);
+  const ITEM_H = 36;
+  const VISIBLE = 7;
+  const COPIES = 3;
+  const totalItems = TZ_LIST.length;
+
+  // Render 3 copies for infinite scroll illusion
+  for (let copy = 0; copy < COPIES; copy++) {
+    TZ_LIST.forEach((entry, i) => {
+      const item = document.createElement('div');
+      item.className = 'tz-picker-item';
+      if (entry.tz === getEffectiveTimezone()) item.classList.add('active');
+      item.dataset.tz = entry.tz;
+      item.dataset.idx = i;
+      const abbr = tzAbbr(entry.tz);
+      item.innerHTML = `<span class="tz-picker-label">${entry.label}</span><span class="tz-picker-abbr">${abbr}</span>`;
+      item.addEventListener('click', () => selectTz(entry.tz, picker, badge));
+      list.appendChild(item);
     });
-    if (filtered.length > 50) {
-      const more = document.createElement('div');
-      more.className = 'tz-more';
-      more.textContent = `${filtered.length - 50} more — type to filter`;
-      list.appendChild(more);
-    }
   }
 
-  renderList('');
+  list.style.height = (VISIBLE * ITEM_H) + 'px';
+  picker.appendChild(list);
 
-  searchInput.addEventListener('input', () => renderList(searchInput.value));
+  // Position below badge
+  const rect = badge.getBoundingClientRect();
+  picker.style.top = (rect.bottom + 4) + 'px';
+  picker.style.right = (window.innerWidth - rect.right) + 'px';
 
-  // Handle selection (delegated)
-  dropdown.addEventListener('click', async (e) => {
-    const opt = e.target.closest('.tz-option');
-    if (!opt) return;
-    const tz = opt.dataset.tz;
-    await saveTimezone(tz);
-    dropdown.remove();
+  document.body.appendChild(picker);
+
+  // Scroll to center current timezone in middle copy
+  const activeIdx = findTzIndex(getEffectiveTimezone());
+  const midStart = totalItems; // start of middle copy
+  const targetScroll = (midStart + activeIdx) * ITEM_H - Math.floor(VISIBLE / 2) * ITEM_H;
+  list.scrollTop = targetScroll;
+
+  // Infinite scroll: snap to middle copy when reaching edges
+  list.addEventListener('scroll', () => {
+    const maxScroll = totalItems * COPIES * ITEM_H - list.clientHeight;
+    if (list.scrollTop < totalItems * ITEM_H * 0.25) {
+      list.scrollTop += totalItems * ITEM_H;
+    } else if (list.scrollTop > totalItems * ITEM_H * 1.75) {
+      list.scrollTop -= totalItems * ITEM_H;
+    }
   });
 
-  // Position dropdown below badge
-  const rect = badge.getBoundingClientRect();
-  dropdown.style.top = (rect.bottom + 4) + 'px';
-  dropdown.style.right = (window.innerWidth - rect.right) + 'px';
-
-  document.body.appendChild(dropdown);
-  searchInput.focus();
-
   // Close on outside click
-  function closeOnOutside(e) {
-    if (!dropdown.contains(e.target) && e.target !== badge) {
-      dropdown.remove();
-      document.removeEventListener('click', closeOnOutside);
+  function closeOutside(e) {
+    if (!picker.contains(e.target) && e.target !== badge) {
+      picker.remove();
+      document.removeEventListener('click', closeOutside);
+      document.removeEventListener('keydown', closeEsc);
     }
   }
-  setTimeout(() => document.addEventListener('click', closeOnOutside), 0);
-
-  // Close on Escape
-  function closeOnEsc(e) {
+  function closeEsc(e) {
     if (e.key === 'Escape') {
-      dropdown.remove();
-      document.removeEventListener('keydown', closeOnEsc);
-      document.removeEventListener('click', closeOnOutside);
+      picker.remove();
+      document.removeEventListener('click', closeOutside);
+      document.removeEventListener('keydown', closeEsc);
     }
   }
-  document.addEventListener('keydown', closeOnEsc);
+  setTimeout(() => {
+    document.addEventListener('click', closeOutside);
+    document.addEventListener('keydown', closeEsc);
+  }, 0);
 }
 
-async function saveTimezone(tz) {
+async function selectTz(tz, picker, badge) {
   activeTimezone = tz;
-  updateTimezoneBadgeDisplay();
+  updateBadgeText(badge);
+  if (picker) picker.remove();
   try {
     await fetch(`${API_BASE}/api/settings`, {
       method: 'PUT',
@@ -389,19 +433,35 @@ async function fetchCurrent() {
 
 // ── Deep Insights (Interactive Cards) ──
 
+// Title-specific icons for insight cards (Feather/Lucide style)
+const insightTitleIcons = {
+  'Avg Cycle Utilization': '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', // clock/gauge
+  '30-Day Usage': '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>', // calendar
+  'Weekly Pace': '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>', // trending-up
+  'Tool Call Share': '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>', // pie-chart
+  'Session Avg': '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>', // bar-chart
+  'Coverage': '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', // shield
+  'High Variance': '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>', // activity
+  'Usage Spread': '<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>', // bar-chart-2
+  'Consistent': '<line x1="5" y1="12" x2="19" y2="12"/>', // minus (steady)
+  'Trend': '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>', // trending-up
+  'Getting Started': '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>', // info
+};
+
+// Quota-type icons (used for live quota insight cards)
+const quotaIcons = {
+  subscription: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>', // credit-card/subscription
+  search: '<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>', // search
+  toolCalls: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>', // wrench
+  session: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>', // bar-chart
+};
+
+// Severity fallback icons
 const insightIcons = {
   positive: '<path d="M20 6L9 17l-5-5"/>',
   warning: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/>',
   negative: '<circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>'
-};
-
-// Quota-specific icons for insight cards
-const quotaIcons = {
-  subscription: '<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
-  search: '<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>',
-  toolCalls: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
-  session: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
 };
 
 async function fetchDeepInsights() {
@@ -430,7 +490,7 @@ async function fetchDeepInsights() {
 
     if (allInsights.length > 0) {
       cardsEl.innerHTML = allInsights.map((i, idx) => {
-        const icon = (i.quotaType && quotaIcons[i.quotaType]) ? quotaIcons[i.quotaType] : (insightIcons[i.severity] || insightIcons.info);
+        const icon = insightTitleIcons[i.title] || (i.quotaType && quotaIcons[i.quotaType]) || insightIcons[i.severity] || insightIcons.info;
         return `<div class="insight-card severity-${i.severity}" data-insight-idx="${idx}" role="button" tabindex="0">
           <div class="insight-card-header">
             <svg class="insight-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>

@@ -120,6 +120,11 @@ func (s *Store) createTables() error {
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL
 		);
+
+		CREATE TABLE IF NOT EXISTS auth_tokens (
+			token      TEXT PRIMARY KEY,
+			expires_at TEXT NOT NULL
+		);
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {
@@ -529,6 +534,50 @@ func (s *Store) SetSetting(key, value string) error {
 	_, err := s.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, value)
 	if err != nil {
 		return fmt.Errorf("store.SetSetting: %w", err)
+	}
+	return nil
+}
+
+// SaveAuthToken persists a session token with its expiry.
+func (s *Store) SaveAuthToken(token string, expiresAt time.Time) error {
+	_, err := s.db.Exec(
+		"INSERT OR REPLACE INTO auth_tokens (token, expires_at) VALUES (?, ?)",
+		token, expiresAt.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return fmt.Errorf("store.SaveAuthToken: %w", err)
+	}
+	return nil
+}
+
+// GetAuthTokenExpiry returns the expiry time for a token. Returns zero time and false if not found.
+func (s *Store) GetAuthTokenExpiry(token string) (time.Time, bool, error) {
+	var expiresAtStr string
+	err := s.db.QueryRow("SELECT expires_at FROM auth_tokens WHERE token = ?", token).Scan(&expiresAtStr)
+	if err == sql.ErrNoRows {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("store.GetAuthTokenExpiry: %w", err)
+	}
+	t, _ := time.Parse(time.RFC3339Nano, expiresAtStr)
+	return t, true, nil
+}
+
+// DeleteAuthToken removes a session token.
+func (s *Store) DeleteAuthToken(token string) error {
+	_, err := s.db.Exec("DELETE FROM auth_tokens WHERE token = ?", token)
+	if err != nil {
+		return fmt.Errorf("store.DeleteAuthToken: %w", err)
+	}
+	return nil
+}
+
+// CleanExpiredAuthTokens removes all expired tokens.
+func (s *Store) CleanExpiredAuthTokens() error {
+	_, err := s.db.Exec("DELETE FROM auth_tokens WHERE expires_at < ?", time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("store.CleanExpiredAuthTokens: %w", err)
 	}
 	return nil
 }

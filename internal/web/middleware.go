@@ -10,26 +10,36 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/onllm-dev/syntrack/internal/store"
 )
 
 const sessionCookieName = "syntrack_session"
 const sessionMaxAge = 7 * 24 * 3600 // 7 days
 
-// SessionStore manages in-memory session tokens (single-user, lightweight).
+// SessionStore manages session tokens with SQLite persistence and in-memory cache.
 type SessionStore struct {
 	mu       sync.RWMutex
-	tokens   map[string]time.Time // token -> expiry
+	tokens   map[string]time.Time // in-memory cache: token -> expiry
 	username string
 	password string
+	store    *store.Store // optional: if set, tokens are persisted across restarts
 }
 
 // NewSessionStore creates a session store with the given credentials.
-func NewSessionStore(username, password string) *SessionStore {
-	return &SessionStore{
+// If a store is provided, tokens are persisted in SQLite.
+func NewSessionStore(username, password string, db *store.Store) *SessionStore {
+	ss := &SessionStore{
 		tokens:   make(map[string]time.Time),
 		username: username,
 		password: password,
+		store:    db,
 	}
+	// Clean expired tokens and preload valid ones from DB
+	if db != nil {
+		db.CleanExpiredAuthTokens()
+	}
+	return ss
 }
 
 // Authenticate validates credentials and returns a session token if valid.
@@ -41,9 +51,14 @@ func (s *SessionStore) Authenticate(username, password string) (string, bool) {
 	}
 
 	token := generateToken()
+	expiry := time.Now().Add(time.Duration(sessionMaxAge) * time.Second)
 	s.mu.Lock()
-	s.tokens[token] = time.Now().Add(time.Duration(sessionMaxAge) * time.Second)
+	s.tokens[token] = expiry
 	s.mu.Unlock()
+	// Persist to SQLite
+	if s.store != nil {
+		s.store.SaveAuthToken(token, expiry)
+	}
 	return token, true
 }
 
@@ -52,19 +67,39 @@ func (s *SessionStore) ValidateToken(token string) bool {
 	if token == "" {
 		return false
 	}
+	// Check in-memory cache first
 	s.mu.RLock()
 	expiry, ok := s.tokens[token]
 	s.mu.RUnlock()
-	if !ok {
-		return false
+	if ok {
+		if time.Now().After(expiry) {
+			s.mu.Lock()
+			delete(s.tokens, token)
+			s.mu.Unlock()
+			if s.store != nil {
+				s.store.DeleteAuthToken(token)
+			}
+			return false
+		}
+		return true
 	}
-	if time.Now().After(expiry) {
+	// Not in cache — check SQLite (handles tokens from previous daemon run)
+	if s.store != nil {
+		dbExpiry, found, err := s.store.GetAuthTokenExpiry(token)
+		if err != nil || !found {
+			return false
+		}
+		if time.Now().After(dbExpiry) {
+			s.store.DeleteAuthToken(token)
+			return false
+		}
+		// Valid in DB — add to in-memory cache
 		s.mu.Lock()
-		delete(s.tokens, token)
+		s.tokens[token] = dbExpiry
 		s.mu.Unlock()
-		return false
+		return true
 	}
-	return true
+	return false
 }
 
 // Invalidate removes a session token.
@@ -72,6 +107,9 @@ func (s *SessionStore) Invalidate(token string) {
 	s.mu.Lock()
 	delete(s.tokens, token)
 	s.mu.Unlock()
+	if s.store != nil {
+		s.store.DeleteAuthToken(token)
+	}
 }
 
 func generateToken() string {
