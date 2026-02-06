@@ -654,14 +654,15 @@ button, input, select { font-family: inherit; }
 .insight-stat {
   text-align: center;
   padding: 16px 12px;
-  background: var(--surface-inset);
+  background: var(--accent-teal-muted);
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
+  border: 1px solid color-mix(in srgb, var(--accent-teal) 15%, var(--border-light));
   transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 .insight-stat:hover {
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
+  border-color: var(--accent-teal);
 }
 
 .insight-stat-value {
@@ -706,20 +707,20 @@ button, input, select { font-family: inherit; }
 }
 .insight-card:active { transform: translateY(0); }
 .insight-card.severity-positive {
-  background: color-mix(in srgb, var(--status-healthy) 8%, var(--surface-card-alt));
-  border-color: color-mix(in srgb, var(--status-healthy) 20%, var(--border-light));
+  background: color-mix(in srgb, var(--status-healthy) 14%, var(--surface-card-alt));
+  border-color: color-mix(in srgb, var(--status-healthy) 30%, var(--border-light));
 }
 .insight-card.severity-warning {
-  background: color-mix(in srgb, var(--status-warning) 8%, var(--surface-card-alt));
-  border-color: color-mix(in srgb, var(--status-warning) 20%, var(--border-light));
+  background: color-mix(in srgb, var(--status-warning) 14%, var(--surface-card-alt));
+  border-color: color-mix(in srgb, var(--status-warning) 30%, var(--border-light));
 }
 .insight-card.severity-negative {
-  background: color-mix(in srgb, var(--status-danger) 8%, var(--surface-card-alt));
-  border-color: color-mix(in srgb, var(--status-danger) 20%, var(--border-light));
+  background: color-mix(in srgb, var(--status-danger) 14%, var(--surface-card-alt));
+  border-color: color-mix(in srgb, var(--status-danger) 30%, var(--border-light));
 }
 .insight-card.severity-info {
-  background: color-mix(in srgb, var(--status-info) 8%, var(--surface-card-alt));
-  border-color: color-mix(in srgb, var(--status-info) 20%, var(--border-light));
+  background: color-mix(in srgb, var(--status-info) 14%, var(--surface-card-alt));
+  border-color: color-mix(in srgb, var(--status-info) 30%, var(--border-light));
 }
 
 .insight-card-header {
