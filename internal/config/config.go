@@ -16,7 +16,14 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	APIKey       string        // SYNTHETIC_API_KEY
+	// Synthetic provider configuration
+	SyntheticAPIKey string // SYNTHETIC_API_KEY
+
+	// Z.ai provider configuration
+	ZaiAPIKey  string // ZAI_API_KEY
+	ZaiBaseURL string // ZAI_BASE_URL
+
+	// Shared configuration
 	PollInterval time.Duration // SYNTRACK_POLL_INTERVAL (seconds → Duration)
 	Port         int           // SYNTRACK_PORT
 	AdminUser    string        // SYNTRACK_ADMIN_USER
@@ -94,8 +101,12 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	cfg := &Config{}
 
-	// API Key (required)
-	cfg.APIKey = os.Getenv("SYNTHETIC_API_KEY")
+	// Synthetic provider
+	cfg.SyntheticAPIKey = os.Getenv("SYNTHETIC_API_KEY")
+
+	// Z.ai provider
+	cfg.ZaiAPIKey = os.Getenv("ZAI_API_KEY")
+	cfg.ZaiBaseURL = os.Getenv("ZAI_BASE_URL")
 
 	// Poll Interval (seconds)
 	if flags.interval > 0 {
@@ -163,18 +174,26 @@ func (c *Config) applyDefaults() {
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
 	}
+	if c.ZaiBaseURL == "" {
+		c.ZaiBaseURL = "https://api.z.ai/api"
+	}
 }
 
 // Validate checks the configuration for errors.
 func (c *Config) Validate() error {
-	// API Key is required
-	if c.APIKey == "" {
-		return fmt.Errorf("SYNTHETIC_API_KEY is required")
+	// At least one provider must be configured
+	if c.SyntheticAPIKey == "" && c.ZaiAPIKey == "" {
+		return fmt.Errorf("at least one provider must be configured: set SYNTHETIC_API_KEY or ZAI_API_KEY (or both)")
 	}
 
-	// API Key format: must start with "syn_"
-	if !strings.HasPrefix(c.APIKey, "syn_") {
+	// Validate Synthetic API key if provided
+	if c.SyntheticAPIKey != "" && !strings.HasPrefix(c.SyntheticAPIKey, "syn_") {
 		return fmt.Errorf("SYNTHETIC_API_KEY must start with 'syn_'")
+	}
+
+	// Validate Z.ai API key if provided
+	if c.ZaiAPIKey != "" && c.ZaiAPIKey == "" {
+		return fmt.Errorf("ZAI_API_KEY cannot be empty if provided")
 	}
 
 	// Poll interval bounds
@@ -195,14 +214,45 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// AvailableProviders returns which providers are configured.
+func (c *Config) AvailableProviders() []string {
+	var providers []string
+	if c.SyntheticAPIKey != "" {
+		providers = append(providers, "synthetic")
+	}
+	if c.ZaiAPIKey != "" {
+		providers = append(providers, "zai")
+	}
+	return providers
+}
+
+// HasProvider returns true if the given provider is configured.
+func (c *Config) HasProvider(name string) bool {
+	switch name {
+	case "synthetic":
+		return c.SyntheticAPIKey != ""
+	case "zai":
+		return c.ZaiAPIKey != ""
+	}
+	return false
+}
+
 // String returns a redacted string representation of the config.
 func (c *Config) String() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Config{\n")
 
-	// Redact API key
-	apiKeyDisplay := redactAPIKey(c.APIKey)
-	fmt.Fprintf(&sb, "  APIKey: %s,\n", apiKeyDisplay)
+	// Providers section
+	fmt.Fprintf(&sb, "  Providers: %v,\n", c.AvailableProviders())
+
+	// Redact Synthetic API key
+	syntheticKeyDisplay := redactAPIKey(c.SyntheticAPIKey, "syn_")
+	fmt.Fprintf(&sb, "  SyntheticAPIKey: %s,\n", syntheticKeyDisplay)
+
+	// Redact Z.ai API key
+	zaiKeyDisplay := redactAPIKey(c.ZaiAPIKey, "")
+	fmt.Fprintf(&sb, "  ZaiAPIKey: %s,\n", zaiKeyDisplay)
+	fmt.Fprintf(&sb, "  ZaiBaseURL: %s,\n", c.ZaiBaseURL)
 
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)
 	fmt.Fprintf(&sb, "  Port: %d,\n", c.Port)
@@ -217,22 +267,22 @@ func (c *Config) String() string {
 }
 
 // redactAPIKey masks the API key for display.
-func redactAPIKey(key string) string {
+func redactAPIKey(key string, expectedPrefix string) string {
 	if key == "" {
-		return "(empty)"
+		return "(not set)"
 	}
 
-	if !strings.HasPrefix(key, "syn_") || len(key) < 8 {
-		return "syn_***...***"
+	if expectedPrefix != "" && !strings.HasPrefix(key, expectedPrefix) {
+		return "***...***"
 	}
 
-	// Show first 4 chars after syn_ and last 3 chars
-	visibleStart := 4 // "syn_" prefix shown
-	if len(key) <= visibleStart+7 {
-		return "syn_***...***"
+	prefixLen := len(expectedPrefix)
+	if len(key) <= prefixLen+7 {
+		return expectedPrefix + "***...***"
 	}
 
-	return key[:visibleStart+4] + "***...***" + key[len(key)-3:]
+	// Show first 4 chars after prefix and last 3 chars
+	return key[:prefixLen+4] + "***...***" + key[len(key)-3:]
 }
 
 // LogWriter returns the appropriate log destination based on debug mode.

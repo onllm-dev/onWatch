@@ -22,8 +22,8 @@ func TestConfig_LoadsFromEnv(t *testing.T) {
 		t.Fatalf("Load() failed: %v", err)
 	}
 
-	if cfg.APIKey != "syn_test_key_123" {
-		t.Errorf("APIKey = %q, want %q", cfg.APIKey, "syn_test_key_123")
+	if cfg.SyntheticAPIKey != "syn_test_key_123" {
+		t.Errorf("SyntheticAPIKey = %q, want %q", cfg.SyntheticAPIKey, "syn_test_key_123")
 	}
 	if cfg.PollInterval != 120*time.Second {
 		t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, 120*time.Second)
@@ -42,6 +42,38 @@ func TestConfig_LoadsFromEnv(t *testing.T) {
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "debug")
+	}
+}
+
+func TestConfig_LoadsZaiFromEnv(t *testing.T) {
+	os.Setenv("ZAI_API_KEY", "zai_test_key_456")
+	os.Setenv("ZAI_BASE_URL", "https://custom.z.ai/api")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.ZaiAPIKey != "zai_test_key_456" {
+		t.Errorf("ZaiAPIKey = %q, want %q", cfg.ZaiAPIKey, "zai_test_key_456")
+	}
+	if cfg.ZaiBaseURL != "https://custom.z.ai/api" {
+		t.Errorf("ZaiBaseURL = %q, want %q", cfg.ZaiBaseURL, "https://custom.z.ai/api")
+	}
+}
+
+func TestConfig_ZaiDefaults(t *testing.T) {
+	os.Setenv("ZAI_API_KEY", "zai_test_key")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.ZaiBaseURL != "https://api.z.ai/api" {
+		t.Errorf("ZaiBaseURL = %q, want default %q", cfg.ZaiBaseURL, "https://api.z.ai/api")
 	}
 }
 
@@ -74,16 +106,90 @@ func TestConfig_DefaultValues(t *testing.T) {
 	}
 }
 
-func TestConfig_ValidatesAPIKey_Required(t *testing.T) {
+func TestConfig_OnlySyntheticProvider(t *testing.T) {
+	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	providers := cfg.AvailableProviders()
+	if len(providers) != 1 || providers[0] != "synthetic" {
+		t.Errorf("AvailableProviders() = %v, want [synthetic]", providers)
+	}
+
+	if !cfg.HasProvider("synthetic") {
+		t.Error("HasProvider('synthetic') should be true")
+	}
+
+	if cfg.HasProvider("zai") {
+		t.Error("HasProvider('zai') should be false")
+	}
+}
+
+func TestConfig_OnlyZaiProvider(t *testing.T) {
+	os.Setenv("ZAI_API_KEY", "zai_test_key")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	providers := cfg.AvailableProviders()
+	if len(providers) != 1 || providers[0] != "zai" {
+		t.Errorf("AvailableProviders() = %v, want [zai]", providers)
+	}
+
+	if cfg.HasProvider("synthetic") {
+		t.Error("HasProvider('synthetic') should be false")
+	}
+
+	if !cfg.HasProvider("zai") {
+		t.Error("HasProvider('zai') should be true")
+	}
+}
+
+func TestConfig_BothProviders(t *testing.T) {
+	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	os.Setenv("ZAI_API_KEY", "zai_test_key")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	providers := cfg.AvailableProviders()
+	if len(providers) != 2 {
+		t.Errorf("AvailableProviders() = %v, want 2 providers", providers)
+	}
+
+	if !cfg.HasProvider("synthetic") {
+		t.Error("HasProvider('synthetic') should be true")
+	}
+
+	if !cfg.HasProvider("zai") {
+		t.Error("HasProvider('zai') should be true")
+	}
+}
+
+func TestConfig_ValidatesNoProvidersConfigured(t *testing.T) {
 	os.Clearenv()
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("Load() should fail with empty API key")
+		t.Fatal("Load() should fail when no providers are configured")
+	}
+
+	if !strings.Contains(err.Error(), "at least one provider") {
+		t.Errorf("Error message should mention 'at least one provider', got: %v", err)
 	}
 }
 
-func TestConfig_ValidatesAPIKey_Format(t *testing.T) {
+func TestConfig_ValidatesSyntheticAPIKey_Format(t *testing.T) {
 	tests := []struct {
 		name    string
 		apiKey  string
@@ -93,7 +199,6 @@ func TestConfig_ValidatesAPIKey_Format(t *testing.T) {
 		{"valid with numbers", "syn_12345", false},
 		{"valid long", "syn_abcdefghijklmnopqrstuvwxyz1234567890", false},
 		{"missing prefix", "invalid_key", true},
-		{"empty", "", true},
 		{"wrong prefix", "api_test_key", true},
 		{"syn only", "syn_", false},
 	}
@@ -116,7 +221,7 @@ func TestConfig_ValidatesAPIKey_Format(t *testing.T) {
 }
 
 func TestConfig_ValidatesInterval_Minimum(t *testing.T) {
-	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	os.Setenv("ZAI_API_KEY", "zai_test_key")
 	os.Setenv("SYNTRACK_POLL_INTERVAL", "5")
 	defer os.Clearenv()
 
@@ -127,7 +232,7 @@ func TestConfig_ValidatesInterval_Minimum(t *testing.T) {
 }
 
 func TestConfig_ValidatesInterval_Maximum(t *testing.T) {
-	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	os.Setenv("ZAI_API_KEY", "zai_test_key")
 	os.Setenv("SYNTRACK_POLL_INTERVAL", "7200")
 	defer os.Clearenv()
 
@@ -155,7 +260,7 @@ func TestConfig_ValidatesPort_Range(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			os.Clearenv()
-			os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+			os.Setenv("ZAI_API_KEY", "zai_test_key")
 			os.Setenv("SYNTRACK_PORT", tt.port)
 			defer os.Clearenv()
 
@@ -170,14 +275,25 @@ func TestConfig_ValidatesPort_Range(t *testing.T) {
 	}
 }
 
-func TestConfig_RedactsAPIKey(t *testing.T) {
+func TestConfig_RedactsSyntheticAPIKey(t *testing.T) {
 	cfg := &Config{
-		APIKey: "syn_secret_api_key_xyz789",
+		SyntheticAPIKey: "syn_secret_api_key_xyz789",
 	}
 
 	str := cfg.String()
 	if strings.Contains(str, "syn_secret_api_key_xyz789") {
-		t.Error("String() should not contain full API key")
+		t.Error("String() should not contain full Synthetic API key")
+	}
+}
+
+func TestConfig_RedactsZaiAPIKey(t *testing.T) {
+	cfg := &Config{
+		ZaiAPIKey: "zai_secret_key_abc123",
+	}
+
+	str := cfg.String()
+	if strings.Contains(str, "zai_secret_key_abc123") {
+		t.Error("String() should not contain full Z.ai API key")
 	}
 }
 
@@ -271,5 +387,122 @@ func TestConfig_LogWriter(t *testing.T) {
 	}
 	if writer == os.Stdout {
 		t.Error("Background mode should not return os.Stdout")
+	}
+}
+
+func TestConfig_AvailableProviders_Empty(t *testing.T) {
+	cfg := &Config{}
+	providers := cfg.AvailableProviders()
+	if len(providers) != 0 {
+		t.Errorf("AvailableProviders() = %v, want empty slice", providers)
+	}
+}
+
+func TestConfig_HasProvider_Unknown(t *testing.T) {
+	cfg := &Config{
+		SyntheticAPIKey: "syn_test",
+	}
+
+	if cfg.HasProvider("unknown") {
+		t.Error("HasProvider('unknown') should be false for unknown provider")
+	}
+}
+
+func TestConfig_RedactAPIKey_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name           string
+		key            string
+		prefix         string
+		wantContains   []string
+		wantNotContain []string
+	}{
+		{
+			name:           "empty key",
+			key:            "",
+			prefix:         "syn_",
+			wantContains:   []string{"(not set)"},
+			wantNotContain: []string{"***"},
+		},
+		{
+			name:           "short synthetic key",
+			key:            "syn_ab",
+			prefix:         "syn_",
+			wantContains:   []string{"syn_***...***"},
+			wantNotContain: []string{"syn_ab"},
+		},
+		{
+			name:           "long synthetic key",
+			key:            "syn_abcdefghijklmnopqrstuvwxyz",
+			prefix:         "syn_",
+			wantContains:   []string{"syn_abcd***...***xyz"},
+			wantNotContain: []string{"syn_abcdefghijklmnopqrstuvwxyz"},
+		},
+		{
+			name:           "key without expected prefix",
+			key:            "some_random_key",
+			prefix:         "syn_",
+			wantContains:   []string{"***...***"},
+			wantNotContain: []string{"some_random_key"},
+		},
+		{
+			name:           "zai key without prefix check",
+			key:            "zai_test_key_123",
+			prefix:         "",
+			wantContains:   []string{"zai_***...***123"},
+			wantNotContain: []string{"zai_test_key_123"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := redactAPIKey(tt.key, tt.prefix)
+
+			for _, want := range tt.wantContains {
+				if !strings.Contains(result, want) {
+					t.Errorf("redactAPIKey() = %q, should contain %q", result, want)
+				}
+			}
+
+			for _, notWant := range tt.wantNotContain {
+				if strings.Contains(result, notWant) {
+					t.Errorf("redactAPIKey() = %q, should NOT contain %q", result, notWant)
+				}
+			}
+		})
+	}
+}
+
+func TestConfig_String_ContainsProviders(t *testing.T) {
+	cfg := &Config{
+		SyntheticAPIKey: "syn_test_key_12345",
+		ZaiAPIKey:       "zai_test_key_67890",
+		PollInterval:    60 * time.Second,
+		Port:            8932,
+		AdminUser:       "admin",
+		AdminPass:       "secret",
+		DBPath:          "./test.db",
+		LogLevel:        "info",
+		DebugMode:       false,
+	}
+
+	str := cfg.String()
+
+	// Check providers list is shown
+	if !strings.Contains(str, "Providers:") {
+		t.Error("String() should contain Providers list")
+	}
+
+	// Check both API keys are redacted
+	if strings.Contains(str, "syn_test_key_12345") {
+		t.Error("String() should not contain full Synthetic API key")
+	}
+
+	if strings.Contains(str, "zai_test_key_67890") {
+		t.Error("String() should not contain full Z.ai API key")
+	}
+
+	// Check ZaiBaseURL is shown
+	if !strings.Contains(str, "ZaiBaseURL:") {
+		t.Error("String() should contain ZaiBaseURL")
 	}
 }
