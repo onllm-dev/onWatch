@@ -271,7 +271,7 @@ func run() error {
 	client := api.NewClient(cfg.SyntheticAPIKey, logger)
 	tr := tracker.New(db, logger)
 	ag := agent.New(client, db, tr, cfg.PollInterval, logger)
-	handler := web.NewHandler(db, tr, logger, nil)
+	handler := web.NewHandler(db, tr, logger, nil, cfg)
 	server := web.NewServer(cfg.Port, handler, logger, cfg.AdminUser, cfg.AdminPass)
 
 	// Setup signal handling
