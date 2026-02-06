@@ -4,6 +4,16 @@ const API_BASE = '';
 const REFRESH_INTERVAL = 60000;
 const SEARCH_DEBOUNCE_MS = 200;
 
+// ── Auth helper: redirect to login on 401 ──
+async function authFetch(url) {
+  const res = await fetch(url);
+  if (res.status === 401) {
+    window.location.href = '/login';
+    throw new Error('Session expired');
+  }
+  return res;
+}
+
 // ── Global State ──
 const State = {
   chart: null,
@@ -15,14 +25,12 @@ const State = {
   allCyclesData: [],
   allSessionsData: [],
   // Cycles table state
-  cyclesSearch: '',
   cyclesSort: { key: null, dir: 'desc' },
   cyclesPage: 1,
   cyclesPageSize: 10,
   cyclesRange: 259200000,   // 3 days in ms (default)
   cyclesGroup: 300000,      // 5 minutes in ms (default)
   // Sessions table state
-  sessionsSearch: '',
   sessionsSort: { key: null, dir: 'desc' },
   sessionsPage: 1,
   sessionsPageSize: 10,
@@ -200,7 +208,7 @@ function startCountdowns() {
 
 async function fetchCurrent() {
   try {
-    const res = await fetch(`${API_BASE}/api/current`);
+    const res = await authFetch(`${API_BASE}/api/current`);
     if (!res.ok) throw new Error('Failed to fetch');
     const data = await res.json();
 
@@ -240,7 +248,7 @@ async function fetchDeepInsights() {
   if (!cardsEl) return;
 
   try {
-    const res = await fetch(`${API_BASE}/api/insights`);
+    const res = await authFetch(`${API_BASE}/api/insights`);
     if (!res.ok) throw new Error('Failed to fetch insights');
     const data = await res.json();
 
@@ -449,7 +457,7 @@ async function fetchHistory(range) {
     range = activeBtn ? activeBtn.dataset.range : '6h';
   }
   try {
-    const res = await fetch(`${API_BASE}/api/history?range=${range}`);
+    const res = await authFetch(`${API_BASE}/api/history?range=${range}`);
     if (!res.ok) throw new Error('Failed to fetch history');
     const data = await res.json();
 
@@ -479,7 +487,7 @@ async function fetchCycles(quotaType) {
     quotaType = select ? select.value : 'subscription';
   }
   try {
-    const res = await fetch(`${API_BASE}/api/cycles?type=${quotaType}`);
+    const res = await authFetch(`${API_BASE}/api/cycles?type=${quotaType}`);
     if (!res.ok) throw new Error('Failed to fetch cycles');
     State.allCyclesData = await res.json();
     State.cyclesPage = 1;
@@ -574,16 +582,6 @@ function renderCyclesTable() {
     };
   });
 
-  // Search filter
-  if (State.cyclesSearch) {
-    const q = State.cyclesSearch.toLowerCase();
-    data = data.filter(d => {
-      const disp = d._display;
-      const searchStr = `${disp.id} ${disp.start.toLocaleString()} ${disp.end ? disp.end.toLocaleString() : 'Active'} ${disp.durationStr} ${formatNumber(d.peakRequests)} ${formatNumber(d.totalDelta)} ${formatNumber(disp.rate)}`.toLowerCase();
-      return searchStr.includes(q);
-    });
-  }
-
   // Sort
   if (State.cyclesSort.key) {
     const dir = State.cyclesSort.dir === 'asc' ? 1 : -1;
@@ -655,7 +653,7 @@ function renderCyclesTable() {
 
 async function fetchSessions() {
   try {
-    const res = await fetch(`${API_BASE}/api/sessions`);
+    const res = await authFetch(`${API_BASE}/api/sessions`);
     if (!res.ok) throw new Error('Failed to fetch sessions');
     State.allSessionsData = await res.json();
     State.sessionsPage = 1;
@@ -690,16 +688,6 @@ function renderSessionsTable() {
   if (!tbody) return;
 
   let data = State.allSessionsData.map((s, i) => ({ ...s, _computed: getSessionComputedFields(s), _index: i }));
-
-  // Search filter
-  if (State.sessionsSearch) {
-    const q = State.sessionsSearch.toLowerCase();
-    data = data.filter(s => {
-      const comp = s._computed;
-      const searchStr = `${s.id.slice(0, 8)} ${comp.start.toLocaleString()} ${s.endedAt ? comp.end.toLocaleString() : 'Active'} ${comp.durationStr} ${formatNumber(s.maxSubRequests)} ${formatNumber(s.maxSearchRequests)} ${formatNumber(s.maxToolRequests)}`.toLowerCase();
-      return searchStr.includes(q);
-    });
-  }
 
   // Sort
   if (State.sessionsSort.key) {
@@ -928,7 +916,7 @@ async function loadModalChart(quotaType) {
   const range = activeRange ? activeRange.dataset.range : '6h';
 
   try {
-    const res = await fetch(`${API_BASE}/api/history?range=${range}`);
+    const res = await authFetch(`${API_BASE}/api/history?range=${range}`);
     if (!res.ok) return;
     const data = await res.json();
 
@@ -985,7 +973,7 @@ async function loadModalChart(quotaType) {
 async function loadModalCycles(quotaType) {
   const apiType = quotaType === 'toolCalls' ? 'toolcall' : quotaType;
   try {
-    const res = await fetch(`${API_BASE}/api/cycles?type=${apiType}`);
+    const res = await authFetch(`${API_BASE}/api/cycles?type=${apiType}`);
     if (!res.ok) return;
     const cycles = await res.json();
 
