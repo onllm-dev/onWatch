@@ -32,7 +32,10 @@ func main() {
 	}
 }
 
-const pidFile = ".syntrack.pid"
+var (
+	pidDir  = defaultPIDDir()
+	pidFile = filepath.Join(pidDir, "syntrack.pid")
+)
 
 // stopPreviousInstance stops any running syntrack instance using PID file + port check.
 func stopPreviousInstance(port int) {
@@ -115,7 +118,14 @@ func isSyntrackProcess(pid int) bool {
 	return strings.Contains(strings.ToLower(cmd), "syntrack")
 }
 
+func ensurePIDDir() error {
+	return os.MkdirAll(pidDir, 0755)
+}
+
 func writePIDFile() error {
+	if err := ensurePIDDir(); err != nil {
+		return fmt.Errorf("failed to create PID directory: %w", err)
+	}
 	return os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
 }
 
@@ -149,15 +159,18 @@ func daemonize(cfg *config.Config) error {
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Env = append(os.Environ(), "_SYNTRACK_DAEMON=1")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = daemonSysProcAttr()
 
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
-	// Write child PID to .syntrack.pid
+	// Write child PID
 	childPID := cmd.Process.Pid
+	if err := ensurePIDDir(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not create PID directory: %v\n", err)
+	}
 	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(childPID)), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not write PID file: %v\n", err)
 	}
@@ -190,9 +203,20 @@ func run() error {
 	// Stop any previous instance before starting
 	stopPreviousInstance(cfg.Port)
 
-	// Write PID file for this instance
-	if err := writePIDFile(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not write PID file: %v\n", err)
+	// Daemonize: if not in debug mode and not already the daemon child, fork
+	if !cfg.DebugMode && os.Getenv("_SYNTRACK_DAEMON") != "1" {
+		printBanner(cfg, version)
+		return daemonize(cfg)
+	}
+
+	// From here on, we are either the daemon child or running in --debug mode.
+
+	// In daemon mode, the parent already wrote the PID file with our PID.
+	// In debug mode, we write our own PID file.
+	if cfg.DebugMode {
+		if err := writePIDFile(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write PID file: %v\n", err)
+		}
 	}
 	defer removePIDFile()
 
@@ -225,8 +249,10 @@ func run() error {
 	}))
 	slog.SetDefault(logger)
 
-	// Print startup banner
-	printBanner(cfg, version)
+	// Print startup banner (only in debug/foreground mode)
+	if cfg.DebugMode {
+		printBanner(cfg, version)
+	}
 
 	// Open database
 	db, err := store.New(cfg.DBPath)
