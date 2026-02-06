@@ -157,7 +157,7 @@ func TestIntegration_FullCycle(t *testing.T) {
 	}
 
 	// Test web handler returns the data
-	handler := web.NewHandler(db, tr, nil)
+	handler := web.NewHandler(db, tr, discardLogger())
 
 	// Test /api/current endpoint
 	req := httptest.NewRequest("GET", "/api/current", nil)
@@ -244,12 +244,12 @@ func TestIntegration_ResetDetection(t *testing.T) {
 	}
 	defer db.Close()
 
-	client := api.NewClient("syn_test_key", nil, api.WithBaseURL(server.URL+"/v2/quotas"))
-	tr := tracker.New(db, nil)
+	client := api.NewClient("syn_test_key", discardLogger(), api.WithBaseURL(server.URL+"/v2/quotas"))
+	tr := tracker.New(db, discardLogger())
 
 	// First poll
 	ctx1, cancel1 := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	ag1 := agent.New(client, db, tr, 1*time.Hour, nil) // Long interval, we'll cancel immediately
+	ag1 := agent.New(client, db, tr, 1*time.Hour, discardLogger()) // Long interval, we'll cancel immediately
 	go ag1.Run(ctx1)
 	time.Sleep(150 * time.Millisecond)
 	cancel1()
@@ -257,7 +257,7 @@ func TestIntegration_ResetDetection(t *testing.T) {
 
 	// Second poll - should detect reset
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	ag2 := agent.New(client, db, tr, 1*time.Hour, nil)
+	ag2 := agent.New(client, db, tr, 1*time.Hour, discardLogger())
 	go ag2.Run(ctx2)
 	time.Sleep(150 * time.Millisecond)
 	cancel2()
@@ -279,7 +279,7 @@ func TestIntegration_ResetDetection(t *testing.T) {
 	}
 
 	// Verify via API endpoint
-	handler := web.NewHandler(db, tr, nil)
+	handler := web.NewHandler(db, tr, discardLogger())
 	req := httptest.NewRequest("GET", "/api/cycles?type=subscription", nil)
 	w := httptest.NewRecorder()
 	handler.Cycles(w, req)
@@ -335,18 +335,18 @@ func TestIntegration_DashboardRendersData(t *testing.T) {
 	}
 	defer db.Close()
 
-	client := api.NewClient("syn_test_key", nil, api.WithBaseURL(server.URL+"/v2/quotas"))
-	tr := tracker.New(db, nil)
+	client := api.NewClient("syn_test_key", discardLogger(), api.WithBaseURL(server.URL+"/v2/quotas"))
+	tr := tracker.New(db, discardLogger())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	ag := agent.New(client, db, tr, 1*time.Hour, nil)
+	ag := agent.New(client, db, tr, 1*time.Hour, discardLogger())
 	go ag.Run(ctx)
 	time.Sleep(250 * time.Millisecond)
 	cancel()
 	time.Sleep(50 * time.Millisecond)
 
 	// Test dashboard HTML response
-	handler := web.NewHandler(db, tr, nil)
+	handler := web.NewHandler(db, tr, discardLogger())
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	handler.Dashboard(w, req)
@@ -413,13 +413,13 @@ func TestIntegration_GracefulShutdown(t *testing.T) {
 	}
 	defer db.Close()
 
-	client := api.NewClient("syn_test_key", nil, api.WithBaseURL(server.URL+"/v2/quotas"))
-	tr := tracker.New(db, nil)
-	ag := agent.New(client, db, tr, 1*time.Second, nil)
+	client := api.NewClient("syn_test_key", discardLogger(), api.WithBaseURL(server.URL+"/v2/quotas"))
+	tr := tracker.New(db, discardLogger())
+	ag := agent.New(client, db, tr, 1*time.Second, discardLogger())
 
 	// Create web server
-	handler := web.NewHandler(db, tr, nil)
-	webServer := web.NewServer(0, handler, nil) // Port 0 = random available port
+	handler := web.NewHandler(db, tr, discardLogger())
+	webServer := web.NewServer(0, handler, discardLogger()) // Port 0 = random available port
 
 	// Start web server in background
 	go webServer.Start()
