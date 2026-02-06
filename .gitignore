@@ -48,3 +48,4 @@ coverage.html
 *.log
 .syntrack.log
 logs/
+opencode.json
