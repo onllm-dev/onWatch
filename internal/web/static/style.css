@@ -218,7 +218,6 @@ body { min-height: 100vh; transition: background-color 200ms, color 200ms; }
 
 /* Cycle Filters - inline with title */
 .cycles-filters-inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.table-search-compact { min-width: 100px; width: 100px; }
 .filter-group { display: flex; align-items: center; gap: 6px; }
 .filter-label { font-size: 11px; font-weight: 600; color: var(--md-on-surface-variant); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
 .filter-pills { display: flex; gap: 3px; }
@@ -232,9 +231,6 @@ body { min-height: 100vh; transition: background-color 200ms, color 200ms; }
 
 /* Table Controls */
 .table-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.table-search { padding: 8px 14px; border: 1px solid var(--md-outline); background: var(--md-surface-container-high); color: var(--md-on-surface); font-size: 14px; border-radius: 8px; min-width: 160px; transition: border-color 200ms; }
-.table-search:focus { outline: none; border-color: var(--md-primary); }
-.table-search::placeholder { color: var(--md-on-surface-variant); }
 .quota-select, .page-size-select { padding: 8px 16px; border: 1px solid var(--md-outline); background: var(--md-surface-container-high); color: var(--md-on-surface); font-size: 14px; border-radius: 8px; cursor: pointer; }
 .table-info { font-size: 13px; color: var(--md-on-surface-variant); font-family: var(--font-mono); white-space: nowrap; }
 
@@ -364,7 +360,6 @@ body { min-height: 100vh; transition: background-color 200ms, color 200ms; }
   .range-btn { flex: 1; padding: 8px; font-size: 13px; }
   .login-card { padding: 32px 24px; }
   .table-controls { flex-direction: column; align-items: stretch; }
-  .table-search { min-width: unset; width: 100%; }
   .section-header { flex-direction: column; align-items: flex-start; }
   .header-meta { gap: 8px; }
   .session-detail-grid { grid-template-columns: repeat(2, 1fr); }
@@ -372,7 +367,6 @@ body { min-height: 100vh; transition: background-color 200ms, color 200ms; }
   .cycles-filters-inline .filter-group { width: 100%; }
   .cycles-filters-inline .filter-pills { flex: 1; }
   .filter-pill { flex: 1; text-align: center; padding: 5px 6px; font-size: 11px; }
-  .table-search-compact { width: 100%; min-width: unset; }
   .insights-cards { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
 

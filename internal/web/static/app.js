@@ -2,7 +2,6 @@
 
 const API_BASE = '';
 const REFRESH_INTERVAL = 60000;
-const SEARCH_DEBOUNCE_MS = 200;
 
 // ── Auth helper: redirect to login on 401 ──
 async function authFetch(url) {
@@ -74,13 +73,6 @@ function formatDateTime(isoString) {
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function debounce(fn, ms) {
-  let timer;
-  return function(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), ms);
-  };
-}
 
 function getThemeColors() {
   const style = getComputedStyle(document.documentElement);
@@ -1075,16 +1067,6 @@ function setupPasswordToggle() {
 }
 
 function setupTableControls() {
-  // Cycles search
-  const cyclesSearchEl = document.getElementById('cycles-search');
-  if (cyclesSearchEl) {
-    cyclesSearchEl.addEventListener('input', debounce(() => {
-      State.cyclesSearch = cyclesSearchEl.value;
-      State.cyclesPage = 1;
-      renderCyclesTable();
-    }, SEARCH_DEBOUNCE_MS));
-  }
-
   // Cycles page size
   const cyclesPageSizeEl = document.getElementById('cycles-page-size');
   if (cyclesPageSizeEl) {
@@ -1093,16 +1075,6 @@ function setupTableControls() {
       State.cyclesPage = 1;
       renderCyclesTable();
     });
-  }
-
-  // Sessions search
-  const sessionsSearchEl = document.getElementById('sessions-search');
-  if (sessionsSearchEl) {
-    sessionsSearchEl.addEventListener('input', debounce(() => {
-      State.sessionsSearch = sessionsSearchEl.value;
-      State.sessionsPage = 1;
-      renderSessionsTable();
-    }, SEARCH_DEBOUNCE_MS));
   }
 
   // Sessions page size
