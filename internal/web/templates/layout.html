@@ -20,7 +20,7 @@
     </script>
 </head>
 <body>
-    <a href="#main-content" class="skip-link">Skip to dashboard</a>
+    {{if ne .Title "Login"}}<a href="#main-content" class="skip-link">Skip to dashboard</a>{{end}}
     {{template "content" .}}
     <script src="/static/app.js"></script>
 </body>

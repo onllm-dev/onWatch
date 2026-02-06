@@ -49,3 +49,10 @@ coverage.html
 .syntrack.log
 logs/
 opencode.json
+.syntrack.pid
+
+# Node.js (dev tools)
+node_modules/
+package.json
+package-lock.json
+tests/

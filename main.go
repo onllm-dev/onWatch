@@ -4,8 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
+	"os/exec"
 	"os/signal"
+	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +31,97 @@ func main() {
 	}
 }
 
+const pidFile = ".syntrack.pid"
+
+// stopPreviousInstance stops any running syntrack instance using PID file + port check.
+func stopPreviousInstance(port int) {
+	myPID := os.Getpid()
+	stopped := false
+
+	// Method 1: PID file
+	if data, err := os.ReadFile(pidFile); err == nil {
+		pidStr := strings.TrimSpace(string(data))
+		if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 && pid != myPID {
+			if proc, err := os.FindProcess(pid); err == nil {
+				if err := proc.Signal(syscall.SIGTERM); err == nil {
+					fmt.Printf("Stopped previous instance (PID %d) via PID file\n", pid)
+					stopped = true
+				}
+			}
+		}
+		os.Remove(pidFile)
+	}
+
+	// Method 2: Check if the port is in use and kill the occupying syntrack process
+	if !stopped && port > 0 {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			// Port is occupied — find which process holds it
+			if pids := findSyntrackOnPort(port); len(pids) > 0 {
+				for _, pid := range pids {
+					if pid == myPID {
+						continue
+					}
+					if proc, err := os.FindProcess(pid); err == nil {
+						if err := proc.Signal(syscall.SIGTERM); err == nil {
+							fmt.Printf("Stopped previous instance (PID %d) on port %d\n", pid, port)
+							stopped = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if stopped {
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// findSyntrackOnPort uses lsof (macOS/Linux) to find syntrack processes on a port.
+func findSyntrackOnPort(port int) []int {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		return nil
+	}
+
+	// lsof -ti :PORT gives PIDs listening on that port
+	out, err := exec.Command("lsof", "-ti", fmt.Sprintf(":%d", port)).Output()
+	if err != nil {
+		return nil
+	}
+
+	var pids []int
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if pid, err := strconv.Atoi(line); err == nil && pid > 0 {
+			// Verify it's a syntrack process by checking the command name
+			if isSyntrackProcess(pid) {
+				pids = append(pids, pid)
+			}
+		}
+	}
+	return pids
+}
+
+// isSyntrackProcess checks if a PID belongs to a syntrack binary.
+func isSyntrackProcess(pid int) bool {
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
+	if err != nil {
+		return false
+	}
+	cmd := strings.TrimSpace(string(out))
+	return strings.Contains(strings.ToLower(cmd), "syntrack")
+}
+
+func writePIDFile() error {
+	return os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
+}
+
+func removePIDFile() {
+	os.Remove(pidFile)
+}
+
 func run() error {
 	// Parse flags and load config
 	cfg, err := config.Load()
@@ -44,6 +140,15 @@ func run() error {
 			return nil
 		}
 	}
+
+	// Stop any previous instance before starting
+	stopPreviousInstance(cfg.Port)
+
+	// Write PID file for this instance
+	if err := writePIDFile(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not write PID file: %v\n", err)
+	}
+	defer removePIDFile()
 
 	// Setup logging
 	logWriter, err := cfg.LogWriter()
@@ -90,8 +195,8 @@ func run() error {
 	client := api.NewClient(cfg.APIKey, logger)
 	tr := tracker.New(db, logger)
 	ag := agent.New(client, db, tr, cfg.PollInterval, logger)
-	handler := web.NewHandler(db, tr, logger)
-	server := web.NewServer(cfg.Port, handler, logger)
+	handler := web.NewHandler(db, tr, logger, nil)
+	server := web.NewServer(cfg.Port, handler, logger, cfg.AdminUser, cfg.AdminPass)
 
 	// Setup signal handling
 	ctx, cancel := context.WithCancel(context.Background())
