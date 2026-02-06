@@ -378,6 +378,19 @@ func (s *Store) CloseCycle(quotaType string, cycleEnd time.Time, peak, delta flo
 	return nil
 }
 
+// UpdateCycle updates the peak and delta for an active cycle
+func (s *Store) UpdateCycle(quotaType string, peak, delta float64) error {
+	_, err := s.db.Exec(
+		`UPDATE reset_cycles SET peak_requests = ?, total_delta = ?
+		WHERE quota_type = ? AND cycle_end IS NULL`,
+		peak, delta, quotaType,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update cycle: %w", err)
+	}
+	return nil
+}
+
 // QueryActiveCycle returns the active cycle for a quota type
 func (s *Store) QueryActiveCycle(quotaType string) (*ResetCycle, error) {
 	var cycle ResetCycle
