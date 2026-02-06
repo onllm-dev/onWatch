@@ -57,7 +57,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	// Apply session-based authentication middleware
 	var finalHandler http.Handler = mux
 	if username != "" && password != "" {
-		sessions := NewSessionStore(username, password)
+		sessions := NewSessionStore(username, password, handler.store)
 		handler.sessions = sessions
 		finalHandler = SessionAuthMiddleware(sessions)(mux)
 	}
