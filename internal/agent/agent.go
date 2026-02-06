@@ -41,6 +41,13 @@ func New(client *api.Client, store *store.Store, tracker *tracker.Tracker, inter
 // then continues at the configured interval until the context is cancelled.
 // On context cancellation, it gracefully shuts down and closes the session.
 func (a *Agent) Run(ctx context.Context) error {
+	// Close any orphaned sessions from previous runs (e.g., process was killed)
+	if closed, err := a.store.CloseOrphanedSessions(); err != nil {
+		a.logger.Warn("Failed to close orphaned sessions", "error", err)
+	} else if closed > 0 {
+		a.logger.Info("Closed orphaned sessions", "count", closed)
+	}
+
 	// Generate session ID
 	a.sessionID = uuid.New().String()
 
