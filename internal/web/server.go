@@ -24,7 +24,7 @@ type Server struct {
 }
 
 // NewServer creates a new Server instance
-func NewServer(port int, handler *Handler, logger *slog.Logger) *Server {
+func NewServer(port int, handler *Handler, logger *slog.Logger, username, password string) *Server {
 	if port == 0 {
 		port = 8932 // default port
 	}
@@ -34,21 +34,31 @@ func NewServer(port int, handler *Handler, logger *slog.Logger) *Server {
 	// Register routes
 	mux.HandleFunc("/", handler.Dashboard)
 	mux.HandleFunc("/login", handler.Login)
+	mux.HandleFunc("/logout", handler.Logout)
 	mux.HandleFunc("/api/current", handler.Current)
 	mux.HandleFunc("/api/history", handler.History)
 	mux.HandleFunc("/api/cycles", handler.Cycles)
 	mux.HandleFunc("/api/summary", handler.Summary)
 	mux.HandleFunc("/api/sessions", handler.Sessions)
+	mux.HandleFunc("/api/insights", handler.Insights)
 
 	// Static files from embedded filesystem
 	staticDir, _ := fs.Sub(staticFS, "static")
 	staticHandler := http.FileServer(http.FS(staticDir))
 	mux.Handle("/static/", http.StripPrefix("/static/", contentTypeHandler(staticHandler)))
 
+	// Apply session-based authentication middleware
+	var finalHandler http.Handler = mux
+	if username != "" && password != "" {
+		sessions := NewSessionStore(username, password)
+		handler.sessions = sessions
+		finalHandler = SessionAuthMiddleware(sessions)(mux)
+	}
+
 	return &Server{
 		httpServer: &http.Server{
 			Addr:    ":" + strconv.Itoa(port),
-			Handler: mux,
+			Handler: finalHandler,
 		},
 		handler: handler,
 		logger:  logger,

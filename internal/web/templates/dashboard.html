@@ -1,15 +1,21 @@
 {{define "content"}}
 <div class="app">
     <header class="app-header">
-        <div class="header-brand">
+        <a href="#" class="header-brand" id="scroll-top" aria-label="Scroll to top">
             <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
             </svg>
             <span class="brand-text">SynTrack</span>
-        </div>
-        <div class="header-meta">
-            <span class="last-updated" id="last-updated">Last updated: --:--:--</span>
-            <span class="status-indicator" id="status-dot" aria-label="Connection status"></span>
+        </a>
+        <div class="header-actions">
+            <button class="header-btn" id="refresh-btn" aria-label="Refresh data" title="Refresh now">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            </button>
+            <div class="header-meta">
+                <span class="last-updated" id="last-updated">Last updated: --:--:--</span>
+                <span class="timezone-badge" id="timezone-badge"></span>
+                <span class="status-indicator" id="status-dot" aria-label="Connection status"></span>
+            </div>
         </div>
         <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
             <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -24,7 +30,7 @@
 
     <main id="main-content" class="main-content">
         <div class="quota-grid" id="quota-grid">
-            <article class="quota-card" data-quota="subscription">
+            <article class="quota-card" data-quota="subscription" role="button" tabindex="0" aria-label="View Subscription Quota details">
                 <header class="card-header">
                     <h2 class="quota-title">
                         <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -56,7 +62,7 @@
                 </footer>
             </article>
 
-            <article class="quota-card" data-quota="search">
+            <article class="quota-card" data-quota="search" role="button" tabindex="0" aria-label="View Search Quota details">
                 <header class="card-header">
                     <h2 class="quota-title">
                         <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -88,7 +94,7 @@
                 </footer>
             </article>
 
-            <article class="quota-card" data-quota="toolCalls">
+            <article class="quota-card" data-quota="toolCalls" role="button" tabindex="0" aria-label="View Tool Call Discounts details">
                 <header class="card-header">
                     <h2 class="quota-title">
                         <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -121,14 +127,17 @@
         </div>
 
         <section class="insights-panel">
-            <h3 class="section-title">
-                <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="M12 16v-4M12 8h.01"/>
-                </svg>
-                Usage Insights
-            </h3>
-            <div class="insights-content" id="insights-content">
+            <header class="section-header">
+                <h3 class="section-title">
+                    <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 16v-4M12 8h.01"/>
+                    </svg>
+                    Usage Insights
+                </h3>
+            </header>
+            <div class="insights-stats" id="insights-stats"></div>
+            <div class="insights-cards" id="insights-cards">
                 <p class="insight-text">Loading insights...</p>
             </div>
         </section>
@@ -162,25 +171,52 @@
                         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
                         <path d="M3 3v5h5"/>
                     </svg>
-                    Reset Cycle History
+                    Cycle History
                 </h3>
-                <select class="quota-select" id="cycle-quota-select" aria-label="Select quota type">
-                    <option value="subscription">Subscription</option>
-                    <option value="search">Search</option>
-                    <option value="toolcall">Tool Calls</option>
-                </select>
+                <div class="cycles-filters-inline">
+                    <select class="quota-select" id="cycle-quota-select" aria-label="Select quota type">
+                        <option value="subscription">Subscription</option>
+                        <option value="toolcall">Tool Calls</option>
+                    </select>
+                    <div class="filter-group">
+                        <span class="filter-label">Range</span>
+                        <div class="filter-pills" id="cycle-range-pills" role="group" aria-label="Time range">
+                            <button class="filter-pill" data-range="3600000">1h</button>
+                            <button class="filter-pill active" data-range="259200000">3d</button>
+                            <button class="filter-pill" data-range="604800000">7d</button>
+                            <button class="filter-pill" data-range="1296000000">15d</button>
+                            <button class="filter-pill" data-range="2592000000">30d</button>
+                        </div>
+                    </div>
+                    <div class="filter-group">
+                        <span class="filter-label">Group</span>
+                        <div class="filter-pills" id="cycle-group-pills" role="group" aria-label="Grouping interval">
+                            <button class="filter-pill" data-group="60000">1m</button>
+                            <button class="filter-pill active" data-group="300000">5m</button>
+                            <button class="filter-pill" data-group="1800000">30m</button>
+                            <button class="filter-pill" data-group="3600000">1h</button>
+                        </div>
+                    </div>
+                    <select class="page-size-select" id="cycles-page-size" aria-label="Rows per page">
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="30">30</option>
+                        <option value="0">All</option>
+                    </select>
+                    <input type="text" class="table-search table-search-compact" id="cycles-search" placeholder="Search..." aria-label="Search cycles">
+                </div>
             </header>
             <div class="table-wrapper">
                 <table class="data-table" id="cycles-table">
                     <thead>
                         <tr>
-                            <th>Cycle</th>
-                            <th>Start</th>
-                            <th>End</th>
-                            <th>Duration</th>
-                            <th>Peak</th>
-                            <th>Total</th>
-                            <th>Rate</th>
+                            <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
+                            <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
+                            <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
+                            <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
+                            <th data-sort-key="peak" role="button" tabindex="0">Peak <span class="sort-arrow"></span></th>
+                            <th data-sort-key="total" role="button" tabindex="0">Total <span class="sort-arrow"></span></th>
+                            <th data-sort-key="rate" role="button" tabindex="0">Rate <span class="sort-arrow"></span></th>
                         </tr>
                     </thead>
                     <tbody id="cycles-tbody">
@@ -190,28 +226,43 @@
                     </tbody>
                 </table>
             </div>
+            <div class="table-footer">
+                <span class="table-info" id="cycles-info">Showing 0-0 of 0</span>
+                <div class="table-pagination" id="cycles-pagination"></div>
+            </div>
         </section>
 
         <section class="sessions-section">
-            <h3 class="section-title">
-                <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
-                Session History
-            </h3>
+            <header class="section-header">
+                <h3 class="section-title">
+                    <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    Session History
+                </h3>
+                <div class="table-controls">
+                    <input type="text" class="table-search" id="sessions-search" placeholder="Search sessions..." aria-label="Search sessions">
+                    <select class="page-size-select" id="sessions-page-size" aria-label="Rows per page">
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="30">30</option>
+                        <option value="0">All</option>
+                    </select>
+                </div>
+            </header>
             <div class="table-wrapper">
                 <table class="data-table" id="sessions-table">
                     <thead>
                         <tr>
-                            <th>Session</th>
-                            <th>Started</th>
-                            <th>Ended</th>
-                            <th>Duration</th>
-                            <th>Sub Max</th>
-                            <th>Search Max</th>
-                            <th>Tool Max</th>
+                            <th data-sort-key="id" role="button" tabindex="0">Session <span class="sort-arrow"></span></th>
+                            <th data-sort-key="start" role="button" tabindex="0">Started <span class="sort-arrow"></span></th>
+                            <th data-sort-key="end" role="button" tabindex="0">Ended <span class="sort-arrow"></span></th>
+                            <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
+                            <th data-sort-key="sub" role="button" tabindex="0">Sub Usage <span class="sort-arrow"></span></th>
+                            <th data-sort-key="search" role="button" tabindex="0">Search Usage <span class="sort-arrow"></span></th>
+                            <th data-sort-key="tool" role="button" tabindex="0">Tool Usage <span class="sort-arrow"></span></th>
                         </tr>
                     </thead>
                     <tbody id="sessions-tbody">
@@ -221,7 +272,26 @@
                     </tbody>
                 </table>
             </div>
+            <div class="table-footer">
+                <span class="table-info" id="sessions-info">Showing 0-0 of 0</span>
+                <div class="table-pagination" id="sessions-pagination"></div>
+            </div>
         </section>
     </main>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detail-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
+    <div class="modal-content">
+        <header class="modal-header">
+            <h2 class="modal-title" id="modal-title">Quota Details</h2>
+            <button class="modal-close" id="modal-close" aria-label="Close modal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </header>
+        <div class="modal-body" id="modal-body"></div>
+    </div>
 </div>
 {{end}}

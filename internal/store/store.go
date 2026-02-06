@@ -451,3 +451,41 @@ func (s *Store) QueryCycleHistory(quotaType string) ([]*ResetCycle, error) {
 
 	return cycles, rows.Err()
 }
+
+// QueryCyclesSince returns all cycles (completed and active) for a quota type since a given time
+func (s *Store) QueryCyclesSince(quotaType string, since time.Time) ([]*ResetCycle, error) {
+	rows, err := s.db.Query(
+		`SELECT id, quota_type, cycle_start, cycle_end, renews_at, peak_requests, total_delta
+		FROM reset_cycles WHERE quota_type = ? AND cycle_start >= ? ORDER BY cycle_start DESC`,
+		quotaType, since.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query cycles since: %w", err)
+	}
+	defer rows.Close()
+
+	var cycles []*ResetCycle
+	for rows.Next() {
+		var cycle ResetCycle
+		var cycleStart, renewsAt string
+		var cycleEnd sql.NullString
+
+		err := rows.Scan(
+			&cycle.ID, &cycle.QuotaType, &cycleStart, &cycleEnd, &renewsAt, &cycle.PeakRequests, &cycle.TotalDelta,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan cycle: %w", err)
+		}
+
+		cycle.CycleStart, _ = time.Parse(time.RFC3339Nano, cycleStart)
+		cycle.RenewsAt, _ = time.Parse(time.RFC3339Nano, renewsAt)
+		if cycleEnd.Valid {
+			endTime, _ := time.Parse(time.RFC3339Nano, cycleEnd.String)
+			cycle.CycleEnd = &endTime
+		}
+
+		cycles = append(cycles, &cycle)
+	}
+
+	return cycles, rows.Err()
+}
