@@ -38,53 +38,73 @@ The Synthetic API shows current quota usage, but not historical trends or per-cy
 
 ## Quick Start
 
-### Install
+### 1. Download or Build
 
+**Option A: Download release (macOS ARM64)**
+```bash
+curl -L -o syntrack https://github.com/onllm-dev/syntrack/releases/download/v1.0.0/syntrack-darwin-arm64
+chmod +x syntrack
+```
+
+**Option B: Build from source**
 ```bash
 git clone https://github.com/onllm-dev/syntrack.git
 cd syntrack
 go build -ldflags="-s -w" -o syntrack .
 ```
 
-Or use Make:
+### 2. Configure
 
-```bash
-make build
-```
-
-### Configure
+Copy the example environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env`:
-
-```env
-SYNTHETIC_API_KEY=syn_your_api_key_here
-SYNTRACK_ADMIN_USER=admin
-SYNTRACK_ADMIN_PASS=your_secure_password
-```
-
-### Run
+Edit `.env` and set your API key:
 
 ```bash
-# Background mode (default) — logs to .syntrack.log
-./syntrack
+# Get your API key from https://synthetic.new/settings/api
+SYNTHETIC_API_KEY=syn_your_actual_key_here
 
-# Foreground mode — logs to stdout
-./syntrack --debug
-
-# Custom interval and port
-./syntrack --interval 30 --port 9000
-
-# View logs
-tail -f .syntrack.log
+# Change these for security
+SYNTRACK_ADMIN_USER=admin
+SYNTRACK_ADMIN_PASS=your_secure_password_here
 ```
 
-### Open Dashboard
+**Required:** At minimum, set `SYNTHETIC_API_KEY`. All other values have sensible defaults.
 
-Navigate to `http://localhost:8932` and log in.
+### 3. Run
+
+**Background mode (recommended for daily use):**
+```bash
+./syntrack
+```
+Logs go to `.syntrack.log` in the same directory.
+
+**Foreground/debug mode (for troubleshooting):**
+```bash
+./syntrack --debug
+```
+
+**Custom settings:**
+```bash
+./syntrack --interval 30 --port 8080
+```
+
+### 4. View Dashboard
+
+Open http://localhost:8932 in your browser and log in with the credentials from your `.env` file.
+
+### 5. Check Logs
+
+```bash
+# Background mode
+tail -f .syntrack.log
+
+# Or view the log file directly
+cat .syntrack.log
+```
 
 ---
 
