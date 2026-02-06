@@ -1,6 +1,227 @@
 {{define "content"}}
-<div class="dashboard">
-    <h2>Dashboard</h2>
-    <p>Synthetic API Usage Tracker</p>
+<div class="app">
+    <header class="app-header">
+        <div class="header-brand">
+            <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
+            </svg>
+            <span class="brand-text">SynTrack</span>
+        </div>
+        <div class="header-meta">
+            <span class="last-updated" id="last-updated">Last updated: --:--:--</span>
+            <span class="status-indicator" id="status-dot" aria-label="Connection status"></span>
+        </div>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="5"/>
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+        </button>
+    </header>
+
+    <main id="main-content" class="main-content">
+        <div class="quota-grid" id="quota-grid">
+            <article class="quota-card" data-quota="subscription">
+                <header class="card-header">
+                    <h2 class="quota-title">
+                        <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                        </svg>
+                        Subscription Quota
+                    </h2>
+                    <span class="countdown" id="countdown-subscription">--:--</span>
+                </header>
+                <p class="quota-desc">Main API request quota for your plan</p>
+                <div class="progress-wrapper">
+                    <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-fill" id="progress-subscription" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span class="usage-fraction" id="fraction-subscription">0 / 0</span>
+                        <span class="usage-percent" id="percent-subscription">0%</span>
+                    </div>
+                </div>
+                <footer class="card-footer">
+                    <span class="status-badge" id="status-subscription" data-status="healthy">
+                        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        Healthy
+                    </span>
+                    <span class="reset-time" id="reset-subscription">Resets: --</span>
+                </footer>
+            </article>
+
+            <article class="quota-card" data-quota="search">
+                <header class="card-header">
+                    <h2 class="quota-title">
+                        <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        Search (Hourly)
+                    </h2>
+                    <span class="countdown" id="countdown-search">--:--</span>
+                </header>
+                <p class="quota-desc">Search endpoint calls, resets every hour</p>
+                <div class="progress-wrapper">
+                    <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-fill" id="progress-search" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span class="usage-fraction" id="fraction-search">0 / 0</span>
+                        <span class="usage-percent" id="percent-search">0%</span>
+                    </div>
+                </div>
+                <footer class="card-footer">
+                    <span class="status-badge" id="status-search" data-status="healthy">
+                        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        Healthy
+                    </span>
+                    <span class="reset-time" id="reset-search">Resets: --</span>
+                </footer>
+            </article>
+
+            <article class="quota-card" data-quota="toolCalls">
+                <header class="card-header">
+                    <h2 class="quota-title">
+                        <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                        </svg>
+                        Tool Call Discounts
+                    </h2>
+                    <span class="countdown" id="countdown-toolCalls">--:--</span>
+                </header>
+                <p class="quota-desc">Discounted tool call requests</p>
+                <div class="progress-wrapper">
+                    <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-fill" id="progress-toolCalls" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span class="usage-fraction" id="fraction-toolCalls">0 / 0</span>
+                        <span class="usage-percent" id="percent-toolCalls">0%</span>
+                    </div>
+                </div>
+                <footer class="card-footer">
+                    <span class="status-badge" id="status-toolCalls" data-status="healthy">
+                        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        Healthy
+                    </span>
+                    <span class="reset-time" id="reset-toolCalls">Resets: --</span>
+                </footer>
+            </article>
+        </div>
+
+        <section class="insights-panel">
+            <h3 class="section-title">
+                <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 16v-4M12 8h.01"/>
+                </svg>
+                Usage Insights
+            </h3>
+            <div class="insights-content" id="insights-content">
+                <p class="insight-text">Loading insights...</p>
+            </div>
+        </section>
+
+        <section class="chart-section">
+            <header class="section-header">
+                <h3 class="section-title">
+                    <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 3v18h18"/>
+                        <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
+                    </svg>
+                    Usage Over Time
+                </h3>
+                <div class="range-selector" role="group" aria-label="Time range">
+                    <button class="range-btn" data-range="1h">1h</button>
+                    <button class="range-btn active" data-range="6h">6h</button>
+                    <button class="range-btn" data-range="24h">24h</button>
+                    <button class="range-btn" data-range="7d">7d</button>
+                    <button class="range-btn" data-range="30d">30d</button>
+                </div>
+            </header>
+            <div class="chart-container">
+                <canvas id="usage-chart"></canvas>
+            </div>
+        </section>
+
+        <section class="cycles-section">
+            <header class="section-header">
+                <h3 class="section-title">
+                    <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                    </svg>
+                    Reset Cycle History
+                </h3>
+                <select class="quota-select" id="cycle-quota-select" aria-label="Select quota type">
+                    <option value="subscription">Subscription</option>
+                    <option value="search">Search</option>
+                    <option value="toolcall">Tool Calls</option>
+                </select>
+            </header>
+            <div class="table-wrapper">
+                <table class="data-table" id="cycles-table">
+                    <thead>
+                        <tr>
+                            <th>Cycle</th>
+                            <th>Start</th>
+                            <th>End</th>
+                            <th>Duration</th>
+                            <th>Peak</th>
+                            <th>Total</th>
+                            <th>Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cycles-tbody">
+                        <tr>
+                            <td colspan="7" class="empty-state">No cycle data yet. Tracking begins on first poll.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="sessions-section">
+            <h3 class="section-title">
+                <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                Session History
+            </h3>
+            <div class="table-wrapper">
+                <table class="data-table" id="sessions-table">
+                    <thead>
+                        <tr>
+                            <th>Session</th>
+                            <th>Started</th>
+                            <th>Ended</th>
+                            <th>Duration</th>
+                            <th>Sub Max</th>
+                            <th>Search Max</th>
+                            <th>Tool Max</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessions-tbody">
+                        <tr>
+                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
 </div>
 {{end}}

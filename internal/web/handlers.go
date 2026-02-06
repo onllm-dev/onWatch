@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -15,9 +16,10 @@ import (
 
 // Handler handles HTTP requests for the web dashboard
 type Handler struct {
-	store   *store.Store
-	tracker *tracker.Tracker
-	logger  *slog.Logger
+	store     *store.Store
+	tracker   *tracker.Tracker
+	logger    *slog.Logger
+	templates *template.Template
 }
 
 // NewHandler creates a new Handler instance
@@ -25,10 +27,18 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 	if logger == nil {
 		logger = slog.Default()
 	}
+
+	tmpl, err := template.ParseFS(templatesFS, "templates/*.html")
+	if err != nil {
+		logger.Error("failed to parse templates", "error", err)
+		tmpl = template.New("empty")
+	}
+
 	return &Handler{
-		store:   store,
-		tracker: tracker,
-		logger:  logger,
+		store:     store,
+		tracker:   tracker,
+		logger:    logger,
+		templates: tmpl,
 	}
 }
 
@@ -91,31 +101,15 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl := `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - SynTrack</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <header>
-        <h1>SynTrack</h1>
-    </header>
-    <main>
-        <div class="dashboard">
-            <h2>Dashboard</h2>
-            <p>Synthetic API Usage Tracker</p>
-        </div>
-    </main>
-    <script src="/static/app.js"></script>
-</body>
-</html>`
+	data := map[string]string{
+		"Title": "Dashboard",
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(tmpl))
+	if err := h.templates.ExecuteTemplate(w, "layout.html", data); err != nil {
+		h.logger.Error("failed to render template", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 // Current returns current quota status (API endpoint)
@@ -176,9 +170,9 @@ func buildQuotaResponse(name, description string, info api.QuotaInfo, tr *tracke
 	if percent >= 95 {
 		status = "critical"
 	} else if percent >= 80 {
-		status = "warning"
+		status = "danger"
 	} else if percent >= 50 {
-		status = "caution"
+		status = "warning"
 	}
 
 	result := map[string]interface{}{
@@ -459,4 +453,18 @@ func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, response)
+}
+
+// Login renders the login page
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	data := map[string]interface{}{
+		"Title": "Login",
+		"Error": r.URL.Query().Get("error"),
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.templates.ExecuteTemplate(w, "login.html", data); err != nil {
+		h.logger.Error("failed to render login template", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
