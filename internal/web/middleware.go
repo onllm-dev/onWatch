@@ -116,13 +116,8 @@ func SessionAuthMiddleware(sessions *SessionStore) func(http.Handler) http.Handl
 						next.ServeHTTP(w, r)
 						return
 					}
-					// Wrong Basic Auth credentials: send challenge so CLI tools retry
-					w.Header().Set("WWW-Authenticate", `Basic realm="SynTrack"`)
-					http.Error(w, "Unauthorized", http.StatusUnauthorized)
-					return
 				}
-				// No credentials at all (browser fetch with expired cookie):
-				// return 401 WITHOUT WWW-Authenticate to avoid browser popup
+				// Return JSON 401 without WWW-Authenticate to prevent browser popup
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte(`{"error":"unauthorized","login":"/login"}`))
