@@ -33,6 +33,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger) *Server {
 
 	// Register routes
 	mux.HandleFunc("/", handler.Dashboard)
+	mux.HandleFunc("/login", handler.Login)
 	mux.HandleFunc("/api/current", handler.Current)
 	mux.HandleFunc("/api/history", handler.History)
 	mux.HandleFunc("/api/cycles", handler.Cycles)
