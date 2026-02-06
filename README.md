@@ -206,10 +206,13 @@ All endpoints require Basic Auth:
 
 ## Development
 
-### Prerequisites
+See [DEVELOPMENT.md](DEVELOPMENT.md) for complete build instructions for all platforms.
 
-- Go 1.22+
-- No CGO required
+### Quick Build
+
+```bash
+go build -ldflags="-s -w" -o syntrack .
+```
 
 ### Commands
 
@@ -220,12 +223,7 @@ make run     # Build and run
 make clean   # Remove artifacts
 ```
 
-### Testing
-
-- Tests written first (TDD)
-- Table-driven tests
-- Real SQLite (`:memory:`), no mocks
-- Race detection enabled
+See [DEVELOPMENT.md](DEVELOPMENT.md) for platform-specific setup (Ubuntu, CentOS, Windows, macOS).
 
 ---
 
