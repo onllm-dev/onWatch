@@ -26,6 +26,7 @@ type Config struct {
 	// Shared configuration
 	PollInterval time.Duration // SYNTRACK_POLL_INTERVAL (seconds → Duration)
 	Port         int           // SYNTRACK_PORT
+	Host         string        // SYNTRACK_HOST (bind address, default: 0.0.0.0)
 	AdminUser    string        // SYNTRACK_ADMIN_USER
 	AdminPass    string        // SYNTRACK_ADMIN_PASS
 	DBPath       string        // SYNTRACK_DB_PATH
