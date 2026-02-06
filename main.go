@@ -267,10 +267,30 @@ func run() error {
 
 	logger.Info("Database opened", "path", cfg.DBPath)
 
+	// Create API clients based on configured providers
+	var syntheticClient *api.Client
+	var zaiClient *api.ZaiClient
+
+	if cfg.HasProvider("synthetic") {
+		syntheticClient = api.NewClient(cfg.SyntheticAPIKey, logger)
+		logger.Info("Synthetic API client configured")
+	}
+
+	if cfg.HasProvider("zai") {
+		zaiClient = api.NewZaiClient(cfg.ZaiAPIKey, logger)
+		logger.Info("Z.ai API client configured", "base_url", cfg.ZaiBaseURL)
+	}
+
 	// Create components
-	client := api.NewClient(cfg.SyntheticAPIKey, logger)
 	tr := tracker.New(db, logger)
-	ag := agent.New(client, db, tr, cfg.PollInterval, logger)
+
+	// Create agent for Synthetic only (Z.ai agent can be added later)
+	var ag *agent.Agent
+	if syntheticClient != nil {
+		ag = agent.New(syntheticClient, db, tr, cfg.PollInterval, logger)
+	}
+
+	_ = zaiClient // Suppress unused variable warning for now
 	handler := web.NewHandler(db, tr, logger, nil, cfg)
 	server := web.NewServer(cfg.Port, handler, logger, cfg.AdminUser, cfg.AdminPass)
 
@@ -281,14 +301,18 @@ func run() error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start agent in goroutine
+	// Start agent in goroutine (only if Synthetic is configured)
 	agentErr := make(chan error, 1)
-	go func() {
-		logger.Info("Starting agent", "interval", cfg.PollInterval)
-		if err := ag.Run(ctx); err != nil {
-			agentErr <- fmt.Errorf("agent error: %w", err)
-		}
-	}()
+	if ag != nil {
+		go func() {
+			logger.Info("Starting agent", "interval", cfg.PollInterval)
+			if err := ag.Run(ctx); err != nil {
+				agentErr <- fmt.Errorf("agent error: %w", err)
+			}
+		}()
+	} else {
+		logger.Info("No agent configured (Synthetic API not enabled)")
+	}
 
 	// Start web server in goroutine
 	serverErr := make(chan error, 1)
@@ -304,8 +328,10 @@ func run() error {
 	case sig := <-sigChan:
 		logger.Info("Received signal, shutting down gracefully", "signal", sig)
 	case err := <-agentErr:
-		logger.Error("Agent failed", "error", err)
-		cancel()
+		if err != nil {
+			logger.Error("Agent failed", "error", err)
+			cancel()
+		}
 	case err := <-serverErr:
 		logger.Error("Server failed", "error", err)
 		cancel()
@@ -338,24 +364,43 @@ func run() error {
 }
 
 func printBanner(cfg *config.Config, version string) {
-	apiKeyDisplay := redactAPIKey(cfg.SyntheticAPIKey)
 	fmt.Println()
 	fmt.Println("╔══════════════════════════════════════╗")
 	fmt.Printf("║  SynTrack v%-25s ║\n", version)
 	fmt.Println("╠══════════════════════════════════════╣")
-	fmt.Println("║  API:       synthetic.new/v2/quotas  ║")
+
+	// Show configured providers
+	providers := cfg.AvailableProviders()
+	if len(providers) > 0 {
+		fmt.Printf("║  Providers: %-24s ║\n", strings.Join(providers, ", "))
+	}
+
+	if cfg.HasProvider("synthetic") {
+		fmt.Println("║  API:       synthetic.new/v2/quotas  ║")
+	}
+	if cfg.HasProvider("zai") {
+		fmt.Println("║  API:       z.ai/api                ║")
+	}
+
 	fmt.Printf("║  Polling:   every %s              ║\n", cfg.PollInterval)
 	fmt.Printf("║  Dashboard: http://localhost:%d    ║\n", cfg.Port)
 	fmt.Printf("║  Database:  %-24s ║\n", cfg.DBPath)
 	fmt.Printf("║  Auth:      %s / ****             ║\n", cfg.AdminUser)
 	fmt.Println("╚══════════════════════════════════════╝")
 	fmt.Println()
-	fmt.Printf("API Key: %s\n", apiKeyDisplay)
+
+	// Show API keys
+	if cfg.HasProvider("synthetic") {
+		fmt.Printf("Synthetic API Key: %s\n", redactAPIKey(cfg.SyntheticAPIKey))
+	}
+	if cfg.HasProvider("zai") {
+		fmt.Printf("Z.ai API Key:      %s\n", redactAPIKey(cfg.ZaiAPIKey))
+	}
 	fmt.Println()
 }
 
 func printHelp() {
-	fmt.Println("SynTrack - Synthetic API Usage Tracker")
+	fmt.Println("SynTrack - Multi-Provider API Usage Tracker")
 	fmt.Println()
 	fmt.Println("Usage: syntrack [OPTIONS]")
 	fmt.Println()
@@ -368,7 +413,9 @@ func printHelp() {
 	fmt.Println("  --debug            Run in foreground mode, log to stdout")
 	fmt.Println()
 	fmt.Println("Environment Variables:")
-	fmt.Println("  SYNTHETIC_API_KEY       Required - Your Synthetic API key")
+	fmt.Println("  SYNTHETIC_API_KEY       Synthetic API key (configure at least one provider)")
+	fmt.Println("  ZAI_API_KEY            Z.ai API key")
+	fmt.Println("  ZAI_BASE_URL           Z.ai base URL (default: https://api.z.ai/api)")
 	fmt.Println("  SYNTRACK_POLL_INTERVAL  Polling interval in seconds")
 	fmt.Println("  SYNTRACK_PORT           Dashboard HTTP port")
 	fmt.Println("  SYNTRACK_ADMIN_USER     Dashboard admin username")
@@ -380,17 +427,28 @@ func printHelp() {
 	fmt.Println("  syntrack                           # Run in background mode")
 	fmt.Println("  syntrack --debug                   # Run in foreground mode")
 	fmt.Println("  syntrack --interval 30 --port 8080 # Custom interval and port")
+	fmt.Println()
+	fmt.Println("Configure providers in .env file or environment variables.")
+	fmt.Println("At least one provider (Synthetic or Z.ai) must be configured.")
 }
 
 func redactAPIKey(key string) string {
 	if key == "" {
-		return "(empty)"
+		return "(not set)"
 	}
 	if len(key) < 8 {
 		return "***"
 	}
-	if len(key) <= 12 {
-		return key[:4] + "***"
+
+	// Handle "syn_" prefix for Synthetic keys
+	prefix := ""
+	if strings.HasPrefix(key, "syn_") {
+		prefix = "syn_"
+		key = key[4:]
 	}
-	return key[:4] + "***" + key[len(key)-4:]
+
+	if len(key) <= 8 {
+		return prefix + key[:4] + "***"
+	}
+	return prefix + key[:4] + "***" + key[len(key)-4:]
 }

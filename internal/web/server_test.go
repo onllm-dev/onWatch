@@ -14,8 +14,8 @@ import (
 
 func TestServer_StartsOnPort(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewHandler(nil, nil, logger)
-	server := NewServer(0, handler, logger) // Port 0 = auto-assign
+	handler := NewHandler(nil, nil, logger, nil, nil)
+	server := NewServer(0, handler, logger, "admin", "test") // Port 0 = auto-assign
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -47,8 +47,8 @@ func TestServer_StartsOnPort(t *testing.T) {
 
 func TestServer_ServesHTML(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewHandler(nil, nil, logger)
-	server := NewServer(0, handler, logger)
+	handler := NewHandler(nil, nil, logger, nil, nil)
+	server := NewServer(0, handler, logger, "admin", "test")
 
 	// Start server
 	go server.Start()
@@ -89,8 +89,8 @@ func TestServer_ServesHTML(t *testing.T) {
 
 func TestServer_ServesStaticCSS(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewHandler(nil, nil, logger)
-	server := NewServer(0, handler, logger)
+	handler := NewHandler(nil, nil, logger, nil, nil)
+	server := NewServer(0, handler, logger, "admin", "test")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
@@ -123,8 +123,8 @@ func TestServer_ServesStaticCSS(t *testing.T) {
 
 func TestServer_ServesStaticJS(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewHandler(nil, nil, logger)
-	server := NewServer(0, handler, logger)
+	handler := NewHandler(nil, nil, logger, nil, nil)
+	server := NewServer(0, handler, logger, "admin", "test")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
@@ -157,8 +157,8 @@ func TestServer_ServesStaticJS(t *testing.T) {
 
 func TestServer_GracefulShutdown(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewHandler(nil, nil, logger)
-	server := NewServer(0, handler, logger)
+	handler := NewHandler(nil, nil, logger, nil, nil)
+	server := NewServer(0, handler, logger, "admin", "test")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
@@ -191,8 +191,8 @@ func TestServer_GracefulShutdown(t *testing.T) {
 func TestServer_EmbeddedAssets(t *testing.T) {
 	// Test that embedded assets are accessible
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewHandler(nil, nil, logger)
-	server := NewServer(0, handler, logger)
+	handler := NewHandler(nil, nil, logger, nil, nil)
+	server := NewServer(0, handler, logger, "admin", "test")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
