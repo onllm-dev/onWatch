@@ -665,12 +665,29 @@ const crosshairPlugin = {
 // ── Chart Init & Update ──
 
 function computeYMax(datasets) {
+  // Filter out hidden datasets (if any are marked as hidden)
+  const visibleDatasets = datasets.filter(ds => !ds.hidden && ds.data && ds.data.length > 0);
+  
+  // If no visible datasets, return default 10%
+  if (visibleDatasets.length === 0) return 10;
+  
   let maxVal = 0;
-  datasets.forEach(ds => {
-    ds.data.forEach(v => { if (v > maxVal) maxVal = v; });
+  visibleDatasets.forEach(ds => {
+    ds.data.forEach(v => {
+      const val = typeof v === 'number' ? v : 0;
+      if (val > maxVal) maxVal = val;
+    });
   });
-  // ~2x the peak so at most half the chart is empty space
-  const yMax = Math.min(Math.max(Math.ceil(maxVal * 2 / 10) * 10, 20), 100);
+  
+  // If max is 0 or very low, show up to 10% to give visual context
+  if (maxVal <= 0) return 10;
+  if (maxVal < 5) return 10;
+  
+  // Add 20% padding above the max value for better visualization
+  // Round up to nearest 5 for cleaner axis labels
+  const paddedMax = maxVal * 1.2;
+  const yMax = Math.min(Math.max(Math.ceil(paddedMax / 5) * 5, 10), 100);
+  
   return yMax;
 }
 
@@ -1309,7 +1326,17 @@ async function loadModalChart(quotaType) {
     const colors = getThemeColors();
     const chartData = data.map(d => d[datasetKey]);
     const maxVal = Math.max(...chartData, 0);
-    const yMax = Math.max(Math.ceil((maxVal + 15) / 10) * 10, 20);
+    
+    // Dynamic Y-axis: if max is 0 or very low, show up to 10%
+    // Otherwise add 20% padding, rounded to nearest 5
+    let yMax;
+    if (maxVal <= 0) {
+      yMax = 10;
+    } else if (maxVal < 5) {
+      yMax = 10;
+    } else {
+      yMax = Math.min(Math.max(Math.ceil((maxVal * 1.2) / 5) * 5, 10), 100);
+    }
 
     State.modalChart = new Chart(ctx, {
       type: 'line',
