@@ -17,9 +17,9 @@ SETUP_PASSWORD=""
 SETUP_PORT=""
 
 # ─── Colors ───────────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'
-DIM='\033[2m'; NC='\033[0m'
+RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'; CYAN=$'\033[0;36m'; BOLD=$'\033[1m'
+DIM=$'\033[2m'; NC=$'\033[0m'
 
 info()    { printf "  ${BLUE}info${NC}  %s\n" "$*"; }
 ok()      { printf "  ${GREEN} ok ${NC}  %s\n" "$*"; }
@@ -420,24 +420,17 @@ collect_anthropic_config() {
 
     if [[ "$entry_choice" == "2" ]]; then
         printf "\n  ${BOLD}How to retrieve your Anthropic token:${NC}\n\n" >&2
-        case "$(uname -s)" in
-            Darwin*)
-                printf "  ${CYAN}macOS Keychain:${NC}\n" >&2
-                printf "    security find-generic-password -s \"Claude Code-credentials\" -a \"\$(whoami)\" -w | python3 -c \"import sys,json; print(json.loads(sys.stdin.read())['claudeAiOauth']['accessToken'])\"\n\n" >&2
-                ;;
-            Linux*)
-                printf "  ${CYAN}Linux Keyring (GNOME/KDE):${NC}\n" >&2
-                printf "    secret-tool lookup service \"Claude Code-credentials\" account \"\$(whoami)\" | python3 -c \"import sys,json; print(json.loads(sys.stdin.read())['claudeAiOauth']['accessToken'])\"\n\n" >&2
-                printf "  ${CYAN}Linux File Fallback:${NC}\n" >&2
-                printf "    python3 -c \"import json; print(json.load(open('\$HOME/.claude/.credentials.json'))['claudeAiOauth']['accessToken'])\"\n\n" >&2
-                ;;
-            *)
-                printf "  ${CYAN}File-based (Windows/Other):${NC}\n" >&2
-                printf "    Check: ~/.claude/.credentials.json\n" >&2
-                printf "    Extract: claudeAiOauth.accessToken from the JSON\n\n" >&2
-                ;;
-        esac
-        printf "  ${DIM}Paste the token below after running the command above.${NC}\n" >&2
+        printf "  ${CYAN}macOS Keychain:${NC}\n" >&2
+        printf "    security find-generic-password -s \"Claude Code-credentials\" -a \"\$(whoami)\" -w \\ \n" >&2
+        printf "      | python3 -c \"import sys,json; print(json.loads(sys.stdin.read())['claudeAiOauth']['accessToken'])\"\n\n" >&2
+        printf "  ${CYAN}Linux Keyring (GNOME/KDE):${NC}\n" >&2
+        printf "    secret-tool lookup service \"Claude Code-credentials\" account \"\$(whoami)\" \\ \n" >&2
+        printf "      | python3 -c \"import sys,json; print(json.loads(sys.stdin.read())['claudeAiOauth']['accessToken'])\"\n\n" >&2
+        printf "  ${CYAN}Linux / macOS / Windows File Fallback:${NC}\n" >&2
+        printf "    python3 -c \"import json; print(json.load(open('\$HOME/.claude/.credentials.json'))['claudeAiOauth']['accessToken'])\"\n\n" >&2
+        printf "  ${CYAN}Windows (PowerShell):${NC}\n" >&2
+        printf "    (Get-Content \"\$env:USERPROFILE\\.claude\\.credentials.json\" | ConvertFrom-Json).claudeAiOauth.accessToken\n\n" >&2
+        printf "  ${DIM}Paste the token below after running the appropriate command above.${NC}\n" >&2
     fi
 
     _anthropic_token=$(prompt_secret "Anthropic token" validate_nonempty)
