@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/api"
+	"github.com/onllm-dev/onwatch/internal/api"
 )
 
 // ZaiResetCycle represents a Z.ai quota reset cycle

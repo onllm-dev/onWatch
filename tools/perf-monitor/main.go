@@ -1,4 +1,4 @@
-// perf-monitor - RAM and performance monitoring tool for SynTrack
+// perf-monitor - RAM and performance monitoring tool for onWatch
 // Usage: go run main.go [port] [duration]
 // Default: port=9211, duration=1m
 package main
@@ -69,7 +69,7 @@ var (
 
 func main() {
 	fmt.Println("╔════════════════════════════════════════════════════════════════╗")
-	fmt.Println("║         SynTrack RAM & Performance Monitor                     ║")
+	fmt.Println("║         onWatch RAM & Performance Monitor                     ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
 	fmt.Println()
 
@@ -100,28 +100,28 @@ func main() {
 	if shouldRestart {
 		// Stop existing instance
 		fmt.Println("🔄 Restart mode enabled")
-		stopSynTrack(port)
+		stoponWatch(port)
 		time.Sleep(500 * time.Millisecond)
 
 		// Start fresh instance
-		pid = startSynTrack(port)
+		pid = startonWatch(port)
 		if pid == 0 {
-			fmt.Println("❌ Failed to start SynTrack")
+			fmt.Println("❌ Failed to start onWatch")
 			os.Exit(1)
 		}
-		fmt.Printf("✓ Started fresh SynTrack instance (PID: %d)\n\n", pid)
+		fmt.Printf("✓ Started fresh onWatch instance (PID: %d)\n\n", pid)
 	} else {
 		// Find existing process
-		pid = findSynTrackProcess(port)
+		pid = findonWatchProcess(port)
 		if pid == 0 {
-			fmt.Printf("❌ SynTrack process not found on port %d\n", port)
-			fmt.Println("\nMake sure SynTrack is running first:")
-			fmt.Println("   ./syntrack --debug")
+			fmt.Printf("❌ onWatch process not found on port %d\n", port)
+			fmt.Println("\nMake sure onWatch is running first:")
+			fmt.Println("   ./onwatch --debug")
 			fmt.Println("\nOr use --restart flag:")
 			fmt.Println("   go run main.go --restart")
 			os.Exit(1)
 		}
-		fmt.Printf("✓ Found SynTrack process (PID: %d) on port %d\n", pid, port)
+		fmt.Printf("✓ Found onWatch process (PID: %d) on port %d\n", pid, port)
 	}
 
 	fmt.Printf("✓ Total monitoring duration: %s\n", duration)
@@ -223,11 +223,11 @@ func runMonitoring(pid, port int, totalDuration time.Duration) *Report {
 	return report
 }
 
-func findSynTrackProcess(port int) int {
+func findonWatchProcess(port int) int {
 	// Try PID file
-	pidFile := filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "syntrack", "syntrack.pid")
+	pidFile := filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "onwatch", "onwatch.pid")
 	if runtime.GOOS != "darwin" {
-		pidFile = filepath.Join(os.Getenv("HOME"), ".local", "share", "syntrack", "syntrack.pid")
+		pidFile = filepath.Join(os.Getenv("HOME"), ".local", "share", "onwatch", "onwatch.pid")
 	}
 
 	if data, err := os.ReadFile(pidFile); err == nil {
@@ -244,7 +244,7 @@ func findSynTrackProcess(port int) int {
 		if err == nil {
 			for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 				if pid, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && pid > 0 {
-					if isSyntrackProcess(pid) {
+					if isOnwatchProcess(pid) {
 						return pid
 					}
 				}
@@ -264,19 +264,19 @@ func isProcessRunning(pid int) bool {
 	return proc.Signal(os.Signal(nil)) == nil
 }
 
-func isSyntrackProcess(pid int) bool {
+func isOnwatchProcess(pid int) bool {
 	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
 	if err != nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(string(out)), "syntrack")
+	return strings.Contains(strings.ToLower(string(out)), "onwatch")
 }
 
-func stopSynTrack(port int) {
+func stoponWatch(port int) {
 	// Try PID file first
-	pidFile := filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "syntrack", "syntrack.pid")
+	pidFile := filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "onwatch", "onwatch.pid")
 	if runtime.GOOS != "darwin" {
-		pidFile = filepath.Join(os.Getenv("HOME"), ".local", "share", "syntrack", "syntrack.pid")
+		pidFile = filepath.Join(os.Getenv("HOME"), ".local", "share", "onwatch", "onwatch.pid")
 	}
 
 	if data, err := os.ReadFile(pidFile); err == nil {
@@ -296,7 +296,7 @@ func stopSynTrack(port int) {
 		if err == nil {
 			for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 				if pid, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && pid > 0 {
-					if isSyntrackProcess(pid) {
+					if isOnwatchProcess(pid) {
 						if proc, err := os.FindProcess(pid); err == nil {
 							proc.Signal(os.Interrupt)
 							fmt.Printf("   Stopped process (PID: %d) on port %d\n", pid, port)
@@ -308,13 +308,13 @@ func stopSynTrack(port int) {
 	}
 }
 
-func startSynTrack(port int) int {
-	// Find syntrack binary in various locations
+func startonWatch(port int) int {
+	// Find onwatch binary in various locations
 	possiblePaths := []string{
-		"./syntrack",
-		"../syntrack",
-		"../../syntrack",
-		"/Users/prakersh/projects/syntrack/syntrack",
+		"./onwatch",
+		"../onwatch",
+		"../../onwatch",
+		"/Users/prakersh/project./onwatch/onwatch",
 	}
 
 	binaryPath := ""
@@ -327,37 +327,37 @@ func startSynTrack(port int) int {
 
 	if binaryPath == "" {
 		// Try PATH
-		binaryPath = "syntrack"
+		binaryPath = "onwatch"
 	}
 
 	// Change to the binary's directory so it can find .env and database
 	binaryDir := filepath.Dir(binaryPath)
 	if binaryDir != "." && binaryDir != "" {
 		os.Chdir(binaryDir)
-		binaryPath = "./syntrack"
+		binaryPath = "./onwatch"
 	}
 
-	// Start syntrack in debug mode
+	// Start onwatch in debug mode
 	cmd := exec.Command(binaryPath, "--debug", "--port", strconv.Itoa(port))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
 
 	if err := cmd.Start(); err != nil {
-		fmt.Printf("   Error starting SynTrack: %v\n", err)
+		fmt.Printf("   Error starting onWatch: %v\n", err)
 		return 0
 	}
 
 	pid := cmd.Process.Pid
 
 	// Wait for it to be ready
-	fmt.Println("   Waiting for SynTrack to be ready...")
+	fmt.Println("   Waiting for onWatch to be ready...")
 	for i := 0; i < 30; i++ {
 		time.Sleep(200 * time.Millisecond)
 
 		// Check if process is still running
 		if !isProcessRunning(pid) {
-			fmt.Println("   ❌ SynTrack process died during startup")
+			fmt.Println("   ❌ onWatch process died during startup")
 			return 0
 		}
 
@@ -368,7 +368,7 @@ func startSynTrack(port int) int {
 		}
 	}
 
-	fmt.Println("   ⚠️  Timeout waiting for SynTrack to start")
+	fmt.Println("   ⚠️  Timeout waiting for onWatch to start")
 	return 0
 }
 

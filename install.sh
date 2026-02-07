@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════
-# SynTrack Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/onllm-dev/syntrack/main/install.sh | bash
+# onWatch Installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash
 # ═══════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
-INSTALL_DIR="${SYNTRACK_INSTALL_DIR:-$HOME/.syntrack}"
+INSTALL_DIR="${ONWATCH_INSTALL_DIR:-$HOME/.onwatch}"
 BIN_DIR="${INSTALL_DIR}/bin"
-REPO="onllm-dev/syntrack"
-SERVICE_NAME="syntrack"
+REPO="onllm-dev/onwatch"
+SERVICE_NAME="onwatch"
 SYSTEMD_MODE="user"  # "user" or "system" — auto-detected at runtime
 
 # Collected during interactive setup, used by start_service
@@ -38,9 +38,9 @@ _systemctl() {
 
 _journalctl() {
     if [[ "$SYSTEMD_MODE" == "system" ]]; then
-        journalctl -u syntrack "$@"
+        journalctl -u onwatch "$@"
     else
-        journalctl --user -u syntrack "$@"
+        journalctl --user -u onwatch "$@"
     fi
 }
 
@@ -54,9 +54,9 @@ _sctl_cmd() {
 
 _jctl_cmd() {
     if [[ "$SYSTEMD_MODE" == "system" ]]; then
-        echo "journalctl -u syntrack"
+        echo "journalctl -u onwatch"
     else
-        echo "journalctl --user -u syntrack"
+        echo "journalctl --user -u onwatch"
     fi
 }
 
@@ -198,16 +198,90 @@ detect_platform() {
     esac
 
     PLATFORM="${OS}-${ARCH}"
-    ASSET_NAME="syntrack-${PLATFORM}"
+    ASSET_NAME="onwatch-${PLATFORM}"
+}
+
+# ─── Migrate from SynTrack ──────────────────────────────────────────
+migrate_from_syntrack() {
+    local old_dir="$HOME/.syntrack"
+    if [[ ! -d "$old_dir" ]]; then
+        return
+    fi
+
+    info "Found existing SynTrack installation at ${old_dir}"
+    info "Migrating to onWatch..."
+
+    # Stop old service
+    if [[ "$OS" == "linux" ]] && command -v systemctl &>/dev/null; then
+        if [[ "$SYSTEMD_MODE" == "system" ]]; then
+            systemctl stop syntrack 2>/dev/null || true
+            systemctl disable syntrack 2>/dev/null || true
+        else
+            systemctl --user stop syntrack 2>/dev/null || true
+            systemctl --user disable syntrack 2>/dev/null || true
+        fi
+    elif [[ -f "${old_dir}/bin/syntrack" ]]; then
+        "${old_dir}/bin/syntrack" stop 2>/dev/null || true
+        sleep 1
+    fi
+
+    # Create new directories
+    mkdir -p "${INSTALL_DIR}" "${BIN_DIR}" "${INSTALL_DIR}/data"
+
+    # Copy and transform .env (SYNTRACK_ -> ONWATCH_)
+    if [[ -f "${old_dir}/.env" ]]; then
+        sed 's/SYNTRACK_/ONWATCH_/g' "${old_dir}/.env" > "${INSTALL_DIR}/.env"
+        ok "Migrated .env (SYNTRACK_* -> ONWATCH_*)"
+    fi
+
+    # Move DB files (rename syntrack.db -> onwatch.db)
+    for ext in "" "-journal" "-wal" "-shm"; do
+        if [[ -f "${old_dir}/data/syntrack.db${ext}" ]]; then
+            cp "${old_dir}/data/syntrack.db${ext}" "${INSTALL_DIR}/data/onwatch.db${ext}"
+        elif [[ -f "${old_dir}/syntrack.db${ext}" ]]; then
+            cp "${old_dir}/syntrack.db${ext}" "${INSTALL_DIR}/data/onwatch.db${ext}"
+        fi
+    done
+    ok "Migrated database files (syntrack.db -> onwatch.db)"
+
+    # Remove old systemd service
+    if [[ "$OS" == "linux" ]] && command -v systemctl &>/dev/null; then
+        if [[ "$SYSTEMD_MODE" == "system" ]]; then
+            rm -f /etc/systemd/system/syntrack.service
+            systemctl daemon-reload 2>/dev/null || true
+        else
+            rm -f "$HOME/.config/systemd/user/syntrack.service"
+            systemctl --user daemon-reload 2>/dev/null || true
+        fi
+        ok "Removed old syntrack systemd service"
+    fi
+
+    # Clean PATH entries for .syntrack
+    for rc_file in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+        if [[ -f "$rc_file" ]]; then
+            # Remove lines containing .syntrack PATH export and the comment above it
+            sed -i.bak '/# SynTrack/d; /\.syntrack/d' "$rc_file" 2>/dev/null || true
+            rm -f "${rc_file}.bak"
+        fi
+    done
+
+    # Remove old directory
+    rm -rf "$old_dir"
+    ok "Removed old SynTrack directory"
+
+    echo ""
+    printf "  ${GREEN}${BOLD}Migration complete: SynTrack -> onWatch${NC}\n"
+    printf "  ${DIM}Old directory ${old_dir} has been removed${NC}\n"
+    echo ""
 }
 
 # ─── Stop Existing Instance ──────────────────────────────────────────
 stop_existing() {
-    if [[ -f "${BIN_DIR}/syntrack" ]]; then
+    if [[ -f "${BIN_DIR}/onwatch" ]]; then
         if [[ "$OS" == "linux" ]] && command -v systemctl &>/dev/null; then
-            _systemctl stop syntrack 2>/dev/null || true
+            _systemctl stop onwatch 2>/dev/null || true
         else
-            "${BIN_DIR}/syntrack" stop 2>/dev/null || true
+            "${BIN_DIR}/onwatch" stop 2>/dev/null || true
         fi
         sleep 1
     fi
@@ -216,9 +290,9 @@ stop_existing() {
 # ─── Download Binary ─────────────────────────────────────────────────
 download() {
     local url="https://github.com/${REPO}/releases/latest/download/${ASSET_NAME}"
-    local dest="${BIN_DIR}/syntrack"
+    local dest="${BIN_DIR}/onwatch"
 
-    info "Downloading syntrack for ${BOLD}${PLATFORM}${NC}..."
+    info "Downloading onwatch for ${BOLD}${PLATFORM}${NC}..."
 
     if command -v curl &>/dev/null; then
         if ! curl -fsSL -o "$dest" "$url"; then
@@ -236,18 +310,18 @@ download() {
 
     local ver
     ver="$("$dest" --version 2>/dev/null | head -1 || echo "unknown")"
-    ok "Installed ${BOLD}syntrack ${ver}${NC}"
+    ok "Installed ${BOLD}onwatch ${ver}${NC}"
 }
 
 # ─── Create Wrapper Script ───────────────────────────────────────────
 # The binary loads .env from the working directory. This wrapper ensures
-# we always cd to ~/.syntrack before running, so .env is always found.
+# we always cd to ~/.onwatch before running, so .env is always found.
 create_wrapper() {
-    local wrapper="${INSTALL_DIR}/syntrack"
+    local wrapper="${INSTALL_DIR}/onwatch"
 
     cat > "$wrapper" <<WRAPPER
 #!/usr/bin/env bash
-cd "\$HOME/.syntrack" 2>/dev/null && exec "\$HOME/.syntrack/bin/syntrack" "\$@"
+cd "\$HOME/.onwatch" 2>/dev/null && exec "\$HOME/.onwatch/bin/onwatch" "\$@"
 WRAPPER
     chmod +x "$wrapper"
 }
@@ -322,9 +396,9 @@ interactive_setup() {
 
     if [[ -f "$env_file" ]]; then
         # Load existing values for start_service display
-        SETUP_PORT="$(env_get SYNTRACK_PORT)"
+        SETUP_PORT="$(env_get ONWATCH_PORT)"
         SETUP_PORT="${SETUP_PORT:-9211}"
-        SETUP_USERNAME="$(env_get SYNTRACK_ADMIN_USER)"
+        SETUP_USERNAME="$(env_get ONWATCH_ADMIN_USER)"
         SETUP_USERNAME="${SETUP_USERNAME:-admin}"
         SETUP_PASSWORD=""  # Don't show existing password
 
@@ -464,7 +538,7 @@ interactive_setup() {
     # ── Write .env ──
     {
         echo "# ═══════════════════════════════════════════════════════════════"
-        echo "# SynTrack Configuration"
+        echo "# onWatch Configuration"
         echo "# Generated by installer on $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
         echo "# ═══════════════════════════════════════════════════════════════"
         echo ""
@@ -485,14 +559,14 @@ interactive_setup() {
         fi
 
         echo "# Dashboard credentials"
-        echo "SYNTRACK_ADMIN_USER=${SETUP_USERNAME}"
-        echo "SYNTRACK_ADMIN_PASS=${SETUP_PASSWORD}"
+        echo "ONWATCH_ADMIN_USER=${SETUP_USERNAME}"
+        echo "ONWATCH_ADMIN_PASS=${SETUP_PASSWORD}"
         echo ""
         echo "# Polling interval in seconds (10-3600)"
-        echo "SYNTRACK_POLL_INTERVAL=${poll_interval}"
+        echo "ONWATCH_POLL_INTERVAL=${poll_interval}"
         echo ""
         echo "# Dashboard port"
-        echo "SYNTRACK_PORT=${SETUP_PORT}"
+        echo "ONWATCH_PORT=${SETUP_PORT}"
     } > "$env_file"
 
     ok "Created ${env_file}"
@@ -535,7 +609,7 @@ setup_systemd() {
 
         cat > "$svc_file" <<EOF
 [Unit]
-Description=SynTrack - AI API Quota Tracker
+Description=onWatch - AI API Quota Tracker
 Documentation=https://github.com/${REPO}
 After=network-online.target
 Wants=network-online.target
@@ -545,19 +619,19 @@ StartLimitIntervalSec=120
 [Service]
 Type=simple
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${BIN_DIR}/syntrack --debug
+ExecStart=${BIN_DIR}/onwatch --debug
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=syntrack
+SyslogIdentifier=onwatch
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
         systemctl daemon-reload 2>/dev/null || true
-        systemctl enable syntrack 2>/dev/null || true
+        systemctl enable onwatch 2>/dev/null || true
 
         ok "Created system-wide systemd service"
     else
@@ -574,7 +648,7 @@ EOF
 
         cat > "$svc_file" <<EOF
 [Unit]
-Description=SynTrack - AI API Quota Tracker
+Description=onWatch - AI API Quota Tracker
 Documentation=https://github.com/${REPO}
 After=network-online.target
 Wants=network-online.target
@@ -584,19 +658,19 @@ StartLimitIntervalSec=120
 [Service]
 Type=simple
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${BIN_DIR}/syntrack --debug
+ExecStart=${BIN_DIR}/onwatch --debug
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=syntrack
+SyslogIdentifier=onwatch
 
 [Install]
 WantedBy=default.target
 EOF
 
         systemctl --user daemon-reload 2>/dev/null || true
-        systemctl --user enable syntrack 2>/dev/null || true
+        systemctl --user enable onwatch 2>/dev/null || true
 
         ok "Created systemd user service"
     fi
@@ -607,10 +681,10 @@ EOF
 
     echo ""
     printf "  ${DIM}Manage with:${NC}\n"
-    printf "    ${CYAN}${sctl} start syntrack${NC}    # Start\n"
-    printf "    ${CYAN}${sctl} stop syntrack${NC}     # Stop\n"
-    printf "    ${CYAN}${sctl} status syntrack${NC}   # Status\n"
-    printf "    ${CYAN}${sctl} restart syntrack${NC}  # Restart\n"
+    printf "    ${CYAN}${sctl} start onwatch${NC}    # Start\n"
+    printf "    ${CYAN}${sctl} stop onwatch${NC}     # Stop\n"
+    printf "    ${CYAN}${sctl} status onwatch${NC}   # Status\n"
+    printf "    ${CYAN}${sctl} restart onwatch${NC}  # Restart\n"
     printf "    ${CYAN}${jctl} -f${NC}   # Logs\n"
     return 0
 }
@@ -620,22 +694,22 @@ setup_launchd() {
     if [[ "$OS" != "darwin" ]]; then return 1; fi
 
     echo ""
-    ok "macOS detected — SynTrack self-daemonizes"
+    ok "macOS detected — onWatch self-daemonizes"
     printf "  ${DIM}Manage with:${NC}\n"
-    printf "    ${CYAN}syntrack${NC}           # Start (runs in background)\n"
-    printf "    ${CYAN}syntrack stop${NC}      # Stop\n"
-    printf "    ${CYAN}syntrack status${NC}    # Status\n"
-    printf "    ${CYAN}syntrack --debug${NC}   # Run in foreground (logs to stdout)\n"
+    printf "    ${CYAN}onwatch${NC}           # Start (runs in background)\n"
+    printf "    ${CYAN}onwatch stop${NC}      # Stop\n"
+    printf "    ${CYAN}onwatch status${NC}    # Status\n"
+    printf "    ${CYAN}onwatch --debug${NC}   # Run in foreground (logs to stdout)\n"
     return 0
 }
 
 # ─── PATH Setup ──────────────────────────────────────────────────────
 setup_path() {
-    local path_line="export PATH=\"\$HOME/.syntrack:\$PATH\""
+    local path_line="export PATH=\"\$HOME/.onwatch:\$PATH\""
     local shell_rc=""
 
     # Already in PATH?
-    if command -v syntrack &>/dev/null 2>&1; then
+    if command -v onwatch &>/dev/null 2>&1; then
         return
     fi
 
@@ -651,8 +725,8 @@ setup_path() {
     esac
 
     if [[ -n "$shell_rc" && -f "$shell_rc" ]]; then
-        if ! grep -q '\.syntrack' "$shell_rc" 2>/dev/null; then
-            printf '\n# SynTrack\n%s\n' "$path_line" >> "$shell_rc"
+        if ! grep -q '\.onwatch' "$shell_rc" 2>/dev/null; then
+            printf '\n# onWatch\n%s\n' "$path_line" >> "$shell_rc"
             ok "Added to PATH in ${shell_rc}"
         fi
     else
@@ -669,19 +743,19 @@ start_service() {
     local username="${SETUP_USERNAME:-admin}"
     local password="${SETUP_PASSWORD}"
 
-    info "Starting SynTrack..."
+    info "Starting onWatch..."
 
     if [[ "$OS" == "linux" ]] && command -v systemctl &>/dev/null; then
         # ── systemd start ──
-        if ! _systemctl start syntrack 2>/dev/null; then
+        if ! _systemctl start onwatch 2>/dev/null; then
             print_errors "$port"
             return 1
         fi
 
         sleep 2
 
-        if _systemctl is-active --quiet syntrack 2>/dev/null; then
-            ok "SynTrack is running"
+        if _systemctl is-active --quiet onwatch 2>/dev/null; then
+            ok "onWatch is running"
         else
             print_errors "$port"
             return 1
@@ -689,9 +763,9 @@ start_service() {
     else
         # ── Direct start (macOS / Linux without systemd) ──
         cd "$INSTALL_DIR"
-        if "${BIN_DIR}/syntrack" 2>&1; then
+        if "${BIN_DIR}/onwatch" 2>&1; then
             sleep 1
-            ok "SynTrack is running in background"
+            ok "onWatch is running in background"
         else
             print_errors "$port"
             return 1
@@ -713,13 +787,13 @@ print_errors() {
     local port="${1:-9211}"
 
     echo ""
-    printf "  ${RED}${BOLD}SynTrack failed to start${NC}\n"
+    printf "  ${RED}${BOLD}onWatch failed to start${NC}\n"
 
     # Show systemd status/logs on Linux
     if [[ "$OS" == "linux" ]] && command -v systemctl &>/dev/null; then
         echo ""
         printf "  ${DIM}Service status:${NC}\n"
-        _systemctl status syntrack --no-pager 2>&1 | head -12 | sed 's/^/    /' || true
+        _systemctl status onwatch --no-pager 2>&1 | head -12 | sed 's/^/    /' || true
         echo ""
         printf "  ${DIM}Recent logs:${NC}\n"
         _journalctl -n 10 --no-pager 2>&1 | sed 's/^/    /' || true
@@ -729,7 +803,7 @@ print_errors() {
     printf "  ${BOLD}Common issues:${NC}\n\n"
 
     printf "  ${YELLOW}1.${NC} Port ${port} already in use\n"
-    printf "     Change SYNTRACK_PORT in ${CYAN}${INSTALL_DIR}/.env${NC}\n"
+    printf "     Change ONWATCH_PORT in ${CYAN}${INSTALL_DIR}/.env${NC}\n"
     printf "     Check what's using it: ${CYAN}lsof -i :${port}${NC}\n\n"
 
     printf "  ${YELLOW}2.${NC} Invalid API key\n"
@@ -742,20 +816,23 @@ print_errors() {
     if [[ "$OS" == "linux" ]] && command -v systemctl &>/dev/null; then
         printf "  ${DIM}Full logs: $(_jctl_cmd) -f${NC}\n"
     else
-        printf "  ${DIM}Debug mode: syntrack --debug${NC}\n"
+        printf "  ${DIM}Debug mode: onwatch --debug${NC}\n"
     fi
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────
 main() {
     printf "\n"
-    printf "  ${BOLD}SynTrack Installer${NC}\n"
+    printf "  ${BOLD}onWatch Installer${NC}\n"
     printf "  ${DIM}https://github.com/${REPO}${NC}\n"
     printf "\n"
 
     # Detect platform
     detect_platform
     info "Platform: ${BOLD}${PLATFORM}${NC}"
+
+    # Migrate from SynTrack if old installation exists
+    migrate_from_syntrack
 
     # Detect root/sudo — determines system-wide vs user systemd service
     if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then

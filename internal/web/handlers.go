@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/api"
-	"github.com/onllm-dev/syntrack/internal/config"
-	"github.com/onllm-dev/syntrack/internal/store"
-	"github.com/onllm-dev/syntrack/internal/tracker"
+	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/config"
+	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/internal/tracker"
 )
 
 // Handler handles HTTP requests for the web dashboard
@@ -1603,7 +1603,7 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool, rangeDur time.D
 		resp.Insights = append(resp.Insights, insightItem{
 			Type: "info", Severity: "info",
 			Title: "Getting Started",
-			Desc:  "Keep SynTrack running to build up usage data. Deep insights will appear after a few cycles.",
+			Desc:  "Keep onWatch running to build up usage data. Deep insights will appear after a few cycles.",
 		})
 	}
 
@@ -1634,7 +1634,7 @@ func (h *Handler) buildZaiInsights(hidden map[string]bool) insightsResponse {
 		resp.Insights = append(resp.Insights, insightItem{
 			Type: "info", Severity: "info",
 			Title: "Getting Started",
-			Desc:  "Keep SynTrack running to collect Z.ai usage data. Insights appear after a few snapshots.",
+			Desc:  "Keep onWatch running to collect Z.ai usage data. Insights appear after a few snapshots.",
 		})
 		return resp
 	}

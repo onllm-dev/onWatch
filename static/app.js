@@ -1,4 +1,4 @@
-// SynTrack Dashboard JavaScript
+// onWatch Dashboard JavaScript
 
 const API_BASE = '';
 const REFRESH_INTERVAL = 60000;
@@ -66,7 +66,7 @@ const State = {
 
 function loadHiddenQuotas() {
   try {
-    const stored = localStorage.getItem('syntrack-hidden-quotas');
+    const stored = localStorage.getItem('onwatch-hidden-quotas');
     if (stored) {
       State.hiddenQuotas = new Set(JSON.parse(stored));
     }
@@ -78,7 +78,7 @@ function loadHiddenQuotas() {
 
 function saveHiddenQuotas() {
   try {
-    localStorage.setItem('syntrack-hidden-quotas', JSON.stringify([...State.hiddenQuotas]));
+    localStorage.setItem('onwatch-hidden-quotas', JSON.stringify([...State.hiddenQuotas]));
   } catch (e) {
     console.warn('Failed to save hidden quotas:', e);
   }
@@ -164,7 +164,7 @@ async function unhideInsight(key) {
 
 function loadDefaultProvider() {
   try {
-    return localStorage.getItem('syntrack-default-provider') || '';
+    return localStorage.getItem('onwatch-default-provider') || '';
   } catch (e) {
     return '';
   }
@@ -172,7 +172,7 @@ function loadDefaultProvider() {
 
 function saveDefaultProvider(provider) {
   try {
-    localStorage.setItem('syntrack-default-provider', provider);
+    localStorage.setItem('onwatch-default-provider', provider);
   } catch (e) {
     console.warn('Failed to save default provider:', e);
   }
@@ -492,7 +492,7 @@ function initTheme() {
     const current = document.documentElement.getAttribute('data-theme');
     const next = current === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('syntrack-theme', next);
+    localStorage.setItem('onwatch-theme', next);
     if (State.chart) updateChartTheme();
   });
 }

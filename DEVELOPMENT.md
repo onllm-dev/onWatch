@@ -1,6 +1,6 @@
 # Development Guide
 
-Build and run SynTrack from source on any platform.
+Build and run onWatch from source on any platform.
 
 ---
 
@@ -15,8 +15,8 @@ Build and run SynTrack from source on any platform.
 ## Quick Build
 
 ```bash
-git clone https://github.com/onllm-dev/syntrack.git
-cd syntrack
+git clone https://github.com/onllm-dev/onwatch.git
+cd onwatch
 make build
 ```
 
@@ -62,7 +62,7 @@ winget install GoLang.Go
 Build:
 
 ```powershell
-go build -ldflags="-s -w" -o syntrack.exe .
+go build -ldflags="-s -w" -o onwatch.exe .
 ```
 
 ---
@@ -96,7 +96,7 @@ To bump the version, edit `VERSION` and rebuild. The GitHub Actions workflow and
 
 ## Cross-Compilation
 
-SynTrack uses pure Go SQLite (`modernc.org/sqlite`), so cross-compilation works without CGO:
+onWatch uses pure Go SQLite (`modernc.org/sqlite`), so cross-compilation works without CGO:
 
 ```bash
 make release-local
@@ -106,16 +106,16 @@ This produces binaries in `dist/`:
 
 | Platform | Binary |
 |----------|--------|
-| macOS ARM64 | `syntrack-darwin-arm64` |
-| macOS AMD64 | `syntrack-darwin-amd64` |
-| Linux AMD64 | `syntrack-linux-amd64` |
-| Linux ARM64 | `syntrack-linux-arm64` |
-| Windows AMD64 | `syntrack-windows-amd64.exe` |
+| macOS ARM64 | `onwatch-darwin-arm64` |
+| macOS AMD64 | `onwatch-darwin-amd64` |
+| Linux AMD64 | `onwatch-linux-amd64` |
+| Linux ARM64 | `onwatch-linux-arm64` |
+| Windows AMD64 | `onwatch-windows-amd64.exe` |
 
 Manual cross-compilation:
 
 ```bash
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(cat VERSION)" -o syntrack-linux-amd64 .
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(cat VERSION)" -o onwatch-linux-amd64 .
 ```
 
 ---
@@ -125,8 +125,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$
 ### 1. Clone and Setup
 
 ```bash
-git clone https://github.com/onllm-dev/syntrack.git
-cd syntrack
+git clone https://github.com/onllm-dev/onwatch.git
+cd onwatch
 cp .env.example .env
 ```
 
@@ -169,7 +169,7 @@ make coverage              # Generate HTML coverage report → coverage.html
 
 ## Multi-Provider Architecture
 
-SynTrack supports two providers: Synthetic and Z.ai. When both API keys are set, both agents run in parallel goroutines, each polling its respective API and storing snapshots in the shared SQLite database.
+onWatch supports two providers: Synthetic and Z.ai. When both API keys are set, both agents run in parallel goroutines, each polling its respective API and storing snapshots in the shared SQLite database.
 
 The dashboard switches between providers via the `?provider=` query parameter. Each provider renders its own quota cards, insight cards, and stat summaries. Synthetic insights focus on cycle utilization and billing periods; Z.ai insights show plan capacity (daily/monthly token budgets), tokens-per-call efficiency, and top tool analysis.
 
@@ -192,7 +192,7 @@ Key source files:
 Strip debug symbols for a smaller binary:
 
 ```bash
-make build    # Equivalent to: go build -ldflags="-s -w -X main.version=$(VERSION)" -o syntrack .
+make build    # Equivalent to: go build -ldflags="-s -w -X main.version=$(VERSION)" -o onwatch .
 ```
 
 Binary sizes: ~12-13 MB per platform.
@@ -253,26 +253,26 @@ go mod tidy
 FROM golang:1.25-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN go build -ldflags="-s -w" -o syntrack .
+RUN go build -ldflags="-s -w" -o onwatch .
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 WORKDIR /root/
-COPY --from=builder /app/syntrack .
+COPY --from=builder /app/onwatch .
 COPY .env.example .env
-CMD ["./syntrack"]
+CMD ["./onwatch"]
 ```
 
 ```bash
-docker build -t syntrack .
-docker run -p 9211:9211 -v $(pwd)/.env:/root/.env syntrack
+docker build -t onwatch .
+docker run -p 9211:9211 -v $(pwd)/.env:/root/.env onwatch
 ```
 
 ---
 
 ## Performance Monitoring
 
-A built-in performance monitoring tool tracks SynTrack's RAM consumption and HTTP response times. This helps validate memory efficiency and identify performance regressions.
+A built-in performance monitoring tool tracks onWatch's RAM consumption and HTTP response times. This helps validate memory efficiency and identify performance regressions.
 
 ### Building the Tool
 
@@ -293,7 +293,7 @@ go build -o perf-monitor .
 ./perf-monitor 9211 2m
 ```
 
-**With restart (stops and restarts SynTrack for clean baseline):**
+**With restart (stops and restarts onWatch for clean baseline):**
 ```bash
 ./perf-monitor --restart 9211 1m
 ```
@@ -355,12 +355,12 @@ go mod download
 ### Permission denied (Unix)
 
 ```bash
-chmod +x syntrack
+chmod +x onwatch
 ```
 
 ### Port already in use
 
 ```bash
-./syntrack stop           # Stop existing instance
-./syntrack --port 9000    # Or use a different port
+./onwatch stop           # Stop existing instance
+./onwatch --port 9000    # Or use a different port
 ```

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/api"
-	"github.com/onllm-dev/syntrack/internal/store"
+	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/store"
 )
 
 func makeZaiSnapshot(capturedAt time.Time, tokensValue float64, timeValue float64, nextReset *time.Time) *api.ZaiSnapshot {

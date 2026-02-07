@@ -1,4 +1,4 @@
-// Package web provides HTTP server components for the SynTrack dashboard.
+// Package web provides HTTP server components for the onWatch dashboard.
 package web
 
 import (
@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/store"
+	"github.com/onllm-dev/onwatch/internal/store"
 )
 
 // HashPassword returns the SHA-256 hex hash of a password.
@@ -23,7 +23,7 @@ func HashPassword(password string) string {
 	return fmt.Sprintf("%x", h)
 }
 
-const sessionCookieName = "syntrack_session"
+const sessionCookieName = "onwatch_session"
 const sessionMaxAge = 7 * 24 * 3600 // 7 days
 
 // SessionStore manages session tokens with SQLite persistence and in-memory cache.
@@ -284,7 +284,7 @@ func isStaticAsset(path string) bool {
 
 // writeUnauthorized sends a 401 Unauthorized response.
 func writeUnauthorized(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="SynTrack"`)
+	w.Header().Set("WWW-Authenticate", `Basic realm="onWatch"`)
 	w.WriteHeader(http.StatusUnauthorized)
 	http.Error(w, "Unauthorized", http.StatusUnauthorized)
 }

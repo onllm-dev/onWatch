@@ -18,19 +18,19 @@ jobs:
         include:
           - goos: darwin
             goarch: arm64
-            binary: syntrack-darwin-arm64
+            binary: onwatch-darwin-arm64
           - goos: darwin
             goarch: amd64
-            binary: syntrack-darwin-amd64
+            binary: onwatch-darwin-amd64
           - goos: linux
             goarch: amd64
-            binary: syntrack-linux-amd64
+            binary: onwatch-linux-amd64
           - goos: linux
             goarch: arm64
-            binary: syntrack-linux-arm64
+            binary: onwatch-linux-arm64
           - goos: windows
             goarch: amd64
-            binary: syntrack-windows-amd64.exe
+            binary: onwatch-windows-amd64.exe
 
     runs-on: ubuntu-latest
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
@@ -90,5 +90,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ inputs.tag }}" dist/* \
-            --title "SynTrack ${{ inputs.tag }}" \
+            --title "onWatch ${{ inputs.tag }}" \
             --generate-notes

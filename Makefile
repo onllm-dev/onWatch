@@ -1,7 +1,7 @@
 .PHONY: build test run clean integration dev lint release-local
 
 VERSION := $(shell cat VERSION)
-BINARY := syntrack
+BINARY := onwatch
 LDFLAGS := -ldflags="-s -w -X main.version=$(VERSION)"
 
 build:
@@ -35,12 +35,12 @@ coverage:
 	@echo "Coverage report generated: coverage.html"
 
 release-local:
-	@echo "Building SynTrack v$(VERSION) for all platforms..."
+	@echo "Building onWatch v$(VERSION) for all platforms..."
 	@mkdir -p dist
-	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build $(LDFLAGS) -o dist/syntrack-darwin-arm64       .
-	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build $(LDFLAGS) -o dist/syntrack-darwin-amd64       .
-	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build $(LDFLAGS) -o dist/syntrack-linux-amd64        .
-	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build $(LDFLAGS) -o dist/syntrack-linux-arm64        .
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/syntrack-windows-amd64.exe  .
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build $(LDFLAGS) -o dist/onwatch-darwin-arm64       .
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build $(LDFLAGS) -o dist/onwatch-darwin-amd64       .
+	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build $(LDFLAGS) -o dist/onwatch-linux-amd64        .
+	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build $(LDFLAGS) -o dist/onwatch-linux-arm64        .
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/onwatch-windows-amd64.exe  .
 	@echo "Done. Binaries in dist/"
 	@ls -lh dist/

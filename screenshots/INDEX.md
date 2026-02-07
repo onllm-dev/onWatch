@@ -1,6 +1,6 @@
 # Screenshots
 
-Dashboard screenshots captured from a live SynTrack instance with real Synthetic and Z.ai data.
+Dashboard screenshots captured from a live onWatch instance with real Synthetic and Z.ai data.
 
 | File | Description |
 |------|-------------|

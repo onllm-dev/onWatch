@@ -73,7 +73,7 @@ func (c *ZaiClient) FetchQuotas(ctx context.Context) (*ZaiQuotaResponse, error) 
 
 	// Set headers - Z.ai uses API key directly without Bearer prefix
 	req.Header.Set("Authorization", c.apiKey)
-	req.Header.Set("User-Agent", "syntrack/1.0")
+	req.Header.Set("User-Agent", "onwatch/1.0")
 	req.Header.Set("Accept", "application/json")
 
 	// Log request (with redacted API key)

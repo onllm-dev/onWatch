@@ -1,4 +1,4 @@
-module github.com/onllm-dev/syntrack
+module github.com/onllm-dev/onwatch
 
 go 1.25.7
 

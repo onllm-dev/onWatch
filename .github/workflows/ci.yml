@@ -28,4 +28,4 @@ jobs:
         run: go test -race -cover -count=1 ./...
 
       - name: Build
-        run: go build -o syntrack .
+        run: go build -o onwatch .
