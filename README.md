@@ -78,11 +78,17 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 
 Each quota card shows: usage vs. limit with progress bar, live countdown to reset, status badge (healthy/warning/danger/critical), and consumption rate with projected usage.
 
+**Time-series chart** -- Chart.js area chart showing all quotas as % of limit. Time ranges: 1h, 6h, 24h, 7d, 30d.
+
 **Insights** -- Cycle utilization, billing-period usage, weekly pace, tokens-per-call efficiency, and per-tool breakdowns (provider-specific).
 
 **Sessions** -- Every agent run creates a session that tracks peak consumption, letting you compare usage across work periods.
 
+**Dark/Light mode** -- Toggle via sun/moon icon in the header. Auto-detects system preference on first visit and persists your choice across sessions.
+
 **Password management** -- Change your password from the dashboard. The hash is stored in SQLite and persists across restarts (takes precedence over `.env`). To force-reset, delete the row from the `users` table.
+
+**Single binary** -- No runtime dependencies. All templates and static assets embedded via `embed.FS`. SQLite via pure Go driver (no CGO).
 
 ---
 
@@ -116,6 +122,16 @@ Both agents run as parallel goroutines. Each polls its API at the configured int
 
 ## CLI Reference
 
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `syntrack` | Start the agent (background mode) |
+| `syntrack stop` or `--stop` | Stop the running instance |
+| `syntrack status` or `--status` | Show running instance status |
+
+### Options
+
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
 | `--interval` | `SYNTRACK_POLL_INTERVAL` | `60` | Poll interval in seconds (10--3600) |
@@ -124,6 +140,7 @@ Both agents run as parallel goroutines. Each polls its API at the configured int
 | `--debug` | -- | `false` | Foreground mode, log to stdout |
 | `--test` | -- | `false` | Isolated PID/log files for testing |
 | `--version` | -- | -- | Print version and exit |
+| `--help` | -- | -- | Print help and exit |
 
 Additional environment variables:
 
@@ -172,7 +189,7 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
     └── syntrack.db       # SQLite database (WAL mode)
 ```
 
-On first run, if a database exists at `./syntrack.db`, SynTrack auto-migrates it to `~/.syntrack/data/`.
+Override with `--db` or `SYNTRACK_DB_PATH` to use a custom location. On first run, if a database exists at `./syntrack.db`, SynTrack auto-migrates it to the new path.
 
 ---
 
@@ -193,6 +210,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for build instructions, cross-compilation, 
 make build          # Production binary
 make test           # Tests with race detection
 make run            # Build and run in debug mode
+make clean          # Remove artifacts
 make release-local  # Cross-compile for all platforms
 ```
 
