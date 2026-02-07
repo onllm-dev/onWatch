@@ -1460,7 +1460,7 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 		response["zai"] = h.buildZaiInsights(hidden)
 	}
 	if h.config.HasProvider("anthropic") {
-		response["anthropic"] = h.buildAnthropicInsights()
+		response["anthropic"] = h.buildAnthropicInsights(hidden, rangeDur)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -2173,11 +2173,12 @@ func buildAnthropicSummaryResponse(summary *tracker.AnthropicSummary) map[string
 
 // insightsAnthropic returns Anthropic deep analytics.
 func (h *Handler) insightsAnthropic(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
-	respondJSON(w, http.StatusOK, h.buildAnthropicInsights())
+	hidden := h.getHiddenInsightKeys()
+	respondJSON(w, http.StatusOK, h.buildAnthropicInsights(hidden, rangeDur))
 }
 
-// buildAnthropicInsights builds the Anthropic insights response.
-func (h *Handler) buildAnthropicInsights() insightsResponse {
+// buildAnthropicInsights builds the Anthropic insights response with per-quota analytics.
+func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.Duration) insightsResponse {
 	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
 	if h.store == nil {
 		return resp
@@ -2192,7 +2193,34 @@ func (h *Handler) buildAnthropicInsights() insightsResponse {
 		return resp
 	}
 
-	// Stats cards: show each quota's utilization
+	// Collect summaries for all quotas
+	quotaNames, _ := h.store.QueryAllAnthropicQuotaNames()
+	summaries := map[string]*tracker.AnthropicSummary{}
+	if h.anthropicTracker != nil {
+		for _, name := range quotaNames {
+			if s, err := h.anthropicTracker.UsageSummary(name); err == nil && s != nil {
+				summaries[name] = s
+			}
+		}
+	}
+
+	// Fetch completed cycles per quota and group into real billing periods
+	quotaCycles := map[string][]*store.AnthropicResetCycle{}
+	quotaBillingCount := map[string]int{}
+	quotaBillingAvg := map[string]float64{}
+	quotaBillingPeak := map[string]float64{}
+	for _, name := range quotaNames {
+		cycles, err := h.store.QueryAnthropicCycleHistory(name)
+		if err == nil && len(cycles) > 0 {
+			quotaCycles[name] = cycles
+			quotaBillingCount[name] = anthropicBillingPeriodCount(cycles)
+			quotaBillingAvg[name] = anthropicBillingPeriodAvg(cycles)
+			quotaBillingPeak[name] = anthropicBillingPeriodPeak(cycles)
+		}
+	}
+
+	// ═══ Stats Cards ═══
+	// Show each quota's current utilization as stat cards
 	for _, q := range latest.Quotas {
 		resp.Stats = append(resp.Stats, insightStat{
 			Value: fmt.Sprintf("%.0f%%", q.Utilization),
@@ -2200,23 +2228,142 @@ func (h *Handler) buildAnthropicInsights() insightsResponse {
 		})
 	}
 
-	// Find highest utilization quota
-	var maxQuota api.AnthropicQuota
+	// ═══ Deep Insights ═══
+
+	// 1. Current Utilization per quota (always show — primary insight)
 	for _, q := range latest.Quotas {
-		if q.Utilization > maxQuota.Utilization {
-			maxQuota = q
+		key := fmt.Sprintf("current_%s", q.Name)
+		if hidden[key] {
+			continue
 		}
+		sev := severityFromPercent(q.Utilization)
+		desc := fmt.Sprintf("%s quota is at %.1f%% utilization.", api.AnthropicDisplayName(q.Name), q.Utilization)
+		if peak, ok := quotaBillingPeak[q.Name]; ok && peak > q.Utilization {
+			desc += fmt.Sprintf(" Peak observed: %.0f%%.", peak)
+		}
+		s, hasSummary := summaries[q.Name]
+		if hasSummary && s.ResetsAt != nil {
+			desc += fmt.Sprintf(" Resets in %s.", formatDuration(s.TimeUntilReset))
+		}
+		resp.Insights = append(resp.Insights, insightItem{
+			Key:  key,
+			Type: "factual", Severity: sev,
+			Title:    api.AnthropicDisplayName(q.Name),
+			Metric:   fmt.Sprintf("%.0f%%", q.Utilization),
+			Sublabel: "current",
+			Desc:     desc,
+		})
 	}
 
-	if maxQuota.Name != "" {
-		sev := severityFromPercent(maxQuota.Utilization)
+	// 2. Avg Peak Utilization (per quota, ≥2 real billing periods)
+	for _, name := range quotaNames {
+		count := quotaBillingCount[name]
+		if count < 2 {
+			continue
+		}
+		key := fmt.Sprintf("cycle_avg_%s", name)
+		if hidden[key] {
+			continue
+		}
+		avg := quotaBillingAvg[name]
+		sev := severityFromPercent(avg)
 		resp.Insights = append(resp.Insights, insightItem{
-			Key:  "highest_util",
-			Type: "factual", Severity: sev,
-			Title:    "Highest Utilization",
-			Metric:   fmt.Sprintf("%.0f%%", maxQuota.Utilization),
-			Sublabel: api.AnthropicDisplayName(maxQuota.Name),
-			Desc:     fmt.Sprintf("%s quota is at %.1f%% utilization.", api.AnthropicDisplayName(maxQuota.Name), maxQuota.Utilization),
+			Key:  key,
+			Type: "recommendation", Severity: sev,
+			Title:    "Avg Peak Utilization",
+			Metric:   fmt.Sprintf("%.0f%%", avg),
+			Sublabel: api.AnthropicDisplayName(name),
+			Desc:     fmt.Sprintf("Average peak utilization per %s reset period is %.1f%% across %d periods.", api.AnthropicDisplayName(name), avg, count),
+		})
+	}
+
+	// 3. Variance (per quota, ≥3 real billing periods)
+	for _, name := range quotaNames {
+		count := quotaBillingCount[name]
+		avg := quotaBillingAvg[name]
+		peak := quotaBillingPeak[name]
+		if count < 3 || avg <= 1 {
+			continue
+		}
+		key := fmt.Sprintf("variance_%s", name)
+		if hidden[key] {
+			continue
+		}
+		diff := ((peak - avg) / avg) * 100
+		var item insightItem
+		switch {
+		case diff > 50:
+			item = insightItem{Key: key, Type: "factual", Severity: "warning",
+				Title: "High Variance", Metric: fmt.Sprintf("+%.0f%%", diff), Sublabel: api.AnthropicDisplayName(name),
+				Desc: fmt.Sprintf("Peak period %.0f%% vs average %.0f%% for %s — usage varies significantly.", peak, avg, api.AnthropicDisplayName(name)),
+			}
+		case diff > 10:
+			item = insightItem{Key: key, Type: "factual", Severity: "info",
+				Title: "Usage Spread", Metric: fmt.Sprintf("+%.0f%%", diff), Sublabel: api.AnthropicDisplayName(name),
+				Desc: fmt.Sprintf("Peak: %.0f%%, average: %.0f%% for %s — moderately consistent.", peak, avg, api.AnthropicDisplayName(name)),
+			}
+		default:
+			item = insightItem{Key: key, Type: "factual", Severity: "positive",
+				Title: "Consistent", Metric: fmt.Sprintf("~%.0f%%", avg), Sublabel: api.AnthropicDisplayName(name),
+				Desc: fmt.Sprintf("Peak (%.0f%%) close to average (%.0f%%) for %s — predictable usage.", peak, avg, api.AnthropicDisplayName(name)),
+			}
+		}
+		resp.Insights = append(resp.Insights, item)
+	}
+
+	// 4. Trend (per quota, ≥4 real billing periods)
+	for _, name := range quotaNames {
+		count := quotaBillingCount[name]
+		if count < 4 {
+			continue
+		}
+		key := fmt.Sprintf("trend_%s", name)
+		if hidden[key] {
+			continue
+		}
+		periods := groupAnthropicBillingPeriods(quotaCycles[name])
+		mid := len(periods) / 2
+		var recentSum, olderSum float64
+		for _, p := range periods[:mid] {
+			recentSum += p.maxPeak
+		}
+		for _, p := range periods[mid:] {
+			olderSum += p.maxPeak
+		}
+		recentAvg := recentSum / float64(mid)
+		olderAvg := olderSum / float64(len(periods)-mid)
+		if olderAvg <= 0 {
+			continue
+		}
+		change := ((recentAvg - olderAvg) / olderAvg) * 100
+		var desc, sev, metric string
+		switch {
+		case change > 15:
+			metric = fmt.Sprintf("+%.0f%%", change)
+			desc = fmt.Sprintf("Recent %s periods avg %.0f%% vs earlier %.0f%% — usage is increasing.", api.AnthropicDisplayName(name), recentAvg, olderAvg)
+			sev = "warning"
+		case change < -15:
+			metric = fmt.Sprintf("%.0f%%", change)
+			desc = fmt.Sprintf("Recent %s periods avg %.0f%% vs earlier %.0f%% — usage is decreasing.", api.AnthropicDisplayName(name), recentAvg, olderAvg)
+			sev = "positive"
+		default:
+			metric = "Stable"
+			desc = fmt.Sprintf("Recent %s periods avg %.0f%% vs earlier %.0f%% — steady usage.", api.AnthropicDisplayName(name), recentAvg, olderAvg)
+			sev = "positive"
+		}
+		resp.Insights = append(resp.Insights, insightItem{
+			Key: key, Type: "trend", Severity: sev,
+			Title: "Trend", Metric: metric, Sublabel: api.AnthropicDisplayName(name),
+			Desc: desc,
+		})
+	}
+
+	// If no insights at all, add a getting-started message
+	if len(resp.Insights) == 0 {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "info",
+			Title: "Getting Started",
+			Desc:  "Keep onWatch running to build up usage data. Deep insights will appear after a few cycles.",
 		})
 	}
 
@@ -2322,6 +2469,75 @@ func billingPeriodAvg(cycles []*store.ResetCycle) float64 {
 func billingPeriodPeak(cycles []*store.ResetCycle) float64 {
 	var peak float64
 	for _, p := range groupBillingPeriods(cycles) {
+		if p.maxPeak > peak {
+			peak = p.maxPeak
+		}
+	}
+	return peak
+}
+
+// anthropicBillingPeriod represents an actual Anthropic billing period
+// (many mini-cycles from renewsAt jitter merged into one real period).
+type anthropicBillingPeriod struct {
+	start   time.Time
+	maxPeak float64 // highest PeakUtilization across mini-cycles in this period
+}
+
+// groupAnthropicBillingPeriods merges micro-cycles caused by renewsAt jitter
+// into actual billing periods. A real reset is detected when PeakUtilization
+// drops by >50% (utilization went back to ~0). Cycles expected sorted DESC.
+func groupAnthropicBillingPeriods(cycles []*store.AnthropicResetCycle) []anthropicBillingPeriod {
+	if len(cycles) == 0 {
+		return nil
+	}
+
+	// Process in chronological order (oldest first)
+	last := len(cycles) - 1
+	current := anthropicBillingPeriod{
+		start:   cycles[last].CycleStart,
+		maxPeak: cycles[last].PeakUtilization,
+	}
+
+	var periods []anthropicBillingPeriod
+	for i := last - 1; i >= 0; i-- {
+		c := cycles[i]
+		if current.maxPeak > 5 && c.PeakUtilization < current.maxPeak*0.5 {
+			// Peak dropped significantly — this is a real reset
+			periods = append(periods, current)
+			current = anthropicBillingPeriod{
+				start:   c.CycleStart,
+				maxPeak: c.PeakUtilization,
+			}
+		} else if c.PeakUtilization > current.maxPeak {
+			current.maxPeak = c.PeakUtilization
+		}
+	}
+	periods = append(periods, current)
+	return periods
+}
+
+// anthropicBillingPeriodCount returns the number of real billing periods.
+func anthropicBillingPeriodCount(cycles []*store.AnthropicResetCycle) int {
+	return len(groupAnthropicBillingPeriods(cycles))
+}
+
+// anthropicBillingPeriodAvg returns the avg peak utilization per real billing period.
+func anthropicBillingPeriodAvg(cycles []*store.AnthropicResetCycle) float64 {
+	periods := groupAnthropicBillingPeriods(cycles)
+	if len(periods) == 0 {
+		return 0
+	}
+	var total float64
+	for _, p := range periods {
+		total += p.maxPeak
+	}
+	return total / float64(len(periods))
+}
+
+// anthropicBillingPeriodPeak returns the highest peak utilization across all real billing periods.
+func anthropicBillingPeriodPeak(cycles []*store.AnthropicResetCycle) float64 {
+	var peak float64
+	for _, p := range groupAnthropicBillingPeriods(cycles) {
 		if p.maxPeak > peak {
 			peak = p.maxPeak
 		}
