@@ -13,6 +13,16 @@ async function authFetch(url) {
   return res;
 }
 
+// ── Provider State ──
+function getCurrentProvider() {
+  const grid = document.getElementById('quota-grid');
+  return (grid && grid.dataset.provider) || 'synthetic';
+}
+
+function providerParam() {
+  return `provider=${getCurrentProvider()}`;
+}
+
 // ── Global State ──
 const State = {
   chart: null,
@@ -406,14 +416,20 @@ function startCountdowns() {
 
 async function fetchCurrent() {
   try {
-    const res = await authFetch(`${API_BASE}/api/current`);
+    const res = await authFetch(`${API_BASE}/api/current?${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch');
     const data = await res.json();
 
     requestAnimationFrame(() => {
-      updateCard('subscription', data.subscription);
-      updateCard('search', data.search);
-      updateCard('toolCalls', data.toolCalls);
+      const provider = getCurrentProvider();
+      if (provider === 'zai') {
+        updateCard('tokensLimit', data.tokensLimit);
+        updateCard('timeLimit', data.timeLimit);
+      } else {
+        updateCard('subscription', data.subscription);
+        updateCard('search', data.search);
+        updateCard('toolCalls', data.toolCalls);
+      }
 
       const lastUpdated = document.getElementById('last-updated');
       if (lastUpdated) {
@@ -470,7 +486,7 @@ async function fetchDeepInsights() {
   if (!cardsEl) return;
 
   try {
-    const res = await authFetch(`${API_BASE}/api/insights`);
+    const res = await authFetch(`${API_BASE}/api/insights?${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch insights');
     const data = await res.json();
 
@@ -529,23 +545,32 @@ async function fetchDeepInsights() {
 
 function computeClientInsights() {
   const insights = [];
+  const provider = getCurrentProvider();
 
   // Live remaining quota — show percentage remaining + time
-  ['subscription', 'search', 'toolCalls'].forEach(type => {
+  const quotaTypes = provider === 'zai'
+    ? ['tokensLimit', 'timeLimit']
+    : ['subscription', 'search', 'toolCalls'];
+
+  const zaiQuotaNames = { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit' };
+
+  quotaTypes.forEach(type => {
     const q = State.currentQuotas[type];
     if (!q || !q.limit || q.limit === 0) return;
 
+    const names = provider === 'zai' ? zaiQuotaNames : quotaNames;
     const pctUsed = q.percent;
     const remaining = q.limit - q.usage;
-    if (remaining > 0 && q.timeUntilResetSeconds > 0) {
+    if (remaining > 0) {
+      const hasReset = q.timeUntilResetSeconds && q.timeUntilResetSeconds > 0;
       insights.push({
         type: 'live',
         quotaType: type,
         severity: pctUsed > 80 ? 'warning' : pctUsed > 50 ? 'info' : 'positive',
-        title: `${quotaNames[type]}`,
+        title: `${names[type] || type}`,
         metric: `${pctUsed.toFixed(1)}%`,
         sublabel: `${formatNumber(remaining)} remaining`,
-        description: `Currently at ${pctUsed.toFixed(1)}% utilization (${formatNumber(q.usage)} of ${formatNumber(q.limit)}). Resets in ${formatDuration(q.timeUntilResetSeconds)}.`
+        description: `Currently at ${pctUsed.toFixed(1)}% utilization (${formatNumber(q.usage)} of ${formatNumber(q.limit)}).${hasReset ? ` Resets in ${formatDuration(q.timeUntilResetSeconds)}.` : ''}`
       });
     }
   });
@@ -691,17 +716,44 @@ async function fetchHistory(range) {
     range = activeBtn ? activeBtn.dataset.range : '6h';
   }
   try {
-    const res = await authFetch(`${API_BASE}/api/history?range=${range}`);
+    const res = await authFetch(`${API_BASE}/api/history?range=${range}&${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch history');
     const data = await res.json();
 
     if (!State.chart) initChart();
     if (!State.chart) return;
 
+    const provider = getCurrentProvider();
     State.chart.data.labels = data.map(d => new Date(d.capturedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
-    State.chart.data.datasets[0].data = data.map(d => d.subscriptionPercent);
-    State.chart.data.datasets[1].data = data.map(d => d.searchPercent);
-    State.chart.data.datasets[2].data = data.map(d => d.toolCallsPercent);
+
+    if (provider === 'zai') {
+      // Z.ai has 2 datasets: tokens and time
+      // Ensure chart has correct datasets for Z.ai
+      while (State.chart.data.datasets.length > 2) State.chart.data.datasets.pop();
+      if (State.chart.data.datasets.length < 2) {
+        // Reinitialize for Z.ai
+        State.chart.data.datasets = [
+          { label: 'Tokens', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+          { label: 'Time', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+        ];
+      }
+      State.chart.data.datasets[0].label = 'Tokens';
+      State.chart.data.datasets[0].data = data.map(d => d.tokensPercent);
+      State.chart.data.datasets[1].label = 'Time';
+      State.chart.data.datasets[1].data = data.map(d => d.timePercent);
+    } else {
+      // Synthetic has 3 datasets
+      while (State.chart.data.datasets.length < 3) {
+        State.chart.data.datasets.push({ label: '', data: [], borderColor: '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 });
+      }
+      while (State.chart.data.datasets.length > 3) State.chart.data.datasets.pop();
+      State.chart.data.datasets[0].label = 'Subscription';
+      State.chart.data.datasets[0].data = data.map(d => d.subscriptionPercent);
+      State.chart.data.datasets[1].label = 'Search';
+      State.chart.data.datasets[1].data = data.map(d => d.searchPercent);
+      State.chart.data.datasets[2].label = 'Tool Calls';
+      State.chart.data.datasets[2].data = data.map(d => d.toolCallsPercent);
+    }
 
     // Dynamic Y-axis
     State.chartYMax = computeYMax(State.chart.data.datasets);
@@ -718,10 +770,10 @@ async function fetchHistory(range) {
 async function fetchCycles(quotaType) {
   if (quotaType === undefined) {
     const select = document.getElementById('cycle-quota-select');
-    quotaType = select ? select.value : 'subscription';
+    quotaType = select ? select.value : (getCurrentProvider() === 'zai' ? 'tokens' : 'subscription');
   }
   try {
-    const res = await authFetch(`${API_BASE}/api/cycles?type=${quotaType}`);
+    const res = await authFetch(`${API_BASE}/api/cycles?type=${quotaType}&${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch cycles');
     State.allCyclesData = await res.json();
     State.cyclesPage = 1;
@@ -887,7 +939,7 @@ function renderCyclesTable() {
 
 async function fetchSessions() {
   try {
-    const res = await authFetch(`${API_BASE}/api/sessions`);
+    const res = await authFetch(`${API_BASE}/api/sessions?${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch sessions');
     State.allSessionsData = await res.json();
     State.sessionsPage = 1;
@@ -1150,11 +1202,17 @@ async function loadModalChart(quotaType) {
   const range = activeRange ? activeRange.dataset.range : '6h';
 
   try {
-    const res = await authFetch(`${API_BASE}/api/history?range=${range}`);
+    const res = await authFetch(`${API_BASE}/api/history?range=${range}&${providerParam()}`);
     if (!res.ok) return;
     const data = await res.json();
 
-    const datasetKey = quotaType === 'subscription' ? 'subscriptionPercent' : quotaType === 'search' ? 'searchPercent' : 'toolCallsPercent';
+    const provider = getCurrentProvider();
+    let datasetKey;
+    if (provider === 'zai') {
+      datasetKey = quotaType === 'tokensLimit' ? 'tokensPercent' : 'timePercent';
+    } else {
+      datasetKey = quotaType === 'subscription' ? 'subscriptionPercent' : quotaType === 'search' ? 'searchPercent' : 'toolCallsPercent';
+    }
     const style = getComputedStyle(document.documentElement);
     const colorMap = { subscription: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', search: style.getPropertyValue('--chart-search').trim() || '#F59E0B', toolCalls: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6' };
     const bgMap = { subscription: 'rgba(13,148,136,0.08)', search: 'rgba(245,158,11,0.08)', toolCalls: 'rgba(59,130,246,0.08)' };
@@ -1208,7 +1266,7 @@ async function loadModalChart(quotaType) {
 async function loadModalCycles(quotaType) {
   const apiType = quotaType === 'toolCalls' ? 'toolcall' : quotaType;
   try {
-    const res = await authFetch(`${API_BASE}/api/cycles?type=${apiType}`);
+    const res = await authFetch(`${API_BASE}/api/cycles?type=${apiType}&${providerParam()}`);
     if (!res.ok) return;
     const cycles = await res.json();
 
@@ -1370,6 +1428,15 @@ function setupTableControls() {
   }
 }
 
+function setupProviderSelector() {
+  const select = document.getElementById('provider-select');
+  if (!select) return;
+  select.addEventListener('change', (e) => {
+    const provider = e.target.value;
+    window.location.href = `/?provider=${provider}`;
+  });
+}
+
 function setupHeaderActions() {
   // Scroll to top
   const scrollBtn = document.getElementById('scroll-top');
@@ -1438,6 +1505,7 @@ function startAutoRefresh() {
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initTimezoneBadge();
+  setupProviderSelector();
   setupRangeSelector();
   setupCycleSelector();
   setupCycleFilters();
@@ -1447,10 +1515,12 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCardModals();
 
   if (document.getElementById('usage-chart')) {
+    const provider = getCurrentProvider();
+    const defaultCycleType = provider === 'zai' ? 'tokens' : 'subscription';
     initChart();
     fetchCurrent().then(() => fetchDeepInsights());
     fetchHistory('6h');
-    fetchCycles('subscription');
+    fetchCycles(defaultCycleType);
     fetchSessions();
     startCountdowns();
     startAutoRefresh();
