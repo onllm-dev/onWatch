@@ -1091,7 +1091,7 @@ function updateChartTheme() {
 
 async function fetchHistory(range) {
   if (range === undefined) {
-    const activeBtn = document.querySelector('.range-btn.active');
+    const activeBtn = document.querySelector('.range-btn[data-range].active');
     range = activeBtn ? activeBtn.dataset.range : '6h';
   }
   try {
@@ -1779,7 +1779,7 @@ async function loadModalChart(quotaType, effectiveProvider) {
     State.modalChart = null;
   }
 
-  const activeRange = document.querySelector('.range-btn.active');
+  const activeRange = document.querySelector('.range-btn[data-range].active');
   const range = activeRange ? activeRange.dataset.range : '6h';
 
   const provider = effectiveProvider || getCurrentProvider();
@@ -1787,6 +1787,7 @@ async function loadModalChart(quotaType, effectiveProvider) {
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=${provider}`);
     if (!res.ok) return;
     const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return;
     let datasetKey;
     if (provider === 'zai') {
       datasetKey = quotaType === 'tokensLimit' ? 'tokensPercent' : 'timePercent';

@@ -601,7 +601,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("synthetic") && h.store != nil {
 		snapshots, err := h.store.QueryRange(start, now, 200)
 		if err == nil {
-			var synData []map[string]interface{}
+			synData := make([]map[string]interface{}, 0, len(snapshots))
 			for _, s := range snapshots {
 				subPct, searchPct, toolPct := 0.0, 0.0, 0.0
 				if s.Sub.Limit > 0 {
@@ -633,7 +633,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("zai") && h.store != nil {
 		snapshots, err := h.store.QueryZaiRange(start, now, 200)
 		if err == nil {
-			var zaiData []map[string]interface{}
+			zaiData := make([]map[string]interface{}, 0, len(snapshots))
 			for _, s := range snapshots {
 				zaiData = append(zaiData, map[string]interface{}{
 					"capturedAt":    s.CapturedAt.Format(time.RFC3339),
@@ -677,7 +677,7 @@ func (h *Handler) historySynthetic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var response []map[string]interface{}
+	response := make([]map[string]interface{}, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		subPercent := 0.0
 		if snapshot.Sub.Limit > 0 {
@@ -736,7 +736,7 @@ func (h *Handler) historyZai(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var response []map[string]interface{}
+	response := make([]map[string]interface{}, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		// Z.ai API: "usage" = budget, "currentValue" = actual usage, "percentage" = server %
 		response = append(response, map[string]interface{}{

@@ -703,6 +703,7 @@ func TestHandler_parseTimeRange(t *testing.T) {
 		{"7d", 7 * 24 * time.Hour, false},
 		{"30d", 30 * 24 * time.Hour, false},
 		{"invalid", 0, true},
+		{"undefined", 0, true},
 		{"", 6 * time.Hour, false},
 	}
 
@@ -1747,5 +1748,104 @@ func TestHandler_Cycles_ZaiActiveAndCompleted(t *testing.T) {
 	// The active cycle should have nil cycleEnd
 	if response[0]["cycleEnd"] != nil {
 		t.Error("expected active cycle to have nil cycleEnd")
+	}
+}
+
+// ── KPI Modal Chart Regression Tests ──
+// These tests guard against the range-selector misfire bug where
+// insights range pills (data-insights-range) were picked up instead
+// of chart range buttons (data-range), sending range=undefined to the API.
+
+func TestHandler_History_UndefinedRange_Returns400(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithSynthetic()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/history?range=undefined&provider=synthetic", nil)
+	rr := httptest.NewRecorder()
+	h.History(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for range=undefined, got %d", rr.Code)
+	}
+}
+
+func TestHandler_History_EmptyDB_ReturnsEmptyArray_Synthetic(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithSynthetic()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/history?range=6h&provider=synthetic", nil)
+	rr := httptest.NewRecorder()
+	h.History(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	body := strings.TrimSpace(rr.Body.String())
+	if body != "[]" {
+		t.Errorf("expected empty JSON array '[]' for empty DB, got %q", body)
+	}
+}
+
+func TestHandler_History_EmptyDB_ReturnsEmptyArray_Zai(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithZai()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/history?range=6h&provider=zai", nil)
+	rr := httptest.NewRecorder()
+	h.History(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	body := strings.TrimSpace(rr.Body.String())
+	if body != "[]" {
+		t.Errorf("expected empty JSON array '[]' for empty DB, got %q", body)
+	}
+}
+
+func TestHandler_History_EmptyDB_ReturnsEmptyArrays_Both(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithBoth()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/history?range=6h&provider=both", nil)
+	rr := httptest.NewRecorder()
+	h.History(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	for _, key := range []string{"synthetic", "zai"} {
+		val, ok := response[key]
+		if !ok {
+			continue
+		}
+		arr, ok := val.([]interface{})
+		if !ok {
+			t.Errorf("expected %s to be an array, got %T", key, val)
+			continue
+		}
+		if len(arr) != 0 {
+			t.Errorf("expected %s to be empty array, got %d items", key, len(arr))
+		}
 	}
 }
