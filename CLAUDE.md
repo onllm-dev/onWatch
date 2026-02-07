@@ -368,7 +368,7 @@ See `design-system/syntrack/pages/dashboard.md` for dashboard-specific layout an
 - **Color-coded thresholds** — green (0-49%), yellow (50-79%), red (80-94%), critical (95%+)
 - **Accessibility** — color + icon + text for all status indicators (never color alone)
 - **Live countdown** — updates every second for all 3 quota types
-- **Usage insights** — plain English description of what current usage means
+- **Usage insights** — provider-specific: Synthetic shows cycle utilization, billing period usage, weekly pace, tool call share; Z.ai shows plan capacity (daily/monthly), tokens-per-call efficiency, top tool analysis, per-tool breakdowns
 - **Time-series chart** — Chart.js area chart, all 3 quotas as % of limit
 - **Reset cycle history** — table showing historical cycles with stats
 

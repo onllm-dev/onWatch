@@ -1366,6 +1366,18 @@ func (h *Handler) insightsZai(w http.ResponseWriter, r *http.Request) {
 	snapshots24h, _ := h.store.QueryZaiRange(d24h, now)
 	snapshots7d, _ := h.store.QueryZaiRange(d7d, now)
 
+	// Plan capacity: "usage" field IS the daily budget (resets daily)
+	dailyTokenBudget := tokensBudget // e.g., 200,000,000 tokens/day
+	monthlyTokenCapacity := dailyTokenBudget * 30
+	dailyTimeBudget := timeBudget // e.g., 1000 time units/day
+	monthlyTimeCapacity := dailyTimeBudget * 30
+
+	// Avg tokens per tool call
+	var avgTokensPerCall float64
+	if totalToolCalls > 0 {
+		avgTokensPerCall = tokensUsed / totalToolCalls
+	}
+
 	// ═══ Stats Cards ═══
 	resp.Stats = append(resp.Stats, insightStat{
 		Value: fmt.Sprintf("%d%%", latest.TokensPercentage),
@@ -1376,9 +1388,23 @@ func (h *Handler) insightsZai(w http.ResponseWriter, r *http.Request) {
 		Label: "Tokens Left",
 	})
 	resp.Stats = append(resp.Stats, insightStat{
+		Value: compactNum(dailyTokenBudget),
+		Label: "Daily Token Limit",
+	})
+	resp.Stats = append(resp.Stats, insightStat{
+		Value: compactNum(monthlyTokenCapacity),
+		Label: "Monthly Capacity",
+	})
+	resp.Stats = append(resp.Stats, insightStat{
 		Value: fmt.Sprintf("%.0f", totalToolCalls),
 		Label: "Tool Calls",
 	})
+	if totalToolCalls > 0 {
+		resp.Stats = append(resp.Stats, insightStat{
+			Value: compactNum(avgTokensPerCall),
+			Label: "Avg Tokens/Call",
+		})
+	}
 	resp.Stats = append(resp.Stats, insightStat{
 		Value: fmt.Sprintf("%.0f / %.0f", timeUsed, timeBudget),
 		Label: "Time Budget",
@@ -1575,7 +1601,90 @@ func (h *Handler) insightsZai(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 7. Tracking Coverage
+	// 7. Plan Capacity (daily vs monthly context)
+	if dailyTokenBudget > 0 {
+		dailyUsedPct := (tokensUsed / dailyTokenBudget) * 100
+		desc := fmt.Sprintf("Daily token limit: %s. Monthly capacity: %s (30 × daily).", compactNum(dailyTokenBudget), compactNum(monthlyTokenCapacity))
+		if dailyUsedPct >= 80 {
+			desc += fmt.Sprintf(" You've consumed %.0f%% of today's budget.", dailyUsedPct)
+		}
+		if dailyTimeBudget > 0 {
+			desc += fmt.Sprintf(" Daily time limit: %.0f units (monthly: %s).", dailyTimeBudget, compactNum(monthlyTimeCapacity))
+		}
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "factual", Severity: "info",
+			Title:    "Plan Capacity",
+			Metric:   compactNum(monthlyTokenCapacity),
+			Sublabel: fmt.Sprintf("%s tokens/day", compactNum(dailyTokenBudget)),
+			Desc:     desc,
+		})
+	}
+
+	// 8. Tokens Per Call (efficiency metric)
+	if totalToolCalls > 0 && avgTokensPerCall > 0 {
+		sev := "info"
+		desc := fmt.Sprintf("Each tool call consumes ~%s tokens on average (%s tokens across %.0f calls).", compactNum(avgTokensPerCall), compactNum(tokensUsed), totalToolCalls)
+		if dailyTokenBudget > 0 {
+			callsPerDay := dailyTokenBudget / avgTokensPerCall
+			desc += fmt.Sprintf(" At this rate, your daily budget supports ~%.0f calls.", callsPerDay)
+			if callsPerDay < totalToolCalls*2 {
+				sev = "warning"
+			}
+		}
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "factual", Severity: sev,
+			Title:    "Tokens Per Call",
+			Metric:   compactNum(avgTokensPerCall),
+			Sublabel: "avg tokens/call",
+			Desc:     desc,
+		})
+	}
+
+	// 9. Top Tool (dominant tool analysis)
+	if latest.TimeUsageDetails != "" {
+		var details []api.ZaiUsageDetail
+		if err := json.Unmarshal([]byte(latest.TimeUsageDetails), &details); err == nil && len(details) > 1 {
+			var topTool string
+			var topUsage, totalUsage float64
+			for _, d := range details {
+				totalUsage += d.Usage
+				if d.Usage > topUsage {
+					topUsage = d.Usage
+					topTool = d.ModelCode
+				}
+			}
+			if totalUsage > 0 {
+				topPct := (topUsage / totalUsage) * 100
+				sev := "info"
+				if topPct > 70 {
+					sev = "warning"
+				}
+				desc := fmt.Sprintf("%s leads with %.0f calls (%.0f%% of %.0f total).", topTool, topUsage, topPct, totalUsage)
+				// Find second-highest for comparison
+				var secondTool string
+				var secondUsage float64
+				for _, d := range details {
+					if d.ModelCode != topTool && d.Usage > secondUsage {
+						secondUsage = d.Usage
+						secondTool = d.ModelCode
+					}
+				}
+				if secondTool != "" {
+					ratio := topUsage / secondUsage
+					desc += fmt.Sprintf(" %.1fx more than %s (%.0f calls).", ratio, secondTool, secondUsage)
+				}
+				resp.Insights = append(resp.Insights, insightItem{
+					Type: "factual", Severity: sev,
+					Title:    "Top Tool",
+					Metric:   topTool,
+					Sublabel: fmt.Sprintf("%.0f%% of calls", topPct),
+					Desc:     desc,
+				})
+			}
+		}
+	}
+
+	// 10. Tracking Coverage
 	if len(snapshots7d) > 0 {
 		oldest := snapshots7d[0]
 		trackingHours := now.Sub(oldest.CapturedAt).Hours()
@@ -1703,6 +1812,9 @@ func billingPeriodPeak(cycles []*store.ResetCycle) float64 {
 }
 
 func compactNum(v float64) string {
+	if v >= 1000000000 {
+		return fmt.Sprintf("%.1fB", v/1000000000)
+	}
 	if v >= 1000000 {
 		return fmt.Sprintf("%.1fM", v/1000000)
 	}
