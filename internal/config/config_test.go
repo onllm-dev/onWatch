@@ -89,8 +89,8 @@ func TestConfig_DefaultValues(t *testing.T) {
 	if cfg.PollInterval != 60*time.Second {
 		t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, 60*time.Second)
 	}
-	if cfg.Port != 8932 {
-		t.Errorf("Port = %d, want %d", cfg.Port, 8932)
+	if cfg.Port != 9211 {
+		t.Errorf("Port = %d, want %d", cfg.Port, 9211)
 	}
 	if cfg.AdminUser != "admin" {
 		t.Errorf("AdminUser = %q, want %q", cfg.AdminUser, "admin")
@@ -477,7 +477,7 @@ func TestConfig_String_ContainsProviders(t *testing.T) {
 		SyntheticAPIKey: "syn_test_key_12345",
 		ZaiAPIKey:       "zai_test_key_67890",
 		PollInterval:    60 * time.Second,
-		Port:            8932,
+		Port:            9211,
 		AdminUser:       "admin",
 		AdminPass:       "secret",
 		DBPath:          "./test.db",

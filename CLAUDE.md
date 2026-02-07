@@ -208,7 +208,7 @@ cp .env.example .env               # Create local config
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--interval` | Polling interval in seconds | `60` |
-| `--port` | Dashboard HTTP port | `8932` |
+| `--port` | Dashboard HTTP port | `9211` |
 | `--db` | SQLite database file path | `./syntrack.db` |
 | `--debug` | Run in foreground, log to stdout | `false` |
 | `--version` | Print version and exit | - |

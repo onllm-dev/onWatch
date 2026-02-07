@@ -110,7 +110,7 @@ Logs go to `.syntrack.log`. The process daemonizes automatically.
 
 ### 4. View Dashboard
 
-Open http://localhost:8932 and log in with your `.env` credentials.
+Open http://localhost:9211 and log in with your `.env` credentials.
 
 If both providers are configured, use the provider dropdown to switch between Synthetic and Z.ai views.
 
@@ -138,7 +138,7 @@ If both providers are configured, use the provider dropdown to switch between Sy
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
 | `--interval` | `SYNTRACK_POLL_INTERVAL` | `60` | Polling interval in seconds (10-3600) |
-| `--port` | `SYNTRACK_PORT` | `8932` | Dashboard HTTP port |
+| `--port` | `SYNTRACK_PORT` | `9211` | Dashboard HTTP port |
 | `--db` | `SYNTRACK_DB_PATH` | `./syntrack.db` | SQLite database path |
 | `--debug` | - | `false` | Run in foreground, log to stdout |
 | `--version` | - | - | Print version and exit |
@@ -221,7 +221,7 @@ Each agent run creates a session with a unique UUID. The session tracks maximum 
 ```
                     ┌──────────────┐
                     │   Dashboard  │
-                    │  :8932       │
+                    │  :9211       │
                     └──────┬───────┘
                            │
                     ┌──────┴───────┐

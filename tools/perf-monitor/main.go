@@ -1,6 +1,6 @@
 // perf-monitor - RAM and performance monitoring tool for SynTrack
 // Usage: go run main.go [port] [duration]
-// Default: port=8932, duration=1m
+// Default: port=9211, duration=1m
 package main
 
 import (
@@ -74,7 +74,7 @@ func main() {
 	fmt.Println()
 
 	// Parse arguments
-	port := 8932
+	port := 9211
 	duration := 1 * time.Minute
 	shouldRestart := false
 

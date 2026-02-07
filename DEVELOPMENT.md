@@ -265,7 +265,7 @@ CMD ["./syntrack"]
 
 ```bash
 docker build -t syntrack .
-docker run -p 8932:8932 -v $(pwd)/.env:/root/.env syntrack
+docker run -p 9211:9211 -v $(pwd)/.env:/root/.env syntrack
 ```
 
 ---
@@ -290,12 +290,12 @@ go build -o perf-monitor .
 
 **With custom port and duration:**
 ```bash
-./perf-monitor 8932 2m
+./perf-monitor 9211 2m
 ```
 
 **With restart (stops and restarts SynTrack for clean baseline):**
 ```bash
-./perf-monitor --restart 8932 1m
+./perf-monitor --restart 9211 1m
 ```
 
 ### What It Measures

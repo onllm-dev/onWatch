@@ -47,7 +47,66 @@ const State = {
   expandedSessionId: null,
   // Dynamic Y-axis max (preserved across theme changes)
   chartYMax: 100,
+  // Hidden quota datasets (persisted in localStorage)
+  hiddenQuotas: new Set(),
 };
+
+// ── Persistence ──
+
+function loadHiddenQuotas() {
+  try {
+    const stored = localStorage.getItem('syntrack-hidden-quotas');
+    if (stored) {
+      State.hiddenQuotas = new Set(JSON.parse(stored));
+    }
+  } catch (e) {
+    console.warn('Failed to load hidden quotas:', e);
+    State.hiddenQuotas = new Set();
+  }
+}
+
+function saveHiddenQuotas() {
+  try {
+    localStorage.setItem('syntrack-hidden-quotas', JSON.stringify([...State.hiddenQuotas]));
+  } catch (e) {
+    console.warn('Failed to save hidden quotas:', e);
+  }
+}
+
+function toggleQuotaVisibility(quotaType) {
+  if (State.hiddenQuotas.has(quotaType)) {
+    State.hiddenQuotas.delete(quotaType);
+  } else {
+    State.hiddenQuotas.add(quotaType);
+  }
+  saveHiddenQuotas();
+  
+  // Update chart if it exists
+  if (State.chart) {
+    updateChartVisibility();
+  }
+}
+
+function updateChartVisibility() {
+  if (!State.chart) return;
+  
+  const provider = getCurrentProvider();
+  const quotaMap = provider === 'zai' 
+    ? { 0: 'tokensLimit', 1: 'timeLimit' }
+    : { 0: 'subscription', 1: 'search', 2: 'toolCalls' };
+  
+  State.chart.data.datasets.forEach((ds, index) => {
+    const quotaType = quotaMap[index];
+    if (quotaType) {
+      ds.hidden = State.hiddenQuotas.has(quotaType);
+    }
+  });
+  
+  // Recompute Y-axis based on visible datasets only
+  State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+  State.chart.options.scales.y.max = State.chartYMax;
+  State.chart.update('none'); // Update without animation
+}
 
 const statusConfig = {
   healthy: { label: 'Healthy', icon: 'M20 6L9 17l-5-5' },
@@ -664,13 +723,34 @@ const crosshairPlugin = {
 
 // ── Chart Init & Update ──
 
-function computeYMax(datasets) {
-  let maxVal = 0;
-  datasets.forEach(ds => {
-    ds.data.forEach(v => { if (v > maxVal) maxVal = v; });
+function computeYMax(datasets, chart) {
+  // Filter out hidden datasets — check both ds.hidden and chart metadata visibility
+  const visibleDatasets = datasets.filter((ds, i) => {
+    if (ds.hidden) return false;
+    if (chart && chart.getDatasetMeta(i).hidden) return false;
+    return ds.data && ds.data.length > 0;
   });
-  // ~2x the peak so at most half the chart is empty space
-  const yMax = Math.min(Math.max(Math.ceil(maxVal * 2 / 10) * 10, 20), 100);
+
+  // If no visible datasets, return default 10%
+  if (visibleDatasets.length === 0) return 10;
+
+  let maxVal = 0;
+  visibleDatasets.forEach(ds => {
+    ds.data.forEach(v => {
+      const val = typeof v === 'number' ? v : 0;
+      if (val > maxVal) maxVal = val;
+    });
+  });
+  
+  // If max is 0 or very low, show up to 10% to give visual context
+  if (maxVal <= 0) return 10;
+  if (maxVal < 5) return 10;
+  
+  // Add 20% padding above the max value for better visualization
+  // Round up to nearest 5 for cleaner axis labels
+  const paddedMax = maxVal * 1.2;
+  const yMax = Math.min(Math.max(Math.ceil(paddedMax / 5) * 5, 10), 100);
+  
   return yMax;
 }
 
@@ -682,14 +762,20 @@ function initChart() {
 
   const colors = getThemeColors();
 
+  // Map dataset indices to quota types for visibility toggle
+  const provider = getCurrentProvider();
+  const quotaMap = provider === 'zai' 
+    ? ['tokensLimit', 'timeLimit']
+    : ['subscription', 'search', 'toolCalls'];
+  
   State.chart = new Chart(ctx, {
     type: 'line',
     data: {
       labels: [],
       datasets: [
-        { label: 'Subscription', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
-        { label: 'Search', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
-        { label: 'Tool Calls', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 }
+        { label: 'Subscription', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('subscription') },
+        { label: 'Search', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('search') },
+        { label: 'Tool Calls', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('toolCalls') }
       ]
     },
     options: {
@@ -697,7 +783,21 @@ function initChart() {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { color: colors.text, usePointStyle: true, boxWidth: 8 } },
+        legend: {
+          labels: { color: colors.text, usePointStyle: true, boxWidth: 8 },
+          onClick: function(e, legendItem, legend) {
+            // Default toggle behavior
+            const index = legendItem.datasetIndex;
+            const ci = legend.chart;
+            const meta = ci.getDatasetMeta(index);
+            meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+            ci.update('none');
+            // Recalculate Y-axis based on visible datasets
+            State.chartYMax = computeYMax(ci.data.datasets, ci);
+            ci.options.scales.y.max = State.chartYMax;
+            ci.update();
+          }
+        },
         tooltip: {
           mode: 'index',
           intersect: false,
@@ -775,14 +875,16 @@ async function fetchHistory(range) {
       if (State.chart.data.datasets.length < 2) {
         // Reinitialize for Z.ai
         State.chart.data.datasets = [
-          { label: 'Tokens', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
-          { label: 'Time', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+          { label: 'Tokens', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
+          { label: 'Time', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('timeLimit') },
         ];
       }
       State.chart.data.datasets[0].label = 'Tokens';
       State.chart.data.datasets[0].data = data.map(d => d.tokensPercent);
+      State.chart.data.datasets[0].hidden = State.hiddenQuotas.has('tokensLimit');
       State.chart.data.datasets[1].label = 'Time';
       State.chart.data.datasets[1].data = data.map(d => d.timePercent);
+      State.chart.data.datasets[1].hidden = State.hiddenQuotas.has('timeLimit');
     } else {
       // Synthetic has 3 datasets
       while (State.chart.data.datasets.length < 3) {
@@ -791,14 +893,17 @@ async function fetchHistory(range) {
       while (State.chart.data.datasets.length > 3) State.chart.data.datasets.pop();
       State.chart.data.datasets[0].label = 'Subscription';
       State.chart.data.datasets[0].data = data.map(d => d.subscriptionPercent);
+      State.chart.data.datasets[0].hidden = State.hiddenQuotas.has('subscription');
       State.chart.data.datasets[1].label = 'Search';
       State.chart.data.datasets[1].data = data.map(d => d.searchPercent);
+      State.chart.data.datasets[1].hidden = State.hiddenQuotas.has('search');
       State.chart.data.datasets[2].label = 'Tool Calls';
       State.chart.data.datasets[2].data = data.map(d => d.toolCallsPercent);
+      State.chart.data.datasets[2].hidden = State.hiddenQuotas.has('toolCalls');
     }
 
     // Dynamic Y-axis
-    State.chartYMax = computeYMax(State.chart.data.datasets);
+    State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
     State.chart.options.scales.y.max = State.chartYMax;
 
     State.chart.update();
@@ -1309,7 +1414,17 @@ async function loadModalChart(quotaType) {
     const colors = getThemeColors();
     const chartData = data.map(d => d[datasetKey]);
     const maxVal = Math.max(...chartData, 0);
-    const yMax = Math.max(Math.ceil((maxVal + 15) / 10) * 10, 20);
+    
+    // Dynamic Y-axis: if max is 0 or very low, show up to 10%
+    // Otherwise add 20% padding, rounded to nearest 5
+    let yMax;
+    if (maxVal <= 0) {
+      yMax = 10;
+    } else if (maxVal < 5) {
+      yMax = 10;
+    } else {
+      yMax = Math.min(Math.max(Math.ceil((maxVal * 1.2) / 5) * 5, 10), 100);
+    }
 
     State.modalChart = new Chart(ctx, {
       type: 'line',
@@ -1559,6 +1674,50 @@ function setupHeaderActions() {
   }
 }
 
+function setupQuotaToggles() {
+  // Add eye icons to quota cards for toggling visibility
+  document.querySelectorAll('.quota-card').forEach(card => {
+    const quotaType = card.dataset.quota;
+    if (!quotaType) return;
+    
+    // Create eye toggle button
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'quota-toggle-btn';
+    toggleBtn.setAttribute('aria-label', `Toggle ${quotaType} visibility`);
+    toggleBtn.setAttribute('title', 'Click to hide/show on graph');
+    toggleBtn.innerHTML = `
+      <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+        <line x1="1" y1="1" x2="23" y2="23"/>
+      </svg>
+    `;
+    
+    // Check if initially hidden
+    if (State.hiddenQuotas.has(quotaType)) {
+      card.classList.add('quota-hidden');
+      toggleBtn.classList.add('hidden');
+    }
+    
+    // Add click handler (prevent modal from opening)
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleQuotaVisibility(quotaType);
+      card.classList.toggle('quota-hidden', State.hiddenQuotas.has(quotaType));
+      toggleBtn.classList.toggle('hidden', State.hiddenQuotas.has(quotaType));
+    });
+    
+    // Add to card header
+    const header = card.querySelector('.card-header');
+    if (header) {
+      header.appendChild(toggleBtn);
+    }
+  });
+}
+
 function setupCardModals() {
   document.querySelectorAll('.quota-card[role="button"]').forEach(card => {
     const handler = () => openModal(card.dataset.quota);
@@ -1598,6 +1757,9 @@ function startAutoRefresh() {
 // ── Init ──
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Load persisted state
+  loadHiddenQuotas();
+  
   initTheme();
   initTimezoneBadge();
   setupProviderSelector();
@@ -1608,6 +1770,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupTableControls();
   setupHeaderActions();
   setupCardModals();
+  setupQuotaToggles();
 
   if (document.getElementById('usage-chart')) {
     const provider = getCurrentProvider();

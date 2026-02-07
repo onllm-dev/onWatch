@@ -103,7 +103,7 @@ function updateChartVisibility() {
   });
   
   // Recompute Y-axis based on visible datasets only
-  State.chartYMax = computeYMax(State.chart.data.datasets);
+  State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
   State.chart.options.scales.y.max = State.chartYMax;
   State.chart.update('none'); // Update without animation
 }
@@ -723,13 +723,17 @@ const crosshairPlugin = {
 
 // ── Chart Init & Update ──
 
-function computeYMax(datasets) {
-  // Filter out hidden datasets (if any are marked as hidden)
-  const visibleDatasets = datasets.filter(ds => !ds.hidden && ds.data && ds.data.length > 0);
-  
+function computeYMax(datasets, chart) {
+  // Filter out hidden datasets — check both ds.hidden and chart metadata visibility
+  const visibleDatasets = datasets.filter((ds, i) => {
+    if (ds.hidden) return false;
+    if (chart && chart.getDatasetMeta(i).hidden) return false;
+    return ds.data && ds.data.length > 0;
+  });
+
   // If no visible datasets, return default 10%
   if (visibleDatasets.length === 0) return 10;
-  
+
   let maxVal = 0;
   visibleDatasets.forEach(ds => {
     ds.data.forEach(v => {
@@ -779,7 +783,21 @@ function initChart() {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { color: colors.text, usePointStyle: true, boxWidth: 8 } },
+        legend: {
+          labels: { color: colors.text, usePointStyle: true, boxWidth: 8 },
+          onClick: function(e, legendItem, legend) {
+            // Default toggle behavior
+            const index = legendItem.datasetIndex;
+            const ci = legend.chart;
+            const meta = ci.getDatasetMeta(index);
+            meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+            ci.update('none');
+            // Recalculate Y-axis based on visible datasets
+            State.chartYMax = computeYMax(ci.data.datasets, ci);
+            ci.options.scales.y.max = State.chartYMax;
+            ci.update();
+          }
+        },
         tooltip: {
           mode: 'index',
           intersect: false,
@@ -885,7 +903,7 @@ async function fetchHistory(range) {
     }
 
     // Dynamic Y-axis
-    State.chartYMax = computeYMax(State.chart.data.datasets);
+    State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
     State.chart.options.scales.y.max = State.chartYMax;
 
     State.chart.update();
