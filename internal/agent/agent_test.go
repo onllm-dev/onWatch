@@ -297,12 +297,25 @@ func TestAgent_TrackerError_StillStoresSnapshot(t *testing.T) {
 
 	agent := New(client, str, tr, 50*time.Millisecond, logger)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Millisecond)
+	// Use generous timeout — race detector adds significant overhead
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	go agent.Run(ctx)
-	<-ctx.Done()
-	time.Sleep(10 * time.Millisecond)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- agent.Run(ctx)
+	}()
+
+	// Wait for at least one poll to complete, then cancel
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+
+	// Wait for agent to fully stop before querying (avoids separate :memory: connections)
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Agent.Run() did not return within 2s")
+	}
 
 	// Even if tracker had issues, snapshot should be stored
 	latest, _ := str.QueryLatest()
