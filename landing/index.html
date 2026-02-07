@@ -657,6 +657,13 @@ a:hover { text-decoration: underline; }
   color: var(--text-primary);
 }
 
+.mock-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
 .mockup-tabs {
   display: flex;
   gap: 2px;
@@ -1898,6 +1905,7 @@ a:hover { text-decoration: underline; }
                 <div class="mockup-body">
                     <div class="mockup-header">
                         <div class="mockup-title">Dashboard</div>
+                        <div class="mock-time" id="mock-time"></div>
                         <div class="mockup-tabs" id="mockup-tabs">
                             <span class="mockup-tab active" data-tab="synthetic" onclick="switchMockTab('synthetic')">Synthetic</span>
                             <span class="mockup-tab" data-tab="zai" onclick="switchMockTab('zai')">Z.ai</span>
@@ -1917,7 +1925,7 @@ a:hover { text-decoration: underline; }
                                 <div class="mock-progress"><div class="mock-progress-fill" id="prog-sub" style="width:0%;background:var(--status-healthy)"></div></div>
                                 <div class="mock-card-footer">
                                     <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
-                                    <span class="mock-reset">Resets 8:16 PM</span>
+                                    <span class="mock-reset" id="mock-reset-sub"></span>
                                 </div>
                             </div>
                             <div class="mock-card">
@@ -1943,7 +1951,7 @@ a:hover { text-decoration: underline; }
                                 <div class="mock-progress"><div class="mock-progress-fill" id="prog-tool" style="width:0%;background:var(--status-warning)"></div></div>
                                 <div class="mock-card-footer">
                                     <span class="mock-badge warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Warning</span>
-                                    <span class="mock-reset">Resets 5:26 PM</span>
+                                    <span class="mock-reset" id="mock-reset-tool"></span>
                                 </div>
                             </div>
                         </div>
@@ -1961,7 +1969,7 @@ a:hover { text-decoration: underline; }
                                 <div class="mock-progress"><div class="mock-progress-fill" id="prog-zai-tok" style="width:0%;background:var(--status-healthy)"></div></div>
                                 <div class="mock-card-footer">
                                     <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
-                                    <span class="mock-reset">Daily reset</span>
+                                    <span class="mock-reset" id="mock-reset-zai-tok"></span>
                                 </div>
                             </div>
                             <div class="mock-card">
@@ -1974,7 +1982,7 @@ a:hover { text-decoration: underline; }
                                 <div class="mock-progress"><div class="mock-progress-fill" id="prog-zai-time" style="width:0%;background:var(--status-healthy)"></div></div>
                                 <div class="mock-card-footer">
                                     <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
-                                    <span class="mock-reset">Daily reset</span>
+                                    <span class="mock-reset" id="mock-reset-zai-time"></span>
                                 </div>
                             </div>
                             <div class="mock-card">
@@ -1987,7 +1995,7 @@ a:hover { text-decoration: underline; }
                                 <div class="mock-progress"><div class="mock-progress-fill" id="prog-zai-tool" style="width:0%;background:var(--status-healthy)"></div></div>
                                 <div class="mock-card-footer">
                                     <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
-                                    <span class="mock-reset">Daily reset</span>
+                                    <span class="mock-reset" id="mock-reset-zai-tool"></span>
                                 </div>
                             </div>
                         </div>
@@ -3154,6 +3162,11 @@ document.querySelectorAll('a[href^="#"]').forEach(function(a) {
         if (rSearch) rSearch.textContent = fmtResetTime(searchReset);
         var rTool = document.getElementById('mock-reset-tool');
         if (rTool) rTool.textContent = fmtResetTime(toolReset);
+        /* Z.ai resets */
+        ['mock-reset-zai-tok', 'mock-reset-zai-time', 'mock-reset-zai-tool'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = fmtResetTime(zaiReset);
+        });
 
         /* Update countdown text in all card-countdown elements by traversing DOM */
         updateCardCountdowns('mock-synthetic', [
