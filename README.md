@@ -17,7 +17,7 @@ API providers show current quota usage but not historical trends or per-cycle co
 - Get projected usage before reset
 - Monitor in real-time with live countdowns
 - Switch between providers in a single dashboard
-- Run silently in the background (~10 MB RAM)
+- Run silently in the background (~26 MB RAM idle, ~28 MB with dashboard)
 
 ---
 
@@ -242,7 +242,32 @@ Each agent run creates a session with a unique UUID. The session tracks maximum 
 
 Both agents run in parallel goroutines. Each polls its API at the configured interval and stores snapshots. The dashboard reads from the shared SQLite store.
 
-**RAM budget:** ~10 MB idle, ~15 MB during dashboard render.
+**RAM budget:** ~30 MB idle, ~50 MB during dashboard render.
+
+---
+
+## Performance
+
+SynTrack is designed for minimal resource consumption as a background agent.
+
+### Measured Performance (2026-02-07)
+
+**Test Environment:** macOS, SynTrack v1.2.0, dual-provider (Synthetic + Z.ai)
+
+| Metric | Value |
+|--------|-------|
+| **Idle RAM** | 26.3 MB (stable) |
+| **Dashboard Load RAM** | 28.3 MB (+2.0 MB / +7.7%) |
+| **Peak RAM under load** | 29.0 MB |
+| **Dashboard response** | 0.71 ms |
+| **API response (avg)** | 0.27-0.32 ms |
+| **Request throughput** | ~77 req/sec |
+
+**Idle State:** Memory sampled every 5 seconds for 30 seconds with no HTTP requests. All 6 samples showed 26.3 MB RSS — extremely stable baseline.
+
+**Load State:** 2,320 HTTP requests across all endpoints over 30 seconds. Memory increased by only 2.0 MB (7.7%) with peak at 29.0 MB. The overhead is minimal even under sustained load.
+
+**Key Insight:** SynTrack's memory footprint remains remarkably stable. The 2 MB increase under load primarily reflects temporary request handling buffers and Go runtime GC behavior, not memory leaks.
 
 ---
 

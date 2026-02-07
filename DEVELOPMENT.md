@@ -270,6 +270,76 @@ docker run -p 8932:8932 -v $(pwd)/.env:/root/.env syntrack
 
 ---
 
+## Performance Monitoring
+
+A built-in performance monitoring tool tracks SynTrack's RAM consumption and HTTP response times. This helps validate memory efficiency and identify performance regressions.
+
+### Building the Tool
+
+```bash
+cd tools/perf-monitor
+go build -o perf-monitor .
+```
+
+### Running Performance Tests
+
+**Monitor existing instance (default 1 minute):**
+```bash
+./perf-monitor
+```
+
+**With custom port and duration:**
+```bash
+./perf-monitor 8932 2m
+```
+
+**With restart (stops and restarts SynTrack for clean baseline):**
+```bash
+./perf-monitor --restart 8932 1m
+```
+
+### What It Measures
+
+The tool runs two phases:
+
+1. **Idle Phase (50% of duration):** Samples memory every 5 seconds with no HTTP requests
+2. **Load Phase (50% of duration):** Makes continuous requests to all endpoints while sampling memory
+
+### Output
+
+The tool generates:
+- Console summary with RAM statistics and HTTP performance
+- JSON report: `perf-report-YYYYMMDD-HHMMSS.json`
+
+Example results:
+```
+IDLE STATE:
+  Avg RSS: 26.3 MB
+  
+LOAD STATE:
+  Avg RSS: 28.3 MB
+  Delta: +2.0 MB (+7.7%)
+  
+HTTP PERFORMANCE:
+  /api/current: 290 reqs, avg 0.29ms
+  /api/insights: 290 reqs, avg 0.26ms
+```
+
+### Interpreting Results
+
+**Healthy metrics:**
+- Idle RAM: 25-30 MB
+- Load overhead: <5 MB
+- API response: <5 ms
+- Dashboard response: <10 ms
+
+**Investigate if:**
+- Idle RAM >35 MB
+- Load overhead >10 MB
+- Response times >50 ms
+
+---
+
 ## Troubleshooting
 
 ### "go: command not found"

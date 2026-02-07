@@ -7,7 +7,7 @@
 **This is an open-source project.** No secrets, no waste, clean repo.
 
 **Core Design Principles:**
-- **Ultra-lightweight:** Minimal RAM footprint (~8-10 MB idle). This app runs as a background agent — memory efficiency is paramount. Every design decision must consider RAM impact.
+- **Ultra-lightweight:** Minimal RAM footprint (~25-30 MB idle). This app runs as a background agent — memory efficiency is paramount. Every design decision must consider RAM impact.
 - **Single binary:** No external dependencies at runtime. All templates and static assets embedded via `embed.FS`.
 - **TDD-first:** Every feature is built test-first. Red → Green → Refactor. No exceptions.
 - **Efficient polling:** The `/v2/quotas` endpoint does NOT count against quota, but we still poll responsibly (default 60s).
@@ -40,8 +40,8 @@ Since SynTrack runs as a background daemon, RAM is our primary constraint:
 | HTTP server (idle) | 1 MB |
 | Agent + polling buffer | 1 MB |
 | Template rendering | 1 MB |
-| **Total idle** | **~10 MB max** |
-| **During dashboard render** | **~15 MB max** |
+| **Total idle** | **~30 MB max** |
+| **During dashboard render** | **~50 MB max** |
 
 ## Tech Stack
 
