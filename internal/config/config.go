@@ -161,7 +161,7 @@ func (c *Config) applyDefaults() {
 		c.PollInterval = 60 * time.Second
 	}
 	if c.Port == 0 {
-		c.Port = 8932
+		c.Port = 9211
 	}
 	if c.AdminUser == "" {
 		c.AdminUser = "admin"

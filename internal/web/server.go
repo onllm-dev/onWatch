@@ -26,7 +26,7 @@ type Server struct {
 // NewServer creates a new Server instance
 func NewServer(port int, handler *Handler, logger *slog.Logger, username, password string) *Server {
 	if port == 0 {
-		port = 8932 // default port
+		port = 9211 // default port
 	}
 
 	mux := http.NewServeMux()

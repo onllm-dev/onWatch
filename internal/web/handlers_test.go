@@ -19,7 +19,7 @@ func createTestConfigWithSynthetic() *config.Config {
 	return &config.Config{
 		SyntheticAPIKey: "syn_test_key",
 		PollInterval:    60 * time.Second,
-		Port:            8932,
+		Port:            9211,
 		AdminUser:       "admin",
 		AdminPass:       "test",
 		DBPath:          "./test.db",
@@ -31,7 +31,7 @@ func createTestConfigWithZai() *config.Config {
 		ZaiAPIKey:    "zai_test_key",
 		ZaiBaseURL:   "https://api.z.ai/api",
 		PollInterval: 60 * time.Second,
-		Port:         8932,
+		Port:         9211,
 		AdminUser:    "admin",
 		AdminPass:    "test",
 		DBPath:       "./test.db",
@@ -44,7 +44,7 @@ func createTestConfigWithBoth() *config.Config {
 		ZaiAPIKey:       "zai_test_key",
 		ZaiBaseURL:      "https://api.z.ai/api",
 		PollInterval:    60 * time.Second,
-		Port:            8932,
+		Port:            9211,
 		AdminUser:       "admin",
 		AdminPass:       "test",
 		DBPath:          "./test.db",
@@ -758,7 +758,7 @@ func TestHandler_Providers_ReturnsAvailableProviders(t *testing.T) {
 func TestHandler_Providers_WithNoProviders(t *testing.T) {
 	cfg := &config.Config{
 		PollInterval: 60 * time.Second,
-		Port:         8932,
+		Port:         9211,
 		AdminUser:    "admin",
 		AdminPass:    "test",
 		DBPath:       "./test.db",
@@ -1031,12 +1031,12 @@ func TestHandler_Current_ZaiReturnsTokensAndTimeLimits(t *testing.T) {
 	// Z.ai API: "usage" = budget/capacity, "currentValue" = actual consumption
 	zaiSnapshot := &api.ZaiSnapshot{
 		CapturedAt:          time.Now().UTC(),
-		TokensUsage:         200000000,  // budget
-		TokensCurrentValue:  200000000,  // 100% consumed
+		TokensUsage:         200000000, // budget
+		TokensCurrentValue:  200000000, // 100% consumed
 		TokensRemaining:     0,
 		TokensPercentage:    100,
-		TimeUsage:           1000,       // budget
-		TimeCurrentValue:    19,         // actual consumption
+		TimeUsage:           1000, // budget
+		TimeCurrentValue:    19,   // actual consumption
 		TimeRemaining:       981,
 		TimePercentage:      2,
 		TokensNextResetTime: &resetTime,
@@ -1553,12 +1553,12 @@ func TestHandler_Current_ZaiWithMockData(t *testing.T) {
 	// Z.ai API: "usage" = budget/capacity, "currentValue" = actual consumption
 	zaiSnapshot := &api.ZaiSnapshot{
 		CapturedAt:          time.Now().UTC(),
-		TokensUsage:         200000000,  // budget
-		TokensCurrentValue:  100000000,  // 50% consumed
+		TokensUsage:         200000000, // budget
+		TokensCurrentValue:  100000000, // 50% consumed
 		TokensRemaining:     100000000,
 		TokensPercentage:    50,
-		TimeUsage:           1000,       // budget
-		TimeCurrentValue:    500,        // 50% consumed
+		TimeUsage:           1000, // budget
+		TimeCurrentValue:    500,  // 50% consumed
 		TimeRemaining:       500,
 		TimePercentage:      50,
 		TokensNextResetTime: &resetTime,

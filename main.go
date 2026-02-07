@@ -424,7 +424,8 @@ func runStop() error {
 
 	// Method 2: Port-based fallback — check default and common ports
 	if !stopped {
-		for _, port := range []int{8932} {
+		// Check both old (8932) and new (9211) default ports for backwards compatibility
+		for _, port := range []int{9211, 8932} {
 			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
 			if err != nil {
 				continue
@@ -466,7 +467,8 @@ func runStatus() error {
 					fmt.Printf("syntrack is running (PID %d)\n", pid)
 
 					// Check which port it's listening on
-					for _, port := range []int{8932, 8080, 9000} {
+					// Check both old (8932) and new (9211) default ports for backwards compatibility
+					for _, port := range []int{9211, 8932, 8080, 9000} {
 						if pids := findSyntrackOnPort(port); len(pids) > 0 {
 							for _, p := range pids {
 								if p == pid {
@@ -502,7 +504,8 @@ func runStatus() error {
 	}
 
 	// No PID file — try port check
-	for _, port := range []int{8932} {
+	// Check both old (8932) and new (9211) default ports for backwards compatibility
+	for _, port := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
 		if err != nil {
 			continue
@@ -584,7 +587,7 @@ func printHelp() {
 	fmt.Println("  --version          Print version and exit")
 	fmt.Println("  --help             Print this help message")
 	fmt.Println("  --interval SEC     Polling interval in seconds (default: 60)")
-	fmt.Println("  --port PORT        Dashboard HTTP port (default: 8932)")
+	fmt.Println("  --port PORT        Dashboard HTTP port (default: 9211)")
 	fmt.Println("  --db PATH          SQLite database file path (default: ./syntrack.db)")
 	fmt.Println("  --debug            Run in foreground mode, log to stdout")
 	fmt.Println()
