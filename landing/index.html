@@ -1016,6 +1016,11 @@ a:hover { text-decoration: underline; }
   grid-template-columns: repeat(2, 1fr);
   gap: 20px;
 }
+.gallery-grid.single-item {
+  grid-template-columns: 1fr;
+  max-width: 640px;
+  margin: 0 auto;
+}
 
 .gallery-item {
   background: var(--surface-card);
@@ -1258,20 +1263,24 @@ a:hover { text-decoration: underline; }
 
 .comparison-table-wrap {
   overflow-x: auto;
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  margin-top: 32px;
 }
 
 .comparison-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
-  margin-top: 32px;
 }
 
 .comparison-table th,
 .comparison-table td {
   padding: 14px 20px;
   text-align: left;
-  border-bottom: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .comparison-table th {
@@ -1282,16 +1291,20 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.06em;
   background: var(--surface-card-alt);
 }
+.comparison-table thead tr:first-child th:first-child { border-radius: var(--radius-lg) 0 0 0; }
+.comparison-table thead tr:first-child th:last-child { border-radius: 0 var(--radius-lg) 0 0; }
 
 .comparison-table td {
   color: var(--text-primary);
 }
 
+.comparison-table tbody tr:last-child td { border-bottom: none; }
+
 .comparison-table tr:hover td {
   background: var(--surface-card-alt);
 }
 
-.check { color: var(--status-healthy); }
+.check { color: var(--status-healthy); font-weight: 700; font-size: 16px; }
 .cross { color: var(--text-muted); opacity: 0.4; }
 
 /* ═══════════════════════════════════════════
@@ -1828,8 +1841,10 @@ a:hover { text-decoration: underline; }
 <span class="code-string">EOF</span>
 
 <span class="code-comment"># Run</span>
-<span class="code-cmd">./syntrack</span>            <span class="code-comment"># background</span>
-<span class="code-cmd">./syntrack</span> --debug     <span class="code-comment"># foreground</span></div>
+<span class="code-cmd">./syntrack</span>            <span class="code-comment"># start (background)</span>
+<span class="code-cmd">./syntrack</span> --debug     <span class="code-comment"># foreground mode</span>
+<span class="code-cmd">./syntrack</span> stop        <span class="code-comment"># stop</span>
+<span class="code-cmd">./syntrack</span> status      <span class="code-comment"># check status</span></div>
                 </div>
             </div>
 
@@ -1941,17 +1956,18 @@ a:hover { text-decoration: underline; }
         </div>
         <div class="gallery-filters fade-in">
             <div class="filter-group">
-                <span class="filter-label">Theme</span>
-                <button class="filter-btn active" data-filter="theme" data-value="light">Light</button>
-                <button class="filter-btn" data-filter="theme" data-value="dark">Dark</button>
-                <button class="filter-btn" data-filter="theme" data-value="all">All</button>
-            </div>
-            <div class="filter-group">
                 <span class="filter-label">Provider</span>
                 <button class="filter-btn active" data-filter="provider" data-value="synthetic">Synthetic</button>
                 <button class="filter-btn" data-filter="provider" data-value="zai">Z.ai</button>
                 <button class="filter-btn" data-filter="provider" data-value="both">Both</button>
+                <button class="filter-btn" data-filter="provider" data-value="general">Login</button>
                 <button class="filter-btn" data-filter="provider" data-value="all">All</button>
+            </div>
+            <div class="filter-group" id="theme-filter" style="display:none;">
+                <span class="filter-label">Theme</span>
+                <button class="filter-btn active" data-filter="theme" data-value="all">All</button>
+                <button class="filter-btn" data-filter="theme" data-value="light">Light</button>
+                <button class="filter-btn" data-filter="theme" data-value="dark">Dark</button>
             </div>
         </div>
         <div class="gallery-grid" id="gallery-grid">
@@ -1962,7 +1978,7 @@ a:hover { text-decoration: underline; }
                     <span class="gallery-caption-badge">Synthetic</span>
                 </div>
             </div>
-            <div class="gallery-item fade-in visible hidden" data-theme="dark" data-provider="synthetic" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
+            <div class="gallery-item fade-in visible" data-theme="dark" data-provider="synthetic" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
                 <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/syntrack/main/screenshots/dashboard-dark.png" alt="SynTrack dashboard in dark mode — Synthetic provider" loading="lazy">
                 <div class="gallery-caption">
                     <span class="gallery-caption-text">Dashboard — Dark Mode</span>
@@ -1987,7 +2003,7 @@ a:hover { text-decoration: underline; }
                 <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/syntrack/main/screenshots/login.png" alt="SynTrack login page with dark mode" loading="lazy">
                 <div class="gallery-caption">
                     <span class="gallery-caption-text">Login Page</span>
-                    <span class="gallery-caption-badge">Auth</span>
+                    <span class="gallery-caption-badge">Login</span>
                 </div>
             </div>
             <p class="gallery-empty" id="gallery-empty" style="display:none;">No screenshots match the selected filters.</p>
@@ -2188,20 +2204,55 @@ function copyInstallCmd(el) {
 
 /* Gallery Filters */
 (function() {
-    var activeTheme = 'light';
+    var activeTheme = 'all';
     var activeProvider = 'synthetic';
+
+    // Map of available themes per provider
+    function getThemesForProvider(provider) {
+        var themes = {};
+        document.querySelectorAll('.gallery-item').forEach(function(item) {
+            var p = item.getAttribute('data-provider');
+            var t = item.getAttribute('data-theme');
+            if (provider === 'all' || p === provider) themes[t] = true;
+        });
+        return Object.keys(themes);
+    }
+
+    function updateThemeFilter() {
+        var themeGroup = document.getElementById('theme-filter');
+        var themes = getThemesForProvider(activeProvider);
+        if (themes.length > 1) {
+            themeGroup.style.display = '';
+            // Reset theme to 'all' when switching providers
+            activeTheme = 'all';
+            themeGroup.querySelectorAll('.filter-btn').forEach(function(b) {
+                b.classList.toggle('active', b.getAttribute('data-value') === 'all');
+            });
+        } else {
+            themeGroup.style.display = 'none';
+            activeTheme = 'all';
+        }
+    }
+
+    function updateGridLayout() {
+        var grid = document.getElementById('gallery-grid');
+        var visible = grid.querySelectorAll('.gallery-item:not(.hidden)');
+        grid.classList.toggle('single-item', visible.length === 1);
+    }
 
     document.querySelectorAll('.filter-btn').forEach(function(btn) {
         btn.addEventListener('click', function() {
             var group = this.getAttribute('data-filter');
             var value = this.getAttribute('data-value');
 
-            // Update active button in this group
             this.parentElement.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
             this.classList.add('active');
 
+            if (group === 'provider') {
+                activeProvider = value;
+                updateThemeFilter();
+            }
             if (group === 'theme') activeTheme = value;
-            if (group === 'provider') activeProvider = value;
 
             applyFilters();
         });
@@ -2224,9 +2275,12 @@ function copyInstallCmd(el) {
         });
         var empty = document.getElementById('gallery-empty');
         if (empty) empty.style.display = visibleCount === 0 ? '' : 'none';
+        updateGridLayout();
     }
 
-    // Initial filter applied via HTML classes (light + synthetic visible by default)
+    // Show theme filter for Synthetic (has light + dark)
+    updateThemeFilter();
+    applyFilters();
 })();
 
 /* Lightbox with navigation + zoom */
