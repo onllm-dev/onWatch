@@ -443,6 +443,15 @@ a:hover { text-decoration: underline; }
   text-align: center;
 }
 
+.hero-badges {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
 .hero-badge {
   display: inline-flex;
   align-items: center;
@@ -452,6 +461,15 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
   color: var(--accent-teal);
   background: var(--accent-teal-muted);
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.hero-badge:hover { opacity: 0.8; text-decoration: none; }
+
+.hero-badge-onllm {
+  color: var(--accent-peach);
+  background: rgba(245, 158, 11, 0.1);
   border: 1px solid color-mix(in srgb, var(--accent-teal) 20%, transparent);
   border-radius: var(--radius-full);
   margin-bottom: 24px;
@@ -1840,9 +1858,15 @@ a:hover { text-decoration: underline; }
 <section class="hero">
     <div class="container">
         <div class="fade-in">
-            <div class="hero-badge">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-                Free &amp; Open Source
+            <div class="hero-badges">
+                <a href="https://github.com/onllm-dev/syntrack" class="hero-badge" target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                    Free &amp; Open Source
+                </a>
+                <a href="https://onllm.dev" class="hero-badge hero-badge-onllm" target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/></svg>
+                    Powered by onllm.dev
+                </a>
             </div>
             <h1>Know your <span class="accent">AI API</span> usage before it knows you</h1>
             <p class="hero-desc">Open-source background agent that tracks your Synthetic and Z.ai API quota usage across every reset cycle. Historical trends, rate projections, per-session tracking, and a Material Design 3 dashboard. Single binary, ~25&nbsp;MB RAM, zero telemetry. Works with Cline, Roo Code, Kilo Code, Claude Code, and any tool using Synthetic or Z.ai API keys.</p>
@@ -2697,9 +2721,8 @@ a:hover { text-decoration: underline; }
                 <a href="https://github.com/onllm-dev/syntrack" class="footer-link" target="_blank" rel="noopener noreferrer">GitHub</a>
                 <a href="https://github.com/onllm-dev/syntrack/releases" class="footer-link" target="_blank" rel="noopener noreferrer">Releases</a>
                 <a href="https://github.com/onllm-dev/syntrack/blob/main/LICENSE" class="footer-link" target="_blank" rel="noopener noreferrer">GPL-3.0 License</a>
-                <a href="https://onllm.dev" class="footer-link" target="_blank" rel="noopener noreferrer">onllm.dev</a>
             </div>
-            <div class="footer-copy">Powered by <a href="https://onllm.dev" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">onllm.dev</a></div>
+            <div class="footer-copy">Powered by <a href="https://onllm.dev" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">onllm.dev</a> &middot; Built with <a href="https://www.chartjs.org/" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">Chart.js</a> &middot; <a href="https://pkg.go.dev/modernc.org/sqlite" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">modernc.org/sqlite</a></div>
         </div>
     </div>
 </footer>
