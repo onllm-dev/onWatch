@@ -320,7 +320,7 @@ func run() error {
 	}
 	if hasCommand("--version", "-v", "version") {
 		fmt.Printf("SynTrack v%s\n", version)
-		fmt.Println("https://github.com/onllm-dev/syntrack")
+		fmt.Println("github.com/onllm-dev/syntrack")
 		fmt.Println("Powered by onllm.dev")
 		return nil
 	}
