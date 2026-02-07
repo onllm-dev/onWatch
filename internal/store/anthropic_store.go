@@ -328,6 +328,42 @@ func (s *Store) QueryAnthropicCyclesSince(quotaName string, since time.Time) ([]
 	return cycles, rows.Err()
 }
 
+// UtilizationPoint is a lightweight time+utilization pair for rate computation.
+type UtilizationPoint struct {
+	CapturedAt  time.Time
+	Utilization float64
+}
+
+// QueryAnthropicUtilizationSeries returns per-quota utilization points since a given time.
+// This is lighter than QueryAnthropicRange as it avoids loading all quotas per snapshot.
+func (s *Store) QueryAnthropicUtilizationSeries(quotaName string, since time.Time) ([]UtilizationPoint, error) {
+	rows, err := s.db.Query(
+		`SELECT s.captured_at, qv.utilization
+		FROM anthropic_quota_values qv
+		JOIN anthropic_snapshots s ON s.id = qv.snapshot_id
+		WHERE qv.quota_name = ? AND s.captured_at >= ?
+		ORDER BY s.captured_at ASC`,
+		quotaName, since.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query utilization series: %w", err)
+	}
+	defer rows.Close()
+
+	var points []UtilizationPoint
+	for rows.Next() {
+		var capturedAt string
+		var util float64
+		if err := rows.Scan(&capturedAt, &util); err != nil {
+			return nil, fmt.Errorf("failed to scan utilization point: %w", err)
+		}
+		t, _ := time.Parse(time.RFC3339Nano, capturedAt)
+		points = append(points, UtilizationPoint{CapturedAt: t, Utilization: util})
+	}
+
+	return points, rows.Err()
+}
+
 // QueryAllAnthropicQuotaNames returns all distinct quota names from Anthropic reset cycles.
 func (s *Store) QueryAllAnthropicQuotaNames() ([]string, error) {
 	rows, err := s.db.Query(

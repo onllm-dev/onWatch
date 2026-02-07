@@ -248,11 +248,11 @@ const anthropicQuotaIcons = {
   extra_usage: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>' // pie-chart
 };
 
-// Anthropic chart colors (coral / pink / cyan — visually distinct per quota)
+// Anthropic chart colors (coral / amber / indigo — visually distinct per quota)
 const anthropicChartColors = [
   { border: '#D97757', bg: 'rgba(217, 119, 87, 0.08)' },   // five_hour — coral
-  { border: '#EC4899', bg: 'rgba(236, 72, 153, 0.08)' },   // seven_day — pink
-  { border: '#06B6D4', bg: 'rgba(6, 182, 212, 0.08)' },    // seven_day_sonnet — cyan
+  { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },   // seven_day — amber
+  { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },   // seven_day_sonnet — indigo
   { border: '#A855F7', bg: 'rgba(168, 85, 247, 0.08)' },   // monthly_limit — violet
   { border: '#14B8A6', bg: 'rgba(20, 184, 166, 0.08)' }    // extra_usage — teal
 ];
