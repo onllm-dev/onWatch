@@ -1,16 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
-      publish:
-        description: 'Create GitHub Release with binaries'
-        required: false
-        type: boolean
-        default: false
+      tag:
+        description: 'Tag to release (e.g. v1.6.0). Must already exist.'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -41,6 +37,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -72,14 +70,11 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Read version
-        id: version
-        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -94,7 +89,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="v${{ steps.version.outputs.version }}"
-          gh release create "$tag" dist/* \
-            --title "SynTrack $tag" \
+          gh release create "${{ inputs.tag }}" dist/* \
+            --title "SynTrack ${{ inputs.tag }}" \
             --generate-notes
