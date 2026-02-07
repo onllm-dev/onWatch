@@ -159,8 +159,8 @@ func SessionAuthMiddleware(sessions *SessionStore, logger ...*slog.Logger) func(
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 
-			// Static assets bypass authentication
-			if isStaticAsset(path) {
+			// Static assets and public files bypass authentication
+			if isStaticAsset(path) || isPublicFile(path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -280,6 +280,11 @@ func extractCredentials(r *http.Request) (username, password string, ok bool) {
 // isStaticAsset checks if the request path is for a static asset.
 func isStaticAsset(path string) bool {
 	return strings.HasPrefix(path, "/static/")
+}
+
+// isPublicFile checks if the request path is for a public root-level file.
+func isPublicFile(path string) bool {
+	return path == "/robots.txt" || path == "/llms.txt"
 }
 
 // writeUnauthorized sends a 401 Unauthorized response.
