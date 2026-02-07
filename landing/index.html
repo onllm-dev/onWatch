@@ -776,6 +776,36 @@ a:hover { text-decoration: underline; }
   align-items: center;
   justify-content: space-between;
 }
+.ant-quota-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ant-quota-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  min-width: 90px;
+}
+.ant-quota-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+  min-width: 48px;
+}
+.ant-quota-countdown {
+  margin-left: auto;
+}
+.ant-quota-badge { flex-shrink: 0; }
+.ant-quota-reset {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 
 .mock-badge {
   font-size: 9px;
@@ -2239,72 +2269,65 @@ a:hover { text-decoration: underline; }
                             </div>
                         </div>
                     </div>
-                    <!-- Anthropic view -->
+                    <!-- Anthropic view — single combined card with vertical sub-rows -->
                     <div class="mockup-view" id="mock-anthropic">
-                        <div class="mockup-cards">
-                            <div class="mock-card">
-                                <div class="mock-card-header">
-                                    <div class="mock-card-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Five-Hour</div>
-                                    <div class="mock-card-countdown">2h 18m</div>
+                        <div class="mockup-cards" style="grid-template-columns:1fr;">
+                            <div class="mock-card" style="padding:14px 16px;">
+                                <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+                                    <div style="width:18px;height:18px;border-radius:50%;background:#D97757;display:flex;align-items:center;justify-content:center;">
+                                        <svg viewBox="0 0 24 24" width="10" height="10" fill="none"><path d="M12 6l-6.5 13h13L12 6z" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>
+                                    </div>
+                                    <span style="font-size:11px;font-weight:600;color:var(--text-primary);">Anthropic</span>
                                 </div>
-                                <div class="mock-card-value" id="anim-ant-5h">0%</div>
-                                <div class="mock-card-sub">50% utilization</div>
-                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-ant-5h" style="width:0%;background:var(--status-warning)"></div></div>
-                                <div class="mock-card-footer">
-                                    <span class="mock-badge warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Warning</span>
-                                    <span class="mock-reset" id="mock-reset-ant-5h"></span>
+                                <div class="ant-quota-row">
+                                    <div class="ant-quota-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Five-Hour</div>
+                                    <div class="ant-quota-value" id="anim-ant-5h">0%</div>
+                                    <div class="ant-quota-countdown mock-card-countdown">2h 18m</div>
+                                    <div class="ant-quota-badge"><span class="mock-badge warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Warning</span></div>
+                                    <div class="ant-quota-reset mock-reset" id="mock-reset-ant-5h"></div>
                                 </div>
-                            </div>
-                            <div class="mock-card">
-                                <div class="mock-card-header">
-                                    <div class="mock-card-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Seven-Day</div>
-                                    <div class="mock-card-countdown">4d 12h</div>
+                                <div class="mock-progress" style="margin:4px 0 10px;"><div class="mock-progress-fill" id="prog-ant-5h" style="width:0%;background:var(--status-warning)"></div></div>
+                                <div class="ant-quota-row">
+                                    <div class="ant-quota-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Seven-Day</div>
+                                    <div class="ant-quota-value" id="anim-ant-7d">0%</div>
+                                    <div class="ant-quota-countdown mock-card-countdown">4d 12h</div>
+                                    <div class="ant-quota-badge"><span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span></div>
+                                    <div class="ant-quota-reset mock-reset" id="mock-reset-ant-7d"></div>
                                 </div>
-                                <div class="mock-card-value" id="anim-ant-7d">0%</div>
-                                <div class="mock-card-sub">31% utilization</div>
-                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-ant-7d" style="width:0%;background:var(--status-healthy)"></div></div>
-                                <div class="mock-card-footer">
-                                    <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
-                                    <span class="mock-reset" id="mock-reset-ant-7d"></span>
+                                <div class="mock-progress" style="margin:4px 0 10px;"><div class="mock-progress-fill" id="prog-ant-7d" style="width:0%;background:var(--status-healthy)"></div></div>
+                                <div class="ant-quota-row">
+                                    <div class="ant-quota-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Sonnet (7-Day)</div>
+                                    <div class="ant-quota-value" id="anim-ant-son">0%</div>
+                                    <div class="ant-quota-countdown mock-card-countdown">4d 12h</div>
+                                    <div class="ant-quota-badge"><span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span></div>
+                                    <div class="ant-quota-reset mock-reset" id="mock-reset-ant-son"></div>
                                 </div>
-                            </div>
-                            <div class="mock-card">
-                                <div class="mock-card-header">
-                                    <div class="mock-card-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Sonnet (7-Day)</div>
-                                    <div class="mock-card-countdown">4d 12h</div>
-                                </div>
-                                <div class="mock-card-value" id="anim-ant-son">0%</div>
-                                <div class="mock-card-sub">1% utilization</div>
-                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-ant-son" style="width:0%;background:var(--status-healthy)"></div></div>
-                                <div class="mock-card-footer">
-                                    <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
-                                    <span class="mock-reset" id="mock-reset-ant-son"></span>
-                                </div>
+                                <div class="mock-progress" style="margin:4px 0 0;"><div class="mock-progress-fill" id="prog-ant-son" style="width:0%;background:var(--status-healthy)"></div></div>
                             </div>
                         </div>
                     </div>
                     <!-- All providers view -->
                     <div class="mockup-view" id="mock-all" style="display:none;">
                         <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#D97757;margin:0 0 6px;opacity:0.7;">Anthropic</div>
-                        <div class="mockup-cards" style="grid-template-columns: repeat(3, 1fr); gap:8px; margin-bottom:6px;">
-                            <div class="mock-card" style="padding:10px 12px;">
-                                <div class="mock-card-header"><div class="mock-card-label" style="font-size:9px;">Five-Hour</div><div class="mock-card-countdown" style="font-size:8px;padding:1px 4px;">2h 18m</div></div>
-                                <div class="mock-card-value" id="anim-all-ant5h" style="font-size:16px;">0%</div>
-                                <div class="mock-card-sub" style="font-size:9px;">50% utilization</div>
-                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-all-ant5h" style="width:0%;background:var(--status-warning)"></div></div>
+                        <div class="mock-card" style="padding:8px 10px;margin-bottom:6px;">
+                            <div class="ant-quota-row" style="font-size:8px;">
+                                <div class="ant-quota-label" style="font-size:8px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:10px;height:10px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Five-Hour</div>
+                                <div class="ant-quota-value" id="anim-all-ant5h" style="font-size:13px;">0%</div>
+                                <div class="ant-quota-countdown mock-card-countdown" style="font-size:7px;padding:1px 3px;">2h 18m</div>
                             </div>
-                            <div class="mock-card" style="padding:10px 12px;">
-                                <div class="mock-card-header"><div class="mock-card-label" style="font-size:9px;">Seven-Day</div><div class="mock-card-countdown" style="font-size:8px;padding:1px 4px;">4d 12h</div></div>
-                                <div class="mock-card-value" id="anim-all-ant7d" style="font-size:16px;">0%</div>
-                                <div class="mock-card-sub" style="font-size:9px;">31% utilization</div>
-                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-all-ant7d" style="width:0%;background:var(--status-healthy)"></div></div>
+                            <div class="mock-progress" style="margin:3px 0 6px;height:3px;"><div class="mock-progress-fill" id="prog-all-ant5h" style="width:0%;background:var(--status-warning)"></div></div>
+                            <div class="ant-quota-row" style="font-size:8px;">
+                                <div class="ant-quota-label" style="font-size:8px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:10px;height:10px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Seven-Day</div>
+                                <div class="ant-quota-value" id="anim-all-ant7d" style="font-size:13px;">0%</div>
+                                <div class="ant-quota-countdown mock-card-countdown" style="font-size:7px;padding:1px 3px;">4d 12h</div>
                             </div>
-                            <div class="mock-card" style="padding:10px 12px;">
-                                <div class="mock-card-header"><div class="mock-card-label" style="font-size:9px;">Sonnet (7d)</div><div class="mock-card-countdown" style="font-size:8px;padding:1px 4px;">4d 12h</div></div>
-                                <div class="mock-card-value" id="anim-all-antson" style="font-size:16px;">0%</div>
-                                <div class="mock-card-sub" style="font-size:9px;">1% utilization</div>
-                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-all-antson" style="width:0%;background:var(--status-healthy)"></div></div>
+                            <div class="mock-progress" style="margin:3px 0 6px;height:3px;"><div class="mock-progress-fill" id="prog-all-ant7d" style="width:0%;background:var(--status-healthy)"></div></div>
+                            <div class="ant-quota-row" style="font-size:8px;">
+                                <div class="ant-quota-label" style="font-size:8px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:10px;height:10px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Sonnet (7d)</div>
+                                <div class="ant-quota-value" id="anim-all-antson" style="font-size:13px;">0%</div>
+                                <div class="ant-quota-countdown mock-card-countdown" style="font-size:7px;padding:1px 3px;">4d 12h</div>
                             </div>
+                            <div class="mock-progress" style="margin:3px 0 0;height:3px;"><div class="mock-progress-fill" id="prog-all-antson" style="width:0%;background:var(--status-healthy)"></div></div>
                         </div>
                         <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent-teal);margin:8px 0 6px;opacity:0.7;">Synthetic</div>
                         <div class="mockup-cards" style="grid-template-columns: repeat(3, 1fr); gap:8px; margin-bottom:6px;">
