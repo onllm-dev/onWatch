@@ -201,7 +201,7 @@ func TestStore_CreateAndCloseSession(t *testing.T) {
 	sessionID := "test-session-123"
 	startedAt := time.Now().UTC()
 
-	err = s.CreateSession(sessionID, startedAt, 60)
+	err = s.CreateSession(sessionID, startedAt, 60, "synthetic")
 	if err != nil {
 		t.Fatalf("CreateSession failed: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestStore_UpdateSessionMaxRequests(t *testing.T) {
 	defer s.Close()
 
 	sessionID := "test-session"
-	err = s.CreateSession(sessionID, time.Now(), 60)
+	err = s.CreateSession(sessionID, time.Now(), 60, "synthetic")
 	if err != nil {
 		t.Fatalf("CreateSession failed: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestStore_IncrementSnapshotCount(t *testing.T) {
 	defer s.Close()
 
 	sessionID := "test-session"
-	err = s.CreateSession(sessionID, time.Now(), 60)
+	err = s.CreateSession(sessionID, time.Now(), 60, "synthetic")
 	if err != nil {
 		t.Fatalf("CreateSession failed: %v", err)
 	}
