@@ -343,11 +343,14 @@ func (s *Store) QueryRange(start, end time.Time) ([]*api.Snapshot, error) {
 	return snapshots, rows.Err()
 }
 
-// CreateSession creates a new session
-func (s *Store) CreateSession(sessionID string, startedAt time.Time, pollInterval int) error {
+// CreateSession creates a new session with the given provider
+func (s *Store) CreateSession(sessionID string, startedAt time.Time, pollInterval int, provider string) error {
+	if provider == "" {
+		provider = "synthetic"
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO sessions (id, started_at, poll_interval) VALUES (?, ?, ?)`,
-		sessionID, startedAt.Format(time.RFC3339Nano), pollInterval,
+		`INSERT INTO sessions (id, started_at, poll_interval, provider) VALUES (?, ?, ?, ?)`,
+		sessionID, startedAt.Format(time.RFC3339Nano), pollInterval, provider,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
@@ -442,13 +445,20 @@ func (s *Store) QueryActiveSession() (*Session, error) {
 	return &session, nil
 }
 
-// QuerySessionHistory returns all sessions ordered by start time
-func (s *Store) QuerySessionHistory() ([]*Session, error) {
-	rows, err := s.db.Query(
-		`SELECT id, started_at, ended_at, poll_interval,
+// QuerySessionHistory returns sessions ordered by start time, optionally filtered by provider.
+// If provider is empty, all sessions are returned.
+func (s *Store) QuerySessionHistory(provider ...string) ([]*Session, error) {
+	query := `SELECT id, started_at, ended_at, poll_interval,
 		 max_sub_requests, max_search_requests, max_tool_requests, snapshot_count
-		FROM sessions ORDER BY started_at DESC`,
-	)
+		FROM sessions`
+	var args []interface{}
+	if len(provider) > 0 && provider[0] != "" {
+		query += ` WHERE provider = ?`
+		args = append(args, provider[0])
+	}
+	query += ` ORDER BY started_at DESC`
+
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sessions: %w", err)
 	}

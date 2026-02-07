@@ -950,8 +950,7 @@ func buildZaiTimeSummary(snapshot *api.ZaiSnapshot) map[string]interface{} {
 
 // Sessions returns session data (API endpoint)
 func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
-	// Note: Sessions are provider-agnostic for now, but we validate the provider parameter
-	_, err := h.getProviderFromRequest(r)
+	provider, err := h.getProviderFromRequest(r)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -962,7 +961,7 @@ func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := h.store.QuerySessionHistory()
+	sessions, err := h.store.QuerySessionHistory(provider)
 	if err != nil {
 		h.logger.Error("failed to query sessions", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query sessions")

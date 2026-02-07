@@ -283,6 +283,13 @@ func run() error {
 
 	logger.Info("Database opened", "path", cfg.DBPath)
 
+	// Close any orphaned sessions from previous runs (e.g., process was killed)
+	if closed, err := db.CloseOrphanedSessions(); err != nil {
+		logger.Warn("Failed to close orphaned sessions", "error", err)
+	} else if closed > 0 {
+		logger.Info("Closed orphaned sessions", "count", closed)
+	}
+
 	// Create API clients based on configured providers
 	var syntheticClient *api.Client
 	var zaiClient *api.ZaiClient

@@ -531,8 +531,8 @@ func TestHandler_Sessions_ReturnsList(t *testing.T) {
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(s, nil, nil, nil, cfg)
 
-	s.CreateSession("session-1", time.Now().Add(-2*time.Hour), 60)
-	s.CreateSession("session-2", time.Now().Add(-1*time.Hour), 60)
+	s.CreateSession("session-1", time.Now().Add(-2*time.Hour), 60, "synthetic")
+	s.CreateSession("session-2", time.Now().Add(-1*time.Hour), 60, "synthetic")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
@@ -559,7 +559,7 @@ func TestHandler_Sessions_IncludesMaxRequests(t *testing.T) {
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(s, nil, nil, nil, cfg)
 
-	s.CreateSession("session-1", time.Now(), 60)
+	s.CreateSession("session-1", time.Now(), 60, "synthetic")
 	s.UpdateSessionMaxRequests("session-1", 100, 20, 50)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
@@ -589,8 +589,8 @@ func TestHandler_Sessions_IncludesActiveSession(t *testing.T) {
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(s, nil, nil, nil, cfg)
 
-	s.CreateSession("active-session", time.Now(), 60)
-	s.CreateSession("closed-session", time.Now().Add(-2*time.Hour), 60)
+	s.CreateSession("active-session", time.Now(), 60, "synthetic")
+	s.CreateSession("closed-session", time.Now().Add(-2*time.Hour), 60, "synthetic")
 	s.CloseSession("closed-session", time.Now().Add(-1*time.Hour))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
