@@ -1,10 +1,18 @@
 # SynTrack
 
-Track your [Synthetic](https://synthetic.new) and [Z.ai](https://z.ai) API quota usage over time. SynTrack polls quota endpoints, stores snapshots in SQLite, and serves a dashboard that shows what your provider doesn't: historical trends, reset cycle detection, consumption rates, and projections.
+**SynTrack** is a free, open-source CLI tool that tracks [Synthetic](https://synthetic.new) and [Z.ai](https://z.ai) API quota usage in real time. It runs as a lightweight background agent (~25 MB RAM), polls quota endpoints at configurable intervals, stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
+
+SynTrack fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session intelligence that developers actually need. It works with any tool that uses Synthetic or Z.ai API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Cursor**, **Windsurf**, and others.
+
+**Zero telemetry. Single binary. All data stays on your machine.**
+
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8.svg)](https://go.dev)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#quick-start)
 
 ![Dashboard Dark Mode](./screenshots/dashboard-dark.png)
 
-> Powered by [onllm.dev](https://onllm.dev)
+> Powered by [onllm.dev](https://onllm.dev) | [Landing Page](https://syntrack.onllm.dev)
 
 ---
 
@@ -54,7 +62,7 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 
 ---
 
-## Features
+## What SynTrack Tracks (That Your Provider Doesn't)
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -92,6 +100,43 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 
 ---
 
+## Who Is SynTrack For?
+
+| Audience | Pain Point | How SynTrack Helps |
+|----------|-----------|-------------------|
+| **Solo developers & freelancers** using Cline, Roo Code, or Kilo Code with Synthetic/Z.ai | Budget anxiety -- no visibility into quota burn rate, surprise throttling mid-task | Real-time rate projections, historical trends, live countdowns so you never get throttled unexpectedly |
+| **Small dev teams (3-20 people)** sharing API keys | No shared visibility into who's consuming what, impossible to budget next month | Shared dashboard with session tracking, cycle history for budget planning |
+| **DevOps & platform engineers** | Shadow AI usage with no FinOps for coding API subscriptions | Lightweight sidecar (~25 MB), SQLite data source for Grafana, REST API for monitoring stack integration |
+| **Privacy-conscious developers** in regulated industries | Can't use SaaS analytics that phone home; need local, auditable monitoring | Single binary, local SQLite, zero telemetry, GPL-3.0 source code, works air-gapped |
+| **Researchers & educators** on grants | Need per-session API cost attribution for grant reports and paper methodology | Per-session usage tracking, historical export via SQLite |
+| **Budget-conscious API users** paying $3-$60/month | Every request matters; no way to know if plan is underutilized or budget is at risk | Usage insights, plan capacity analysis, upgrade/downgrade recommendations via data |
+
+---
+
+## FAQ
+
+### How do I track my Synthetic API usage?
+
+Install SynTrack, set `SYNTHETIC_API_KEY` in your `.env`, and run `./syntrack`. It polls the Synthetic `/v2/quotas` endpoint every 60 seconds, stores historical data in SQLite, and serves a dashboard at `localhost:9211` showing subscription, search, and tool call quotas with live countdowns, rate projections, and reset cycle history.
+
+### How do I monitor Z.ai (GLM Coding Plan) API quota?
+
+Set `ZAI_API_KEY` in your `.env`. SynTrack polls the Z.ai `/monitor/usage/quota/limit` endpoint and tracks token limits, time limits, and tool call quotas. Both Synthetic and Z.ai can run simultaneously.
+
+### Does SynTrack work with Cline, Roo Code, Kilo Code, or Claude Code?
+
+Yes. SynTrack monitors the API provider (Synthetic or Z.ai), not the coding tool. Any tool that uses a Synthetic or Z.ai API key -- including Cline, Roo Code, Kilo Code, Claude Code, Cursor, Windsurf, and others -- will have its usage tracked automatically.
+
+### Does SynTrack send any data to external servers?
+
+No. Zero telemetry. All data stays in a local SQLite file. The only outbound calls are to the Synthetic and Z.ai quota APIs you configure. Fully auditable on [GitHub](https://github.com/onllm-dev/syntrack) (GPL-3.0).
+
+### How much memory does SynTrack use?
+
+~25-30 MB idle, ~50 MB during dashboard render. Lighter than a single browser tab.
+
+---
+
 ## Architecture
 
 ```
@@ -122,16 +167,6 @@ Both agents run as parallel goroutines. Each polls its API at the configured int
 
 ## CLI Reference
 
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `syntrack` | Start the agent (background mode) |
-| `syntrack stop` or `--stop` | Stop the running instance |
-| `syntrack status` or `--status` | Show running instance status |
-
-### Options
-
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
 | `--interval` | `SYNTRACK_POLL_INTERVAL` | `60` | Poll interval in seconds (10--3600) |
@@ -140,7 +175,6 @@ Both agents run as parallel goroutines. Each polls its API at the configured int
 | `--debug` | -- | `false` | Foreground mode, log to stdout |
 | `--test` | -- | `false` | Isolated PID/log files for testing |
 | `--version` | -- | -- | Print version and exit |
-| `--help` | -- | -- | Print help and exit |
 
 Additional environment variables:
 
@@ -189,7 +223,7 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
     └── syntrack.db       # SQLite database (WAL mode)
 ```
 
-Override with `--db` or `SYNTRACK_DB_PATH` to use a custom location. On first run, if a database exists at `./syntrack.db`, SynTrack auto-migrates it to the new path.
+On first run, if a database exists at `./syntrack.db`, SynTrack auto-migrates it to `~/.syntrack/data/`.
 
 ---
 
@@ -210,7 +244,6 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for build instructions, cross-compilation, 
 make build          # Production binary
 make test           # Tests with race detection
 make run            # Build and run in debug mode
-make clean          # Remove artifacts
 make release-local  # Cross-compile for all platforms
 ```
 
