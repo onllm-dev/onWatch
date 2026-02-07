@@ -9,7 +9,7 @@
     <meta property="og:title" content="SynTrack - API Quota Tracker for AI Coding Tools">
     <meta property="og:description" content="Track your AI coding API usage with historical trends, reset cycle detection, and rate projections. Free and open source.">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://github.com/onllm-dev/syntrack">
+    <meta property="og:url" content="https://syntrack.onllm.dev">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='16' fill='%230D9488'/><g transform='translate(4 4)' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07'/></g></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -215,6 +215,45 @@ a:hover { text-decoration: underline; }
 }
 .nav-cta:hover { opacity: 0.9; text-decoration: none; }
 .nav-cta svg { width: 16px; height: 16px; }
+
+.nav-install-cmd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+}
+.nav-install-cmd:hover {
+  border-color: var(--accent-teal);
+  color: var(--text-secondary);
+}
+.nav-install-cmd code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav-install-cmd .copy-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+}
+.nav-install-cmd:hover .copy-icon { color: var(--accent-teal); }
+.nav-install-cmd.copied {
+  border-color: var(--status-healthy);
+  color: var(--status-healthy);
+}
+.nav-install-cmd.copied .copy-icon { color: var(--status-healthy); }
 
 .theme-toggle {
   display: flex;
@@ -746,6 +785,19 @@ a:hover { text-decoration: underline; }
   border-top: 1px solid var(--border-light);
 }
 
+.install-oneliner .code-block {
+  border: 2px solid var(--accent-teal);
+  box-shadow: 0 0 24px rgba(13, 148, 136, 0.12);
+}
+[data-theme="dark"] .install-oneliner .code-block {
+  box-shadow: 0 0 24px rgba(20, 184, 166, 0.15);
+}
+.install-oneliner .code-body {
+  font-size: 14px;
+  text-align: center;
+  padding: 20px 24px;
+}
+
 .install-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1011,6 +1063,7 @@ a:hover { text-decoration: underline; }
   .hero h1 { font-size: 32px; }
   .hero-desc { font-size: 16px; }
   .nav-links .nav-link { display: none; }
+  .nav-install-cmd { display: none; }
   .features-grid { grid-template-columns: 1fr; }
   .mockup-cards { grid-template-columns: 1fr; }
   .providers-grid { gap: 16px; flex-direction: column; }
@@ -1095,6 +1148,10 @@ a:hover { text-decoration: underline; }
                     <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
                 </svg>
             </button>
+            <div class="nav-install-cmd" onclick="copyInstallCmd(this)" title="Click to copy install command" role="button" tabindex="0" aria-label="Copy install command">
+                <code>curl -fsSL https://raw.githubusercontent.com/onllm-dev/syntrack/main/install.sh | bash</code>
+                <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </div>
             <a href="https://github.com/onllm-dev/syntrack" class="nav-cta" target="_blank" rel="noopener noreferrer">
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
                 GitHub
@@ -1330,65 +1387,78 @@ a:hover { text-decoration: underline; }
 <!-- Install -->
 <section class="install" id="install">
     <div class="container">
-        <div class="fade-in">
+        <div class="fade-in" style="text-align:center;margin-bottom:40px;">
             <div class="section-label">Quick Start</div>
-            <h2 class="section-title">Running in under a minute</h2>
-            <p class="section-desc">Download or build from source. Configure your API keys. Run.</p>
+            <h2 class="section-title">One command. That's it.</h2>
+            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Detects your OS, downloads the right binary, sets up a systemd service, and starts tracking.</p>
         </div>
-        <div class="install-grid fade-in">
+
+        <!-- One-liner hero -->
+        <div class="install-oneliner fade-in">
+            <div class="code-block" style="max-width:720px;margin:0 auto;">
+                <div class="code-header">
+                    <span class="code-lang">bash</span>
+                    <button class="code-copy" onclick="copyCode(this)" aria-label="Copy to clipboard">Copy</button>
+                </div>
+                <div class="code-body"><span class="code-cmd">curl</span> -fsSL https://raw.githubusercontent.com/onllm-dev/syntrack/main/install.sh | <span class="code-cmd">bash</span></div>
+            </div>
+        </div>
+
+        <!-- What the installer does -->
+        <div class="install-grid fade-in" style="margin-top:48px;">
             <div class="install-steps">
                 <div class="install-step">
                     <div class="step-num">1</div>
                     <div class="step-content">
-                        <h4>Download or build</h4>
-                        <p>Grab a release binary for macOS, Linux, or Windows. Or build from source with Go 1.25+.</p>
+                        <h4>Detects your platform</h4>
+                        <p>Identifies OS (macOS, Linux) and architecture (x86_64, ARM64). Downloads the matching binary to <code>~/.syntrack/</code>.</p>
                     </div>
                 </div>
                 <div class="install-step">
                     <div class="step-num">2</div>
                     <div class="step-content">
-                        <h4>Configure API keys</h4>
-                        <p>Copy <code>.env.example</code> to <code>.env</code> and add your Synthetic and/or Z.ai API keys.</p>
+                        <h4>Creates default config</h4>
+                        <p>Generates <code>~/.syntrack/.env</code> with sensible defaults. Add your Synthetic or Z.ai API key to start tracking.</p>
                     </div>
                 </div>
                 <div class="install-step">
                     <div class="step-num">3</div>
                     <div class="step-content">
-                        <h4>Start tracking</h4>
-                        <p>Run <code>./syntrack</code>. It daemonizes, polls every 60 seconds, and serves a dashboard at <code>:9211</code>.</p>
+                        <h4>Sets up service management</h4>
+                        <p>On Linux: creates a <code>systemd</code> user service with start, stop, status, and auto-restart. On macOS: self-daemonizes natively.</p>
                     </div>
                 </div>
                 <div class="install-step">
                     <div class="step-num">4</div>
                     <div class="step-content">
-                        <h4>View your dashboard</h4>
-                        <p>Open <code>http://localhost:9211</code> in your browser. Dark mode, live countdowns, charts, insights.</p>
+                        <h4>Starts tracking</h4>
+                        <p>Polls every 60 seconds, detects reset cycles, and serves a dashboard at <code>http://localhost:9211</code>.</p>
                     </div>
                 </div>
             </div>
             <div class="code-block">
                 <div class="code-header">
-                    <span class="code-lang">bash</span>
+                    <span class="code-lang">after install</span>
                     <button class="code-copy" onclick="copyCode(this)" aria-label="Copy to clipboard">Copy</button>
                 </div>
-                <div class="code-body"><span class="code-comment"># Download (macOS ARM64)</span>
-<span class="code-cmd">curl</span> -L -o syntrack \
-  https://github.com/onllm-dev/syntrack/releases/latest/download/syntrack-darwin-arm64
-<span class="code-cmd">chmod</span> +x syntrack
+                <div class="code-body"><span class="code-comment"># Edit config</span>
+<span class="code-cmd">nano</span> ~/.syntrack/.env
+
+<span class="code-comment"># Linux (systemd)</span>
+<span class="code-cmd">systemctl</span> --user start syntrack
+<span class="code-cmd">systemctl</span> --user stop syntrack
+<span class="code-cmd">systemctl</span> --user status syntrack
+<span class="code-cmd">journalctl</span> --user -u syntrack -f
+
+<span class="code-comment"># macOS</span>
+<span class="code-cmd">syntrack</span>            <span class="code-comment"># start (background)</span>
+<span class="code-cmd">syntrack</span> stop        <span class="code-comment"># stop</span>
+<span class="code-cmd">syntrack</span> status      <span class="code-comment"># check status</span>
+<span class="code-cmd">syntrack</span> --debug     <span class="code-comment"># foreground mode</span>
 
 <span class="code-comment"># Or build from source</span>
 <span class="code-cmd">git clone</span> https://github.com/onllm-dev/syntrack.git
-<span class="code-cmd">cd</span> syntrack && <span class="code-cmd">make</span> build
-
-<span class="code-comment"># Configure</span>
-<span class="code-cmd">cp</span> .env.example .env
-<span class="code-comment"># Edit .env with your API keys</span>
-
-<span class="code-comment"># Run</span>
-<span class="code-cmd">./syntrack</span>            <span class="code-comment"># background mode</span>
-<span class="code-cmd">./syntrack</span> --debug     <span class="code-comment"># foreground mode</span>
-<span class="code-cmd">./syntrack</span> stop        <span class="code-comment"># stop running instance</span>
-<span class="code-cmd">./syntrack</span> status      <span class="code-comment"># check if running</span></div>
+<span class="code-cmd">cd</span> syntrack && <span class="code-cmd">make</span> build</div>
             </div>
         </div>
     </div>
@@ -1590,6 +1660,19 @@ function copyCode(btn) {
     navigator.clipboard.writeText(text).then(function() {
         btn.textContent = 'Copied!';
         setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+    });
+}
+
+/* Copy nav install command */
+function copyInstallCmd(el) {
+    var cmd = 'curl -fsSL https://raw.githubusercontent.com/onllm-dev/syntrack/main/install.sh | bash';
+    navigator.clipboard.writeText(cmd).then(function() {
+        el.classList.add('copied');
+        el.querySelector('code').textContent = 'Copied!';
+        setTimeout(function() {
+            el.classList.remove('copied');
+            el.querySelector('code').textContent = cmd;
+        }, 2000);
     });
 }
 
