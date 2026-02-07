@@ -15,12 +15,14 @@ import (
 
 // AnthropicAgent manages the background polling loop for Anthropic quota tracking.
 type AnthropicAgent struct {
-	client    *api.AnthropicClient
-	store     *store.Store
-	tracker   *tracker.AnthropicTracker
-	interval  time.Duration
-	logger    *slog.Logger
-	sessionID string
+	client            *api.AnthropicClient
+	store             *store.Store
+	tracker           *tracker.AnthropicTracker
+	interval          time.Duration
+	logger            *slog.Logger
+	sessionID         string
+	sessionStartUtils map[string]float64 // per-quota starting utilization
+	totalSessionDelta float64            // cumulative utilization change across all quotas
 }
 
 // NewAnthropicAgent creates a new AnthropicAgent with the given dependencies.
@@ -112,7 +114,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 		}
 	}
 
-	// Update session max values: use highest utilization among quotas as "sub" value
+	// Track session deltas
 	var maxUtil float64
 	quotaCount := len(snapshot.Quotas)
 	for _, q := range snapshot.Quotas {
@@ -121,11 +123,31 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 		}
 	}
 
+	if a.sessionStartUtils == nil {
+		// First poll: record starting baselines
+		a.sessionStartUtils = make(map[string]float64)
+		for _, q := range snapshot.Quotas {
+			a.sessionStartUtils[q.Name] = q.Utilization
+		}
+	} else {
+		// Subsequent polls: accumulate positive deltas
+		for _, q := range snapshot.Quotas {
+			if startUtil, ok := a.sessionStartUtils[q.Name]; ok {
+				delta := q.Utilization - startUtil
+				if delta > 0 {
+					a.totalSessionDelta += delta
+				}
+			}
+			// Update baseline for next delta
+			a.sessionStartUtils[q.Name] = q.Utilization
+		}
+	}
+
 	if err := a.store.UpdateSessionMaxRequests(
 		a.sessionID,
 		maxUtil,
-		0,
-		0,
+		a.totalSessionDelta,
+		float64(quotaCount),
 	); err != nil {
 		a.logger.Error("Failed to update Anthropic session max", "error", err)
 	}
@@ -135,6 +157,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 		"session_id", a.sessionID,
 		"quota_count", quotaCount,
 		"max_utilization", maxUtil,
+		"session_delta", a.totalSessionDelta,
 	)
 }
 

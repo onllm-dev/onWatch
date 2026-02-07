@@ -539,8 +539,8 @@ func TestAgent_CreatesSessionOnStart(t *testing.T) {
 
 	// Poll for session creation (CI runners can be slow)
 	var found bool
-	for i := 0; i < 30; i++ {
-		time.Sleep(15 * time.Millisecond)
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
 		session, _ = str.QueryActiveSession()
 		if session != nil {
 			found = true

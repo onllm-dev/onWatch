@@ -92,10 +92,18 @@ func (t *AnthropicTracker) processQuota(quota api.AnthropicQuota, capturedAt tim
 		return nil
 	}
 
-	// Check for reset: compare ResetsAt timestamps
+	// Check for reset: compare ResetsAt timestamps with 10-minute tolerance.
+	// Anthropic's resets_at jitters by up to ±1 second on each API response
+	// (e.g., 22:59:59.709 vs 23:00:00.313), sometimes crossing minute
+	// boundaries. Real resets shift by ≥5 hours (the shortest quota window),
+	// so any change <10 minutes is guaranteed to be API jitter.
 	resetDetected := false
 	if quota.ResetsAt != nil && cycle.ResetsAt != nil {
-		if !quota.ResetsAt.Equal(*cycle.ResetsAt) {
+		diff := quota.ResetsAt.Sub(*cycle.ResetsAt)
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > 10*time.Minute {
 			resetDetected = true
 		}
 	} else if quota.ResetsAt != nil && cycle.ResetsAt == nil {
@@ -205,8 +213,8 @@ func (t *AnthropicTracker) UsageSummary(quotaName string) (*AnthropicSummary, er
 
 		for _, cycle := range history {
 			totalDelta += cycle.TotalDelta
-			if cycle.TotalDelta > summary.PeakCycle {
-				summary.PeakCycle = cycle.TotalDelta
+			if cycle.PeakUtilization > summary.PeakCycle {
+				summary.PeakCycle = cycle.PeakUtilization
 			}
 		}
 		summary.AvgPerCycle = totalDelta / float64(len(history))
@@ -216,6 +224,9 @@ func (t *AnthropicTracker) UsageSummary(quotaName string) (*AnthropicSummary, er
 	// Add active cycle data
 	if activeCycle != nil {
 		summary.TotalTracked += activeCycle.TotalDelta
+		if activeCycle.PeakUtilization > summary.PeakCycle {
+			summary.PeakCycle = activeCycle.PeakUtilization
+		}
 		if activeCycle.ResetsAt != nil {
 			summary.ResetsAt = activeCycle.ResetsAt
 			summary.TimeUntilReset = time.Until(*activeCycle.ResetsAt)
@@ -240,14 +251,19 @@ func (t *AnthropicTracker) UsageSummary(quotaName string) (*AnthropicSummary, er
 				}
 			}
 
-			// Calculate rate from active cycle timing
+			// Calculate rate from tracked delta within this cycle
+			// Require at least 30 min of data for meaningful rate
 			elapsed := time.Since(activeCycle.CycleStart)
-			if elapsed.Hours() > 0 && summary.CurrentUtil > 0 {
-				summary.CurrentRate = summary.CurrentUtil / elapsed.Hours()
+			if elapsed.Minutes() >= 30 && activeCycle.TotalDelta > 0 {
+				summary.CurrentRate = activeCycle.TotalDelta / elapsed.Hours()
 				if summary.ResetsAt != nil {
 					hoursLeft := time.Until(*summary.ResetsAt).Hours()
 					if hoursLeft > 0 {
-						summary.ProjectedUtil = summary.CurrentUtil + (summary.CurrentRate * hoursLeft)
+						projected := summary.CurrentUtil + (summary.CurrentRate * hoursLeft)
+						if projected > 100 {
+							projected = 100
+						}
+						summary.ProjectedUtil = projected
 					}
 				}
 			}

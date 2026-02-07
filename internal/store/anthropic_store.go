@@ -289,3 +289,63 @@ func (s *Store) QueryAnthropicCycleHistory(quotaName string, limit ...int) ([]*A
 
 	return cycles, rows.Err()
 }
+
+// QueryAnthropicCyclesSince returns completed cycles for a quota since a given time.
+func (s *Store) QueryAnthropicCyclesSince(quotaName string, since time.Time) ([]*AnthropicResetCycle, error) {
+	rows, err := s.db.Query(
+		`SELECT id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
+		FROM anthropic_reset_cycles WHERE quota_name = ? AND cycle_end IS NOT NULL AND cycle_start >= ?
+		ORDER BY cycle_start DESC`,
+		quotaName, since.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query anthropic cycles since: %w", err)
+	}
+	defer rows.Close()
+
+	var cycles []*AnthropicResetCycle
+	for rows.Next() {
+		var cycle AnthropicResetCycle
+		var cycleStart, cycleEnd string
+		var resetsAt sql.NullString
+
+		if err := rows.Scan(&cycle.ID, &cycle.QuotaName, &cycleStart, &cycleEnd, &resetsAt,
+			&cycle.PeakUtilization, &cycle.TotalDelta); err != nil {
+			return nil, fmt.Errorf("failed to scan anthropic cycle: %w", err)
+		}
+
+		cycle.CycleStart, _ = time.Parse(time.RFC3339Nano, cycleStart)
+		t, _ := time.Parse(time.RFC3339Nano, cycleEnd)
+		cycle.CycleEnd = &t
+		if resetsAt.Valid {
+			rt, _ := time.Parse(time.RFC3339Nano, resetsAt.String)
+			cycle.ResetsAt = &rt
+		}
+
+		cycles = append(cycles, &cycle)
+	}
+
+	return cycles, rows.Err()
+}
+
+// QueryAllAnthropicQuotaNames returns all distinct quota names from Anthropic reset cycles.
+func (s *Store) QueryAllAnthropicQuotaNames() ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT quota_name FROM anthropic_reset_cycles ORDER BY quota_name`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query anthropic quota names: %w", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("failed to scan quota name: %w", err)
+		}
+		names = append(names, name)
+	}
+
+	return names, rows.Err()
+}
