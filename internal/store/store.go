@@ -142,6 +142,7 @@ func (s *Store) createTables() error {
 			time_current_value REAL NOT NULL,
 			time_remaining REAL NOT NULL,
 			time_percentage INTEGER NOT NULL,
+			time_usage_details TEXT NOT NULL DEFAULT '',
 			tokens_limit INTEGER NOT NULL,
 			tokens_unit INTEGER NOT NULL,
 			tokens_number INTEGER NOT NULL,
@@ -222,6 +223,18 @@ func (s *Store) migrateSchema() error {
 	`); err != nil {
 		if !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("failed to add provider to sessions: %w", err)
+		}
+	}
+
+	// Add time_usage_details column to zai_snapshots if not exists
+	if _, err := s.db.Exec(`
+		ALTER TABLE zai_snapshots ADD COLUMN time_usage_details TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			// Table might not exist yet (new install) — ignore
+			if !strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("failed to add time_usage_details to zai_snapshots: %w", err)
+			}
 		}
 	}
 
