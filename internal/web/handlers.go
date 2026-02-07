@@ -2086,7 +2086,8 @@ func (h *Handler) historyAnthropic(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, response)
 }
 
-// cyclesAnthropic returns Anthropic reset cycles.
+// cyclesAnthropic returns per-minute Anthropic snapshot data as cycle-shaped rows.
+// Each polled snapshot becomes a row, enabling 1m/5m/30m/1h grouping in the frontend.
 func (h *Handler) cyclesAnthropic(w http.ResponseWriter, r *http.Request) {
 	if h.store == nil {
 		respondJSON(w, http.StatusOK, []interface{}{})
@@ -2096,15 +2097,45 @@ func (h *Handler) cyclesAnthropic(w http.ResponseWriter, r *http.Request) {
 	if quotaName == "" {
 		quotaName = "five_hour"
 	}
-	response := []map[string]interface{}{}
-	if active, err := h.store.QueryActiveAnthropicCycle(quotaName); err == nil && active != nil {
-		response = append(response, anthropicCycleToMap(active))
+
+	rangeDur := parseInsightsRange(r.URL.Query().Get("range"))
+	since := time.Now().UTC().Add(-rangeDur)
+
+	points, err := h.store.QueryAnthropicUtilizationSeries(quotaName, since)
+	if err != nil {
+		h.logger.Error("failed to query Anthropic utilization series", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycles")
+		return
 	}
-	if history, err := h.store.QueryAnthropicCycleHistory(quotaName); err == nil {
-		for _, c := range history {
-			response = append(response, anthropicCycleToMap(c))
+
+	response := make([]map[string]interface{}, 0, len(points))
+	for i, pt := range points {
+		var delta float64
+		if i > 0 {
+			d := pt.Utilization - points[i-1].Utilization
+			if d > 0 {
+				delta = d
+			}
 		}
+		var cycleEnd interface{}
+		if i < len(points)-1 {
+			cycleEnd = points[i+1].CapturedAt.Format(time.RFC3339)
+		}
+		response = append(response, map[string]interface{}{
+			"id":              i + 1,
+			"quotaName":       quotaName,
+			"cycleStart":      pt.CapturedAt.Format(time.RFC3339),
+			"cycleEnd":        cycleEnd,
+			"peakUtilization": pt.Utilization,
+			"totalDelta":      delta,
+		})
 	}
+
+	// Reverse to DESC order (newest first) to match frontend expectations
+	for i, j := 0, len(response)-1; i < j; i, j = i+1, j-1 {
+		response[i], response[j] = response[j], response[i]
+	}
+
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -2220,60 +2251,124 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 	}
 
 	// ═══ Stats Cards ═══
-	// Show each quota's current utilization as stat cards
+	// Show avg window utilization per quota (current % already shown in KPI cards)
 	for _, q := range latest.Quotas {
-		resp.Stats = append(resp.Stats, insightStat{
-			Value: fmt.Sprintf("%.0f%%", q.Utilization),
-			Label: api.AnthropicDisplayName(q.Name),
-		})
+		if avg, ok := quotaBillingAvg[q.Name]; ok && quotaBillingCount[q.Name] > 0 {
+			resp.Stats = append(resp.Stats, insightStat{
+				Value: fmt.Sprintf("%.0f%%", avg),
+				Label: fmt.Sprintf("Avg %s", api.AnthropicDisplayName(q.Name)),
+			})
+		} else {
+			// No completed cycles yet — show current with "Now" label
+			resp.Stats = append(resp.Stats, insightStat{
+				Value: fmt.Sprintf("%.0f%%", q.Utilization),
+				Label: fmt.Sprintf("%s (now)", api.AnthropicDisplayName(q.Name)),
+			})
+		}
 	}
 
 	// ═══ Deep Insights ═══
 
-	// 1. Current Utilization per quota (always show — primary insight)
+	// 1. Burn Rate & Forecast per quota (replaces redundant current_* cards)
 	for _, q := range latest.Quotas {
-		key := fmt.Sprintf("current_%s", q.Name)
+		key := fmt.Sprintf("forecast_%s", q.Name)
 		if hidden[key] {
 			continue
 		}
-		sev := severityFromPercent(q.Utilization)
-		desc := fmt.Sprintf("%s quota is at %.1f%% utilization.", api.AnthropicDisplayName(q.Name), q.Utilization)
-		if peak, ok := quotaBillingPeak[q.Name]; ok && peak > q.Utilization {
-			desc += fmt.Sprintf(" Peak observed: %.0f%%.", peak)
+		s := summaries[q.Name]
+		rate := h.computeAnthropicRate(q.Name, q.Utilization, s)
+
+		var item insightItem
+		item.Key = key
+		item.Title = api.AnthropicDisplayName(q.Name)
+
+		// Build reset time string (reused across scenarios)
+		resetStr := ""
+		if s != nil && s.ResetsAt != nil {
+			resetStr = formatDuration(s.TimeUntilReset)
 		}
-		s, hasSummary := summaries[q.Name]
-		if hasSummary && s.ResetsAt != nil {
-			desc += fmt.Sprintf(" Resets in %s.", formatDuration(s.TimeUntilReset))
+
+		if !rate.HasRate {
+			// Insufficient data — show current % and collecting message
+			item.Type = "factual"
+			item.Severity = "info"
+			item.Metric = fmt.Sprintf("%.0f%%", q.Utilization)
+			item.Sublabel = "collecting data"
+			item.Desc = fmt.Sprintf("Currently at %.0f%%. Collecting data for rate analysis...", q.Utilization)
+		} else if rate.Rate < 0.01 {
+			// Idle — truly zero consumption
+			item.Type = "factual"
+			item.Severity = "info"
+			item.Metric = "Idle"
+			if resetStr != "" {
+				item.Sublabel = fmt.Sprintf("resets in %s", resetStr)
+			} else {
+				item.Sublabel = "no activity"
+			}
+			item.Desc = fmt.Sprintf("No consumption detected recently. Currently at %.0f%%.", q.Utilization)
+		} else if rate.ExhaustsFirst {
+			// Exhausts before reset — danger
+			item.Type = "recommendation"
+			item.Severity = "negative"
+			item.Metric = fmt.Sprintf("%.1f%%/hr", rate.Rate)
+			exhaustStr := formatDuration(rate.TimeToExhaust)
+			item.Sublabel = fmt.Sprintf("exhausts in %s", exhaustStr)
+			desc := fmt.Sprintf("At this rate, quota exhausts in %s.", exhaustStr)
+			if resetStr != "" {
+				desc += fmt.Sprintf(" Resets in %s. May hit limit before reset.", resetStr)
+			}
+			item.Desc = desc
+		} else if rate.ProjectedPct > 80 {
+			// High projected usage at reset — warning
+			item.Type = "recommendation"
+			item.Severity = "warning"
+			item.Metric = fmt.Sprintf("%.1f%%/hr", rate.Rate)
+			if resetStr != "" {
+				item.Sublabel = fmt.Sprintf("~%.0f%% at reset in %s", rate.ProjectedPct, resetStr)
+			} else {
+				item.Sublabel = fmt.Sprintf("projected ~%.0f%%", rate.ProjectedPct)
+			}
+			item.Desc = fmt.Sprintf("Consuming at %.1f%%/hr. Projected ~%.0f%% at reset.", rate.Rate, rate.ProjectedPct)
+		} else {
+			// Safe — comfortable headroom
+			item.Type = "factual"
+			item.Severity = "positive"
+			item.Metric = fmt.Sprintf("%.1f%%/hr", rate.Rate)
+			if resetStr != "" {
+				item.Sublabel = fmt.Sprintf("resets in %s", resetStr)
+			} else {
+				item.Sublabel = "comfortable headroom"
+			}
+			item.Desc = fmt.Sprintf("Consuming at %.1f%%/hr with comfortable headroom.", rate.Rate)
 		}
-		resp.Insights = append(resp.Insights, insightItem{
-			Key:  key,
-			Type: "factual", Severity: sev,
-			Title:    api.AnthropicDisplayName(q.Name),
-			Metric:   fmt.Sprintf("%.0f%%", q.Utilization),
-			Sublabel: "current",
-			Desc:     desc,
-		})
+
+		resp.Insights = append(resp.Insights, item)
 	}
 
-	// 2. Avg Peak Utilization (per quota, ≥2 real billing periods)
+	// 2. Avg Window Usage (per quota, ≥1 real billing period)
 	for _, name := range quotaNames {
 		count := quotaBillingCount[name]
-		if count < 2 {
+		if count < 1 {
 			continue
 		}
-		key := fmt.Sprintf("cycle_avg_%s", name)
+		key := fmt.Sprintf("avg_window_%s", name)
 		if hidden[key] {
 			continue
 		}
 		avg := quotaBillingAvg[name]
 		sev := severityFromPercent(avg)
+		displayName := api.AnthropicDisplayName(name)
+		periodWord := "window"
+		if count > 1 {
+			periodWord = "windows"
+		}
 		resp.Insights = append(resp.Insights, insightItem{
 			Key:  key,
 			Type: "recommendation", Severity: sev,
-			Title:    "Avg Peak Utilization",
+			Title:    "Avg Window Usage",
 			Metric:   fmt.Sprintf("%.0f%%", avg),
-			Sublabel: api.AnthropicDisplayName(name),
-			Desc:     fmt.Sprintf("Average peak utilization per %s reset period is %.1f%% across %d periods.", api.AnthropicDisplayName(name), avg, count),
+			Sublabel: displayName,
+			Desc:     fmt.Sprintf("Your %s windows average %.1f%% peak utilization across %d completed %s.", displayName, avg, count, periodWord),
 		})
 	}
 
@@ -2368,6 +2463,70 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 	}
 
 	return resp
+}
+
+// anthropicQuotaRate holds computed burn rate and forecast for an Anthropic quota.
+type anthropicQuotaRate struct {
+	Rate          float64       // %/hr (0 if idle)
+	HasRate       bool          // true if enough data to compute
+	TimeToExhaust time.Duration // time until 100% at current rate
+	TimeToReset   time.Duration // time until quota resets
+	ExhaustsFirst bool          // true if exhaustion < reset
+	ProjectedPct  float64       // projected % at reset time
+}
+
+// computeAnthropicRate computes burn rate from recent snapshots, falling back to tracker summary.
+func (h *Handler) computeAnthropicRate(quotaName string, currentUtil float64, summary *tracker.AnthropicSummary) anthropicQuotaRate {
+	var result anthropicQuotaRate
+
+	// Fill reset time from summary
+	if summary != nil && summary.ResetsAt != nil {
+		result.TimeToReset = time.Until(*summary.ResetsAt)
+	}
+
+	// Try recent snapshots (last 30 min) for a responsive burn rate
+	if h.store != nil {
+		points, err := h.store.QueryAnthropicUtilizationSeries(quotaName, time.Now().Add(-30*time.Minute))
+		if err == nil && len(points) >= 2 {
+			first := points[0]
+			last := points[len(points)-1]
+			elapsed := last.CapturedAt.Sub(first.CapturedAt)
+			if elapsed >= 5*time.Minute {
+				delta := last.Utilization - first.Utilization
+				if delta > 0 {
+					result.Rate = delta / elapsed.Hours()
+					result.HasRate = true
+				} else {
+					// Utilization didn't increase — idle
+					result.Rate = 0
+					result.HasRate = true
+				}
+			}
+		}
+	}
+
+	// Fall back to tracker's cycle-averaged rate
+	if !result.HasRate && summary != nil && summary.CurrentRate > 0 {
+		result.Rate = summary.CurrentRate
+		result.HasRate = true
+	}
+
+	// Compute derived values
+	if result.HasRate && result.Rate > 0 {
+		remaining := 100 - currentUtil
+		if remaining > 0 {
+			result.TimeToExhaust = time.Duration(remaining/result.Rate*float64(time.Hour))
+		}
+		if result.TimeToReset > 0 {
+			result.ProjectedPct = currentUtil + (result.Rate * result.TimeToReset.Hours())
+			if result.ProjectedPct > 100 {
+				result.ProjectedPct = 100
+			}
+			result.ExhaustsFirst = result.TimeToExhaust > 0 && result.TimeToExhaust < result.TimeToReset
+		}
+	}
+
+	return result
 }
 
 // severityFromPercent returns a severity string based on a usage percentage

@@ -1945,8 +1945,8 @@ func TestHandler_Current_WithAnthropicProvider(t *testing.T) {
 	if q0["name"] != "five_hour" {
 		t.Errorf("expected first quota name 'five_hour', got %v", q0["name"])
 	}
-	if q0["displayName"] != "5-Hour" {
-		t.Errorf("expected displayName '5-Hour', got %v", q0["displayName"])
+	if q0["displayName"] != "5-Hour Limit" {
+		t.Errorf("expected displayName '5-Hour Limit', got %v", q0["displayName"])
 	}
 	if _, ok := q0["status"]; !ok {
 		t.Error("expected status field")
@@ -2034,7 +2034,18 @@ func TestHandler_Cycles_WithAnthropicProvider(t *testing.T) {
 
 	now := time.Now().UTC()
 	resetsAt := now.Add(5 * time.Hour)
-	s.CreateAnthropicCycle("five_hour", now, &resetsAt)
+
+	// Insert 3 snapshots with increasing utilization
+	for i, util := range []float64{10.0, 25.0, 40.0} {
+		snap := &api.AnthropicSnapshot{
+			CapturedAt: now.Add(time.Duration(i) * time.Minute),
+			Quotas: []api.AnthropicQuota{
+				{Name: "five_hour", Utilization: util, ResetsAt: &resetsAt},
+			},
+			RawJSON: fmt.Sprintf(`{"five_hour":{"utilization":%v}}`, util),
+		}
+		s.InsertAnthropicSnapshot(snap)
+	}
 
 	cfg := createTestConfigWithAnthropic()
 	h := NewHandler(s, nil, nil, nil, cfg)
@@ -2052,12 +2063,33 @@ func TestHandler_Cycles_WithAnthropicProvider(t *testing.T) {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
 
-	if len(response) == 0 {
-		t.Fatal("expected at least one cycle")
+	if len(response) != 3 {
+		t.Fatalf("expected 3 snapshot rows, got %d", len(response))
 	}
 
+	// Response is DESC order (newest first)
 	if response[0]["quotaName"] != "five_hour" {
 		t.Errorf("expected quotaName to be five_hour, got %v", response[0]["quotaName"])
+	}
+
+	// Newest snapshot (util=40) should be first, with cycleEnd=nil (active)
+	if response[0]["cycleEnd"] != nil {
+		t.Errorf("expected latest snapshot cycleEnd to be nil, got %v", response[0]["cycleEnd"])
+	}
+
+	// Check peakUtilization of newest = 40.0
+	if peak, ok := response[0]["peakUtilization"].(float64); !ok || peak != 40.0 {
+		t.Errorf("expected peakUtilization=40.0, got %v", response[0]["peakUtilization"])
+	}
+
+	// Check delta computation: 40-25=15 for the newest snapshot
+	if delta, ok := response[0]["totalDelta"].(float64); !ok || delta != 15.0 {
+		t.Errorf("expected totalDelta=15.0, got %v", response[0]["totalDelta"])
+	}
+
+	// First snapshot (util=10, oldest) should have delta=0
+	if delta, ok := response[2]["totalDelta"].(float64); !ok || delta != 0.0 {
+		t.Errorf("expected first snapshot totalDelta=0, got %v", response[2]["totalDelta"])
 	}
 }
 

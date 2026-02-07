@@ -37,10 +37,10 @@ type AnthropicSnapshot struct {
 
 // anthropicDisplayNames maps API keys to human-readable labels.
 var anthropicDisplayNames = map[string]string{
-	"five_hour":        "5-Hour",
-	"seven_day":        "7-Day",
-	"seven_day_sonnet": "7-Day Sonnet",
-	"monthly_limit":    "Monthly",
+	"five_hour":        "5-Hour Limit",
+	"seven_day":        "Weekly All-Model",
+	"seven_day_sonnet": "Weekly Sonnet",
+	"monthly_limit":    "Monthly Limit",
 	"extra_usage":      "Extra Usage",
 }
 

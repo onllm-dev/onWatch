@@ -415,6 +415,79 @@ func TestStore_QueryAnthropicCycleHistory_NoClosedCycles(t *testing.T) {
 	}
 }
 
+func TestStore_QueryAnthropicUtilizationSeries(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer s.Close()
+
+	base := time.Date(2026, 2, 6, 12, 0, 0, 0, time.UTC)
+	// Insert 5 snapshots at 1-minute intervals with increasing utilization
+	for i := 0; i < 5; i++ {
+		snapshot := &api.AnthropicSnapshot{
+			CapturedAt: base.Add(time.Duration(i) * time.Minute),
+			RawJSON:    "{}",
+			Quotas: []api.AnthropicQuota{
+				{Name: "five_hour", Utilization: float64(i) * 10},
+				{Name: "seven_day", Utilization: float64(i) * 2},
+			},
+		}
+		_, err := s.InsertAnthropicSnapshot(snapshot)
+		if err != nil {
+			t.Fatalf("InsertAnthropicSnapshot failed: %v", err)
+		}
+	}
+
+	// Query five_hour since base (should get all 5)
+	points, err := s.QueryAnthropicUtilizationSeries("five_hour", base)
+	if err != nil {
+		t.Fatalf("QueryAnthropicUtilizationSeries failed: %v", err)
+	}
+	if len(points) != 5 {
+		t.Errorf("Expected 5 points, got %d", len(points))
+	}
+	// Verify ordering (ASC) and values
+	if len(points) >= 2 {
+		if points[0].Utilization != 0 {
+			t.Errorf("First point utilization = %v, want 0", points[0].Utilization)
+		}
+		if points[4].Utilization != 40 {
+			t.Errorf("Last point utilization = %v, want 40", points[4].Utilization)
+		}
+	}
+
+	// Query since base+2min (should get 3 snapshots: idx 2,3,4)
+	points, err = s.QueryAnthropicUtilizationSeries("five_hour", base.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("QueryAnthropicUtilizationSeries since failed: %v", err)
+	}
+	if len(points) != 3 {
+		t.Errorf("Expected 3 points since +2min, got %d", len(points))
+	}
+
+	// Query different quota name
+	points, err = s.QueryAnthropicUtilizationSeries("seven_day", base)
+	if err != nil {
+		t.Fatalf("QueryAnthropicUtilizationSeries seven_day failed: %v", err)
+	}
+	if len(points) != 5 {
+		t.Errorf("Expected 5 seven_day points, got %d", len(points))
+	}
+	if len(points) >= 1 && points[4].Utilization != 8 {
+		t.Errorf("Last seven_day utilization = %v, want 8", points[4].Utilization)
+	}
+
+	// Query non-existent quota
+	points, err = s.QueryAnthropicUtilizationSeries("nonexistent", base)
+	if err != nil {
+		t.Fatalf("QueryAnthropicUtilizationSeries nonexistent failed: %v", err)
+	}
+	if len(points) != 0 {
+		t.Errorf("Expected 0 points for nonexistent quota, got %d", len(points))
+	}
+}
+
 func TestStore_AnthropicForeignKeyConstraint(t *testing.T) {
 	s, err := New(":memory:")
 	if err != nil {
