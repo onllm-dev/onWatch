@@ -3305,12 +3305,13 @@ document.querySelectorAll('a[href^="#"]').forEach(function(a) {
         return g;
     }
 
-    function calcYMax(datasets) {
+    function calcYMax(datasets, multiplier) {
+        var mult = multiplier || 2;
         var mx = 0;
         datasets.forEach(function(ds) {
             ds.forEach(function(v) { if (v > mx) mx = v; });
         });
-        return Math.min(100, Math.max(10, Math.ceil(mx * 2 / 5) * 5));
+        return Math.min(100, Math.max(10, Math.ceil(mx * mult / 5) * 5));
     }
 
     var commonOpts = {
@@ -3367,7 +3368,7 @@ document.querySelectorAll('a[href^="#"]').forEach(function(a) {
 
     /* ── Create charts ── */
     var synYMax = calcYMax([synSubData, synSearchData, synToolData]);
-    var zaiYMax = calcYMax([zaiTokData, zaiTimeData, zaiToolData]);
+    var zaiYMax = calcYMax([zaiTokData, zaiTimeData, zaiToolData], 1.5);
 
     var mainCanvas = document.getElementById('mock-chart-canvas');
     var synCanvas = document.getElementById('mock-chart-syn');
