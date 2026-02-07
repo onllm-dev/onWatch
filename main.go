@@ -556,7 +556,7 @@ func run() error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start agents in goroutines
+	// Start agents in goroutines (staggered to avoid SQLite contention on session creation)
 	agentErr := make(chan error, 3)
 	if ag != nil {
 		go func() {
@@ -569,6 +569,7 @@ func run() error {
 
 	if zaiAg != nil {
 		go func() {
+			time.Sleep(200 * time.Millisecond) // stagger to avoid SQLite BUSY
 			logger.Info("Starting Z.ai agent", "interval", cfg.PollInterval)
 			if err := zaiAg.Run(ctx); err != nil {
 				agentErr <- fmt.Errorf("zai agent error: %w", err)
@@ -578,6 +579,7 @@ func run() error {
 
 	if anthropicAg != nil {
 		go func() {
+			time.Sleep(400 * time.Millisecond) // stagger to avoid SQLite BUSY
 			logger.Info("Starting Anthropic agent", "interval", cfg.PollInterval)
 			if err := anthropicAg.Run(ctx); err != nil {
 				agentErr <- fmt.Errorf("anthropic agent error: %w", err)
