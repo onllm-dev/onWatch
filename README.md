@@ -320,7 +320,7 @@ make release-local  # Cross-compile for all 5 platforms
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 ---
 

@@ -129,7 +129,7 @@ syntrack/
 ├── tools/
 │   └── perf-monitor/                   # RAM + HTTP performance measurement tool
 │
-└── LICENSE                             # MIT
+└── LICENSE                             # GPL-3.0
 ```
 
 ## API Reference
