@@ -898,8 +898,7 @@ a:hover { text-decoration: underline; }
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 24px;
-  max-width: 900px;
-  margin: 0 auto;
+  justify-content: center;
 }
 
 .install-method {
@@ -912,6 +911,7 @@ a:hover { text-decoration: underline; }
   position: relative;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .install-method:hover {
   transform: translateY(-2px);
@@ -2051,8 +2051,8 @@ a:hover { text-decoration: underline; }
                 </div>
             </div>
 
-            <p class="fade-in" style="text-align:center;font-size:13px;color:var(--text-muted);margin-top:16px;grid-column:1/-1;">Want to build from source? See <a href="https://github.com/onllm-dev/syntrack/blob/main/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">DEVELOPMENT.md</a></p>
         </div>
+        <p class="fade-in" style="text-align:center;font-size:13px;color:var(--text-muted);margin-top:16px;">Want to build from source? See <a href="https://github.com/onllm-dev/syntrack/blob/main/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">DEVELOPMENT.md</a></p>
     </div>
 </section>
 
