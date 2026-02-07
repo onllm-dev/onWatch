@@ -256,7 +256,8 @@ func (h *Handler) currentZai(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"capturedAt":  now.Format(time.RFC3339),
 		"tokensLimit": buildEmptyZaiQuotaResponse("Tokens Limit", "Token consumption budget"),
-		"timeLimit":   buildEmptyZaiQuotaResponse("Time Limit", "Tool call budget"),
+		"timeLimit":   buildEmptyZaiQuotaResponse("Time Limit", "Tool call time budget"),
+		"toolCalls":   buildEmptyZaiQuotaResponse("Tool Calls", "Individual tool call breakdown"),
 	}
 
 	if h.store != nil {
@@ -271,6 +272,7 @@ func (h *Handler) currentZai(w http.ResponseWriter, r *http.Request) {
 			response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 			response["tokensLimit"] = buildZaiTokensQuotaResponse(latest)
 			response["timeLimit"] = buildZaiTimeQuotaResponse(latest)
+			response["toolCalls"] = buildZaiToolCallsResponse(latest)
 		}
 	}
 
@@ -363,7 +365,7 @@ func buildZaiTimeQuotaResponse(snapshot *api.ZaiSnapshot) map[string]interface{}
 
 	return map[string]interface{}{
 		"name":                  "Time Limit",
-		"description":           "Tool call budget",
+		"description":           "Tool call time budget",
 		"usage":                 currentUsage,
 		"limit":                 budget,
 		"percent":               percent,
@@ -372,6 +374,52 @@ func buildZaiTimeQuotaResponse(snapshot *api.ZaiSnapshot) map[string]interface{}
 		"timeUntilReset":        "N/A",
 		"timeUntilResetSeconds": 0,
 	}
+}
+
+func buildZaiToolCallsResponse(snapshot *api.ZaiSnapshot) map[string]interface{} {
+	var totalCalls float64
+	var details []api.ZaiUsageDetail
+
+	if snapshot.TimeUsageDetails != "" {
+		if err := json.Unmarshal([]byte(snapshot.TimeUsageDetails), &details); err == nil {
+			for _, d := range details {
+				totalCalls += d.Usage
+			}
+		}
+	}
+
+	budget := snapshot.TimeUsage // tool calls draw from the time budget
+	percent := 0.0
+	if budget > 0 {
+		percent = (totalCalls / budget) * 100
+	}
+
+	status := "healthy"
+	if percent >= 95 {
+		status = "critical"
+	} else if percent >= 80 {
+		status = "danger"
+	} else if percent >= 50 {
+		status = "warning"
+	}
+
+	result := map[string]interface{}{
+		"name":                  "Tool Calls",
+		"description":           "Individual tool call breakdown",
+		"usage":                 totalCalls,
+		"limit":                 budget,
+		"percent":               percent,
+		"status":                status,
+		"renewsAt":              time.Now().UTC().Format(time.RFC3339),
+		"timeUntilReset":        "N/A",
+		"timeUntilResetSeconds": 0,
+	}
+
+	if len(details) > 0 {
+		result["usageDetails"] = details
+	}
+
+	return result
 }
 
 func buildQuotaResponse(name, description string, info api.QuotaInfo, tr *tracker.Tracker, quotaType string) map[string]interface{} {
@@ -1262,7 +1310,7 @@ func (h *Handler) insightsSynthetic(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, resp)
 }
 
-// insightsZai returns Z.ai deep analytics (simplified for now)
+// insightsZai returns Z.ai deep analytics with historical data
 func (h *Handler) insightsZai(w http.ResponseWriter, r *http.Request) {
 	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
 
@@ -1271,7 +1319,6 @@ func (h *Handler) insightsZai(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get Z.ai data
 	latest, err := h.store.QueryLatestZai()
 	if err != nil {
 		h.logger.Error("failed to query Z.ai data for insights", "error", err)
@@ -1279,73 +1326,288 @@ func (h *Handler) insightsZai(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if latest != nil {
-		// Z.ai API: "usage" = budget, "currentValue" = actual usage, "percentage" = server-computed %
-		tokensBudget := latest.TokensUsage
-		tokensUsed := latest.TokensCurrentValue
-		tokensPercent := float64(latest.TokensPercentage)
-		tokensRemaining := latest.TokensRemaining
-
-		timeBudget := latest.TimeUsage
-		timeUsed := latest.TimeCurrentValue
-		timePercent := float64(latest.TimePercentage)
-		timeRemaining := latest.TimeRemaining
-
-		resp.Stats = append(resp.Stats, insightStat{
-			Value: fmt.Sprintf("%d%%", latest.TokensPercentage),
-			Label: "Tokens Usage",
-		})
-		resp.Stats = append(resp.Stats, insightStat{
-			Value: fmt.Sprintf("%d%%", latest.TimePercentage),
-			Label: "Time Usage",
-		})
-		resp.Stats = append(resp.Stats, insightStat{
-			Value: compactNum(tokensRemaining),
-			Label: "Tokens Remaining",
-		})
-		resp.Stats = append(resp.Stats, insightStat{
-			Value: compactNum(timeRemaining),
-			Label: "Time Remaining",
-		})
-
-		// Token usage insight
-		tokensSev := "positive"
-		if tokensPercent >= 95 {
-			tokensSev = "negative"
-		} else if tokensPercent >= 80 {
-			tokensSev = "warning"
-		} else if tokensPercent >= 50 {
-			tokensSev = "info"
-		}
+	if latest == nil {
 		resp.Insights = append(resp.Insights, insightItem{
-			Type:     "factual",
-			Severity: tokensSev,
-			Title:    "Tokens Budget",
-			Metric:   fmt.Sprintf("%d%%", latest.TokensPercentage),
-			Sublabel: fmt.Sprintf("%s of %s used", compactNum(tokensUsed), compactNum(tokensBudget)),
-			Desc:     fmt.Sprintf("Token usage at %d%%. %s used of %s budget, %s remaining.", latest.TokensPercentage, compactNum(tokensUsed), compactNum(tokensBudget), compactNum(tokensRemaining)),
+			Type: "info", Severity: "info",
+			Title: "Getting Started",
+			Desc:  "Keep SynTrack running to collect Z.ai usage data. Insights appear after a few snapshots.",
 		})
+		respondJSON(w, http.StatusOK, resp)
+		return
+	}
 
-		// Time usage insight
-		timeSev := "positive"
-		if timePercent >= 95 {
-			timeSev = "negative"
-		} else if timePercent >= 80 {
-			timeSev = "warning"
-		} else if timePercent >= 50 {
-			timeSev = "info"
+	now := time.Now().UTC()
+
+	// Z.ai API: "usage" = budget, "currentValue" = actual consumption
+	tokensBudget := latest.TokensUsage
+	tokensUsed := latest.TokensCurrentValue
+	tokensPercent := float64(latest.TokensPercentage)
+	tokensRemaining := latest.TokensRemaining
+
+	timeBudget := latest.TimeUsage
+	timeUsed := latest.TimeCurrentValue
+	timePercent := float64(latest.TimePercentage)
+	timeRemaining := latest.TimeRemaining
+
+	// Compute total tool calls from usageDetails
+	var totalToolCalls float64
+	if latest.TimeUsageDetails != "" {
+		var details []api.ZaiUsageDetail
+		if err := json.Unmarshal([]byte(latest.TimeUsageDetails), &details); err == nil {
+			for _, d := range details {
+				totalToolCalls += d.Usage
+			}
 		}
+	}
+
+	// Historical snapshots for rate/trend computation
+	d24h := now.Add(-24 * time.Hour)
+	d7d := now.Add(-7 * 24 * time.Hour)
+	snapshots24h, _ := h.store.QueryZaiRange(d24h, now)
+	snapshots7d, _ := h.store.QueryZaiRange(d7d, now)
+
+	// ═══ Stats Cards ═══
+	resp.Stats = append(resp.Stats, insightStat{
+		Value: fmt.Sprintf("%d%%", latest.TokensPercentage),
+		Label: "Tokens Used",
+	})
+	resp.Stats = append(resp.Stats, insightStat{
+		Value: compactNum(tokensRemaining),
+		Label: "Tokens Left",
+	})
+	resp.Stats = append(resp.Stats, insightStat{
+		Value: fmt.Sprintf("%.0f", totalToolCalls),
+		Label: "Tool Calls",
+	})
+	resp.Stats = append(resp.Stats, insightStat{
+		Value: fmt.Sprintf("%.0f / %.0f", timeUsed, timeBudget),
+		Label: "Time Budget",
+	})
+	if len(snapshots24h) > 0 {
+		resp.Stats = append(resp.Stats, insightStat{
+			Value: fmt.Sprintf("%d", len(snapshots24h)),
+			Label: "Snapshots (24h)",
+		})
+	}
+
+	// ═══ Deep Insights ═══
+
+	// 1. Token Budget Status
+	tokensSev := severityFromPercent(tokensPercent)
+	tokenDesc := fmt.Sprintf("%s tokens consumed of %s budget (%d%%).", compactNum(tokensUsed), compactNum(tokensBudget), latest.TokensPercentage)
+	if latest.TokensNextResetTime != nil {
+		untilReset := time.Until(*latest.TokensNextResetTime)
+		if untilReset > 0 {
+			tokenDesc += fmt.Sprintf(" Resets in %s.", formatDuration(untilReset))
+		}
+	}
+	if tokensPercent >= 100 {
+		tokenDesc += " Budget exhausted — requests may be throttled."
+	} else if tokensRemaining > 0 {
+		tokenDesc += fmt.Sprintf(" %s tokens remaining.", compactNum(tokensRemaining))
+	}
+	resp.Insights = append(resp.Insights, insightItem{
+		Type: "factual", Severity: tokensSev,
+		Title:    "Token Budget",
+		Metric:   fmt.Sprintf("%d%%", latest.TokensPercentage),
+		Sublabel: fmt.Sprintf("%s of %s", compactNum(tokensUsed), compactNum(tokensBudget)),
+		Desc:     tokenDesc,
+	})
+
+	// 2. Token Consumption Rate (computed from historical snapshots)
+	if len(snapshots24h) >= 2 {
+		oldest := snapshots24h[0]
+		newest := snapshots24h[len(snapshots24h)-1]
+		elapsed := newest.CapturedAt.Sub(oldest.CapturedAt)
+		tokenDelta := newest.TokensCurrentValue - oldest.TokensCurrentValue
+
+		if elapsed.Hours() > 0 && tokenDelta > 0 {
+			ratePerHour := tokenDelta / elapsed.Hours()
+			resp.Insights = append(resp.Insights, insightItem{
+				Type: "trend", Severity: "info",
+				Title:    "Token Rate",
+				Metric:   fmt.Sprintf("%s/hr", compactNum(ratePerHour)),
+				Sublabel: fmt.Sprintf("last %.0fh", elapsed.Hours()),
+				Desc: fmt.Sprintf("Consuming ~%s tokens/hour over the last %.1f hours (%s total in this period).",
+					compactNum(ratePerHour), elapsed.Hours(), compactNum(tokenDelta)),
+			})
+
+			// 3. Projected Token Usage (only if we have a reset time)
+			if latest.TokensNextResetTime != nil {
+				hoursLeft := time.Until(*latest.TokensNextResetTime).Hours()
+				if hoursLeft > 0 {
+					projected := tokensUsed + (ratePerHour * hoursLeft)
+					projectedPct := (projected / tokensBudget) * 100
+
+					projSev := severityFromPercent(projectedPct)
+					projDesc := fmt.Sprintf("At current rate (~%s/hr), projected %s tokens (%s%%) by reset.",
+						compactNum(ratePerHour), compactNum(projected), compactNum(projectedPct))
+					if projectedPct >= 100 {
+						projDesc += " Likely to exhaust budget before reset."
+					} else if projectedPct >= 80 {
+						projDesc += " Approaching limit — monitor closely."
+					} else {
+						projDesc += " Comfortable headroom."
+					}
+					resp.Insights = append(resp.Insights, insightItem{
+						Type: "recommendation", Severity: projSev,
+						Title:    "Projected Usage",
+						Metric:   fmt.Sprintf("%.0f%%", projectedPct),
+						Sublabel: fmt.Sprintf("~%s by reset", compactNum(projected)),
+						Desc:     projDesc,
+					})
+				}
+			}
+		}
+	}
+
+	// 4. Tool Call Breakdown (per-model details)
+	if latest.TimeUsageDetails != "" {
+		var details []api.ZaiUsageDetail
+		if err := json.Unmarshal([]byte(latest.TimeUsageDetails), &details); err == nil && len(details) > 0 {
+			// Build breakdown description
+			parts := make([]string, 0, len(details))
+			var maxTool string
+			var maxUsage, totalDetailUsage float64
+			for _, d := range details {
+				parts = append(parts, fmt.Sprintf("%s: %.0f", d.ModelCode, d.Usage))
+				totalDetailUsage += d.Usage
+				if d.Usage > maxUsage {
+					maxUsage = d.Usage
+					maxTool = d.ModelCode
+				}
+			}
+			breakdownStr := strings.Join(parts, ", ")
+
+			desc := fmt.Sprintf("%.0f total tool calls across %d tools. Breakdown: %s.", totalDetailUsage, len(details), breakdownStr)
+			if maxTool != "" && len(details) > 1 && totalDetailUsage > 0 {
+				pct := (maxUsage / totalDetailUsage) * 100
+				desc += fmt.Sprintf(" %s accounts for %.0f%% of tracked calls.", maxTool, pct)
+			}
+			desc += fmt.Sprintf(" Time budget: %.0f/%.0f used.", timeUsed, timeBudget)
+
+			toolCallPct := 0.0
+			if timeBudget > 0 {
+				toolCallPct = (totalDetailUsage / timeBudget) * 100
+			}
+
+			resp.Insights = append(resp.Insights, insightItem{
+				Type: "factual", Severity: severityFromPercent(toolCallPct),
+				Title:    "Tool Breakdown",
+				Metric:   fmt.Sprintf("%.0f", totalDetailUsage),
+				Sublabel: fmt.Sprintf("calls (%d tools)", len(details)),
+				Desc:     desc,
+			})
+		}
+	} else {
+		// No per-tool details — show basic time budget insight
+		timeSev := severityFromPercent(timePercent)
 		resp.Insights = append(resp.Insights, insightItem{
-			Type:     "factual",
-			Severity: timeSev,
+			Type: "factual", Severity: timeSev,
 			Title:    "Time Budget",
 			Metric:   fmt.Sprintf("%d%%", latest.TimePercentage),
-			Sublabel: fmt.Sprintf("%.0f of %.0f calls used", timeUsed, timeBudget),
-			Desc:     fmt.Sprintf("Time quota at %d%%. %.0f calls used of %.0f budget, %.0f remaining.", latest.TimePercentage, timeUsed, timeBudget, timeRemaining),
+			Sublabel: fmt.Sprintf("%.0f of %.0f used", timeUsed, timeBudget),
+			Desc:     fmt.Sprintf("%.0f of %.0f time budget used (%d%%), %.0f remaining.", timeUsed, timeBudget, latest.TimePercentage, timeRemaining),
+		})
+	}
+
+	// 5. 24h Token Trend (compare first half vs second half of snapshots)
+	if len(snapshots24h) >= 4 {
+		mid := len(snapshots24h) / 2
+		firstHalf := snapshots24h[:mid]
+		secondHalf := snapshots24h[mid:]
+
+		firstDelta := firstHalf[len(firstHalf)-1].TokensCurrentValue - firstHalf[0].TokensCurrentValue
+		secondDelta := secondHalf[len(secondHalf)-1].TokensCurrentValue - secondHalf[0].TokensCurrentValue
+
+		firstElapsed := firstHalf[len(firstHalf)-1].CapturedAt.Sub(firstHalf[0].CapturedAt).Hours()
+		secondElapsed := secondHalf[len(secondHalf)-1].CapturedAt.Sub(secondHalf[0].CapturedAt).Hours()
+
+		if firstElapsed > 0 && secondElapsed > 0 {
+			firstRate := firstDelta / firstElapsed
+			secondRate := secondDelta / secondElapsed
+
+			if firstRate > 0 {
+				change := ((secondRate - firstRate) / firstRate) * 100
+				var trendSev, trendMetric, trendDesc string
+				switch {
+				case change > 25:
+					trendSev = "warning"
+					trendMetric = fmt.Sprintf("+%.0f%%", change)
+					trendDesc = fmt.Sprintf("Token consumption accelerating: recent rate ~%s/hr vs earlier ~%s/hr.", compactNum(secondRate), compactNum(firstRate))
+				case change < -25:
+					trendSev = "positive"
+					trendMetric = fmt.Sprintf("%.0f%%", change)
+					trendDesc = fmt.Sprintf("Token consumption slowing: recent rate ~%s/hr vs earlier ~%s/hr.", compactNum(secondRate), compactNum(firstRate))
+				default:
+					trendSev = "positive"
+					trendMetric = "Stable"
+					trendDesc = fmt.Sprintf("Steady consumption: ~%s/hr over the observation period.", compactNum((firstRate+secondRate)/2))
+				}
+				resp.Insights = append(resp.Insights, insightItem{
+					Type: "trend", Severity: trendSev,
+					Title:    "24h Trend",
+					Metric:   trendMetric,
+					Sublabel: "recent vs earlier",
+					Desc:     trendDesc,
+				})
+			}
+		}
+	}
+
+	// 6. 7-Day Token Summary
+	if len(snapshots7d) >= 2 {
+		oldest7d := snapshots7d[0]
+		newest7d := snapshots7d[len(snapshots7d)-1]
+		totalDelta7d := newest7d.TokensCurrentValue - oldest7d.TokensCurrentValue
+		elapsed7d := newest7d.CapturedAt.Sub(oldest7d.CapturedAt)
+
+		if totalDelta7d > 0 && elapsed7d.Hours() > 0 {
+			dailyRate := totalDelta7d / (elapsed7d.Hours() / 24)
+			resp.Insights = append(resp.Insights, insightItem{
+				Type: "factual", Severity: "info",
+				Title:    "7-Day Usage",
+				Metric:   compactNum(totalDelta7d),
+				Sublabel: fmt.Sprintf("~%s/day", compactNum(dailyRate)),
+				Desc: fmt.Sprintf("%s tokens consumed over %.1f days (%d snapshots). Daily average: ~%s tokens.",
+					compactNum(totalDelta7d), elapsed7d.Hours()/24, len(snapshots7d), compactNum(dailyRate)),
+			})
+		}
+	}
+
+	// 7. Tracking Coverage
+	if len(snapshots7d) > 0 {
+		oldest := snapshots7d[0]
+		trackingHours := now.Sub(oldest.CapturedAt).Hours()
+		trackingDays := trackingHours / 24
+		label := fmt.Sprintf("%.0fh", trackingHours)
+		if trackingDays >= 1 {
+			label = fmt.Sprintf("%.1fd", trackingDays)
+		}
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "factual", Severity: "positive",
+			Title:    "Coverage",
+			Metric:   label,
+			Sublabel: fmt.Sprintf("%d snapshots", len(snapshots7d)),
+			Desc:     fmt.Sprintf("Monitoring Z.ai for %s — %d snapshots captured.", label, len(snapshots7d)),
 		})
 	}
 
 	respondJSON(w, http.StatusOK, resp)
+}
+
+// severityFromPercent returns a severity string based on a usage percentage
+func severityFromPercent(pct float64) string {
+	switch {
+	case pct >= 95:
+		return "negative"
+	case pct >= 80:
+		return "warning"
+	case pct >= 50:
+		return "info"
+	default:
+		return "positive"
+	}
 }
 
 // ── Insight helpers ──

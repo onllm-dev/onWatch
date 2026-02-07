@@ -373,13 +373,41 @@ function updateCard(quotaType, data) {
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
 
-  if (resetEl && data.renewsAt) {
-    resetEl.textContent = `Resets: ${formatDateTime(data.renewsAt)}`;
+  if (resetEl) {
+    if (data.renewsAt && data.timeUntilReset !== 'N/A') {
+      resetEl.textContent = `Resets: ${formatDateTime(data.renewsAt)}`;
+      resetEl.style.display = '';
+    } else {
+      resetEl.textContent = '';
+      resetEl.style.display = 'none';
+    }
   }
 
   if (countdownEl) {
-    countdownEl.textContent = formatDuration(data.timeUntilResetSeconds);
-    countdownEl.classList.toggle('imminent', data.timeUntilResetSeconds < 1800);
+    if (data.timeUntilResetSeconds > 0) {
+      countdownEl.textContent = formatDuration(data.timeUntilResetSeconds);
+      countdownEl.classList.toggle('imminent', data.timeUntilResetSeconds < 1800);
+      countdownEl.style.display = '';
+    } else if (data.timeUntilReset === 'N/A') {
+      countdownEl.style.display = 'none';
+    } else {
+      countdownEl.textContent = '< 1m';
+      countdownEl.style.display = '';
+    }
+  }
+
+  // Render per-tool breakdown for Z.ai Time Limit card
+  const detailsEl = document.getElementById(`usage-details-${quotaType}`);
+  if (detailsEl && data.usageDetails && data.usageDetails.length > 0) {
+    detailsEl.innerHTML = data.usageDetails.map(d =>
+      `<div class="usage-detail-row">
+        <span class="usage-detail-model">${d.modelCode || d.ModelCode}</span>
+        <span class="usage-detail-count">${formatNumber(d.usage || d.Usage)}</span>
+      </div>`
+    ).join('');
+    detailsEl.style.display = '';
+  } else if (detailsEl) {
+    detailsEl.style.display = 'none';
   }
 }
 
@@ -425,6 +453,7 @@ async function fetchCurrent() {
       if (provider === 'zai') {
         updateCard('tokensLimit', data.tokensLimit);
         updateCard('timeLimit', data.timeLimit);
+        updateCard('toolCalls', data.toolCalls);
       } else {
         updateCard('subscription', data.subscription);
         updateCard('search', data.search);
@@ -462,6 +491,14 @@ const insightTitleIcons = {
   'Consistent': '<line x1="5" y1="12" x2="19" y2="12"/>', // minus (steady)
   'Trend': '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>', // trending-up
   'Getting Started': '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>', // info
+  // Z.ai-specific insight icons
+  'Token Budget': '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', // clock/gauge
+  'Token Rate': '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>', // trending-up
+  'Projected Usage': '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', // shield
+  'Tool Breakdown': '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>', // wrench
+  'Time Budget': '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', // clock
+  '24h Trend': '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>', // trending-up
+  '7-Day Usage': '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>', // calendar
 };
 
 // Quota-type icons (used for live quota insight cards)
@@ -469,6 +506,8 @@ const quotaIcons = {
   subscription: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>', // credit-card/subscription
   search: '<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>', // search
   toolCalls: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>', // wrench
+  tokensLimit: '<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>', // layers
+  timeLimit: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', // clock
   session: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>', // bar-chart
 };
 
@@ -549,10 +588,10 @@ function computeClientInsights() {
 
   // Live remaining quota — show percentage remaining + time
   const quotaTypes = provider === 'zai'
-    ? ['tokensLimit', 'timeLimit']
+    ? ['tokensLimit', 'timeLimit', 'toolCalls']
     : ['subscription', 'search', 'toolCalls'];
 
-  const zaiQuotaNames = { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit' };
+  const zaiQuotaNames = { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit', toolCalls: 'Tool Calls' };
 
   quotaTypes.forEach(type => {
     const q = State.currentQuotas[type];
@@ -575,8 +614,8 @@ function computeClientInsights() {
     }
   });
 
-  // Session avg consumption %
-  if (State.allSessionsData.length >= 2) {
+  // Session avg consumption % (only for Synthetic — Z.ai sessions don't track per-quota max values)
+  if (provider !== 'zai' && State.allSessionsData.length >= 2) {
     const recent = State.allSessionsData.slice(0, Math.min(State.allSessionsData.length, 10));
     let totalCons = 0;
     let maxCons = 0;
@@ -1184,7 +1223,7 @@ function openModal(quotaType) {
   if (!data) return;
 
   const provider = getCurrentProvider();
-  const zaiQuotaNames = { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit' };
+  const zaiQuotaNames = { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit', toolCalls: 'Tool Calls' };
   const names = provider === 'zai' ? zaiQuotaNames : quotaNames;
   titleEl.textContent = names[quotaType] || quotaType;
 
@@ -1261,8 +1300,8 @@ async function loadModalChart(quotaType) {
       datasetKey = quotaType === 'subscription' ? 'subscriptionPercent' : quotaType === 'search' ? 'searchPercent' : 'toolCallsPercent';
     }
     const style = getComputedStyle(document.documentElement);
-    const colorMap = { subscription: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', search: style.getPropertyValue('--chart-search').trim() || '#F59E0B', toolCalls: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6' };
-    const bgMap = { subscription: 'rgba(13,148,136,0.08)', search: 'rgba(245,158,11,0.08)', toolCalls: 'rgba(59,130,246,0.08)' };
+    const colorMap = { subscription: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', search: style.getPropertyValue('--chart-search').trim() || '#F59E0B', toolCalls: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', tokensLimit: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', timeLimit: style.getPropertyValue('--chart-search').trim() || '#F59E0B' };
+    const bgMap = { subscription: 'rgba(13,148,136,0.08)', search: 'rgba(245,158,11,0.08)', toolCalls: 'rgba(59,130,246,0.08)', tokensLimit: 'rgba(13,148,136,0.08)', timeLimit: 'rgba(245,158,11,0.08)' };
 
     const colors = getThemeColors();
     const chartData = data.map(d => d[datasetKey]);
@@ -1274,10 +1313,10 @@ async function loadModalChart(quotaType) {
       data: {
         labels: data.map(d => new Date(d.capturedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })),
         datasets: [{
-          label: quotaNames[quotaType],
+          label: (provider === 'zai' ? { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit', toolCalls: 'Tool Calls' } : quotaNames)[quotaType] || quotaType,
           data: chartData,
-          borderColor: colorMap[quotaType],
-          backgroundColor: bgMap[quotaType],
+          borderColor: colorMap[quotaType] || '#3B82F6',
+          backgroundColor: bgMap[quotaType] || 'rgba(59,130,246,0.08)',
           fill: true,
           tension: 0.3,
           borderWidth: 2.5,

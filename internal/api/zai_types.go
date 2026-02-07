@@ -61,6 +61,7 @@ type ZaiSnapshot struct {
 	TimeCurrentValue float64
 	TimeRemaining    float64
 	TimePercentage   int
+	TimeUsageDetails string // JSON: [{"modelCode":"search-prime","usage":16}, ...]
 	// TOKENS_LIMIT fields
 	TokensLimit         int
 	TokensUnit          int
@@ -88,6 +89,10 @@ func (r *ZaiQuotaResponse) ToSnapshot(capturedAt time.Time) *ZaiSnapshot {
 			snapshot.TimeCurrentValue = limit.CurrentValue
 			snapshot.TimeRemaining = limit.Remaining
 			snapshot.TimePercentage = limit.Percentage
+			if len(limit.UsageDetails) > 0 {
+				b, _ := json.Marshal(limit.UsageDetails)
+				snapshot.TimeUsageDetails = string(b)
+			}
 		case "TOKENS_LIMIT":
 			snapshot.TokensLimit = limit.Unit * limit.Number
 			snapshot.TokensUnit = limit.Unit
