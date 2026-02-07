@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/onllm-dev/syntrack/internal/api"
-	"github.com/onllm-dev/syntrack/internal/store"
-	"github.com/onllm-dev/syntrack/internal/tracker"
+	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/internal/tracker"
 )
 
 // testResponse returns a standard quota response for mocking

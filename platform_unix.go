@@ -13,5 +13,5 @@ func daemonSysProcAttr() *syscall.SysProcAttr {
 }
 
 func defaultPIDDir() string {
-	return filepath.Join(os.Getenv("HOME"), ".syntrack")
+	return filepath.Join(os.Getenv("HOME"), ".onwatch")
 }

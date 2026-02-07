@@ -90,8 +90,8 @@ func TestServer_ServesHTML(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "SynTrack") {
-		t.Error("Expected body to contain 'SynTrack'")
+	if !strings.Contains(string(body), "onWatch") {
+		t.Error("Expected body to contain 'onWatch'")
 	}
 
 	// Shutdown
@@ -125,8 +125,8 @@ func TestServer_ServesStaticCSS(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "SynTrack") {
-		t.Error("Expected CSS to contain 'SynTrack'")
+	if !strings.Contains(string(body), "onWatch") {
+		t.Error("Expected CSS to contain 'onWatch'")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -159,8 +159,8 @@ func TestServer_ServesStaticJS(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "SynTrack") {
-		t.Error("Expected JS to contain 'SynTrack'")
+	if !strings.Contains(string(body), "onWatch") {
+		t.Error("Expected JS to contain 'onWatch'")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -217,8 +217,8 @@ func TestServer_EmbeddedAssets(t *testing.T) {
 		path         string
 		expectInBody string
 	}{
-		{"/static/style.css", "SynTrack"},
-		{"/static/app.js", "SynTrack"},
+		{"/static/style.css", "onWatch"},
+		{"/static/app.js", "onWatch"},
 	}
 
 	for _, tt := range tests {

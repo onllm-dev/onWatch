@@ -17,11 +17,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/agent"
-	"github.com/onllm-dev/syntrack/internal/api"
-	"github.com/onllm-dev/syntrack/internal/store"
-	"github.com/onllm-dev/syntrack/internal/tracker"
-	"github.com/onllm-dev/syntrack/internal/web"
+	"github.com/onllm-dev/onwatch/internal/agent"
+	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/internal/tracker"
+	"github.com/onllm-dev/onwatch/internal/web"
 )
 
 // discardLogger returns a logger that discards all output
@@ -358,8 +358,8 @@ func TestIntegration_DashboardRendersData(t *testing.T) {
 	body := w.Body.String()
 
 	// Check that the page contains expected elements
-	if !strings.Contains(body, "SynTrack") {
-		t.Error("Dashboard should contain 'SynTrack'")
+	if !strings.Contains(body, "onWatch") {
+		t.Error("Dashboard should contain 'onWatch'")
 	}
 	if !strings.Contains(body, "Dashboard") {
 		t.Error("Dashboard should contain 'Dashboard'")

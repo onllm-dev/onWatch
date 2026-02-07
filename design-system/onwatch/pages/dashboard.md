@@ -1,10 +1,10 @@
 # Dashboard Page Overrides
 
-> **PROJECT:** SynTrack
+> **PROJECT:** onWatch
 > **Updated:** 2026-02-06
 > **Page Type:** Real-time Monitoring Dashboard
 
-> This file **overrides** the Master file (`design-system/syntrack/MASTER.md`).
+> This file **overrides** the Master file (`design-system/onwatch/MASTER.md`).
 > Only deviations from the Master are documented here. For all other rules, refer to the Master.
 
 ---
@@ -18,7 +18,7 @@
 
 ```
 +-------------------------------------------------------------------+
-|  [S] SynTrack        Last updated: 12:34    [Theme] [Status dot]  |
+|  [S] onWatch        Last updated: 12:34    [Theme] [Status dot]  |
 +-------------------------------------------------------------------+
 |                                                                    |
 |  +------------------+ +------------------+ +------------------+   |

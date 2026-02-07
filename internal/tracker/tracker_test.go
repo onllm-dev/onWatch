@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/api"
-	"github.com/onllm-dev/syntrack/internal/store"
+	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/store"
 )
 
 func TestTracker_FirstSnapshot_CreatesThreeCycles(t *testing.T) {

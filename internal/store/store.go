@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/api"
+	"github.com/onllm-dev/onwatch/internal/api"
 	_ "modernc.org/sqlite"
 )
 
-// Store provides SQLite storage for SynTrack
+// Store provides SQLite storage for onWatch
 type Store struct {
 	db *sql.DB
 }

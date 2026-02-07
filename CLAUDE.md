@@ -1,8 +1,8 @@
-# SynTrack - CLAUDE.md
+# onWatch - CLAUDE.md
 
 ## Overview
 
-**SynTrack** is a minimal, ultra-lightweight Go CLI tool that tracks [Synthetic API](https://synthetic.new) and [Z.ai](https://z.ai) usage by polling quota endpoints at configurable intervals, storing historical data in SQLite, and serving a Material Design 3 web dashboard with dark/light mode for usage visualization. Supports multiple providers running in parallel.
+**onWatch** is a minimal, ultra-lightweight Go CLI tool that tracks [Synthetic API](https://synthetic.new) and [Z.ai](https://z.ai) usage by polling quota endpoints at configurable intervals, storing historical data in SQLite, and serving a Material Design 3 web dashboard with dark/light mode for usage visualization. Supports multiple providers running in parallel.
 
 **This is an open-source project.** No secrets, no waste, clean repo.
 
@@ -15,7 +15,7 @@
 
 ## RAM Efficiency Guidelines
 
-Since SynTrack runs as a background daemon, RAM is our primary constraint:
+Since onWatch runs as a background daemon, RAM is our primary constraint:
 
 | Guideline | Implementation |
 |-----------|---------------|
@@ -59,7 +59,7 @@ Since SynTrack runs as a background daemon, RAM is our primary constraint:
 ## Project Structure
 
 ```
-syntrack/
+onwatch/
 ├── CLAUDE.md                           # THIS FILE
 ├── README.md                           # User-facing documentation
 ├── DEVELOPMENT.md                      # Build guide + perf monitoring
@@ -121,7 +121,7 @@ syntrack/
 │   └── INDEX.md                        # Screenshot descriptions
 │
 ├── design-system/                      # UI/UX design specifications
-│   └── syntrack/
+│   └── onwatch/
 │       ├── MASTER.md
 │       └── pages/
 │           └── dashboard.md
@@ -187,7 +187,7 @@ Key facts: `requests` is `float64`. Three independent quotas with independent `r
 
 ### Provider Mapping
 
-| SynTrack Concept | Synthetic API | Z.ai Equivalent |
+| onWatch Concept | Synthetic API | Z.ai Equivalent |
 |-----------------|---------------|-----------------|
 | Real-time snapshot | `GET /v2/quotas` | `GET /monitor/usage/quota/limit` |
 | Primary quota | `subscription` (requests/limit) | `TOKENS_LIMIT` (currentValue/usage) |
@@ -214,12 +214,12 @@ make coverage                      # Generate HTML coverage report
 make release-local                 # Cross-compile for 5 platforms -> dist/
 
 # Running
-./syntrack                         # Background: daemonize, log to ~/.syntrack/.syntrack.log
-./syntrack --debug                 # Foreground: log to stdout
-./syntrack --interval 30           # Poll every 30 seconds
-./syntrack --port 9000             # Dashboard on port 9000
-./syntrack stop                    # Stop running instance
-./syntrack status                  # Check if running
+./onwatch                         # Background: daemonize, log to ~/.onwatch/.onwatch.log
+./onwatch --debug                 # Foreground: log to stdout
+./onwatch --interval 30           # Poll every 30 seconds
+./onwatch --port 9000             # Dashboard on port 9000
+./onwatch stop                    # Stop running instance
+./onwatch status                  # Check if running
 
 # Environment setup
 cp .env.example .env               # Create local config
@@ -231,9 +231,9 @@ cp .env.example .env               # Create local config
 
 | Command | Description |
 |---------|-------------|
-| `syntrack` | Start agent (background mode) |
-| `syntrack stop` or `--stop` | Stop running instance (PID file + port fallback) |
-| `syntrack status` or `--status` | Show status of running instance |
+| `onwatch` | Start agent (background mode) |
+| `onwatch stop` or `--stop` | Stop running instance (PID file + port fallback) |
+| `onwatch status` or `--status` | Show status of running instance |
 
 ### Flags
 
@@ -241,7 +241,7 @@ cp .env.example .env               # Create local config
 |------|-------------|---------|
 | `--interval` | Polling interval in seconds | `60` |
 | `--port` | Dashboard HTTP port | `9211` |
-| `--db` | SQLite database file path | `~/.syntrack/data/syntrack.db` |
+| `--db` | SQLite database file path | `~/.onwatch/data/onwatch.db` |
 | `--debug` | Run in foreground, log to stdout | `false` |
 | `--test` | Test mode: isolated PID/log, won't kill production | `false` |
 | `--version` | Print version and exit | - |
@@ -278,7 +278,7 @@ cp .env.example .env               # Create local config
 - **NEVER log API keys** -- redact in all log output
 - **NEVER embed secrets in code** -- always load from env/flags
 - **NEVER commit database files** (`.db`, `.db-journal`, `.db-wal`, `.db-shm`)
-- **NEVER commit binaries** (`syntrack`, `*.exe`, `/bin/`, `/dist/`)
+- **NEVER commit binaries** (`onwatch`, `*.exe`, `/bin/`, `/dist/`)
 - **ALWAYS use parameterized SQL** -- never string interpolation in queries
 - **ALWAYS use `subtle.ConstantTimeCompare`** for credential comparison
 - **ALWAYS set HTTP timeouts** -- 10s for API client, 5s for shutdown
@@ -370,8 +370,8 @@ CREATE TABLE IF NOT EXISTS users (
 
 ## Dashboard Design
 
-See `design-system/syntrack/MASTER.md` for design tokens and component specs.
-See `design-system/syntrack/pages/dashboard.md` for dashboard-specific layout.
+See `design-system/onwatch/MASTER.md` for design tokens and component specs.
+See `design-system/onwatch/pages/dashboard.md` for dashboard-specific layout.
 
 **Key design decisions:**
 - Material Design 3 with dark + light mode
@@ -386,7 +386,7 @@ See `design-system/syntrack/pages/dashboard.md` for dashboard-specific layout.
 
 ## Quota Reset Tracking Logic
 
-Core intelligence of SynTrack -- tracking usage across reset boundaries:
+Core intelligence of onWatch -- tracking usage across reset boundaries:
 
 1. **Detection:** Compare consecutive snapshots' `renewsAt` timestamps. If changed, a reset occurred. Each quota type tracked independently.
 2. **Cycle management:** On reset, close current cycle (set `cycle_end`), open new cycle. Record `peak_requests` and accumulate `total_delta`.

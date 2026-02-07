@@ -17,12 +17,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/agent"
-	"github.com/onllm-dev/syntrack/internal/api"
-	"github.com/onllm-dev/syntrack/internal/config"
-	"github.com/onllm-dev/syntrack/internal/store"
-	"github.com/onllm-dev/syntrack/internal/tracker"
-	"github.com/onllm-dev/syntrack/internal/web"
+	"github.com/onllm-dev/onwatch/internal/agent"
+	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/config"
+	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/internal/tracker"
+	"github.com/onllm-dev/onwatch/internal/web"
 )
 
 //go:embed VERSION
@@ -45,7 +45,7 @@ func main() {
 
 var (
 	pidDir  = defaultPIDDir()
-	pidFile = filepath.Join(pidDir, "syntrack.pid")
+	pidFile = filepath.Join(pidDir, "onwatch.pid")
 )
 
 // hasFlag checks if a flag exists anywhere in os.Args[1:].
@@ -70,7 +70,7 @@ func hasCommand(cmds ...string) bool {
 	return false
 }
 
-// stopPreviousInstance stops any running syntrack instance using PID file + port check.
+// stopPreviousInstance stops any running onwatch instance using PID file + port check.
 // In test mode, only PID file is used (no port scanning) to avoid killing production.
 func stopPreviousInstance(port int, testMode bool) {
 	myPID := os.Getpid()
@@ -107,7 +107,7 @@ func stopPreviousInstance(port int, testMode bool) {
 			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", filePort), 500*time.Millisecond)
 			if err == nil {
 				conn.Close()
-				if pids := findSyntrackOnPort(filePort); len(pids) > 0 {
+				if pids := findOnwatchOnPort(filePort); len(pids) > 0 {
 					for _, foundPID := range pids {
 						if foundPID == myPID {
 							continue
@@ -124,14 +124,14 @@ func stopPreviousInstance(port int, testMode bool) {
 		}
 	}
 
-	// Method 2: Check if the port is in use and kill the occupying syntrack process
+	// Method 2: Check if the port is in use and kill the occupying onwatch process
 	// Skip in test mode to avoid accidentally killing production instances
 	if !testMode && !stopped && port > 0 {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
 		if err == nil {
 			conn.Close()
 			// Port is occupied — find which process holds it
-			if pids := findSyntrackOnPort(port); len(pids) > 0 {
+			if pids := findOnwatchOnPort(port); len(pids) > 0 {
 				for _, pid := range pids {
 					if pid == myPID {
 						continue
@@ -152,8 +152,8 @@ func stopPreviousInstance(port int, testMode bool) {
 	}
 }
 
-// findSyntrackOnPort uses lsof (macOS/Linux) to find syntrack processes on a port.
-func findSyntrackOnPort(port int) []int {
+// findOnwatchOnPort uses lsof (macOS/Linux) to find onwatch processes on a port.
+func findOnwatchOnPort(port int) []int {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		return nil
 	}
@@ -168,8 +168,8 @@ func findSyntrackOnPort(port int) []int {
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
 		if pid, err := strconv.Atoi(line); err == nil && pid > 0 {
-			// Verify it's a syntrack process by checking the command name
-			if isSyntrackProcess(pid) {
+			// Verify it's an onwatch process by checking the command name
+			if isOnwatchProcess(pid) {
 				pids = append(pids, pid)
 			}
 		}
@@ -177,14 +177,14 @@ func findSyntrackOnPort(port int) []int {
 	return pids
 }
 
-// isSyntrackProcess checks if a PID belongs to a syntrack binary.
-func isSyntrackProcess(pid int) bool {
+// isOnwatchProcess checks if a PID belongs to an onwatch (or legacy syntrack) binary.
+func isOnwatchProcess(pid int) bool {
 	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
 	if err != nil {
 		return false
 	}
-	cmd := strings.TrimSpace(string(out))
-	return strings.Contains(strings.ToLower(cmd), "syntrack")
+	cmd := strings.ToLower(strings.TrimSpace(string(out)))
+	return strings.Contains(cmd, "onwatch") || strings.Contains(cmd, "syntrack")
 }
 
 func ensurePIDDir() error {
@@ -198,15 +198,16 @@ func sha256hex(s string) string {
 }
 
 // migrateDBLocation moves the database from old default locations to the new one.
-// Only runs when no explicit --db or SYNTRACK_DB_PATH was set.
+// Only runs when no explicit --db or ONWATCH_DB_PATH was set.
 func migrateDBLocation(newPath string, logger *slog.Logger) {
 	oldPaths := []string{
-		"./syntrack.db",
+		"./onwatch.db",
 	}
 	oldHome := os.Getenv("HOME")
 	if oldHome != "" {
-		intermediatePath := filepath.Join(oldHome, ".syntrack", "syntrack.db")
-		oldPaths = append(oldPaths, intermediatePath)
+		oldPaths = append(oldPaths,
+			filepath.Join(oldHome, ".onwatch", "onwatch.db"),
+		)
 	}
 
 	for _, oldPath := range oldPaths {
@@ -252,7 +253,7 @@ func removePIDFile() {
 }
 
 // daemonize re-executes the current binary as a detached background process.
-// The parent writes the child's PID to .syntrack.pid and exits.
+// The parent writes the child's PID to .onwatch.pid and exits.
 func daemonize(cfg *config.Config) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -266,9 +267,9 @@ func daemonize(cfg *config.Config) error {
 	}
 
 	// Open log file for child's stdout/stderr
-	logName := ".syntrack.log"
+	logName := ".onwatch.log"
 	if cfg.TestMode {
-		logName = ".syntrack-test.log"
+		logName = ".onwatch-test.log"
 	}
 	logPath := filepath.Join(filepath.Dir(cfg.DBPath), logName)
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -280,7 +281,7 @@ func daemonize(cfg *config.Config) error {
 	cmd := exec.Command(exe, os.Args[1:]...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.Env = append(os.Environ(), "_SYNTRACK_DAEMON=1")
+	cmd.Env = append(os.Environ(), "_ONWATCH_DAEMON=1")
 	cmd.SysProcAttr = daemonSysProcAttr()
 
 	if err := cmd.Start(); err != nil {
@@ -308,7 +309,7 @@ func run() error {
 	// Phase 1: Detect test mode early and configure PID file for isolation
 	testMode := hasFlag("--test")
 	if testMode {
-		pidFile = filepath.Join(pidDir, "syntrack-test.pid")
+		pidFile = filepath.Join(pidDir, "onwatch-test.pid")
 	}
 
 	// Phase 2: Handle subcommands (both with and without -- prefix)
@@ -319,8 +320,8 @@ func run() error {
 		return runStatus(testMode)
 	}
 	if hasCommand("--version", "-v", "version") {
-		fmt.Printf("SynTrack v%s\n", version)
-		fmt.Println("github.com/onllm-dev/syntrack")
+		fmt.Printf("onWatch v%s\n", version)
+		fmt.Println("github.com/onllm-dev/onwatch")
 		fmt.Println("Powered by onllm.dev")
 		return nil
 	}
@@ -335,7 +336,7 @@ func run() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	isDaemonChild := os.Getenv("_SYNTRACK_DAEMON") == "1"
+	isDaemonChild := os.Getenv("_ONWATCH_DAEMON") == "1"
 
 	// Stop any previous instance (parent does this, daemon child skips it)
 	if !isDaemonChild {
@@ -550,14 +551,14 @@ func run() error {
 	return nil
 }
 
-// runStop stops any running syntrack instance.
+// runStop stops any running onwatch instance.
 // In test mode, only the test PID file is used (no port scanning) to avoid killing production.
 func runStop(testMode bool) error {
 	myPID := os.Getpid()
 	stopped := false
-	label := "syntrack"
+	label := "onwatch"
 	if testMode {
-		label = "syntrack (test)"
+		label = "onwatch (test)"
 	}
 
 	// Method 1: PID file (handles both "PID" and "PID:PORT" formats)
@@ -598,7 +599,7 @@ func runStop(testMode bool) error {
 			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
 			if err == nil {
 				conn.Close()
-				if pids := findSyntrackOnPort(port); len(pids) > 0 {
+				if pids := findOnwatchOnPort(port); len(pids) > 0 {
 					for _, foundPID := range pids {
 						if foundPID == myPID {
 							continue
@@ -625,7 +626,7 @@ func runStop(testMode bool) error {
 				continue
 			}
 			conn.Close()
-			if pids := findSyntrackOnPort(port); len(pids) > 0 {
+			if pids := findOnwatchOnPort(port); len(pids) > 0 {
 				for _, pid := range pids {
 					if pid == myPID {
 						continue
@@ -647,13 +648,13 @@ func runStop(testMode bool) error {
 	return nil
 }
 
-// runStatus reports the status of any running syntrack instance.
+// runStatus reports the status of any running onwatch instance.
 // In test mode, only the test PID file is checked (no port scanning).
 func runStatus(testMode bool) error {
 	myPID := os.Getpid()
-	label := "syntrack"
+	label := "onwatch"
 	if testMode {
-		label = "syntrack (test)"
+		label = "onwatch (test)"
 	}
 
 	// Check PID file (handles both "PID" and "PID:PORT" formats)
@@ -684,7 +685,7 @@ func runStatus(testMode bool) error {
 					} else if !testMode {
 						// Check which port it's listening on (skip in test mode)
 						for _, checkPort := range []int{9211, 8932, 8080, 9000} {
-							if pids := findSyntrackOnPort(checkPort); len(pids) > 0 {
+							if pids := findOnwatchOnPort(checkPort); len(pids) > 0 {
 								for _, p := range pids {
 									if p == pid {
 										fmt.Printf("  Dashboard: http://localhost:%d\n", checkPort)
@@ -699,9 +700,9 @@ func runStatus(testMode bool) error {
 					fmt.Printf("  PID file:  %s\n", pidFile)
 
 					// Show log file if it exists
-					logPath := ".syntrack.log"
+					logPath := ".onwatch.log"
 					if testMode {
-						logPath = ".syntrack-test.log"
+						logPath = ".onwatch-test.log"
 					}
 					if info, err := os.Stat(logPath); err == nil {
 						fmt.Printf("  Log file:  %s (%s)\n", logPath, humanSize(info.Size()))
@@ -710,8 +711,8 @@ func runStatus(testMode bool) error {
 					// Show DB file if it exists (check new default path first, then old)
 					home, _ := os.UserHomeDir()
 					dbPaths := []string{
-						filepath.Join(home, ".syntrack", "data", "syntrack.db"),
-						"./syntrack.db",
+						filepath.Join(home, ".onwatch", "data", "onwatch.db"),
+						"./onwatch.db",
 					}
 					for _, dbPath := range dbPaths {
 						if info, err := os.Stat(dbPath); err == nil {
@@ -737,7 +738,7 @@ func runStatus(testMode bool) error {
 				continue
 			}
 			conn.Close()
-			if pids := findSyntrackOnPort(port); len(pids) > 0 {
+			if pids := findOnwatchOnPort(port); len(pids) > 0 {
 				for _, pid := range pids {
 					if pid == myPID {
 						continue
@@ -768,7 +769,7 @@ func humanSize(bytes int64) string {
 func printBanner(cfg *config.Config, version string) {
 	fmt.Println()
 	fmt.Println("╔══════════════════════════════════════╗")
-	fmt.Printf("║  SynTrack v%-25s ║\n", version)
+	fmt.Printf("║  onWatch v%-26s ║\n", version)
 	fmt.Println("╠══════════════════════════════════════╣")
 
 	// Show configured providers
@@ -805,12 +806,12 @@ func printBanner(cfg *config.Config, version string) {
 }
 
 func printHelp() {
-	fmt.Println("SynTrack - Multi-Provider API Usage Tracker")
+	fmt.Println("onWatch - Multi-Provider API Usage Tracker")
 	fmt.Println()
-	fmt.Println("Usage: syntrack [COMMAND] [OPTIONS]")
+	fmt.Println("Usage: onwatch [COMMAND] [OPTIONS]")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  stop, --stop       Stop the running syntrack instance")
+	fmt.Println("  stop, --stop       Stop the running onwatch instance")
 	fmt.Println("  status, --status   Show status of the running instance")
 	fmt.Println()
 	fmt.Println("Options:")
@@ -818,7 +819,7 @@ func printHelp() {
 	fmt.Println("  --help             Print this help message")
 	fmt.Println("  --interval SEC     Polling interval in seconds (default: 60)")
 	fmt.Println("  --port PORT        Dashboard HTTP port (default: 9211)")
-	fmt.Println("  --db PATH          SQLite database file path (default: ~/.syntrack/data/syntrack.db)")
+	fmt.Println("  --db PATH          SQLite database file path (default: ~/.onwatch/data/onwatch.db)")
 	fmt.Println("  --debug            Run in foreground mode, log to stdout")
 	fmt.Println("  --test             Test mode: isolated PID/log files, won't affect production")
 	fmt.Println()
@@ -826,27 +827,27 @@ func printHelp() {
 	fmt.Println("  SYNTHETIC_API_KEY       Synthetic API key (configure at least one provider)")
 	fmt.Println("  ZAI_API_KEY            Z.ai API key")
 	fmt.Println("  ZAI_BASE_URL           Z.ai base URL (default: https://api.z.ai/api)")
-	fmt.Println("  SYNTRACK_POLL_INTERVAL  Polling interval in seconds")
-	fmt.Println("  SYNTRACK_PORT           Dashboard HTTP port")
-	fmt.Println("  SYNTRACK_ADMIN_USER     Dashboard admin username")
-	fmt.Println("  SYNTRACK_ADMIN_PASS     Dashboard admin password")
-	fmt.Println("  SYNTRACK_DB_PATH        SQLite database file path")
-	fmt.Println("  SYNTRACK_LOG_LEVEL      Log level: debug, info, warn, error")
+	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
+	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")
+	fmt.Println("  ONWATCH_ADMIN_USER      Dashboard admin username")
+	fmt.Println("  ONWATCH_ADMIN_PASS      Dashboard admin password")
+	fmt.Println("  ONWATCH_DB_PATH         SQLite database file path")
+	fmt.Println("  ONWATCH_LOG_LEVEL       Log level: debug, info, warn, error")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  syntrack                           # Run in background mode")
-	fmt.Println("  syntrack --debug                   # Run in foreground mode")
-	fmt.Println("  syntrack --interval 30 --port 8080 # Custom interval and port")
-	fmt.Println("  syntrack stop                      # Stop running instance")
-	fmt.Println("  syntrack --stop                    # Same as 'stop'")
-	fmt.Println("  syntrack status                    # Check if running")
-	fmt.Println("  syntrack --status                  # Same as 'status'")
-	fmt.Println("  syntrack --test --debug            # Run test instance (isolated)")
-	fmt.Println("  syntrack --test stop               # Stop only test instance")
-	fmt.Println("  syntrack --test status             # Check test instance status")
+	fmt.Println("  onwatch                           # Run in background mode")
+	fmt.Println("  onwatch --debug                   # Run in foreground mode")
+	fmt.Println("  onwatch --interval 30 --port 8080 # Custom interval and port")
+	fmt.Println("  onwatch stop                      # Stop running instance")
+	fmt.Println("  onwatch --stop                    # Same as 'stop'")
+	fmt.Println("  onwatch status                    # Check if running")
+	fmt.Println("  onwatch --status                  # Same as 'status'")
+	fmt.Println("  onwatch --test --debug            # Run test instance (isolated)")
+	fmt.Println("  onwatch --test stop               # Stop only test instance")
+	fmt.Println("  onwatch --test status             # Check test instance status")
 	fmt.Println()
 	fmt.Println("Test Mode (--test):")
-	fmt.Println("  Uses separate PID file (syntrack-test.pid) and log file (.syntrack-test.log).")
+	fmt.Println("  Uses separate PID file (onwatch-test.pid) and log file (.onwatch-test.log).")
 	fmt.Println("  Test instances never kill production instances and vice versa.")
 	fmt.Println("  Use --db and --port to further isolate test from production.")
 	fmt.Println()

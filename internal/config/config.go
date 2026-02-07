@@ -1,4 +1,4 @@
-// Package config handles loading and validation of SynTrack configuration.
+// Package config handles loading and validation of onWatch configuration.
 // It loads from .env files, environment variables, and CLI flags.
 package config
 
@@ -24,17 +24,26 @@ type Config struct {
 	ZaiBaseURL string // ZAI_BASE_URL
 
 	// Shared configuration
-	PollInterval time.Duration // SYNTRACK_POLL_INTERVAL (seconds → Duration)
-	Port         int           // SYNTRACK_PORT
-	Host         string        // SYNTRACK_HOST (bind address, default: 0.0.0.0)
-	AdminUser     string // SYNTRACK_ADMIN_USER
-	AdminPass     string // SYNTRACK_ADMIN_PASS
+	PollInterval time.Duration // ONWATCH_POLL_INTERVAL (seconds → Duration)
+	Port         int           // ONWATCH_PORT
+	Host         string        // ONWATCH_HOST (bind address, default: 0.0.0.0)
+	AdminUser     string // ONWATCH_ADMIN_USER
+	AdminPass     string // ONWATCH_ADMIN_PASS
 	AdminPassHash string // SHA-256 hash of password (set after DB check)
-	DBPath        string // SYNTRACK_DB_PATH
-	DBPathExplicit bool  // true if user explicitly set --db or SYNTRACK_DB_PATH
-	LogLevel     string        // SYNTRACK_LOG_LEVEL
+	DBPath        string // ONWATCH_DB_PATH
+	DBPathExplicit bool  // true if user explicitly set --db or ONWATCH_DB_PATH
+	LogLevel     string        // ONWATCH_LOG_LEVEL
 	DebugMode    bool          // --debug flag (foreground mode)
 	TestMode     bool          // --test flag (test mode isolation)
+}
+
+// envWithFallback reads the primary env var, falling back to the legacy name.
+// This provides backward compatibility for SYNTRACK_* → ONWATCH_* rename.
+func envWithFallback(primary, fallback string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	return os.Getenv(fallback)
 }
 
 // flagValues holds parsed CLI flags.
@@ -115,10 +124,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	cfg.ZaiAPIKey = os.Getenv("ZAI_API_KEY")
 	cfg.ZaiBaseURL = os.Getenv("ZAI_BASE_URL")
 
-	// Poll Interval (seconds)
+	// Poll Interval (seconds) — ONWATCH_* first, SYNTRACK_* fallback
 	if flags.interval > 0 {
 		cfg.PollInterval = time.Duration(flags.interval) * time.Second
-	} else if env := os.Getenv("SYNTRACK_POLL_INTERVAL"); env != "" {
+	} else if env := envWithFallback("ONWATCH_POLL_INTERVAL", "SYNTRACK_POLL_INTERVAL"); env != "" {
 		if v, err := strconv.Atoi(env); err == nil {
 			cfg.PollInterval = time.Duration(v) * time.Second
 		}
@@ -127,27 +136,27 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// Port
 	if flags.port > 0 {
 		cfg.Port = flags.port
-	} else if env := os.Getenv("SYNTRACK_PORT"); env != "" {
+	} else if env := envWithFallback("ONWATCH_PORT", "SYNTRACK_PORT"); env != "" {
 		if v, err := strconv.Atoi(env); err == nil {
 			cfg.Port = v
 		}
 	}
 
 	// Admin credentials
-	cfg.AdminUser = os.Getenv("SYNTRACK_ADMIN_USER")
-	cfg.AdminPass = os.Getenv("SYNTRACK_ADMIN_PASS")
+	cfg.AdminUser = envWithFallback("ONWATCH_ADMIN_USER", "SYNTRACK_ADMIN_USER")
+	cfg.AdminPass = envWithFallback("ONWATCH_ADMIN_PASS", "SYNTRACK_ADMIN_PASS")
 
 	// DB Path
 	if flags.db != "" {
 		cfg.DBPath = flags.db
 		cfg.DBPathExplicit = true
-	} else if envDB := os.Getenv("SYNTRACK_DB_PATH"); envDB != "" {
+	} else if envDB := envWithFallback("ONWATCH_DB_PATH", "SYNTRACK_DB_PATH"); envDB != "" {
 		cfg.DBPath = envDB
 		cfg.DBPathExplicit = true
 	}
 
 	// Log Level
-	cfg.LogLevel = os.Getenv("SYNTRACK_LOG_LEVEL")
+	cfg.LogLevel = envWithFallback("ONWATCH_LOG_LEVEL", "SYNTRACK_LOG_LEVEL")
 
 	// Debug mode (CLI flag only)
 	cfg.DebugMode = flags.debug
@@ -183,9 +192,9 @@ func (c *Config) applyDefaults() {
 	if c.DBPath == "" {
 		home, err := os.UserHomeDir()
 		if err != nil || home == "" {
-			c.DBPath = "./syntrack.db"
+			c.DBPath = "./onwatch.db"
 		} else {
-			c.DBPath = filepath.Join(home, ".syntrack", "data", "syntrack.db")
+			c.DBPath = filepath.Join(home, ".onwatch", "data", "onwatch.db")
 		}
 	}
 	if c.LogLevel == "" {
@@ -309,16 +318,16 @@ func redactAPIKey(key string, expectedPrefix string) string {
 
 // LogWriter returns the appropriate log destination based on debug mode.
 // In debug mode: returns os.Stdout
-// In background mode: returns a file handle to .syntrack.log
+// In background mode: returns a file handle to .onwatch.log
 func (c *Config) LogWriter() (io.Writer, error) {
 	if c.DebugMode {
 		return os.Stdout, nil
 	}
 
 	// Background mode: log to file in same directory as DB
-	logName := ".syntrack.log"
+	logName := ".onwatch.log"
 	if c.TestMode {
-		logName = ".syntrack-test.log"
+		logName = ".onwatch-test.log"
 	}
 	logPath := filepath.Join(filepath.Dir(c.DBPath), logName)
 

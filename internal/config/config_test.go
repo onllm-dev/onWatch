@@ -10,12 +10,12 @@ import (
 
 func TestConfig_LoadsFromEnv(t *testing.T) {
 	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key_123")
-	os.Setenv("SYNTRACK_POLL_INTERVAL", "120")
-	os.Setenv("SYNTRACK_PORT", "8080")
-	os.Setenv("SYNTRACK_ADMIN_USER", "myuser")
-	os.Setenv("SYNTRACK_ADMIN_PASS", "mypass")
-	os.Setenv("SYNTRACK_DB_PATH", "/tmp/test.db")
-	os.Setenv("SYNTRACK_LOG_LEVEL", "debug")
+	os.Setenv("ONWATCH_POLL_INTERVAL", "120")
+	os.Setenv("ONWATCH_PORT", "8080")
+	os.Setenv("ONWATCH_ADMIN_USER", "myuser")
+	os.Setenv("ONWATCH_ADMIN_PASS", "mypass")
+	os.Setenv("ONWATCH_DB_PATH", "/tmp/test.db")
+	os.Setenv("ONWATCH_LOG_LEVEL", "debug")
 	defer os.Clearenv()
 
 	cfg, err := Load()
@@ -102,13 +102,13 @@ func TestConfig_DefaultValues(t *testing.T) {
 	// Default DB path depends on HOME availability
 	home, homeErr := os.UserHomeDir()
 	if homeErr == nil && home != "" {
-		expectedDBPath := filepath.Join(home, ".syntrack", "data", "syntrack.db")
+		expectedDBPath := filepath.Join(home, ".onwatch", "data", "onwatch.db")
 		if cfg.DBPath != expectedDBPath {
 			t.Errorf("DBPath = %q, want %q", cfg.DBPath, expectedDBPath)
 		}
 	} else {
-		if cfg.DBPath != "./syntrack.db" {
-			t.Errorf("DBPath = %q, want %q (HOME unavailable fallback)", cfg.DBPath, "./syntrack.db")
+		if cfg.DBPath != "./onwatch.db" {
+			t.Errorf("DBPath = %q, want %q (HOME unavailable fallback)", cfg.DBPath, "./onwatch.db")
 		}
 	}
 	if cfg.LogLevel != "info" {
@@ -232,7 +232,7 @@ func TestConfig_ValidatesSyntheticAPIKey_Format(t *testing.T) {
 
 func TestConfig_ValidatesInterval_Minimum(t *testing.T) {
 	os.Setenv("ZAI_API_KEY", "zai_test_key")
-	os.Setenv("SYNTRACK_POLL_INTERVAL", "5")
+	os.Setenv("ONWATCH_POLL_INTERVAL", "5")
 	defer os.Clearenv()
 
 	_, err := Load()
@@ -243,7 +243,7 @@ func TestConfig_ValidatesInterval_Minimum(t *testing.T) {
 
 func TestConfig_ValidatesInterval_Maximum(t *testing.T) {
 	os.Setenv("ZAI_API_KEY", "zai_test_key")
-	os.Setenv("SYNTRACK_POLL_INTERVAL", "7200")
+	os.Setenv("ONWATCH_POLL_INTERVAL", "7200")
 	defer os.Clearenv()
 
 	_, err := Load()
@@ -271,7 +271,7 @@ func TestConfig_ValidatesPort_Range(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			os.Clearenv()
 			os.Setenv("ZAI_API_KEY", "zai_test_key")
-			os.Setenv("SYNTRACK_PORT", tt.port)
+			os.Setenv("ONWATCH_PORT", tt.port)
 			defer os.Clearenv()
 
 			_, err := Load()
@@ -323,9 +323,9 @@ func TestConfig_DebugMode_Default(t *testing.T) {
 
 func TestConfig_LoadWithArgs_FlagOverridesEnv(t *testing.T) {
 	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
-	os.Setenv("SYNTRACK_POLL_INTERVAL", "120")
-	os.Setenv("SYNTRACK_PORT", "8080")
-	os.Setenv("SYNTRACK_DB_PATH", "/tmp/env.db")
+	os.Setenv("ONWATCH_POLL_INTERVAL", "120")
+	os.Setenv("ONWATCH_PORT", "8080")
+	os.Setenv("ONWATCH_DB_PATH", "/tmp/env.db")
 	defer os.Clearenv()
 
 	cfg, err := loadWithArgs([]string{"--interval", "30", "--port", "9000", "--db", "/tmp/flag.db"})
@@ -389,7 +389,7 @@ func TestConfig_LogWriter(t *testing.T) {
 
 	cfg = &Config{
 		DebugMode: false,
-		DBPath:    "/tmp/test_syntrack.db",
+		DBPath:    "/tmp/test_onwatch.db",
 	}
 	writer, err = cfg.LogWriter()
 	if err != nil {

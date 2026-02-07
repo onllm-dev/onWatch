@@ -11,8 +11,8 @@
 *.db-shm
 
 # Binary
-/syntrack
-/syntrack.exe
+/onwatch
+/onwatch.exe
 /bin/
 /dist/
 
@@ -46,10 +46,10 @@ coverage.html
 
 # Logs
 *.log
-.syntrack.log
+.onwatch.log
 logs/
 opencode.json
-.syntrack.pid
+.onwatch.pid
 
 # Node.js (dev tools)
 node_modules/

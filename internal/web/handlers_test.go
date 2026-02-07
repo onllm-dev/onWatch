@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/api"
-	"github.com/onllm-dev/syntrack/internal/config"
-	"github.com/onllm-dev/syntrack/internal/store"
-	"github.com/onllm-dev/syntrack/internal/tracker"
+	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/config"
+	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/internal/tracker"
 )
 
 // Test helper functions for creating configurations
@@ -71,8 +71,8 @@ func TestHandler_Dashboard_ReturnsHTML(t *testing.T) {
 	if !strings.Contains(body, "<!DOCTYPE html>") {
 		t.Error("expected HTML document in response")
 	}
-	if !strings.Contains(body, "SynTrack") {
-		t.Error("expected 'SynTrack' in response body")
+	if !strings.Contains(body, "onWatch") {
+		t.Error("expected 'onWatch' in response body")
 	}
 }
 

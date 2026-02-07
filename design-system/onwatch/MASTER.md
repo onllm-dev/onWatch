@@ -1,4 +1,4 @@
-# SynTrack - Design System Master
+# onWatch - Design System Master
 
 > **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
 > If that file exists, its rules **override** this Master file.
@@ -6,7 +6,7 @@
 
 ---
 
-**Project:** SynTrack
+**Project:** onWatch
 **Updated:** 2026-02-06
 **Design Language:** Google Material Design 3 (Material You) — adapted for monitoring dashboards
 **Theme:** Dual-mode (Dark + Light) with system preference detection
@@ -15,7 +15,7 @@
 
 ## Design Philosophy
 
-SynTrack follows Google Material Design 3 principles adapted for a monitoring dashboard:
+onWatch follows Google Material Design 3 principles adapted for a monitoring dashboard:
 
 1. **Elevated surfaces** — Cards float above the background using Material elevation system
 2. **Dynamic color** — Theme-aware colors using CSS custom properties
@@ -65,7 +65,7 @@ SynTrack follows Google Material Design 3 principles adapted for a monitoring da
 
 ### Quota Status Colors (Both Modes)
 
-These are semantic colors for the usage meters — the core visual feature of SynTrack.
+These are semantic colors for the usage meters — the core visual feature of onWatch.
 
 | Status | Condition | Dark Hex | Light Hex | CSS Variable |
 |--------|-----------|----------|-----------|-------------|
@@ -106,7 +106,7 @@ These are semantic colors for the usage meters — the core visual feature of Sy
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
 | Display Large | 57px | 400 | 64px | Not used (dashboard) |
-| Headline Large | 32px | 600 | 40px | Page title "SynTrack" |
+| Headline Large | 32px | 600 | 40px | Page title "onWatch" |
 | Headline Medium | 28px | 500 | 36px | Section headers |
 | Title Large | 22px | 500 | 28px | Card titles |
 | Title Medium | 16px | 600 | 24px | Quota type labels |
@@ -179,7 +179,7 @@ The most important UI element. Each card represents one quota type.
 
 ```
 +---------------------------------------------------------------------+
-|  [S] SynTrack          Last updated: 12:34:56    [Sun/Moon] [Gear]  |
+|  [S] onWatch          Last updated: 12:34:56    [Sun/Moon] [Gear]  |
 +---------------------------------------------------------------------+
 ```
 

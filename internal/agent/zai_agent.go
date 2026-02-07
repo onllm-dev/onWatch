@@ -1,4 +1,4 @@
-// Package agent provides the background polling agent for SynTrack.
+// Package agent provides the background polling agent for onWatch.
 package agent
 
 import (
@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/onllm-dev/syntrack/internal/api"
-	"github.com/onllm-dev/syntrack/internal/store"
-	"github.com/onllm-dev/syntrack/internal/tracker"
+	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/internal/tracker"
 )
 
 // ZaiAgent manages the background polling loop for Z.ai quota tracking.

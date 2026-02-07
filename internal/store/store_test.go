@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/api"
+	"github.com/onllm-dev/onwatch/internal/api"
 )
 
 func TestStore_CreateTables(t *testing.T) {

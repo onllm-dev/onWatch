@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/onllm-dev/syntrack/internal/api"
-	"github.com/onllm-dev/syntrack/internal/store"
+	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/store"
 )
 
 // ZaiTracker manages reset cycle detection and usage calculation for Z.ai quotas.
