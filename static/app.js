@@ -848,11 +848,10 @@ function buildInsightCardsHTML(insights) {
       <div class="insight-card-header">
         <svg class="insight-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
         <span class="insight-card-title">${i.title}</span>
+        ${i.metric || i.sublabel ? `<span class="insight-card-values">${i.metric ? `<span class="insight-card-metric">${i.metric}</span>` : ''}${i.sublabel ? `<span class="insight-card-sublabel">${i.sublabel}</span>` : ''}</span>` : ''}
         ${hideBtn}
         <svg class="insight-card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
       </div>
-      ${i.metric ? `<div class="insight-card-metric">${i.metric}</div>` : ''}
-      ${i.sublabel ? `<div class="insight-card-sublabel">${i.sublabel}</div>` : ''}
       <div class="insight-card-detail">
         <div class="insight-card-desc">${i.description}</div>
       </div>
