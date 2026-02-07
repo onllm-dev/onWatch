@@ -64,7 +64,9 @@ _jctl_cmd() {
 
 # Generate a random 12-char alphanumeric password
 generate_password() {
-    LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 12
+    local bytes
+    bytes=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 12) || true
+    printf '%s' "$bytes"
 }
 
 # Numbered menu, returns selection number
@@ -72,18 +74,18 @@ generate_password() {
 prompt_choice() {
     local prompt="$1"; shift
     local options=("$@")
-    printf "\n  ${BOLD}%s${NC}\n" "$prompt"
+    printf "\n  ${BOLD}%s${NC}\n" "$prompt" >&2
     for i in "${!options[@]}"; do
-        printf "    ${CYAN}%d)${NC} %s\n" "$((i+1))" "${options[$i]}"
+        printf "    ${CYAN}%d)${NC} %s\n" "$((i+1))" "${options[$i]}" >&2
     done
     while true; do
-        printf "  ${BOLD}>${NC} "
+        printf "  ${BOLD}>${NC} " >&2
         read -u 3 -r choice
         if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#options[@]} )); then
             echo "$choice"
             return
         fi
-        printf "  ${RED}Please enter 1-%d${NC}\n" "${#options[@]}"
+        printf "  ${RED}Please enter 1-%d${NC}\n" "${#options[@]}" >&2
     done
 }
 
@@ -93,11 +95,11 @@ prompt_secret() {
     local prompt="$1" validation="$2"
     local value=""
     while true; do
-        printf "  %s: " "$prompt"
+        printf "  %s: " "$prompt" >&2
         read -u 3 -rs value
-        echo ""
+        echo "" >&2
         if [[ -z "$value" ]]; then
-            printf "  ${RED}Cannot be empty${NC}\n"
+            printf "  ${RED}Cannot be empty${NC}\n" >&2
             continue
         fi
         # Run validation
@@ -108,7 +110,7 @@ prompt_secret() {
             else
                 masked="${value:0:3}..."
             fi
-            printf "  ${GREEN}✓${NC} ${DIM}%s${NC}\n" "$masked"
+            printf "  ${GREEN}✓${NC} ${DIM}%s${NC}\n" "$masked" >&2
             echo "$value"
             return
         fi
@@ -119,7 +121,7 @@ prompt_secret() {
 # Usage: result=$(prompt_with_default "Dashboard port" "9211")
 prompt_with_default() {
     local prompt="$1" default="$2"
-    printf "  %s ${DIM}[%s]${NC}: " "$prompt" "$default"
+    printf "  %s ${DIM}[%s]${NC}: " "$prompt" "$default" >&2
     read -u 3 -r value
     if [[ -z "$value" ]]; then
         echo "$default"
@@ -135,7 +137,7 @@ validate_synthetic_key() {
     if [[ "$val" == syn_* ]]; then
         return 0
     fi
-    printf "  ${RED}Key must start with 'syn_'${NC}\n"
+    printf "  ${RED}Key must start with 'syn_'${NC}\n" >&2
     return 1
 }
 
@@ -144,7 +146,7 @@ validate_nonempty() {
     if [[ -n "$val" ]]; then
         return 0
     fi
-    printf "  ${RED}Cannot be empty${NC}\n"
+    printf "  ${RED}Cannot be empty${NC}\n" >&2
     return 1
 }
 
@@ -153,7 +155,7 @@ validate_https_url() {
     if [[ "$val" == https://* ]]; then
         return 0
     fi
-    printf "  ${RED}URL must start with 'https://'${NC}\n"
+    printf "  ${RED}URL must start with 'https://'${NC}\n" >&2
     return 1
 }
 
@@ -162,7 +164,7 @@ validate_port() {
     if [[ "$val" =~ ^[0-9]+$ ]] && (( val >= 1 && val <= 65535 )); then
         return 0
     fi
-    printf "  ${RED}Must be a number between 1 and 65535${NC}\n"
+    printf "  ${RED}Must be a number between 1 and 65535${NC}\n" >&2
     return 1
 }
 
@@ -171,7 +173,7 @@ validate_interval() {
     if [[ "$val" =~ ^[0-9]+$ ]] && (( val >= 10 && val <= 3600 )); then
         return 0
     fi
-    printf "  ${RED}Must be a number between 10 and 3600${NC}\n"
+    printf "  ${RED}Must be a number between 10 and 3600${NC}\n" >&2
     return 1
 }
 
@@ -288,10 +290,10 @@ append_zai_to_env() {
 collect_zai_config() {
     local _zai_key _zai_base_url
 
-    printf "\n  ${DIM}Get your key: https://www.z.ai/api-keys${NC}\n"
+    printf "\n  ${DIM}Get your key: https://www.z.ai/api-keys${NC}\n" >&2
     _zai_key=$(prompt_secret "Z.ai API key" validate_nonempty)
 
-    printf "\n"
+    printf "\n" >&2
     local use_default_url
     use_default_url=$(prompt_with_default "Use default Z.ai base URL (https://api.z.ai/api)? (Y/n)" "Y")
     if [[ "$use_default_url" =~ ^[Nn] ]]; then
@@ -300,7 +302,7 @@ collect_zai_config() {
             if validate_https_url "$_zai_base_url" 2>/dev/null; then
                 break
             fi
-            printf "  ${RED}URL must start with 'https://'${NC}\n"
+            printf "  ${RED}URL must start with 'https://'${NC}\n" >&2
         done
     else
         _zai_base_url="https://api.z.ai/api"
@@ -316,6 +318,7 @@ collect_zai_config() {
 # Reads from /dev/tty (fd 3) for piped install compatibility.
 interactive_setup() {
     local env_file="${INSTALL_DIR}/.env"
+    local _opened_fd3=false
 
     if [[ -f "$env_file" ]]; then
         # Load existing values for start_service display
@@ -344,7 +347,10 @@ interactive_setup() {
             # Fall through to fresh setup below
         else
             # One provider configured — offer to add the missing one
-            exec 3</dev/tty || fail "Cannot read from terminal. Run the script directly instead of piping."
+            if ! { true <&3; } 2>/dev/null; then
+                exec 3</dev/tty || fail "Cannot read from terminal. Run the script directly instead of piping."
+                _opened_fd3=true
+            fi
 
             if $has_syn && ! $has_zai; then
                 info "Existing .env found — Synthetic configured"
@@ -373,7 +379,7 @@ interactive_setup() {
                 fi
             fi
 
-            exec 3<&-
+            $_opened_fd3 && exec 3<&- || true
             return
         fi
     fi
@@ -381,7 +387,11 @@ interactive_setup() {
     # ── Fresh setup (no .env or empty keys) ──
 
     # Open /dev/tty for reading — works even when script is piped via curl | bash
-    exec 3</dev/tty || fail "Cannot read from terminal. Run the script directly instead of piping."
+    # Skip if fd 3 is already open (e.g., during testing)
+    if ! { true <&3; } 2>/dev/null; then
+        exec 3</dev/tty || fail "Cannot read from terminal. Run the script directly instead of piping."
+        _opened_fd3=true
+    fi
 
     printf "\n"
     printf "  ${BOLD}━━━ Configuration ━━━${NC}\n"
@@ -448,8 +458,8 @@ interactive_setup() {
         printf "  ${RED}Must be a number between 10 and 3600${NC}\n"
     done
 
-    # Close the tty fd
-    exec 3<&-
+    # Close the tty fd (only if we opened it)
+    $_opened_fd3 && exec 3<&- || true
 
     # ── Write .env ──
     {
