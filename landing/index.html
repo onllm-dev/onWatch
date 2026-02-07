@@ -1370,6 +1370,19 @@ a:hover { text-decoration: underline; }
   background: var(--surface-card-alt);
 }
 
+.comparison-table th.highlight-col {
+  color: var(--accent-teal);
+  background: rgba(13, 148, 136, 0.08);
+}
+.comparison-table td.highlight-col {
+  background: rgba(13, 148, 136, 0.04);
+}
+.comparison-table tr:hover td.highlight-col {
+  background: rgba(13, 148, 136, 0.08);
+}
+.comparison-table th, .comparison-table td { text-align: center; }
+.comparison-table th:first-child, .comparison-table td:first-child { text-align: left; }
+
 .check { color: var(--status-healthy); font-weight: 700; font-size: 16px; }
 .cross { color: var(--text-muted); opacity: 0.4; }
 
@@ -2070,8 +2083,9 @@ a:hover { text-decoration: underline; }
                 <thead>
                     <tr>
                         <th scope="col">Capability</th>
-                        <th scope="col">Provider Dashboard</th>
-                        <th scope="col">SynTrack</th>
+                        <th scope="col">Synthetic</th>
+                        <th scope="col">Z.ai</th>
+                        <th scope="col" class="highlight-col">SynTrack</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2079,46 +2093,61 @@ a:hover { text-decoration: underline; }
                         <td>Current quota usage</td>
                         <td><span class="check" aria-label="Yes">&#10003;</span></td>
                         <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Reset time visibility</td>
+                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
                     </tr>
                     <tr>
                         <td>Historical usage trends</td>
                         <td><span class="cross" aria-label="No">&#10005;</span></td>
                         <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
                     </tr>
                     <tr>
                         <td>Reset cycle detection &amp; history</td>
                         <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
                     </tr>
                     <tr>
                         <td>Per-cycle consumption stats</td>
                         <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
                     </tr>
                     <tr>
-                        <td>Usage rate projections</td>
+                        <td>Usage rate &amp; projections</td>
                         <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
                     </tr>
                     <tr>
                         <td>Per-session tracking</td>
                         <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
                     </tr>
                     <tr>
                         <td>Multi-provider unified view</td>
                         <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
                     </tr>
                     <tr>
                         <td>Live countdown timers</td>
                         <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
                     </tr>
                     <tr>
-                        <td>Open source</td>
+                        <td>Open source &amp; self-hosted</td>
                         <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
                     </tr>
                 </tbody>
             </table>
