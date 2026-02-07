@@ -3625,14 +3625,9 @@ document.querySelectorAll('a[href^="#"]').forEach(function(a) {
         labels.push(h + ':' + pad(t.getMinutes()));
     }
 
-    /* Synthetic data: cumulative usage with activity bursts and resets */
-    var actSub = genActivity(1337);
-    var actSearch = genActivity(7891);
-    var actTool = genActivity(4242);
+    /* ── Curve builders ── */
 
-    /* Target end percentages */
-    var subEnd = 11.4, searchEnd = 95.2, toolEnd = 87.6;
-
+    /* Monotonically increasing curve from 0 to endPct */
     function buildCurve(activity, endPct) {
         var total = 0;
         for (var j = 0; j < POINTS; j++) total += activity[j];
@@ -3641,7 +3636,6 @@ document.querySelectorAll('a[href^="#"]').forEach(function(a) {
         var sum = 0;
         for (var j = 0; j < POINTS; j++) {
             sum += activity[j];
-            /* Scale so final point = endPct, and add small upward drift */
             var base = (sum / total) * endPct * 0.85;
             var drift = (j / POINTS) * endPct * 0.15;
             cumulative.push(Math.min(100, base + drift));
@@ -3649,21 +3643,7 @@ document.querySelectorAll('a[href^="#"]').forEach(function(a) {
         return cumulative;
     }
 
-    var synSubData = buildCurve(actSub, subEnd);
-    var synSearchData = buildCurve(actSearch, searchEnd);
-    var synToolData = buildCurve(actTool, toolEnd);
-
-    /* Z.ai data: derived from different seeds, monotonically increasing (no resets) */
-    /* Z.ai has daily resets, so within 6h window the data should be steadily climbing */
-    /* Start from a meaningful base (usage already happened earlier in the day) */
-    var actZTok = genActivity(5555);
-    var actZTime = genActivity(9876);
-    var actZTool = genActivity(3141);
-
-    var zaiTokBase = 18, zaiTokEnd = 34;     /* 18% -> 34% of daily token limit */
-    var zaiTimeBase = 8, zaiTimeEnd = 22;     /* 8% -> 22% of daily time limit */
-    var zaiToolBase = 12, zaiToolEnd = 28;    /* 12% -> 28% of daily tool call limit */
-
+    /* Monotonically increasing curve from basePct to endPct */
     function buildCurveWithBase(activity, basePct, endPct) {
         var range = endPct - basePct;
         var total = 0;
@@ -3680,35 +3660,117 @@ document.querySelectorAll('a[href^="#"]').forEach(function(a) {
         return cumulative;
     }
 
-    var zaiTokData = buildCurveWithBase(actZTok, zaiTokBase, zaiTokEnd);
-    var zaiTimeData = buildCurveWithBase(actZTime, zaiTimeBase, zaiTimeEnd);
-    var zaiToolData = buildCurveWithBase(actZTool, zaiToolBase, zaiToolEnd);
+    /* Curve with a single reset drop: climbs to prePeak, drops at resetIdx, climbs to postEnd */
+    function buildCurveWithReset(activity, resetIdx, preBase, prePeak, postEnd) {
+        var result = [];
+        /* Pre-reset: climb from preBase up to prePeak */
+        var preTotal = 0;
+        for (var j = 0; j < resetIdx; j++) preTotal += activity[j];
+        if (preTotal === 0) preTotal = 1;
+        var preSum = 0, prevVal = preBase;
+        var preRange = prePeak - preBase;
+        for (var j = 0; j < resetIdx; j++) {
+            preSum += activity[j];
+            var pct = preBase + (preSum / preTotal) * preRange * 0.85 + (j / resetIdx) * preRange * 0.15;
+            pct = Math.max(prevVal, Math.min(100, pct));
+            result.push(pct);
+            prevVal = pct;
+        }
+        /* Post-reset: climb from near 0 up to postEnd */
+        var postLen = POINTS - resetIdx;
+        var postTotal = 0;
+        for (var j = resetIdx; j < POINTS; j++) postTotal += activity[j];
+        if (postTotal === 0) postTotal = 1;
+        var postSum = 0;
+        prevVal = 0;
+        for (var j = resetIdx; j < POINTS; j++) {
+            postSum += activity[j];
+            var pct = postEnd * (postSum / postTotal) * 0.85 + postEnd * ((j - resetIdx) / postLen) * 0.15;
+            pct = Math.max(prevVal, Math.min(100, pct));
+            result.push(pct);
+            prevVal = pct;
+        }
+        return result;
+    }
 
-    /* Ensure Z.ai data is monotonically increasing */
+    /* Sawtooth curve for hourly resets: multiple cycles of climb-then-drop */
+    function buildSawtooth(activity, resetPoints, finalEnd) {
+        var result = [];
+        var boundaries = [0].concat(resetPoints).concat([POINTS]);
+        for (var s = 0; s < boundaries.length - 1; s++) {
+            var segStart = boundaries[s], segEnd = boundaries[s + 1];
+            var segLen = segEnd - segStart;
+            var isLast = (s === boundaries.length - 2);
+            /* Completed cycles peak at 75-95%. Final (current) cycle ends at finalEnd. */
+            var peak = isLast ? finalEnd : (75 + (activity[segStart % activity.length] * 20));
+            if (peak > 100) peak = 95;
+            var segTotal = 0;
+            for (var j = segStart; j < segEnd; j++) segTotal += activity[j % activity.length];
+            if (segTotal === 0) segTotal = 1;
+            var segSum = 0, prevVal = 0;
+            for (var j = segStart; j < segEnd; j++) {
+                segSum += activity[j % activity.length];
+                var pct = peak * (segSum / segTotal) * 0.85 + peak * ((j - segStart) / segLen) * 0.15;
+                pct = Math.max(prevVal, Math.min(100, pct));
+                result.push(pct);
+                prevVal = pct;
+            }
+        }
+        return result;
+    }
+
     function monotonic(arr) {
         for (var k = 1; k < arr.length; k++) {
             if (arr[k] < arr[k - 1]) arr[k] = arr[k - 1];
         }
         return arr;
     }
+
+    /* ── Synthetic data ── */
+    var actSub = genActivity(1337);
+    var actSearch = genActivity(7891);
+    var actTool = genActivity(4242);
+
+    /* Subscription: ~5h cycle, 3h47m left → reset happened ~1h13m (≈15 pts) ago → resetIdx = 57 */
+    /* Before reset: was climbing all cycle, peaked around 72%. After reset: climbed to 11.4%. */
+    var synSubData = buildCurveWithReset(actSub, 57, 42, 72, 11.4);
+
+    /* Search: hourly resets, 38m left → current cycle started 22m ago */
+    /* Reset points every 12 data points (1h). Last reset at pt 68, then 56, 44, 32, 20, 8 */
+    var synSearchData = buildSawtooth(actSearch, [8, 20, 32, 44, 56, 68], 95.2);
+
+    /* Tool Calls: ~24h cycle, 16h22m left → reset was ~7h38m ago, before the 6h window. No reset. */
+    var synToolData = buildCurveWithBase(actTool, 62, 87.6);
+    monotonic(synToolData);
+
+    /* ── Z.ai data ── */
+    /* Daily resets, 17h14m left → reset ~6h46m ago, just outside the 6h window. Monotonic climb. */
+    var actZTok = genActivity(5555);
+    var actZTime = genActivity(9876);
+    var actZTool = genActivity(3141);
+
+    var zaiTokData = buildCurveWithBase(actZTok, 18, 34);
+    var zaiTimeData = buildCurveWithBase(actZTime, 8, 22);
+    var zaiToolData = buildCurveWithBase(actZTool, 12, 28);
     monotonic(zaiTokData);
     monotonic(zaiTimeData);
     monotonic(zaiToolData);
 
-    /* Anthropic data: utilization % curves for five_hour, seven_day, seven_day_sonnet */
+    /* ── Anthropic data ── */
     var actAnt5h = genActivity(7777);
     var actAnt7d = genActivity(4242);
     var actAntSon = genActivity(1234);
 
-    var ant5hBase = 30, ant5hEnd = 50;     /* 30% -> 50% of five-hour limit */
-    var ant7dBase = 20, ant7dEnd = 31;     /* 20% -> 31% of seven-day limit */
-    var antSonBase = 0.2, antSonEnd = 1.0; /* 0.2% -> 1% of sonnet seven-day limit */
+    /* Five-hour: 5h cycle, 2h18m left → reset ~2h42m (≈32 pts) ago → resetIdx = 40 */
+    /* Before reset: peaked around 65%. After reset: climbed to 50%. */
+    var ant5hData = buildCurveWithReset(actAnt5h, 40, 38, 65, 50);
 
-    var ant5hData = buildCurveWithBase(actAnt5h, ant5hBase, ant5hEnd);
-    var ant7dData = buildCurveWithBase(actAnt7d, ant7dBase, ant7dEnd);
-    var antSonData = buildCurveWithBase(actAntSon, antSonBase, antSonEnd);
-    monotonic(ant5hData);
+    /* Seven-day: weekly reset, 4d12h left → no reset in 6h window. Monotonic. */
+    var ant7dData = buildCurveWithBase(actAnt7d, 20, 31);
     monotonic(ant7dData);
+
+    /* Sonnet seven-day: same weekly cycle, no reset. */
+    var antSonData = buildCurveWithBase(actAntSon, 0.2, 1.0);
     monotonic(antSonData);
 
     /* ── Chart colors ── */
