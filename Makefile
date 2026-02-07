@@ -1,6 +1,6 @@
-.PHONY: build test run clean integration dev lint
+.PHONY: build test run clean integration dev lint release-local
 
-VERSION := 1.0.0
+VERSION := $(shell cat VERSION)
 BINARY := syntrack
 LDFLAGS := -ldflags="-s -w -X main.version=$(VERSION)"
 
@@ -15,6 +15,7 @@ run: build
 
 clean:
 	rm -f $(BINARY) coverage.out coverage.html
+	rm -rf dist/
 	go clean -testcache
 	rm -f *.db *.db-journal *.db-wal *.db-shm
 
@@ -32,3 +33,14 @@ coverage:
 	go test -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
+
+release-local:
+	@echo "Building SynTrack v$(VERSION) for all platforms..."
+	@mkdir -p dist
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build $(LDFLAGS) -o dist/syntrack-darwin-arm64       .
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build $(LDFLAGS) -o dist/syntrack-darwin-amd64       .
+	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build $(LDFLAGS) -o dist/syntrack-linux-amd64        .
+	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build $(LDFLAGS) -o dist/syntrack-linux-arm64        .
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/syntrack-windows-amd64.exe  .
+	@echo "Done. Binaries in dist/"
+	@ls -lh dist/
