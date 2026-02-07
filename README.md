@@ -31,6 +31,7 @@ API providers show current quota usage but not historical trends or per-cycle co
 | Live countdown | Real-time timers for all quota types |
 | Material Design 3 | Dashboard with dark and light mode |
 | Time-series chart | Chart.js area chart with 1h, 6h, 24h, 7d, 30d ranges |
+| Usage insights | Provider-specific stats: plan capacity, tokens-per-call, cycle utilization |
 | Session tracking | Track consumption per agent session |
 | SQLite storage | Append-only log, WAL mode |
 | Single binary | No runtime dependencies, all assets embedded |
@@ -174,7 +175,7 @@ Each provider displays cards for its quota types:
 
 **Synthetic:** Subscription, Search (Hourly), Tool Call Discounts — each with independent reset timers.
 
-**Z.ai:** Tokens Limit and Time Limit — with usage details and reset countdown.
+**Z.ai:** Tokens Limit, Time Limit, and Tool Calls — each with per-tool breakdown and reset countdown.
 
 Every card shows:
 - Current usage vs. limit with color-coded progress bar
@@ -184,9 +185,15 @@ Every card shows:
 
 ### Usage Insights
 
-Plain English summaries:
+Each provider shows stat cards and expandable insight cards tailored to its data model.
 
-> "You've used 47.1% of your tool call quota. At current rate (~1,834 req/hr), projected ~12,102 before reset."
+**Synthetic insights** focus on cycle-level analysis: average cycle utilization, 30-day usage across billing periods, weekly pace with monthly projection, tool call share of total consumption, and per-session averages.
+
+**Z.ai insights** surface plan capacity and efficiency: daily token budget (200M) and monthly capacity (6B), average tokens per tool call, top tool by call volume, and per-tool breakdowns (search-prime, web-reader, zread). Both providers show live quota status and monitoring coverage.
+
+Example:
+
+> "Each tool call consumes ~1.0M tokens on average. At this rate, your daily budget supports ~193 calls."
 
 ### Time-Series Chart
 

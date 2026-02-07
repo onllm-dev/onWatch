@@ -171,7 +171,7 @@ make coverage              # Generate HTML coverage report → coverage.html
 
 SynTrack supports two providers: Synthetic and Z.ai. When both API keys are set, both agents run in parallel goroutines, each polling its respective API and storing snapshots in the shared SQLite database.
 
-The dashboard switches between providers via the `?provider=` query parameter. The frontend reloads the page when the user selects a different provider from the dropdown.
+The dashboard switches between providers via the `?provider=` query parameter. Each provider renders its own quota cards, insight cards, and stat summaries. Synthetic insights focus on cycle utilization and billing periods; Z.ai insights show plan capacity (daily/monthly token budgets), tokens-per-call efficiency, and top tool analysis.
 
 Key source files:
 
