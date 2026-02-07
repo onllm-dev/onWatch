@@ -506,7 +506,10 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
   border-radius: 4px;
   color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
 }
+.mockup-tab:hover { color: var(--text-secondary); }
 .mockup-tab.active {
   background: var(--surface-card);
   color: var(--accent-teal);
@@ -517,15 +520,23 @@ a:hover { text-decoration: underline; }
 .mockup-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .mock-card {
-  padding: 16px;
+  padding: 12px 14px;
   background: var(--surface-card-alt);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast);
+}
+
+.mock-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 
 .mock-card-label {
@@ -534,7 +545,24 @@ a:hover { text-decoration: underline; }
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.mock-card-label svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0.5;
+}
+
+.mock-card-countdown {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent-teal);
+  background: rgba(13, 148, 136, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 .mock-card-value {
@@ -542,14 +570,14 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
   font-family: var(--font-mono);
   color: var(--text-primary);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .mock-card-sub {
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--text-muted);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .mock-progress {
@@ -557,12 +585,50 @@ a:hover { text-decoration: underline; }
   background: var(--surface-inset);
   border-radius: var(--radius-full);
   overflow: hidden;
+  margin-bottom: 8px;
 }
 
 .mock-progress-fill {
   height: 100%;
   border-radius: var(--radius-full);
   transition: width 1.5s ease-out;
+}
+
+.mock-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mock-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.mock-badge svg { width: 9px; height: 9px; }
+.mock-badge.healthy {
+  color: var(--status-healthy);
+  background: var(--status-healthy-bg);
+}
+.mock-badge.warning {
+  color: var(--status-warning);
+  background: var(--status-warning-bg);
+}
+.mock-badge.danger {
+  color: var(--status-danger);
+  background: var(--status-danger-bg);
+}
+
+.mock-reset {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
 
 .mock-chart {
@@ -1573,30 +1639,143 @@ a:hover { text-decoration: underline; }
                 <div class="mockup-body">
                     <div class="mockup-header">
                         <div class="mockup-title">Dashboard</div>
-                        <div class="mockup-tabs">
-                            <span class="mockup-tab active">Synthetic</span>
-                            <span class="mockup-tab">Z.ai</span>
-                            <span class="mockup-tab">Both</span>
+                        <div class="mockup-tabs" id="mockup-tabs">
+                            <span class="mockup-tab active" data-tab="synthetic" onclick="switchMockTab('synthetic')">Synthetic</span>
+                            <span class="mockup-tab" data-tab="zai" onclick="switchMockTab('zai')">Z.ai</span>
+                            <span class="mockup-tab" data-tab="both" onclick="switchMockTab('both')">Both</span>
                         </div>
                     </div>
-                    <div class="mockup-cards">
-                        <div class="mock-card">
-                            <div class="mock-card-label">Subscription</div>
-                            <div class="mock-card-value" id="anim-sub">0%</div>
-                            <div class="mock-card-sub">154 / 1,350</div>
-                            <div class="mock-progress"><div class="mock-progress-fill" id="prog-sub" style="width:0%;background:var(--status-healthy)"></div></div>
+                    <!-- Synthetic view -->
+                    <div class="mockup-view" id="mock-synthetic">
+                        <div class="mockup-cards">
+                            <div class="mock-card">
+                                <div class="mock-card-header">
+                                    <div class="mock-card-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>Subscription</div>
+                                    <div class="mock-card-countdown" id="mock-cd-sub">4h 12m</div>
+                                </div>
+                                <div class="mock-card-value" id="anim-sub">0%</div>
+                                <div class="mock-card-sub">154 / 1,350</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-sub" style="width:0%;background:var(--status-healthy)"></div></div>
+                                <div class="mock-card-footer">
+                                    <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
+                                    <span class="mock-reset">Resets 8:16 PM</span>
+                                </div>
+                            </div>
+                            <div class="mock-card">
+                                <div class="mock-card-header">
+                                    <div class="mock-card-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>Search (Hourly)</div>
+                                    <div class="mock-card-countdown">18m</div>
+                                </div>
+                                <div class="mock-card-value" id="anim-search">0%</div>
+                                <div class="mock-card-sub">42 / 250</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-search" style="width:0%;background:var(--status-healthy)"></div></div>
+                                <div class="mock-card-footer">
+                                    <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
+                                    <span class="mock-reset">Resets 4:22 PM</span>
+                                </div>
+                            </div>
+                            <div class="mock-card">
+                                <div class="mock-card-header">
+                                    <div class="mock-card-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Tool Calls</div>
+                                    <div class="mock-card-countdown">1h 22m</div>
+                                </div>
+                                <div class="mock-card-value" id="anim-tool">0%</div>
+                                <div class="mock-card-sub">7,635 / 16,200</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-tool" style="width:0%;background:var(--status-warning)"></div></div>
+                                <div class="mock-card-footer">
+                                    <span class="mock-badge warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Warning</span>
+                                    <span class="mock-reset">Resets 5:26 PM</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="mock-card">
-                            <div class="mock-card-label">Search (Hourly)</div>
-                            <div class="mock-card-value" id="anim-search">0%</div>
-                            <div class="mock-card-sub">42 / 250</div>
-                            <div class="mock-progress"><div class="mock-progress-fill" id="prog-search" style="width:0%;background:var(--status-warning)"></div></div>
+                    </div>
+                    <!-- Z.ai view -->
+                    <div class="mockup-view" id="mock-zai" style="display:none;">
+                        <div class="mockup-cards">
+                            <div class="mock-card">
+                                <div class="mock-card-header">
+                                    <div class="mock-card-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>Tokens</div>
+                                    <div class="mock-card-countdown">23h 45m</div>
+                                </div>
+                                <div class="mock-card-value" id="anim-zai-tok">0%</div>
+                                <div class="mock-card-sub">1.2M / 10M</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-zai-tok" style="width:0%;background:var(--status-healthy)"></div></div>
+                                <div class="mock-card-footer">
+                                    <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
+                                    <span class="mock-reset">Daily reset</span>
+                                </div>
+                            </div>
+                            <div class="mock-card">
+                                <div class="mock-card-header">
+                                    <div class="mock-card-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Time</div>
+                                    <div class="mock-card-countdown">23h 45m</div>
+                                </div>
+                                <div class="mock-card-value" id="anim-zai-time">0%</div>
+                                <div class="mock-card-sub">28 / 500 min</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-zai-time" style="width:0%;background:var(--status-healthy)"></div></div>
+                                <div class="mock-card-footer">
+                                    <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
+                                    <span class="mock-reset">Daily reset</span>
+                                </div>
+                            </div>
+                            <div class="mock-card">
+                                <div class="mock-card-header">
+                                    <div class="mock-card-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Tool Calls</div>
+                                    <div class="mock-card-countdown">23h 45m</div>
+                                </div>
+                                <div class="mock-card-value" id="anim-zai-tool">0%</div>
+                                <div class="mock-card-sub">85 / 1,000</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-zai-tool" style="width:0%;background:var(--status-healthy)"></div></div>
+                                <div class="mock-card-footer">
+                                    <span class="mock-badge healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>Healthy</span>
+                                    <span class="mock-reset">Daily reset</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="mock-card">
-                            <div class="mock-card-label">Tool Calls</div>
-                            <div class="mock-card-value" id="anim-tool">0%</div>
-                            <div class="mock-card-sub">7,635 / 16,200</div>
-                            <div class="mock-progress"><div class="mock-progress-fill" id="prog-tool" style="width:0%;background:var(--accent-peach)"></div></div>
+                    </div>
+                    <!-- Both view -->
+                    <div class="mockup-view" id="mock-both" style="display:none;">
+                        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent-teal);margin:0 0 6px;opacity:0.7;">Synthetic</div>
+                        <div class="mockup-cards" style="grid-template-columns: repeat(3, 1fr); gap:8px; margin-bottom:6px;">
+                            <div class="mock-card" style="padding:10px 12px;">
+                                <div class="mock-card-header"><div class="mock-card-label" style="font-size:9px;">Subscription</div><div class="mock-card-countdown" style="font-size:8px;padding:1px 4px;">4h 12m</div></div>
+                                <div class="mock-card-value" id="anim-both-sub" style="font-size:16px;">0%</div>
+                                <div class="mock-card-sub" style="font-size:9px;">154 / 1,350</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-both-sub" style="width:0%;background:var(--status-healthy)"></div></div>
+                            </div>
+                            <div class="mock-card" style="padding:10px 12px;">
+                                <div class="mock-card-header"><div class="mock-card-label" style="font-size:9px;">Search</div><div class="mock-card-countdown" style="font-size:8px;padding:1px 4px;">18m</div></div>
+                                <div class="mock-card-value" id="anim-both-search" style="font-size:16px;">0%</div>
+                                <div class="mock-card-sub" style="font-size:9px;">42 / 250</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-both-search" style="width:0%;background:var(--status-healthy)"></div></div>
+                            </div>
+                            <div class="mock-card" style="padding:10px 12px;">
+                                <div class="mock-card-header"><div class="mock-card-label" style="font-size:9px;">Tool Calls</div><div class="mock-card-countdown" style="font-size:8px;padding:1px 4px;">1h 22m</div></div>
+                                <div class="mock-card-value" id="anim-both-tool" style="font-size:16px;">0%</div>
+                                <div class="mock-card-sub" style="font-size:9px;">7,635 / 16,200</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-both-tool" style="width:0%;background:var(--status-warning)"></div></div>
+                            </div>
+                        </div>
+                        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent-peach);margin:8px 0 6px;opacity:0.7;">Z.ai</div>
+                        <div class="mockup-cards" style="grid-template-columns: repeat(3, 1fr); gap:8px; margin-bottom:0;">
+                            <div class="mock-card" style="padding:10px 12px;">
+                                <div class="mock-card-header"><div class="mock-card-label" style="font-size:9px;">Tokens</div><div class="mock-card-countdown" style="font-size:8px;padding:1px 4px;">23h 45m</div></div>
+                                <div class="mock-card-value" id="anim-both-tok" style="font-size:16px;">0%</div>
+                                <div class="mock-card-sub" style="font-size:9px;">1.2M / 10M</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-both-tok" style="width:0%;background:var(--status-healthy)"></div></div>
+                            </div>
+                            <div class="mock-card" style="padding:10px 12px;">
+                                <div class="mock-card-header"><div class="mock-card-label" style="font-size:9px;">Time</div><div class="mock-card-countdown" style="font-size:8px;padding:1px 4px;">23h 45m</div></div>
+                                <div class="mock-card-value" id="anim-both-time" style="font-size:16px;">0%</div>
+                                <div class="mock-card-sub" style="font-size:9px;">28 / 500 min</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-both-time" style="width:0%;background:var(--status-healthy)"></div></div>
+                            </div>
+                            <div class="mock-card" style="padding:10px 12px;">
+                                <div class="mock-card-header"><div class="mock-card-label" style="font-size:9px;">Tool Calls</div><div class="mock-card-countdown" style="font-size:8px;padding:1px 4px;">23h 45m</div></div>
+                                <div class="mock-card-value" id="anim-both-ztool" style="font-size:16px;">0%</div>
+                                <div class="mock-card-sub" style="font-size:9px;">85 / 1,000</div>
+                                <div class="mock-progress"><div class="mock-progress-fill" id="prog-both-ztool" style="width:0%;background:var(--status-healthy)"></div></div>
+                            </div>
                         </div>
                     </div>
                     <div class="mock-chart">
@@ -2108,43 +2287,75 @@ a:hover { text-decoration: underline; }
 
 /* Animate mockup numbers */
 (function() {
-    var targets = [
-        { id: 'anim-sub', prog: 'prog-sub', end: 11.4, color: 'var(--status-healthy)' },
-        { id: 'anim-search', prog: 'prog-search', end: 16.8, color: 'var(--status-healthy)' },
-        { id: 'anim-tool', prog: 'prog-tool', end: 47.1, color: 'var(--accent-peach)' }
-    ];
-    var animated = false;
+    var allTargets = {
+        synthetic: [
+            { id: 'anim-sub', prog: 'prog-sub', end: 11.4 },
+            { id: 'anim-search', prog: 'prog-search', end: 16.8 },
+            { id: 'anim-tool', prog: 'prog-tool', end: 47.1 }
+        ],
+        zai: [
+            { id: 'anim-zai-tok', prog: 'prog-zai-tok', end: 12.0 },
+            { id: 'anim-zai-time', prog: 'prog-zai-time', end: 5.6 },
+            { id: 'anim-zai-tool', prog: 'prog-zai-tool', end: 8.5 }
+        ],
+        both: [
+            { id: 'anim-both-sub', prog: 'prog-both-sub', end: 11.4 },
+            { id: 'anim-both-search', prog: 'prog-both-search', end: 16.8 },
+            { id: 'anim-both-tool', prog: 'prog-both-tool', end: 47.1 },
+            { id: 'anim-both-tok', prog: 'prog-both-tok', end: 12.0 },
+            { id: 'anim-both-time', prog: 'prog-both-time', end: 5.6 },
+            { id: 'anim-both-ztool', prog: 'prog-both-ztool', end: 8.5 }
+        ]
+    };
 
-    function animate() {
-        if (animated) return;
-        animated = true;
+    function getBarColor(pct) {
+        if (pct >= 80) return 'var(--status-danger)';
+        if (pct >= 50) return 'var(--status-warning)';
+        return 'var(--status-healthy)';
+    }
+
+    function animateTargets(targets) {
         targets.forEach(function(t) {
             var el = document.getElementById(t.id);
             var prog = document.getElementById(t.prog);
             if (!el || !prog) return;
-
-            var start = 0;
-            var duration = 1200;
-            var startTime = null;
-
+            var duration = 1200, startTime = null;
             function step(ts) {
                 if (!startTime) startTime = ts;
                 var p = Math.min((ts - startTime) / duration, 1);
                 var ease = 1 - Math.pow(1 - p, 3);
-                var val = start + (t.end - start) * ease;
+                var val = t.end * ease;
                 el.textContent = val.toFixed(1) + '%';
                 prog.style.width = val + '%';
+                prog.style.background = getBarColor(val);
                 if (p < 1) requestAnimationFrame(step);
             }
             requestAnimationFrame(step);
         });
     }
 
+    var animatedViews = {};
+
+    window.switchMockTab = function(tab) {
+        document.querySelectorAll('#mockup-tabs .mockup-tab').forEach(function(t) {
+            t.classList.toggle('active', t.getAttribute('data-tab') === tab);
+        });
+        ['synthetic', 'zai', 'both'].forEach(function(v) {
+            var view = document.getElementById('mock-' + v);
+            if (view) view.style.display = v === tab ? '' : 'none';
+        });
+        if (!animatedViews[tab] && allTargets[tab]) {
+            animatedViews[tab] = true;
+            setTimeout(function() { animateTargets(allTargets[tab]); }, 100);
+        }
+    };
+
     var mockup = document.getElementById('dashboard-mockup');
     if (mockup) {
         var obs = new IntersectionObserver(function(entries) {
             if (entries[0].isIntersecting) {
-                setTimeout(animate, 300);
+                animatedViews['synthetic'] = true;
+                setTimeout(function() { animateTargets(allTargets.synthetic); }, 300);
                 obs.disconnect();
             }
         }, { threshold: 0.3 });
