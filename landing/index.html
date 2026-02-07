@@ -3,13 +3,161 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SynTrack - API Quota Tracker for AI Coding Tools</title>
-    <meta name="description" content="Open-source, lightweight background agent that tracks Synthetic and Z.ai API usage. Historical trends, reset cycle detection, rate projections — all in a Material Design dashboard.">
-    <meta name="keywords" content="API quota tracker, Synthetic API, Z.ai, usage monitoring, open source, developer tool">
-    <meta property="og:title" content="SynTrack - API Quota Tracker for AI Coding Tools">
-    <meta property="og:description" content="Track your AI coding API usage with historical trends, reset cycle detection, and rate projections. Free and open source.">
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-DL6C40HTGQ"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-DL6C40HTGQ');
+    </script>
+    <title>SynTrack - Open-Source API Quota Tracker for Synthetic, Z.ai & AI Coding Tools</title>
+    <meta name="description" content="SynTrack is a free, open-source CLI tool that tracks Synthetic API and Z.ai API quota usage in real time. Historical trends, reset cycle detection, rate projections, per-session tracking, and a Material Design 3 dashboard — all in a single 25 MB Go binary with zero telemetry. Works with Cline, Roo Code, Kilo Code, Claude Code, and any tool using Synthetic or Z.ai API keys.">
+    <meta name="keywords" content="SynTrack, API quota tracker, Synthetic API monitor, Z.ai API tracker, AI coding API usage, quota monitoring tool, open source API monitor, Cline quota tracker, Roo Code usage, Kilo Code API, Claude Code API usage, AI API budget tracker, self-hosted API monitoring, lightweight API dashboard, reset cycle detection, rate projection, Go CLI tool, developer tool, API quota dashboard, Quotio alternative, cross-platform quota monitor">
+    <link rel="canonical" href="https://syntrack.onllm.dev">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="SynTrack - Open-Source API Quota Tracker for AI Coding Tools">
+    <meta property="og:description" content="Track your Synthetic and Z.ai API quota usage with historical trends, reset cycle detection, and rate projections. Free, open-source, single binary, zero telemetry. The cross-platform alternative to Quotio.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://syntrack.onllm.dev">
+    <meta property="og:site_name" content="SynTrack">
+    <meta property="og:image" content="https://raw.githubusercontent.com/onllm-dev/syntrack/main/screenshots/dashboard-dark.png">
+    <meta property="og:image:alt" content="SynTrack dashboard showing Synthetic API quota cards with usage trends and live countdown timers">
+    <meta property="og:image:width" content="1920">
+    <meta property="og:image:height" content="1080">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="SynTrack - Open-Source API Quota Tracker for AI Coding Tools">
+    <meta name="twitter:description" content="Track Synthetic & Z.ai API usage with historical trends, reset cycle detection, and rate projections. Single 25 MB binary, zero telemetry.">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/onllm-dev/syntrack/main/screenshots/dashboard-dark.png">
+
+    <!-- Additional SEO -->
+    <meta name="author" content="onllm.dev">
+    <meta name="robots" content="index, follow">
+    <meta name="theme-color" content="#0D9488">
+
+    <!-- JSON-LD: SoftwareApplication -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "SynTrack",
+      "description": "Open-source, lightweight background agent that tracks Synthetic API and Z.ai API quota usage. Provides historical usage trends, automatic reset cycle detection, consumption rate projections, per-session tracking, and a Material Design 3 web dashboard. Single Go binary, ~25 MB RAM, zero telemetry.",
+      "url": "https://syntrack.onllm.dev",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS, Linux, Windows",
+      "softwareVersion": "1.6.0",
+      "license": "https://www.gnu.org/licenses/gpl-3.0.en.html",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "onllm.dev",
+        "url": "https://onllm.dev"
+      },
+      "codeRepository": "https://github.com/onllm-dev/syntrack",
+      "programmingLanguage": "Go",
+      "downloadUrl": "https://github.com/onllm-dev/syntrack/releases",
+      "screenshot": "https://raw.githubusercontent.com/onllm-dev/syntrack/main/screenshots/dashboard-dark.png",
+      "featureList": [
+        "Historical API usage trends with Chart.js time-series",
+        "Automatic quota reset cycle detection",
+        "Consumption rate projections and time-to-exhaustion",
+        "Per-session usage tracking",
+        "Multi-provider support: Synthetic API and Z.ai",
+        "Unified Both view showing all providers side-by-side",
+        "Live countdown timers for quota resets",
+        "Material Design 3 dashboard with dark and light mode",
+        "Single Go binary with zero runtime dependencies",
+        "Local SQLite storage with zero telemetry",
+        "Background daemon mode with ~25 MB RAM footprint",
+        "Cross-platform: macOS, Linux, Windows",
+        "REST API with JSON endpoints",
+        "Session-based auth with password management"
+      ],
+      "keywords": "API quota tracker, Synthetic API, Z.ai, AI coding tools, usage monitoring, open source, Cline, Roo Code, Kilo Code, Claude Code, API budget tracker, self-hosted, Quotio alternative"
+    }
+    </script>
+
+    <!-- JSON-LD: FAQPage -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I track my Synthetic API usage?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "SynTrack is a free, open-source tool that tracks Synthetic API usage by polling the /v2/quotas endpoint every 60 seconds. It stores historical data in SQLite and serves a Material Design 3 dashboard showing subscription, search, and tool call quotas with live countdowns, rate projections, and reset cycle history. Install it with one command: curl -fsSL https://raw.githubusercontent.com/onllm-dev/syntrack/main/install.sh | bash"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I monitor Z.ai API quota usage?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "SynTrack monitors Z.ai (GLM Coding Plan) API usage by polling the /monitor/usage/quota/limit endpoint. It tracks token limits, time limits, and tool call quotas with historical trends and reset cycle detection. Configure it by setting ZAI_API_KEY in your .env file. SynTrack can run both Synthetic and Z.ai monitoring simultaneously."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the best open-source tool to track AI coding API usage?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "SynTrack is the only open-source tool specifically designed to track historical quota usage for flat-rate AI coding API subscriptions like Synthetic and Z.ai. It provides features that provider dashboards lack: historical usage trends, automatic reset cycle detection, consumption rate projections, per-session tracking, and a multi-provider unified view. It runs as a single 25 MB Go binary with zero telemetry and local SQLite storage."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is SynTrack a Quotio alternative for Linux and Windows?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Quotio is macOS-only (requires macOS 15.0 Sequoia+). SynTrack is cross-platform, running on macOS (ARM64, AMD64), Linux (AMD64, ARM64), and Windows (AMD64). Unlike Quotio, SynTrack also provides historical usage data, reset cycle tracking, per-session analytics, and a web dashboard accessible from any device."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I track API usage when using Cline, Roo Code, or Kilo Code with Synthetic?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "If you use Cline, Roo Code, Kilo Code, or any AI coding agent with a Synthetic or Z.ai API key, SynTrack runs as a background agent that monitors your quota consumption independently. It tracks usage across reset cycles (Synthetic resets every ~5 hours), shows rate projections so you know if you'll hit the limit mid-session, and logs per-session consumption. Just set your API key in the .env file and run ./syntrack."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does SynTrack send any data to external servers?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. SynTrack has zero telemetry. All usage data is stored locally in a SQLite file on your machine. The only outbound network calls are to the Synthetic and Z.ai quota APIs you configure. No analytics, no tracking pixels, no cloud dependencies. The tool is fully open-source (GPL-3.0) and auditable on GitHub."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much memory does SynTrack use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "SynTrack idles at approximately 25-30 MB RAM and peaks at around 50 MB during active dashboard rendering. It's designed to run as a background daemon with minimal resource usage: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), and polling buffer (1 MB). This is lighter than a single browser tab."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What makes SynTrack different from Helicone or Langfuse?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Helicone and Langfuse are heavyweight LLM observability platforms designed for custom AI pipelines with per-token cost tracking. They require SaaS accounts or complex self-hosted deployments. SynTrack is a single 25 MB binary focused specifically on tracking flat-rate AI coding API subscriptions (Synthetic, Z.ai). No SaaS dependency, no Docker, no complex setup — just download and run."
+          }
+        }
+      ]
+    }
+    </script>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='16' fill='%230D9488'/><g transform='translate(4 4)' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07'/></g></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1397,6 +1545,69 @@ a:hover { text-decoration: underline; }
 .cross { color: var(--text-muted); opacity: 0.4; font-size: 13px; }
 
 /* ═══════════════════════════════════════════
+   FAQ SECTION
+   ═══════════════════════════════════════════ */
+.faq-item {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  background: var(--surface-card);
+  transition: border-color var(--transition-fast);
+}
+.faq-item:hover { border-color: var(--accent-teal); }
+.faq-item[open] { border-color: var(--accent-teal); }
+
+.faq-question {
+  padding: 16px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.faq-question::-webkit-details-marker { display: none; }
+.faq-question::after {
+  content: '+';
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 300;
+  color: var(--text-muted);
+  background: var(--surface-inset);
+  border-radius: 6px;
+  transition: all var(--transition-fast);
+}
+.faq-item[open] .faq-question::after {
+  content: '\2212';
+  color: var(--accent-teal);
+  background: var(--accent-teal-muted);
+}
+
+.faq-answer {
+  padding: 0 20px 16px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.faq-answer code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  background: var(--surface-inset);
+  border-radius: 4px;
+  color: var(--accent-teal);
+}
+.faq-answer a { color: var(--accent-teal); }
+
+/* ═══════════════════════════════════════════
    CTA SECTION
    ═══════════════════════════════════════════ */
 .cta-section {
@@ -1602,7 +1813,8 @@ a:hover { text-decoration: underline; }
             <a href="#features" class="nav-link">Features</a>
             <a href="#how-it-works" class="nav-link">How It Works</a>
             <a href="#install" class="nav-link">Install</a>
-            <a href="#screenshots" class="nav-link">Screenshots</a>
+            <a href="#alternatives" class="nav-link">Alternatives</a>
+            <a href="#faq" class="nav-link">FAQ</a>
             <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
                 <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="5"/>
@@ -1633,7 +1845,7 @@ a:hover { text-decoration: underline; }
                 Free &amp; Open Source
             </div>
             <h1>Know your <span class="accent">AI API</span> usage before it knows you</h1>
-            <p class="hero-desc">Lightweight background agent that tracks Synthetic and Z.ai quota usage, detects reset cycles, and serves a real-time dashboard. Single binary, ~25 MB RAM.</p>
+            <p class="hero-desc">Open-source background agent that tracks your Synthetic and Z.ai API quota usage across every reset cycle. Historical trends, rate projections, per-session tracking, and a Material Design 3 dashboard. Single binary, ~25&nbsp;MB RAM, zero telemetry. Works with Cline, Roo Code, Kilo Code, Claude Code, and any tool using Synthetic or Z.ai API keys.</p>
             <div class="hero-actions">
                 <a href="#install" class="btn-primary">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
@@ -1648,7 +1860,7 @@ a:hover { text-decoration: underline; }
                 <code><span class="install-prefix">$</span> curl -fsSL https://raw.githubusercontent.com/onllm-dev/syntrack/main/install.sh | bash</code>
                 <span class="copy-hint">Copy</span>
             </div>
-            <p class="hero-meta">v1.5.0 &middot; Go &middot; GPL-3.0 License</p>
+            <p class="hero-meta">v1.6.0 &middot; Go &middot; GPL-3.0 License &middot; Zero Telemetry</p>
         </div>
 
         <!-- Dashboard Mockup -->
@@ -2137,6 +2349,223 @@ a:hover { text-decoration: underline; }
                     </tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+</section>
+
+<!-- Alternatives / Competitive Comparison -->
+<section class="comparison" id="alternatives" style="padding-top:40px;">
+    <div class="container">
+        <div class="fade-in" style="text-align:center;margin-bottom:32px;">
+            <div class="section-label">Alternatives</div>
+            <h2 class="section-title">SynTrack vs other monitoring tools</h2>
+            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Existing tools either monitor the wrong thing, target the wrong use case, or require heavyweight deployments. SynTrack fills the gap.</p>
+        </div>
+        <div class="comparison-table-wrap fade-in">
+            <table class="comparison-table" role="table">
+                <thead>
+                    <tr>
+                        <th scope="col">Feature</th>
+                        <th scope="col">Quotio</th>
+                        <th scope="col">Helicone</th>
+                        <th scope="col">Langfuse</th>
+                        <th scope="col" class="highlight-col">SynTrack</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Synthetic API tracking</td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Z.ai API tracking</td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Cross-platform (macOS, Linux, Windows)</td>
+                        <td><span class="cross" aria-label="No">&#10005;</span> macOS only</td>
+                        <td><span class="check" aria-label="Yes">&#10003;</span> SaaS</td>
+                        <td><span class="check" aria-label="Yes">&#10003;</span> SaaS/Docker</td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Historical usage across resets</td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Reset cycle detection</td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Self-hosted, zero telemetry</td>
+                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td><span class="check" aria-label="Partial">~</span> Docker</td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Single binary, no dependencies</td>
+                        <td><span class="check" aria-label="Yes">&#10003;</span> .app</td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span></td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Flat-rate subscription tracking</td>
+                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
+                        <td><span class="cross" aria-label="No">&#10005;</span> Per-token</td>
+                        <td><span class="cross" aria-label="No">&#10005;</span> Per-token</td>
+                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Memory footprint</td>
+                        <td>~50 MB</td>
+                        <td>Cloud</td>
+                        <td>Cloud/Docker</td>
+                        <td class="highlight-col">~25 MB</td>
+                    </tr>
+                    <tr>
+                        <td>Price</td>
+                        <td>Free</td>
+                        <td>$25/mo+</td>
+                        <td>Free tier</td>
+                        <td class="highlight-col">Free forever</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="fade-in" style="text-align:center;font-size:13px;color:var(--text-muted);margin-top:16px;max-width:640px;margin-left:auto;margin-right:auto;">
+            <a href="https://github.com/nguyenphutrong/quotio" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">Quotio</a> is a macOS menu bar app for Claude, Gemini, and OpenAI quotas.
+            <a href="https://www.helicone.ai/" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">Helicone</a> and
+            <a href="https://langfuse.com/" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">Langfuse</a> are LLM observability platforms for custom AI pipelines.
+            SynTrack is purpose-built for flat-rate AI coding API subscriptions.
+        </p>
+    </div>
+</section>
+
+<!-- Who is SynTrack for? -->
+<section class="features" id="use-cases" style="padding-top:40px;">
+    <div class="container">
+        <div class="fade-in" style="text-align:center;margin-bottom:32px;">
+            <div class="section-label">Use Cases</div>
+            <h2 class="section-title">Who is SynTrack for?</h2>
+            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Whether you're a solo developer tracking your $20/month Synthetic budget or a team lead managing shared API keys, SynTrack gives you the data your provider doesn't.</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card fade-in">
+                <div class="feature-icon teal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <h3 class="feature-title">Solo Developers &amp; Freelancers</h3>
+                <p class="feature-desc">Using Cline, Roo Code, or Kilo Code with a Synthetic or Z.ai API key? SynTrack tracks your quota burn rate so you never get throttled mid-task. Know exactly where your AI coding budget goes.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="feature-icon peach">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </div>
+                <h3 class="feature-title">Small Dev Teams (3-20 people)</h3>
+                <p class="feature-desc">Sharing API keys across a team? SynTrack provides a shared dashboard with historical trends, session tracking, and rate projections. Budget with data, not guesses. Present usage reports in sprint reviews.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="feature-icon blue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                </div>
+                <h3 class="feature-title">DevOps &amp; Platform Engineers</h3>
+                <p class="feature-desc">Deploy SynTrack as a lightweight sidecar (~25 MB) with no SaaS dependency. Use the SQLite database as a Grafana data source or the REST API endpoints to feed your existing monitoring stack.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="feature-icon teal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <h3 class="feature-title">Privacy-Conscious Developers</h3>
+                <p class="feature-desc">You chose Synthetic because it never trains on your data. SynTrack has the same philosophy: single binary, local SQLite, zero telemetry. Works in air-gapped and regulated environments.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="feature-icon peach">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                </div>
+                <h3 class="feature-title">Researchers &amp; Educators</h3>
+                <p class="feature-desc">Track per-session API consumption for grant reports and paper methodology sections. Compare Synthetic vs Z.ai efficiency. Z.ai's $3/month plan is popular with students and researchers.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="feature-icon blue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                </div>
+                <h3 class="feature-title">Budget-Conscious API Users</h3>
+                <p class="feature-desc">At $20-$60/month on Synthetic or $3-$15/month on Z.ai, every request matters. SynTrack shows if you're underutilizing your plan, burning through quota too fast, or need to upgrade.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FAQ Section -->
+<section class="features" id="faq" style="padding-top:40px;">
+    <div class="container">
+        <div class="fade-in" style="text-align:center;margin-bottom:32px;">
+            <div class="section-label">FAQ</div>
+            <h2 class="section-title">Frequently asked questions</h2>
+        </div>
+        <div class="faq-list fade-in" style="max-width:760px;margin:0 auto;">
+            <details class="faq-item">
+                <summary class="faq-question">How do I track my Synthetic API usage?</summary>
+                <div class="faq-answer">
+                    <p>Install SynTrack with one command: <code>curl -fsSL https://raw.githubusercontent.com/onllm-dev/syntrack/main/install.sh | bash</code>. Set your <code>SYNTHETIC_API_KEY</code> in the <code>.env</code> file and run <code>./syntrack</code>. SynTrack polls the Synthetic <code>/v2/quotas</code> endpoint every 60 seconds (configurable), stores historical data in SQLite, and serves a dashboard at <code>localhost:9211</code> showing subscription, search, and tool call quotas with live countdowns and rate projections.</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">How do I monitor Z.ai (GLM Coding Plan) API quota?</summary>
+                <div class="faq-answer">
+                    <p>Set your <code>ZAI_API_KEY</code> in the <code>.env</code> file. SynTrack polls the Z.ai <code>/monitor/usage/quota/limit</code> endpoint and tracks token limits, time limits, and tool call quotas. Both Synthetic and Z.ai can run simultaneously with a unified "Both" view on the dashboard.</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">Does SynTrack work with Cline, Roo Code, Kilo Code, or Claude Code?</summary>
+                <div class="faq-answer">
+                    <p>Yes. SynTrack monitors the API provider (Synthetic or Z.ai), not the coding tool. Any tool that uses a Synthetic or Z.ai API key&mdash;including Cline, Roo Code, Kilo Code, Claude Code, Cursor, Windsurf, and others&mdash;will have its usage tracked automatically.</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">Is SynTrack a cross-platform alternative to Quotio?</summary>
+                <div class="faq-answer">
+                    <p>Yes. <a href="https://github.com/nguyenphutrong/quotio" target="_blank" rel="noopener noreferrer">Quotio</a> is macOS-only (requires macOS 15.0+) and tracks Claude, Gemini, and OpenAI. SynTrack runs on macOS, Linux, and Windows, and tracks Synthetic and Z.ai specifically. SynTrack also provides historical usage trends, reset cycle detection, per-session tracking, and a web-based dashboard that Quotio does not offer.</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">How is SynTrack different from Helicone or Langfuse?</summary>
+                <div class="faq-answer">
+                    <p><a href="https://www.helicone.ai/" target="_blank" rel="noopener noreferrer">Helicone</a> ($25/mo+) and <a href="https://langfuse.com/" target="_blank" rel="noopener noreferrer">Langfuse</a> (Docker/SaaS) are LLM observability platforms designed for custom AI pipelines with per-token cost tracking. SynTrack is a single 25 MB binary focused on tracking flat-rate AI coding API subscriptions. No SaaS accounts, no Docker, no proxy setup&mdash;just download and run.</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">Does SynTrack send any data to external servers?</summary>
+                <div class="faq-answer">
+                    <p>No. SynTrack has zero telemetry. All usage data is stored locally in a SQLite file on your machine. The only outbound network calls are to the Synthetic and Z.ai quota APIs you configure. No analytics, no tracking, no cloud. The source code is fully auditable on <a href="https://github.com/onllm-dev/syntrack" target="_blank" rel="noopener noreferrer">GitHub</a> (GPL-3.0).</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">How much memory does SynTrack use?</summary>
+                <div class="faq-answer">
+                    <p>SynTrack idles at ~25-30 MB RAM and peaks at ~50 MB during dashboard rendering. Breakdown: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), polling buffer (1 MB). This is lighter than a single browser tab and designed to run as a background daemon indefinitely.</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">What platforms does SynTrack support?</summary>
+                <div class="faq-answer">
+                    <p>Pre-built binaries are available for macOS (ARM64 and AMD64), Linux (AMD64 and ARM64), and Windows (AMD64). SynTrack is written in pure Go with no CGO dependencies, so it cross-compiles cleanly to any Go-supported platform.</p>
+                </div>
+            </details>
         </div>
     </div>
 </section>
