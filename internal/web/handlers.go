@@ -80,7 +80,7 @@ func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, map[string]string{"error": message})
 }
 
-// parseTimeRange parses a time range string (1h, 6h, 24h, 7d, 30d)
+// parseTimeRange parses a time range string (1h, 6h, 24h, 1d, 7d, 30d)
 func parseTimeRange(rangeStr string) (time.Duration, error) {
 	if rangeStr == "" {
 		return 6 * time.Hour, nil
@@ -91,7 +91,7 @@ func parseTimeRange(rangeStr string) (time.Duration, error) {
 		return time.Hour, nil
 	case "6h":
 		return 6 * time.Hour, nil
-	case "24h":
+	case "24h", "1d":
 		return 24 * time.Hour, nil
 	case "7d":
 		return 7 * 24 * time.Hour, nil
@@ -99,6 +99,18 @@ func parseTimeRange(rangeStr string) (time.Duration, error) {
 		return 30 * 24 * time.Hour, nil
 	default:
 		return 0, fmt.Errorf("invalid range: %s", rangeStr)
+	}
+}
+
+// parseInsightsRange parses the insights range param, defaulting to 7d.
+func parseInsightsRange(rangeStr string) time.Duration {
+	switch rangeStr {
+	case "1d":
+		return 24 * time.Hour
+	case "30d":
+		return 30 * 24 * time.Hour
+	default:
+		return 7 * 24 * time.Hour // default "7d"
 	}
 }
 
@@ -1361,25 +1373,27 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rangeDur := parseInsightsRange(r.URL.Query().Get("range"))
+
 	switch provider {
 	case "both":
-		h.insightsBoth(w, r)
+		h.insightsBoth(w, r, rangeDur)
 	case "zai":
-		h.insightsZai(w, r)
+		h.insightsZai(w, r, rangeDur)
 	case "synthetic":
-		h.insightsSynthetic(w, r)
+		h.insightsSynthetic(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
 }
 
 // insightsBoth returns combined insights from both providers.
-func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
 	response := map[string]interface{}{}
 
 	if h.config.HasProvider("synthetic") {
-		response["synthetic"] = h.buildSyntheticInsights(hidden)
+		response["synthetic"] = h.buildSyntheticInsights(hidden, rangeDur)
 	}
 	if h.config.HasProvider("zai") {
 		response["zai"] = h.buildZaiInsights(hidden)
@@ -1389,13 +1403,14 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request) {
 }
 
 // insightsSynthetic returns Synthetic deep analytics
-func (h *Handler) insightsSynthetic(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) insightsSynthetic(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildSyntheticInsights(hidden))
+	respondJSON(w, http.StatusOK, h.buildSyntheticInsights(hidden, rangeDur))
 }
 
 // buildSyntheticInsights builds the Synthetic insights response.
-func (h *Handler) buildSyntheticInsights(hidden map[string]bool) insightsResponse {
+// rangeDur controls the time window for the 4 stat cards.
+func (h *Handler) buildSyntheticInsights(hidden map[string]bool, rangeDur time.Duration) insightsResponse {
 	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
 
 	if h.store == nil {
@@ -1403,10 +1418,11 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool) insightsRespons
 	}
 
 	now := time.Now().UTC()
+	rangeStart := now.Add(-rangeDur)
 	d30 := now.Add(-30 * 24 * time.Hour)
 	d7 := now.Add(-7 * 24 * time.Hour)
 
-	// Fetch cycle data for all quota types (last 30 days)
+	// Fetch cycle data for all quota types (last 30 days for insights, rangeDur for stats)
 	subCycles, _ := h.store.QueryCyclesSince("subscription", d30)
 	searchCycles, _ := h.store.QueryCyclesSince("search", d30)
 	toolCycles, _ := h.store.QueryCyclesSince("toolcall", d30)
@@ -1419,59 +1435,40 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool) insightsRespons
 		subLimit = latest.Sub.Limit
 	}
 
-	// Aggregate totals using billing-period grouping (not raw mini-cycle deltas).
-	// This correctly counts the initial baseline when tracking started mid-period.
+	// Compute range-specific totals for stat cards
+	rangeDays := int(rangeDur.Hours() / 24)
+	if rangeDays == 0 {
+		rangeDays = 1
+	}
+	rangeLabel := fmt.Sprintf("%dd", rangeDays)
+
+	subRange := cycleSumConsumptionSince(subCycles, rangeStart)
+	searchRange := cycleSumConsumptionSince(searchCycles, rangeStart)
+	toolRange := cycleSumConsumptionSince(toolCycles, rangeStart)
+	totalRange := subRange + searchRange + toolRange
+
+	// Count sessions in range
+	var sessionsInRange int
+	for _, s := range sessions {
+		if !s.StartedAt.Before(rangeStart) {
+			sessionsInRange++
+		}
+	}
+
+	// 30-day totals for insights (always based on 30d regardless of range)
 	sub30 := cycleSumConsumption(subCycles)
 	sub7 := cycleSumConsumptionSince(subCycles, d7)
-	search30 := cycleSumConsumption(searchCycles)
-	tool30 := cycleSumConsumption(toolCycles)
-	total30 := sub30 + search30 + tool30
 
 	subAvg := billingPeriodAvg(subCycles)
 	subPeak := billingPeriodPeak(subCycles)
 
-	// Tracking duration
-	var trackingDays int
-	if len(sessions) > 0 {
-		earliest := sessions[len(sessions)-1].StartedAt
-		trackingDays = int(now.Sub(earliest).Hours() / 24)
-		if trackingDays == 0 && now.Sub(earliest).Hours() > 0 {
-			trackingDays = 1
-		}
-	}
+	// ═══ Stats Cards (exactly 4, range-aware) ═══
+	resp.Stats = append(resp.Stats, insightStat{Value: compactNum(subRange), Label: fmt.Sprintf("Requests (%s)", rangeLabel)})
+	resp.Stats = append(resp.Stats, insightStat{Value: compactNum(totalRange), Label: fmt.Sprintf("Total API Calls (%s)", rangeLabel)})
+	resp.Stats = append(resp.Stats, insightStat{Value: compactNum(toolRange), Label: fmt.Sprintf("Tool Calls (%s)", rangeLabel)})
+	resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%d", sessionsInRange), Label: "Sessions"})
 
-	// Session stats (last 10)
-	recentN := min(len(sessions), 10)
-	var avgSessionDurMin, avgSessionConsumption, peakSessionConsumption float64
-	if recentN > 0 {
-		var totalDur, totalCons float64
-		for i := 0; i < recentN; i++ {
-			s := sessions[i]
-			end := now
-			if s.EndedAt != nil {
-				end = *s.EndedAt
-			}
-			totalDur += end.Sub(s.StartedAt).Minutes()
-			c := s.MaxSubRequests + s.MaxSearchRequests + s.MaxToolRequests
-			totalCons += c
-			if c > peakSessionConsumption {
-				peakSessionConsumption = c
-			}
-		}
-		avgSessionDurMin = totalDur / float64(recentN)
-		avgSessionConsumption = totalCons / float64(recentN)
-	}
-
-	// ═══ Stats Cards (quick KPI numbers — no duplicates with insights below) ═══
-	resp.Stats = append(resp.Stats, insightStat{Value: compactNum(sub30), Label: "Requests (30d)"})
-	resp.Stats = append(resp.Stats, insightStat{Value: compactNum(total30), Label: "Total API Calls (30d)"})
-	resp.Stats = append(resp.Stats, insightStat{Value: compactNum(tool30), Label: "Tool Calls (30d)"})
-	resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%d", len(sessions)), Label: "Sessions Tracked"})
-	if trackingDays > 0 {
-		resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%dd", trackingDays), Label: "Tracking Duration"})
-	}
-
-	// ═══ Deep Insights (interactive card format with metric + sublabel) ═══
+	// ═══ Deep Insights (analytical cards only — no session avg, no live quota duplicates) ═══
 
 	// 1. Avg Cycle Utilization %
 	if !hidden["cycle_utilization"] && subAvg > 0 && subLimit > 0 {
@@ -1534,7 +1531,7 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool) insightsRespons
 		})
 	}
 
-	// 4. Peak vs Average Variance
+	// 3. Peak vs Average Variance
 	if !hidden["variance"] && subPeak > 0 && subAvg > 0 && subBillingCount > 1 {
 		diff := ((subPeak - subAvg) / subAvg) * 100
 		var item insightItem
@@ -1568,25 +1565,7 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool) insightsRespons
 		resp.Insights = append(resp.Insights, item)
 	}
 
-	// 5. Session Avg
-	if !hidden["session_avg"] && recentN > 0 {
-		avgH := avgSessionDurMin / 60
-		resp.Insights = append(resp.Insights, insightItem{
-			Key:  "session_avg",
-			Type: "session", Severity: "info",
-			Title:    "Session Avg",
-			Metric:   fmt.Sprintf("%.0f", avgSessionConsumption),
-			Sublabel: fmt.Sprintf("req/session (%d)", recentN),
-			Desc: fmt.Sprintf("Last %d sessions: avg duration %.1fh, avg consumption %.0f requests.%s", recentN, avgH, avgSessionConsumption, func() string {
-				if peakSessionConsumption > avgSessionConsumption*1.5 && avgSessionConsumption > 0 {
-					return fmt.Sprintf(" Peak: %.0f (%.1fx avg).", peakSessionConsumption, peakSessionConsumption/avgSessionConsumption)
-				}
-				return ""
-			}()),
-		})
-	}
-
-	// 6. Consumption Trend (needs at least 4 billing periods to be meaningful)
+	// 4. Consumption Trend (needs at least 4 billing periods to be meaningful)
 	if !hidden["trend"] && subBillingCount >= 4 {
 		mid := len(subCycles) / 2
 		recentAvg := billingPeriodAvg(subCycles[:mid])
@@ -1632,7 +1611,7 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool) insightsRespons
 }
 
 // insightsZai returns Z.ai deep analytics with historical data
-func (h *Handler) insightsZai(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) insightsZai(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
 	respondJSON(w, http.StatusOK, h.buildZaiInsights(hidden))
 }

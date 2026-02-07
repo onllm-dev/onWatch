@@ -55,6 +55,8 @@ const State = {
   hiddenQuotas: new Set(),
   // Hidden insight keys (persisted in DB via settings API)
   hiddenInsights: new Set(),
+  // Insights time range (1d / 7d / 30d)
+  insightsRange: '7d',
 };
 
 // ── Persistence ──
@@ -697,162 +699,194 @@ const insightIcons = {
 };
 
 async function fetchDeepInsights() {
+  const panel = document.querySelector('.insights-panel');
   const statsEl = document.getElementById('insights-stats');
   const cardsEl = document.getElementById('insights-cards');
   if (!cardsEl) return;
 
+  // Render range selector pills in the insights header (once)
+  renderInsightsRangePills();
+
   try {
-    const res = await authFetch(`${API_BASE}/api/insights?${providerParam()}`);
+    const res = await authFetch(`${API_BASE}/api/insights?${providerParam()}&range=${State.insightsRange}`);
     if (!res.ok) throw new Error('Failed to fetch insights');
     const data = await res.json();
 
     const provider = getCurrentProvider();
-    let allStats = [];
-    let allInsights = [];
 
     if (provider === 'both') {
-      // "both" response: { synthetic: {stats, insights}, zai: {stats, insights} }
-      if (data.synthetic) {
-        if (data.synthetic.stats) allStats = allStats.concat(data.synthetic.stats.map(s => ({ ...s, label: `${s.label} (Syn)` })));
-        if (data.synthetic.insights) allInsights = allInsights.concat(data.synthetic.insights.map(i => ({ ...i, title: `${i.title} (Syn)` })));
-      }
-      if (data.zai) {
-        if (data.zai.stats) allStats = allStats.concat(data.zai.stats.map(s => ({ ...s, label: `${s.label} (Z.ai)` })));
-        if (data.zai.insights) allInsights = allInsights.concat(data.zai.insights.map(i => ({ ...i, title: `${i.title} (Z.ai)` })));
-      }
+      // "both" mode: render two separate provider boxes
+      renderBothInsights(data, statsEl, cardsEl);
     } else {
-      if (data.stats) allStats = data.stats;
-      allInsights = data.insights || [];
-    }
-    allInsights = allInsights.concat(computeClientInsights());
+      // Single provider mode
+      const allStats = data.stats || [];
+      let allInsights = data.insights || [];
 
-    // Render stat summary cards
-    if (statsEl && allStats.length > 0) {
-      statsEl.innerHTML = allStats.map(s =>
-        `<div class="insight-stat">
-          <div class="insight-stat-value">${s.value}</div>
-          <div class="insight-stat-label">${s.label}</div>
-        </div>`
-      ).join('');
-    }
+      // Filter out hidden insights
+      const expandedHidden = expandCorrelatedKeys(State.hiddenInsights);
+      allInsights = allInsights.filter(i => !i.key || !expandedHidden.has(i.key));
 
-    // Filter out client-side hidden insights (live/client-computed ones)
-    const expandedHidden = expandCorrelatedKeys(State.hiddenInsights);
-    allInsights = allInsights.filter(i => !i.key || !expandedHidden.has(i.key));
+      // Render stats
+      if (statsEl) {
+        statsEl.innerHTML = allStats.length > 0 ? allStats.map(s =>
+          `<div class="insight-stat">
+            <div class="insight-stat-value">${s.value}</div>
+            <div class="insight-stat-label">${s.label}</div>
+          </div>`
+        ).join('') : '';
+      }
 
-    if (allInsights.length > 0) {
-      cardsEl.innerHTML = allInsights.map((i, idx) => {
-        const titleForIcon = i.title.replace(/ \(Syn\)$| \(Z\.ai\)$/, '');
-        const icon = insightTitleIcons[titleForIcon] || (i.quotaType && quotaIcons[i.quotaType]) || insightIcons[i.severity] || insightIcons.info;
-        const hideBtn = i.key ? `<button class="insight-eye-btn" data-key="${i.key}" aria-label="Hide this insight" title="Hide this insight">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          </button>` : '';
-        return `<div class="insight-card severity-${i.severity}" data-insight-idx="${idx}" data-key="${i.key || ''}" role="button" tabindex="0">
-          <div class="insight-card-header">
-            <svg class="insight-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
-            <span class="insight-card-title">${i.title}</span>
-            ${hideBtn}
-            <svg class="insight-card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-          </div>
-          ${i.metric ? `<div class="insight-card-metric">${i.metric}</div>` : ''}
-          ${i.sublabel ? `<div class="insight-card-sublabel">${i.sublabel}</div>` : ''}
-          <div class="insight-card-detail">
-            <div class="insight-card-desc">${i.description}</div>
-          </div>
-        </div>`;
-      }).join('');
-
-      // Attach expand/collapse events
-      cardsEl.querySelectorAll('.insight-card').forEach(card => {
-        const toggle = (e) => {
-          if (e.target.closest('.insight-eye-btn')) return; // Don't toggle on eye click
-          const wasExpanded = card.classList.contains('expanded');
-          cardsEl.querySelectorAll('.insight-card.expanded').forEach(c => c.classList.remove('expanded'));
-          if (!wasExpanded) card.classList.add('expanded');
-        };
-        card.addEventListener('click', toggle);
-        card.addEventListener('keydown', e => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e); }
-        });
-      });
-
-      // Attach hide buttons
-      cardsEl.querySelectorAll('.insight-eye-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          toggleInsightVisibility(btn.dataset.key);
-        });
-      });
-    } else {
-      cardsEl.innerHTML = '<p class="insight-text">Keep tracking to see deep analytics.</p>';
+      // Render insight cards
+      renderInsightCards(cardsEl, allInsights);
     }
 
     // Render hidden insights badge
     renderHiddenInsightsBadge();
   } catch (err) {
     console.error('Insights fetch error:', err);
+    if (statsEl) statsEl.innerHTML = '';
     cardsEl.innerHTML = '<p class="insight-text">Unable to load insights.</p>';
   }
 }
 
-function computeClientInsights() {
-  const insights = [];
-  const provider = getCurrentProvider();
+function renderInsightsRangePills() {
+  const header = document.querySelector('.insights-panel .section-header');
+  if (!header || header.querySelector('.insights-range-selector')) return;
 
-  if (provider === 'both') return insights; // Server handles both-mode insights
+  const selector = document.createElement('div');
+  selector.className = 'range-selector insights-range-selector';
+  selector.setAttribute('role', 'group');
+  selector.setAttribute('aria-label', 'Insights time range');
 
-  // Live remaining quota — show percentage remaining + time
-  const quotaTypes = provider === 'zai'
-    ? ['tokensLimit', 'timeLimit', 'toolCalls']
-    : ['subscription', 'search', 'toolCalls'];
+  const ranges = [
+    { value: '1d', label: '1d' },
+    { value: '7d', label: '7d' },
+    { value: '30d', label: '30d' },
+  ];
 
-  const zaiQuotaNames = { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit', toolCalls: 'Tool Calls' };
+  selector.innerHTML = ranges.map(r =>
+    `<button class="range-btn ${r.value === State.insightsRange ? 'active' : ''}" data-insights-range="${r.value}">${r.label}</button>`
+  ).join('');
 
-  quotaTypes.forEach(type => {
-    const q = State.currentQuotas[type];
-    if (!q || !q.limit || q.limit === 0) return;
-
-    const names = provider === 'zai' ? zaiQuotaNames : quotaNames;
-    const pctUsed = q.percent;
-    const remaining = q.limit - q.usage;
-    if (remaining > 0) {
-      const hasReset = q.timeUntilResetSeconds && q.timeUntilResetSeconds > 0;
-      insights.push({
-        type: 'live',
-        key: `live_${type}`,
-        quotaType: type,
-        severity: pctUsed > 80 ? 'warning' : pctUsed > 50 ? 'info' : 'positive',
-        title: `${names[type] || type}`,
-        metric: `${pctUsed.toFixed(1)}%`,
-        sublabel: `${formatNumber(remaining)} remaining`,
-        description: `Currently at ${pctUsed.toFixed(1)}% utilization (${formatNumber(q.usage)} of ${formatNumber(q.limit)}).${hasReset ? ` Resets in ${formatDuration(q.timeUntilResetSeconds)}.` : ''}`
-      });
-    }
+  selector.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-insights-range]');
+    if (!btn) return;
+    State.insightsRange = btn.dataset.insightsRange;
+    selector.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    fetchDeepInsights();
   });
 
-  // Session avg consumption % (only for Synthetic — Z.ai sessions don't track per-quota max values)
-  if (provider !== 'zai' && State.allSessionsData.length >= 2) {
-    const recent = State.allSessionsData.slice(0, Math.min(State.allSessionsData.length, 10));
-    let totalCons = 0;
-    let maxCons = 0;
-    recent.forEach(s => {
-      const c = (s.maxSubRequests || 0) + (s.maxSearchRequests || 0) + (s.maxToolRequests || 0);
-      totalCons += c;
-      if (c > maxCons) maxCons = c;
-    });
-    const avg = totalCons / recent.length;
-    if (avg > 0) {
-      insights.push({
-        type: 'session', key: 'session_avg', quotaType: 'session', severity: 'info',
-        title: 'Session Avg',
-        metric: formatNumber(avg),
-        sublabel: `per session (last ${recent.length})`,
-        description: `Average consumption: ${formatNumber(avg)} requests/session across last ${recent.length} sessions.${maxCons > avg * 1.5 ? ` Peak session: ${formatNumber(maxCons)} (${(maxCons / avg).toFixed(1)}x average).` : ''}`
-      });
-    }
+  header.appendChild(selector);
+}
+
+function renderBothInsights(data, statsEl, cardsEl) {
+  // Clear the single-mode containers
+  if (statsEl) statsEl.innerHTML = '';
+
+  const expandedHidden = expandCorrelatedKeys(State.hiddenInsights);
+
+  let html = '';
+
+  // Synthetic box
+  if (data.synthetic) {
+    const synStats = data.synthetic.stats || [];
+    let synInsights = (data.synthetic.insights || []).filter(i => !i.key || !expandedHidden.has(i.key));
+    html += `<div class="provider-insights-box" data-provider="synthetic">
+      <h4 class="provider-insights-label">Synthetic</h4>
+      <div class="insights-stats">${synStats.map(s =>
+        `<div class="insight-stat">
+          <div class="insight-stat-value">${s.value}</div>
+          <div class="insight-stat-label">${s.label}</div>
+        </div>`
+      ).join('')}</div>
+      <div class="insights-cards">${buildInsightCardsHTML(synInsights)}</div>
+    </div>`;
   }
 
-  return insights;
+  // Z.ai box
+  if (data.zai) {
+    const zaiStats = data.zai.stats || [];
+    let zaiInsights = (data.zai.insights || []).filter(i => !i.key || !expandedHidden.has(i.key));
+    html += `<div class="provider-insights-box" data-provider="zai">
+      <h4 class="provider-insights-label">Z.ai</h4>
+      <div class="insights-stats">${zaiStats.map(s =>
+        `<div class="insight-stat">
+          <div class="insight-stat-value">${s.value}</div>
+          <div class="insight-stat-label">${s.label}</div>
+        </div>`
+      ).join('')}</div>
+      <div class="insights-cards">${buildInsightCardsHTML(zaiInsights)}</div>
+    </div>`;
+  }
+
+  cardsEl.innerHTML = html || '<p class="insight-text">No insights available.</p>';
+
+  // Attach events to all insight cards within both boxes
+  cardsEl.querySelectorAll('.insight-card').forEach(card => {
+    attachInsightCardEvents(card, cardsEl);
+  });
+  cardsEl.querySelectorAll('.insight-eye-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleInsightVisibility(btn.dataset.key);
+    });
+  });
+}
+
+function buildInsightCardsHTML(insights) {
+  if (insights.length === 0) return '<p class="insight-text">Keep tracking to see deep analytics.</p>';
+  return insights.map((i, idx) => {
+    const icon = insightTitleIcons[i.title] || (i.quotaType && quotaIcons[i.quotaType]) || insightIcons[i.severity] || insightIcons.info;
+    const hideBtn = i.key ? `<button class="insight-eye-btn" data-key="${i.key}" aria-label="Hide this insight" title="Hide this insight">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>` : '';
+    return `<div class="insight-card severity-${i.severity}" data-insight-idx="${idx}" data-key="${i.key || ''}" role="button" tabindex="0">
+      <div class="insight-card-header">
+        <svg class="insight-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+        <span class="insight-card-title">${i.title}</span>
+        ${hideBtn}
+        <svg class="insight-card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      ${i.metric ? `<div class="insight-card-metric">${i.metric}</div>` : ''}
+      ${i.sublabel ? `<div class="insight-card-sublabel">${i.sublabel}</div>` : ''}
+      <div class="insight-card-detail">
+        <div class="insight-card-desc">${i.description}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderInsightCards(container, insights) {
+  if (insights.length > 0) {
+    container.innerHTML = buildInsightCardsHTML(insights);
+    container.querySelectorAll('.insight-card').forEach(card => {
+      attachInsightCardEvents(card, container);
+    });
+    container.querySelectorAll('.insight-eye-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleInsightVisibility(btn.dataset.key);
+      });
+    });
+  } else {
+    container.innerHTML = '<p class="insight-text">Keep tracking to see deep analytics.</p>';
+  }
+}
+
+function attachInsightCardEvents(card, container) {
+  const toggle = (e) => {
+    if (e.target.closest('.insight-eye-btn')) return;
+    const wasExpanded = card.classList.contains('expanded');
+    // Only collapse siblings within the same parent container
+    const parent = card.closest('.insights-cards') || container;
+    parent.querySelectorAll('.insight-card.expanded').forEach(c => c.classList.remove('expanded'));
+    if (!wasExpanded) card.classList.add('expanded');
+  };
+  card.addEventListener('click', toggle);
+  card.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e); }
+  });
 }
 
 // ── Hidden Insights Badge ──
