@@ -102,16 +102,19 @@ onwatch/
 │   │   ├── client.go                   # HTTP client for Synthetic API
 │   │   ├── client_test.go
 │   │   ├── zai_types.go               # Z.ai response types + snapshot conversion
+│   │   ├── zai_types_test.go
 │   │   ├── zai_client.go              # HTTP client for Z.ai API
+│   │   ├── zai_client_test.go
 │   │   ├── anthropic_types.go         # Anthropic: dynamic quota response types
 │   │   ├── anthropic_client.go        # HTTP client for Anthropic OAuth usage API + SetToken() + ErrAnthropicUnauthorized
 │   │   ├── anthropic_token.go         # Shared token detection entry point
 │   │   ├── anthropic_token_unix.go    # macOS Keychain + Linux keyring/file detection
 │   │   └── anthropic_token_windows.go # Windows file-based detection
 │   ├── store/
-│   │   ├── store.go                    # SQLite schema, CRUD, users table, auth tokens
+│   │   ├── store.go                    # SQLite schema, CRUD, users table, auth tokens, settings
 │   │   ├── store_test.go
 │   │   ├── zai_store.go               # Z.ai-specific queries
+│   │   ├── zai_store_test.go
 │   │   ├── anthropic_store.go         # Anthropic snapshot/cycle queries
 │   │   └── anthropic_store_test.go
 │   ├── tracker/
@@ -123,14 +126,24 @@ onwatch/
 │   ├── agent/
 │   │   ├── agent.go                    # Synthetic background polling loop
 │   │   ├── agent_test.go
+│   │   ├── session_manager.go         # Cross-agent session lifecycle management
+│   │   ├── session_manager_test.go
 │   │   ├── zai_agent.go               # Z.ai background polling loop
 │   │   └── anthropic_agent.go         # Anthropic background polling loop + token refresh + 401 retry
+│   ├── notify/
+│   │   ├── notify.go                  # NotificationEngine: threshold alerts, quota resets
+│   │   ├── notify_test.go
+│   │   ├── smtp.go                    # SMTPMailer: TLS/STARTTLS email delivery
+│   │   ├── smtp_test.go
+│   │   ├── crypto.go                  # AES-GCM encryption for SMTP passwords at rest
+│   │   └── crypto_test.go
 │   ├── update/
-│   │   └── update.go                  # Self-update: check, download, apply, systemd migration
+│   │   ├── update.go                  # Self-update: check, download, apply, systemd migration
+│   │   └── update_test.go
 │   └── web/
 │       ├── server.go                   # HTTP server setup + route registration + gzip middleware + cache headers
 │       ├── server_test.go
-│       ├── handlers.go                 # Route handlers (HTML + JSON API + password change)
+│       ├── handlers.go                 # Route handlers (HTML + JSON API + settings + SMTP test)
 │       ├── handlers_test.go
 │       ├── middleware.go               # Session auth, Basic Auth, SHA-256 hashing
 │       ├── middleware_test.go
@@ -141,6 +154,7 @@ onwatch/
 │       └── templates/                  # Go html/template files (embedded)
 │           ├── layout.html
 │           ├── dashboard.html          # Main page + footer + password modal
+│           ├── settings.html           # Settings page: providers, notifications, SMTP
 │           └── login.html
 │
 ├── static/                             # Sync copy of internal/web/static/ (keep in sync)
@@ -346,6 +360,47 @@ The Anthropic agent automatically picks up rotated OAuth tokens without restart:
 - `HashPassword()` in `middleware.go` produces the SHA-256 hex hash
 - `NewSessionStore` and `NewServer` accept a password hash, not plaintext
 
+## Settings Page
+
+The `/settings` page provides a tabbed UI for managing onWatch configuration:
+
+- **General** -- Default provider selection
+- **Providers** -- Enable/disable individual providers
+- **Notifications** -- Per-quota threshold alerts (warning at configurable %, critical at configurable %)
+- **Email** -- SMTP configuration for email alerts
+
+Settings are stored as JSON blobs in the `settings` key-value table (`store.GetSetting` / `store.SetSetting`). The frontend fetches via `GET /api/settings` and saves via `PUT /api/settings`.
+
+## Notification System
+
+The `internal/notify/` package sends email alerts when quota utilization crosses thresholds.
+
+**Architecture:**
+- `NotificationEngine` in `notify.go` -- checks quota statuses against configured thresholds, dispatches alerts
+- `SMTPMailer` in `smtp.go` -- handles TLS/STARTTLS email delivery
+- `crypto.go` -- AES-GCM encryption for SMTP passwords stored in the database
+
+**Alert types:**
+- **Warning** -- quota crosses the warning threshold (configurable per quota)
+- **Critical** -- quota crosses the critical threshold
+- **Reset** -- quota resets to zero (new cycle begins)
+
+**SMTP password security:** Passwords are encrypted with AES-GCM before storage. The encryption key derives from the admin password hash. `POST /api/settings/smtp/test` sends a test email to verify configuration. Rate-limited to one test per 30 seconds.
+
+**Handler integration:** The `Handler` struct holds a `Notifier` interface (implemented by `NotificationEngine`). `Notifier.Reload()` refreshes notification settings from the DB; `Notifier.ConfigureSMTP()` reinitializes the SMTP mailer.
+
+## Anthropic Cross-Quota Insights
+
+The Anthropic insights engine computes a cross-quota ratio between the 5-Hour and Weekly All-Model quotas:
+
+- **Key:** `ratio_5h_weekly`
+- **Calculation:** `rate_five_hour / rate_seven_day` (both in %/hr)
+- **Display:** "1:X" format (e.g., "1:24" means 1% weekly costs ~24% of 5-hr)
+- **Visibility:** Only shown when both quotas have active rates >= 0.01%/hr
+- **Purpose:** Lets users gauge sprint capacity relative to weekly budget
+
+The ratio uses the same burn rates already computed by `computeAnthropicRate()` for each quota's forecast card.
+
 ## Development Rules
 
 ### TDD Protocol (MANDATORY)
@@ -514,17 +569,19 @@ See `design-system/onwatch/MASTER.md` for design tokens and component specs.
 See `design-system/onwatch/pages/dashboard.md` for dashboard-specific layout.
 
 **Key design decisions:**
-- Material Design 3 with dark + light mode
+- Material Design 3 with glassmorphism and dark + light mode
 - Three quota cards per provider (Synthetic/Z.ai), dynamic cards for Anthropic
 - Anthropic cards rendered dynamically from API response (variable quota count)
 - Color-coded thresholds: green (0-49%), yellow (50-79%), red (80-94%), critical (95%+)
 - Provider accent colors: Synthetic (primary), Z.ai (teal), Anthropic (coral #D97757)
 - Accessibility: color + icon + text for all status indicators
 - Live countdown updating every second
-- Provider-specific usage insights
-- Chart.js area chart with time range selector
+- Provider-specific usage insights with cross-quota ratio analysis
+- Cycle Overview table: cross-quota correlation at peak usage points
+- Chart.js area chart with time range selector and custom crosshair plugin
 - Footer with version display and "Change Password" button
 - Password change modal with current/new/confirm fields
+- Settings page (`/settings`) for provider controls, notification thresholds, and SMTP configuration
 
 **Provider tab order:** Anthropic (default), Synthetic, Z.ai, All. Controlled by `AvailableProviders()` in `config.go`.
 

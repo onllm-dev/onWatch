@@ -2413,6 +2413,9 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 
 	// ═══ Deep Insights ═══
 
+	// Collect rates for cross-quota analysis
+	quotaRates := map[string]anthropicQuotaRate{}
+
 	// 1. Burn Rate & Forecast per quota (replaces redundant current_* cards)
 	for _, q := range latest.Quotas {
 		key := fmt.Sprintf("forecast_%s", q.Name)
@@ -2421,6 +2424,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 		}
 		s := summaries[q.Name]
 		rate := h.computeAnthropicRate(q.Name, q.Utilization, s)
+		quotaRates[q.Name] = rate
 
 		var item insightItem
 		item.Key = key
@@ -2595,6 +2599,27 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 			Title: "Trend", Metric: metric, Sublabel: api.AnthropicDisplayName(name),
 			Desc: desc,
 		})
+	}
+
+	// 5. Cross-quota ratio: 5-Hour vs Weekly All-Model
+	if !hidden["ratio_5h_weekly"] {
+		r5h := quotaRates["five_hour"]
+		r7d := quotaRates["seven_day"]
+		if r5h.HasRate && r7d.HasRate && r5h.Rate >= 0.01 && r7d.Rate >= 0.01 {
+			ratio := r5h.Rate / r7d.Rate
+			resp.Insights = append(resp.Insights, insightItem{
+				Key:      "ratio_5h_weekly",
+				Type:     "factual",
+				Severity: "info",
+				Title:    "5-Hour vs Weekly",
+				Metric:   fmt.Sprintf("1:%.0f", ratio),
+				Sublabel: fmt.Sprintf("1%% weekly ~ %.0f%% of 5-hr", ratio),
+				Desc: fmt.Sprintf(
+					"Every 1%% of Weekly All-Model usage costs ~%.0f%% of a single 5-Hour sprint. "+
+						"Based on current rates: 5-Hour at %.1f%%/hr, Weekly at %.1f%%/hr.",
+					ratio, r5h.Rate, r7d.Rate),
+			})
+		}
 	}
 
 	// If no insights at all, add a getting-started message
