@@ -18,6 +18,13 @@ type ZaiTracker struct {
 	lastTokensValue float64
 	lastTimeValue   float64
 	hasLastValues   bool
+
+	onReset func(quotaName string) // called when a quota reset is detected
+}
+
+// SetOnReset registers a callback that is invoked when a quota reset is detected.
+func (t *ZaiTracker) SetOnReset(fn func(string)) {
+	t.onReset = fn
 }
 
 // ZaiSummary contains computed usage statistics for a Z.ai quota type.
@@ -130,6 +137,9 @@ func (t *ZaiTracker) processTokensQuota(snapshot *api.ZaiSnapshot) error {
 			"newNextReset", snapshot.TokensNextResetTime,
 			"totalDelta", cycle.TotalDelta,
 		)
+		if t.onReset != nil {
+			t.onReset(quotaType)
+		}
 		return nil
 	}
 
@@ -212,6 +222,9 @@ func (t *ZaiTracker) processTimeQuota(snapshot *api.ZaiSnapshot) error {
 			"newValue", currentValue,
 			"totalDelta", cycle.TotalDelta,
 		)
+		if t.onReset != nil {
+			t.onReset(quotaType)
+		}
 		return nil
 	}
 

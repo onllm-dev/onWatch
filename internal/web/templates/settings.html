@@ -1,0 +1,218 @@
+{{define "content"}}
+<div class="settings-page">
+    <header class="settings-header">
+        <div class="settings-header-left">
+            <a href="/" class="settings-back" aria-label="Back to dashboard" title="Back to dashboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <div>
+                <h1 class="settings-title">Settings</h1>
+                <p class="settings-subtitle">Configure notifications, providers, and preferences</p>
+            </div>
+        </div>
+        <div class="settings-header-right">
+            <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+                <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="settings-main">
+        <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+            <button class="settings-tab active" data-tab="email" role="tab" aria-selected="true" aria-controls="panel-email">Email (SMTP)</button>
+            <button class="settings-tab" data-tab="notifications" role="tab" aria-selected="false" aria-controls="panel-notifications">Notifications</button>
+            <button class="settings-tab" data-tab="providers" role="tab" aria-selected="false" aria-controls="panel-providers">Providers</button>
+            <button class="settings-tab" data-tab="general" role="tab" aria-selected="false" aria-controls="panel-general">General</button>
+        </div>
+
+        <!-- Email (SMTP) Panel -->
+        <div class="settings-panel active" id="panel-email" role="tabpanel">
+            <div class="settings-section">
+                <h3 class="settings-section-title">SMTP Configuration</h3>
+                <p class="settings-section-desc">Configure your mail server to enable email notifications.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="smtp-host">SMTP Host</label>
+                        <input type="text" id="smtp-host" class="settings-input" placeholder="smtp.gmail.com">
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="smtp-port">Port</label>
+                        <input type="number" id="smtp-port" class="settings-input" placeholder="587" min="1" max="65535">
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="smtp-protocol">Protocol</label>
+                        <select id="smtp-protocol" class="settings-input">
+                            <option value="tls">TLS</option>
+                            <option value="starttls">STARTTLS</option>
+                            <option value="none">None</option>
+                        </select>
+                    </div>
+                    <div class="settings-field">
+                        <label for="smtp-username">Username</label>
+                        <input type="text" id="smtp-username" class="settings-input" placeholder="user@example.com" autocomplete="off">
+                    </div>
+                    <div class="settings-field">
+                        <label for="smtp-password">Password</label>
+                        <input type="password" id="smtp-password" class="settings-input" placeholder="App password or SMTP password" autocomplete="new-password">
+                    </div>
+                    <div class="settings-field">
+                        <label for="smtp-from-address">From Address</label>
+                        <input type="email" id="smtp-from-address" class="settings-input" placeholder="alerts@example.com">
+                    </div>
+                    <div class="settings-field">
+                        <label for="smtp-from-name">From Name</label>
+                        <input type="text" id="smtp-from-name" class="settings-input" placeholder="onWatch Alerts">
+                    </div>
+                    <div class="settings-field">
+                        <label for="smtp-to">Recipients</label>
+                        <input type="text" id="smtp-to" class="settings-input" placeholder="admin@example.com, team@example.com">
+                        <span class="settings-field-hint">Comma-separated email addresses</span>
+                    </div>
+                </div>
+                <div class="settings-actions">
+                    <button class="settings-test-btn" id="smtp-test-btn" type="button">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                        Send Test Email
+                    </button>
+                    <span class="settings-test-result" id="smtp-test-result"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notifications Panel -->
+        <div class="settings-panel" id="panel-notifications" role="tabpanel" hidden>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Global Thresholds</h3>
+                <p class="settings-section-desc">Default thresholds that apply to all quotas unless overridden.</p>
+                <div class="settings-fields">
+                    <div class="settings-field settings-field-half">
+                        <label for="threshold-warning">Warning Threshold (%)</label>
+                        <div class="threshold-input-group">
+                            <input type="range" id="threshold-warning-slider" class="threshold-slider" min="0" max="100" value="80">
+                            <input type="number" id="threshold-warning" class="settings-input settings-input-sm" min="0" max="100" value="80">
+                        </div>
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="threshold-critical">Critical Threshold (%)</label>
+                        <div class="threshold-input-group">
+                            <input type="range" id="threshold-critical-slider" class="threshold-slider" min="0" max="100" value="95">
+                            <input type="number" id="threshold-critical" class="settings-input settings-input-sm" min="0" max="100" value="95">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Notification Types</h3>
+                <div class="settings-fields">
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="notify-warning" checked>
+                        <span>Warning alerts (quota crosses warning threshold)</span>
+                    </label>
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="notify-critical" checked>
+                        <span>Critical alerts (quota crosses critical threshold)</span>
+                    </label>
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="notify-reset" checked>
+                        <span>Reset notifications (quota cycle resets)</span>
+                    </label>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Cooldown</h3>
+                <p class="settings-section-desc">Minimum time between repeated notifications for the same quota and level.</p>
+                <div class="settings-fields">
+                    <div class="settings-field settings-field-half">
+                        <label for="notify-cooldown">Cooldown (minutes)</label>
+                        <input type="number" id="notify-cooldown" class="settings-input" min="1" value="30" placeholder="30">
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Per-Quota Overrides</h3>
+                <p class="settings-section-desc">Override global thresholds for specific quotas.</p>
+                <div id="override-list" class="override-list"></div>
+                <button class="settings-add-btn" id="add-override-btn" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                    Add Override
+                </button>
+            </div>
+        </div>
+
+        <!-- Providers Panel -->
+        <div class="settings-panel" id="panel-providers" role="tabpanel" hidden>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Provider Visibility</h3>
+                <p class="settings-section-desc">Control which providers appear on the dashboard and are actively polled.</p>
+                <div class="settings-fields" id="provider-toggles">
+                    <!-- Populated dynamically by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- General Panel -->
+        <div class="settings-panel" id="panel-general" role="tabpanel" hidden>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Timezone</h3>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="settings-timezone">Display Timezone</label>
+                        <select id="settings-timezone" class="settings-input">
+                            <option value="">Browser Default</option>
+                        </select>
+                        <span class="settings-field-hint">Affects how times are displayed on the dashboard</span>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Password</h3>
+                <p class="settings-section-desc">Change the dashboard login password.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="settings-current-password">Current Password</label>
+                        <input type="password" id="settings-current-password" class="settings-input" autocomplete="current-password">
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="settings-new-password">New Password</label>
+                        <input type="password" id="settings-new-password" class="settings-input" minlength="6" autocomplete="new-password">
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="settings-confirm-password">Confirm Password</label>
+                        <input type="password" id="settings-confirm-password" class="settings-input" minlength="6" autocomplete="new-password">
+                    </div>
+                </div>
+                <button class="settings-save-btn settings-save-btn-secondary" id="password-save-btn" type="button">Update Password</button>
+                <div id="settings-password-feedback" class="settings-feedback" hidden></div>
+            </div>
+        </div>
+
+        <!-- Global save bar -->
+        <div class="settings-save-bar">
+            <div id="settings-feedback" class="settings-feedback" hidden></div>
+            <button class="settings-save-btn" id="settings-save-btn" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Save Settings
+            </button>
+        </div>
+    </main>
+
+    <footer class="app-footer">
+        <div class="footer-content">
+            <span class="footer-brand"><a href="https://onwatch.onllm.dev" class="footer-link" target="_blank" rel="noopener">onWatch v{{.Version}}</a></span>
+            <span class="footer-heart">Built with &#10084;&#65039; by <a href="https://prakersh.in" class="footer-link" target="_blank" rel="noopener">Prakersh</a></span>
+        </div>
+    </footer>
+</div>
+{{end}}

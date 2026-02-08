@@ -21,6 +21,7 @@ import (
 	"github.com/onllm-dev/onwatch/internal/agent"
 	"github.com/onllm-dev/onwatch/internal/api"
 	"github.com/onllm-dev/onwatch/internal/config"
+	"github.com/onllm-dev/onwatch/internal/notify"
 	"github.com/onllm-dev/onwatch/internal/store"
 	"github.com/onllm-dev/onwatch/internal/tracker"
 	"github.com/onllm-dev/onwatch/internal/update"
@@ -575,8 +576,40 @@ func run() error {
 		})
 	}
 
+	// Create notification engine
+	notifier := notify.New(db, logger)
+	notifier.Reload()
+	notifier.ConfigureSMTP()
+
+	// Wire notifier to agents
+	if ag != nil {
+		ag.SetNotifier(notifier)
+	}
+	if zaiAg != nil {
+		zaiAg.SetNotifier(notifier)
+	}
+	if anthropicAg != nil {
+		anthropicAg.SetNotifier(notifier)
+	}
+
+	// Wire reset callbacks to trackers
+	tr.SetOnReset(func(quotaName string) {
+		notifier.Check(notify.QuotaStatus{Provider: "synthetic", QuotaKey: quotaName, ResetOccurred: true})
+	})
+	if zaiTr != nil {
+		zaiTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "zai", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
+	if anthropicTr != nil {
+		anthropicTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "anthropic", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
+
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
+	handler.SetNotifier(notifier)
 	if anthropicTr != nil {
 		handler.SetAnthropicTracker(anthropicTr)
 	}

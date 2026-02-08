@@ -19,6 +19,13 @@ type Tracker struct {
 	lastSearchRequests float64
 	lastToolRequests   float64
 	hasLastValues      bool
+
+	onReset func(quotaName string) // called when a quota reset is detected
+}
+
+// SetOnReset registers a callback that is invoked when a quota reset is detected.
+func (t *Tracker) SetOnReset(fn func(string)) {
+	t.onReset = fn
 }
 
 // Summary contains computed usage statistics
@@ -133,6 +140,9 @@ func (t *Tracker) processQuota(quotaType string, capturedAt time.Time, info api.
 			"newRenewsAt", info.RenewsAt,
 			"totalDelta", cycle.TotalDelta,
 		)
+		if t.onReset != nil {
+			t.onReset(quotaType)
+		}
 		return nil
 	}
 

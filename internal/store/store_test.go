@@ -575,6 +575,142 @@ func TestStore_QuerySyntheticCycleOverview_WithData(t *testing.T) {
 	}
 }
 
+func TestStore_NotificationLog_TableExists(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer s.Close()
+
+	var count int
+	err = s.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='notification_log'").Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query tables: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected notification_log table to exist, got count=%d", count)
+	}
+}
+
+func TestStore_UpsertNotificationLog_Insert(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer s.Close()
+
+	err = s.UpsertNotificationLog("five_hour", "threshold_80", 82.5)
+	if err != nil {
+		t.Fatalf("UpsertNotificationLog failed: %v", err)
+	}
+
+	sentAt, util, err := s.GetLastNotification("five_hour", "threshold_80")
+	if err != nil {
+		t.Fatalf("GetLastNotification failed: %v", err)
+	}
+	if sentAt.IsZero() {
+		t.Error("Expected non-zero sentAt")
+	}
+	if util != 82.5 {
+		t.Errorf("utilization = %v, want 82.5", util)
+	}
+}
+
+func TestStore_UpsertNotificationLog_Upsert(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer s.Close()
+
+	// Insert first
+	err = s.UpsertNotificationLog("five_hour", "threshold_80", 80.0)
+	if err != nil {
+		t.Fatalf("First upsert failed: %v", err)
+	}
+
+	sentAt1, _, err := s.GetLastNotification("five_hour", "threshold_80")
+	if err != nil {
+		t.Fatalf("GetLastNotification failed: %v", err)
+	}
+
+	// Upsert (replace)
+	// Small delay to ensure different timestamp
+	time.Sleep(10 * time.Millisecond)
+	err = s.UpsertNotificationLog("five_hour", "threshold_80", 85.0)
+	if err != nil {
+		t.Fatalf("Second upsert failed: %v", err)
+	}
+
+	sentAt2, util, err := s.GetLastNotification("five_hour", "threshold_80")
+	if err != nil {
+		t.Fatalf("GetLastNotification after upsert failed: %v", err)
+	}
+
+	if !sentAt2.After(sentAt1) {
+		t.Errorf("Expected sentAt2 (%v) > sentAt1 (%v)", sentAt2, sentAt1)
+	}
+	if util != 85.0 {
+		t.Errorf("utilization = %v, want 85.0", util)
+	}
+}
+
+func TestStore_GetLastNotification_NotFound(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer s.Close()
+
+	sentAt, util, err := s.GetLastNotification("nonexistent", "threshold_80")
+	if err != nil {
+		t.Fatalf("GetLastNotification failed: %v", err)
+	}
+	if !sentAt.IsZero() {
+		t.Errorf("Expected zero time for missing entry, got %v", sentAt)
+	}
+	if util != 0 {
+		t.Errorf("Expected 0 utilization for missing entry, got %v", util)
+	}
+}
+
+func TestStore_UpsertNotificationLog_DifferentKeys(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer s.Close()
+
+	// Insert for different quota keys
+	err = s.UpsertNotificationLog("five_hour", "threshold_80", 80.0)
+	if err != nil {
+		t.Fatalf("Upsert five_hour failed: %v", err)
+	}
+	err = s.UpsertNotificationLog("seven_day", "threshold_80", 81.0)
+	if err != nil {
+		t.Fatalf("Upsert seven_day failed: %v", err)
+	}
+	err = s.UpsertNotificationLog("five_hour", "threshold_95", 95.0)
+	if err != nil {
+		t.Fatalf("Upsert five_hour threshold_95 failed: %v", err)
+	}
+
+	// Each should be independent
+	_, util1, _ := s.GetLastNotification("five_hour", "threshold_80")
+	_, util2, _ := s.GetLastNotification("seven_day", "threshold_80")
+	_, util3, _ := s.GetLastNotification("five_hour", "threshold_95")
+
+	if util1 != 80.0 {
+		t.Errorf("five_hour/threshold_80 util = %v, want 80.0", util1)
+	}
+	if util2 != 81.0 {
+		t.Errorf("seven_day/threshold_80 util = %v, want 81.0", util2)
+	}
+	if util3 != 95.0 {
+		t.Errorf("five_hour/threshold_95 util = %v, want 95.0", util3)
+	}
+}
+
 func TestStore_QuerySyntheticCycleOverview_NoSnapshots(t *testing.T) {
 	s, err := New(":memory:")
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/notify"
 	"github.com/onllm-dev/onwatch/internal/store"
 	"github.com/onllm-dev/onwatch/internal/tracker"
 )
@@ -19,6 +20,12 @@ type ZaiAgent struct {
 	interval time.Duration
 	logger   *slog.Logger
 	sm       *SessionManager
+	notifier *notify.NotificationEngine
+}
+
+// SetNotifier sets the notification engine for sending alerts.
+func (a *ZaiAgent) SetNotifier(n *notify.NotificationEngine) {
+	a.notifier = n
 }
 
 // NewZaiAgent creates a new ZaiAgent with the given dependencies.
@@ -91,6 +98,27 @@ func (a *ZaiAgent) poll(ctx context.Context) {
 	if a.tracker != nil {
 		if err := a.tracker.Process(snapshot); err != nil {
 			a.logger.Error("Z.ai tracker processing failed", "error", err)
+		}
+	}
+
+	// Check notification thresholds
+	if a.notifier != nil {
+		if snapshot.TokensUsage > 0 {
+			a.notifier.Check(notify.QuotaStatus{
+				Provider:    "zai",
+				QuotaKey:    "tokens",
+				Utilization: float64(snapshot.TokensPercentage),
+				Limit:       snapshot.TokensUsage,
+			})
+		}
+		if snapshot.TimeUsage > 0 {
+			pct := (snapshot.TimeCurrentValue / snapshot.TimeUsage) * 100
+			a.notifier.Check(notify.QuotaStatus{
+				Provider:    "zai",
+				QuotaKey:    "time",
+				Utilization: pct,
+				Limit:       snapshot.TimeUsage,
+			})
 		}
 	}
 

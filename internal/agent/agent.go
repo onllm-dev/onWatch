@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/notify"
 	"github.com/onllm-dev/onwatch/internal/store"
 	"github.com/onllm-dev/onwatch/internal/tracker"
 )
@@ -19,6 +20,12 @@ type Agent struct {
 	interval time.Duration
 	logger   *slog.Logger
 	sm       *SessionManager
+	notifier *notify.NotificationEngine
+}
+
+// SetNotifier sets the notification engine for sending alerts.
+func (a *Agent) SetNotifier(n *notify.NotificationEngine) {
+	a.notifier = n
 }
 
 // New creates a new Agent with the given dependencies.
@@ -97,6 +104,27 @@ func (a *Agent) poll(ctx context.Context) {
 	// Process with tracker (log error but don't stop)
 	if err := a.tracker.Process(snapshot); err != nil {
 		a.logger.Error("Tracker processing failed", "error", err)
+	}
+
+	// Check notification thresholds
+	if a.notifier != nil {
+		for _, q := range []struct {
+			key      string
+			req, lim float64
+		}{
+			{"subscription", snapshot.Sub.Requests, snapshot.Sub.Limit},
+			{"search", snapshot.Search.Requests, snapshot.Search.Limit},
+			{"toolcall", snapshot.ToolCall.Requests, snapshot.ToolCall.Limit},
+		} {
+			if q.lim > 0 {
+				a.notifier.Check(notify.QuotaStatus{
+					Provider:    "synthetic",
+					QuotaKey:    q.key,
+					Utilization: (q.req / q.lim) * 100,
+					Limit:       q.lim,
+				})
+			}
+		}
 	}
 
 	// Report to session manager for usage-based session detection

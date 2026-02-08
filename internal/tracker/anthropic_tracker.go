@@ -18,6 +18,13 @@ type AnthropicTracker struct {
 	lastValues map[string]float64 // quota_name -> last utilization %
 	lastResets map[string]string  // quota_name -> last resets_at string
 	hasLast    bool
+
+	onReset func(quotaName string) // called when a quota reset is detected
+}
+
+// SetOnReset registers a callback that is invoked when a quota reset is detected.
+func (t *AnthropicTracker) SetOnReset(fn func(string)) {
+	t.onReset = fn
 }
 
 // AnthropicSummary contains computed usage statistics for an Anthropic quota.
@@ -147,6 +154,9 @@ func (t *AnthropicTracker) processQuota(quota api.AnthropicQuota, capturedAt tim
 			"newResetsAt", quota.ResetsAt,
 			"totalDelta", cycle.TotalDelta,
 		)
+		if t.onReset != nil {
+			t.onReset(quotaName)
+		}
 		return nil
 	}
 
