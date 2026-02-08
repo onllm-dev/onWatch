@@ -253,6 +253,16 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_anthropic_quota_values_snapshot ON anthropic_quota_values(snapshot_id);
 		CREATE INDEX IF NOT EXISTS idx_anthropic_cycles_name_start ON anthropic_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_anthropic_cycles_name_active ON anthropic_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
+
+		-- Notification log (dedup: one row per quota_key + notification_type)
+		CREATE TABLE IF NOT EXISTS notification_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_key TEXT NOT NULL,
+			notification_type TEXT NOT NULL,
+			sent_at TEXT NOT NULL,
+			utilization REAL,
+			UNIQUE(quota_key, notification_type)
+		);
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {
@@ -1224,4 +1234,38 @@ func (s *Store) DeleteAllAuthTokens() error {
 		return fmt.Errorf("store.DeleteAllAuthTokens: %w", err)
 	}
 	return nil
+}
+
+// UpsertNotificationLog inserts or replaces a notification log entry.
+// The UNIQUE(quota_key, notification_type) constraint ensures only the most recent
+// notification per quota+type pair is kept.
+func (s *Store) UpsertNotificationLog(quotaKey, notifType string, util float64) error {
+	_, err := s.db.Exec(
+		`INSERT OR REPLACE INTO notification_log (quota_key, notification_type, sent_at, utilization)
+		 VALUES (?, ?, ?, ?)`,
+		quotaKey, notifType, time.Now().UTC().Format(time.RFC3339Nano), util,
+	)
+	if err != nil {
+		return fmt.Errorf("store.UpsertNotificationLog: %w", err)
+	}
+	return nil
+}
+
+// GetLastNotification returns the last notification time and utilization for a quota+type pair.
+// Returns zero time and 0 utilization if no entry exists.
+func (s *Store) GetLastNotification(quotaKey, notifType string) (time.Time, float64, error) {
+	var sentAtStr string
+	var util float64
+	err := s.db.QueryRow(
+		`SELECT sent_at, utilization FROM notification_log WHERE quota_key = ? AND notification_type = ?`,
+		quotaKey, notifType,
+	).Scan(&sentAtStr, &util)
+	if err == sql.ErrNoRows {
+		return time.Time{}, 0, nil
+	}
+	if err != nil {
+		return time.Time{}, 0, fmt.Errorf("store.GetLastNotification: %w", err)
+	}
+	sentAt, _ := time.Parse(time.RFC3339Nano, sentAtStr)
+	return sentAt, util, nil
 }

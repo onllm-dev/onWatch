@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/internal/notify"
 	"github.com/onllm-dev/onwatch/internal/store"
 	"github.com/onllm-dev/onwatch/internal/tracker"
 )
@@ -26,6 +27,12 @@ type AnthropicAgent struct {
 	sm           *SessionManager
 	tokenRefresh TokenRefreshFunc
 	lastToken    string
+	notifier     *notify.NotificationEngine
+}
+
+// SetNotifier sets the notification engine for sending alerts.
+func (a *AnthropicAgent) SetNotifier(n *notify.NotificationEngine) {
+	a.notifier = n
 }
 
 // NewAnthropicAgent creates a new AnthropicAgent with the given dependencies.
@@ -137,6 +144,17 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 	if a.tracker != nil {
 		if err := a.tracker.Process(snapshot); err != nil {
 			a.logger.Error("Anthropic tracker processing failed", "error", err)
+		}
+	}
+
+	// Check notification thresholds
+	if a.notifier != nil {
+		for _, q := range snapshot.Quotas {
+			a.notifier.Check(notify.QuotaStatus{
+				Provider:    "anthropic",
+				QuotaKey:    q.Name,
+				Utilization: q.Utilization,
+			})
 		}
 	}
 

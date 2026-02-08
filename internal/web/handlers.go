@@ -6,8 +6,10 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/onllm-dev/onwatch/internal/api"
@@ -17,6 +19,14 @@ import (
 	"github.com/onllm-dev/onwatch/internal/update"
 )
 
+// Notifier defines the interface for the notification engine.
+// The concrete implementation lives in internal/notify.
+type Notifier interface {
+	Reload() error
+	ConfigureSMTP() error
+	SendTestEmail() error
+}
+
 // Handler handles HTTP requests for the web dashboard
 type Handler struct {
 	store              *store.Store
@@ -24,12 +34,16 @@ type Handler struct {
 	zaiTracker         *tracker.ZaiTracker
 	anthropicTracker   *tracker.AnthropicTracker
 	updater            *update.Updater
+	notifier           Notifier
 	logger             *slog.Logger
 	dashboardTmpl      *template.Template
 	loginTmpl          *template.Template
+	settingsTmpl       *template.Template
 	sessions           *SessionStore
 	config             *config.Config
 	version            string
+	smtpTestMu         sync.Mutex
+	smtpTestLastSent   time.Time
 }
 
 // NewHandler creates a new Handler instance
@@ -52,12 +66,20 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 		loginTmpl = template.New("empty")
 	}
 
+	// Parse settings template (layout + settings)
+	settingsTmpl, err := template.New("").ParseFS(templatesFS, "templates/layout.html", "templates/settings.html")
+	if err != nil {
+		logger.Error("failed to parse settings template", "error", err)
+		settingsTmpl = template.New("empty")
+	}
+
 	h := &Handler{
 		store:         store,
 		tracker:       tracker,
 		logger:        logger,
 		dashboardTmpl: dashboardTmpl,
 		loginTmpl:     loginTmpl,
+		settingsTmpl:  settingsTmpl,
 		sessions:      sessions,
 		config:        cfg,
 	}
@@ -80,6 +102,26 @@ func (h *Handler) SetAnthropicTracker(t *tracker.AnthropicTracker) {
 // SetUpdater sets the updater for self-update functionality.
 func (h *Handler) SetUpdater(u *update.Updater) {
 	h.updater = u
+}
+
+// SetNotifier sets the notification engine for alert management.
+func (h *Handler) SetNotifier(n Notifier) {
+	h.notifier = n
+}
+
+// SettingsPage renders the settings page.
+func (h *Handler) SettingsPage(w http.ResponseWriter, r *http.Request) {
+	data := map[string]interface{}{
+		"Title":   "Settings",
+		"Version": h.version,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := h.settingsTmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
+		h.logger.Error("failed to render settings template", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 // respondJSON sends a JSON response
@@ -210,7 +252,25 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	providers := h.config.AvailableProviders()
-	if h.config.HasMultipleProviders() {
+
+	// Filter by provider_visibility dashboard flag
+	if h.store != nil {
+		if visJSON, _ := h.store.GetSetting("provider_visibility"); visJSON != "" {
+			var vis map[string]map[string]bool
+			if json.Unmarshal([]byte(visJSON), &vis) == nil {
+				filtered := make([]string, 0, len(providers))
+				for _, p := range providers {
+					if pv, ok := vis[p]; ok && !pv["dashboard"] {
+						continue
+					}
+					filtered = append(filtered, p)
+				}
+				providers = filtered
+			}
+		}
+	}
+
+	if h.config.HasMultipleProviders() && len(providers) > 1 {
 		providers = append(providers, "both")
 	}
 	current := ""
@@ -2822,11 +2882,52 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if hiddenInsights == nil {
 		hiddenInsights = []string{}
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+
+	result := map[string]interface{}{
 		"timezone":        tz,
 		"hidden_insights": hiddenInsights,
-	})
+	}
+
+	// SMTP settings (never return the actual password)
+	if h.store != nil {
+		smtpJSON, _ := h.store.GetSetting("smtp")
+		if smtpJSON != "" {
+			var smtp map[string]interface{}
+			if json.Unmarshal([]byte(smtpJSON), &smtp) == nil {
+				// Mask the password — only indicate whether one is set
+				if _, ok := smtp["password"]; ok {
+					pwd, _ := smtp["password"].(string)
+					smtp["password"] = ""
+					smtp["password_set"] = pwd != ""
+				}
+				result["smtp"] = smtp
+			}
+		}
+
+		// Notification settings
+		notifJSON, _ := h.store.GetSetting("notifications")
+		if notifJSON != "" {
+			var notif map[string]interface{}
+			if json.Unmarshal([]byte(notifJSON), &notif) == nil {
+				result["notifications"] = notif
+			}
+		}
+
+		// Provider visibility settings
+		visJSON, _ := h.store.GetSetting("provider_visibility")
+		if visJSON != "" {
+			var vis map[string]interface{}
+			if json.Unmarshal([]byte(visJSON), &vis) == nil {
+				result["provider_visibility"] = vis
+			}
+		}
+	}
+
+	respondJSON(w, http.StatusOK, result)
 }
+
+// emailRegex validates email addresses.
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
 // UpdateSettings updates settings from JSON body (partial updates supported).
 func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -2888,7 +2989,184 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		result["hidden_insights"] = keys
 	}
 
+	// Handle SMTP settings
+	if raw, ok := body["smtp"]; ok {
+		var smtp struct {
+			Host        string `json:"host"`
+			Port        int    `json:"port"`
+			Protocol    string `json:"protocol"`
+			Username    string `json:"username"`
+			Password    string `json:"password"`
+			FromAddress string `json:"from_address"`
+			FromName    string `json:"from_name"`
+			To          string `json:"to"`
+		}
+		if err := json.Unmarshal(raw, &smtp); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid smtp value")
+			return
+		}
+		// Validate
+		if smtp.Port < 0 || smtp.Port > 65535 {
+			respondError(w, http.StatusBadRequest, "SMTP port must be between 1 and 65535")
+			return
+		}
+		validProtocols := map[string]bool{"tls": true, "starttls": true, "none": true, "": true}
+		if !validProtocols[smtp.Protocol] {
+			respondError(w, http.StatusBadRequest, "SMTP protocol must be tls, starttls, or none")
+			return
+		}
+		if smtp.FromAddress != "" && !emailRegex.MatchString(smtp.FromAddress) {
+			respondError(w, http.StatusBadRequest, "invalid from address")
+			return
+		}
+		if smtp.To != "" {
+			for _, addr := range strings.Split(smtp.To, ",") {
+				addr = strings.TrimSpace(addr)
+				if addr != "" && !emailRegex.MatchString(addr) {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid recipient address: %s", addr))
+					return
+				}
+			}
+		}
+
+		// If password is empty, preserve the existing password
+		if smtp.Password == "" {
+			existingJSON, _ := h.store.GetSetting("smtp")
+			if existingJSON != "" {
+				var existing map[string]interface{}
+				if json.Unmarshal([]byte(existingJSON), &existing) == nil {
+					if pwd, ok := existing["password"].(string); ok {
+						smtp.Password = pwd
+					}
+				}
+			}
+		}
+
+		smtpJSON, _ := json.Marshal(smtp)
+		if err := h.store.SetSetting("smtp", string(smtpJSON)); err != nil {
+			h.logger.Error("failed to save SMTP settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save SMTP settings")
+			return
+		}
+		result["smtp"] = "saved"
+
+		// Reconfigure SMTP mailer with new settings
+		if h.notifier != nil {
+			if err := h.notifier.ConfigureSMTP(); err != nil {
+				h.logger.Error("failed to reconfigure SMTP after settings update", "error", err)
+			}
+		}
+	}
+
+	// Handle notification settings
+	if raw, ok := body["notifications"]; ok {
+		var notif struct {
+			WarningThreshold  float64 `json:"warning_threshold"`
+			CriticalThreshold float64 `json:"critical_threshold"`
+			NotifyWarning     bool    `json:"notify_warning"`
+			NotifyCritical    bool    `json:"notify_critical"`
+			NotifyReset       bool    `json:"notify_reset"`
+			CooldownMinutes   int     `json:"cooldown_minutes"`
+			Overrides         []struct {
+				QuotaKey  string  `json:"quota_key"`
+				Provider  string  `json:"provider"`
+				Warning   float64 `json:"warning"`
+				Critical  float64 `json:"critical"`
+			} `json:"overrides"`
+		}
+		if err := json.Unmarshal(raw, &notif); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid notifications value")
+			return
+		}
+		// Validate thresholds
+		if notif.WarningThreshold < 0 || notif.WarningThreshold > 100 {
+			respondError(w, http.StatusBadRequest, "warning threshold must be between 0 and 100")
+			return
+		}
+		if notif.CriticalThreshold < 0 || notif.CriticalThreshold > 100 {
+			respondError(w, http.StatusBadRequest, "critical threshold must be between 0 and 100")
+			return
+		}
+		if notif.WarningThreshold >= notif.CriticalThreshold {
+			respondError(w, http.StatusBadRequest, "warning threshold must be less than critical threshold")
+			return
+		}
+		if notif.CooldownMinutes < 1 {
+			notif.CooldownMinutes = 1
+		}
+
+		notifJSON, _ := json.Marshal(notif)
+		if err := h.store.SetSetting("notifications", string(notifJSON)); err != nil {
+			h.logger.Error("failed to save notification settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save notification settings")
+			return
+		}
+		result["notifications"] = "saved"
+
+		// Reload notifier if available
+		if h.notifier != nil {
+			if err := h.notifier.Reload(); err != nil {
+				h.logger.Error("failed to reload notifier after notification update", "error", err)
+			}
+		}
+	}
+
+	// Handle provider visibility
+	if raw, ok := body["provider_visibility"]; ok {
+		var vis map[string]map[string]bool
+		if err := json.Unmarshal(raw, &vis); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid provider_visibility value")
+			return
+		}
+		visJSON, _ := json.Marshal(vis)
+		if err := h.store.SetSetting("provider_visibility", string(visJSON)); err != nil {
+			h.logger.Error("failed to save provider visibility settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save provider visibility settings")
+			return
+		}
+		result["provider_visibility"] = vis
+	}
+
 	respondJSON(w, http.StatusOK, result)
+}
+
+// SMTPTest sends a test email via the configured SMTP settings.
+func (h *Handler) SMTPTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Rate limit: 30 second cooldown
+	h.smtpTestMu.Lock()
+	elapsed := time.Since(h.smtpTestLastSent)
+	if elapsed < 30*time.Second {
+		h.smtpTestMu.Unlock()
+		remaining := int((30*time.Second - elapsed).Seconds())
+		respondError(w, http.StatusTooManyRequests, fmt.Sprintf("please wait %d seconds before sending another test", remaining))
+		return
+	}
+	h.smtpTestLastSent = time.Now()
+	h.smtpTestMu.Unlock()
+
+	if h.notifier == nil {
+		respondError(w, http.StatusServiceUnavailable, "notification engine not configured")
+		return
+	}
+
+	if err := h.notifier.SendTestEmail(); err != nil {
+		h.logger.Error("SMTP test failed", "error", err)
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed: %s", err.Error()),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Test email sent successfully",
+	})
 }
 
 // Login handles GET (show form) and POST (authenticate).

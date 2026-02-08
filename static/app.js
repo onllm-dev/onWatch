@@ -2978,9 +2978,404 @@ function pollForRestart() {
   }, 30000);
 }
 
+// ═══════════════════════════════════════════
+// SETTINGS PAGE
+// ═══════════════════════════════════════════
+
+function isSettingsPage() {
+  return window.location.pathname === '/settings';
+}
+
+function initSettingsPage() {
+  setupSettingsTabs();
+  loadSettings();
+  setupSettingsSave();
+  setupSMTPTest();
+  setupSettingsPassword();
+  setupThresholdSliders();
+  setupOverrides();
+  populateTimezoneSelect();
+}
+
+function setupSettingsTabs() {
+  const tabs = document.querySelectorAll('.settings-tab');
+  const panels = document.querySelectorAll('.settings-panel');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.tab;
+      tabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+      panels.forEach(p => { p.classList.remove('active'); p.hidden = true; });
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+      const panel = document.getElementById('panel-' + target);
+      if (panel) { panel.classList.add('active'); panel.hidden = false; }
+    });
+  });
+}
+
+function setupThresholdSliders() {
+  // Warning threshold
+  const wSlider = document.getElementById('threshold-warning-slider');
+  const wInput = document.getElementById('threshold-warning');
+  if (wSlider && wInput) {
+    wSlider.addEventListener('input', () => { wInput.value = wSlider.value; });
+    wInput.addEventListener('input', () => { wSlider.value = wInput.value; });
+  }
+  // Critical threshold
+  const cSlider = document.getElementById('threshold-critical-slider');
+  const cInput = document.getElementById('threshold-critical');
+  if (cSlider && cInput) {
+    cSlider.addEventListener('input', () => { cInput.value = cSlider.value; });
+    cInput.addEventListener('input', () => { cSlider.value = cInput.value; });
+  }
+}
+
+async function loadSettings() {
+  try {
+    const resp = await authFetch('/api/settings');
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    // Timezone
+    const tzSelect = document.getElementById('settings-timezone');
+    if (tzSelect && data.timezone) { tzSelect.value = data.timezone; }
+
+    // SMTP
+    if (data.smtp) {
+      const s = data.smtp;
+      setVal('smtp-host', s.host);
+      setVal('smtp-port', s.port);
+      setVal('smtp-protocol', s.protocol);
+      setVal('smtp-username', s.username);
+      setVal('smtp-from-address', s.from_address);
+      setVal('smtp-from-name', s.from_name);
+      setVal('smtp-to', s.to);
+      if (s.password_set) {
+        const pwdInput = document.getElementById('smtp-password');
+        if (pwdInput) pwdInput.placeholder = '********** (saved)';
+      }
+    }
+
+    // Notifications
+    if (data.notifications) {
+      const n = data.notifications;
+      setVal('threshold-warning', n.warning_threshold);
+      setVal('threshold-warning-slider', n.warning_threshold);
+      setVal('threshold-critical', n.critical_threshold);
+      setVal('threshold-critical-slider', n.critical_threshold);
+      const warnCheck = document.getElementById('notify-warning');
+      const critCheck = document.getElementById('notify-critical');
+      const resetCheck = document.getElementById('notify-reset');
+      if (warnCheck) warnCheck.checked = n.notify_warning !== false;
+      if (critCheck) critCheck.checked = n.notify_critical !== false;
+      if (resetCheck) resetCheck.checked = n.notify_reset !== false;
+      setVal('notify-cooldown', n.cooldown_minutes || 30);
+      // Load overrides
+      if (n.overrides && n.overrides.length > 0) {
+        n.overrides.forEach(o => addOverrideRow(o.quota_key, o.provider, o.warning, o.critical));
+      }
+    }
+
+    // Provider visibility
+    if (data.provider_visibility) {
+      populateProviderToggles(data.provider_visibility);
+    } else {
+      populateProviderToggles({});
+    }
+  } catch (e) {
+    // Settings load failed silently
+  }
+}
+
+function setVal(id, val) {
+  const el = document.getElementById(id);
+  if (el && val !== undefined && val !== null) el.value = val;
+}
+
+function populateTimezoneSelect() {
+  const select = document.getElementById('settings-timezone');
+  if (!select) return;
+  const zones = [
+    'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+    'America/Sao_Paulo', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
+    'Asia/Dubai', 'Asia/Kolkata', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul',
+    'Australia/Sydney', 'Pacific/Auckland'
+  ];
+  zones.forEach(tz => {
+    const opt = document.createElement('option');
+    opt.value = tz;
+    opt.textContent = tz.replace(/_/g, ' ');
+    select.appendChild(opt);
+  });
+}
+
+function populateProviderToggles(visibility) {
+  const container = document.getElementById('provider-toggles');
+  if (!container) return;
+  const providers = [
+    { key: 'anthropic', name: 'Anthropic', desc: 'Claude Code usage tracking' },
+    { key: 'synthetic', name: 'Synthetic', desc: 'Synthetic API quota monitoring' },
+    { key: 'zai', name: 'Z.ai', desc: 'Z.ai API usage tracking' },
+  ];
+
+  container.innerHTML = '';
+  providers.forEach(p => {
+    const vis = visibility[p.key] || { dashboard: true, polling: true };
+    const row = document.createElement('div');
+    row.className = 'settings-toggle-row';
+    row.innerHTML = `
+      <div>
+        <div class="settings-toggle-label">${p.name}</div>
+        <div class="settings-toggle-sublabel">${p.desc}</div>
+      </div>
+      <div class="settings-toggle-actions">
+        <label class="settings-toggle" title="Show on dashboard">
+          <input type="checkbox" data-provider="${p.key}" data-role="dashboard" ${vis.dashboard !== false ? 'checked' : ''}>
+          <span class="settings-toggle-track"></span>
+        </label>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function gatherSettings() {
+  const settings = {};
+
+  // SMTP
+  const smtpHost = document.getElementById('smtp-host');
+  if (smtpHost) {
+    settings.smtp = {
+      host: smtpHost.value.trim(),
+      port: parseInt(document.getElementById('smtp-port')?.value) || 587,
+      protocol: document.getElementById('smtp-protocol')?.value || 'tls',
+      username: document.getElementById('smtp-username')?.value.trim() || '',
+      password: document.getElementById('smtp-password')?.value || '',
+      from_address: document.getElementById('smtp-from-address')?.value.trim() || '',
+      from_name: document.getElementById('smtp-from-name')?.value.trim() || '',
+      to: document.getElementById('smtp-to')?.value.trim() || '',
+    };
+  }
+
+  // Notifications
+  const warningInput = document.getElementById('threshold-warning');
+  if (warningInput) {
+    const overrides = [];
+    document.querySelectorAll('.settings-override-row').forEach(row => {
+      const quota = row.querySelector('.override-quota')?.value;
+      const provider = row.querySelector('.override-provider')?.value;
+      const w = parseFloat(row.querySelector('.override-warning')?.value);
+      const c = parseFloat(row.querySelector('.override-critical')?.value);
+      if (quota && !isNaN(w) && !isNaN(c)) {
+        overrides.push({ quota_key: quota, provider: provider || '', warning: w, critical: c });
+      }
+    });
+
+    settings.notifications = {
+      warning_threshold: parseFloat(warningInput.value) || 80,
+      critical_threshold: parseFloat(document.getElementById('threshold-critical')?.value) || 95,
+      notify_warning: document.getElementById('notify-warning')?.checked ?? true,
+      notify_critical: document.getElementById('notify-critical')?.checked ?? true,
+      notify_reset: document.getElementById('notify-reset')?.checked ?? true,
+      cooldown_minutes: parseInt(document.getElementById('notify-cooldown')?.value) || 30,
+      overrides: overrides,
+    };
+  }
+
+  // Provider visibility
+  const toggles = document.querySelectorAll('#provider-toggles input[type="checkbox"]');
+  if (toggles.length > 0) {
+    const vis = {};
+    toggles.forEach(t => {
+      const prov = t.dataset.provider;
+      const role = t.dataset.role;
+      if (!vis[prov]) vis[prov] = {};
+      vis[prov][role] = t.checked;
+    });
+    settings.provider_visibility = vis;
+  }
+
+  // Timezone
+  const tzSelect = document.getElementById('settings-timezone');
+  if (tzSelect) {
+    settings.timezone = tzSelect.value;
+  }
+
+  return settings;
+}
+
+function setupSettingsSave() {
+  const saveBtn = document.getElementById('settings-save-btn');
+  const feedback = document.getElementById('settings-feedback');
+  if (!saveBtn) return;
+
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    if (feedback) { feedback.hidden = true; }
+
+    const settings = gatherSettings();
+
+    // Client-side validation
+    if (settings.notifications) {
+      if (settings.notifications.warning_threshold >= settings.notifications.critical_threshold) {
+        showSettingsFeedback(feedback, 'Warning threshold must be less than critical threshold.', 'error');
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
+        return;
+      }
+    }
+
+    try {
+      const resp = await authFetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        showSettingsFeedback(feedback, data.error || 'Failed to save settings.', 'error');
+      } else {
+        showSettingsFeedback(feedback, 'Settings saved successfully.', 'success');
+      }
+    } catch (e) {
+      showSettingsFeedback(feedback, 'Network error. Please try again.', 'error');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
+    }
+  });
+}
+
+function showSettingsFeedback(el, msg, type) {
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'settings-feedback ' + type;
+  el.hidden = false;
+  setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+function setupSMTPTest() {
+  const testBtn = document.getElementById('smtp-test-btn');
+  const result = document.getElementById('smtp-test-result');
+  if (!testBtn) return;
+
+  testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true;
+    testBtn.textContent = 'Sending...';
+    if (result) { result.textContent = ''; result.className = 'settings-test-result'; }
+
+    try {
+      const resp = await authFetch('/api/settings/smtp/test', { method: 'POST' });
+      const data = await resp.json();
+      if (result) {
+        result.textContent = data.message || (data.success ? 'Test email sent.' : 'Test failed.');
+        result.className = 'settings-test-result ' + (data.success ? 'success' : 'error');
+      }
+    } catch (e) {
+      if (result) {
+        result.textContent = 'Network error.';
+        result.className = 'settings-test-result error';
+      }
+    } finally {
+      testBtn.disabled = false;
+      testBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Send Test Email';
+    }
+  });
+}
+
+function setupSettingsPassword() {
+  const saveBtn = document.getElementById('password-save-btn');
+  const feedback = document.getElementById('settings-password-feedback');
+  if (!saveBtn) return;
+
+  saveBtn.addEventListener('click', async () => {
+    if (feedback) { feedback.hidden = true; }
+    const currentPass = document.getElementById('settings-current-password')?.value;
+    const newPass = document.getElementById('settings-new-password')?.value;
+    const confirmPass = document.getElementById('settings-confirm-password')?.value;
+
+    if (!currentPass || !newPass) {
+      showSettingsFeedback(feedback, 'Please fill in all password fields.', 'error');
+      return;
+    }
+    if (newPass !== confirmPass) {
+      showSettingsFeedback(feedback, 'New passwords do not match.', 'error');
+      return;
+    }
+    if (newPass.length < 6) {
+      showSettingsFeedback(feedback, 'New password must be at least 6 characters.', 'error');
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Updating...';
+
+    try {
+      const resp = await authFetch('/api/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_password: currentPass, new_password: newPass }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        showSettingsFeedback(feedback, data.error || 'Failed to update password.', 'error');
+      } else {
+        showSettingsFeedback(feedback, 'Password updated! Redirecting to login...', 'success');
+        setTimeout(() => { window.location.href = '/login'; }, 1500);
+      }
+    } catch (e) {
+      showSettingsFeedback(feedback, 'Network error.', 'error');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Update Password';
+    }
+  });
+}
+
+function setupOverrides() {
+  const addBtn = document.getElementById('add-override-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => addOverrideRow('', '', 80, 95));
+  }
+}
+
+function addOverrideRow(quotaKey, provider, warning, critical) {
+  const list = document.getElementById('override-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'settings-override-row';
+  row.innerHTML = `
+    <select class="settings-input override-quota" style="flex:2">
+      <option value="">Select quota...</option>
+      <option value="five_hour" ${quotaKey === 'five_hour' ? 'selected' : ''}>5-Hour Limit</option>
+      <option value="seven_day" ${quotaKey === 'seven_day' ? 'selected' : ''}>Weekly All-Model</option>
+      <option value="seven_day_sonnet" ${quotaKey === 'seven_day_sonnet' ? 'selected' : ''}>Weekly Sonnet</option>
+      <option value="monthly_limit" ${quotaKey === 'monthly_limit' ? 'selected' : ''}>Monthly Limit</option>
+      <option value="subscription" ${quotaKey === 'subscription' ? 'selected' : ''}>Subscription</option>
+      <option value="tokens" ${quotaKey === 'tokens' ? 'selected' : ''}>Tokens Limit</option>
+    </select>
+    <input type="number" class="settings-input settings-input-sm override-warning" value="${warning}" min="0" max="100" placeholder="Warn%" title="Warning threshold">
+    <input type="number" class="settings-input settings-input-sm override-critical" value="${critical}" min="0" max="100" placeholder="Crit%" title="Critical threshold">
+    <input type="hidden" class="override-provider" value="${provider || ''}">
+    <button class="override-remove" title="Remove override" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  `;
+  row.querySelector('.override-remove').addEventListener('click', () => row.remove());
+  list.appendChild(row);
+}
+
 // ── Init ──
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Settings page has its own initialization
+  if (isSettingsPage()) {
+    initTheme();
+    initSettingsPage();
+    return;
+  }
+
   // Redirect to saved default provider if no explicit provider in URL
   // Only when multiple providers are available (tabs exist)
   const urlParams = new URLSearchParams(window.location.search);
