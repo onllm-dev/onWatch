@@ -443,11 +443,26 @@ a:hover { text-decoration: underline; }
   display: inline-flex;
   align-items: stretch;
   justify-content: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   border-radius: var(--radius-full);
   overflow: hidden;
   border: 1px solid rgba(13, 148, 136, 0.2);
 }
+
+.beta-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  background: var(--accent-blue-muted);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: var(--radius-full);
+  margin-bottom: 24px;
+}
+.beta-banner svg { width: 14px; height: 14px; }
 
 .hero-badge {
   display: inline-flex;
@@ -2141,6 +2156,10 @@ a:hover { text-decoration: underline; }
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/></svg>
                     Powered by onllm.dev
                 </a>
+            </div>
+            <div class="beta-banner">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                Beta — Currently in active development
             </div>
             <h1>The <span class="accent">intelligence</span> layer for your AI API stack</h1>
             <p class="hero-desc">Track API usage across Synthetic, Z.ai, and Anthropic in one place. onWatch polls every provider's quotas, stores historical data locally, and surfaces patterns, projections, and cross-provider context&mdash;so you always know where your budget stands and which provider has headroom.</p>
