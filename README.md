@@ -223,6 +223,24 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
 
 ---
 
+## Self-Update
+
+onWatch can update itself from the dashboard or CLI:
+
+```bash
+onwatch update    # Check for updates and self-update from CLI
+```
+
+Or click the update badge in the dashboard footer when a new version is available.
+
+**Under systemd**, the update is fully automatic — no manual restart needed. onWatch detects its systemd service via `/proc/self/cgroup`, fixes the unit file if needed (`Restart=always`), runs `systemctl daemon-reload`, and triggers `systemctl restart` for a clean lifecycle-managed restart.
+
+**Standalone mode** (macOS, or Linux without systemd) spawns the new binary, which takes over via PID file.
+
+The binary validates downloaded updates by checking executable magic bytes (ELF, Mach-O, PE) before replacing itself.
+
+---
+
 ## Data Storage
 
 ```
