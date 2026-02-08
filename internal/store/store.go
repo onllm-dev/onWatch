@@ -68,11 +68,17 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	// Single connection: SQLite is single-writer anyway, and each connection
+	// allocates its own page cache (~2 MB with default settings). Limiting to 1
+	// connection saves 2-4 MB RSS. busy_timeout handles any contention.
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
+
 	// Configure SQLite for RAM efficiency
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL;",
 		"PRAGMA synchronous=NORMAL;",
-		"PRAGMA cache_size=-2000;",
+		"PRAGMA cache_size=-500;",
 		"PRAGMA foreign_keys=ON;",
 		"PRAGMA busy_timeout=5000;",
 	}

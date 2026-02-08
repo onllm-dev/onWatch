@@ -48,7 +48,7 @@
       "url": "https://onwatch.onllm.dev",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux, Windows",
-      "softwareVersion": "2.3.4",
+      "softwareVersion": "2.4.0",
       "license": "https://www.gnu.org/licenses/gpl-3.0.en.html",
       "isAccessibleForFree": true,
       "offers": {
@@ -140,7 +140,7 @@
           "name": "How much memory does onWatch use?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "onWatch idles at ~28 MB RAM and peaks at ~29 MB under continuous dashboard load, measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. It's designed to run as a background daemon with minimal resource usage: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), and polling buffer (1 MB). This is lighter than a single browser tab."
+            "text": "onWatch idles at ~28 MB RAM and peaks at ~36 MB under continuous dashboard load, measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. It's designed to run as a background daemon with minimal resource usage: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), and polling buffer (1 MB). This is lighter than a single browser tab."
           }
         },
         {
@@ -2159,7 +2159,7 @@ a:hover { text-decoration: underline; }
                 <code><span class="install-prefix">$</span> curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash</code>
                 <span class="copy-hint">Copy</span>
             </div>
-            <p class="hero-meta"><span id="hero-version">v2.3.4</span> &middot; Go &middot; GPL-3.0 &middot; Zero Telemetry &middot; ~28 MB RAM &middot; ~13 MB Binary</p>
+            <p class="hero-meta"><span id="hero-version">v2.4.0</span> &middot; Go &middot; GPL-3.0 &middot; Zero Telemetry &middot; ~28 MB RAM &middot; ~13 MB Binary</p>
         </div>
 
         <!-- Dashboard Mockup -->
@@ -2886,7 +2886,7 @@ a:hover { text-decoration: underline; }
             <details class="faq-item">
                 <summary class="faq-question">How much memory does onWatch use?</summary>
                 <div class="faq-answer">
-                    <p>onWatch idles at ~28 MB RAM and peaks at ~29 MB under continuous dashboard load, measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Breakdown: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), polling buffer (1 MB). This is lighter than a single browser tab and designed to run as a background daemon indefinitely.</p>
+                    <p>onWatch idles at ~28 MB RAM and peaks at ~36 MB under continuous dashboard load, measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Breakdown: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), polling buffer (1 MB). This is lighter than a single browser tab and designed to run as a background daemon indefinitely.</p>
                 </div>
             </details>
             <details class="faq-item">

@@ -142,7 +142,7 @@ No. Zero telemetry. All data stays in a local SQLite file. The only outbound cal
 
 ### How much memory does onWatch use?
 
-~28 MB idle, ~29 MB under continuous dashboard load. Measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed benchmarks.
+~28 MB idle, ~36 MB under continuous dashboard load with server-side chart downsampling. Measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed benchmarks.
 
 ---
 
@@ -170,7 +170,7 @@ No. Zero telemetry. All data stays in a local SQLite file. The only outbound cal
 
 All agents run as parallel goroutines. Each polls its API at the configured interval and writes snapshots. The dashboard reads from the shared store.
 
-**Measured RAM (all three agents running in parallel):** 27.5 MB idle, 29 MB P95 under continuous load (~1,160 requests in 15s). Single binary, all assets embedded via `embed.FS`.
+**Measured RAM (all three agents running in parallel):** 28 MB idle, 36 MB P95 under continuous load (~1,100 requests in 15s). Single binary, all assets embedded via `embed.FS`.
 
 ---
 

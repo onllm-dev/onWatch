@@ -69,8 +69,8 @@ func (s *Store) QueryLatestAnthropic() (*api.AnthropicSnapshot, error) {
 	var capturedAt string
 
 	err := s.db.QueryRow(
-		`SELECT id, captured_at, raw_json, quota_count FROM anthropic_snapshots ORDER BY captured_at DESC LIMIT 1`,
-	).Scan(&snapshot.ID, &capturedAt, &snapshot.RawJSON, new(int))
+		`SELECT id, captured_at, quota_count FROM anthropic_snapshots ORDER BY captured_at DESC LIMIT 1`,
+	).Scan(&snapshot.ID, &capturedAt, new(int))
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -109,7 +109,7 @@ func (s *Store) QueryLatestAnthropic() (*api.AnthropicSnapshot, error) {
 
 // QueryAnthropicRange returns Anthropic snapshots within a time range with optional limit.
 func (s *Store) QueryAnthropicRange(start, end time.Time, limit ...int) ([]*api.AnthropicSnapshot, error) {
-	query := `SELECT id, captured_at, raw_json, quota_count FROM anthropic_snapshots
+	query := `SELECT id, captured_at, quota_count FROM anthropic_snapshots
 		WHERE captured_at BETWEEN ? AND ? ORDER BY captured_at ASC`
 	args := []interface{}{start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)}
 	if len(limit) > 0 && limit[0] > 0 {
@@ -127,7 +127,7 @@ func (s *Store) QueryAnthropicRange(start, end time.Time, limit ...int) ([]*api.
 	for rows.Next() {
 		var snap api.AnthropicSnapshot
 		var capturedAt string
-		if err := rows.Scan(&snap.ID, &capturedAt, &snap.RawJSON, new(int)); err != nil {
+		if err := rows.Scan(&snap.ID, &capturedAt, new(int)); err != nil {
 			return nil, fmt.Errorf("failed to scan anthropic snapshot: %w", err)
 		}
 		snap.CapturedAt, _ = time.Parse(time.RFC3339Nano, capturedAt)

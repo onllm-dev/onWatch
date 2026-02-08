@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -378,6 +379,12 @@ func run() error {
 		return nil
 	}
 
+	// Memory tuning: GOMEMLIMIT triggers MADV_DONTNEED which actually shrinks RSS.
+	// Without this, Go uses MADV_FREE on macOS — pages are reclaimable but still
+	// counted in RSS, causing a permanent ratchet effect.
+	debug.SetMemoryLimit(40 * 1024 * 1024) // 40 MiB soft limit
+	debug.SetGCPercent(50)                  // GC at 50% heap growth (default 100)
+
 	// Phase 3: Parse flags and load config
 	cfg, err := config.Load()
 	if err != nil {
@@ -643,6 +650,21 @@ func run() error {
 		logger.Info("Starting web server", "port", cfg.Port)
 		if err := server.Start(); err != nil {
 			serverErr <- fmt.Errorf("server error: %w", err)
+		}
+	}()
+
+	// Periodically return freed memory to the OS. On macOS, MADV_FREE pages
+	// are reclaimable but still counted in RSS. FreeOSMemory forces MADV_DONTNEED.
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				debug.FreeOSMemory()
+			}
 		}
 	}()
 

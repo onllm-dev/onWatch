@@ -57,9 +57,9 @@ func TestStore_BoundedCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to query cache size: %v", err)
 	}
-	// cache_size is negative for KB, -2000 = 2MB
-	if cacheSize != -2000 {
-		t.Errorf("Expected cache_size -2000, got %d", cacheSize)
+	// cache_size is negative for KB, -500 = 512KB
+	if cacheSize != -500 {
+		t.Errorf("Expected cache_size -500, got %d", cacheSize)
 	}
 }
 

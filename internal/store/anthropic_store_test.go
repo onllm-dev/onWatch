@@ -114,8 +114,10 @@ func TestStore_QueryLatestAnthropic_WithData(t *testing.T) {
 	if latest.Quotas[1].ResetsAt != nil {
 		t.Error("Expected ResetsAt to be nil for seven_day")
 	}
-	if latest.RawJSON != `{"five_hour":{"utilization":0.42}}` {
-		t.Errorf("RawJSON = %q, want original", latest.RawJSON)
+	// raw_json is intentionally not loaded by queries (only stored on INSERT)
+	// to save memory — verified by checking it's empty on read
+	if latest.RawJSON != "" {
+		t.Errorf("RawJSON should be empty on query (not loaded), got %q", latest.RawJSON)
 	}
 }
 
