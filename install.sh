@@ -284,30 +284,58 @@ stop_existing() {
         else
             "${BIN_DIR}/onwatch" stop 2>/dev/null || true
         fi
-        sleep 1
+        # Wait up to 5 seconds for the process to die.
+        # On Linux, writing to a running binary returns ETXTBSY,
+        # so we must ensure it's stopped before replacing.
+        local waited=0
+        while [[ $waited -lt 5 ]]; do
+            # Check if any onwatch process is still running from BIN_DIR
+            if ! pgrep -f "${BIN_DIR}/onwatch" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+            waited=$((waited + 1))
+        done
     fi
 }
 
 # ─── Download Binary ─────────────────────────────────────────────────
+# Downloads to a temp file first, then atomically moves into place.
+# This avoids ETXTBSY errors on Linux when the binary is still running.
 download() {
     local url="https://github.com/${REPO}/releases/latest/download/${ASSET_NAME}"
     local dest="${BIN_DIR}/onwatch"
+    local tmp_dest="${BIN_DIR}/onwatch.tmp.$$"
 
     info "Downloading onwatch for ${BOLD}${PLATFORM}${NC}..."
 
     if command -v curl &>/dev/null; then
-        if ! curl -fsSL -o "$dest" "$url"; then
+        if ! curl -fsSL -o "$tmp_dest" "$url"; then
+            rm -f "$tmp_dest"
             fail "Download failed. Check your internet connection.\n       URL: $url"
         fi
     elif command -v wget &>/dev/null; then
-        if ! wget -q -O "$dest" "$url"; then
+        if ! wget -q -O "$tmp_dest" "$url"; then
+            rm -f "$tmp_dest"
             fail "Download failed. Check your internet connection.\n       URL: $url"
         fi
     else
         fail "curl or wget is required"
     fi
 
-    chmod +x "$dest"
+    # Validate download is non-empty
+    if [[ ! -s "$tmp_dest" ]]; then
+        rm -f "$tmp_dest"
+        fail "Downloaded file is empty"
+    fi
+
+    chmod +x "$tmp_dest"
+
+    # Atomic swap: remove old binary (safe even if still running on Linux —
+    # unlink detaches the name, the running process keeps its inode), then
+    # move new binary into place.
+    rm -f "$dest"
+    mv "$tmp_dest" "$dest"
 
     local ver
     ver="$("$dest" --version 2>/dev/null | head -1 || echo "unknown")"
