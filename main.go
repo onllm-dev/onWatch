@@ -386,6 +386,13 @@ func run() error {
 
 	isDaemonChild := os.Getenv("_ONWATCH_DAEMON") == "1"
 
+	// Auto-fix systemd unit file BEFORE stopping the previous instance.
+	// When a post-update child runs this, the daemon-reload completes while
+	// the parent is still alive (systemd tracks it). After the child kills
+	// the parent below, systemd sees Restart=always and auto-starts the new binary.
+	// No-op if not under systemd or already up to date.
+	update.MigrateSystemdUnit(slog.Default())
+
 	// Stop any previous instance (parent does this, daemon child skips it)
 	if !isDaemonChild {
 		stopPreviousInstance(cfg.Port, testMode)
