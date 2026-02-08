@@ -235,17 +235,19 @@ Or click the update badge in the dashboard footer when a new version is availabl
 
 **Under systemd**, the update is fully automatic — no manual restart needed. onWatch detects its systemd service via `/proc/self/cgroup`, fixes the unit file if needed (`Restart=always`), runs `systemctl daemon-reload`, and triggers `systemctl restart` for a clean lifecycle-managed restart.
 
-**Standalone mode** (macOS, or Linux without systemd) spawns the new binary, which takes over via PID file. If the spawn fails, onWatch automatically falls back to `systemctl restart` (both system-level and user-level) as a safety net.
+**Standalone mode** (macOS, or Linux without systemd) spawns the new binary, which takes over via PID file. If the spawn fails, onWatch automatically falls back to `systemctl restart` as a safety net.
 
 The binary validates downloaded updates by checking executable magic bytes (ELF, Mach-O, PE) before replacing itself.
 
-**Restart fallback chain:**
+**If a self-update fails to restart**, the new binary is already on disk — just restart the service manually:
 
-| Priority | Method | When |
-|----------|--------|------|
-| 1 | `systemctl restart` | Running under systemd |
-| 2 | Spawn new binary | Standalone mode (macOS/Linux) |
-| 3 | `systemctl restart` (fallback) | Spawn failed but systemd is available |
+```bash
+# systemd (Linux)
+sudo systemctl restart onwatch
+
+# Standalone (macOS / Linux without systemd)
+onwatch stop && onwatch
+```
 
 ---
 
