@@ -3,6 +3,24 @@
 const API_BASE = '';
 const REFRESH_INTERVAL = 60000;
 
+// ── Lazy Loading via IntersectionObserver ──
+const _lazyLoaded = new Set();
+function lazyLoadOnVisible(selector, callback) {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  if (typeof IntersectionObserver === 'undefined') { callback(); return; }
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && !_lazyLoaded.has(selector)) {
+        _lazyLoaded.add(selector);
+        observer.unobserve(entry.target);
+        callback();
+      }
+    });
+  }, { rootMargin: '200px' });
+  observer.observe(el);
+}
+
 // ── Auth helper: redirect to login on 401 ──
 async function authFetch(url, options) {
   const res = await fetch(url, options);
@@ -81,7 +99,7 @@ function loadHiddenQuotas() {
       State.hiddenQuotas = new Set(JSON.parse(stored));
     }
   } catch (e) {
-    console.warn('Failed to load hidden quotas:', e);
+    // silent — localStorage read failure is non-critical
     State.hiddenQuotas = new Set();
   }
 }
@@ -90,7 +108,7 @@ function saveHiddenQuotas() {
   try {
     localStorage.setItem('onwatch-hidden-quotas', JSON.stringify([...State.hiddenQuotas]));
   } catch (e) {
-    console.warn('Failed to save hidden quotas:', e);
+    // silent
   }
 }
 
@@ -136,7 +154,7 @@ async function loadHiddenInsights() {
       }
     }
   } catch (e) {
-    console.warn('Failed to load hidden insights:', e);
+    // silent
   }
 }
 
@@ -148,7 +166,7 @@ async function saveHiddenInsights() {
       body: JSON.stringify({ hidden_insights: [...State.hiddenInsights] })
     });
   } catch (e) {
-    console.warn('Failed to save hidden insights:', e);
+    // silent
   }
 }
 
@@ -184,7 +202,7 @@ function saveDefaultProvider(provider) {
   try {
     localStorage.setItem('onwatch-default-provider', provider);
   } catch (e) {
-    console.warn('Failed to save default provider:', e);
+    // silent
   }
 }
 
@@ -511,7 +529,7 @@ async function loadAnthropicModalChart(quotaName) {
         }
       }
     });
-  } catch (err) { console.error('Anthropic modal chart error:', err); }
+  } catch (err) { /* modal chart error — non-critical */ }
 }
 
 async function loadAnthropicModalCycles(quotaName) {
@@ -540,7 +558,7 @@ async function loadAnthropicModalCycles(quotaName) {
         <td>${formatNumber(cycle.totalDelta || 0)}</td>
       </tr>`;
     }).join('');
-  } catch (err) { console.error('Anthropic modal cycles error:', err); }
+  } catch (err) { /* modal cycles error — non-critical */ }
 }
 
 // ── Utilities ──
@@ -795,7 +813,7 @@ async function selectTz(tz, picker, badge) {
       body: JSON.stringify({ timezone: tz })
     });
   } catch (e) {
-    console.error('Failed to save timezone:', e);
+    // silent
   }
 }
 
@@ -985,7 +1003,7 @@ async function fetchCurrent() {
 
     });
   } catch (err) {
-    console.error('Fetch error:', err);
+    // fetch error — cards show fallback state
     const statusDot = document.getElementById('status-dot');
     if (statusDot) statusDot.classList.add('stale');
   }
@@ -1107,7 +1125,7 @@ async function fetchDeepInsights() {
     // Render hidden insights badge
     renderHiddenInsightsBadge();
   } catch (err) {
-    console.error('Insights fetch error:', err);
+    // insights fetch error — panel shows fallback state
     if (statsEl) statsEl.innerHTML = '';
     cardsEl.innerHTML = '<p class="insight-text">Unable to load insights.</p>';
   }
@@ -1553,7 +1571,7 @@ async function fetchHistory(range) {
     State.chart.options.scales.y.max = State.chartYMax;
     State.chart.update();
   } catch (err) {
-    console.error('History fetch error:', err);
+    // history fetch error — chart shows empty state
   }
 }
 
@@ -1724,7 +1742,7 @@ async function fetchCycles(quotaType) {
     State.cyclesPage = 1;
     renderCyclesTable();
   } catch (err) {
-    console.error('Cycles fetch error:', err);
+    // cycles fetch error — table shows empty state
   }
 }
 
@@ -1903,7 +1921,7 @@ async function fetchSessions() {
     State.sessionsPage = 1;
     renderSessionsTable();
   } catch (err) {
-    console.error('Sessions fetch error:', err);
+    // sessions fetch error — table shows empty state
   }
 }
 
@@ -2348,7 +2366,7 @@ async function loadModalChart(quotaType, effectiveProvider) {
       }
     });
   } catch (err) {
-    console.error('Modal chart error:', err);
+    // modal chart error — non-critical
   }
 }
 
@@ -2385,7 +2403,7 @@ async function loadModalCycles(quotaType, effectiveProvider) {
       </tr>`;
     }).join('');
   } catch (err) {
-    console.error('Modal cycles error:', err);
+    // modal cycles error — non-critical
   }
 }
 
@@ -2543,7 +2561,7 @@ async function fetchCycleOverview() {
     State.overviewQuotaNames = data.quotaNames || [];
     renderOverviewTable();
   } catch (e) {
-    console.warn('Failed to fetch cycle overview:', e);
+    // cycle overview fetch error — non-critical
   }
 }
 
@@ -2810,11 +2828,12 @@ function setupCardModals() {
 function startAutoRefresh() {
   if (State.refreshInterval) clearInterval(State.refreshInterval);
   State.refreshInterval = setInterval(() => {
-    fetchCurrent(); fetchDeepInsights();
-    fetchHistory();
-    fetchCycles();
-    fetchCycleOverview();
-    fetchSessions();
+    // Always refresh above-fold data
+    fetchCurrent(); fetchDeepInsights(); fetchHistory();
+    // Only refresh below-fold sections that have been loaded
+    if (_lazyLoaded.has('.cycles-section')) fetchCycles();
+    if (_lazyLoaded.has('.cycle-overview-section')) fetchCycleOverview();
+    if (_lazyLoaded.has('.sessions-section')) fetchSessions();
   }, REFRESH_INTERVAL);
 }
 
@@ -2890,7 +2909,7 @@ async function applyUpdate() {
       const data = await res.json();
       btn.textContent = 'Update failed';
       btn.disabled = false;
-      console.error('Update failed:', data.error);
+      // update failed — error shown in UI
       setTimeout(() => { btn.textContent = origText; }, 3000);
       return;
     }
@@ -2962,16 +2981,23 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCardModals();
 
   if (document.getElementById('usage-chart') || document.getElementById('both-view')) {
-    // Load hidden insights from API (dashboard-only — requires auth)
-    loadHiddenInsights();
     const provider = getCurrentProvider();
     const defaultCycleType = provider === 'both' ? 'subscription' : provider === 'anthropic' ? 'five_hour' : provider === 'zai' ? 'tokens' : 'subscription';
     initChart();
-    fetchCurrent(); fetchDeepInsights();
-    fetchHistory('6h');
-    fetchCycles(defaultCycleType);
-    fetchCycleOverview();
-    fetchSessions();
+
+    // Critical path: fetch above-fold data in parallel
+    Promise.all([
+      loadHiddenInsights(),
+      fetchCurrent(),
+      fetchDeepInsights(),
+      fetchHistory('6h'),
+    ]);
+
+    // Below-fold: lazy-load when sections scroll into view
+    lazyLoadOnVisible('.cycles-section', () => fetchCycles(defaultCycleType));
+    lazyLoadOnVisible('.cycle-overview-section', () => fetchCycleOverview());
+    lazyLoadOnVisible('.sessions-section', () => fetchSessions());
+
     startCountdowns();
     startAutoRefresh();
 
