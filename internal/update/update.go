@@ -445,11 +445,33 @@ func (u *Updater) Restart() error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("update.Restart: spawn %s: %w", exePath, err)
+		u.logger.Warn("Spawn failed, trying systemctl restart as fallback", "error", err)
+		return u.fallbackSystemctlRestart()
 	}
 
 	u.logger.Info("Spawned new process", "pid", cmd.Process.Pid, "path", exePath, "args", args)
 	return nil
+}
+
+// fallbackSystemctlRestart attempts to restart via systemctl when the primary
+// restart method fails. Tries the detected service name first, then "onwatch.service".
+func (u *Updater) fallbackSystemctlRestart() error {
+	for _, name := range []string{DetectServiceName(), "onwatch.service"} {
+		cmd := exec.Command("systemctl", "restart", name)
+		if err := cmd.Start(); err == nil {
+			u.logger.Info("Fallback: triggered systemctl restart", "service", name)
+			time.Sleep(30 * time.Second)
+			os.Exit(0)
+		}
+		// Also try user-level
+		cmd = exec.Command("systemctl", "--user", "restart", name)
+		if err := cmd.Start(); err == nil {
+			u.logger.Info("Fallback: triggered systemctl --user restart", "service", name)
+			time.Sleep(30 * time.Second)
+			os.Exit(0)
+		}
+	}
+	return fmt.Errorf("update.Restart: all restart methods failed")
 }
 
 // filterArgs removes "update" and "--update" from args so the new process
