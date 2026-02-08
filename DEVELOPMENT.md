@@ -364,6 +364,39 @@ Measured with the built-in `tools/perf-monitor` while all three provider agents 
 
 ---
 
+## Self-Update Mechanism
+
+onWatch includes a self-update system that downloads new releases from GitHub and replaces the running binary. The update can be triggered from the dashboard (update badge in footer) or via `onwatch update`.
+
+### Update Flow
+
+1. **Check**: Queries `https://api.github.com/repos/onllm-dev/onwatch/releases/latest` (cached for 1 hour)
+2. **Apply**: Downloads the platform-specific binary, validates magic bytes (ELF/Mach-O/PE), replaces the current binary using remove+rename (Unix) or backup-rename (Windows)
+3. **Migrate**: Fixes the systemd unit file if running under systemd (`Restart=always`, `RestartSec=5`)
+4. **Restart**: Uses `systemctl restart` under systemd, or spawns a new process in standalone mode
+
+### systemd Integration
+
+Under systemd, onWatch auto-detects its service name from `/proc/self/cgroup` and uses `systemctl restart` for proper lifecycle management. Three layers ensure reliability:
+
+| Layer | When | Purpose |
+|-------|------|---------|
+| `Apply()` | After binary replacement | Fixes unit file before any restart attempt |
+| `Restart()` | After apply | Runs `systemctl restart <service>` |
+| Startup | Every boot | Safety net — re-checks unit file settings |
+
+The startup migration runs before `stopPreviousInstance()`. This is critical for upgrades from older versions: when an old binary spawns the new binary as a post-update child, the child fixes the unit file while the parent is still alive, then kills the parent. systemd sees the main PID die, and `Restart=always` triggers an automatic restart with the new binary.
+
+### Key Source Files
+
+| File | Purpose |
+|------|---------|
+| `internal/update/update.go` | Version check, download, binary replacement, systemd migration |
+| `internal/web/handlers.go` | `/api/update/check` and `/api/update/apply` endpoints |
+| `main.go` | `MigrateSystemdUnit()` call on startup, `runUpdate()` CLI handler |
+
+---
+
 ## Troubleshooting
 
 ### "go: command not found"
