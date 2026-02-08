@@ -291,9 +291,9 @@ func IsSystemd() bool {
 	return os.Getenv("INVOCATION_ID") != ""
 }
 
-// detectServiceName reads /proc/self/cgroup to find the systemd service name.
+// DetectServiceName reads /proc/self/cgroup to find the systemd service name.
 // Falls back to "onwatch.service" if detection fails.
-func detectServiceName() string {
+func DetectServiceName() string {
 	data, err := os.ReadFile("/proc/self/cgroup")
 	if err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
@@ -309,12 +309,99 @@ func detectServiceName() string {
 	return "onwatch.service"
 }
 
+// findUnitFile locates the systemd unit file on disk.
+// Checks system-level first (/etc/systemd/system/), then user-level (~/.config/systemd/user/).
+func findUnitFile(serviceName string) string {
+	systemPath := filepath.Join("/etc/systemd/system", serviceName)
+	if _, err := os.Stat(systemPath); err == nil {
+		return systemPath
+	}
+
+	if home, err := os.UserHomeDir(); err == nil {
+		userPath := filepath.Join(home, ".config", "systemd", "user", serviceName)
+		if _, err := os.Stat(userPath); err == nil {
+			return userPath
+		}
+	}
+
+	return ""
+}
+
+// MigrateSystemdUnit auto-fixes the systemd unit file with current best practices.
+//
+// IMPORTANT: Must be called BEFORE stopPreviousInstance() in main.go.
+// When a post-update child process runs this before killing the parent,
+// the daemon-reload completes while systemd still tracks the parent PID.
+// After the child kills the parent, systemd uses the UPDATED Restart=always
+// policy and automatically starts a fresh instance of the new binary.
+//
+// This is the mechanism that makes self-updates work under systemd with
+// zero manual intervention — even when the OLD binary's Restart() code
+// used the broken spawn-and-kill approach.
+//
+// Safe to call on every startup — no-op if already up to date or not under systemd.
+func MigrateSystemdUnit(logger *slog.Logger) {
+	if !IsSystemd() {
+		return
+	}
+
+	serviceName := DetectServiceName()
+	unitPath := findUnitFile(serviceName)
+	if unitPath == "" {
+		return
+	}
+
+	content, err := os.ReadFile(unitPath)
+	if err != nil {
+		logger.Warn("Could not read systemd unit file", "path", unitPath, "error", err)
+		return
+	}
+
+	original := string(content)
+	updated := original
+
+	// Migration 1: Restart=on-failure → Restart=always
+	// Ensures service restarts after self-update (old code exited with 0)
+	updated = strings.Replace(updated, "Restart=on-failure", "Restart=always", 1)
+
+	// Migration 2: RestartSec=10 → RestartSec=5
+	// Faster restart after update
+	updated = strings.Replace(updated, "RestartSec=10", "RestartSec=5", 1)
+
+	if updated == original {
+		return // already up to date
+	}
+
+	if err := os.WriteFile(unitPath, []byte(updated), 0644); err != nil {
+		logger.Warn("Could not update systemd unit file", "path", unitPath, "error", err)
+		return
+	}
+
+	// Reload systemd configuration synchronously — MUST complete before
+	// stopPreviousInstance() kills the parent, so systemd sees the new
+	// Restart=always policy when the parent PID dies.
+	var cmd *exec.Cmd
+	if strings.HasPrefix(unitPath, "/etc/systemd/system") {
+		cmd = exec.Command("systemctl", "daemon-reload")
+	} else {
+		cmd = exec.Command("systemctl", "--user", "daemon-reload")
+	}
+	if err := cmd.Run(); err != nil {
+		logger.Warn("systemctl daemon-reload failed", "error", err)
+		return
+	}
+
+	logger.Info("Migrated systemd unit file",
+		"path", unitPath,
+		"changes", "Restart=always, RestartSec=5")
+}
+
 // Restart handles restarting after an update.
 // Under systemd: triggers `systemctl restart` so systemd manages the full lifecycle.
 // Standalone: spawns the new binary which will stop the old instance via PID file.
 func (u *Updater) Restart() error {
 	if IsSystemd() {
-		serviceName := detectServiceName()
+		serviceName := DetectServiceName()
 		u.logger.Info("Running under systemd — triggering service restart", "service", serviceName)
 
 		// Run systemctl restart in a detached process.
