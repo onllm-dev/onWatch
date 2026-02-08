@@ -146,6 +146,12 @@ func (u *Updater) Apply() error {
 		return fmt.Errorf("update.Apply: cannot update dev build")
 	}
 
+	// Force a fresh check (bypass cache) to avoid stale version data
+	u.mu.Lock()
+	u.cachedVersion = ""
+	u.cachedAt = time.Time{}
+	u.mu.Unlock()
+
 	info, err := u.Check()
 	if err != nil {
 		return fmt.Errorf("update.Apply: %w", err)
