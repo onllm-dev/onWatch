@@ -1,12 +1,16 @@
 package web
 
 import (
+	"compress/gzip"
 	"context"
 	"embed"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 )
 
 //go:embed templates/*.html
@@ -60,12 +64,12 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	staticHandler := http.FileServer(http.FS(staticDir))
 	mux.Handle("/static/", http.StripPrefix("/static/", contentTypeHandler(staticHandler)))
 
-	// Apply session-based authentication middleware
-	var finalHandler http.Handler = mux
+	// Apply gzip compression (outermost middleware — compresses all responses)
+	var finalHandler http.Handler = gzipHandler(mux)
 	if username != "" && passwordHash != "" {
 		sessions := NewSessionStore(username, passwordHash, handler.store)
 		handler.sessions = sessions
-		finalHandler = SessionAuthMiddleware(sessions, logger)(mux)
+		finalHandler = gzipHandler(SessionAuthMiddleware(sessions, logger)(mux))
 	}
 
 	return &Server{
@@ -79,7 +83,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	}
 }
 
-// contentTypeHandler wraps a handler and sets proper Content-Type headers
+// contentTypeHandler wraps a handler and sets proper Content-Type and Cache-Control headers
 func contentTypeHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Set content type based on file extension before serving
@@ -93,7 +97,49 @@ func contentTypeHandler(next http.Handler) http.Handler {
 				w.Header().Set("Content-Type", "image/svg+xml")
 			}
 		}
+		// Immutable caching — static assets are versioned via ?v= query param
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		next.ServeHTTP(w, r)
+	})
+}
+
+// gzipResponseWriter wraps http.ResponseWriter with gzip compression
+type gzipResponseWriter struct {
+	io.Writer
+	http.ResponseWriter
+}
+
+func (grw *gzipResponseWriter) Write(b []byte) (int, error) {
+	return grw.Writer.Write(b)
+}
+
+var gzipWriterPool = sync.Pool{
+	New: func() any {
+		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+		return w
+	},
+}
+
+// gzipHandler compresses responses for clients that accept gzip encoding
+func gzipHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		gz := gzipWriterPool.Get().(*gzip.Writer)
+		gz.Reset(w)
+		defer func() {
+			gz.Close()
+			gzipWriterPool.Put(gz)
+		}()
+
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		w.Header().Del("Content-Length")
+
+		next.ServeHTTP(&gzipResponseWriter{Writer: gz, ResponseWriter: w}, r)
 	})
 }
 
