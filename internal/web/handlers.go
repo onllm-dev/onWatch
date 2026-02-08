@@ -116,6 +116,20 @@ func parseTimeRange(rangeStr string) (time.Duration, error) {
 	}
 }
 
+// maxChartPoints is the target number of data points for chart responses.
+// Charts beyond this density add no visual value on typical displays (~1000px wide)
+// but increase JSON size and browser rendering time.
+const maxChartPoints = 500
+
+// downsampleStep returns the step size to reduce n items to at most max items.
+// Returns 1 if no downsampling is needed.
+func downsampleStep(n, max int) int {
+	if n <= max || max <= 0 {
+		return 1
+	}
+	return (n + max - 1) / max // ceil division
+}
+
 // parseInsightsRange parses the insights range param, defaulting to 7d.
 func parseInsightsRange(rangeStr string) time.Duration {
 	switch rangeStr {
@@ -639,10 +653,15 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	start := now.Add(-duration)
 
 	if h.config.HasProvider("synthetic") && h.store != nil {
-		snapshots, err := h.store.QueryRange(start, now, 200)
+		snapshots, err := h.store.QueryRange(start, now)
 		if err == nil {
-			synData := make([]map[string]interface{}, 0, len(snapshots))
-			for _, s := range snapshots {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			synData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, s := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
 				subPct, searchPct, toolPct := 0.0, 0.0, 0.0
 				if s.Sub.Limit > 0 {
 					subPct = (s.Sub.Requests / s.Sub.Limit) * 100
@@ -671,10 +690,15 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("zai") && h.store != nil {
-		snapshots, err := h.store.QueryZaiRange(start, now, 200)
+		snapshots, err := h.store.QueryZaiRange(start, now)
 		if err == nil {
-			zaiData := make([]map[string]interface{}, 0, len(snapshots))
-			for _, s := range snapshots {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			zaiData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, s := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
 				zaiData = append(zaiData, map[string]interface{}{
 					"capturedAt":       s.CapturedAt.Format(time.RFC3339),
 					"tokensLimit":      s.TokensUsage,
@@ -691,10 +715,15 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("anthropic") && h.store != nil {
-		snapshots, err := h.store.QueryAnthropicRange(start, now, 200)
+		snapshots, err := h.store.QueryAnthropicRange(start, now)
 		if err == nil {
-			anthData := make([]map[string]interface{}, 0, len(snapshots))
-			for _, snap := range snapshots {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			anthData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
 				entry := map[string]interface{}{
 					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
 				}
@@ -735,8 +764,14 @@ func (h *Handler) historySynthetic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := make([]map[string]interface{}, 0, len(snapshots))
-	for _, snapshot := range snapshots {
+	step := downsampleStep(len(snapshots), maxChartPoints)
+	last := len(snapshots) - 1
+	response := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+	for i, snapshot := range snapshots {
+		if step > 1 && i != 0 && i != last && i%step != 0 {
+			continue
+		}
+
 		subPercent := 0.0
 		if snapshot.Sub.Limit > 0 {
 			subPercent = (snapshot.Sub.Requests / snapshot.Sub.Limit) * 100
@@ -794,8 +829,13 @@ func (h *Handler) historyZai(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := make([]map[string]interface{}, 0, len(snapshots))
-	for _, snapshot := range snapshots {
+	step := downsampleStep(len(snapshots), maxChartPoints)
+	last := len(snapshots) - 1
+	response := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+	for i, snapshot := range snapshots {
+		if step > 1 && i != 0 && i != last && i%step != 0 {
+			continue
+		}
 		// Z.ai API: "usage" = budget, "currentValue" = actual usage, "percentage" = server %
 		response = append(response, map[string]interface{}{
 			"capturedAt":        snapshot.CapturedAt.Format(time.RFC3339),
@@ -885,7 +925,7 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 		if active, err := h.store.QueryActiveAnthropicCycle(anthType); err == nil && active != nil {
 			anthCycles = append(anthCycles, anthropicCycleToMap(active))
 		}
-		if history, err := h.store.QueryAnthropicCycleHistory(anthType); err == nil {
+		if history, err := h.store.QueryAnthropicCycleHistory(anthType, 200); err == nil {
 			for _, c := range history {
 				anthCycles = append(anthCycles, anthropicCycleToMap(c))
 			}
@@ -933,7 +973,7 @@ func (h *Handler) cyclesSynthetic(w http.ResponseWriter, r *http.Request) {
 		response = append(response, cycleToMap(active))
 	}
 
-	history, err := h.store.QueryCycleHistory(quotaType)
+	history, err := h.store.QueryCycleHistory(quotaType, 200)
 	if err != nil {
 		h.logger.Error("failed to query cycle history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycles")
@@ -983,7 +1023,7 @@ func (h *Handler) cyclesZai(w http.ResponseWriter, r *http.Request) {
 		response = append(response, zaiCycleToMap(active))
 	}
 
-	history, err := h.store.QueryZaiCycleHistory(quotaType)
+	history, err := h.store.QueryZaiCycleHistory(quotaType, 200)
 	if err != nil {
 		h.logger.Error("failed to query Z.ai cycle history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycles")
@@ -2100,14 +2140,19 @@ func (h *Handler) historyAnthropic(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	start := now.Add(-duration)
-	snapshots, err := h.store.QueryAnthropicRange(start, now, 200)
+	snapshots, err := h.store.QueryAnthropicRange(start, now)
 	if err != nil {
 		h.logger.Error("failed to query Anthropic history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
 		return
 	}
-	response := make([]map[string]interface{}, 0, len(snapshots))
-	for _, snap := range snapshots {
+	step := downsampleStep(len(snapshots), maxChartPoints)
+	last := len(snapshots) - 1
+	response := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+	for i, snap := range snapshots {
+		if step > 1 && i != 0 && i != last && i%step != 0 {
+			continue
+		}
 		entry := map[string]interface{}{
 			"capturedAt": snap.CapturedAt.Format(time.RFC3339),
 		}
@@ -2274,7 +2319,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 	quotaBillingAvg := map[string]float64{}
 	quotaBillingPeak := map[string]float64{}
 	for _, name := range quotaNames {
-		cycles, err := h.store.QueryAnthropicCycleHistory(name)
+		cycles, err := h.store.QueryAnthropicCycleHistory(name, 50)
 		if err == nil && len(cycles) > 0 {
 			quotaCycles[name] = cycles
 			quotaBillingCount[name] = anthropicBillingPeriodCount(cycles)

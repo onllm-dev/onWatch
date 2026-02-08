@@ -19,13 +19,19 @@ Since onWatch runs as a background daemon, RAM is our primary constraint:
 
 | Guideline | Implementation |
 |-----------|---------------|
+| GOMEMLIMIT + GOGC | `debug.SetMemoryLimit(40MiB)`, `debug.SetGCPercent(50)` -- triggers MADV_DONTNEED to actually shrink RSS |
+| Periodic FreeOSMemory | Every 5 min goroutine forces OS memory return |
+| Single SQLite connection | `db.SetMaxOpenConns(1)` -- avoids duplicate 2 MB page caches |
+| Small SQLite cache | `cache_size=-500` (512 KB) -- sufficient for sequential inserts |
+| Lean HTTP transports | `MaxIdleConns:1, MaxIdleConnsPerHost:1` on all API clients |
+| Bounded cycle queries | Cycle table endpoints capped at 200 per quota type; insights at 50 |
 | No goroutine leaks | Always use `context.Context` for cancellation |
 | Bounded buffers | Limit in-memory snapshot cache (last 100 max) |
 | No ORM | Raw SQL with `database/sql` interface -- no reflection overhead |
 | Embedded assets | `embed.FS` -- no runtime file reads |
 | System fonts preferred | Google Fonts lazy-loaded only when dashboard viewed |
 | Chart.js via CDN | Not bundled in binary -- loaded by browser only |
-| SQLite WAL mode | Enables concurrent reads without memory-heavy locks |
+| SQLite WAL mode | Single-writer with `busy_timeout=5000` for concurrency |
 | Minimal dependencies | Only `modernc.org/sqlite` and `godotenv` |
 | HTTP server idle cost | `net/http` idles at ~1 MB -- acceptable |
 
@@ -34,7 +40,7 @@ Since onWatch runs as a background daemon, RAM is our primary constraint:
 | Component | Budget |
 |-----------|--------|
 | Go runtime | 5 MB |
-| SQLite (in-process) | 2 MB |
+| SQLite (in-process, single conn, 512KB cache) | 1 MB |
 | HTTP server (idle) | 1 MB |
 | Agent + polling buffer | 1 MB |
 | Template rendering | 1 MB |
@@ -45,14 +51,14 @@ Since onWatch runs as a background daemon, RAM is our primary constraint:
 
 | Metric | Measured | Budget |
 |--------|----------|--------|
-| Idle RSS (avg) | 27.5 MB | 30 MB |
-| Idle RSS (P95) | 27.5 MB | 30 MB |
-| Load RSS (avg) | 28.5 MB | 50 MB |
-| Load RSS (P95) | 29.0 MB | 50 MB |
-| Load delta | +0.9 MB (+3.4%) | <5 MB |
-| Avg API response | 0.28 ms | <5 ms |
-| Avg dashboard response | 0.69 ms | <10 ms |
-| Load test throughput | 1,160 reqs / 15s | -- |
+| Idle RSS (avg) | 28.0 MB | 30 MB |
+| Idle RSS (P95) | 28.0 MB | 30 MB |
+| Load RSS (avg) | 35.1 MB | 50 MB |
+| Load RSS (P95) | 35.9 MB | 50 MB |
+| Load delta | +7.1 MB (+25%) | <20 MB |
+| Avg API response | 0.75 ms | <5 ms |
+| Avg dashboard response | 2.58 ms | <10 ms |
+| Load test throughput | 1,104 reqs / 15s | -- |
 
 ## Tech Stack
 
@@ -434,7 +440,7 @@ All tables created in `store.go:createTables()`:
 ```sql
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
-PRAGMA cache_size=-2000;
+PRAGMA cache_size=-500;
 PRAGMA foreign_keys=ON;
 PRAGMA busy_timeout=5000;
 

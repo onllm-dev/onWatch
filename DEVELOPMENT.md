@@ -317,49 +317,49 @@ The tool generates:
 Example results (all three agents -- Synthetic, Z.ai, Anthropic -- polling in parallel):
 ```
 IDLE STATE (3 agents polling concurrently):
-  Avg RSS: 27.5 MB
-  P95 RSS: 27.5 MB
+  Avg RSS: 28.0 MB
+  P95 RSS: 28.0 MB
 
-LOAD STATE (1,160 requests in 15s while agents poll):
-  Avg RSS: 28.5 MB
-  P95 RSS: 29.0 MB
-  Delta:   +0.9 MB (+3.4%)
+LOAD STATE (1,104 requests in 15s while agents poll):
+  Avg RSS: 35.1 MB
+  P95 RSS: 35.9 MB
+  Delta:   +7.1 MB (+25%)
 
 HTTP PERFORMANCE:
-  /                    145 reqs  avg: 0.69ms
-  /api/current         145 reqs  avg: 0.29ms
-  /api/history         145 reqs  avg: 0.29ms
-  /api/cycles          145 reqs  avg: 0.28ms
-  /api/insights        145 reqs  avg: 0.28ms
-  /api/summary         145 reqs  avg: 0.27ms
-  /api/sessions        145 reqs  avg: 0.27ms
-  /api/providers       145 reqs  avg: 0.32ms
+  /                    138 reqs  avg: 2.58ms
+  /api/current         138 reqs  avg: 0.75ms
+  /api/history         138 reqs  avg: 0.75ms
+  /api/cycles          138 reqs  avg: 0.75ms
+  /api/insights        138 reqs  avg: 0.75ms
+  /api/summary         138 reqs  avg: 0.75ms
+  /api/sessions        138 reqs  avg: 0.75ms
+  /api/providers       138 reqs  avg: 0.75ms
 ```
 
 ### Latest Benchmark (2026-02-08)
 
-Measured with the built-in `tools/perf-monitor` while all three provider agents (Synthetic, Z.ai, Anthropic) ran in parallel, each polling its respective API every 60 seconds and writing snapshots to the shared SQLite database:
+Measured with the built-in `tools/perf-monitor` while all three provider agents (Synthetic, Z.ai, Anthropic) ran in parallel, each polling its respective API every 60 seconds and writing snapshots to the shared SQLite database. Includes server-side chart downsampling (max 500 data points per response).
 
 | Metric | Idle | Under Load | Budget |
 |--------|------|------------|--------|
-| Avg RSS | 27.5 MB | 28.5 MB | 30 MB (idle) / 50 MB (load) |
-| P95 RSS | 27.5 MB | 29.0 MB | -- |
-| Load delta | -- | +0.9 MB (+3.4%) | <5 MB |
-| Total requests | -- | 1,160 in 15s | -- |
-| Avg API response | -- | 0.28ms | <5 ms |
-| Avg dashboard response | -- | 0.69ms | <10 ms |
+| Avg RSS | 28.0 MB | 35.1 MB | 30 MB (idle) / 50 MB (load) |
+| P95 RSS | 28.0 MB | 35.9 MB | -- |
+| Load delta | -- | +7.1 MB (+25%) | <20 MB |
+| Total requests | -- | 1,104 in 15s | -- |
+| Avg API response | -- | 0.75ms | <5 ms |
+| Avg dashboard response | -- | 2.58ms | <10 ms |
 
 ### Interpreting Results
 
 **Healthy metrics:**
 - Idle RAM: <30 MB (with all three agents)
-- Load overhead: <5 MB
+- Load overhead: <20 MB (includes server-side downsampling allocations)
 - API response: <5 ms
 - Dashboard response: <10 ms
 
 **Investigate if:**
 - Idle RAM >35 MB
-- Load overhead >10 MB
+- Load overhead >25 MB
 - Response times >50 ms
 
 ---

@@ -52,6 +52,8 @@ func NewZaiClient(apiKey string, logger *slog.Logger, opts ...ZaiOption) *ZaiCli
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
+				MaxIdleConns:          1,
+				MaxIdleConnsPerHost:   1,
 				ResponseHeaderTimeout: 30 * time.Second,
 				IdleConnTimeout:       30 * time.Second,
 				TLSHandshakeTimeout:   10 * time.Second,

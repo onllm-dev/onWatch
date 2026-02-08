@@ -59,6 +59,11 @@ func NewUpdater(version string, logger *slog.Logger) *Updater {
 		logger:         logger,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        1,
+				MaxIdleConnsPerHost: 1,
+				IdleConnTimeout:     30 * time.Second,
+			},
 		},
 		cacheTTL:    defaultCacheTTL,
 		apiURL:      githubReleasesURL,
