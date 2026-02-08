@@ -93,9 +93,15 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 
 **Time-series chart** -- Chart.js area chart showing all quotas as % of limit. Time ranges: 1h, 6h, 24h, 7d, 30d.
 
-**Insights** -- Cycle utilization, billing-period usage, weekly pace, tokens-per-call efficiency, and per-tool breakdowns (provider-specific).
+**Insights** -- Burn rate forecasting, billing-period averages, usage variance, trend detection, and cross-quota ratio analysis (e.g., "1% weekly ~ 24% of 5-hr sprint"). Provider-specific: tokens-per-call efficiency and per-tool breakdowns for Z.ai.
+
+**Cycle Overview** -- Cross-quota correlation table showing all quota values at peak usage points within each billing period. Helps identify which quotas spike together.
 
 **Sessions** -- Every agent run creates a session that tracks peak consumption, letting you compare usage across work periods.
+
+**Settings** -- Dedicated settings page (`/settings`) with tabs for general preferences, provider controls, notification thresholds, and SMTP email configuration.
+
+**Email notifications** -- Configure SMTP to receive alerts when quotas cross warning or critical thresholds, or when quotas reset. SMTP passwords are encrypted at rest with AES-GCM.
 
 **Dark/Light mode** -- Toggle via sun/moon icon in the header. Auto-detects system preference on first visit and persists your choice across sessions.
 
@@ -209,17 +215,22 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Dashboard |
+| `/settings` | GET | Settings page |
 | `/login` | GET/POST | Login page |
 | `/logout` | GET | Clear session |
 | `/api/current` | GET | Latest snapshot with summaries |
 | `/api/history?range=6h` | GET | Historical data for charts |
 | `/api/cycles?type=subscription` | GET | Reset cycle history |
+| `/api/cycle-overview` | GET | Cross-quota correlation at peak usage |
 | `/api/summary` | GET | Usage summaries |
 | `/api/sessions` | GET | Session history |
 | `/api/insights` | GET | Usage insights |
 | `/api/providers` | GET | Available providers |
-| `/api/settings` | GET/PUT | User settings |
+| `/api/settings` | GET/PUT | User settings (notifications, SMTP, providers) |
+| `/api/settings/smtp/test` | POST | Send test email via configured SMTP |
 | `/api/password` | PUT | Change password |
+| `/api/update/check` | GET | Check for new version |
+| `/api/update/apply` | POST | Download and apply update |
 
 ---
 

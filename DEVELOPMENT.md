@@ -171,7 +171,9 @@ make coverage              # Generate HTML coverage report → coverage.html
 
 onWatch supports three providers: Synthetic, Z.ai, and Anthropic. When multiple API keys are set, all agents run in parallel goroutines, each polling its respective API and storing snapshots in the shared SQLite database.
 
-The dashboard switches between providers via the `?provider=` query parameter. Each provider renders its own quota cards, insight cards, and stat summaries. Synthetic insights focus on cycle utilization and billing periods; Z.ai insights show plan capacity (daily/monthly token budgets), tokens-per-call efficiency, and top tool analysis; Anthropic insights show burn rate forecasting, window averages, and projected exhaustion.
+The dashboard switches between providers via the `?provider=` query parameter. Each provider renders its own quota cards, insight cards, and stat summaries. Synthetic insights focus on cycle utilization and billing periods; Z.ai insights show plan capacity (daily/monthly token budgets), tokens-per-call efficiency, and top tool analysis; Anthropic insights show burn rate forecasting, window averages, projected exhaustion, and cross-quota ratio analysis (5-Hour vs Weekly).
+
+A dedicated settings page (`/settings`) provides tabbed configuration for provider controls, notification thresholds, and SMTP email alerts. The notification engine (`internal/notify/`) checks quota statuses against thresholds and dispatches email alerts for warning, critical, and reset events.
 
 Key source files:
 
@@ -183,10 +185,15 @@ Key source files:
 | `internal/agent/agent.go` | Synthetic polling agent |
 | `internal/agent/zai_agent.go` | Z.ai polling agent |
 | `internal/agent/anthropic_agent.go` | Anthropic polling agent |
-| `internal/store/store.go` | Shared SQLite store |
+| `internal/agent/session_manager.go` | Cross-agent session lifecycle |
+| `internal/store/store.go` | Shared SQLite store + settings |
 | `internal/store/zai_store.go` | Z.ai-specific queries |
 | `internal/store/anthropic_store.go` | Anthropic-specific queries |
-| `internal/web/handlers.go` | Provider-aware route handlers |
+| `internal/notify/notify.go` | Notification engine: thresholds + alerts |
+| `internal/notify/smtp.go` | SMTP mailer: TLS/STARTTLS delivery |
+| `internal/notify/crypto.go` | AES-GCM encryption for SMTP passwords |
+| `internal/web/handlers.go` | Provider-aware route handlers + settings |
+| `internal/web/templates/settings.html` | Settings page template |
 
 ---
 
