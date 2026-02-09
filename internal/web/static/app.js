@@ -1125,6 +1125,7 @@ async function fetchDeepInsights() {
           `<div class="insight-stat">
             <div class="insight-stat-value">${s.value}</div>
             <div class="insight-stat-label">${s.label}</div>
+            ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
           </div>`
         ).join('') : '';
       }
@@ -1191,6 +1192,7 @@ function renderBothInsights(data, statsEl, cardsEl) {
         `<div class="insight-stat">
           <div class="insight-stat-value">${s.value}</div>
           <div class="insight-stat-label">${s.label}</div>
+          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
         </div>`
       ).join('')}</div>
       <div class="insights-cards">${buildInsightCardsHTML(synInsights)}</div>
@@ -1207,6 +1209,7 @@ function renderBothInsights(data, statsEl, cardsEl) {
         `<div class="insight-stat">
           <div class="insight-stat-value">${s.value}</div>
           <div class="insight-stat-label">${s.label}</div>
+          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
         </div>`
       ).join('')}</div>
       <div class="insights-cards">${buildInsightCardsHTML(zaiInsights)}</div>
@@ -1223,6 +1226,7 @@ function renderBothInsights(data, statsEl, cardsEl) {
         `<div class="insight-stat">
           <div class="insight-stat-value">${s.value}</div>
           <div class="insight-stat-label">${s.label}</div>
+          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
         </div>`
       ).join('')}</div>
       <div class="insights-cards">${buildInsightCardsHTML(anthInsights)}</div>
