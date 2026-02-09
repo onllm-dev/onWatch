@@ -22,13 +22,19 @@ bin/
 onwatch
 onwatch.exe
 
-# Screenshots and design
-screenshots/
+# Screenshots, design, and docs (embedded assets are in internal/)
+docs/screenshots/
 design-system/
+landing/
 
 # Tools
 tools/
-perf-monitor/
+
+# Tests (not needed in Docker image)
+tests/
+
+# Temp working directory
+temp/
 
 # Documentation (keep README.md for Docker Hub)
 *.md
@@ -51,8 +57,11 @@ coverage.html
 .DS_Store
 Thumbs.db
 
-# Static files sync (embedded in binary)
-static/
+# Root-level static dir (embedded from internal/web/static/ via embed.FS)
+/static/
+
+# Node.js (dev tools)
+node_modules/
 
 # Claude Code memory (local only)
 .claude/
