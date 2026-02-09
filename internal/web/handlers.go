@@ -1522,8 +1522,9 @@ func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 // ── Deep Insights ──
 
 type insightStat struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
+	Value    string `json:"value"`
+	Label    string `json:"label"`
+	Sublabel string `json:"sublabel,omitempty"`
 }
 
 type insightItem struct {
@@ -2421,9 +2422,15 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 	// Show avg window utilization per quota (current % already shown in KPI cards)
 	for _, q := range latest.Quotas {
 		if avg, ok := quotaBillingAvg[q.Name]; ok && quotaBillingCount[q.Name] > 0 {
+			count := quotaBillingCount[q.Name]
+			periodWord := "window"
+			if count > 1 {
+				periodWord = "windows"
+			}
 			resp.Stats = append(resp.Stats, insightStat{
-				Value: fmt.Sprintf("%.0f%%", avg),
-				Label: fmt.Sprintf("Avg %s", api.AnthropicDisplayName(q.Name)),
+				Value:    fmt.Sprintf("%.0f%%", avg),
+				Label:    fmt.Sprintf("Avg %s", api.AnthropicDisplayName(q.Name)),
+				Sublabel: fmt.Sprintf("across %d %s", count, periodWord),
 			})
 		} else {
 			// No completed cycles yet — show current with "Now" label
@@ -2516,34 +2523,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 		resp.Insights = append(resp.Insights, item)
 	}
 
-	// 2. Avg Window Usage (per quota, ≥1 real billing period)
-	for _, name := range quotaNames {
-		count := quotaBillingCount[name]
-		if count < 1 {
-			continue
-		}
-		key := fmt.Sprintf("avg_window_%s", name)
-		if hidden[key] {
-			continue
-		}
-		avg := quotaBillingAvg[name]
-		sev := severityFromPercent(avg)
-		displayName := api.AnthropicDisplayName(name)
-		periodWord := "window"
-		if count > 1 {
-			periodWord = "windows"
-		}
-		resp.Insights = append(resp.Insights, insightItem{
-			Key:  key,
-			Type: "recommendation", Severity: sev,
-			Title:    "Avg Window Usage",
-			Metric:   fmt.Sprintf("%.0f%%", avg),
-			Sublabel: displayName,
-			Desc:     fmt.Sprintf("Your %s windows average %.1f%% peak utilization across %d completed %s.", displayName, avg, count, periodWord),
-		})
-	}
-
-	// 3. Variance (per quota, ≥3 real billing periods)
+	// 2. Variance (per quota, ≥3 real billing periods)
 	for _, name := range quotaNames {
 		count := quotaBillingCount[name]
 		avg := quotaBillingAvg[name]
@@ -2577,7 +2557,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 		resp.Insights = append(resp.Insights, item)
 	}
 
-	// 4. Trend (per quota, ≥4 real billing periods)
+	// 3. Trend (per quota, ≥4 real billing periods)
 	for _, name := range quotaNames {
 		count := quotaBillingCount[name]
 		if count < 4 {
@@ -2624,7 +2604,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 		})
 	}
 
-	// 5. Cross-quota ratio: 5-Hour vs Weekly All-Model
+	// 4. Cross-quota ratio: 5-Hour vs Weekly All-Model
 	if !hidden["ratio_5h_weekly"] {
 		r5h := quotaRates["five_hour"]
 		r7d := quotaRates["seven_day"]

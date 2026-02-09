@@ -826,6 +826,12 @@ button, input, select { font-family: inherit; }
   letter-spacing: 0.05em;
   font-weight: 600;
 }
+.insight-stat-sublabel {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  opacity: 0.7;
+}
 
 /* Insight Cards Grid */
 .insights-cards {
