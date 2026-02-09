@@ -8,7 +8,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SCREENSHOTS_DIR = join(__dirname, '..', 'screenshots');
+const SCREENSHOTS_DIR = join(__dirname, '..', 'docs', 'screenshots');
 const BASE_URL = 'http://localhost:9211';
 const USERNAME = 'admin';
 const PASSWORD = 'changeme';

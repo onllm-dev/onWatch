@@ -15,7 +15,7 @@ onWatch fills the gap between "current usage snapshot" and the historical, per-c
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![Website](https://img.shields.io/badge/onwatch.onllm.dev-7C3AED?style=for-the-badge&logo=globe&logoColor=white)](https://onwatch.onllm.dev)
 
-![Anthropic Dashboard — Light Mode](./screenshots/anthropic-light.png)
+![Anthropic Dashboard — Light Mode](./docs/screenshots/anthropic-light.png)
 
 > Powered by [onllm.dev](https://onllm.dev) | [Landing Page](https://onwatch.onllm.dev)
 
@@ -38,7 +38,7 @@ This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a s
 ```bash
 git clone https://github.com/onllm-dev/onwatch.git && cd onwatch
 cp .env.example .env    # then add your API keys
-make build && ./onwatch --debug
+./app.sh --build && ./onwatch --debug    # or: make build && ./onwatch --debug
 ```
 
 ### Configure
@@ -150,7 +150,7 @@ No. Zero telemetry. All data stays in a local SQLite file. The only outbound cal
 
 ### How much memory does onWatch use?
 
-~28 MB idle, ~36 MB under continuous dashboard load with server-side chart downsampling. Measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed benchmarks.
+~28 MB idle, ~36 MB under continuous dashboard load with server-side chart downsampling. Measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed benchmarks.
 
 ---
 
@@ -289,13 +289,13 @@ On first run, if a database exists at `./onwatch.db`, onWatch auto-migrates it t
 
 ## Development
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for build instructions, cross-compilation, and testing.
+See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilation, and testing.
 
 ```bash
-make build          # Production binary
-make test           # Tests with race detection
-make run            # Build and run in debug mode
-make release-local  # Cross-compile for all platforms
+./app.sh --build       # Production binary        (or: make build)
+./app.sh --test        # Tests with race detection (or: make test)
+./app.sh --build --run # Build + run debug mode    (or: make run)
+./app.sh --release     # Cross-compile all platforms (or: make release-local)
 ```
 
 ---
@@ -305,7 +305,7 @@ make release-local  # Cross-compile for all platforms
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feat/my-feature`
 3. Write tests first, then implement
-4. Run `make test` and commit with conventional format
+4. Run `./app.sh --test` and commit with conventional format
 5. Open a Pull Request
 
 ---

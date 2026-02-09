@@ -17,7 +17,7 @@ Build and run onWatch from source on any platform.
 ```bash
 git clone https://github.com/onllm-dev/onwatch.git
 cd onwatch
-make build
+./app.sh --build    # or: make build
 ```
 
 This reads the version from the `VERSION` file and injects it via ldflags.
@@ -29,22 +29,22 @@ This reads the version from the `VERSION` file and injects it via ldflags.
 ### macOS
 
 ```bash
-brew install go
-make build
+./app.sh --deps     # auto-installs Go + git via Homebrew
+./app.sh --build
 ```
 
 ### Ubuntu / Debian
 
 ```bash
-sudo apt update && sudo apt install -y golang-go git make
-make build
+./app.sh --deps     # auto-installs Go + git via apt
+./app.sh --build
 ```
 
 ### CentOS / RHEL / Fedora
 
 ```bash
-sudo dnf install -y golang git make
-make build
+./app.sh --deps     # auto-installs Go + git via dnf
+./app.sh --build
 ```
 
 ### Windows
@@ -67,17 +67,21 @@ go build -ldflags="-s -w" -o onwatch.exe .
 
 ---
 
-## Make Targets
+## Commands
+
+`app.sh` is the primary entry point. `make` targets are thin wrappers.
 
 ```bash
-make build          # Build production binary with version from VERSION file
-make test           # Run all tests with race detection and coverage
-make run            # Build and run in debug/foreground mode
-make clean          # Remove binary, coverage files, dist/, and database files
-make dev            # Run with --debug --interval 10 (fast polling for dev)
-make lint           # Run go fmt and go vet
-make coverage       # Generate HTML coverage report
-make release-local  # Cross-compile for all 5 platforms into dist/
+./app.sh --build          # Build production binary (or: make build)
+./app.sh --test           # Tests with race detection and coverage (or: make test)
+./app.sh --build --run    # Build + run in debug mode (or: make run)
+./app.sh --clean          # Remove binary, coverage, dist/ (or: make clean)
+./app.sh --smoke          # Quick validation: vet + build + short tests
+./app.sh --release        # Cross-compile all 5 platforms (or: make release-local)
+./app.sh --deps           # Install Go + git for your platform
+make dev                  # go run . --debug --interval 10
+make lint                 # go fmt + go vet
+make coverage             # HTML coverage report
 ```
 
 ---
@@ -214,7 +218,7 @@ Binary sizes: ~12-13 MB per platform.
 ### Local
 
 ```bash
-make release-local
+./app.sh --release    # or: make release-local
 ls -lh dist/
 ```
 

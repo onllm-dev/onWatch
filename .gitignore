@@ -16,6 +16,9 @@
 /bin/
 /dist/
 
+# Static (embedded from internal/web/static/ via embed.FS)
+/static/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -34,9 +37,11 @@ Thumbs.db
 *.jpeg
 *.gif
 *.bmp
-!screenshots/*.png
+!docs/screenshots/*.png
 tmp/
 temp/
+test-screenshots/
+test-evidence/
 
 # Go
 vendor/
@@ -55,20 +60,16 @@ opencode.json
 node_modules/
 package.json
 package-lock.json
-/tests/
 
-# Internal research & analysis docs (not for public repo)
-market-research.md
-icp-analysis.md
-promotional-articles.md
-naming-research.md
+# Internal research & analysis docs (moved to temp/)
+# All research, analysis, and working docs go in temp/ which is gitignored above
 
 # Performance monitoring artifacts
 tools/perf-monitor/onwatch
 tools/perf-monitor/*.json
 
 # Python E2E tests
-e2e/.venv/
+tests/e2e/.venv/
 __pycache__/
 .pytest_cache/
 *.pyc
