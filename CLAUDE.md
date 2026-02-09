@@ -81,7 +81,7 @@ Since onWatch runs as a background daemon, RAM is our primary constraint:
 onwatch/
 ├── CLAUDE.md                           # THIS FILE
 ├── README.md                           # User-facing documentation
-├── DEVELOPMENT.md                      # Build guide + perf monitoring
+├── app.sh                              # Primary entry point: build, test, run, release
 ├── .env.example                        # Template (safe to commit)
 ├── .env                                # Local secrets (NEVER committed)
 ├── .gitignore
@@ -89,90 +89,47 @@ onwatch/
 ├── main.go                             # Entry point: CLI, wiring, lifecycle, DB migration
 ├── platform_unix.go                    # Unix-specific: daemonize, PID dir
 ├── platform_windows.go                 # Windows-specific: daemonize, PID dir
-├── Makefile                            # build, test, clean, run targets
+├── Makefile                            # Thin wrapper around app.sh
 ├── VERSION                             # Single source of truth for version
+├── install.sh                          # One-line installer script
 │
-├── internal/
+├── internal/                           # (same as before — unchanged)
 │   ├── config/
-│   │   ├── config.go                   # Load .env + CLI flags, multi-provider config
-│   │   └── config_test.go
 │   ├── api/
-│   │   ├── types.go                    # Synthetic: QuotaResponse, QuotaInfo structs
-│   │   ├── types_test.go
-│   │   ├── client.go                   # HTTP client for Synthetic API
-│   │   ├── client_test.go
-│   │   ├── zai_types.go               # Z.ai response types + snapshot conversion
-│   │   ├── zai_types_test.go
-│   │   ├── zai_client.go              # HTTP client for Z.ai API
-│   │   ├── zai_client_test.go
-│   │   ├── anthropic_types.go         # Anthropic: dynamic quota response types
-│   │   ├── anthropic_client.go        # HTTP client for Anthropic OAuth usage API + SetToken() + ErrAnthropicUnauthorized
-│   │   ├── anthropic_token.go         # Shared token detection entry point
-│   │   ├── anthropic_token_unix.go    # macOS Keychain + Linux keyring/file detection
-│   │   └── anthropic_token_windows.go # Windows file-based detection
 │   ├── store/
-│   │   ├── store.go                    # SQLite schema, CRUD, users table, auth tokens, settings
-│   │   ├── store_test.go
-│   │   ├── zai_store.go               # Z.ai-specific queries
-│   │   ├── zai_store_test.go
-│   │   ├── anthropic_store.go         # Anthropic snapshot/cycle queries
-│   │   └── anthropic_store_test.go
 │   ├── tracker/
-│   │   ├── tracker.go                  # Synthetic reset detection + usage delta
-│   │   ├── tracker_test.go
-│   │   ├── zai_tracker.go             # Z.ai reset detection + usage delta
-│   │   ├── zai_tracker_test.go
-│   │   └── anthropic_tracker.go       # Anthropic utilization tracking + cycle mgmt
 │   ├── agent/
-│   │   ├── agent.go                    # Synthetic background polling loop
-│   │   ├── agent_test.go
-│   │   ├── session_manager.go         # Cross-agent session lifecycle management
-│   │   ├── session_manager_test.go
-│   │   ├── zai_agent.go               # Z.ai background polling loop
-│   │   └── anthropic_agent.go         # Anthropic background polling loop + token refresh + 401 retry
 │   ├── notify/
-│   │   ├── notify.go                  # NotificationEngine: threshold alerts, quota resets
-│   │   ├── notify_test.go
-│   │   ├── smtp.go                    # SMTPMailer: TLS/STARTTLS email delivery
-│   │   ├── smtp_test.go
-│   │   ├── crypto.go                  # AES-GCM encryption for SMTP passwords at rest
-│   │   └── crypto_test.go
 │   ├── update/
-│   │   ├── update.go                  # Self-update: check, download, apply, systemd migration
-│   │   └── update_test.go
 │   └── web/
-│       ├── server.go                   # HTTP server setup + route registration + gzip middleware + cache headers
-│       ├── server_test.go
-│       ├── handlers.go                 # Route handlers (HTML + JSON API + settings + SMTP test)
-│       ├── handlers_test.go
-│       ├── middleware.go               # Session auth, Basic Auth, SHA-256 hashing
-│       ├── middleware_test.go
-│       ├── static/                     # Embedded static assets
-│       │   ├── style.css
-│       │   ├── app.js
-│       │   └── favicon.svg
-│       └── templates/                  # Go html/template files (embedded)
-│           ├── layout.html
-│           ├── dashboard.html          # Main page + footer + password modal
-│           ├── settings.html           # Settings page: providers, notifications, SMTP
-│           └── login.html
+│       ├── server.go, handlers.go, middleware.go
+│       ├── static/                     # Embedded static assets (sole source of truth)
+│       │   ├── style.css, app.js, favicon.svg
+│       └── templates/
+│           ├── layout.html, dashboard.html, settings.html, login.html
 │
-├── static/                             # Sync copy of internal/web/static/ (keep in sync)
-│   ├── style.css
-│   └── app.js
+├── docs/                               # Documentation
+│   ├── DEVELOPMENT.md                  # Build guide + perf monitoring
+│   ├── ENCRYPTION_IMPLEMENTATION.md    # SMTP encryption design
+│   └── screenshots/                    # Release screenshots
+│       ├── INDEX.md
+│       └── *.png (13 files)
 │
-├── screenshots/                        # Dashboard screenshots
-│   └── INDEX.md                        # Screenshot descriptions
+├── tests/                              # All testing
+│   ├── e2e/                            # Playwright E2E tests
+│   │   ├── conftest.py, pytest.ini, requirements.txt
+│   │   ├── page_objects/
+│   │   └── tests/
+│   ├── js/
+│   │   └── dashboard-test.js
+│   └── test_install.sh
 │
 ├── design-system/                      # UI/UX design specifications
-│   └── onwatch/
-│       ├── MASTER.md
-│       └── pages/
-│           └── dashboard.md
-│
-├── tools/
-│   └── perf-monitor/                   # RAM + HTTP performance measurement tool
-│
+├── landing/                            # Landing page
+├── scripts/                            # Utility scripts
+├── tools/                              # Dev tools (perf-monitor, capture-screenshots)
+├── .github/                            # CI/CD workflows
+├── temp/                               # Temporary working directory (gitignored)
 └── LICENSE                             # GPL-3.0
 ```
 
@@ -266,32 +223,31 @@ Key facts: `requests` is `float64`. Three independent quotas with independent `r
 ## Commands
 
 ```bash
-# Development
+# Primary (app.sh)
+./app.sh --build          # Production binary with ldflags
+./app.sh --test           # go test -race -cover -count=1 ./...
+./app.sh --smoke          # Quick validation: vet + build check + short tests
+./app.sh --build --run    # Build + run in debug mode
+./app.sh --release        # Cross-compile all 5 platforms → dist/
+./app.sh --clean          # Remove binary, coverage, dist/, test cache
+./app.sh --deps           # Install Go + git (brew/apt/dnf)
+./app.sh --help           # Show all flags and usage
+
+# Make targets (thin wrappers around app.sh)
+make build                # ./app.sh --build
+make test                 # ./app.sh --test
+make run                  # ./app.sh --build --run
+make clean                # ./app.sh --clean
+make release-local        # ./app.sh --release
+make dev                  # go run . --debug --interval 10
+make lint                 # go fmt ./... && go vet ./...
+make coverage             # HTML coverage report
+
+# Direct Go commands
 go test ./...                      # Run all tests
 go test -race ./...                # Race detection (ALWAYS run before commit)
 go test -cover ./...               # Coverage report
 go test ./internal/store/ -v       # Specific package
-
-# Make targets
-make build                         # Production binary (version from VERSION file)
-make test                          # go test -race -cover ./...
-make run                           # Build + run in debug mode
-make dev                           # go run . --debug --interval 10
-make clean                         # Remove binary + test artifacts + dist/ + db files
-make lint                          # go fmt + go vet
-make coverage                      # Generate HTML coverage report
-make release-local                 # Cross-compile for 5 platforms -> dist/
-
-# Running
-./onwatch                         # Background: daemonize, log to ~/.onwatch/.onwatch.log
-./onwatch --debug                 # Foreground: log to stdout
-./onwatch --interval 30           # Poll every 30 seconds
-./onwatch --port 9000             # Dashboard on port 9000
-./onwatch stop                    # Stop running instance
-./onwatch status                  # Check if running
-
-# Environment setup
-cp .env.example .env               # Create local config
 ```
 
 ## CLI Reference
@@ -458,17 +414,16 @@ When creating a new release, always follow these steps in order:
 
 1. **Bump VERSION file** — Update `VERSION` to the new semver (e.g., `2.1.0`)
 2. **Build + test** — `go build -o onwatch .` and `go test -race ./...`
-3. **Cross-compile for all platforms** — `make release-local` builds 5 binaries in `dist/`:
+3. **Cross-compile for all platforms** — `./app.sh --release` builds 5 binaries in `dist/`:
    - `onwatch-darwin-arm64` (macOS Apple Silicon)
    - `onwatch-darwin-amd64` (macOS Intel)
    - `onwatch-linux-amd64`
    - `onwatch-linux-arm64`
    - `onwatch-windows-amd64.exe`
-4. **Capture screenshots** — Run `node tools/capture-screenshots.mjs` to auto-capture all 4 providers × light/dark (8 total) showing the top of the dashboard, saved in `screenshots/`
-5. **Sync static files** — `cp internal/web/static/{app.js,style.css} static/`
-6. **Commit and tag** — `git commit`, then `git tag -a vX.Y.Z -m "..."`
-7. **Push commit + tag** — `git push origin main && git push origin vX.Y.Z`
-8. **Create GitHub release with `gh`** — Upload all 5 binaries from `dist/` and write a thorough release description:
+4. **Capture screenshots** — Run `node tools/capture-screenshots.mjs` to auto-capture all 4 providers × light/dark (8 total) showing the top of the dashboard, saved in `docs/screenshots/`
+5. **Commit and tag** — `git commit`, then `git tag -a vX.Y.Z -m "..."`
+6. **Push commit + tag** — `git push origin main && git push origin vX.Y.Z`
+7. **Create GitHub release with `gh`** — Upload all 5 binaries from `dist/` and write a thorough release description:
    ```bash
    gh release create vX.Y.Z dist/* --title "..." --notes "..."
    ```
@@ -476,17 +431,36 @@ When creating a new release, always follow these steps in order:
 
 **Never skip the cross-compile step.** Every release must include binaries for all 5 platforms.
 
-### Static File Sync
+### Static Files
 
-Static files exist in TWO places. Always keep them in sync:
-- `internal/web/static/` -- embedded in binary (source of truth)
-- `static/` -- sync copy
+Static assets live in `internal/web/static/` and are embedded into the binary via `embed.FS`. There is no root `static/` copy — one source of truth, zero drift.
 
-After editing `internal/web/static/`, copy to `static/`:
-```bash
-cp internal/web/static/style.css static/style.css
-cp internal/web/static/app.js static/app.js
+## Temporary Files & Working Directory
+
+**All temporary artifacts MUST go in `temp/`.** This directory is gitignored and serves as the single working area for non-committed files. Use the subdirectories to stay organized:
+
 ```
+temp/
+├── screenshots/    # Test, debug, and UI verification screenshots
+├── evidence/       # Test evidence, QA captures, verification artifacts
+├── research/       # Market research, ICP analysis, naming, competitive analysis
+└── logs/           # Tool output, debug logs, network captures
+```
+
+| Subdirectory | What goes here | Examples |
+|--------------|----------------|---------|
+| `temp/screenshots/` | UI screenshots, layout checks, visual debugging | `test-login.png`, `debug-layout.png` |
+| `temp/evidence/` | Test run evidence, QA verification captures | `e2e-run-01.png`, `perf-results.txt` |
+| `temp/research/` | Research docs, analysis, working notes & drafts | `market-research.md`, `icp-analysis.md` |
+| `temp/logs/` | Log files from tools, debug sessions | `playwright.log`, `network-requests.log` |
+
+**Rules:**
+- **NEVER** create temporary files or directories in the project root -- always use `temp/` subdirectories
+- **NEVER** create ad-hoc `test-*` files/directories at root -- use `temp/screenshots/` or `temp/evidence/`
+- The `docs/screenshots/` directory (committed) is for **release screenshots only** (captured via `tools/capture-screenshots.mjs`)
+- `temp/` is gitignored -- nothing in it will ever be committed
+- For one-off scratch files that don't fit a subdirectory, put them directly in `temp/`
+- Clean up `temp/` periodically; it's a working area, not an archive
 
 ## Database Schema
 

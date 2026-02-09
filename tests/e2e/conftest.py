@@ -25,7 +25,7 @@ USERNAME = "admin"
 PASSWORD = "testpass123"
 
 # Paths
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 MOCK_BINARY = "/tmp/mockserver-test"
 ONWATCH_BINARY = "/tmp/onwatch-test"
 # E2E isolation: override HOME so the canonical DB path (~/.onwatch/data/onwatch.db)
