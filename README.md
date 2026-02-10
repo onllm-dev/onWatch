@@ -2,7 +2,7 @@
 
 ### **[onwatch.onllm.dev](https://onwatch.onllm.dev)**
 
-**onWatch** is a free, open-source CLI tool that tracks [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), and [Anthropic](https://anthropic.com) (Claude Code) API quota usage in real time. It runs as a lightweight background agent (~28 MB RAM with all three providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
+**onWatch** is a free, open-source CLI tool that tracks [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), and [Anthropic](https://anthropic.com) (Claude Code) API quota usage in real time. It runs as a lightweight background agent (<50 MB RAM with all three providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
 
 onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session intelligence that developers actually need. It works with any tool that uses Synthetic, Z.ai, or Anthropic API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Cursor**, **Windsurf**, and others.
 
@@ -137,7 +137,7 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 |----------|-----------|-------------------|
 | **Solo developers & freelancers** using Claude Code, Cline, Roo Code, or Kilo Code with Anthropic/Synthetic/Z.ai | Budget anxiety -- no visibility into quota burn rate, surprise throttling mid-task | Real-time rate projections, historical trends, live countdowns so you never get throttled unexpectedly |
 | **Small dev teams (3-20 people)** sharing API keys | No shared visibility into who's consuming what, impossible to budget next month | Shared dashboard with session tracking, cycle history for budget planning |
-| **DevOps & platform engineers** | Shadow AI usage with no FinOps for coding API subscriptions | Lightweight sidecar (~28 MB), SQLite data source for Grafana, REST API for monitoring stack integration |
+| **DevOps & platform engineers** | Shadow AI usage with no FinOps for coding API subscriptions | Lightweight sidecar (<50 MB), SQLite data source for Grafana, REST API for monitoring stack integration |
 | **Privacy-conscious developers** in regulated industries | Can't use SaaS analytics that phone home; need local, auditable monitoring | Single binary, local SQLite, zero telemetry, GPL-3.0 source code, works air-gapped |
 | **Researchers & educators** on grants | Need per-session API cost attribution for grant reports and paper methodology | Per-session usage tracking, historical export via SQLite |
 | **Budget-conscious API users** paying $3-$60/month | Every request matters; no way to know if plan is underutilized or budget is at risk | Usage insights, plan capacity analysis, upgrade/downgrade recommendations via data |
@@ -168,7 +168,7 @@ No. Zero telemetry. All data stays in a local SQLite file. The only outbound cal
 
 ### How much memory does onWatch use?
 
-~28 MB idle, ~36 MB under continuous dashboard load with server-side chart downsampling. Measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed benchmarks.
+<50 MB under all conditions (typically ~34 MB idle, ~43 MB under heavy dashboard load). Measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed benchmarks.
 
 ---
 
@@ -196,7 +196,7 @@ No. Zero telemetry. All data stays in a local SQLite file. The only outbound cal
 
 All agents run as parallel goroutines. Each polls its API at the configured interval and writes snapshots. The dashboard reads from the shared store.
 
-**Measured RAM (all three agents running in parallel):** 28 MB idle, 36 MB P95 under continuous load (~1,100 requests in 15s). Single binary, all assets embedded via `embed.FS`.
+**Measured RAM (all three agents running in parallel):** ~34 MB idle, ~43 MB P95 under continuous load (~4,300 requests in 60s). Single binary, all assets embedded via `embed.FS`.
 
 ---
 

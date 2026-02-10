@@ -7,7 +7,7 @@
 **This is an open-source project.** No secrets, no waste, clean repo.
 
 **Core Design Principles:**
-- **Ultra-lightweight:** Measured RAM footprint of ~28 MB idle with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. This app runs as a background agent -- memory efficiency is paramount.
+- **Ultra-lightweight:** Measured RAM footprint of <50 MB with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. This app runs as a background agent -- memory efficiency is paramount.
 - **Single binary:** No external dependencies at runtime. All templates and static assets embedded via `embed.FS`.
 - **TDD-first:** Every feature is built test-first. Red -> Green -> Refactor. No exceptions.
 - **Efficient polling:** The `/v2/quotas` endpoint does NOT count against quota, but we still poll responsibly (default 60s).
@@ -44,21 +44,21 @@ Since onWatch runs as a background daemon, RAM is our primary constraint:
 | HTTP server (idle) | 1 MB |
 | Agent + polling buffer | 1 MB |
 | Template rendering | 1 MB |
-| **Total idle** | **~30 MB max** |
-| **During dashboard render** | **~50 MB max** |
+| **Total idle** | **~35 MB** |
+| **During dashboard render** | **<50 MB** |
 
-**Measured RAM (2026-02-08, all three agents polling in parallel):**
+**Measured RAM (2026-02-10, all three agents polling in parallel):**
 
 | Metric | Measured | Budget |
 |--------|----------|--------|
-| Idle RSS (avg) | 28.0 MB | 30 MB |
-| Idle RSS (P95) | 28.0 MB | 30 MB |
-| Load RSS (avg) | 35.1 MB | 50 MB |
-| Load RSS (P95) | 35.9 MB | 50 MB |
-| Load delta | +7.1 MB (+25%) | <20 MB |
-| Avg API response | 0.75 ms | <5 ms |
-| Avg dashboard response | 2.58 ms | <10 ms |
-| Load test throughput | 1,104 reqs / 15s | -- |
+| Idle RSS (avg) | 33.6 MB | 35 MB |
+| Idle RSS (P95) | 33.6 MB | 35 MB |
+| Load RSS (avg) | 41.9 MB | 50 MB |
+| Load RSS (P95) | 43.1 MB | 50 MB |
+| Load delta | +8.3 MB (+25%) | <20 MB |
+| Avg API response | 0.85 ms | <5 ms |
+| Avg dashboard response | 2.52 ms | <10 ms |
+| Load test throughput | 4,352 reqs / 60s | -- |
 
 ## Tech Stack
 

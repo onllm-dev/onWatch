@@ -12,7 +12,7 @@
       gtag('config', 'G-HLLYRRWW4R');
     </script>
     <title>onWatch — Multi-Provider AI API Intelligence · Synthetic, Z.ai, Anthropic</title>
-    <meta name="description" content="onWatch is the intelligence layer for multi-provider AI API management. Track usage across Synthetic, Z.ai, and Anthropic with cross-provider insights, pattern detection, rate projections, and reset cycle intelligence — a ~13 MB Go binary, ~28 MB RAM idle, zero telemetry.">
+    <meta name="description" content="onWatch is the intelligence layer for multi-provider AI API management. Track usage across Synthetic, Z.ai, and Anthropic with cross-provider insights, pattern detection, rate projections, and reset cycle intelligence — a ~13 MB Go binary, <50 MB RAM, zero telemetry.">
     <meta name="keywords" content="onWatch, AI API intelligence, multi-provider API tracking, Synthetic API monitor, Z.ai API tracker, Anthropic API monitoring, cross-provider insights, AI coding API usage, quota monitoring tool, open source API monitor, Cline quota tracker, Claude Code API usage, intelligent provider switching, API budget tracker, self-hosted API monitoring, reset cycle detection, rate projection, Go CLI tool, API quota dashboard">
     <link rel="canonical" href="https://onwatch.onllm.dev">
 
@@ -30,7 +30,7 @@
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="onWatch — Multi-Provider AI API Intelligence · Synthetic, Z.ai, Anthropic">
-    <meta name="twitter:description" content="The intelligence layer for multi-provider AI API management. Cross-provider insights, pattern detection, and rate projections. ~13 MB binary, ~28 MB RAM, zero telemetry.">
+    <meta name="twitter:description" content="The intelligence layer for multi-provider AI API management. Cross-provider insights, pattern detection, and rate projections. ~13 MB binary, <50 MB RAM, zero telemetry.">
     <meta name="twitter:image" content="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/anthropic-dark.png">
 
     <!-- Additional SEO -->
@@ -44,7 +44,7 @@
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "onWatch",
-      "description": "The intelligence layer for multi-provider AI API management. Tracks usage across Synthetic, Z.ai, and Anthropic with cross-provider insights, pattern detection, consumption rate projections, reset cycle intelligence, and a Material Design 3 web dashboard. ~13 MB Go binary, ~28 MB RAM idle, zero telemetry.",
+      "description": "The intelligence layer for multi-provider AI API management. Tracks usage across Synthetic, Z.ai, and Anthropic with cross-provider insights, pattern detection, consumption rate projections, reset cycle intelligence, and a Material Design 3 web dashboard. ~13 MB Go binary, <50 MB RAM, zero telemetry.",
       "url": "https://onwatch.onllm.dev",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux, Windows",
@@ -79,7 +79,7 @@
         "Material Design 3 dashboard with dark and light mode",
         "Single Go binary with zero runtime dependencies",
         "Local SQLite storage with zero telemetry",
-        "Background daemon mode with ~28 MB RAM idle footprint",
+        "Background daemon mode with <50 MB RAM footprint",
         "Cross-platform: macOS, Linux, Windows",
         "REST API with JSON endpoints",
         "Session-based auth with password management",
@@ -111,7 +111,7 @@
           "name": "What is the best open-source tool to track AI coding API usage?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "onWatch is the only open-source tool designed to track historical quota usage across Anthropic, Synthetic, and Z.ai in a single dashboard. It provides features that provider dashboards lack: historical usage trends, automatic reset cycle detection, consumption rate projections, per-session tracking, and a multi-provider unified view. It's a ~13 MB Go binary that idles at ~28 MB RAM with zero telemetry and local SQLite storage."
+            "text": "onWatch is the only open-source tool designed to track historical quota usage across Anthropic, Synthetic, and Z.ai in a single dashboard. It provides features that provider dashboards lack: historical usage trends, automatic reset cycle detection, consumption rate projections, per-session tracking, and a multi-provider unified view. It's a ~13 MB Go binary that uses <50 MB RAM with zero telemetry and local SQLite storage."
           }
         },
         {
@@ -143,7 +143,7 @@
           "name": "How much memory does onWatch use?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "onWatch idles at ~28 MB RAM and peaks at ~36 MB under continuous dashboard load, measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. It's designed to run as a background daemon with minimal resource usage: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), and polling buffer (1 MB). This is lighter than a single browser tab."
+            "text": "onWatch uses <50 MB RAM under all conditions (typically ~34 MB idle, ~43 MB under heavy load), measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. It's designed to run as a background daemon with minimal resource usage: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), and polling buffer (1 MB). This is lighter than a single browser tab."
           }
         },
         {
@@ -2189,7 +2189,7 @@ a:hover { text-decoration: underline; }
                 <code><span class="install-prefix">$</span> curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash</code>
                 <span class="copy-hint">Copy</span>
             </div>
-            <p class="hero-meta"><span id="hero-version">v2.7.0</span> &middot; Go &middot; GPL-3.0 &middot; Zero Telemetry &middot; ~28 MB RAM &middot; ~13 MB Binary</p>
+            <p class="hero-meta"><span id="hero-version">v2.7.0</span> &middot; Go &middot; GPL-3.0 &middot; Zero Telemetry &middot; <50 MB RAM &middot; ~13 MB Binary</p>
         </div>
 
         <!-- Dashboard Mockup -->
@@ -2752,8 +2752,8 @@ a:hover { text-decoration: underline; }
         </div>
         <div class="arch-stats fade-in">
             <div class="arch-stat">
-                <div class="arch-stat-value">~28 MB</div>
-                <div class="arch-stat-label">RAM Idle</div>
+                <div class="arch-stat-value"><50 MB</div>
+                <div class="arch-stat-label">RAM Usage</div>
             </div>
             <div class="arch-stat">
                 <div class="arch-stat-value">0</div>
@@ -2806,7 +2806,7 @@ a:hover { text-decoration: underline; }
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                 </div>
                 <h3 class="feature-title">DevOps &amp; Platform Engineers</h3>
-                <p class="feature-desc">Deploy as a ~13 MB binary (~28 MB RAM idle) with zero SaaS dependencies. Use the SQLite database as a Grafana data source or pipe the REST API into your existing monitoring stack.</p>
+                <p class="feature-desc">Deploy as a ~13 MB binary (<50 MB RAM) with zero SaaS dependencies. Use the SQLite database as a Grafana data source or pipe the REST API into your existing monitoring stack.</p>
             </div>
         </div>
     </div>
@@ -2944,7 +2944,7 @@ a:hover { text-decoration: underline; }
             <details class="faq-item">
                 <summary class="faq-question">How much memory does onWatch use?</summary>
                 <div class="faq-answer">
-                    <p>onWatch idles at ~28 MB RAM and peaks at ~36 MB under continuous dashboard load, measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Breakdown: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), polling buffer (1 MB). This is lighter than a single browser tab and designed to run as a background daemon indefinitely.</p>
+                    <p>onWatch uses <50 MB RAM under all conditions (typically ~34 MB idle, ~43 MB under heavy load), measured with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. Breakdown: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), polling buffer (1 MB). This is lighter than a single browser tab and designed to run as a background daemon indefinitely.</p>
                 </div>
             </details>
             <details class="faq-item">
