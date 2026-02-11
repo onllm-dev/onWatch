@@ -109,15 +109,19 @@ func (t *Tracker) processQuota(quotaType string, capturedAt time.Time, info api.
 	oldHour := cycle.RenewsAt.Truncate(time.Hour)
 	newHour := info.RenewsAt.Truncate(time.Hour)
 	if !oldHour.Equal(newHour) {
-		// First, update delta from last snapshot before closing
+		// Calculate final delta from the last snapshot before closing.
+		// The delta includes the change up to the reset point.
 		if t.hasLastValues {
 			delta := info.Requests - *lastRequests
 			if delta > 0 {
 				cycle.TotalDelta += delta
 			}
-			if info.Requests > cycle.PeakRequests {
-				cycle.PeakRequests = info.Requests
-			}
+			// NOTE: We intentionally do NOT update peak_requests here.
+			// The current snapshot's timestamp becomes cycle_end, and the
+			// cross-quota query uses `captured_at < cycle_end`, so this
+			// snapshot is excluded. Including its value in peak_requests
+			// would create an inconsistency where the "max" shown in the
+			// overview doesn't match any snapshot in the query range.
 		}
 
 		// Close old cycle with final stats
