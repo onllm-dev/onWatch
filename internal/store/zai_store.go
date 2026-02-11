@@ -392,12 +392,14 @@ func (s *Store) QueryZaiCycleOverview(groupBy string, limit int) ([]CycleOvervie
 			peakCol = "tokens_current_value"
 		}
 
+		// Note: cycle_end is the timestamp when reset was detected, which is actually
+		// the first snapshot of the NEW cycle, so we use < instead of <= to exclude it
 		var capturedAt string
 		var timeUsage, timeCurrent, tokensUsage, tokensCurrent float64
 		err := s.db.QueryRow(
 			fmt.Sprintf(`SELECT captured_at, time_usage, time_current_value, tokens_usage, tokens_current_value
 			FROM zai_snapshots
-			WHERE captured_at BETWEEN ? AND ?
+			WHERE captured_at >= ? AND captured_at < ?
 			ORDER BY %s DESC LIMIT 1`, peakCol),
 			c.CycleStart.Format(time.RFC3339Nano),
 			c.CycleEnd.Format(time.RFC3339Nano),

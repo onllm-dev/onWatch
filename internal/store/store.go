@@ -809,12 +809,14 @@ func (s *Store) QuerySyntheticCycleOverview(groupBy string, limit int) ([]CycleO
 			peakCol = "sub_requests"
 		}
 
+		// Note: cycle_end is the timestamp when reset was detected, which is actually
+		// the first snapshot of the NEW cycle, so we use < instead of <= to exclude it
 		var capturedAt string
 		var subLimit, subReq, searchLimit, searchReq, toolLimit, toolReq float64
 		err := s.db.QueryRow(
 			fmt.Sprintf(`SELECT captured_at, sub_limit, sub_requests, search_limit, search_requests, tool_limit, tool_requests
 			FROM quota_snapshots
-			WHERE captured_at BETWEEN ? AND ?
+			WHERE captured_at >= ? AND captured_at < ?
 			ORDER BY %s DESC LIMIT 1`, peakCol),
 			c.CycleStart.Format(time.RFC3339Nano),
 			c.CycleEnd.Format(time.RFC3339Nano),

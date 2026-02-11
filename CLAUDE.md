@@ -1,601 +1,103 @@
-# onWatch - CLAUDE.md
+# onWatch
 
-## Overview
+Ultra-lightweight Go CLI tracking Anthropic/Synthetic/Z.ai quota usage. Polls endpoints → SQLite → Material Design 3 dashboard. Single binary via `embed.FS`, <50 MB RAM, TDD-first.
 
-**onWatch** is a minimal, ultra-lightweight Go CLI tool that tracks [Anthropic](https://anthropic.com) (Claude Code), [Synthetic API](https://synthetic.new), and [Z.ai](https://z.ai) usage by polling quota endpoints at configurable intervals, storing historical data in SQLite, and serving a Material Design 3 web dashboard with dark/light mode for usage visualization. Supports multiple providers running in parallel.
+## Stack
+Go 1.25+ | SQLite (`modernc.org/sqlite`) | `net/http` | `html/template` + `embed.FS` | Chart.js (CDN) | `log/slog`
 
-**This is an open-source project.** No secrets, no waste, clean repo.
+## RAM Efficiency (Background Daemon Constraint)
+- **Target:** ~35 MB idle, <50 MB under load
+- **GOMEMLIMIT:** `debug.SetMemoryLimit(40MiB)` + `GOGC=50` for aggressive GC
+- **SQLite:** Single connection (`SetMaxOpenConns(1)`), 512KB cache (`cache_size=-500`), WAL mode
+- **HTTP:** Lean transports (`MaxIdleConns:1`), 10s client timeout, 5s shutdown
+- **Bounded queries:** Cycles capped at 200, insights at 50
+- **No leaks:** Always use `context.Context`, no unbounded buffers
 
-**Core Design Principles:**
-- **Ultra-lightweight:** Measured RAM footprint of <50 MB with all three agents (Synthetic, Z.ai, Anthropic) polling in parallel. This app runs as a background agent -- memory efficiency is paramount.
-- **Single binary:** No external dependencies at runtime. All templates and static assets embedded via `embed.FS`.
-- **TDD-first:** Every feature is built test-first. Red -> Green -> Refactor. No exceptions.
-- **Efficient polling:** The `/v2/quotas` endpoint does NOT count against quota, but we still poll responsibly (default 60s).
-- **Visual clarity:** Users must instantly see which quotas approach limits and when they reset.
-
-## RAM Efficiency Guidelines
-
-Since onWatch runs as a background daemon, RAM is our primary constraint:
-
-| Guideline | Implementation |
-|-----------|---------------|
-| GOMEMLIMIT + GOGC | `debug.SetMemoryLimit(40MiB)`, `debug.SetGCPercent(50)` -- triggers MADV_DONTNEED to actually shrink RSS |
-| Periodic FreeOSMemory | Every 5 min goroutine forces OS memory return |
-| Single SQLite connection | `db.SetMaxOpenConns(1)` -- avoids duplicate 2 MB page caches |
-| Small SQLite cache | `cache_size=-500` (512 KB) -- sufficient for sequential inserts |
-| Lean HTTP transports | `MaxIdleConns:1, MaxIdleConnsPerHost:1` on all API clients |
-| Bounded cycle queries | Cycle table endpoints capped at 200 per quota type; insights at 50 |
-| No goroutine leaks | Always use `context.Context` for cancellation |
-| Bounded buffers | Limit in-memory snapshot cache (last 100 max) |
-| No ORM | Raw SQL with `database/sql` interface -- no reflection overhead |
-| Embedded assets | `embed.FS` -- no runtime file reads |
-| System fonts preferred | Google Fonts lazy-loaded only when dashboard viewed |
-| Chart.js via CDN | Not bundled in binary -- loaded by browser only |
-| SQLite WAL mode | Single-writer with `busy_timeout=5000` for concurrency |
-| Minimal dependencies | Only `modernc.org/sqlite` and `godotenv` |
-| HTTP server idle cost | `net/http` idles at ~1 MB -- acceptable |
-
-**Target RAM budget:**
-
-| Component | Budget |
-|-----------|--------|
-| Go runtime | 5 MB |
-| SQLite (in-process, single conn, 512KB cache) | 1 MB |
-| HTTP server (idle) | 1 MB |
-| Agent + polling buffer | 1 MB |
-| Template rendering | 1 MB |
-| **Total idle** | **~35 MB** |
-| **During dashboard render** | **<50 MB** |
-
-**Measured RAM (2026-02-10, all three agents polling in parallel):**
-
-| Metric | Measured | Budget |
-|--------|----------|--------|
-| Idle RSS (avg) | 33.6 MB | 35 MB |
-| Idle RSS (P95) | 33.6 MB | 35 MB |
-| Load RSS (avg) | 41.9 MB | 50 MB |
-| Load RSS (P95) | 43.1 MB | 50 MB |
-| Load delta | +8.3 MB (+25%) | <20 MB |
-| Avg API response | 0.85 ms | <5 ms |
-| Avg dashboard response | 2.52 ms | <10 ms |
-| Load test throughput | 4,352 reqs / 60s | -- |
-
-## Tech Stack
-
-| Component | Technology | Rationale |
-|-----------|-----------|-----------|
-| Language | Go 1.25+ | Low memory, single binary, fast startup |
-| Database | SQLite via `modernc.org/sqlite` | Pure Go (no CGO), zero config, ~2 MB memory |
-| HTTP | `net/http` (stdlib) | No framework overhead |
-| Templates | `html/template` + `embed.FS` | Embedded in binary, zero disk I/O |
-| Static assets | `embed.FS` | CSS/JS embedded, served from memory |
-| Charts | Chart.js 4.x (CDN) | Not in binary -- browser loads on demand |
-| Config | `.env` + CLI flags | Simple, standard |
-| Auth | Session cookies + Basic Auth fallback | SHA-256 password hashing, DB-persisted credentials |
-| Design | Material Design 3 | Dark + Light mode, clean, professional |
-| Logging | `log/slog` (stdlib) | Structured, zero-alloc, built-in |
-
-## Project Structure
-
+## Structure
 ```
-onwatch/
-├── CLAUDE.md                           # THIS FILE
-├── README.md                           # User-facing documentation
-├── app.sh                              # Primary entry point: build, test, run, release
-├── .env.example                        # Template (safe to commit)
-├── .env                                # Local secrets (NEVER committed)
-├── .gitignore
-├── go.mod / go.sum                     # Go module
-├── main.go                             # Entry point: CLI, wiring, lifecycle, DB migration
-├── platform_unix.go                    # Unix-specific: daemonize, PID dir
-├── platform_windows.go                 # Windows-specific: daemonize, PID dir
-├── Makefile                            # Thin wrapper around app.sh
-├── VERSION                             # Single source of truth for version
-├── install.sh                          # One-line installer script
-│
-├── internal/                           # (same as before — unchanged)
-│   ├── config/
-│   ├── api/
-│   ├── store/
-│   ├── tracker/
-│   ├── agent/
-│   ├── notify/
-│   ├── update/
-│   └── web/
-│       ├── server.go, handlers.go, middleware.go
-│       ├── static/                     # Embedded static assets (sole source of truth)
-│       │   ├── style.css, app.js, favicon.svg
-│       └── templates/
-│           ├── layout.html, dashboard.html, settings.html, login.html
-│
-├── docs/                               # Documentation
-│   ├── DEVELOPMENT.md                  # Build guide + perf monitoring
-│   ├── ENCRYPTION_IMPLEMENTATION.md    # SMTP encryption design
-│   └── screenshots/                    # Release screenshots
-│       ├── INDEX.md
-│       └── *.png (13 files)
-│
-├── tests/                              # All testing
-│   ├── e2e/                            # Playwright E2E tests
-│   │   ├── conftest.py, pytest.ini, requirements.txt
-│   │   ├── page_objects/
-│   │   └── tests/
-│   ├── js/
-│   │   └── dashboard-test.js
-│   └── test_install.sh
-│
-├── design-system/                      # UI/UX design specifications
-├── landing/                            # Landing page
-├── scripts/                            # Utility scripts
-├── tools/                              # Dev tools (perf-monitor, capture-screenshots)
-├── .github/                            # CI/CD workflows
-├── temp/                               # Temporary working directory (gitignored)
-└── LICENSE                             # GPL-3.0
+main.go                    # Entry, CLI, lifecycle
+internal/{config,api,store,tracker,agent,notify,update,web}/
+internal/web/static/       # Embedded assets (sole source of truth)
+internal/web/templates/    # dashboard.html, settings.html, login.html
 ```
 
-## API Reference
+## API Responses
 
-### Synthetic API -- GET /v2/quotas
-
-**Endpoint:** `https://api.synthetic.new/v2/quotas`
-**Auth:** `Authorization: Bearer <SYNTHETIC_API_KEY>`
-**Rate Limit:** Does NOT count against quota.
-
-**Response shape:**
+**Synthetic** `GET https://api.synthetic.new/v2/quotas` (Bearer token)
 ```json
-{
-  "subscription": { "limit": 1350, "requests": 154.3, "renewsAt": "2026-02-06T16:16:18.386Z" },
-  "search": { "hourly": { "limit": 250, "requests": 0, "renewsAt": "..." } },
-  "toolCallDiscounts": { "limit": 16200, "requests": 7635, "renewsAt": "..." }
-}
+{"subscription":{"limit":1350,"requests":154.3,"renewsAt":"ISO8601"},
+ "search":{"hourly":{"limit":250,"requests":0,"renewsAt":"..."}},
+ "toolCallDiscounts":{"limit":16200,"requests":7635,"renewsAt":"..."}}
 ```
 
-Key facts: `requests` is `float64`. Three independent quotas with independent `renewsAt` timestamps.
-
-### Z.ai API -- GET /monitor/usage/quota/limit
-
-**Endpoint:** `{ZAI_BASE_URL}/monitor/usage/quota/limit`
-**Auth:** `Authorization: <ZAI_API_KEY>` (no Bearer prefix)
-**Base URLs:** `https://api.z.ai/api` (default) or `https://open.bigmodel.cn/api` (mirror, identical data)
-
-**Response shape:**
+**Z.ai** `GET {ZAI_BASE_URL}/monitor/usage/quota/limit` (no Bearer prefix)
 ```json
-{
-  "code": 200,
-  "data": {
-    "limits": [
-      { "type": "TIME_LIMIT", "usage": 1000, "currentValue": 19, "remaining": 981, "percentage": 1,
-        "usageDetails": [{ "modelCode": "search-prime", "usage": 16 }] },
-      { "type": "TOKENS_LIMIT", "usage": 200000000, "currentValue": 200112618, "remaining": 0,
-        "percentage": 100, "nextResetTime": 1770398385482 }
-    ]
-  }
-}
+{"code":200,"data":{"limits":[
+  {"type":"TIME_LIMIT","usage":1000,"currentValue":19},
+  {"type":"TOKENS_LIMIT","usage":200000000,"currentValue":200112618,"nextResetTime":1770398385482}
+]}}
 ```
+Note: `usage`=limit, `currentValue`=consumed. `nextResetTime` is epoch ms (only on TOKENS_LIMIT).
 
-**Key facts and gotchas:**
-- **Field naming is confusing:** `usage` = quota budget (limit), `currentValue` = actual consumption
-- `nextResetTime` is epoch milliseconds (not ISO 8601) -- only present on `TOKENS_LIMIT`
-- `TIME_LIMIT` has no `nextResetTime` -- reset cycle unclear
-- `currentValue` can exceed `usage` (no hard cap)
-- Auth errors return HTTP 200 with `{"code": 401, "msg": "token expired or incorrect"}` in body
-- `usageDetails` (per-model breakdown) only present on `TIME_LIMIT`
-- `unit` and `number` fields appear in responses but their meaning is unknown
-
-**Additional time-series endpoints (not used for polling):**
-- `GET /monitor/usage/model-usage?startTime={}&endTime={}` -- hourly API call counts + token usage
-- `GET /monitor/usage/tool-usage?startTime={}&endTime={}` -- hourly per-tool breakdown
-
-### Anthropic OAuth Usage API -- GET /api/oauth/usage
-
-**Endpoint:** `https://api.anthropic.com/api/oauth/usage`
-**Auth:** `Authorization: Bearer <ANTHROPIC_TOKEN>`, `anthropic-beta: oauth-2025-04-20`
-**Token source:** Auto-detected from Claude Code credentials (macOS Keychain, Linux keyring, `~/.claude/.credentials.json`)
-
-**Response shape:**
+**Anthropic** `GET https://api.anthropic.com/api/oauth/usage` (Bearer + `anthropic-beta: oauth-2025-04-20`)
 ```json
-{
-  "five_hour": { "utilization": 45.2, "resets_at": "2026-02-07T14:00:00Z", "is_enabled": true },
-  "seven_day": { "utilization": 12.8, "resets_at": "2026-02-10T00:00:00Z", "is_enabled": true },
-  "seven_day_sonnet": { "utilization": 5.1, "resets_at": "2026-02-10T00:00:00Z", "is_enabled": true },
-  "monthly_limit": { "utilization": 67.3, "resets_at": "2026-03-01T00:00:00Z", "is_enabled": true, "monthly_limit": 100.0, "used_credits": 67.3 },
-  "extra_usage": null
-}
+{"five_hour":{"utilization":45.2,"resets_at":"ISO8601","is_enabled":true},
+ "seven_day":{"utilization":12.8,"resets_at":"...","is_enabled":true},
+ "monthly_limit":{"utilization":67.3,"resets_at":"...","is_enabled":true}}
 ```
-
-**Key facts:**
-- Response is a `map[string]*QuotaEntry` — **dynamic keys** (not fixed). Null entries are skipped.
-- `utilization` is a percentage (0-100), not an absolute count
-- `extra_usage` with `is_enabled: false` is filtered out
-- `resets_at` is ISO 8601 (same as Synthetic, unlike Z.ai)
-- New quota types may appear in the future — the DB schema uses normalized key-value storage
-
-### Provider Mapping
-
-| onWatch Concept | Anthropic API | Synthetic API | Z.ai Equivalent |
-|-----------------|--------------|---------------|-----------------|
-| Real-time snapshot | `GET /api/oauth/usage` | `GET /v2/quotas` | `GET /monitor/usage/quota/limit` |
-| Primary quota | `five_hour` (utilization %) | `subscription` (requests/limit) | `TOKENS_LIMIT` (currentValue/usage) |
-| Secondary quotas | `seven_day`, `monthly_limit`, etc. | `search.hourly` | `TIME_LIMIT` (tool calls) |
-| Reset time | `resets_at` (ISO 8601) | `renewsAt` (ISO 8601) | `nextResetTime` (epoch ms) |
-| Quota structure | Dynamic key-value | Fixed 3 quotas | Fixed 2-3 limits |
+Note: Dynamic keys, `utilization` is %, null entries skipped.
 
 ## Commands
-
 ```bash
-# Primary (app.sh)
-./app.sh --build          # Production binary with ldflags
-./app.sh --test           # go test -race -cover -count=1 ./...
-./app.sh --smoke          # Quick validation: vet + build check + short tests
-./app.sh --build --run    # Build + run in debug mode
-./app.sh --release        # Cross-compile all 5 platforms → dist/
-./app.sh --clean          # Remove binary, coverage, dist/, test cache
-./app.sh --deps           # Install Go + git (brew/apt/dnf)
-./app.sh --help           # Show all flags and usage
-
-# Make targets (thin wrappers around app.sh)
-make build                # ./app.sh --build
-make test                 # ./app.sh --test
-make run                  # ./app.sh --build --run
-make clean                # ./app.sh --clean
-make release-local        # ./app.sh --release
-make dev                  # go run . --debug --interval 10
-make lint                 # go fmt ./... && go vet ./...
-make coverage             # HTML coverage report
-
-# Direct Go commands
-go test ./...                      # Run all tests
-go test -race ./...                # Race detection (ALWAYS run before commit)
-go test -cover ./...               # Coverage report
-go test ./internal/store/ -v       # Specific package
+./app.sh --build        # Production binary
+./app.sh --test         # go test -race -cover ./...
+./app.sh --release      # Cross-compile 5 platforms → dist/
+go test -race ./...     # ALWAYS before commit
 ```
 
-## CLI Reference
+## CLI
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--interval` | 60 | Poll seconds |
+| `--port` | 9211 | Dashboard port |
+| `--db` | ~/.onwatch/data/onwatch.db | SQLite path |
+| `--debug` | false | Foreground mode |
+| `stop/status/update` | - | Subcommands |
 
-### Subcommands
+## Rules (MANDATORY)
 
-| Command | Description |
-|---------|-------------|
-| `onwatch` | Start agent (background mode) |
-| `onwatch stop` or `--stop` | Stop running instance (PID file + port fallback) |
-| `onwatch status` or `--status` | Show status of running instance |
-| `onwatch update` or `--update` | Check for updates and self-update |
+**TDD:** Test first → fail → implement → pass → refactor. Use `:memory:` SQLite + `httptest`. Run `-race` before commit. Shared test vars need `sync/atomic` or `sync.Mutex`.
 
-### Flags
+**Security:** Never commit `.env`/`.db`/binaries. Never log API keys. Parameterized SQL only. `subtle.ConstantTimeCompare` for credentials. HTTP timeouts: 10s client, 5s shutdown.
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--interval` | Polling interval in seconds | `60` |
-| `--port` | Dashboard HTTP port | `9211` |
-| `--db` | SQLite database file path | `~/.onwatch/data/onwatch.db` |
-| `--debug` | Run in foreground, log to stdout | `false` |
-| `--test` | Test mode: isolated PID/log, won't kill production | `false` |
-| `--version` | Print version and exit | - |
-| `--help` | Print help and exit | - |
-
-## Self-Update System
-
-The `internal/update/` package implements a self-updating mechanism via GitHub releases.
-
-**Lifecycle:**
-1. **Check** — `Updater.Check()` queries the GitHub releases API (`/repos/onllm-dev/onwatch/releases/latest`), caches the result for 1 hour (mutex-protected), and compares semver against the running version. Dev builds (`"dev"` or `""`) cannot update.
-2. **Apply** — `Updater.Apply()` downloads the platform-specific binary, validates magic bytes (ELF/Mach-O/PE), and replaces the running binary. On Unix: remove + rename (safe since the kernel keeps the inode alive). On Windows: backup-rename fallback.
-3. **MigrateSystemdUnit** — Auto-fixes the systemd unit file (`Restart=on-failure` → `Restart=always`, `RestartSec=10` → `RestartSec=5`), then runs `daemon-reload`. Called inside `Apply()` before `Restart()` so systemd sees the updated policy before the old process exits. Safe to call on every startup (no-op if already up to date or not under systemd).
-4. **Restart** — Under systemd: `systemctl restart <service>`. Standalone: spawns the new binary (which stops the old instance via PID file). Falls back to `systemctl restart` if spawn fails.
-
-**Three-layer reliability:**
-
-| Layer | Mechanism | Fallback |
-|-------|-----------|----------|
-| Apply | remove+rename (Unix) | backup-rename (Windows) |
-| Restart | systemctl restart (systemd) / spawn (standalone) | `fallbackSystemctlRestart()` tries detected + default service names, both system and `--user` |
-| Startup | New binary stops old via PID file | Port-based lsof detection |
-
-**Key functions:** `Updater.Check()`, `Updater.Apply()`, `MigrateSystemdUnit()`, `Updater.Restart()`, `fallbackSystemctlRestart()`
-
-**systemd detection:** `IsSystemd()` checks `INVOCATION_ID` env var. `DetectServiceName()` reads `/proc/self/cgroup` for the `.service` unit name, falls back to `"onwatch.service"`.
-
-**Dashboard integration:** `GET /api/update/check` returns update info. `POST /api/update/apply` triggers download + apply + restart.
-
-## Anthropic Token Auto-Refresh
-
-The Anthropic agent automatically picks up rotated OAuth tokens without restart:
-
-- **`TokenRefreshFunc`** in `anthropic_agent.go` — called before each poll to re-read credentials from disk (macOS Keychain, Linux keyring, `~/.claude/.credentials.json`).
-- **`SetToken()`** on `AnthropicClient` — updates the token used for API requests at runtime.
-- **401 retry** — on `ErrAnthropicUnauthorized`, clears the cached token (`lastToken = ""`), forces credential re-read, and retries the poll once.
-- **Wiring in `main.go`:** `anthropicAg.SetTokenRefresh(func() string { return api.DetectAnthropicToken(logger) })`
-
-## Authentication & Password Management
-
-- Passwords stored as SHA-256 hex hashes in the `users` table
-- On first run, the `.env` password is hashed and stored in the DB
-- On subsequent runs, the DB hash takes precedence (`.env` is not re-read for password)
-- `PUT /api/password` lets the user change their password from the dashboard
-- Password changes invalidate all sessions (force re-login)
-- `HashPassword()` in `middleware.go` produces the SHA-256 hex hash
-- `NewSessionStore` and `NewServer` accept a password hash, not plaintext
-
-## Settings Page
-
-The `/settings` page provides a tabbed UI for managing onWatch configuration:
-
-- **General** -- Default provider selection
-- **Providers** -- Enable/disable individual providers
-- **Notifications** -- Per-quota threshold alerts (warning at configurable %, critical at configurable %)
-- **Email** -- SMTP configuration for email alerts
-
-Settings are stored as JSON blobs in the `settings` key-value table (`store.GetSetting` / `store.SetSetting`). The frontend fetches via `GET /api/settings` and saves via `PUT /api/settings`.
-
-## Notification System
-
-The `internal/notify/` package sends email alerts when quota utilization crosses thresholds.
-
-**Architecture:**
-- `NotificationEngine` in `notify.go` -- checks quota statuses against configured thresholds, dispatches alerts
-- `SMTPMailer` in `smtp.go` -- handles TLS/STARTTLS email delivery
-- `crypto.go` -- AES-GCM encryption for SMTP passwords stored in the database
-
-**Alert types:**
-- **Warning** -- quota crosses the warning threshold (configurable per quota)
-- **Critical** -- quota crosses the critical threshold
-- **Reset** -- quota resets to zero (new cycle begins)
-
-**SMTP password security:** Passwords are encrypted with AES-GCM before storage. The encryption key derives from the admin password hash. `POST /api/settings/smtp/test` sends a test email to verify configuration. Rate-limited to one test per 30 seconds.
-
-**Handler integration:** The `Handler` struct holds a `Notifier` interface (implemented by `NotificationEngine`). `Notifier.Reload()` refreshes notification settings from the DB; `Notifier.ConfigureSMTP()` reinitializes the SMTP mailer.
-
-## Anthropic Cross-Quota Insights
-
-The Anthropic insights engine computes a cross-quota ratio between the 5-Hour and Weekly All-Model quotas:
-
-- **Key:** `ratio_5h_weekly`
-- **Calculation:** `rate_five_hour / rate_seven_day` (both in %/hr)
-- **Display:** "1:X" format (e.g., "1:24" means 1% weekly costs ~24% of 5-hr)
-- **Visibility:** Only shown when both quotas have active rates >= 0.01%/hr
-- **Purpose:** Lets users gauge sprint capacity relative to weekly budget
-
-The ratio uses the same burn rates already computed by `computeAnthropicRate()` for each quota's forecast card.
-
-## Development Rules
-
-### TDD Protocol (MANDATORY)
-
-1. Write the failing test FIRST
-2. Run the test, see it fail
-3. Write minimal implementation to pass
-4. Run the test, see it pass
-5. Refactor if tests stay green
-6. Test file lives next to source: `foo.go` -> `foo_test.go`
-7. Table-driven tests: `[]struct{ name, input, want }`
-8. Prefer real SQLite (`:memory:`) and `httptest.NewServer` over mocks
-9. Test names describe behavior: `TestTracker_DetectsQuotaReset_WhenRenewsAtChanges`
-10. Run with `-race` before every commit
-11. **Concurrency safety in tests:** Any variable shared between a `httptest.Server` handler goroutine and the test goroutine MUST use `sync/atomic` (for counters) or `sync.Mutex` (for slices/maps). Never use bare `int`/`[]T` — the `-race` detector WILL catch these intermittently in CI.
-
-### Security Rules (NON-NEGOTIABLE)
-
-- **NEVER commit `.env`** -- only `.env.example` with placeholder values
-- **NEVER log API keys** -- redact in all log output
-- **NEVER embed secrets in code** -- always load from env/flags
-- **NEVER commit database files** (`.db`, `.db-journal`, `.db-wal`, `.db-shm`)
-- **NEVER commit binaries** (`onwatch`, `*.exe`, `/bin/`, `/dist/`)
-- **ALWAYS use parameterized SQL** -- never string interpolation in queries
-- **ALWAYS use `subtle.ConstantTimeCompare`** for credential comparison
-- **ALWAYS set HTTP timeouts** -- 10s for API client, 5s for shutdown
-
-### Code Style
-
-- Follow `gofmt` / `govet` conventions
-- Use `internal/` to prevent external imports
-- Error wrapping: `fmt.Errorf("store.Save: %w", err)`
-- Structured logging: `slog.Info("poll complete", "requests", resp.Subscription.Requests)`
-- Constants over magic numbers
-
-### Pre-Commit Validation (MANDATORY)
-
-Before EVERY commit, run and verify these pass:
+**Pre-Commit:**
 ```bash
-go test -race -cover ./...    # All tests pass, zero races, zero failures
-go vet ./...                  # No static analysis issues
-```
-**Do NOT commit if any test fails or any race is detected.** Fix the issue first, then commit.
-
-### Git Hygiene
-
-- Conventional commits: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `perf:`
-- Atomic commits -- one logical change per commit
-- Always run `go test -race ./...` before committing
-- Never commit generated files, temp files, or IDE config
-
-### Release Process (MANDATORY for all releases)
-
-When creating a new release, always follow these steps in order:
-
-1. **Bump VERSION file** — Update `VERSION` to the new semver (e.g., `2.1.0`)
-2. **Build + test** — `go build -o onwatch .` and `go test -race ./...`
-3. **Cross-compile for all platforms** — `./app.sh --release` builds 5 binaries in `dist/`:
-   - `onwatch-darwin-arm64` (macOS Apple Silicon)
-   - `onwatch-darwin-amd64` (macOS Intel)
-   - `onwatch-linux-amd64`
-   - `onwatch-linux-arm64`
-   - `onwatch-windows-amd64.exe`
-4. **Capture screenshots** — Run `node tools/capture-screenshots.mjs` to auto-capture all 4 providers × light/dark (8 total) showing the top of the dashboard, saved in `docs/screenshots/`
-5. **Commit and tag** — `git commit`, then `git tag -a vX.Y.Z -m "..."`
-6. **Push commit + tag** — `git push origin main && git push origin vX.Y.Z`
-7. **Create GitHub release with `gh`** — Upload all 5 binaries from `dist/` and write a thorough release description:
-   ```bash
-   gh release create vX.Y.Z dist/* --title "..." --notes "..."
-   ```
-   The release notes should include: download table, what's new (with details), performance data, backend changes table, upgrade guide, and full changelog summary.
-
-**Never skip the cross-compile step.** Every release must include binaries for all 5 platforms.
-
-### Static Files
-
-Static assets live in `internal/web/static/` and are embedded into the binary via `embed.FS`. There is no root `static/` copy — one source of truth, zero drift.
-
-## Temporary Files & Working Directory
-
-**All temporary artifacts MUST go in `temp/`.** This directory is gitignored and serves as the single working area for non-committed files. Use the subdirectories to stay organized:
-
-```
-temp/
-├── screenshots/    # Test, debug, and UI verification screenshots
-├── evidence/       # Test evidence, QA captures, verification artifacts
-├── research/       # Market research, ICP analysis, naming, competitive analysis
-└── logs/           # Tool output, debug logs, network captures
+go test -race -cover ./... && go vet ./...  # Must pass
 ```
 
-| Subdirectory | What goes here | Examples |
-|--------------|----------------|---------|
-| `temp/screenshots/` | UI screenshots, layout checks, visual debugging | `test-login.png`, `debug-layout.png` |
-| `temp/evidence/` | Test run evidence, QA verification captures | `e2e-run-01.png`, `perf-results.txt` |
-| `temp/research/` | Research docs, analysis, working notes & drafts | `market-research.md`, `icp-analysis.md` |
-| `temp/logs/` | Log files from tools, debug sessions | `playwright.log`, `network-requests.log` |
+**Style:** `gofmt`/`govet`, error wrap `fmt.Errorf("x: %w", err)`, conventional commits (`feat:`/`fix:`/`test:`).
 
-**Rules:**
-- **NEVER** create temporary files or directories in the project root -- always use `temp/` subdirectories
-- **NEVER** create ad-hoc `test-*` files/directories at root -- use `temp/screenshots/` or `temp/evidence/`
-- The `docs/screenshots/` directory (committed) is for **release screenshots only** (captured via `tools/capture-screenshots.mjs`)
-- `temp/` is gitignored -- nothing in it will ever be committed
-- For one-off scratch files that don't fit a subdirectory, put them directly in `temp/`
-- Clean up `temp/` periodically; it's a working area, not an archive
+**Temp files:** All in `temp/` (gitignored). Release screenshots only in `docs/screenshots/`.
 
-## Database Schema
+## Anthropic Mappings (must match Go + JS)
+| Key | Display | Chart Color |
+|-----|---------|-------------|
+| `five_hour` | 5-Hour Limit | #D97757 |
+| `seven_day` | Weekly All-Model | #10B981 |
+| `seven_day_sonnet` | Weekly Sonnet | #3B82F6 |
+| `monthly_limit` | Monthly Limit | #A855F7 |
+| `extra_usage` | Extra Usage | #F59E0B |
 
-All tables created in `store.go:createTables()`:
+Dashboard thresholds (defaults, customizable via `/settings`): green (0-49%), yellow (50-79%), red (80-94%), critical (95%+).
 
-```sql
-PRAGMA journal_mode=WAL;
-PRAGMA synchronous=NORMAL;
-PRAGMA cache_size=-500;
-PRAGMA foreign_keys=ON;
-PRAGMA busy_timeout=5000;
-
--- Version tracking
-CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
-
--- Synthetic snapshots (append-only)
-CREATE TABLE IF NOT EXISTS quota_snapshots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider TEXT NOT NULL DEFAULT 'synthetic',
-    captured_at TEXT NOT NULL,
-    sub_limit REAL NOT NULL, sub_requests REAL NOT NULL, sub_renews_at TEXT NOT NULL,
-    search_limit REAL NOT NULL, search_requests REAL NOT NULL, search_renews_at TEXT NOT NULL,
-    tool_limit REAL NOT NULL, tool_requests REAL NOT NULL, tool_renews_at TEXT NOT NULL
-);
-
--- Reset cycles (one row per cycle per quota type)
-CREATE TABLE IF NOT EXISTS reset_cycles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider TEXT NOT NULL DEFAULT 'synthetic',
-    quota_type TEXT NOT NULL, cycle_start TEXT NOT NULL, cycle_end TEXT,
-    renews_at TEXT NOT NULL, peak_requests REAL NOT NULL DEFAULT 0,
-    total_delta REAL NOT NULL DEFAULT 0
-);
-
--- Agent sessions
-CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    provider TEXT NOT NULL DEFAULT 'synthetic',
-    started_at TEXT NOT NULL, ended_at TEXT, poll_interval INTEGER NOT NULL,
-    max_sub_requests REAL NOT NULL DEFAULT 0,
-    max_search_requests REAL NOT NULL DEFAULT 0,
-    max_tool_requests REAL NOT NULL DEFAULT 0,
-    snapshot_count INTEGER NOT NULL DEFAULT 0
-);
-
--- Key-value settings
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-
--- Session auth tokens (persisted across restarts)
-CREATE TABLE IF NOT EXISTS auth_tokens (token TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
-
--- User credentials (SHA-256 password hashes)
-CREATE TABLE IF NOT EXISTS users (
-    username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, updated_at TEXT NOT NULL
-);
-
--- Z.ai snapshots, hourly usage, reset cycles (see store.go for full schema)
-
--- Anthropic snapshots (normalized key-value for dynamic quotas)
-CREATE TABLE IF NOT EXISTS anthropic_snapshots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    captured_at TEXT NOT NULL, raw_json TEXT, quota_count INTEGER DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS anthropic_quota_values (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    snapshot_id INTEGER NOT NULL REFERENCES anthropic_snapshots(id),
-    quota_name TEXT NOT NULL, utilization REAL NOT NULL, resets_at TEXT
-);
-CREATE TABLE IF NOT EXISTS anthropic_reset_cycles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    quota_name TEXT NOT NULL, cycle_start TEXT NOT NULL, cycle_end TEXT,
-    resets_at TEXT NOT NULL, peak_utilization REAL NOT NULL DEFAULT 0,
-    total_delta REAL NOT NULL DEFAULT 0
-);
-```
-
-## Dashboard Design
-
-See `design-system/onwatch/MASTER.md` for design tokens and component specs.
-See `design-system/onwatch/pages/dashboard.md` for dashboard-specific layout.
-
-**Key design decisions:**
-- Material Design 3 with glassmorphism and dark + light mode
-- Three quota cards per provider (Synthetic/Z.ai), dynamic cards for Anthropic
-- Anthropic cards rendered dynamically from API response (variable quota count)
-- Color-coded thresholds: green (0-49%), yellow (50-79%), red (80-94%), critical (95%+)
-- Provider accent colors: Synthetic (primary), Z.ai (teal), Anthropic (coral #D97757)
-- Accessibility: color + icon + text for all status indicators
-- Live countdown updating every second
-- Provider-specific usage insights with cross-quota ratio analysis
-- Cycle Overview table: cross-quota correlation at peak usage points
-- Chart.js area chart with time range selector and custom crosshair plugin
-- Footer with version display and "Change Password" button
-- Password change modal with current/new/confirm fields
-- Settings page (`/settings`) for provider controls, notification thresholds, and SMTP configuration
-
-**Provider tab order:** Anthropic (default), Synthetic, Z.ai, All. Controlled by `AvailableProviders()` in `config.go`.
-
-**Anthropic display names** (must match in both Go `anthropic_types.go` and JS `app.js`):
-
-| API Key | Display Name |
-|---------|-------------|
-| `five_hour` | 5-Hour Limit |
-| `seven_day` | Weekly All-Model |
-| `seven_day_sonnet` | Weekly Sonnet |
-| `monthly_limit` | Monthly Limit |
-| `extra_usage` | Extra Usage |
-
-**Anthropic chart colors** (key-based map in `anthropicChartColorMap`, not index-based):
-
-| Quota | Color | Hex |
-|-------|-------|-----|
-| `five_hour` | Coral | `#D97757` |
-| `seven_day` | Emerald | `#10B981` |
-| `seven_day_sonnet` | Blue | `#3B82F6` |
-| `monthly_limit` | Violet | `#A855F7` |
-| `extra_usage` | Amber | `#F59E0B` |
-
-## Dashboard Performance
-
-Optimizations for fast initial load and efficient resource usage:
-
-- **Gzip middleware** — `compress/gzip` with `sync.Pool` at `gzip.BestSpeed` in `server.go`. Applied as outermost middleware to compress all responses.
-- **Cache headers** — `Cache-Control: public, max-age=31536000, immutable` on static assets, with `?v={{.Version}}` query param for cache busting on version bumps.
-- **Google Fonts** — Reduced from 11 to 5 weights: Inter (400, 500, 600) + JetBrains Mono (400, 500).
-- **Resource preloading** — `<link rel="preload">` for CSS/JS, `<link rel="preconnect">` for Google Fonts and jsDelivr CDN.
-- **Parallel API calls** — `Promise.all()` for above-fold data (current quotas + providers) on initial load.
-- **Lazy loading** — `IntersectionObserver` with 200px `rootMargin` for below-fold sections (cycles, sessions, cycle overview). Only fetched when scrolled into view.
-- **Deferred scripts** — Chart.js and app.js loaded with `defer` at end of `<body>`.
-
-## Quota Reset Tracking Logic
-
-Core intelligence of onWatch -- tracking usage across reset boundaries:
-
-1. **Detection:** Compare consecutive snapshots' `renewsAt` timestamps. If changed, a reset occurred. Each quota type tracked independently.
-2. **Cycle management:** On reset, close current cycle (set `cycle_end`), open new cycle. Record `peak_requests` and accumulate `total_delta`.
-3. **Usage calculation:** `delta = curr.requests - prev.requests` (if positive and same cycle). Negative delta means reset happened between polls.
-4. **Insights derivation:** Average usage per cycle, current rate, projected usage before reset, 30-day total.
+## Code References
+| Feature | Location |
+|---------|----------|
+| DB schema | `internal/store/store.go:createTables()` |
+| Self-update | `internal/update/updater.go` |
+| Token refresh | `internal/agent/anthropic_agent.go:SetTokenRefresh()` |
+| Auth/sessions | `internal/web/middleware.go` |
+| Notifications | `internal/notify/notify.go`, `smtp.go`, `crypto.go` |
+| Settings API | `internal/web/handlers.go` (GET/PUT `/api/settings`) |
+| Quota tracking | `internal/tracker/tracker.go` |
+| Design system | `design-system/onwatch/MASTER.md` |
