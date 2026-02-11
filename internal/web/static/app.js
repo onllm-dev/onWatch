@@ -90,6 +90,8 @@ const State = {
   hiddenInsights: new Set(),
   // Insights time range (1d / 7d / 30d)
   insightsRange: '7d',
+  // Anthropic session column names (sorted, max 3 — mirrors backend positional mapping)
+  anthropicSessionQuotas: [],
   // Cycle Overview state
   allOverviewData: [],
   overviewQuotaNames: [],
@@ -301,11 +303,12 @@ const renewalCategories = {
   anthropic: [
     { label: '5-Hour', groupBy: 'five_hour' },
     { label: 'Weekly', groupBy: 'seven_day' },
-    { label: 'Monthly', groupBy: 'monthly_limit' }
+    { label: 'Sonnet', groupBy: 'seven_day_sonnet' },
+    { label: 'Monthly', groupBy: 'monthly_limit' },
+    { label: 'Extra', groupBy: 'extra_usage' }
   ],
   synthetic: [
     { label: 'Subscription', groupBy: 'subscription' },
-    { label: 'Hourly', groupBy: 'search' },
     { label: 'Tool Calls', groupBy: 'toolcall' }
   ],
   zai: [
@@ -316,7 +319,6 @@ const renewalCategories = {
 
 const overviewQuotaDisplayNames = {
   subscription: 'Subscription',
-  search: 'Search',
   toolcall: 'Tool Calls',
   tokens: 'Tokens',
   time: 'Time',
@@ -481,7 +483,7 @@ function openAnthropicModal(quotaName, providerOverride) {
     <h3 class="modal-section-title">Recent Cycles</h3>
     <div class="table-wrapper">
       <table class="data-table" id="modal-cycles-table">
-        <thead><tr><th>Cycle</th><th>Duration</th><th>Peak</th><th>Total</th></tr></thead>
+        <thead><tr><th>Cycle</th><th>Duration</th><th>Peak %</th><th>Total %</th></tr></thead>
         <tbody id="modal-cycles-tbody"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -561,8 +563,8 @@ async function loadAnthropicModalCycles(quotaName) {
       return `<tr>
         <td>#${cycle.id}${isActive ? ' <span class="badge">Active</span>' : ''}</td>
         <td>${formatDurationMins(durationMins)}</td>
-        <td>${formatNumber(cycle.peakUtilization || 0)}</td>
-        <td>${formatNumber(cycle.totalDelta || 0)}</td>
+        <td>${formatNumber(cycle.peakUtilization || 0)}%</td>
+        <td>${formatNumber(cycle.totalDelta || 0)}%</td>
       </tr>`;
     }).join('');
   } catch (err) { /* modal cycles error — non-critical */ }
@@ -1002,6 +1004,11 @@ async function fetchCurrent() {
           } else {
             data.quotas.forEach(q => updateAnthropicCard(q));
           }
+          // Store sorted quota names for session table headers (mirrors backend positional mapping)
+          if (State.anthropicSessionQuotas.length === 0) {
+            State.anthropicSessionQuotas = data.quotas.map(q => q.name).sort().slice(0, 3);
+            updateAnthropicSessionHeaders();
+          }
         }
       } else if (provider === 'zai') {
         updateCard('tokensLimit', data.tokensLimit);
@@ -1052,6 +1059,39 @@ function populateAnthropicCycleSelect(quotas) {
       }).join('');
     }
   }
+}
+
+// ── Anthropic Session Table Header Updates ──
+
+// Mapping from sorted quota API keys to the 3 positional session columns (sub, search, tool)
+// Backend sorts ActiveQuotaNames() alphabetically and maps first 3 to these DB columns.
+const anthropicSessionSlots = ['sub', 'search', 'tool'];
+
+function updateAnthropicSessionHeaders() {
+  const quotas = State.anthropicSessionQuotas;
+  if (!quotas || quotas.length === 0) return;
+
+  for (let i = 0; i < 3; i++) {
+    const el = document.getElementById(`anth-session-col-${i}`);
+    if (el && quotas[i]) {
+      const shortName = anthropicDisplayNames[quotas[i]] || quotas[i];
+      // Remove trailing " Limit" for compact table headers
+      const label = shortName.replace(/ Limit$/, '');
+      el.innerHTML = `${label} % <span class="sort-arrow"></span>`;
+    }
+  }
+}
+
+// Get the display label for Anthropic session column by positional index (0, 1, 2)
+function getAnthropicSessionLabel(idx) {
+  const quotas = State.anthropicSessionQuotas;
+  if (quotas && quotas[idx]) {
+    const name = anthropicDisplayNames[quotas[idx]] || quotas[idx];
+    return name.replace(/ Limit$/, '');
+  }
+  // Fallback labels if quota data hasn't loaded yet
+  const fallbacks = ['5-Hour', 'Weekly', 'Weekly Sonnet'];
+  return fallbacks[idx] || `Quota ${idx + 1}`;
 }
 
 // ── Deep Insights (Interactive Cards) ──
@@ -1893,8 +1933,15 @@ function renderCyclesTable() {
   const isBothCycles = getCurrentProvider() === 'both';
   const cycleColSpan = isBothCycles ? 8 : 7;
 
+  // Determine if current cycles are Anthropic (values are percentages, not raw counts)
+  const cycleSelect = document.getElementById('cycle-quota-select');
+  const currentCycleType = cycleSelect ? cycleSelect.value : '';
+  const anthropicCycleTypes = ['five_hour', 'seven_day', 'seven_day_sonnet', 'monthly_limit', 'extra_usage'];
+  const isCyclePercent = getCurrentProvider() === 'anthropic' || anthropicCycleTypes.includes(currentCycleType);
+  const cycleSuffix = isCyclePercent ? '%' : '';
+
   if (total === 0) {
-    tbody.innerHTML = `<tr><td colspan="${cycleColSpan}" class="empty-state">No cycle data in this range.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${cycleColSpan}" class="empty-state">No polling data in this range.</td></tr>`;
   } else {
     tbody.innerHTML = pageData.map(row => {
       const d = row._display;
@@ -1905,9 +1952,9 @@ function renderCyclesTable() {
         <td>${d.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
         <td>${row.latestEnd ? new Date(row.latestEnd).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
         <td>${d.durationStr}</td>
-        <td>${formatNumber(row.peakRequests)}</td>
-        <td>${formatNumber(row.totalDelta)}</td>
-        <td>${d.durationMins > 0 ? formatNumber(d.rate) + '/hr' : '-'}</td>
+        <td>${formatNumber(row.peakRequests)}${cycleSuffix}</td>
+        <td>${formatNumber(row.totalDelta)}${cycleSuffix}</td>
+        <td>${d.durationMins > 0 ? formatNumber(d.rate) + cycleSuffix + '/hr' : '-'}</td>
       </tr>`;
     }).join('');
   }
@@ -1940,6 +1987,10 @@ async function fetchSessions() {
     }
     State.sessionsPage = 1;
     renderSessionsTable();
+    // Update Anthropic session headers with actual quota names after render
+    if (getCurrentProvider() === 'anthropic') {
+      updateAnthropicSessionHeaders();
+    }
   } catch (err) {
     // sessions fetch error — table shows empty state
   }
@@ -2066,7 +2117,11 @@ function renderSessionsTable() {
       return mainRow + detailRow;
     }).join('');
   } else if (isAnthropic) {
-    // Anthropic: show Session, Start, End, Duration, 5-Hour %, Weekly %, Weekly Sonnet %
+    // Anthropic: show Session, Start, End, Duration, + dynamic quota columns (max 3)
+    // Labels come from State.anthropicSessionQuotas (populated on first current-data fetch)
+    const lbl0 = getAnthropicSessionLabel(0);
+    const lbl1 = getAnthropicSessionLabel(1);
+    const lbl2 = getAnthropicSessionLabel(2);
     tbody.innerHTML = pageData.map(session => {
       const c = session._computed;
       const isExpanded = State.expandedSessionId === session.id;
@@ -2089,15 +2144,15 @@ function renderSessionsTable() {
           <div class="session-detail-content">
             <div class="session-detail-grid">
               <div class="detail-item">
-                <span class="detail-label">5-Hour</span>
+                <span class="detail-label">${lbl0}</span>
                 <span class="detail-value">${fmtPct(session.startSubRequests)} &rarr; ${fmtPct(session.maxSubRequests)} (${fmtDelta(session.startSubRequests, session.maxSubRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Weekly</span>
+                <span class="detail-label">${lbl1}</span>
                 <span class="detail-value">${fmtPct(session.startSearchRequests)} &rarr; ${fmtPct(session.maxSearchRequests)} (${fmtDelta(session.startSearchRequests, session.maxSearchRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Weekly Sonnet</span>
+                <span class="detail-label">${lbl2}</span>
                 <span class="detail-value">${fmtPct(session.startToolRequests)} &rarr; ${fmtPct(session.maxToolRequests)} (${fmtDelta(session.startToolRequests, session.maxToolRequests)})</span>
               </div>
               <div class="detail-item">
@@ -2591,6 +2646,8 @@ function renderOverviewTable() {
   if (!thead || !tbody) return;
 
   const quotaNames = State.overviewQuotaNames;
+  const overviewProv = getOverviewProvider();
+  const usePercent = overviewProv === 'anthropic';
 
   // Build dynamic header
   let headerHtml = `
@@ -2599,16 +2656,14 @@ function renderOverviewTable() {
       <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
       <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
       <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-      <th data-sort-key="totalDelta" role="button" tabindex="0">Total Delta <span class="sort-arrow"></span></th>`;
-
-  const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic';
+      <th data-sort-key="totalDelta" role="button" tabindex="0">Total Delta${usePercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
 
   quotaNames.forEach(qn => {
     const isPrimary = qn === State.overviewGroupBy;
     const displayName = overviewQuotaDisplayNames[qn] || qn;
     const suffix = usePercent ? ' %' : '';
-    headerHtml += `<th data-sort-key="cq_${qn}" role="button" tabindex="0" ${isPrimary ? 'class="overview-primary-col"' : ''}>${displayName}${suffix} <span class="sort-arrow"></span></th>`;
+    const maxIndicator = isPrimary ? ' Max' : '';
+    headerHtml += `<th data-sort-key="cq_${qn}" role="button" tabindex="0" ${isPrimary ? 'class="overview-primary-col"' : ''}>${displayName}${maxIndicator}${suffix} <span class="sort-arrow"></span></th>`;
   });
   headerHtml += '</tr>';
   thead.innerHTML = headerHtml;
@@ -2671,7 +2726,7 @@ function renderOverviewTable() {
         <td>${start ? formatDateTime(start) : '--'}</td>
         <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>
         <td>${duration}</td>
-        <td>${typeof row.totalDelta === 'number' ? row.totalDelta.toFixed(1) : '--'}</td>`;
+        <td>${typeof row.totalDelta === 'number' ? row.totalDelta.toFixed(1) + (usePercent ? '%' : '') : '--'}</td>`;
 
       quotaNames.forEach(qn => {
         const pct = getCrossQuotaPercent(row, qn);
@@ -3331,6 +3386,23 @@ function setupPushNotifications() {
   var testResult = document.getElementById('push-test-result');
 
   if (!statusLabel) return;
+
+  // Check for HTTPS - required for Push API on mobile devices
+  // Note: window.isSecureContext is true for localhost over HTTP, but Android Chrome
+  // still requires actual HTTPS for push notifications to work reliably
+  var isHttps = location.protocol === 'https:';
+  if (!isHttps) {
+    statusLabel.textContent = 'Push notifications require HTTPS';
+    if (channelToggle) { channelToggle.disabled = true; }
+    if (subscribeBtn) { subscribeBtn.disabled = true; subscribeBtn.hidden = true; }
+    // Add warning message below status
+    var warning = document.createElement('div');
+    warning.className = 'push-http-warning';
+    warning.textContent = 'Requires HTTPS connection. Push notifications are unavailable over HTTP.';
+    warning.style.cssText = 'color: #dc2626; font-size: 11px; margin-top: 4px;';
+    statusLabel.parentNode.appendChild(warning);
+    return;
+  }
 
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     statusLabel.textContent = 'Push notifications not supported in this browser';

@@ -391,12 +391,14 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 		}
 
 		// Find the snapshot where the primary quota peaked within this cycle
+		// Note: cycle_end is the timestamp when reset was detected, which is actually
+		// the first snapshot of the NEW cycle, so we use < instead of <= to exclude it
 		var snapshotID int64
 		var capturedAt string
 		err := s.db.QueryRow(
 			`SELECT s.id, s.captured_at FROM anthropic_snapshots s
 			JOIN anthropic_quota_values qv ON qv.snapshot_id = s.id
-			WHERE qv.quota_name = ? AND s.captured_at BETWEEN ? AND ?
+			WHERE qv.quota_name = ? AND s.captured_at >= ? AND s.captured_at < ?
 			ORDER BY qv.utilization DESC LIMIT 1`,
 			groupBy,
 			c.CycleStart.Format(time.RFC3339Nano),

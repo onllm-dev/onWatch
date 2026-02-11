@@ -484,7 +484,7 @@ func TestIntegration_GracefulShutdown(t *testing.T) {
 
 	// Create web server
 	handler := makeHandler(t, db, tr)
-	webServer := web.NewServer(0, handler, discardLogger(), "admin", "testhash")
+	webServer := web.NewServer(0, handler, discardLogger(), "admin", "testhash", "")
 
 	// Start web server in background
 	go webServer.Start()

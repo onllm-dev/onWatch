@@ -176,13 +176,20 @@ func gzipHandler(next http.Handler) http.Handler {
 	})
 }
 
-// csrfMiddleware requires custom header on state-changing requests
+// csrfMiddleware requires custom header on state-changing requests.
+// Form-based endpoints (/login, /logout) are exempt since browsers
+// cannot add custom headers to standard form submissions.
 func csrfMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" && r.Method != "HEAD" {
-			if r.Header.Get("X-Requested-With") == "" {
-				http.Error(w, "missing required header", http.StatusForbidden)
-				return
+			// Exempt form-based auth endpoints from CSRF header check.
+			// These are protected by session cookies with SameSite=Strict instead.
+			path := r.URL.Path
+			if path != "/login" && path != "/logout" {
+				if r.Header.Get("X-Requested-With") == "" {
+					http.Error(w, "missing required header", http.StatusForbidden)
+					return
+				}
 			}
 		}
 		next.ServeHTTP(w, r)

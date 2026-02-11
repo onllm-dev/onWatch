@@ -286,6 +286,8 @@ func TestServer_RequiresCSRFHeader_OnPost(t *testing.T) {
 		{"PUT with header", "PUT", "/api/settings", true, false},
 		{"DELETE without header", "DELETE", "/api/push/subscribe", false, true},
 		{"DELETE with header", "DELETE", "/api/push/subscribe", true, false},
+		{"POST /login without header", "POST", "/login", false, false},   // exempt
+		{"POST /logout without header", "POST", "/logout", false, false}, // exempt
 	}
 
 	for _, tt := range tests {
