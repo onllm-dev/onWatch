@@ -434,7 +434,34 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 
 		row.PeakTime, _ = time.Parse(time.RFC3339Nano, capturedAt)
 
-		// Load all quota values from that snapshot
+		// Get start values from first snapshot of cycle (for delta calculation)
+		startValues := make(map[string]float64)
+		var firstSnapshotID int64
+		err = s.db.QueryRow(
+			`SELECT id FROM anthropic_snapshots
+			WHERE captured_at >= ? AND captured_at < ?
+			ORDER BY captured_at ASC LIMIT 1`,
+			c.CycleStart.Format(time.RFC3339Nano),
+			endBoundary.Format(time.RFC3339Nano),
+		).Scan(&firstSnapshotID)
+		if err == nil {
+			startRows, err := s.db.Query(
+				`SELECT quota_name, utilization FROM anthropic_quota_values WHERE snapshot_id = ?`,
+				firstSnapshotID,
+			)
+			if err == nil {
+				for startRows.Next() {
+					var name string
+					var util float64
+					if startRows.Scan(&name, &util) == nil {
+						startValues[name] = util
+					}
+				}
+				startRows.Close()
+			}
+		}
+
+		// Load all quota values from peak snapshot
 		qRows, err := s.db.Query(
 			`SELECT quota_name, utilization FROM anthropic_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
 			snapshotID,
@@ -449,6 +476,8 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 				return nil, fmt.Errorf("store.QueryAnthropicCycleOverview: scan quota: %w", err)
 			}
 			entry.Value = entry.Percent // utilization is already a percentage
+			entry.StartPercent = startValues[entry.Name]
+			entry.Delta = entry.Percent - entry.StartPercent
 			row.CrossQuotas = append(row.CrossQuotas, entry)
 		}
 		qRows.Close()
