@@ -3876,10 +3876,12 @@ func cycleOverviewRowsToJSON(rows []store.CycleOverviewRow) []map[string]interfa
 		crossQuotas := make([]map[string]interface{}, 0, len(row.CrossQuotas))
 		for _, cq := range row.CrossQuotas {
 			crossQuotas = append(crossQuotas, map[string]interface{}{
-				"name":    cq.Name,
-				"value":   cq.Value,
-				"limit":   cq.Limit,
-				"percent": cq.Percent,
+				"name":         cq.Name,
+				"value":        cq.Value,
+				"limit":        cq.Limit,
+				"percent":      cq.Percent,
+				"startPercent": cq.StartPercent,
+				"delta":        cq.Delta,
 			})
 		}
 		entry["crossQuotas"] = crossQuotas

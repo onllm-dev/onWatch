@@ -70,10 +70,12 @@ type CycleOverviewRow struct {
 
 // CrossQuotaEntry holds a single quota's value at a given point in time.
 type CrossQuotaEntry struct {
-	Name    string
-	Value   float64
-	Limit   float64 // 0 for Anthropic (utilization is already %)
-	Percent float64
+	Name         string
+	Value        float64
+	Limit        float64 // 0 for Anthropic (utilization is already %)
+	Percent      float64
+	StartPercent float64 // Value at cycle start (for delta calculation)
+	Delta        float64 // Percent - StartPercent
 }
 
 // New creates a new Store with the given database path

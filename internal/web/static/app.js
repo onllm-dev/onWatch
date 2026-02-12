@@ -1882,11 +1882,12 @@ function renderCyclesTable() {
 
       quotaNames.forEach(qn => {
         const pct = getCrossQuotaPercent(row, qn);
+        const delta = getCrossQuotaDelta(row, qn);
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
           if (usePercent) {
-            cellVal = pct.toFixed(1) + '%';
+            cellVal = fmtPctWithDelta(pct, delta);
           } else {
             const cq = getCrossQuotaValue(row, qn);
             cellVal = cq ? formatNumber(cq.value) : pct.toFixed(1) + '%';
@@ -2683,12 +2684,13 @@ function renderOverviewTable() {
 
       quotaNames.forEach(qn => {
         const pct = getCrossQuotaPercent(row, qn);
+        const delta = getCrossQuotaDelta(row, qn);
         const isPrimary = qn === State.overviewGroupBy;
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
           if (usePercent) {
-            cellVal = pct.toFixed(1) + '%';
+            cellVal = fmtPctWithDelta(pct, delta);
           } else {
             const cq = getCrossQuotaValue(row, qn);
             cellVal = cq ? formatNumber(cq.value) : pct.toFixed(1) + '%';
@@ -2721,9 +2723,24 @@ function getCrossQuotaPercent(row, quotaName) {
   return entry ? entry.percent : -1;
 }
 
+function getCrossQuotaDelta(row, quotaName) {
+  if (!row.crossQuotas || row.crossQuotas.length === 0) return null;
+  const entry = row.crossQuotas.find(cq => cq.name === quotaName);
+  return entry ? entry.delta : null;
+}
+
 function getCrossQuotaValue(row, quotaName) {
   if (!row.crossQuotas || row.crossQuotas.length === 0) return null;
   return row.crossQuotas.find(cq => cq.name === quotaName) || null;
+}
+
+// Format value with delta inline: "24.0% (+12.3%)"
+function fmtPctWithDelta(pct, delta) {
+  if (pct == null || pct < 0) return '--';
+  const pctStr = pct.toFixed(1) + '%';
+  if (delta == null) return pctStr;
+  const deltaStr = delta >= 0 ? `+${delta.toFixed(1)}%` : `${delta.toFixed(1)}%`;
+  return `${pctStr} <span class="delta">(${deltaStr})</span>`;
 }
 
 function getOverviewProvider() {
