@@ -69,7 +69,7 @@ ONWATCH_ADMIN_USER=admin
 ONWATCH_ADMIN_PASS=changeme
 ```
 
-At least one provider key is required. Configure any combination to track them in parallel. Anthropic tokens are auto-detected from Claude Code credentials (macOS Keychain, Linux keyring, or `~/.claude/.credentials.json`). Copilot tokens require a GitHub Personal Access Token (classic) with the `copilot` scope.
+At least one provider key is required. Configure any combination to track them in parallel. Anthropic tokens are auto-detected from Claude Code credentials (macOS Keychain, Linux keyring, or `~/.claude/.credentials.json`). Copilot tokens require a GitHub Personal Access Token (classic) with the `copilot` scope — see [Copilot Setup Guide](docs/COPILOT_SETUP.md) for step-by-step instructions.
 
 ### Run
 
