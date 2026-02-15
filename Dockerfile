@@ -46,7 +46,7 @@ ARG VERSION=dev
 
 # Metadata labels
 LABEL maintainer="onllm-dev"
-LABEL description="onWatch - Lightweight API quota tracker for Anthropic, Synthetic, and Z.ai"
+LABEL description="onWatch - Lightweight API quota tracker for Anthropic, Synthetic, Z.ai, and GitHub Copilot (Beta)"
 LABEL version="${VERSION:-dev}"
 
 # Set working directory

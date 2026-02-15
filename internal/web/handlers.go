@@ -54,6 +54,7 @@ type Handler struct {
 	tracker          *tracker.Tracker
 	zaiTracker       *tracker.ZaiTracker
 	anthropicTracker *tracker.AnthropicTracker
+	copilotTracker   *tracker.CopilotTracker
 	updater          *update.Updater
 	notifier         Notifier
 	logger           *slog.Logger
@@ -121,6 +122,11 @@ func (h *Handler) SetVersion(v string) {
 // SetAnthropicTracker sets the Anthropic tracker for usage summary enrichment.
 func (h *Handler) SetAnthropicTracker(t *tracker.AnthropicTracker) {
 	h.anthropicTracker = t
+}
+
+// SetCopilotTracker sets the Copilot tracker for usage summary enrichment.
+func (h *Handler) SetCopilotTracker(t *tracker.CopilotTracker) {
+	h.copilotTracker = t
 }
 
 // SetUpdater sets the updater for self-update functionality.
@@ -413,12 +419,14 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasAnthropic := h.config != nil && h.config.HasProvider("anthropic")
+	hasCopilot := h.config != nil && h.config.HasProvider("copilot")
 	data := map[string]interface{}{
 		"Title":           "Dashboard",
 		"Providers":       providers,
 		"CurrentProvider": currentProvider,
 		"Version":         h.version,
 		"HasAnthropic":    hasAnthropic,
+		"HasCopilot":      hasCopilot,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -446,6 +454,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentSynthetic(w, r)
 	case "anthropic":
 		h.currentAnthropic(w, r)
+	case "copilot":
+		h.currentCopilot(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -462,6 +472,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("anthropic") {
 		response["anthropic"] = h.buildAnthropicCurrent()
+	}
+	if h.config.HasProvider("copilot") {
+		response["copilot"] = h.buildCopilotCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -789,6 +802,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historySynthetic(w, r)
 	case "anthropic":
 		h.historyAnthropic(w, r)
+	case "copilot":
+		h.historyCopilot(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -889,6 +904,30 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				anthData = append(anthData, entry)
 			}
 			response["anthropic"] = anthData
+		}
+	}
+
+	if h.config.HasProvider("copilot") && h.store != nil {
+		snapshots, err := h.store.QueryCopilotRange(start, now)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			copData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+				}
+				for _, q := range snap.Quotas {
+					if q.Entitlement > 0 {
+						entry[q.Name] = float64(q.Entitlement-q.Remaining) / float64(q.Entitlement) * 100
+					}
+				}
+				copData = append(copData, entry)
+			}
+			response["copilot"] = copData
 		}
 	}
 
@@ -1025,6 +1064,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesSynthetic(w, r)
 	case "anthropic":
 		h.cyclesAnthropic(w, r)
+	case "copilot":
+		h.cyclesCopilot(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1249,6 +1290,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summarySynthetic(w, r)
 	case "anthropic":
 		h.summaryAnthropic(w, r)
+	case "copilot":
+		h.summaryCopilot(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1281,6 +1324,9 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("anthropic") {
 		response["anthropic"] = h.buildAnthropicSummaryMap()
+	}
+	if h.config.HasProvider("copilot") {
+		response["copilot"] = h.buildCopilotSummaryMap()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -1582,6 +1628,9 @@ func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("anthropic") {
 		response["anthropic"] = buildSessionList("anthropic")
 	}
+	if h.config.HasProvider("copilot") {
+		response["copilot"] = buildSessionList("copilot")
+	}
 
 	respondJSON(w, http.StatusOK, response)
 }
@@ -1673,8 +1722,9 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsSynthetic(w, r, rangeDur)
 	case "anthropic":
 		h.insightsAnthropic(w, r, rangeDur)
+	case "copilot":
+		h.insightsCopilot(w, r, rangeDur)
 	default:
-		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
 }
 
@@ -1691,6 +1741,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("anthropic") {
 		response["anthropic"] = h.buildAnthropicInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("copilot") {
+		response["copilot"] = h.buildCopilotInsights(hidden, rangeDur)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -3664,6 +3717,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewSynthetic(w, r)
 	case "anthropic":
 		h.cycleOverviewAnthropic(w, r)
+	case "copilot":
+		h.cycleOverviewCopilot(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3852,6 +3907,33 @@ func (h *Handler) cycleOverviewBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.config.HasProvider("copilot") {
+		groupBy := r.URL.Query().Get("copilotGroupBy")
+		if groupBy == "" {
+			groupBy = "premium_interactions"
+		}
+		if rows, err := h.store.QueryCopilotCycleOverview(groupBy, limit); err == nil {
+			quotaNames := []string{}
+			for _, row := range rows {
+				if len(row.CrossQuotas) > 0 {
+					for _, cq := range row.CrossQuotas {
+						quotaNames = append(quotaNames, cq.Name)
+					}
+					break
+				}
+			}
+			if len(quotaNames) == 0 {
+				quotaNames = []string{"premium_interactions", "chat", "completions"}
+			}
+			response["copilot"] = map[string]interface{}{
+				"groupBy":    groupBy,
+				"provider":   "copilot",
+				"quotaNames": quotaNames,
+				"cycles":     cycleOverviewRowsToJSON(rows),
+			}
+		}
+	}
+
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -3888,4 +3970,428 @@ func cycleOverviewRowsToJSON(rows []store.CycleOverviewRow) []map[string]interfa
 		result = append(result, entry)
 	}
 	return result
+}
+
+// ── Copilot Handlers ──
+
+// currentCopilot returns current Copilot quota status.
+func (h *Handler) currentCopilot(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildCopilotCurrent())
+}
+
+// buildCopilotCurrent builds the Copilot current quota response map.
+func (h *Handler) buildCopilotCurrent() map[string]interface{} {
+	now := time.Now().UTC()
+	response := map[string]interface{}{
+		"capturedAt": now.Format(time.RFC3339),
+		"quotas":     []interface{}{},
+	}
+
+	if h.store == nil {
+		return response
+	}
+
+	latest, err := h.store.QueryLatestCopilot()
+	if err != nil {
+		h.logger.Error("failed to query latest Copilot snapshot", "error", err)
+		return response
+	}
+
+	if latest == nil {
+		return response
+	}
+
+	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
+	if latest.CopilotPlan != "" {
+		response["copilotPlan"] = latest.CopilotPlan
+	}
+
+	var quotas []map[string]interface{}
+	for _, q := range latest.Quotas {
+		usagePercent := 0.0
+		if q.Entitlement > 0 {
+			usagePercent = float64(q.Entitlement-q.Remaining) / float64(q.Entitlement) * 100
+		}
+		qMap := map[string]interface{}{
+			"name":             q.Name,
+			"displayName":      api.CopilotDisplayName(q.Name),
+			"entitlement":      q.Entitlement,
+			"remaining":        q.Remaining,
+			"percentRemaining": q.PercentRemaining,
+			"usagePercent":     usagePercent,
+			"unlimited":        q.Unlimited,
+			"status":           copilotUsageStatus(usagePercent, q.Unlimited),
+		}
+		if latest.ResetDate != nil {
+			timeUntilReset := time.Until(*latest.ResetDate)
+			qMap["resetDate"] = latest.ResetDate.Format(time.RFC3339)
+			qMap["timeUntilReset"] = formatDuration(timeUntilReset)
+			qMap["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+		}
+		// Enrich with tracker data
+		if h.copilotTracker != nil {
+			if summary, err := h.copilotTracker.UsageSummary(q.Name); err == nil && summary != nil {
+				qMap["currentRate"] = summary.CurrentRate
+				qMap["projectedUsage"] = summary.ProjectedUsage
+			}
+		}
+		quotas = append(quotas, qMap)
+	}
+	response["quotas"] = quotas
+	return response
+}
+
+// copilotUsageStatus returns a status string based on usage percentage.
+func copilotUsageStatus(usagePercent float64, unlimited bool) string {
+	if unlimited {
+		return "healthy"
+	}
+	switch {
+	case usagePercent >= 95:
+		return "critical"
+	case usagePercent >= 80:
+		return "danger"
+	case usagePercent >= 50:
+		return "warning"
+	default:
+		return "healthy"
+	}
+}
+
+// historyCopilot returns Copilot usage history.
+func (h *Handler) historyCopilot(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+	rangeStr := r.URL.Query().Get("range")
+	duration, err := parseTimeRange(rangeStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	start := now.Add(-duration)
+	snapshots, err := h.store.QueryCopilotRange(start, now)
+	if err != nil {
+		h.logger.Error("failed to query Copilot history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query history")
+		return
+	}
+	step := downsampleStep(len(snapshots), maxChartPoints)
+	last := len(snapshots) - 1
+	response := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+	for i, snap := range snapshots {
+		if step > 1 && i != 0 && i != last && i%step != 0 {
+			continue
+		}
+		entry := map[string]interface{}{
+			"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+		}
+		for _, q := range snap.Quotas {
+			if q.Entitlement > 0 {
+				entry[q.Name] = float64(q.Entitlement-q.Remaining) / float64(q.Entitlement) * 100
+			}
+		}
+		response = append(response, entry)
+	}
+	respondJSON(w, http.StatusOK, response)
+}
+
+// cyclesCopilot returns per-minute Copilot snapshot data as cycle-shaped rows.
+func (h *Handler) cyclesCopilot(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+	quotaName := r.URL.Query().Get("type")
+	if quotaName == "" {
+		quotaName = "premium_interactions"
+	}
+
+	rangeDur := parseInsightsRange(r.URL.Query().Get("range"))
+	since := time.Now().UTC().Add(-rangeDur)
+
+	points, err := h.store.QueryCopilotUsageSeries(quotaName, since)
+	if err != nil {
+		h.logger.Error("failed to query Copilot usage series", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycles")
+		return
+	}
+
+	response := make([]map[string]interface{}, 0, len(points))
+	for i, pt := range points {
+		usagePercent := 0.0
+		if pt.Entitlement > 0 {
+			usagePercent = float64(pt.Entitlement-pt.Remaining) / float64(pt.Entitlement) * 100
+		}
+		var delta float64
+		if i > 0 {
+			prevPercent := 0.0
+			if points[i-1].Entitlement > 0 {
+				prevPercent = float64(points[i-1].Entitlement-points[i-1].Remaining) / float64(points[i-1].Entitlement) * 100
+			}
+			d := usagePercent - prevPercent
+			if d > 0 {
+				delta = d
+			}
+		}
+		var cycleEnd interface{}
+		if i < len(points)-1 {
+			cycleEnd = points[i+1].CapturedAt.Format(time.RFC3339)
+		}
+		response = append(response, map[string]interface{}{
+			"id":              i + 1,
+			"quotaName":       quotaName,
+			"cycleStart":      pt.CapturedAt.Format(time.RFC3339),
+			"cycleEnd":        cycleEnd,
+			"peakUtilization": usagePercent,
+			"totalDelta":      delta,
+		})
+	}
+
+	// Reverse to DESC order (newest first)
+	for i, j := 0, len(response)-1; i < j; i, j = i+1, j-1 {
+		response[i], response[j] = response[j], response[i]
+	}
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+// copilotCycleToMap converts a CopilotResetCycle to a JSON-friendly map.
+func copilotCycleToMap(cycle *store.CopilotResetCycle) map[string]interface{} {
+	result := map[string]interface{}{
+		"id":         cycle.ID,
+		"quotaName":  cycle.QuotaName,
+		"cycleStart": cycle.CycleStart.Format(time.RFC3339),
+		"cycleEnd":   nil,
+		"peakUsed":   cycle.PeakUsed,
+		"totalDelta": cycle.TotalDelta,
+	}
+	if cycle.CycleEnd != nil {
+		result["cycleEnd"] = cycle.CycleEnd.Format(time.RFC3339)
+	}
+	if cycle.ResetDate != nil {
+		result["resetDate"] = cycle.ResetDate.Format(time.RFC3339)
+	}
+	return result
+}
+
+// summaryCopilot returns Copilot usage summary.
+func (h *Handler) summaryCopilot(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildCopilotSummaryMap())
+}
+
+// buildCopilotSummaryMap builds the Copilot summary response.
+func (h *Handler) buildCopilotSummaryMap() map[string]interface{} {
+	response := map[string]interface{}{}
+	if h.copilotTracker != nil && h.store != nil {
+		latest, err := h.store.QueryLatestCopilot()
+		if err == nil && latest != nil {
+			for _, q := range latest.Quotas {
+				if summary, err := h.copilotTracker.UsageSummary(q.Name); err == nil && summary != nil {
+					response[q.Name] = buildCopilotSummaryResponse(summary)
+				}
+			}
+		}
+	}
+	return response
+}
+
+// buildCopilotSummaryResponse builds a summary response from CopilotTracker data.
+func buildCopilotSummaryResponse(summary *tracker.CopilotSummary) map[string]interface{} {
+	result := map[string]interface{}{
+		"quotaName":        summary.QuotaName,
+		"entitlement":      summary.Entitlement,
+		"currentUsed":      summary.CurrentUsed,
+		"currentRemaining": summary.CurrentRemaining,
+		"usagePercent":     summary.UsagePercent,
+		"unlimited":        summary.Unlimited,
+		"currentRate":      summary.CurrentRate,
+		"projectedUsage":   summary.ProjectedUsage,
+		"completedCycles":  summary.CompletedCycles,
+		"avgPerCycle":      summary.AvgPerCycle,
+		"peakCycle":        summary.PeakCycle,
+		"totalTracked":     summary.TotalTracked,
+		"trackingSince":    nil,
+	}
+	if summary.ResetDate != nil {
+		result["resetDate"] = summary.ResetDate.Format(time.RFC3339)
+		result["timeUntilReset"] = formatDuration(summary.TimeUntilReset)
+	}
+	if !summary.TrackingSince.IsZero() {
+		result["trackingSince"] = summary.TrackingSince.Format(time.RFC3339)
+	}
+	return result
+}
+
+// insightsCopilot returns Copilot deep analytics.
+func (h *Handler) insightsCopilot(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
+	hidden := h.getHiddenInsightKeys()
+	respondJSON(w, http.StatusOK, h.buildCopilotInsights(hidden, rangeDur))
+}
+
+// buildCopilotInsights builds the Copilot insights response.
+func (h *Handler) buildCopilotInsights(hidden map[string]bool, rangeDur time.Duration) insightsResponse {
+	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
+	if h.store == nil {
+		return resp
+	}
+	latest, err := h.store.QueryLatestCopilot()
+	if err != nil || latest == nil {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "info",
+			Title: "Getting Started",
+			Desc:  "Keep onWatch running to collect Copilot usage data. Insights will appear after a few snapshots.",
+		})
+		return resp
+	}
+
+	// Collect summaries for all quotas
+	quotaNames, _ := h.store.QueryAllCopilotQuotaNames()
+	summaries := map[string]*tracker.CopilotSummary{}
+	if h.copilotTracker != nil {
+		for _, name := range quotaNames {
+			if s, err := h.copilotTracker.UsageSummary(name); err == nil && s != nil {
+				summaries[name] = s
+			}
+		}
+	}
+
+	// ═══ Stats Cards ═══
+	for _, q := range latest.Quotas {
+		if q.Unlimited {
+			resp.Stats = append(resp.Stats, insightStat{
+				Value: "∞",
+				Label: api.CopilotDisplayName(q.Name),
+			})
+			continue
+		}
+		usagePercent := 0.0
+		if q.Entitlement > 0 {
+			usagePercent = float64(q.Entitlement-q.Remaining) / float64(q.Entitlement) * 100
+		}
+		resp.Stats = append(resp.Stats, insightStat{
+			Value:    fmt.Sprintf("%.0f%%", usagePercent),
+			Label:    api.CopilotDisplayName(q.Name),
+			Sublabel: fmt.Sprintf("%d / %d used", q.Entitlement-q.Remaining, q.Entitlement),
+		})
+	}
+
+	// ═══ Deep Insights ═══
+
+	// 1. Burn Rate & Forecast per non-unlimited quota
+	for _, q := range latest.Quotas {
+		if q.Unlimited || q.Entitlement == 0 {
+			continue
+		}
+		key := fmt.Sprintf("forecast_%s", q.Name)
+		if hidden[key] {
+			continue
+		}
+		s := summaries[q.Name]
+		usagePercent := float64(q.Entitlement-q.Remaining) / float64(q.Entitlement) * 100
+
+		if s != nil && s.CurrentRate > 0 {
+			resp.Insights = append(resp.Insights, insightItem{
+				Key: key, Type: "forecast", Severity: copilotInsightSeverity(usagePercent),
+				Title:  fmt.Sprintf("%s Burn Rate", api.CopilotDisplayName(q.Name)),
+				Metric: fmt.Sprintf("%.1f / hr", s.CurrentRate),
+				Desc:   fmt.Sprintf("Currently at %.0f%% usage (%d/%d). At this rate, projected to use %d by reset.", usagePercent, q.Entitlement-q.Remaining, q.Entitlement, s.ProjectedUsage),
+			})
+		} else {
+			resp.Insights = append(resp.Insights, insightItem{
+				Key: key, Type: "current", Severity: copilotInsightSeverity(usagePercent),
+				Title:  fmt.Sprintf("%s Usage", api.CopilotDisplayName(q.Name)),
+				Metric: fmt.Sprintf("%.0f%%", usagePercent),
+				Desc:   fmt.Sprintf("%d of %d used. Need more data to estimate burn rate.", q.Entitlement-q.Remaining, q.Entitlement),
+			})
+		}
+	}
+
+	// 2. Reset countdown
+	if !hidden["reset_countdown"] && latest.ResetDate != nil {
+		timeLeft := time.Until(*latest.ResetDate)
+		if timeLeft > 0 {
+			resp.Insights = append(resp.Insights, insightItem{
+				Key: "reset_countdown", Type: "info", Severity: "info",
+				Title:  "Quota Reset",
+				Metric: formatDuration(timeLeft),
+				Desc:   fmt.Sprintf("Quotas reset on %s.", latest.ResetDate.Format("Jan 2, 2006")),
+			})
+		}
+	}
+
+	// 3. Coverage — how long we've been tracking
+	if !hidden["coverage"] {
+		snapCount := 0
+		since := time.Now().Add(-rangeDur)
+		if points, err := h.store.QueryCopilotUsageSeries("premium_interactions", since); err == nil {
+			snapCount = len(points)
+		}
+		if snapCount > 0 {
+			resp.Insights = append(resp.Insights, insightItem{
+				Key: "coverage", Type: "info", Severity: "info",
+				Title:  "Data Coverage",
+				Metric: fmt.Sprintf("%d snapshots", snapCount),
+				Desc:   fmt.Sprintf("Tracking Copilot usage with %d data points in selected range.", snapCount),
+			})
+		}
+	}
+
+	return resp
+}
+
+// copilotInsightSeverity returns an insight severity based on usage percentage.
+func copilotInsightSeverity(usagePercent float64) string {
+	switch {
+	case usagePercent >= 90:
+		return "critical"
+	case usagePercent >= 70:
+		return "warning"
+	default:
+		return "info"
+	}
+}
+
+// cycleOverviewCopilot returns Copilot cycle overview with cross-quota data.
+func (h *Handler) cycleOverviewCopilot(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
+		return
+	}
+
+	groupBy := r.URL.Query().Get("groupBy")
+	if groupBy == "" {
+		groupBy = "premium_interactions"
+	}
+
+	limit := parseCycleOverviewLimit(r)
+	rows, err := h.store.QueryCopilotCycleOverview(groupBy, limit)
+	if err != nil {
+		h.logger.Error("failed to query Copilot cycle overview", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycle overview")
+		return
+	}
+
+	// Determine quota names from first row with cross-quota data, or default
+	quotaNames := []string{}
+	for _, row := range rows {
+		if len(row.CrossQuotas) > 0 {
+			for _, cq := range row.CrossQuotas {
+				quotaNames = append(quotaNames, cq.Name)
+			}
+			break
+		}
+	}
+	if len(quotaNames) == 0 {
+		quotaNames = []string{"premium_interactions", "chat", "completions"}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"groupBy":    groupBy,
+		"provider":   "copilot",
+		"quotaNames": quotaNames,
+		"cycles":     cycleOverviewRowsToJSON(rows),
+	})
 }

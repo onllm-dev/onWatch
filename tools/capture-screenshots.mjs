@@ -18,6 +18,7 @@ const PROVIDERS = [
   { name: 'anthropic', tab: 'anthropic' },
   { name: 'synthetic', tab: 'synthetic' },
   { name: 'zai', tab: 'zai' },
+  { name: 'copilot', tab: 'copilot' },
   { name: 'all', tab: 'both' },
 ];
 

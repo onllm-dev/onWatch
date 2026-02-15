@@ -233,3 +233,81 @@ func AnthropicResponseNullQuotas() string {
 	data, _ := json.Marshal(resp)
 	return string(data)
 }
+
+// --- Copilot API Fixtures ---
+
+// CopilotResponseJSON returns a valid Copilot /copilot_internal/user JSON response.
+func CopilotResponseJSON(premiumRemaining, premiumEntitlement int, resetDateUTC string) string {
+	resp := map[string]interface{}{
+		"login":                "testuser",
+		"copilot_plan":        "individual_pro",
+		"access_type_sku":     "plus_monthly_subscriber_quota",
+		"quota_reset_date":    "2026-03-01",
+		"quota_reset_date_utc": resetDateUTC,
+		"quota_snapshots": map[string]interface{}{
+			"premium_interactions": map[string]interface{}{
+				"entitlement":       premiumEntitlement,
+				"remaining":         premiumRemaining,
+				"percent_remaining": float64(premiumRemaining) / float64(premiumEntitlement) * 100,
+				"quota_remaining":   float64(premiumRemaining),
+				"unlimited":         false,
+				"overage_count":     0,
+				"overage_permitted": false,
+				"timestamp_utc":     time.Now().UTC().Format(time.RFC3339),
+			},
+			"chat": map[string]interface{}{
+				"entitlement":       0,
+				"remaining":         0,
+				"percent_remaining": 100.0,
+				"quota_remaining":   0.0,
+				"unlimited":         true,
+				"overage_count":     0,
+				"overage_permitted": false,
+				"timestamp_utc":     time.Now().UTC().Format(time.RFC3339),
+			},
+			"completions": map[string]interface{}{
+				"entitlement":       0,
+				"remaining":         0,
+				"percent_remaining": 100.0,
+				"quota_remaining":   0.0,
+				"unlimited":         true,
+				"overage_count":     0,
+				"overage_permitted": false,
+				"timestamp_utc":     time.Now().UTC().Format(time.RFC3339),
+			},
+		},
+	}
+	data, _ := json.Marshal(resp)
+	return string(data)
+}
+
+// DefaultCopilotResponse returns a typical Copilot response with moderate usage.
+func DefaultCopilotResponse() string {
+	resetDate := time.Now().UTC().AddDate(0, 1, 0).Truncate(24 * time.Hour)
+	return CopilotResponseJSON(1000, 1500, resetDate.Format(time.RFC3339))
+}
+
+// CopilotResponseSequence returns n Copilot responses with decreasing remaining.
+func CopilotResponseSequence(n int) []string {
+	resetDate := time.Now().UTC().AddDate(0, 1, 0).Truncate(24 * time.Hour)
+	responses := make([]string, n)
+	for i := range n {
+		remaining := 1000 - i*50
+		if remaining < 0 {
+			remaining = 0
+		}
+		responses[i] = CopilotResponseJSON(remaining, 1500, resetDate.Format(time.RFC3339))
+	}
+	return responses
+}
+
+// CopilotResponseWithReset returns two responses where the reset date has changed,
+// simulating a quota reset.
+func CopilotResponseWithReset() (before, after string) {
+	resetBefore := time.Now().UTC().AddDate(0, 0, 1).Truncate(24 * time.Hour)
+	resetAfter := time.Now().UTC().AddDate(0, 1, 1).Truncate(24 * time.Hour)
+
+	before = CopilotResponseJSON(200, 1500, resetBefore.Format(time.RFC3339))
+	after = CopilotResponseJSON(1500, 1500, resetAfter.Format(time.RFC3339))
+	return before, after
+}

@@ -97,6 +97,13 @@ func (s *Store) countBadCycles() (int, error) {
 	}
 	total += zaiCount
 
+	// Copilot: monthly reset cycles
+	copilotCount, err := s.countBadCopilotCycles()
+	if err != nil {
+		return 0, err
+	}
+	total += copilotCount
+
 	return total, nil
 }
 
@@ -183,6 +190,13 @@ func (s *Store) fixBadCycles(logger *slog.Logger) ([]MigrationResult, error) {
 		return nil, fmt.Errorf("failed to fix zai cycles: %w", err)
 	}
 	results = append(results, zaiResults...)
+
+	// Fix Copilot cycles
+	copilotResults, err := s.fixBadCopilotCycles(logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fix copilot cycles: %w", err)
+	}
+	results = append(results, copilotResults...)
 
 	return results, nil
 }
@@ -649,6 +663,40 @@ func (s *Store) fixBadZaiCycles(logger *slog.Logger) ([]MigrationResult, error) 
 	)
 
 	// For now, just log - Z.ai cycles can be fixed similarly to Anthropic
+	// but require different snapshot queries
+	return nil, nil
+}
+
+// countBadCopilotCycles counts Copilot cycles with abnormal durations
+func (s *Store) countBadCopilotCycles() (int, error) {
+	// Copilot quotas reset monthly — cycles > 35 days are suspicious
+	query := `
+		SELECT COUNT(*) FROM copilot_reset_cycles
+		WHERE cycle_end IS NOT NULL AND
+		(julianday(cycle_end) - julianday(cycle_start)) > 35
+	`
+	var count int
+	if err := s.db.QueryRow(query).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count bad copilot cycles: %w", err)
+	}
+	return count, nil
+}
+
+// fixBadCopilotCycles fixes Copilot provider cycles
+func (s *Store) fixBadCopilotCycles(logger *slog.Logger) ([]MigrationResult, error) {
+	count, err := s.countBadCopilotCycles()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, nil
+	}
+
+	logger.Info("Found bad Copilot cycles",
+		"count", count,
+	)
+
+	// For now, just log - Copilot cycles can be fixed similarly to Anthropic
 	// but require different snapshot queries
 	return nil, nil
 }

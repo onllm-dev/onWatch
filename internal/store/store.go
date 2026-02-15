@@ -289,6 +289,44 @@ func (s *Store) createTables() error {
 			auth TEXT NOT NULL,
 			created_at TEXT NOT NULL
 		);
+
+		-- Copilot-specific tables
+		CREATE TABLE IF NOT EXISTS copilot_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			copilot_plan TEXT,
+			reset_date TEXT,
+			raw_json TEXT,
+			quota_count INTEGER DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS copilot_quota_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			quota_name TEXT NOT NULL,
+			entitlement INTEGER NOT NULL DEFAULT 0,
+			remaining INTEGER NOT NULL DEFAULT 0,
+			percent_remaining REAL NOT NULL DEFAULT 0,
+			unlimited INTEGER NOT NULL DEFAULT 0,
+			overage_count INTEGER NOT NULL DEFAULT 0,
+			FOREIGN KEY (snapshot_id) REFERENCES copilot_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS copilot_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			reset_date TEXT,
+			peak_used INTEGER NOT NULL DEFAULT 0,
+			total_delta INTEGER NOT NULL DEFAULT 0
+		);
+
+		-- Copilot indexes
+		CREATE INDEX IF NOT EXISTS idx_copilot_snapshots_captured ON copilot_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_copilot_quota_values_snapshot ON copilot_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_copilot_cycles_name_start ON copilot_reset_cycles(quota_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_copilot_cycles_name_active ON copilot_reset_cycles(quota_name) WHERE cycle_end IS NULL;
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {

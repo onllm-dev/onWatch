@@ -31,7 +31,8 @@ func InMemoryStore(t *testing.T) *store.Store {
 
 // InMemoryStoreWithSnapshots creates an in-memory store pre-populated with
 // the specified number of Synthetic, Z.ai, and Anthropic snapshots.
-func InMemoryStoreWithSnapshots(t *testing.T, synCount, zaiCount, anthCount int) *store.Store {
+// Optional copilotCount can be passed as a 4th argument.
+func InMemoryStoreWithSnapshots(t *testing.T, synCount, zaiCount, anthCount int, extra ...int) *store.Store {
 	t.Helper()
 	s := InMemoryStore(t)
 	now := time.Now().UTC()
@@ -85,6 +86,32 @@ func InMemoryStoreWithSnapshots(t *testing.T, synCount, zaiCount, anthCount int)
 		}
 	}
 
+	// Insert Copilot snapshots (optional)
+	copilotCount := 0
+	if len(extra) > 0 {
+		copilotCount = extra[0]
+	}
+	for i := range copilotCount {
+		capturedAt := now.Add(-time.Duration(copilotCount-i) * time.Minute)
+		resetDate := now.AddDate(0, 1, 0).Truncate(24 * time.Hour)
+		remaining := 1000 - i*50
+		if remaining < 0 {
+			remaining = 0
+		}
+		snap := &api.CopilotSnapshot{
+			CapturedAt:  capturedAt,
+			CopilotPlan: "individual_pro",
+			ResetDate:   &resetDate,
+			Quotas: []api.CopilotQuota{
+				{Name: "premium_interactions", Entitlement: 1500, Remaining: remaining, PercentRemaining: float64(remaining) / 1500 * 100, Unlimited: false},
+				{Name: "chat", Entitlement: 0, Remaining: 0, PercentRemaining: 100, Unlimited: true},
+			},
+		}
+		if _, err := s.InsertCopilotSnapshot(snap); err != nil {
+			t.Fatalf("InMemoryStoreWithSnapshots: insert copilot: %v", err)
+		}
+	}
+
 	return s
 }
 
@@ -96,6 +123,7 @@ func TestConfig(baseURL string) *config.Config {
 		ZaiAPIKey:          "zai_test_key",
 		ZaiBaseURL:         baseURL,
 		AnthropicToken:     "anth_test_token",
+		CopilotToken:       "ghp_test_token",
 		PollInterval:       10 * time.Second,
 		Port:               9211,
 		Host:               "127.0.0.1",
@@ -124,6 +152,8 @@ func TestHandler(t *testing.T) (*web.Handler, *store.Store) {
 	h := web.NewHandler(s, tr, logger, sessions, cfg, zaiTr)
 	anthTr := tracker.NewAnthropicTracker(s, logger)
 	h.SetAnthropicTracker(anthTr)
+	copilotTr := tracker.NewCopilotTracker(s, logger)
+	h.SetCopilotTracker(copilotTr)
 	h.SetVersion("test-dev")
 
 	return h, s

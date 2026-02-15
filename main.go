@@ -574,6 +574,12 @@ func run() error {
 		logger.Info("Anthropic API client configured")
 	}
 
+	var copilotClient *api.CopilotClient
+	if cfg.HasProvider("copilot") {
+		copilotClient = api.NewCopilotClient(cfg.CopilotToken, logger)
+		logger.Info("Copilot API client configured")
+	}
+
 	// Create components
 	tr := tracker.New(db, logger)
 
@@ -620,6 +626,18 @@ func run() error {
 		})
 	}
 
+	// Create Copilot tracker
+	var copilotTr *tracker.CopilotTracker
+	if cfg.HasProvider("copilot") {
+		copilotTr = tracker.NewCopilotTracker(db, logger)
+	}
+
+	var copilotAg *agent.CopilotAgent
+	if copilotClient != nil {
+		copilotSm := agent.NewSessionManager(db, "copilot", idleTimeout, logger)
+		copilotAg = agent.NewCopilotAgent(copilotClient, db, copilotTr, cfg.PollInterval, logger, copilotSm)
+	}
+
 	// Create notification engine
 	notifier := notify.New(db, logger)
 	notifier.SetEncryptionKey(deriveEncryptionKey(cfg.AdminPassHash))
@@ -636,6 +654,9 @@ func run() error {
 	}
 	if anthropicAg != nil {
 		anthropicAg.SetNotifier(notifier)
+	}
+	if copilotAg != nil {
+		copilotAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks — agents skip poll when telemetry disabled
@@ -664,6 +685,9 @@ func run() error {
 	if anthropicAg != nil {
 		anthropicAg.SetPollingCheck(func() bool { return isPollingEnabled("anthropic") })
 	}
+	if copilotAg != nil {
+		copilotAg.SetPollingCheck(func() bool { return isPollingEnabled("copilot") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -679,12 +703,20 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "anthropic", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	if copilotTr != nil {
+		copilotTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "copilot", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
 	handler.SetNotifier(notifier)
 	if anthropicTr != nil {
 		handler.SetAnthropicTracker(anthropicTr)
+	}
+	if copilotTr != nil {
+		handler.SetCopilotTracker(copilotTr)
 	}
 	updater := update.NewUpdater(version, logger)
 	handler.SetUpdater(updater)
@@ -703,7 +735,7 @@ func run() error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Start agents in goroutines (staggered to avoid SQLite contention on session creation)
-	agentErr := make(chan error, 3)
+	agentErr := make(chan error, 4)
 	if ag != nil {
 		go func() {
 			defer func() {
@@ -751,7 +783,23 @@ func run() error {
 		}()
 	}
 
-	if ag == nil && zaiAg == nil && anthropicAg == nil {
+	if copilotAg != nil {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("Copilot agent panicked", "panic", r)
+					agentErr <- fmt.Errorf("copilot agent panic: %v", r)
+				}
+			}()
+			time.Sleep(600 * time.Millisecond) // stagger to avoid SQLite BUSY
+			logger.Info("Starting Copilot agent", "interval", cfg.PollInterval)
+			if err := copilotAg.Run(ctx); err != nil {
+				agentErr <- fmt.Errorf("copilot agent error: %w", err)
+			}
+		}()
+	}
+
+	if ag == nil && zaiAg == nil && anthropicAg == nil && copilotAg == nil {
 		logger.Info("No agents configured")
 	}
 
@@ -1128,6 +1176,9 @@ func printBanner(cfg *config.Config, version string) {
 			fmt.Println("║  API:       anthropic.com/usage      ║")
 		}
 	}
+	if cfg.HasProvider("copilot") {
+		fmt.Println("║  API:       github.com/copilot (β)   ║")
+	}
 
 	fmt.Printf("║  Polling:   every %s              ║\n", cfg.PollInterval)
 	fmt.Printf("║  Dashboard: http://localhost:%d    ║\n", cfg.Port)
@@ -1152,6 +1203,9 @@ func printBanner(cfg *config.Config, version string) {
 			label = "Anthropic (auto):  "
 		}
 		fmt.Printf("%s%s\n", label, redactAPIKey(cfg.AnthropicToken))
+	}
+	if cfg.HasProvider("copilot") {
+		fmt.Printf("Copilot Token:     %s\n", redactAPIKey(cfg.CopilotToken))
 	}
 	fmt.Println()
 }
@@ -1180,6 +1234,7 @@ func printHelp() {
 	fmt.Println("  ZAI_API_KEY            Z.ai API key")
 	fmt.Println("  ZAI_BASE_URL           Z.ai base URL (default: https://api.z.ai/api)")
 	fmt.Println("  ANTHROPIC_TOKEN         Anthropic token (auto-detected if not set)")
+	fmt.Println("  COPILOT_TOKEN           GitHub Copilot token (PAT with copilot scope)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
 	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")
 	fmt.Println("  ONWATCH_ADMIN_USER      Dashboard admin username")
@@ -1206,7 +1261,7 @@ func printHelp() {
 	fmt.Println("  Use --db and --port to further isolate test from production.")
 	fmt.Println()
 	fmt.Println("Configure providers in .env file or environment variables.")
-	fmt.Println("At least one provider (Synthetic, Z.ai, or Anthropic) must be configured.")
+	fmt.Println("At least one provider (Synthetic, Z.ai, Anthropic, or Copilot) must be configured.")
 }
 
 func redactAPIKey(key string) string {

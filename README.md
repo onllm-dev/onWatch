@@ -2,9 +2,9 @@
 
 ### **[onwatch.onllm.dev](https://onwatch.onllm.dev)**
 
-**onWatch** is a free, open-source CLI tool that tracks [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), and [Anthropic](https://anthropic.com) (Claude Code) API quota usage in real time. It runs as a lightweight background agent (<50 MB RAM with all three providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
+**onWatch** is a free, open-source CLI tool that tracks [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com) (Claude Code), and [GitHub Copilot](https://github.com/features/copilot) API quota usage in real time. It runs as a lightweight background agent (<50 MB RAM with all four providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
 
-onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session intelligence that developers actually need. It works with any tool that uses Synthetic, Z.ai, or Anthropic API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Cursor**, **Windsurf**, and others.
+onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session intelligence that developers actually need. It works with any tool that uses Synthetic, Z.ai, Anthropic, or GitHub Copilot API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Cursor**, **Windsurf**, **GitHub Copilot**, and others.
 
 **Zero telemetry. Single binary. All data stays on your machine.**
 
@@ -64,11 +64,12 @@ Edit `~/.onwatch/.env` (or `.env` in the project directory if built from source)
 SYNTHETIC_API_KEY=syn_your_key_here       # https://synthetic.new/settings/api
 ZAI_API_KEY=your_zai_key_here             # https://www.z.ai/api-keys
 ANTHROPIC_TOKEN=your_token_here           # Auto-detected from Claude Code credentials
+COPILOT_TOKEN=ghp_your_token_here         # GitHub PAT with copilot scope (Beta)
 ONWATCH_ADMIN_USER=admin
 ONWATCH_ADMIN_PASS=changeme
 ```
 
-At least one provider key is required. Configure any combination to track them in parallel. Anthropic tokens are auto-detected from Claude Code credentials (macOS Keychain, Linux keyring, or `~/.claude/.credentials.json`).
+At least one provider key is required. Configure any combination to track them in parallel. Anthropic tokens are auto-detected from Claude Code credentials (macOS Keychain, Linux keyring, or `~/.claude/.credentials.json`). Copilot tokens require a GitHub Personal Access Token (classic) with the `copilot` scope.
 
 ### Run
 
@@ -104,6 +105,7 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **Synthetic** -- Subscription, Search, and Tool Call quota cards
 - **Z.ai** -- Tokens, Time, and Tool Call quota cards
 - **Anthropic** -- Dynamic quota cards (5-Hour, 7-Day, 7-Day Sonnet, Monthly, etc.) with utilization percentages and OAuth token auto-refresh
+- **GitHub Copilot (Beta)** -- Premium Interactions, Chat, and Completions quota cards with monthly reset tracking
 - **All** -- Side-by-side view of all configured providers
 - **PWA installable** -- Install onWatch from your browser for a native app experience (Beta)
 
@@ -135,7 +137,7 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 
 | Audience | Pain Point | How onWatch Helps |
 |----------|-----------|-------------------|
-| **Solo developers & freelancers** using Claude Code, Cline, Roo Code, or Kilo Code with Anthropic/Synthetic/Z.ai | Budget anxiety -- no visibility into quota burn rate, surprise throttling mid-task | Real-time rate projections, historical trends, live countdowns so you never get throttled unexpectedly |
+| **Solo developers & freelancers** using Claude Code, Cline, Roo Code, or Kilo Code with Anthropic/Synthetic/Z.ai/Copilot | Budget anxiety -- no visibility into quota burn rate, surprise throttling mid-task | Real-time rate projections, historical trends, live countdowns so you never get throttled unexpectedly |
 | **Small dev teams (3-20 people)** sharing API keys | No shared visibility into who's consuming what, impossible to budget next month | Shared dashboard with session tracking, cycle history for budget planning |
 | **DevOps & platform engineers** | Shadow AI usage with no FinOps for coding API subscriptions | Lightweight sidecar (<50 MB), SQLite data source for Grafana, REST API for monitoring stack integration |
 | **Privacy-conscious developers** in regulated industries | Can't use SaaS analytics that phone home; need local, auditable monitoring | Single binary, local SQLite, zero telemetry, GPL-3.0 source code, works air-gapped |
@@ -158,13 +160,17 @@ Set `ZAI_API_KEY` in your `.env`. onWatch polls the Z.ai `/monitor/usage/quota/l
 
 onWatch auto-detects your Claude Code credentials from the system keychain (macOS) or keyring/file (Linux). Just install and run -- if Claude Code is installed, Anthropic tracking is offered automatically. You can also set `ANTHROPIC_TOKEN` manually in your `.env`. Anthropic quotas are dynamic (5-Hour, 7-Day, Monthly, etc.) and displayed as utilization percentages. OAuth tokens are automatically refreshed before expiry, and onWatch gracefully handles auth failures with automatic retry when new credentials are detected.
 
+### How do I track my GitHub Copilot premium request usage?
+
+Set `COPILOT_TOKEN` in your `.env` with a GitHub Personal Access Token (classic) that has the `copilot` scope. Generate one at [github.com/settings/tokens](https://github.com/settings/tokens). onWatch polls the GitHub Copilot internal API to track premium interactions, chat, and completions quotas with monthly reset cycle detection. This feature is in beta and uses an undocumented API.
+
 ### Does onWatch work with Cline, Roo Code, Kilo Code, or Claude Code?
 
-Yes. onWatch monitors the API provider (Synthetic, Z.ai, or Anthropic), not the coding tool. Any tool that uses a Synthetic, Z.ai, or Anthropic API key -- including Cline, Roo Code, Kilo Code, Claude Code, Cursor, Windsurf, and others -- will have its usage tracked automatically.
+Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, or GitHub Copilot), not the coding tool. Any tool that uses a Synthetic, Z.ai, Anthropic, or Copilot API key -- including Cline, Roo Code, Kilo Code, Claude Code, Cursor, Windsurf, GitHub Copilot, and others -- will have its usage tracked automatically.
 
 ### Does onWatch send any data to external servers?
 
-No. Zero telemetry. All data stays in a local SQLite file. The only outbound calls are to the Synthetic, Z.ai, and Anthropic quota APIs you configure. Fully auditable on [GitHub](https://github.com/onllm-dev/onwatch) (GPL-3.0).
+No. Zero telemetry. All data stays in a local SQLite file. The only outbound calls are to the Synthetic, Z.ai, Anthropic, and GitHub Copilot quota APIs you configure. Fully auditable on [GitHub](https://github.com/onllm-dev/onwatch) (GPL-3.0).
 
 ### How much memory does onWatch use?
 
@@ -182,21 +188,21 @@ No. Zero telemetry. All data stays in a local SQLite file. The only outbound cal
                   ┌──────┴───────┐
                   │   SQLite     │
                   │   (WAL)      │
-                  └──┬────┬────┬─┘
-         ┌───────────┘    │    └───────────┐
-    ┌────┴─────┐   ┌─────┴─────┐   ┌──────┴─────┐
-    │ Synthetic│   │   Z.ai    │   │ Anthropic  │
-    │  Agent   │   │   Agent   │   │   Agent    │
-    └────┬─────┘   └─────┬─────┘   └──────┬─────┘
-    ┌────┴─────┐   ┌─────┴─────┐   ┌──────┴─────┐
-    │ Synthetic│   │   Z.ai    │   │ Anthropic  │
-    │  API     │   │   API     │   │  OAuth API │
-    └──────────┘   └───────────┘   └────────────┘
+                  └──┬──┬──┬──┬─┘
+       ┌────────────┘  │  │  └────────────┐
+  ┌────┴─────┐  ┌──────┴──┐  ┌──────┴──┐  ┌──────┴──┐
+  │ Synthetic│  │  Z.ai   │  │Anthropic│  │ Copilot │
+  │  Agent   │  │  Agent  │  │  Agent  │  │  Agent  │
+  └────┬─────┘  └────┬────┘  └────┬────┘  └────┬────┘
+  ┌────┴─────┐  ┌────┴────┐  ┌────┴────┐  ┌────┴────┐
+  │ Synthetic│  │  Z.ai   │  │Anthropic│  │ GitHub  │
+  │  API     │  │  API    │  │OAuth API│  │Copilot  │
+  └──────────┘  └─────────┘  └─────────┘  └─────────┘
 ```
 
 All agents run as parallel goroutines. Each polls its API at the configured interval and writes snapshots. The dashboard reads from the shared store.
 
-**Measured RAM (all three agents running in parallel):** ~34 MB idle, ~43 MB P95 under continuous load (~4,300 requests in 60s). Single binary, all assets embedded via `embed.FS`.
+**Measured RAM (all four agents running in parallel):** ~34 MB idle, ~43 MB P95 under continuous load (~4,300 requests in 60s). Single binary, all assets embedded via `embed.FS`.
 
 ---
 
@@ -216,6 +222,7 @@ Additional environment variables:
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_TOKEN` | Anthropic OAuth token (auto-detected from Claude Code) |
+| `COPILOT_TOKEN` | GitHub Copilot PAT with `copilot` scope (Beta) |
 | `SYNTHETIC_API_KEY` | Synthetic API key |
 | `ZAI_API_KEY` | Z.ai API key |
 | `ZAI_BASE_URL` | Z.ai base URL (default: `https://api.z.ai/api`) |
@@ -230,7 +237,7 @@ CLI flags override environment variables.
 
 ## API Endpoints
 
-All endpoints require authentication (session cookie or Basic Auth). Append `?provider=synthetic|zai|anthropic|both` to select the provider.
+All endpoints require authentication (session cookie or Basic Auth). Append `?provider=synthetic|zai|anthropic|copilot|both` to select the provider.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
