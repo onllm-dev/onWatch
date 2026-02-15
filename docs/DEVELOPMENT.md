@@ -250,6 +250,8 @@ git push && git push --tags
 
 The workflow builds, tests, and publishes binaries automatically.
 
+---
+
 ## Dependencies
 
 | Package | Purpose |
