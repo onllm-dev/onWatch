@@ -27,6 +27,9 @@ type Config struct {
 	AnthropicToken     string // ANTHROPIC_TOKEN or auto-detected
 	AnthropicAutoToken bool   // true if token was auto-detected
 
+	// Copilot provider configuration
+	CopilotToken string // COPILOT_TOKEN (GitHub PAT with copilot scope)
+
 	// Shared configuration
 	PollInterval       time.Duration // ONWATCH_POLL_INTERVAL (seconds → Duration)
 	Port               int           // ONWATCH_PORT
@@ -132,6 +135,9 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// Anthropic provider
 	cfg.AnthropicToken = os.Getenv("ANTHROPIC_TOKEN")
+
+	// Copilot provider
+	cfg.CopilotToken = os.Getenv("COPILOT_TOKEN")
 
 	// Poll Interval (seconds) — ONWATCH_* first, SYNTRACK_* fallback
 	if flags.interval > 0 {
@@ -240,8 +246,8 @@ func (c *Config) applyDefaults() {
 // Validate checks the configuration for errors.
 func (c *Config) Validate() error {
 	// At least one provider must be configured
-	if c.SyntheticAPIKey == "" && c.ZaiAPIKey == "" && c.AnthropicToken == "" {
-		return fmt.Errorf("at least one provider must be configured: set SYNTHETIC_API_KEY, ZAI_API_KEY, or ANTHROPIC_TOKEN")
+	if c.SyntheticAPIKey == "" && c.ZaiAPIKey == "" && c.AnthropicToken == "" && c.CopilotToken == "" {
+		return fmt.Errorf("at least one provider must be configured: set SYNTHETIC_API_KEY, ZAI_API_KEY, ANTHROPIC_TOKEN, or COPILOT_TOKEN")
 	}
 
 	// Validate Synthetic API key if provided
@@ -279,6 +285,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.ZaiAPIKey != "" {
 		providers = append(providers, "zai")
 	}
+	if c.CopilotToken != "" {
+		providers = append(providers, "copilot")
+	}
 	return providers
 }
 
@@ -291,6 +300,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.ZaiAPIKey != ""
 	case "anthropic":
 		return c.AnthropicToken != ""
+	case "copilot":
+		return c.CopilotToken != ""
 	}
 	return false
 }
@@ -305,6 +316,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.AnthropicToken != "" {
+		count++
+	}
+	if c.CopilotToken != "" {
 		count++
 	}
 	return count > 1
@@ -338,6 +352,10 @@ func (c *Config) String() string {
 	if c.AnthropicAutoToken {
 		fmt.Fprintf(&sb, "  AnthropicAutoToken: true,\n")
 	}
+
+	// Redact Copilot token
+	copilotDisplay := redactAPIKey(c.CopilotToken, "ghp_")
+	fmt.Fprintf(&sb, "  CopilotToken: %s,\n", copilotDisplay)
 
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)
 	fmt.Fprintf(&sb, "  SessionIdleTimeout: %v,\n", c.SessionIdleTimeout)

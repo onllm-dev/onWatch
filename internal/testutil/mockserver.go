@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// MockServer provides a unified test server that routes all three provider endpoints.
+// MockServer provides a unified test server that routes all four provider endpoints.
 // Thread-safe for concurrent use from test goroutines and httptest handler goroutines.
 type MockServer struct {
 	*httptest.Server
@@ -32,15 +32,21 @@ type MockServer struct {
 	anthropicResponses []string
 	anthropicError     atomic.Int32
 
+	copilotToken     string
+	copilotResponses []string
+	copilotError     atomic.Int32
+
 	// Round-robin response indexes (atomic for thread safety)
 	syntheticIdx  atomic.Int64
 	zaiIdx        atomic.Int64
 	anthropicIdx  atomic.Int64
+	copilotIdx    atomic.Int64
 
 	// Request counters (atomic for thread safety)
 	syntheticCount  atomic.Int64
 	zaiCount        atomic.Int64
 	anthropicCount  atomic.Int64
+	copilotCount    atomic.Int64
 }
 
 // MockOption configures a MockServer.
@@ -88,6 +94,20 @@ func WithAnthropicResponses(responses []string) MockOption {
 	}
 }
 
+// WithCopilotToken sets the expected Copilot PAT token.
+func WithCopilotToken(token string) MockOption {
+	return func(ms *MockServer) {
+		ms.copilotToken = token
+	}
+}
+
+// WithCopilotResponses sets the Copilot response sequence.
+func WithCopilotResponses(responses []string) MockOption {
+	return func(ms *MockServer) {
+		ms.copilotResponses = responses
+	}
+}
+
 // NewMockServer creates a new mock server with the given options.
 // The server routes requests to the appropriate provider handler based on URL path.
 func NewMockServer(t *testing.T, opts ...MockOption) *MockServer {
@@ -109,11 +129,15 @@ func NewMockServer(t *testing.T, opts ...MockOption) *MockServer {
 	if ms.anthropicToken != "" && len(ms.anthropicResponses) == 0 {
 		ms.anthropicResponses = []string{DefaultAnthropicResponse()}
 	}
+	if ms.copilotToken != "" && len(ms.copilotResponses) == 0 {
+		ms.copilotResponses = []string{DefaultCopilotResponse()}
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/quotas", ms.handleSynthetic)
 	mux.HandleFunc("/monitor/usage/quota/limit", ms.handleZai)
 	mux.HandleFunc("/api/oauth/usage", ms.handleAnthropic)
+	mux.HandleFunc("/copilot_internal/user", ms.handleCopilot)
 	mux.HandleFunc("/admin/scenario", ms.handleAdminScenario)
 	mux.HandleFunc("/admin/error", ms.handleAdminError)
 	mux.HandleFunc("/admin/requests", ms.handleAdminRequests)
@@ -122,6 +146,7 @@ func NewMockServer(t *testing.T, opts ...MockOption) *MockServer {
 		if r.URL.Path != "/v2/quotas" &&
 			r.URL.Path != "/monitor/usage/quota/limit" &&
 			r.URL.Path != "/api/oauth/usage" &&
+			r.URL.Path != "/copilot_internal/user" &&
 			!strings.HasPrefix(r.URL.Path, "/admin/") {
 			http.NotFound(w, r)
 		}
@@ -255,6 +280,47 @@ func (ms *MockServer) handleAnthropic(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, responses[respIdx])
 }
 
+// handleCopilot handles GET /copilot_internal/user
+func (ms *MockServer) handleCopilot(w http.ResponseWriter, r *http.Request) {
+	ms.copilotCount.Add(1)
+
+	// Check for injected error
+	if errCode := ms.copilotError.Load(); errCode > 0 {
+		w.WriteHeader(int(errCode))
+		fmt.Fprintf(w, `{"error": "injected error %d"}`, errCode)
+		return
+	}
+
+	// Validate auth: "Authorization: Bearer <token>"
+	ms.mu.RLock()
+	expectedToken := ms.copilotToken
+	responses := ms.copilotResponses
+	ms.mu.RUnlock()
+
+	if expectedToken != "" {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer "+expectedToken {
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{"message": "Bad credentials"}`)
+			return
+		}
+	}
+
+	if len(responses) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, DefaultCopilotResponse())
+		return
+	}
+
+	idx := ms.copilotIdx.Add(1) - 1
+	respIdx := int(idx) % len(responses)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, responses[respIdx])
+}
+
 // handleAdminScenario handles POST /admin/scenario to switch response sequences at runtime.
 func (ms *MockServer) handleAdminScenario(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -291,6 +357,9 @@ func (ms *MockServer) handleAdminScenario(w http.ResponseWriter, r *http.Request
 	case "anthropic":
 		ms.anthropicResponses = payload.Responses
 		ms.anthropicIdx.Store(0)
+	case "copilot":
+		ms.copilotResponses = payload.Responses
+		ms.copilotIdx.Store(0)
 	default:
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprintf(w, `{"error": "unknown provider: %s"}`, payload.Provider)
@@ -331,6 +400,8 @@ func (ms *MockServer) handleAdminError(w http.ResponseWriter, r *http.Request) {
 		ms.zaiError.Store(int32(payload.StatusCode))
 	case "anthropic":
 		ms.anthropicError.Store(int32(payload.StatusCode))
+	case "copilot":
+		ms.copilotError.Store(int32(payload.StatusCode))
 	default:
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprintf(w, `{"error": "unknown provider: %s"}`, payload.Provider)
@@ -347,6 +418,7 @@ func (ms *MockServer) handleAdminRequests(w http.ResponseWriter, _ *http.Request
 		"synthetic": ms.syntheticCount.Load(),
 		"zai":       ms.zaiCount.Load(),
 		"anthropic": ms.anthropicCount.Load(),
+		"copilot":   ms.copilotCount.Load(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -370,6 +442,11 @@ func (ms *MockServer) SetAnthropicError(code int) {
 	ms.anthropicError.Store(int32(code))
 }
 
+// SetCopilotError injects an HTTP error code for subsequent Copilot requests.
+func (ms *MockServer) SetCopilotError(code int) {
+	ms.copilotError.Store(int32(code))
+}
+
 // SetAnthropicToken changes the expected Anthropic token at runtime.
 func (ms *MockServer) SetAnthropicToken(token string) {
 	ms.mu.Lock()
@@ -382,6 +459,7 @@ func (ms *MockServer) ClearErrors() {
 	ms.syntheticError.Store(0)
 	ms.zaiError.Store(0)
 	ms.anthropicError.Store(0)
+	ms.copilotError.Store(0)
 }
 
 // RequestCount returns the number of requests made to a provider.
@@ -393,6 +471,8 @@ func (ms *MockServer) RequestCount(provider string) int {
 		return int(ms.zaiCount.Load())
 	case "anthropic":
 		return int(ms.anthropicCount.Load())
+	case "copilot":
+		return int(ms.copilotCount.Load())
 	}
 	return 0
 }

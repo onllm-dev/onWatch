@@ -1,6 +1,6 @@
 # onWatch
 
-Ultra-lightweight Go CLI tracking Anthropic/Synthetic/Z.ai quota usage. Polls endpoints → SQLite → Material Design 3 dashboard. Single binary via `embed.FS`, <50 MB RAM, TDD-first.
+Ultra-lightweight Go CLI tracking Anthropic/Synthetic/Z.ai/GitHub Copilot (Beta) quota usage. Polls endpoints → SQLite → Material Design 3 dashboard. Single binary via `embed.FS`, <50 MB RAM, TDD-first.
 
 ## Stack
 Go 1.25+ | SQLite (`modernc.org/sqlite`) | `net/http` | `html/template` + `embed.FS` | Chart.js (CDN) | `log/slog`
@@ -47,6 +47,16 @@ Note: `usage`=limit, `currentValue`=consumed. `nextResetTime` is epoch ms (only 
 ```
 Note: Dynamic keys, `utilization` is %, null entries skipped.
 
+**GitHub Copilot (Beta)** `GET https://api.github.com/copilot_internal/user` (Bearer PAT with `copilot` scope)
+```json
+{"copilot_plan":"individual_pro","quota_reset_date_utc":"2026-03-01T00:00:00.000Z",
+ "quota_snapshots":{
+   "premium_interactions":{"entitlement":1500,"remaining":473,"percent_remaining":31.5,"unlimited":false},
+   "chat":{"entitlement":0,"remaining":0,"percent_remaining":100,"unlimited":true},
+   "completions":{"entitlement":0,"remaining":0,"percent_remaining":100,"unlimited":true}}}
+```
+Note: Undocumented internal API. Monthly reset via `quota_reset_date_utc`. `premium_interactions` is the main quota (300 for Pro, 1500 for Pro+). `chat`/`completions` are typically unlimited.
+
 ## Commands
 ```bash
 ./app.sh --build        # Production binary
@@ -90,6 +100,13 @@ go test -race -cover ./... && go vet ./...  # Must pass
 
 Dashboard thresholds (defaults, customizable via `/settings`): green (0-49%), yellow (50-79%), red (80-94%), critical (95%+).
 
+## Copilot Mappings (must match Go + JS)
+| Key | Display | Chart Color |
+|-----|---------|-------------|
+| `premium_interactions` | Premium Requests | #6e40c9 |
+| `chat` | Chat | #2ea043 |
+| `completions` | Completions | #58a6ff |
+
 ## Code References
 | Feature | Location |
 |---------|----------|
@@ -100,4 +117,8 @@ Dashboard thresholds (defaults, customizable via `/settings`): green (0-49%), ye
 | Notifications | `internal/notify/notify.go`, `smtp.go`, `crypto.go` |
 | Settings API | `internal/web/handlers.go` (GET/PUT `/api/settings`) |
 | Quota tracking | `internal/tracker/tracker.go` |
+| Copilot API | `internal/api/copilot_client.go`, `copilot_types.go` |
+| Copilot store | `internal/store/copilot_store.go` |
+| Copilot tracker | `internal/tracker/copilot_tracker.go` |
+| Copilot agent | `internal/agent/copilot_agent.go` |
 | Design system | `design-system/onwatch/MASTER.md` |

@@ -725,6 +725,35 @@ button, input, select { font-family: inherit; }
   color: var(--text-muted);
 }
 
+/* Beta and Unlimited badges */
+.beta-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: linear-gradient(135deg, #6e40c9 0%, #a371f7 100%);
+  color: #fff;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.unlimited-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--status-healthy-bg);
+  color: var(--status-healthy-text);
+  border-radius: 50%;
+  margin-left: 6px;
+}
+
 
 /* ═══════════════════════════════════════════
    8. SECTION PANELS

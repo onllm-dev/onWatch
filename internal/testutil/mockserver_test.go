@@ -448,11 +448,167 @@ func TestMockServer_UnknownRouteReturns404(t *testing.T) {
 	}
 }
 
+func TestMockServer_DefaultCopilotRoute(t *testing.T) {
+	ms := NewMockServer(t, WithCopilotToken("ghp_test123"))
+	defer ms.Close()
+
+	req, _ := http.NewRequest("GET", ms.URL+"/copilot_internal/user", nil)
+	req.Header.Set("Authorization", "Bearer ghp_test123")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if _, ok := result["copilot_plan"]; !ok {
+		t.Error("response missing 'copilot_plan' key")
+	}
+	if _, ok := result["quota_snapshots"]; !ok {
+		t.Error("response missing 'quota_snapshots' key")
+	}
+}
+
+func TestMockServer_CopilotAuthRejectsInvalidToken(t *testing.T) {
+	ms := NewMockServer(t, WithCopilotToken("ghp_correct"))
+	defer ms.Close()
+
+	req, _ := http.NewRequest("GET", ms.URL+"/copilot_internal/user", nil)
+	req.Header.Set("Authorization", "Bearer ghp_wrong")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestMockServer_SetCopilotError(t *testing.T) {
+	ms := NewMockServer(t, WithCopilotToken("ghp_tok"))
+	defer ms.Close()
+
+	ms.SetCopilotError(503)
+
+	req, _ := http.NewRequest("GET", ms.URL+"/copilot_internal/user", nil)
+	req.Header.Set("Authorization", "Bearer ghp_tok")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 503 {
+		t.Fatalf("expected 503, got %d", resp.StatusCode)
+	}
+}
+
+func TestMockServer_CopilotResponseSequence(t *testing.T) {
+	responses := CopilotResponseSequence(3)
+	ms := NewMockServer(t,
+		WithCopilotToken("ghp_test"),
+		WithCopilotResponses(responses),
+	)
+	defer ms.Close()
+
+	for i := 0; i < 5; i++ {
+		req, _ := http.NewRequest("GET", ms.URL+"/copilot_internal/user", nil)
+		req.Header.Set("Authorization", "Bearer ghp_test")
+
+		resp, _ := http.DefaultClient.Do(req)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		var result map[string]interface{}
+		json.Unmarshal(body, &result)
+
+		quotaSnapshots := result["quota_snapshots"].(map[string]interface{})
+		premium := quotaSnapshots["premium_interactions"].(map[string]interface{})
+		remaining := int(premium["remaining"].(float64))
+
+		// Sequence: 1000, 950, 900, 1000, 950 (cycles back)
+		expectedIdx := i % 3
+		expected := 1000 - expectedIdx*50
+		if remaining != expected {
+			t.Errorf("request %d: expected remaining=%d, got %d", i, expected, remaining)
+		}
+	}
+}
+
+func TestMockServer_CopilotAdminScenario(t *testing.T) {
+	ms := NewMockServer(t, WithCopilotToken("ghp_test"))
+	defer ms.Close()
+
+	// Switch to a new response sequence via admin endpoint
+	newResp := CopilotResponseSequence(2)
+	payload, _ := json.Marshal(map[string]interface{}{
+		"provider":  "copilot",
+		"responses": newResp,
+	})
+
+	req, _ := http.NewRequest("POST", ms.URL+"/admin/scenario", strings.NewReader(string(payload)))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestMockServer_CopilotAdminError(t *testing.T) {
+	ms := NewMockServer(t, WithCopilotToken("ghp_test"))
+	defer ms.Close()
+
+	payload, _ := json.Marshal(map[string]interface{}{
+		"provider":    "copilot",
+		"status_code": 429,
+	})
+
+	req, _ := http.NewRequest("POST", ms.URL+"/admin/error", strings.NewReader(string(payload)))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// Now the copilot endpoint should return the error
+	req, _ = http.NewRequest("GET", ms.URL+"/copilot_internal/user", nil)
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	resp, _ = http.DefaultClient.Do(req)
+	resp.Body.Close()
+
+	if resp.StatusCode != 429 {
+		t.Fatalf("expected 429, got %d", resp.StatusCode)
+	}
+}
+
 func TestMockServer_AllProvidersSimultaneously(t *testing.T) {
 	ms := NewMockServer(t,
 		WithSyntheticKey("syn_k"),
 		WithZaiKey("zai_k"),
 		WithAnthropicToken("anth_t"),
+		WithCopilotToken("ghp_t"),
 	)
 	defer ms.Close()
 
@@ -484,6 +640,15 @@ func TestMockServer_AllProvidersSimultaneously(t *testing.T) {
 	}
 	resp.Body.Close()
 
+	// Copilot
+	req, _ = http.NewRequest("GET", ms.URL+"/copilot_internal/user", nil)
+	req.Header.Set("Authorization", "Bearer ghp_t")
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 200 {
+		t.Errorf("copilot: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
 	if ms.RequestCount("synthetic") != 1 {
 		t.Errorf("expected 1 synthetic, got %d", ms.RequestCount("synthetic"))
 	}
@@ -492,5 +657,8 @@ func TestMockServer_AllProvidersSimultaneously(t *testing.T) {
 	}
 	if ms.RequestCount("anthropic") != 1 {
 		t.Errorf("expected 1 anthropic, got %d", ms.RequestCount("anthropic"))
+	}
+	if ms.RequestCount("copilot") != 1 {
+		t.Errorf("expected 1 copilot, got %d", ms.RequestCount("copilot"))
 	}
 }

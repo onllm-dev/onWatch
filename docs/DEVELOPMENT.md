@@ -141,9 +141,11 @@ Edit `.env` with at least one API key:
 ```bash
 SYNTHETIC_API_KEY=syn_your_actual_key
 ZAI_API_KEY=your_zai_key
+ANTHROPIC_TOKEN=your_anthropic_token      # Auto-detected from Claude Code if not set
+COPILOT_TOKEN=ghp_your_github_token       # GitHub PAT with 'copilot' scope (Beta)
 ```
 
-Both providers can run simultaneously. Configure one or both.
+All four providers can run simultaneously. Configure any combination.
 
 ### 3. Run in Dev Mode
 
@@ -173,9 +175,9 @@ make coverage              # Generate HTML coverage report → coverage.html
 
 ## Multi-Provider Architecture
 
-onWatch supports three providers: Synthetic, Z.ai, and Anthropic. When multiple API keys are set, all agents run in parallel goroutines, each polling its respective API and storing snapshots in the shared SQLite database.
+onWatch supports four providers: Synthetic, Z.ai, Anthropic, and GitHub Copilot (Beta). When multiple API keys are set, all agents run in parallel goroutines, each polling its respective API and storing snapshots in the shared SQLite database.
 
-The dashboard switches between providers via the `?provider=` query parameter. Each provider renders its own quota cards, insight cards, and stat summaries. Synthetic insights focus on cycle utilization and billing periods; Z.ai insights show plan capacity (daily/monthly token budgets), tokens-per-call efficiency, and top tool analysis; Anthropic insights show burn rate forecasting, window averages, projected exhaustion, and cross-quota ratio analysis (5-Hour vs Weekly).
+The dashboard switches between providers via the `?provider=` query parameter. Each provider renders its own quota cards, insight cards, and stat summaries. Synthetic insights focus on cycle utilization and billing periods; Z.ai insights show plan capacity (daily/monthly token budgets), tokens-per-call efficiency, and top tool analysis; Anthropic insights show burn rate forecasting, window averages, projected exhaustion, and cross-quota ratio analysis (5-Hour vs Weekly); GitHub Copilot (Beta) insights are under active development.
 
 A dedicated settings page (`/settings`) provides tabbed configuration for provider controls, notification thresholds, and SMTP email alerts. The notification engine (`internal/notify/`) checks quota statuses against thresholds and dispatches alerts for warning, critical, and reset events via email (SMTP) and/or browser push notifications (Web Push). Delivery channels are configurable per user preference.
 
@@ -186,13 +188,16 @@ Key source files:
 | `internal/api/client.go` | Synthetic API client |
 | `internal/api/zai_client.go` | Z.ai API client |
 | `internal/api/anthropic_client.go` | Anthropic OAuth API client |
+| `internal/api/copilot_client.go` | GitHub Copilot API client (Beta) |
 | `internal/agent/agent.go` | Synthetic polling agent |
 | `internal/agent/zai_agent.go` | Z.ai polling agent |
 | `internal/agent/anthropic_agent.go` | Anthropic polling agent |
+| `internal/agent/copilot_agent.go` | GitHub Copilot polling agent (Beta) |
 | `internal/agent/session_manager.go` | Cross-agent session lifecycle |
 | `internal/store/store.go` | Shared SQLite store + settings |
 | `internal/store/zai_store.go` | Z.ai-specific queries |
 | `internal/store/anthropic_store.go` | Anthropic-specific queries |
+| `internal/store/copilot_store.go` | GitHub Copilot-specific queries (Beta) |
 | `internal/notify/notify.go` | Notification engine: thresholds + alerts |
 | `internal/notify/smtp.go` | SMTP mailer: TLS/STARTTLS delivery |
 | `internal/notify/push.go` | Web Push sender: VAPID + RFC 8291 encryption |
@@ -379,7 +384,7 @@ The tool generates:
 - Console summary with RAM statistics and HTTP performance
 - JSON report: `perf-report-YYYYMMDD-HHMMSS.json`
 
-Example results (all three agents -- Synthetic, Z.ai, Anthropic -- polling in parallel):
+Example results (all four agents -- Synthetic, Z.ai, Anthropic, GitHub Copilot -- polling in parallel):
 ```
 IDLE STATE (3 agents polling concurrently):
   Avg RSS: 33.6 MB
@@ -403,7 +408,7 @@ HTTP PERFORMANCE:
 
 ### Latest Benchmark (2026-02-10)
 
-Measured with the built-in `tools/perf-monitor` while all three provider agents (Synthetic, Z.ai, Anthropic) ran in parallel, each polling its respective API every 60 seconds and writing snapshots to the shared SQLite database. Includes server-side chart downsampling (max 500 data points per response).
+Measured with the built-in `tools/perf-monitor` while all four provider agents (Synthetic, Z.ai, Anthropic, GitHub Copilot) ran in parallel, each polling its respective API every 60 seconds and writing snapshots to the shared SQLite database. Includes server-side chart downsampling (max 500 data points per response).
 
 | Metric | Idle | Under Load | Budget |
 |--------|------|------------|--------|
@@ -417,7 +422,7 @@ Measured with the built-in `tools/perf-monitor` while all three provider agents 
 ### Interpreting Results
 
 **Healthy metrics:**
-- Idle RAM: <30 MB (with all three agents)
+- Idle RAM: <30 MB (with all four agents)
 - Load overhead: <20 MB (includes server-side downsampling allocations)
 - API response: <5 ms
 - Dashboard response: <10 ms

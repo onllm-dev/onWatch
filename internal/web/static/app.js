@@ -49,6 +49,8 @@ function getCurrentProvider() {
   if (bothView) return 'both';
   const anthropicGrid = document.getElementById('quota-grid-anthropic');
   if (anthropicGrid) return 'anthropic';
+  const copilotGrid = document.getElementById('quota-grid-copilot');
+  if (copilotGrid) return 'copilot';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -297,6 +299,31 @@ const anthropicChartColorFallback = [
   { border: '#EC4899', bg: 'rgba(236, 72, 153, 0.08)' }
 ];
 
+// ── Copilot display names (mirrors backend CopilotDisplayName) ──
+const copilotDisplayNames = {
+  premium_interactions: 'Premium Requests',
+  chat: 'Chat',
+  completions: 'Completions'
+};
+
+// Copilot quota icons (mapped by key)
+const copilotQuotaIcons = {
+  premium_interactions: '<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>', // layers
+  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', // message-square
+  completions: '<polyline points="20 6 9 17 4 12"/>' // check
+};
+
+// Copilot chart colors keyed by quota name
+const copilotChartColorMap = {
+  premium_interactions: { border: '#6e40c9', bg: 'rgba(110, 64, 201, 0.08)' }, // GitHub purple
+  chat:                 { border: '#2ea043', bg: 'rgba(46, 160, 67, 0.08)' },  // GitHub green
+  completions:          { border: '#58a6ff', bg: 'rgba(88, 166, 255, 0.08)' }  // GitHub blue
+};
+const copilotChartColorFallback = [
+  { border: '#f78166', bg: 'rgba(247, 129, 102, 0.08)' },
+  { border: '#a371f7', bg: 'rgba(163, 113, 247, 0.08)' }
+];
+
 // ── Renewal Categories for Cycle Overview ──
 
 const renewalCategories = {
@@ -313,6 +340,11 @@ const renewalCategories = {
   zai: [
     { label: 'Tokens', groupBy: 'tokens' },
     { label: 'Time', groupBy: 'time' }
+  ],
+  copilot: [
+    { label: 'Premium', groupBy: 'premium_interactions' },
+    { label: 'Chat', groupBy: 'chat' },
+    { label: 'Completions', groupBy: 'completions' }
   ]
 };
 
@@ -325,7 +357,10 @@ const overviewQuotaDisplayNames = {
   seven_day: 'Weekly',
   seven_day_sonnet: 'Sonnet',
   monthly_limit: 'Monthly',
-  extra_usage: 'Extra'
+  extra_usage: 'Extra',
+  premium_interactions: 'Premium',
+  chat: 'Chat',
+  completions: 'Completions'
 };
 
 // ── Anthropic Dynamic Card Rendering ──
@@ -564,6 +599,284 @@ async function loadAnthropicModalCycles(quotaName) {
         <td>${formatDurationMins(durationMins)}</td>
         <td>${formatNumber(cycle.peakUtilization || 0)}%</td>
         <td>${formatNumber(cycle.totalDelta || 0)}%</td>
+      </tr>`;
+    }).join('');
+  } catch (err) { /* modal cycles error — non-critical */ }
+}
+
+// ── Copilot Dynamic Card Rendering ──
+
+function renderCopilotQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  // Build cards for each quota
+  container.innerHTML = quotas.map((q, i) => {
+    const icon = copilotQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
+    const displayName = q.displayName || copilotDisplayNames[q.name] || q.name;
+    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const status = q.status || 'healthy';
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const countdownId = `countdown-copilot-${q.name}`;
+    const progressId = `progress-copilot-${q.name}`;
+    const percentId = `percent-copilot-${q.name}`;
+    const fractionId = `fraction-copilot-${q.name}`;
+    const statusId = `status-copilot-${q.name}`;
+    const resetId = `reset-copilot-${q.name}`;
+
+    // Format the usage fraction (remaining / entitlement or ∞ for unlimited)
+    let fractionText = '';
+    if (q.unlimited) {
+      fractionText = '∞ Unlimited';
+    } else {
+      const used = q.entitlement - q.remaining;
+      fractionText = `${formatNumber(used)} / ${formatNumber(q.entitlement)}`;
+    }
+
+    return `<article class="quota-card copilot-card" data-quota="${q.name}" data-provider="copilot" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+      <header class="card-header">
+        <h2 class="quota-title">
+          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+          ${displayName}
+          ${q.unlimited ? '<span class="unlimited-badge">∞</span>' : ''}
+        </h2>
+        <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="${percentId}">${q.unlimited ? '0' : usagePct}%</span>
+        <span class="usage-fraction" id="${fractionId}">${fractionText}</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${q.unlimited ? 0 : Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="${progressId}" style="width: ${q.unlimited ? 0 : usagePct}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="${statusId}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="${resetId}">${q.resetDate ? 'Resets: ' + formatDateTime(q.resetDate) : ''}</span>
+      </footer>
+    </article>`;
+  }).join('');
+
+  // Re-attach modal click handlers for new cards
+  container.querySelectorAll('.quota-card[role="button"]').forEach(card => {
+    const handler = () => {
+      const providerCol = card.closest('.provider-column');
+      const providerOverride = providerCol ? providerCol.dataset.provider : 'copilot';
+      openCopilotModal(card.dataset.quota, providerOverride);
+    };
+    card.addEventListener('click', handler);
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); }
+    });
+  });
+}
+
+function updateCopilotCard(quota) {
+  const key = `copilot-${quota.name}`;
+  const prev = State.currentQuotas[key];
+  State.currentQuotas[key] = {
+    percent: quota.usagePercent || 0,
+    usage: quota.entitlement - quota.remaining,
+    limit: quota.entitlement,
+    remaining: quota.remaining,
+    unlimited: quota.unlimited,
+    status: quota.status || 'healthy',
+    renewsAt: quota.resetDate,
+    timeUntilReset: quota.timeUntilReset,
+    timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
+    name: quota.name,
+    displayName: quota.displayName
+  };
+
+  const progressEl = document.getElementById(`progress-copilot-${quota.name}`);
+  const percentEl = document.getElementById(`percent-copilot-${quota.name}`);
+  const fractionEl = document.getElementById(`fraction-copilot-${quota.name}`);
+  const statusEl = document.getElementById(`status-copilot-${quota.name}`);
+  const resetEl = document.getElementById(`reset-copilot-${quota.name}`);
+  const countdownEl = document.getElementById(`countdown-copilot-${quota.name}`);
+
+  const usagePct = quota.unlimited ? 0 : (quota.usagePercent || 0).toFixed(1);
+  const status = quota.status || 'healthy';
+
+  if (progressEl) {
+    progressEl.style.width = `${usagePct}%`;
+    progressEl.setAttribute('data-status', status);
+  }
+  if (percentEl) {
+    const oldVal = prev ? prev.percent : 0;
+    if (!quota.unlimited && Math.abs(oldVal - quota.usagePercent) > 0.2) {
+      animateValue(percentEl, oldVal, quota.usagePercent, 400, v => `${v.toFixed(1)}%`);
+    } else {
+      percentEl.textContent = quota.unlimited ? '0%' : `${usagePct}%`;
+    }
+  }
+  if (fractionEl) {
+    if (quota.unlimited) {
+      fractionEl.textContent = '∞ Unlimited';
+    } else {
+      const used = quota.entitlement - quota.remaining;
+      fractionEl.textContent = `${formatNumber(used)} / ${formatNumber(quota.entitlement)}`;
+    }
+  }
+  if (statusEl) {
+    const config = statusConfig[status] || statusConfig.healthy;
+    statusEl.setAttribute('data-status', status);
+    statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
+  }
+  if (resetEl) {
+    resetEl.textContent = quota.resetDate ? `Resets: ${formatDateTime(quota.resetDate)}` : '';
+  }
+  if (countdownEl) {
+    if (quota.timeUntilResetSeconds > 0) {
+      countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
+      countdownEl.classList.toggle('imminent', quota.timeUntilResetSeconds < 1800);
+      countdownEl.style.display = '';
+    } else {
+      countdownEl.style.display = 'none';
+    }
+  }
+}
+
+// Copilot quota detail modal
+function openCopilotModal(quotaName, providerOverride) {
+  const key = `copilot-${quotaName}`;
+  const data = State.currentQuotas[key];
+  if (!data) return;
+
+  const modal = document.getElementById('detail-modal');
+  const titleEl = document.getElementById('modal-title');
+  const bodyEl = document.getElementById('modal-body');
+  if (!modal || !bodyEl) return;
+
+  const displayName = data.displayName || copilotDisplayNames[quotaName] || quotaName;
+  titleEl.textContent = displayName;
+
+  const usagePct = data.unlimited ? 0 : (data.percent || 0).toFixed(1);
+  const used = data.unlimited ? 0 : (data.limit - data.remaining);
+
+  bodyEl.innerHTML = `
+    <div class="modal-stats-grid">
+      <div class="modal-stat">
+        <span class="modal-stat-label">Usage</span>
+        <span class="modal-stat-value">${usagePct}%</span>
+      </div>
+      <div class="modal-stat">
+        <span class="modal-stat-label">Used / Total</span>
+        <span class="modal-stat-value">${data.unlimited ? '∞' : formatNumber(used) + ' / ' + formatNumber(data.limit)}</span>
+      </div>
+      <div class="modal-stat">
+        <span class="modal-stat-label">Status</span>
+        <span class="modal-stat-value" data-status="${data.status}">${(statusConfig[data.status] || statusConfig.healthy).label}</span>
+      </div>
+      <div class="modal-stat">
+        <span class="modal-stat-label">Resets In</span>
+        <span class="modal-stat-value">${data.timeUntilResetSeconds > 0 ? formatDuration(data.timeUntilResetSeconds) : '--'}</span>
+      </div>
+    </div>
+    <div class="modal-chart-container">
+      <canvas id="modal-chart" height="200"></canvas>
+    </div>
+    <h4 class="modal-section-title">Recent Cycles</h4>
+    <table class="modal-cycles-table">
+      <thead><tr><th>Cycle</th><th>Duration</th><th>Peak Used</th><th>Total Delta</th></tr></thead>
+      <tbody id="modal-cycles-tbody"><tr><td colspan="4">Loading...</td></tr></tbody>
+    </table>
+  `;
+
+  modal.classList.add('open');
+  document.body.classList.add('modal-open');
+  modal.querySelector('.modal-close')?.focus();
+
+  loadCopilotModalChart(quotaName);
+  loadCopilotModalCycles(quotaName);
+}
+
+async function loadCopilotModalChart(quotaName) {
+  try {
+    const res = await authFetch(`${API_BASE}/api/history?range=6h&provider=copilot`);
+    if (!res.ok) return;
+    const history = await res.json();
+    if (!history || history.length === 0) return;
+
+    // Extract data points for this quota
+    const data = history.filter(h => {
+      if (!h.quotas) return false;
+      return h.quotas.some(q => q.name === quotaName);
+    }).map(h => {
+      const q = h.quotas.find(q => q.name === quotaName);
+      return { capturedAt: h.capturedAt, usagePercent: q ? q.usagePercent : 0 };
+    });
+
+    if (data.length === 0) return;
+
+    const canvas = document.getElementById('modal-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    // Clean up existing chart if any
+    if (State.modalChart) {
+      State.modalChart.destroy();
+      State.modalChart = null;
+    }
+
+    const colors = getThemeColors();
+    const chartData = data.map(d => d.usagePercent);
+    const maxVal = Math.max(...chartData, 10);
+    const yMax = Math.min(Math.ceil(maxVal / 10) * 10 + 10, 110);
+
+    State.modalChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.map(d => new Date(d.capturedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })),
+        datasets: [(() => { const c = copilotChartColorMap[quotaName] || { border: '#6e40c9', bg: 'rgba(110, 64, 201, 0.08)' }; return {
+          label: copilotDisplayNames[quotaName] || quotaName,
+          data: chartData,
+          borderColor: c.border,
+          backgroundColor: c.bg,
+          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5
+        }; })()]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor: colors.surfaceContainer, titleColor: colors.onSurface, bodyColor: colors.text, borderColor: colors.outline, borderWidth: 1, callbacks: { label: c => `${c.parsed.y.toFixed(1)}%` } }
+        },
+        scales: {
+          x: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6 } },
+          y: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, callback: v => v + '%' }, min: 0, max: yMax }
+        }
+      }
+    });
+  } catch (err) { /* modal chart error — non-critical */ }
+}
+
+async function loadCopilotModalCycles(quotaName) {
+  try {
+    const res = await authFetch(`${API_BASE}/api/cycles?type=${quotaName}&provider=copilot`);
+    if (!res.ok) return;
+    const cycles = await res.json();
+    const tbody = document.getElementById('modal-cycles-tbody');
+    if (!tbody) return;
+    const recent = cycles.slice(0, 5);
+    if (recent.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No cycles yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = recent.map(cycle => {
+      const start = new Date(cycle.cycleStart);
+      const end = cycle.cycleEnd ? new Date(cycle.cycleEnd) : new Date();
+      const durationMins = Math.round((end - start) / 60000);
+      const isActive = !cycle.cycleEnd;
+      return `<tr>
+        <td>#${cycle.id}${isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${formatDurationMins(durationMins)}</td>
+        <td>${formatNumber(cycle.peakUsed || 0)}</td>
+        <td>${formatNumber(cycle.totalDelta || 0)}</td>
       </tr>`;
     }).join('');
   } catch (err) { /* modal cycles error — non-critical */ }
@@ -992,6 +1305,24 @@ async function fetchCurrent() {
             data.anthropic.quotas.forEach(q => updateAnthropicCard(q));
           }
         }
+        if (data.copilot && data.copilot.quotas) {
+          const container = document.getElementById('quota-grid-copilot-both');
+          if (container && container.children.length === 0) {
+            renderCopilotQuotaCards(data.copilot.quotas, 'quota-grid-copilot-both');
+          } else {
+            data.copilot.quotas.forEach(q => updateCopilotCard(q));
+          }
+        }
+      } else if (provider === 'copilot') {
+        // Copilot response: { capturedAt: ..., quotas: [...] }
+        if (data.quotas) {
+          const container = document.getElementById('quota-grid-copilot');
+          if (container && container.children.length === 0) {
+            renderCopilotQuotaCards(data.quotas, 'quota-grid-copilot');
+          } else {
+            data.quotas.forEach(q => updateCopilotCard(q));
+          }
+        }
       } else if (provider === 'anthropic') {
         // Anthropic response: { capturedAt: ..., quotas: [...] }
         if (data.quotas) {
@@ -1252,6 +1583,23 @@ function renderBothInsights(data, statsEl, cardsEl) {
         </div>`
       ).join('')}</div>
       <div class="insights-cards">${buildInsightCardsHTML(anthInsights)}</div>
+    </div>`;
+  }
+
+  // Copilot box
+  if (data.copilot) {
+    const copilotStats = data.copilot.stats || [];
+    let copilotInsights = (data.copilot.insights || []).filter(i => !i.key || !expandedHidden.has(i.key));
+    html += `<div class="provider-insights-box" data-provider="copilot">
+      <h4 class="provider-insights-label">Copilot <span class="beta-badge">Beta</span></h4>
+      <div class="insights-stats">${copilotStats.map(s =>
+        `<div class="insight-stat">
+          <div class="insight-stat-value">${s.value}</div>
+          <div class="insight-stat-label">${s.label}</div>
+          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
+        </div>`
+      ).join('')}</div>
+      <div class="insights-cards">${buildInsightCardsHTML(copilotInsights)}</div>
     </div>`;
   }
 
@@ -1570,6 +1918,36 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'copilot') {
+      // Copilot history: array of { capturedAt, quotas: [...] } → transform to flat object
+      // Extract quota keys and build datasets
+      const quotaKeys = new Set();
+      data.forEach(d => {
+        if (d.quotas) d.quotas.forEach(q => quotaKeys.add(q.name));
+      });
+      const sortedKeys = [...quotaKeys].sort();
+      let fallbackIdx = 0;
+      State.chart.data.datasets = sortedKeys.map((key) => {
+        const color = copilotChartColorMap[key] || copilotChartColorFallback[fallbackIdx++ % copilotChartColorFallback.length];
+        return {
+          label: copilotDisplayNames[key] || key,
+          data: data.map(d => {
+            const q = d.quotas ? d.quotas.find(q => q.name === key) : null;
+            return q ? (q.usagePercent || 0) : 0;
+          }),
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key)
+        };
+      });
+      State.chart.data.labels = data.map(d => new Date(d.capturedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
     if (provider === 'zai') {
       while (State.chart.data.datasets.length > 3) State.chart.data.datasets.pop();
       if (State.chart.data.datasets.length < 3) {
@@ -1776,7 +2154,7 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic';
+  const usePercent = provider === 'anthropic' || provider === 'copilot';
 
   // Build dynamic header (similar to Cycle Overview)
   let headerHtml = `
