@@ -14,6 +14,9 @@ onWatch fills the gap between "current usage snapshot" and the historical, per-c
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![Website](https://img.shields.io/badge/onwatch.onllm.dev-7C3AED?style=for-the-badge&logo=globe&logoColor=white)](https://onwatch.onllm.dev)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/prakersh)
+
+[![Star History Chart](https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline)](https://star-history.com/#onllm-dev/onwatch&Timeline)
 
 ![Anthropic Dashboard — Light Mode](./docs/screenshots/anthropic-light.png)
 
@@ -135,14 +138,14 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 
 ## Who Is onWatch For?
 
-| Audience | Pain Point | How onWatch Helps |
-|----------|-----------|-------------------|
-| **Solo developers & freelancers** using Claude Code, Cline, Roo Code, or Kilo Code with Anthropic/Synthetic/Z.ai/Copilot | Budget anxiety -- no visibility into quota burn rate, surprise throttling mid-task | Real-time rate projections, historical trends, live countdowns so you never get throttled unexpectedly |
-| **Small dev teams (3-20 people)** sharing API keys | No shared visibility into who's consuming what, impossible to budget next month | Shared dashboard with session tracking, cycle history for budget planning |
-| **DevOps & platform engineers** | Shadow AI usage with no FinOps for coding API subscriptions | Lightweight sidecar (<50 MB), SQLite data source for Grafana, REST API for monitoring stack integration |
-| **Privacy-conscious developers** in regulated industries | Can't use SaaS analytics that phone home; need local, auditable monitoring | Single binary, local SQLite, zero telemetry, GPL-3.0 source code, works air-gapped |
-| **Researchers & educators** on grants | Need per-session API cost attribution for grant reports and paper methodology | Per-session usage tracking, historical export via SQLite |
-| **Budget-conscious API users** paying $3-$60/month | Every request matters; no way to know if plan is underutilized or budget is at risk | Usage insights, plan capacity analysis, upgrade/downgrade recommendations via data |
+| Audience                                                                                                                 | Pain Point                                                                          | How onWatch Helps                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Solo developers & freelancers** using Claude Code, Cline, Roo Code, or Kilo Code with Anthropic/Synthetic/Z.ai/Copilot | Budget anxiety -- no visibility into quota burn rate, surprise throttling mid-task  | Real-time rate projections, historical trends, live countdowns so you never get throttled unexpectedly  |
+| **Small dev teams (3-20 people)** sharing API keys                                                                       | No shared visibility into who's consuming what, impossible to budget next month     | Shared dashboard with session tracking, cycle history for budget planning                               |
+| **DevOps & platform engineers**                                                                                          | Shadow AI usage with no FinOps for coding API subscriptions                         | Lightweight sidecar (<50 MB), SQLite data source for Grafana, REST API for monitoring stack integration |
+| **Privacy-conscious developers** in regulated industries                                                                 | Can't use SaaS analytics that phone home; need local, auditable monitoring          | Single binary, local SQLite, zero telemetry, GPL-3.0 source code, works air-gapped                      |
+| **Researchers & educators** on grants                                                                                    | Need per-session API cost attribution for grant reports and paper methodology       | Per-session usage tracking, historical export via SQLite                                                |
+| **Budget-conscious API users** paying $3-$60/month                                                                       | Every request matters; no way to know if plan is underutilized or budget is at risk | Usage insights, plan capacity analysis, upgrade/downgrade recommendations via data                      |
 
 ---
 
@@ -180,7 +183,7 @@ No. Zero telemetry. All data stays in a local SQLite file. The only outbound cal
 
 ## Architecture
 
-```
+```text
                   ┌──────────────┐
                   │  Dashboard   │
                   │  :9211       │
@@ -208,28 +211,28 @@ All agents run as parallel goroutines. Each polls its API at the configured inte
 
 ## CLI Reference
 
-| Flag | Env Var | Default | Description |
-|------|---------|---------|-------------|
-| `--interval` | `ONWATCH_POLL_INTERVAL` | `60` | Poll interval in seconds (10--3600) |
-| `--port` | `ONWATCH_PORT` | `9211` | Dashboard HTTP port |
-| `--db` | `ONWATCH_DB_PATH` | `~/.onwatch/data/onwatch.db` | SQLite database path |
-| `--debug` | -- | `false` | Foreground mode, log to stdout |
-| `--test` | -- | `false` | Isolated PID/log files for testing |
-| `--version` | -- | -- | Print version and exit |
+| Flag         | Env Var                 | Default                      | Description                         |
+| ------------ | ----------------------- | ---------------------------- | ----------------------------------- |
+| `--interval` | `ONWATCH_POLL_INTERVAL` | `60`                         | Poll interval in seconds (10--3600) |
+| `--port`     | `ONWATCH_PORT`          | `9211`                       | Dashboard HTTP port                 |
+| `--db`       | `ONWATCH_DB_PATH`       | `~/.onwatch/data/onwatch.db` | SQLite database path                |
+| `--debug`    | --                      | `false`                      | Foreground mode, log to stdout      |
+| `--test`     | --                      | `false`                      | Isolated PID/log files for testing  |
+| `--version`  | --                      | --                           | Print version and exit              |
 
 Additional environment variables:
 
-| Variable | Description |
-|----------|-------------|
-| `ANTHROPIC_TOKEN` | Anthropic OAuth token (auto-detected from Claude Code) |
-| `COPILOT_TOKEN` | GitHub Copilot PAT with `copilot` scope (Beta) |
-| `SYNTHETIC_API_KEY` | Synthetic API key |
-| `ZAI_API_KEY` | Z.ai API key |
-| `ZAI_BASE_URL` | Z.ai base URL (default: `https://api.z.ai/api`) |
-| `ONWATCH_ADMIN_USER` | Dashboard username (default: `admin`) |
-| `ONWATCH_ADMIN_PASS` | Initial dashboard password (default: `changeme`) |
-| `ONWATCH_LOG_LEVEL` | Log level: debug, info, warn, error |
-| `ONWATCH_HOST` | Bind address (default: `0.0.0.0`) |
+| Variable             | Description                                            |
+| -------------------- | ------------------------------------------------------ |
+| `ANTHROPIC_TOKEN`    | Anthropic OAuth token (auto-detected from Claude Code) |
+| `COPILOT_TOKEN`      | GitHub Copilot PAT with `copilot` scope (Beta)         |
+| `SYNTHETIC_API_KEY`  | Synthetic API key                                      |
+| `ZAI_API_KEY`        | Z.ai API key                                           |
+| `ZAI_BASE_URL`       | Z.ai base URL (default: `https://api.z.ai/api`)        |
+| `ONWATCH_ADMIN_USER` | Dashboard username (default: `admin`)                  |
+| `ONWATCH_ADMIN_PASS` | Initial dashboard password (default: `changeme`)       |
+| `ONWATCH_LOG_LEVEL`  | Log level: debug, info, warn, error                    |
+| `ONWATCH_HOST`       | Bind address (default: `0.0.0.0`)                      |
 
 CLI flags override environment variables.
 
@@ -239,28 +242,28 @@ CLI flags override environment variables.
 
 All endpoints require authentication (session cookie or Basic Auth). Append `?provider=synthetic|zai|anthropic|copilot|both` to select the provider.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Dashboard |
-| `/settings` | GET | Settings page |
-| `/login` | GET/POST | Login page |
-| `/logout` | GET | Clear session |
-| `/api/current` | GET | Latest snapshot with summaries |
-| `/api/history?range=6h` | GET | Historical data for charts |
-| `/api/cycles?type=subscription` | GET | Reset cycle history |
-| `/api/cycle-overview` | GET | Cross-quota correlation at peak usage |
-| `/api/summary` | GET | Usage summaries |
-| `/api/sessions` | GET | Session history |
-| `/api/insights` | GET | Usage insights |
-| `/api/providers` | GET | Available providers |
-| `/api/settings` | GET/PUT | User settings (notifications, SMTP, providers) |
-| `/api/settings/smtp/test` | POST | Send test email via configured SMTP |
-| `/api/password` | PUT | Change password |
-| `/api/push/vapid` | GET | Get VAPID public key for push subscription |
-| `/api/push/subscribe` | POST/DELETE | Subscribe/unsubscribe push endpoint |
-| `/api/push/test` | POST | Send test push notification |
-| `/api/update/check` | GET | Check for new version |
-| `/api/update/apply` | POST | Download and apply update |
+| Endpoint                        | Method      | Description                                    |
+| ------------------------------- | ----------- | ---------------------------------------------- |
+| `/`                             | GET         | Dashboard                                      |
+| `/settings`                     | GET         | Settings page                                  |
+| `/login`                        | GET/POST    | Login page                                     |
+| `/logout`                       | GET         | Clear session                                  |
+| `/api/current`                  | GET         | Latest snapshot with summaries                 |
+| `/api/history?range=6h`         | GET         | Historical data for charts                     |
+| `/api/cycles?type=subscription` | GET         | Reset cycle history                            |
+| `/api/cycle-overview`           | GET         | Cross-quota correlation at peak usage          |
+| `/api/summary`                  | GET         | Usage summaries                                |
+| `/api/sessions`                 | GET         | Session history                                |
+| `/api/insights`                 | GET         | Usage insights                                 |
+| `/api/providers`                | GET         | Available providers                            |
+| `/api/settings`                 | GET/PUT     | User settings (notifications, SMTP, providers) |
+| `/api/settings/smtp/test`       | POST        | Send test email via configured SMTP            |
+| `/api/password`                 | PUT         | Change password                                |
+| `/api/push/vapid`               | GET         | Get VAPID public key for push subscription     |
+| `/api/push/subscribe`           | POST/DELETE | Subscribe/unsubscribe push endpoint            |
+| `/api/push/test`                | POST        | Send test push notification                    |
+| `/api/update/check`             | GET         | Check for new version                          |
+| `/api/update/apply`             | POST        | Download and apply update                      |
 
 ---
 
@@ -294,7 +297,7 @@ onwatch stop && onwatch
 
 ## Data Storage
 
-```
+```shell
 ~/.onwatch/
 ├── onwatch.pid          # PID file
 ├── .onwatch.log         # Log file (background mode)
@@ -308,7 +311,12 @@ On first run, if a database exists at `./onwatch.db`, onWatch auto-migrates it t
 
 ## Docker Deployment
 
-onWatch provides Docker support with a distroless runtime image (~10-12 MB). The container auto-detects the Docker environment and runs in foreground mode with stdout logging.
+The container auto-detects the Docker environment and runs in foreground mode with stdout logging.
+
+> [!NOTE]
+> onWatch provides Docker support with a distroless runtime image (~10-12 MB).
+> You will almost certainly need to account for file permissions when using bind mounts for the SQLite database, as the container runs as non-root (UID 65532).
+> See [Storage](#storage) below for details.
 
 ### Quick Start
 
@@ -321,16 +329,11 @@ Multi-arch images (linux/amd64, linux/arm64) are automatically built and publish
 docker run -d --name onwatch -p 9211:9211 \
   -v onwatch-data:/data \
   -e SYNTHETIC_API_KEY=your_key_here \
-  ghcr.io/kquinsland/onwatch:latest
-
-# Or use a specific version
-docker run -d --name onwatch -p 9211:9211 \
-  -v onwatch-data:/data \
-  --env-file .env \
-  ghcr.io/kquinsland/onwatch:vX.Y.Z
+  ghcr.io/onllm-dev/onwatch:latest
 ```
 
 **Docker Compose (recommended):**
+
 ```bash
 git clone https://github.com/onllm-dev/onwatch.git && cd onwatch
 cp .env.docker.example .env
@@ -340,6 +343,7 @@ docker-compose logs -f
 ```
 
 **Using app.sh:**
+
 ```bash
 ./app.sh --docker --build      # Build Docker image
 ./app.sh --docker --run        # Build + start container
@@ -348,6 +352,7 @@ docker-compose logs -f
 ```
 
 **Manual Docker run:**
+
 ```bash
 docker build -t onwatch:latest .
 docker run -d --name onwatch -p 9211:9211 \
@@ -360,15 +365,15 @@ docker run -d --name onwatch -p 9211:9211 \
 
 Copy `.env.docker.example` to `.env` and set at least one provider key. See `.env.docker.example` for all available options. Key variables:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SYNTHETIC_API_KEY` | Synthetic API key | -- |
-| `ZAI_API_KEY` | Z.ai API key | -- |
-| `ANTHROPIC_TOKEN` | Anthropic token (auto-detected if not set) | -- |
-| `ONWATCH_ADMIN_USER` | Dashboard username | `admin` |
-| `ONWATCH_ADMIN_PASS` | Dashboard password | `changeme` |
-| `ONWATCH_POLL_INTERVAL` | Polling interval (seconds) | `60` |
-| `ONWATCH_LOG_LEVEL` | Log level | `info` |
+| Variable                | Description                                | Default    |
+| ----------------------- | ------------------------------------------ | ---------- |
+| `SYNTHETIC_API_KEY`     | Synthetic API key                          | --         |
+| `ZAI_API_KEY`           | Z.ai API key                               | --         |
+| `ANTHROPIC_TOKEN`       | Anthropic token (auto-detected if not set) | --         |
+| `ONWATCH_ADMIN_USER`    | Dashboard username                         | `admin`    |
+| `ONWATCH_ADMIN_PASS`    | Dashboard password                         | `changeme` |
+| `ONWATCH_POLL_INTERVAL` | Polling interval (seconds)                 | `60`       |
+| `ONWATCH_LOG_LEVEL`     | Log level                                  | `info`     |
 
 ### Storage
 
@@ -440,6 +445,14 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilat
 ## License
 
 GNU General Public License v3.0. See [LICENSE](LICENSE).
+
+---
+
+## Support
+
+If onWatch saves you time, consider buying me a coffee:
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/prakersh)
 
 ---
 

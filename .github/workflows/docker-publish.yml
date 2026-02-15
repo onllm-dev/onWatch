@@ -2,7 +2,16 @@ name: Docker Build and Publish
 
 on:
   release:
-    types: [published]
+    types:
+      - published
+
+  # For break-glass testing and manual releases
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.6.0). Must already exist."
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -17,7 +26,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -53,10 +64,13 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # Note: with the current architecture, we need to manually keep this in sync with `release.yaml` modulo
+          #   the platforms that the Dockerfile can't support (there is no alpine linux image for Darwin or Windows, for example).
+          # gcr.io/distroless/static-debian12:nonroot also only comes in linux variants
+          platforms: linux/arm64,linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
