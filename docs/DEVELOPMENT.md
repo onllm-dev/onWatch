@@ -263,9 +263,9 @@ The workflow at `.github/workflows/docker-publish.yml` automatically builds and 
 
 **Tags generated:**
 - `ghcr.io/kquinsland/onwatch:latest` - Latest release
-- `ghcr.io/kquinsland/onwatch:2.10.0` - Specific version
-- `ghcr.io/kquinsland/onwatch:2.10` - Major.minor
-- `ghcr.io/kquinsland/onwatch:2` - Major version
+- `ghcr.io/kquinsland/onwatch:vX.Y.Z` - Specific version (e.g., v2.10.0)
+- `ghcr.io/kquinsland/onwatch:X.Y` - Major.minor (e.g., 2.10)
+- `ghcr.io/kquinsland/onwatch:X` - Major version (e.g., 2)
 
 **Workflow triggers:**
 - Automatically on release publication
@@ -277,7 +277,7 @@ The workflow at `.github/workflows/docker-publish.yml` automatically builds and 
 docker pull ghcr.io/kquinsland/onwatch:latest
 
 # Or a specific version
-docker pull ghcr.io/kquinsland/onwatch:2.10.0
+docker pull ghcr.io/kquinsland/onwatch:vX.Y.Z
 
 # Run it
 docker run -d --name onwatch -p 9211:9211 \

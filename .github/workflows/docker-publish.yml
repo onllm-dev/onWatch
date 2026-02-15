@@ -34,7 +34,12 @@ jobs:
 
       - name: Read version
         id: version
-        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ ! -f VERSION ] || [ ! -s VERSION ]; then
+            echo "ERROR: VERSION file is missing or empty"
+            exit 1
+          fi
+          echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
@@ -57,6 +62,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
-            BUILD_TIME=${{ github.event.release.created_at }}
+            BUILD_TIME=${{ github.event.release.published_at }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

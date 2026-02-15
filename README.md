@@ -327,7 +327,7 @@ docker run -d --name onwatch -p 9211:9211 \
 docker run -d --name onwatch -p 9211:9211 \
   -v onwatch-data:/data \
   --env-file .env \
-  ghcr.io/kquinsland/onwatch:2.10.0
+  ghcr.io/kquinsland/onwatch:vX.Y.Z
 ```
 
 **Docker Compose (recommended):**
