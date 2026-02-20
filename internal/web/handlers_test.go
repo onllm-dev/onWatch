@@ -2539,13 +2539,20 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 	}
 
 	hasPlan := false
+	hasFiveHourBehaviorStat := false
 	for _, st := range response.Stats {
 		if st.Label == "Plan" {
 			hasPlan = true
 		}
+		if st.Label == "5-Hour Avg Delta/Cycle" || st.Label == "5-Hour Delta (Current)" {
+			hasFiveHourBehaviorStat = true
+		}
 	}
 	if !hasPlan {
 		t.Error("expected Plan stat in codex insights response")
+	}
+	if !hasFiveHourBehaviorStat {
+		t.Error("expected 5-Hour behavior stat in codex insights response")
 	}
 	for _, in := range response.Insights {
 		if in.Title == "Tracking Quality" {
@@ -2564,6 +2571,9 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 		}
 		if st.Label == "Next Reset" {
 			t.Error("did not expect Next Reset stat in codex insights response")
+		}
+		if st.Label == "Last Sample" {
+			t.Error("did not expect Last Sample stat in codex insights response")
 		}
 	}
 

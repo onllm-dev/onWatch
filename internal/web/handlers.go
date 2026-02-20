@@ -4778,14 +4778,39 @@ func (h *Handler) buildCodexInsights(hidden map[string]bool, rangeDur time.Durat
 			Label: "Plan",
 		})
 	}
-	sampleAge := time.Since(latest.CapturedAt)
-	if sampleAge < 0 {
-		sampleAge = 0
+
+	// Replace "Last Sample" with historical behavior metrics.
+	windowStart := time.Now().UTC().Add(-30 * 24 * time.Hour)
+	fiveHourCycles, err := h.store.QueryCodexCyclesSince("five_hour", windowStart)
+	if err == nil && len(fiveHourCycles) > 0 {
+		var totalDelta float64
+		var peak float64
+		for _, c := range fiveHourCycles {
+			totalDelta += c.TotalDelta
+			if c.PeakUtilization > peak {
+				peak = c.PeakUtilization
+			}
+		}
+		resp.Stats = append(resp.Stats, insightStat{
+			Value:    fmt.Sprintf("%.1f%%", totalDelta/float64(len(fiveHourCycles))),
+			Label:    "5-Hour Avg Delta/Cycle",
+			Sublabel: fmt.Sprintf("%d cycles (30d)", len(fiveHourCycles)),
+		})
+		resp.Stats = append(resp.Stats, insightStat{
+			Value: fmt.Sprintf("%.1f%%", peak),
+			Label: "5-Hour Peak (30d)",
+		})
+	} else if active, err := h.store.QueryActiveCodexCycle("five_hour"); err == nil && active != nil {
+		resp.Stats = append(resp.Stats, insightStat{
+			Value:    fmt.Sprintf("%.1f%%", active.TotalDelta),
+			Label:    "5-Hour Delta (Current)",
+			Sublabel: fmt.Sprintf("peak %.1f%%", active.PeakUtilization),
+		})
+		resp.Stats = append(resp.Stats, insightStat{
+			Value: fmt.Sprintf("%.1f%%", active.PeakUtilization),
+			Label: "5-Hour Peak (Current)",
+		})
 	}
-	resp.Stats = append(resp.Stats, insightStat{
-		Value: formatDuration(sampleAge),
-		Label: "Last Sample",
-	})
 
 	// Burn-rate insights per quota.
 	for _, q := range latest.Quotas {
