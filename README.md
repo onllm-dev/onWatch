@@ -68,13 +68,17 @@ Edit `~/.onwatch/.env` (or `.env` in the project directory if built from source)
 SYNTHETIC_API_KEY=syn_your_key_here       # https://synthetic.new/settings/api
 ZAI_API_KEY=your_zai_key_here             # https://www.z.ai/api-keys
 ANTHROPIC_TOKEN=your_token_here           # Auto-detected from Claude Code credentials
-CODEX_TOKEN=your_token_here               # Auto-detected from ~/.codex/auth.json if not set
+CODEX_TOKEN=your_token_here               # Recommended for Codex-only setups
 COPILOT_TOKEN=ghp_your_token_here         # GitHub PAT with copilot scope (Beta)
 ONWATCH_ADMIN_USER=admin
 ONWATCH_ADMIN_PASS=changeme
 ```
 
-At least one provider key is required. Configure any combination to track them in parallel. Anthropic tokens are auto-detected from Claude Code credentials (macOS Keychain, Linux keyring, or `~/.claude/.credentials.json`). Codex tokens are auto-detected from `~/.codex/auth.json` (or `CODEX_HOME/auth.json`). Copilot tokens require a GitHub Personal Access Token (classic) with the `copilot` scope — see [Copilot Setup Guide](docs/COPILOT_SETUP.md) for step-by-step instructions.
+At least one provider key is required. Configure any combination to track them in parallel. Anthropic tokens are auto-detected from Claude Code credentials (macOS Keychain, Linux keyring, or `~/.claude/.credentials.json`). For Codex-only setups, set `CODEX_TOKEN` in `.env`; during runtime onWatch re-reads Codex auth state from `~/.codex/auth.json` (or `CODEX_HOME/auth.json`) and picks up token changes. Copilot tokens require a GitHub Personal Access Token (classic) with the `copilot` scope.
+
+Provider setup guides:
+- [Codex Setup Guide](docs/CODEX_SETUP.md)
+- [Copilot Setup Guide](docs/COPILOT_SETUP.md)
 
 ### Run
 
@@ -165,6 +169,10 @@ Set `ZAI_API_KEY` in your `.env`. onWatch polls the Z.ai `/monitor/usage/quota/l
 
 onWatch auto-detects your Claude Code credentials from the system keychain (macOS) or keyring/file (Linux). Just install and run -- if Claude Code is installed, Anthropic tracking is offered automatically. You can also set `ANTHROPIC_TOKEN` manually in your `.env`. Anthropic quotas are dynamic (5-Hour, 7-Day, Monthly, etc.) and displayed as utilization percentages. OAuth tokens are automatically refreshed before expiry, and onWatch gracefully handles auth failures with automatic retry when new credentials are detected.
 
+### How do I track my Codex usage?
+
+Set `CODEX_TOKEN` in your `.env` (recommended for Codex-only installs). You can retrieve it from `~/.codex/auth.json` (`tokens.access_token`) or from `$CODEX_HOME/auth.json` if you use a custom Codex home. onWatch re-reads Codex credentials while running, so token rotation is picked up automatically. Full walkthrough: [Codex Setup Guide](docs/CODEX_SETUP.md).
+
 ### How do I track my GitHub Copilot premium request usage?
 
 Set `COPILOT_TOKEN` in your `.env` with a GitHub Personal Access Token (classic) that has the `copilot` scope. Generate one at [github.com/settings/tokens](https://github.com/settings/tokens). onWatch polls the GitHub Copilot internal API to track premium interactions, chat, and completions quotas with monthly reset cycle detection. This feature is in beta and uses an undocumented API.
@@ -227,7 +235,7 @@ Additional environment variables:
 | Variable             | Description                                            |
 | -------------------- | ------------------------------------------------------ |
 | `ANTHROPIC_TOKEN`    | Anthropic OAuth token (auto-detected from Claude Code) |
-| `CODEX_TOKEN`        | Codex token (auto-detected from Codex auth if not set) |
+| `CODEX_TOKEN`        | Codex OAuth access token (recommended for Codex-only)  |
 | `COPILOT_TOKEN`      | GitHub Copilot PAT with `copilot` scope (Beta)         |
 | `SYNTHETIC_API_KEY`  | Synthetic API key                                      |
 | `ZAI_API_KEY`        | Z.ai API key                                           |
@@ -373,7 +381,7 @@ Copy `.env.docker.example` to `.env` and set at least one provider key. See `.en
 | `SYNTHETIC_API_KEY`     | Synthetic API key                          | --         |
 | `ZAI_API_KEY`           | Z.ai API key                               | --         |
 | `ANTHROPIC_TOKEN`       | Anthropic token (auto-detected if not set) | --         |
-| `CODEX_TOKEN`           | Codex token (auto-detected if not set)     | --         |
+| `CODEX_TOKEN`           | Codex OAuth access token (set explicitly)  | --         |
 | `ONWATCH_ADMIN_USER`    | Dashboard username                         | `admin`    |
 | `ONWATCH_ADMIN_PASS`    | Dashboard password                         | `changeme` |
 | `ONWATCH_POLL_INTERVAL` | Polling interval (seconds)                 | `60`       |

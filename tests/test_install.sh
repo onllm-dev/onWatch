@@ -158,7 +158,7 @@ test_anthropic_only_manual_help() {
 test_codex_only_manual() {
     setup && source_functions
     detect_codex_token() { return 1; }
-    run_setup "4\ncodex-test-token-123\nadmin\ntestpass\n9211\n60\n"
+    run_setup "4\n1\ncodex-test-token-123\nadmin\ntestpass\n9211\n60\n"
     assert_unset "SYNTHETIC_API_KEY" && \
     assert_unset "ZAI_API_KEY" && \
     assert_unset "ANTHROPIC_TOKEN" && \
@@ -182,15 +182,16 @@ test_anthropic_auto_rejected_manual() {
 test_multiple_syn_and_anth() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "4\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nadmin\ntestpass\n9211\n60\n"
+    run_setup "5\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_multi_123" && \
     assert_unset "ZAI_API_KEY" && \
-    assert_eq "ANTHROPIC_TOKEN" "anth-multi"
+    assert_eq "ANTHROPIC_TOKEN" "anth-multi" && \
+    assert_unset "CODEX_TOKEN"
 }
 
 test_multiple_zai_only() {
     setup && source_functions
-    run_setup "4\nN\ny\nzai_multi_456\nY\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "5\nN\ny\nzai_multi_456\nY\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_unset "SYNTHETIC_API_KEY" && \
     assert_eq "ZAI_API_KEY" "zai_multi_456" && \
     assert_unset "ANTHROPIC_TOKEN"
@@ -199,19 +200,22 @@ test_multiple_zai_only() {
 test_multiple_all_three() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "4\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nadmin\ntestpass\n9211\n60\n"
+    run_setup "5\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_789" && \
     assert_eq "ZAI_API_KEY" "zai_all_789" && \
-    assert_eq "ANTHROPIC_TOKEN" "anth_all_789"
+    assert_eq "ANTHROPIC_TOKEN" "anth_all_789" && \
+    assert_unset "CODEX_TOKEN"
 }
 
-test_all_available_choice5() {
+test_all_available_choice6() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "5\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\nadmin\ntestpass\n9211\n60\n"
+    detect_codex_token() { return 1; }
+    run_setup "6\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\n1\ncodex_all_avail\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_avail" && \
     assert_eq "ZAI_API_KEY" "zai_all_avail" && \
-    assert_eq "ANTHROPIC_TOKEN" "anth_all_avail"
+    assert_eq "ANTHROPIC_TOKEN" "anth_all_avail" && \
+    assert_eq "CODEX_TOKEN" "codex_all_avail"
 }
 
 test_custom_port_and_interval() {
@@ -245,7 +249,7 @@ ONWATCH_ADMIN_USER=admin
 ONWATCH_ADMIN_PASS=existingpass
 ONWATCH_PORT=9211
 EOF
-    run_setup "N\nN\nN\ny\ncodex-upgrade-token-123\n"
+    run_setup "N\nN\ny\n1\ncodex-upgrade-token-123\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_existing_key" && \
     assert_set "CODEX_TOKEN"
 }
@@ -277,7 +281,7 @@ ONWATCH_ADMIN_USER=admin
 ONWATCH_ADMIN_PASS=pass
 ONWATCH_PORT=9211
 EOF
-    run_setup "N\nY\n"
+    run_setup "N\nY\nN\n"
     assert_set "ANTHROPIC_TOKEN"
 }
 
@@ -313,8 +317,8 @@ EOF
 
 test_multiple_none_triggers_retry() {
     setup && source_functions
-    # choice=4, all N (triggers retry), then add Synthetic on retry
-    run_setup "4\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
+    # choice=5, all N (triggers retry), then add Synthetic on retry
+    run_setup "5\nN\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_retry_123"
 }
 
@@ -361,7 +365,7 @@ run_test test_anthropic_auto_rejected_manual
 run_test test_multiple_syn_and_anth
 run_test test_multiple_zai_only
 run_test test_multiple_all_three
-run_test test_all_available_choice5
+run_test test_all_available_choice6
 run_test test_custom_port_and_interval
 run_test test_upgrade_add_zai
 run_test test_upgrade_add_codex

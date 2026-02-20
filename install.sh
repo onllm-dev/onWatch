@@ -443,7 +443,40 @@ collect_codex_config() {
     local _codex_token=""
 
     printf "\n  ${BOLD}Codex Token Setup${NC}\n" >&2
-    printf "  ${DIM}Provide your Codex OAuth access token from ~/.codex/auth.json.${NC}\n\n" >&2
+    printf "  ${DIM}onWatch can auto-detect your Codex OAuth token from auth.json.${NC}\n\n" >&2
+
+    local auto_token=""
+    auto_token=$(detect_codex_token 2>/dev/null) || true
+
+    if [[ -n "$auto_token" ]]; then
+        printf "  ${GREEN}✓${NC} Auto-detected Codex token\n" >&2
+        local masked="${auto_token:0:8}...${auto_token: -4}"
+        printf "  ${DIM}Token: %s${NC}\n" "$masked" >&2
+        local use_auto
+        use_auto=$(prompt_with_default "Use auto-detected token? (Y/n)" "Y")
+        if [[ "$use_auto" =~ ^[Yy] ]] || [[ -z "$use_auto" ]]; then
+            printf '%s' "$auto_token"
+            return
+        fi
+    else
+        printf "  ${YELLOW}!${NC} Could not auto-detect Codex token from auth.json\n" >&2
+    fi
+
+    local entry_choice
+    entry_choice=$(prompt_choice "How would you like to provide the token?" \
+        "Enter token directly" \
+        "Show help for retrieving token")
+
+    if [[ "$entry_choice" == "2" ]]; then
+        printf "\n  ${BOLD}How to retrieve your Codex token:${NC}\n\n" >&2
+        printf "  ${CYAN}macOS / Linux (default path):${NC}\n" >&2
+        printf "    python3 -c \"import json,os; p=os.path.expanduser('~/.codex/auth.json'); print(json.load(open(p))['tokens']['access_token'])\"\n\n" >&2
+        printf "  ${CYAN}Custom CODEX_HOME:${NC}\n" >&2
+        printf "    python3 -c \"import json,os; p=os.path.join(os.environ['CODEX_HOME'],'auth.json'); print(json.load(open(p))['tokens']['access_token'])\"\n\n" >&2
+        printf "  ${CYAN}Windows (PowerShell):${NC}\n" >&2
+        printf "    (Get-Content \"$env:USERPROFILE\\.codex\\auth.json\" | ConvertFrom-Json).tokens.access_token\n\n" >&2
+        printf "  ${DIM}Paste the access token below after running the appropriate command above.${NC}\n" >&2
+    fi
 
     _codex_token=$(prompt_secret "Codex token" validate_nonempty)
     printf '%s' "$_codex_token"
@@ -537,6 +570,23 @@ detect_anthropic_token() {
     printf '%s' "$token"
 }
 
+# Auto-detect Codex OAuth access token from auth.json
+detect_codex_token() {
+    local auth_file="" token=""
+
+    if [[ -n "${CODEX_HOME:-}" ]]; then
+        auth_file="${CODEX_HOME}/auth.json"
+    else
+        auth_file="${HOME}/.codex/auth.json"
+    fi
+
+    [[ -f "$auth_file" ]] || return 1
+
+    token=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print((d.get('tokens') or {}).get('access_token','').strip())" "$auth_file" 2>/dev/null) || true
+    [[ -n "$token" ]] || return 1
+    printf '%s' "$token"
+}
+
 # Check if Anthropic key is configured
 has_anthropic_key() {
     local val
@@ -608,6 +658,7 @@ interactive_setup() {
             $has_syn && configured="${configured}Synthetic "
             $has_zai && configured="${configured}Z.ai "
             $has_anth && configured="${configured}Anthropic "
+            $has_codex && configured="${configured}Codex "
             info "Existing .env found — configured: ${configured}"
             printf "\n"
 
@@ -660,6 +711,29 @@ interactive_setup() {
                 fi
             fi
 
+            if ! $has_codex; then
+                local auto_codex=""
+                auto_codex=$(detect_codex_token 2>/dev/null) || true
+                if [[ -n "$auto_codex" ]]; then
+                    printf "  ${GREEN}✓${NC} Codex auth token detected on this system\n"
+                    local add_codex
+                    add_codex=$(prompt_with_default "Enable Codex tracking? (Y/n)" "Y")
+                    if [[ "$add_codex" =~ ^[Yy] ]] || [[ -z "$add_codex" ]]; then
+                        append_codex_to_env "$auto_codex"
+                        ok "Added Codex provider to .env (auto-detected)"
+                    fi
+                else
+                    local add_codex
+                    add_codex=$(prompt_with_default "Add Codex provider? (y/N)" "N")
+                    if [[ "$add_codex" =~ ^[Yy] ]]; then
+                        local codex_token
+                        codex_token=$(collect_codex_config)
+                        append_codex_to_env "$codex_token"
+                        ok "Added Codex provider to .env"
+                    fi
+                fi
+            fi
+
             $_opened_fd3 && exec 3<&- || true
             return
         fi
@@ -683,12 +757,13 @@ interactive_setup() {
         "Synthetic only" \
         "Z.ai only" \
         "Anthropic (Claude Code) only" \
+        "Codex only" \
         "Multiple (choose one at a time)" \
         "All available")
 
-    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token=""
+    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token=""
 
-    if [[ "$provider_choice" == "4" ]]; then
+    if [[ "$provider_choice" == "5" ]]; then
         # ── Multiple: ask for each provider individually ──
         local add_it
         add_it=$(prompt_with_default "Add Synthetic provider? (y/N)" "N")
@@ -710,8 +785,13 @@ interactive_setup() {
             anthropic_token=$(collect_anthropic_config)
         fi
 
+        add_it=$(prompt_with_default "Add Codex provider? (y/N)" "N")
+        if [[ "$add_it" =~ ^[Yy] ]]; then
+            codex_token=$(collect_codex_config)
+        fi
+
         # Validate at least one provider selected
-        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" ]]; then
+        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" ]]; then
             printf "  ${RED}No providers selected. Please select at least one.${NC}\n"
             # Re-run provider selection by recursion-safe retry
             printf "\n"
@@ -736,6 +816,12 @@ interactive_setup() {
                 fi
             fi
             if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" ]]; then
+                add_it=$(prompt_with_default "Add Codex provider? (y/N)" "N")
+                if [[ "$add_it" =~ ^[Yy] ]]; then
+                    codex_token=$(collect_codex_config)
+                fi
+            fi
+            if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" ]]; then
                 fail "At least one provider is required"
             fi
         fi
@@ -743,13 +829,13 @@ interactive_setup() {
         # ── Single provider or All ──
 
         # ── Synthetic API Key ──
-        if [[ "$provider_choice" == "1" || "$provider_choice" == "5" ]]; then
+        if [[ "$provider_choice" == "1" || "$provider_choice" == "6" ]]; then
             printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
             synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
         fi
 
         # ── Z.ai API Key ──
-        if [[ "$provider_choice" == "2" || "$provider_choice" == "5" ]]; then
+        if [[ "$provider_choice" == "2" || "$provider_choice" == "6" ]]; then
             local zai_result
             zai_result=$(collect_zai_config)
             zai_key=$(echo "$zai_result" | head -1)
@@ -757,8 +843,13 @@ interactive_setup() {
         fi
 
         # ── Anthropic Token ──
-        if [[ "$provider_choice" == "3" || "$provider_choice" == "5" ]]; then
+        if [[ "$provider_choice" == "3" || "$provider_choice" == "6" ]]; then
             anthropic_token=$(collect_anthropic_config)
+        fi
+
+        # ── Codex Token ──
+        if [[ "$provider_choice" == "4" || "$provider_choice" == "6" ]]; then
+            codex_token=$(collect_codex_config)
         fi
     fi
 
@@ -833,6 +924,12 @@ interactive_setup() {
             echo ""
         fi
 
+        if [[ -n "$codex_token" ]]; then
+            echo "# Codex OAuth token"
+            echo "CODEX_TOKEN=${codex_token}"
+            echo ""
+        fi
+
         echo "# Dashboard credentials"
         echo "ONWATCH_ADMIN_USER=${SETUP_USERNAME}"
         echo "ONWATCH_ADMIN_PASS=${SETUP_PASSWORD}"
@@ -852,15 +949,17 @@ interactive_setup() {
         1) provider_label="Synthetic" ;;
         2) provider_label="Z.ai" ;;
         3) provider_label="Anthropic" ;;
-        4)
+        4) provider_label="Codex" ;;
+        5)
             # Multiple — build label from selected providers
             local parts=()
             [[ -n "$synthetic_key" ]] && parts+=("Synthetic")
             [[ -n "$zai_key" ]] && parts+=("Z.ai")
             [[ -n "$anthropic_token" ]] && parts+=("Anthropic")
+            [[ -n "$codex_token" ]] && parts+=("Codex")
             provider_label=$(IFS=", "; echo "${parts[*]}")
             ;;
-        5) provider_label="All providers" ;;
+        6) provider_label="All providers" ;;
     esac
 
     local masked_pass
