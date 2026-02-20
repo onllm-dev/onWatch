@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -4041,7 +4042,7 @@ func (h *Handler) cycleOverviewBoth(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if len(quotaNames) == 0 {
-				quotaNames = []string{"five_hour", "seven_day"}
+				quotaNames = []string{"five_hour", "seven_day", "code_review"}
 			}
 			response["codex"] = map[string]interface{}{
 				"groupBy":    groupBy,
@@ -4511,18 +4512,40 @@ func (h *Handler) buildCodexCurrent() map[string]interface{} {
 		response["creditsBalance"] = *latest.CreditsBalance
 	}
 
-	quotas := make([]map[string]interface{}, 0, len(latest.Quotas))
-	for _, q := range latest.Quotas {
+	orderedQuotas := make([]api.CodexQuota, len(latest.Quotas))
+	copy(orderedQuotas, latest.Quotas)
+	sort.SliceStable(orderedQuotas, func(i, j int) bool {
+		left := codexQuotaDisplayOrder(orderedQuotas[i].Name)
+		right := codexQuotaDisplayOrder(orderedQuotas[j].Name)
+		if left != right {
+			return left < right
+		}
+		return orderedQuotas[i].Name < orderedQuotas[j].Name
+	})
+
+	quotas := make([]map[string]interface{}, 0, len(orderedQuotas))
+	for _, q := range orderedQuotas {
 		headroom := 100 - q.Utilization
 		if headroom < 0 {
 			headroom = 0
 		}
+		status := codexUtilStatus(q.Utilization)
 		qMap := map[string]interface{}{
 			"name":        q.Name,
 			"displayName": api.CodexDisplayName(q.Name),
 			"utilization": q.Utilization,
 			"headroom":    headroom,
-			"status":      codexUtilStatus(q.Utilization),
+			"status":      status,
+		}
+		if q.Name == "code_review" {
+			remaining := 100 - q.Utilization
+			if remaining < 0 {
+				remaining = 0
+			}
+			qMap["cardPercent"] = remaining
+			qMap["cardLabel"] = "Remaining"
+			qMap["remainingPercent"] = remaining
+			qMap["status"] = codexRemainingStatus(remaining)
 		}
 		if q.ResetsAt != nil {
 			timeUntilReset := time.Until(*q.ResetsAt)
@@ -4549,6 +4572,32 @@ func codexUtilStatus(util float64) string {
 	case util >= 80:
 		return "danger"
 	case util >= 50:
+		return "warning"
+	default:
+		return "healthy"
+	}
+}
+
+func codexQuotaDisplayOrder(name string) int {
+	switch name {
+	case "five_hour":
+		return 0
+	case "seven_day":
+		return 1
+	case "code_review":
+		return 2
+	default:
+		return 100
+	}
+}
+
+func codexRemainingStatus(remaining float64) string {
+	switch {
+	case remaining <= 5:
+		return "critical"
+	case remaining <= 20:
+		return "danger"
+	case remaining <= 50:
 		return "warning"
 	default:
 		return "healthy"
@@ -4601,8 +4650,9 @@ func (h *Handler) cyclesCodex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	validTypes := map[string]bool{
-		"five_hour": true,
-		"seven_day": true,
+		"five_hour":   true,
+		"seven_day":   true,
+		"code_review": true,
 	}
 	if !validTypes[quotaName] {
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid quota type: %s", quotaName))
@@ -4903,7 +4953,7 @@ func (h *Handler) cycleOverviewCodex(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(quotaNames) == 0 {
-		quotaNames = []string{"five_hour", "seven_day"}
+		quotaNames = []string{"five_hour", "seven_day", "code_review"}
 	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"groupBy":    groupBy,

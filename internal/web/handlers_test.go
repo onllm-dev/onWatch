@@ -2230,6 +2230,7 @@ func TestHandler_Current_WithCodexProvider(t *testing.T) {
 		Quotas: []api.CodexQuota{
 			{Name: "five_hour", Utilization: 42.5, ResetsAt: &resetsAt},
 			{Name: "seven_day", Utilization: 18.0, ResetsAt: &resetsAt},
+			{Name: "code_review", Utilization: 35.0, ResetsAt: &resetsAt},
 		},
 		RawJSON: `{"plan_type":"plus"}`,
 	}
@@ -2261,8 +2262,8 @@ func TestHandler_Current_WithCodexProvider(t *testing.T) {
 	if !ok {
 		t.Fatal("expected quotas array")
 	}
-	if len(quotas) != 2 {
-		t.Fatalf("expected 2 codex quotas, got %d", len(quotas))
+	if len(quotas) != 3 {
+		t.Fatalf("expected 3 codex quotas, got %d", len(quotas))
 	}
 
 	q0, ok := quotas[0].(map[string]interface{})
@@ -2271,6 +2272,34 @@ func TestHandler_Current_WithCodexProvider(t *testing.T) {
 	}
 	if q0["displayName"] != "5-Hour Limit" {
 		t.Errorf("expected 5-Hour Limit displayName, got %v", q0["displayName"])
+	}
+
+	foundCodeReview := false
+	for _, raw := range quotas {
+		q, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if q["name"] != "code_review" {
+			continue
+		}
+		foundCodeReview = true
+		if q["displayName"] != "Review Requests" {
+			t.Errorf("expected code_review displayName Review Requests, got %v", q["displayName"])
+		}
+		if q["cardLabel"] != "Remaining" {
+			t.Errorf("expected code_review cardLabel Remaining, got %v", q["cardLabel"])
+		}
+		cardPercent, ok := q["cardPercent"].(float64)
+		if !ok || cardPercent != 65.0 {
+			t.Errorf("expected code_review cardPercent 65.0, got %v", q["cardPercent"])
+		}
+		if q["status"] != "healthy" {
+			t.Errorf("expected code_review status healthy, got %v", q["status"])
+		}
+	}
+	if !foundCodeReview {
+		t.Error("expected code_review quota in codex response")
 	}
 }
 
@@ -2661,6 +2690,28 @@ func TestHandler_CodexUtilStatus(t *testing.T) {
 			got := codexUtilStatus(tt.util)
 			if got != tt.status {
 				t.Errorf("codexUtilStatus(%.1f) = %q, want %q", tt.util, got, tt.status)
+			}
+		})
+	}
+}
+
+func TestHandler_CodexRemainingStatus(t *testing.T) {
+	tests := []struct {
+		remaining float64
+		status    string
+	}{
+		{100, "healthy"},
+		{50, "warning"},
+		{20, "danger"},
+		{5, "critical"},
+		{0, "critical"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("remaining_%.0f", tt.remaining), func(t *testing.T) {
+			got := codexRemainingStatus(tt.remaining)
+			if got != tt.status {
+				t.Errorf("codexRemainingStatus(%.1f) = %q, want %q", tt.remaining, got, tt.status)
 			}
 		})
 	}
