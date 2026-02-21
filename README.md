@@ -15,6 +15,7 @@ onWatch fills the gap between "current usage snapshot" and the historical, per-c
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![Website](https://img.shields.io/badge/onwatch.onllm.dev-7C3AED?style=for-the-badge&logo=globe&logoColor=white)](https://onwatch.onllm.dev)
 [![Version](https://img.shields.io/badge/Version-v2.10.4-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.10.4)
+[![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/prakersh)
 
 [![Star History Chart](https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline)](https://star-history.com/#onllm-dev/onwatch&Timeline)

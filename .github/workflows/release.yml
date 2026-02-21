@@ -8,11 +8,35 @@ on:
         required: true
         type: string
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 permissions:
   contents: write
+  packages: write
 
 jobs:
+  # Run tests once before building
+  test:
+    runs-on: ubuntu-latest
+    name: Test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test with race detection
+        run: go test -race ./...
+
+  # Build binaries in parallel (after tests pass)
   build:
+    needs: test
     strategy:
       matrix:
         include:
@@ -45,9 +69,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run tests
-        run: go test -race ./...
-
       - name: Read version
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
@@ -67,9 +88,11 @@ jobs:
           name: ${{ matrix.binary }}
           path: ${{ matrix.binary }}
 
+  # Create GitHub release with all binaries
   release:
     needs: build
     runs-on: ubuntu-latest
+    name: Release
 
     steps:
       - uses: actions/checkout@v4
@@ -92,3 +115,63 @@ jobs:
           gh release create "${{ inputs.tag }}" dist/* \
             --title "onWatch ${{ inputs.tag }}" \
             --generate-notes
+
+  # Build and push Docker image (after release is created)
+  docker:
+    needs: release
+    runs-on: ubuntu-latest
+    name: Docker
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read version
+        id: version
+        run: |
+          if [ ! -f VERSION ] || [ ! -s VERSION ]; then
+            echo "ERROR: VERSION file is missing or empty"
+            exit 1
+          fi
+          echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ inputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }}
+            type=semver,pattern={{major}},value=${{ inputs.tag }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
