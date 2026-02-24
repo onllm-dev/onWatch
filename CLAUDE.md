@@ -78,6 +78,43 @@ go test -race ./...     # ALWAYS before commit
 
 **IMPORTANT:** This is a compiled Go project. ALWAYS run `./app.sh --build` before starting/testing the application. Never run `./onwatch` without building first - changes won't be reflected otherwise.
 
+## Release Process (MANDATORY)
+
+When creating a new release, ALWAYS include binaries and Docker files:
+
+```bash
+# 1. Update VERSION file
+echo "X.Y.Z" > VERSION
+
+# 2. Cross-compile for all platforms
+./app.sh --release
+
+# 3. Create GitHub release with ALL artifacts
+gh release create vX.Y.Z \
+  dist/onwatch-darwin-arm64 \
+  dist/onwatch-darwin-amd64 \
+  dist/onwatch-linux-amd64 \
+  dist/onwatch-linux-arm64 \
+  dist/onwatch-windows-amd64.exe \
+  Dockerfile \
+  docker-compose.yml \
+  .env.docker.example \
+  --title "vX.Y.Z - Release Title" \
+  --notes "Release notes here"
+```
+
+**Required release artifacts:**
+- `onwatch-darwin-arm64` (macOS Apple Silicon)
+- `onwatch-darwin-amd64` (macOS Intel)
+- `onwatch-linux-amd64` (Linux x64)
+- `onwatch-linux-arm64` (Linux ARM64)
+- `onwatch-windows-amd64.exe` (Windows x64)
+- `Dockerfile`
+- `docker-compose.yml`
+- `.env.docker.example`
+
+**NEVER create a release without binaries.** Users depend on pre-built binaries for installation.
+
 ## CLI
 | Flag | Default | Description |
 |------|---------|-------------|
