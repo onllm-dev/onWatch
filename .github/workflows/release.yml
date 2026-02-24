@@ -112,10 +112,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Delete existing release if present (allows re-running workflow)
+          gh release delete "${{ inputs.tag }}" --yes 2>/dev/null || true
           gh release create "${{ inputs.tag }}" dist/* \
             --title "onWatch ${{ inputs.tag }}" \
-            --generate-notes \
-            --clobber
+            --generate-notes
 
   # Build and push Docker image (after release is created)
   docker:
