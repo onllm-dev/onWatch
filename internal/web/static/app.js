@@ -3142,13 +3142,12 @@ function renderCyclesTable() {
       } else {
         // Cycle view: full row with Start, End, Duration, Total Δ
         // Calculate duration: for buckets > 1, use bucket window; otherwise use actual span
-        let durationMs, durationHrs, duration;
+        let durationHrs, duration;
         if (bucketMinutes > 1) {
-          durationMs = bucketMinutes * 60 * 1000;
           durationHrs = bucketMinutes / 60;
           duration = bucketMinutes >= 60 ? `${bucketMinutes / 60}h` : `${bucketMinutes}m`;
         } else {
-          durationMs = (startDate && endDate) ? endDate - startDate : 0;
+          const durationMs = (startDate && endDate) ? endDate - startDate : 0;
           durationHrs = durationMs / 3600000;
           duration = durationMs > 0 ? formatDuration(Math.floor(durationMs / 1000)) : '--';
         }
