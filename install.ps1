@@ -674,12 +674,28 @@ function Add-ToPath {
 
 # ─── Start Service ─────────────────────────────────────────────────────
 
+function Test-PortListening {
+    param([int]$Port)
+    try {
+        $connection = New-Object System.Net.Sockets.TcpClient
+        $connection.Connect("127.0.0.1", $Port)
+        $connection.Close()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Start-OnWatch {
     $port = if ($script:SetupPort) { $script:SetupPort } else { "9211" }
     $username = if ($script:SetupUsername) { $script:SetupUsername } else { "admin" }
     $password = $script:SetupPassword
 
     Write-Info "Starting onWatch..."
+    Write-Host ""
+    Write-Host "  ${YELLOW}NOTE:${NC} Windows Firewall may show a popup asking for network access."
+    Write-Host "  ${DIM}Please click 'Allow access' if prompted.${NC}"
+    Write-Host ""
 
     $binaryPath = Join-Path $BIN_DIR "onwatch.exe"
 
@@ -688,22 +704,56 @@ function Start-OnWatch {
     try {
         # Start the process (it will daemonize itself on Windows)
         $process = Start-Process -FilePath $binaryPath -PassThru -WindowStyle Hidden
-        Start-Sleep -Seconds 2
 
-        # Check if it's running
-        $running = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
-        if ($running) {
-            Write-Ok "onWatch is running in background (PID: $($process.Id))"
+        # Wait a bit for startup and potential firewall dialog
+        Start-Sleep -Seconds 3
+
+        # Check if port is listening (more reliable than process check due to firewall dialog)
+        $portListening = Test-PortListening -Port ([int]$port)
+
+        if ($portListening) {
+            Write-Ok "onWatch is running (listening on port $port)"
         } else {
-            # Try to start in debug mode to see the error
-            Write-Host ""
-            Write-Host "  ${RED}${BOLD}onWatch failed to start${NC}"
-            Write-Host ""
-            Write-Host "  Run in debug mode to see errors:"
-            Write-Host "    ${CYAN}cd $INSTALL_DIR${NC}"
-            Write-Host "    ${CYAN}.\bin\onwatch.exe --debug${NC}"
-            Pop-Location
-            return
+            # Process might still be starting or waiting for firewall approval
+            # Check if process is still alive
+            $running = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+
+            if ($running) {
+                Write-Host "  ${YELLOW}!${NC} onWatch process started but port $port not yet available"
+                Write-Host ""
+                Write-Host "  ${BOLD}If you see a Windows Firewall popup:${NC}"
+                Write-Host "    Click ${GREEN}'Allow access'${NC} to let onWatch accept connections"
+                Write-Host ""
+                Write-Host "  ${DIM}Waiting for firewall approval...${NC}"
+
+                # Wait up to 30 seconds for user to approve firewall
+                $waited = 0
+                while ($waited -lt 30) {
+                    Start-Sleep -Seconds 2
+                    $waited += 2
+                    if (Test-PortListening -Port ([int]$port)) {
+                        Write-Host ""
+                        Write-Ok "onWatch is now running (listening on port $port)"
+                        $portListening = $true
+                        break
+                    }
+                }
+
+                if (-not $portListening) {
+                    Write-Host ""
+                    Write-Warn "onWatch started but couldn't verify it's listening on port $port"
+                    Write-Host "  ${DIM}Try opening http://localhost:$port in your browser${NC}"
+                }
+            } else {
+                Write-Host ""
+                Write-Host "  ${RED}${BOLD}onWatch failed to start${NC}"
+                Write-Host ""
+                Write-Host "  Run in debug mode to see errors:"
+                Write-Host "    ${CYAN}cd $INSTALL_DIR${NC}"
+                Write-Host "    ${CYAN}.\bin\onwatch.exe --debug${NC}"
+                Pop-Location
+                return
+            }
         }
     } finally {
         Pop-Location
