@@ -108,6 +108,13 @@ jobs:
       - name: List binaries
         run: ls -lh dist/
 
+      - name: Copy additional release files
+        run: |
+          cp install.bat dist/
+          cp Dockerfile dist/
+          cp docker-compose.yml dist/
+          cp .env.docker.example dist/
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
