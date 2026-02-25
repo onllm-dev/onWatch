@@ -28,7 +28,9 @@ onWatch fills the gap between "current usage snapshot" and the historical, per-c
 
 ## Quick Start
 
-**One-line install** (macOS and Linux):
+### macOS & Linux
+
+**One-line install:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash
@@ -36,7 +38,23 @@ curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh |
 
 This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a systemd service (Linux) or self-daemonizes (macOS), and adds `onwatch` to your PATH.
 
-**Or download manually** from the [Releases](https://github.com/onllm-dev/onwatch/releases) page. Binaries are available for macOS (ARM64, AMD64), Linux (AMD64, ARM64), and Windows (AMD64).
+### Windows
+
+**One-line install** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.ps1 | iex
+```
+
+Or download `install.bat` from the [Releases](https://github.com/onllm-dev/onwatch/releases) page and double-click it.
+
+This downloads the binary to `%USERPROFILE%\.onwatch\`, runs interactive setup for API keys, creates a `.env` config, and adds `onwatch` to your PATH.
+
+For manual setup or troubleshooting, see the [Windows Setup Guide](docs/WINDOWS_SETUP.md).
+
+### Manual Installation
+
+**Download binaries** from the [Releases](https://github.com/onllm-dev/onwatch/releases) page. Binaries are available for macOS (ARM64, AMD64), Linux (AMD64, ARM64), and Windows (AMD64).
 
 **Or build from source** (requires Go 1.25+):
 
@@ -78,6 +96,7 @@ ONWATCH_ADMIN_PASS=changeme
 At least one provider key is required. Configure any combination to track them in parallel. Anthropic tokens are auto-detected from Claude Code credentials (macOS Keychain, Linux keyring, or `~/.claude/.credentials.json`). For Codex-only setups, set `CODEX_TOKEN` in `.env`; during runtime onWatch re-reads Codex auth state from `~/.codex/auth.json` (or `CODEX_HOME/auth.json`) and picks up token changes. Copilot tokens require a GitHub Personal Access Token (classic) with the `copilot` scope.
 
 Provider setup guides:
+- [Windows Setup Guide](docs/WINDOWS_SETUP.md) - Detailed Windows installation & manual configuration
 - [Codex Setup Guide](docs/CODEX_SETUP.md)
 - [Copilot Setup Guide](docs/COPILOT_SETUP.md)
 - [Antigravity Setup Guide](docs/ANTIGRAVITY_SETUP.md)
