@@ -5629,17 +5629,28 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) loggingHistoryRangeAndLimit(r *http.Request) (time.Time, time.Time, int) {
-	limit := parseCycleOverviewLimit(r)
-	if limit <= 0 {
-		limit = 200
-	}
-
 	// Parse range parameter (in days, default 30)
 	rangeDays := 30
 	if rangeStr := r.URL.Query().Get("range"); rangeStr != "" {
 		if parsed, err := strconv.Atoi(rangeStr); err == nil && parsed > 0 && parsed <= 30 {
 			rangeDays = parsed
 		}
+	}
+
+	// Parse limit with higher cap for logging history (1-minute polling needs ~1440 records/day)
+	// Cap at 50000 to allow up to ~35 days of data while preventing unbounded queries
+	const maxLoggingLimit = 50000
+	limit := rangeDays * 24 * 60 // Default: enough for the requested range at 1-min polling
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > maxLoggingLimit {
+		limit = maxLoggingLimit
+	}
+	if limit <= 0 {
+		limit = 200
 	}
 
 	now := time.Now().UTC()
