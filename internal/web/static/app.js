@@ -2858,7 +2858,10 @@ async function fetchCycles() {
   if (loggingHistoryProviders.has(provider)) {
     // Convert range from ms to days (min 1, max 30)
     const rangeDays = Math.min(30, Math.max(1, Math.ceil(State.cyclesRange / (24 * 60 * 60 * 1000))));
-    const url = `/api/logging-history?provider=${provider}&limit=200&range=${rangeDays}`;
+    // Calculate limit based on range: 1 minute polling = rangeDays * 24 * 60 records
+    // Cap at 50000 for performance (enough for ~35 days of 1-minute data)
+    const dynamicLimit = Math.min(50000, rangeDays * 24 * 60);
+    const url = `/api/logging-history?provider=${provider}&limit=${dynamicLimit}&range=${rangeDays}`;
     try {
       const res = await authFetch(url);
       if (!res.ok) throw new Error('Failed to fetch logging history');
