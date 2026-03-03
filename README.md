@@ -8,13 +8,15 @@ onWatch fills the gap between "current usage snapshot" and the historical, per-c
 
 **Zero telemetry. Single binary. All data stays on your machine.**
 
+> If onWatch helps you track your AI spending, consider giving it a star — it helps others discover the project.
+
 > **Beta**: onWatch is currently in active development. Features and APIs may change as we refine the product.
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-brightgreen?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![Website](https://img.shields.io/badge/onwatch.onllm.dev-7C3AED?style=for-the-badge&logo=globe&logoColor=white)](https://onwatch.onllm.dev)
-[![Version](https://img.shields.io/badge/Version-v2.11.0-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.0)
+[![Version](https://img.shields.io/badge/Version-v2.11.4-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.4)
 [![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/prakersh)
 
