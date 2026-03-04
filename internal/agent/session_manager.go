@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
 
 // SessionManager provides usage-based session detection for any provider.

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
 func TestQueryAntigravityModelIDsForGroup(t *testing.T) {

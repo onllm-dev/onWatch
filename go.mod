@@ -1,4 +1,4 @@
-module github.com/onllm-dev/onwatch
+module github.com/onllm-dev/onwatch/v2
 
 go 1.25.7
 

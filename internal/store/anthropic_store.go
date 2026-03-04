@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
 // AnthropicResetCycle represents an Anthropic quota reset cycle

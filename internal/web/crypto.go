@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/onllm-dev/onwatch/internal/notify"
+	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"golang.org/x/crypto/hkdf"
 )
 

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/api"
-	"github.com/onllm-dev/onwatch/internal/store"
-	"github.com/onllm-dev/onwatch/internal/tracker"
+	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
 // anthropicResponse returns a valid Anthropic quota response JSON with the given utilization values.

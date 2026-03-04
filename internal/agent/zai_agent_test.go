@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/api"
-	"github.com/onllm-dev/onwatch/internal/notify"
-	"github.com/onllm-dev/onwatch/internal/store"
-	"github.com/onllm-dev/onwatch/internal/tracker"
+	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/notify"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
 // zaiResponse returns a valid Z.ai quota response JSON.

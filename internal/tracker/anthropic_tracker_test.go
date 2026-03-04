@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/api"
-	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
 
 // helper to create an AnthropicSnapshot with a single quota.

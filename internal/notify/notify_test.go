@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
 
 func newTestStore(t *testing.T) *store.Store {

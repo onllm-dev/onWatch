@@ -30,7 +30,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/testutil"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
 // AntigravityResetCycle represents an Antigravity quota reset cycle.

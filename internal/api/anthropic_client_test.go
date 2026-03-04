@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/api"
-	"github.com/onllm-dev/onwatch/internal/testutil"
+	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil"
 )
 
 func TestAnthropicClient_FetchQuotas_Success(t *testing.T) {

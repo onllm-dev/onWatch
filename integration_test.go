@@ -18,13 +18,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/agent"
-	"github.com/onllm-dev/onwatch/internal/api"
-	"github.com/onllm-dev/onwatch/internal/config"
-	"github.com/onllm-dev/onwatch/internal/store"
-	"github.com/onllm-dev/onwatch/internal/testutil"
-	"github.com/onllm-dev/onwatch/internal/tracker"
-	"github.com/onllm-dev/onwatch/internal/web"
+	"github.com/onllm-dev/onwatch/v2/internal/agent"
+	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/config"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil"
+	"github.com/onllm-dev/onwatch/v2/internal/tracker"
+	"github.com/onllm-dev/onwatch/v2/internal/web"
 )
 
 // discardLogger returns a logger that discards all output

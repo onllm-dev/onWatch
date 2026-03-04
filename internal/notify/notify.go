@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/onllm-dev/onwatch/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
 
 // NotificationEngine evaluates quota statuses and sends alerts via email and push.

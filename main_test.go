@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/onllm-dev/onwatch/internal/config"
+	"github.com/onllm-dev/onwatch/v2/internal/config"
 )
 
 func TestConfigLoad_WithOnlyCodexAuthFile_ReturnsValidationError(t *testing.T) {
