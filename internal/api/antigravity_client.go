@@ -19,10 +19,10 @@ import (
 
 // Custom errors for Antigravity API failures.
 var (
-	ErrAntigravityProcessNotFound = errors.New("antigravity: language server process not found")
-	ErrAntigravityPortNotFound    = errors.New("antigravity: no listening port found")
+	ErrAntigravityProcessNotFound  = errors.New("antigravity: language server process not found")
+	ErrAntigravityPortNotFound     = errors.New("antigravity: no listening port found")
 	ErrAntigravityConnectionFailed = errors.New("antigravity: connection failed")
-	ErrAntigravityInvalidResponse = errors.New("antigravity: invalid response")
+	ErrAntigravityInvalidResponse  = errors.New("antigravity: invalid response")
 	ErrAntigravityNotAuthenticated = errors.New("antigravity: not authenticated")
 )
 

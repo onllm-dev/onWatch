@@ -82,7 +82,7 @@ func TestAntigravityUserStatusResponse_ToSnapshot(t *testing.T) {
 			PlanStatus: &AntigravityPlanStatus{
 				AvailablePromptCredits: 500,
 				PlanInfo: &AntigravityPlanInfo{
-					PlanName:            "Pro",
+					PlanName:             "Pro",
 					MonthlyPromptCredits: 1000,
 				},
 			},

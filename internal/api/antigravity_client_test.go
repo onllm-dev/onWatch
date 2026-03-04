@@ -35,7 +35,7 @@ func TestAntigravityClient_FetchQuotas_Success(t *testing.T) {
 				"planStatus": map[string]interface{}{
 					"availablePromptCredits": 500,
 					"planInfo": map[string]interface{}{
-						"planName":            "Pro",
+						"planName":             "Pro",
 						"monthlyPromptCredits": 1000,
 					},
 				},

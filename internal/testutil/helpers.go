@@ -57,12 +57,12 @@ func InMemoryStoreWithSnapshots(t *testing.T, synCount, zaiCount, anthCount int,
 		capturedAt := now.Add(-time.Duration(zaiCount-i) * time.Minute)
 		resetTime := now.Add(7 * 24 * time.Hour)
 		snap := &api.ZaiSnapshot{
-			CapturedAt:         capturedAt,
-			TokensUsage:        200000000,
-			TokensCurrentValue: 10000000 + float64(i)*5000000,
+			CapturedAt:          capturedAt,
+			TokensUsage:         200000000,
+			TokensCurrentValue:  10000000 + float64(i)*5000000,
 			TokensNextResetTime: &resetTime,
-			TimeUsage:          1000,
-			TimeCurrentValue:   10 + float64(i)*3,
+			TimeUsage:           1000,
+			TimeCurrentValue:    10 + float64(i)*3,
 		}
 		if _, err := s.InsertZaiSnapshot(snap); err != nil {
 			t.Fatalf("InMemoryStoreWithSnapshots: insert zai: %v", err)

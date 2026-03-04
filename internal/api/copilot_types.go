@@ -52,8 +52,8 @@ type CopilotSnapshot struct {
 // copilotDisplayNames maps API keys to human-readable labels.
 var copilotDisplayNames = map[string]string{
 	"premium_interactions": "Premium Requests",
-	"chat":                "Chat",
-	"completions":         "Completions",
+	"chat":                 "Chat",
+	"completions":          "Completions",
 }
 
 // CopilotDisplayName returns the human-readable name for a quota key.

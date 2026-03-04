@@ -852,12 +852,12 @@ func TestIntegration_Zai_EpochMsToISO8601(t *testing.T) {
 	expected := time.UnixMilli(epochMs)
 
 	limit := api.ZaiLimit{
-		Type:        "TOKENS_LIMIT",
-		Usage:       200000000,
+		Type:         "TOKENS_LIMIT",
+		Usage:        200000000,
 		CurrentValue: 50000000,
-		Remaining:   150000000,
-		Percentage:  25,
-		NextResetMs: &epochMs,
+		Remaining:    150000000,
+		Percentage:   25,
+		NextResetMs:  &epochMs,
 	}
 
 	resetTime := limit.GetResetTime()

@@ -37,16 +37,16 @@ type MockServer struct {
 	copilotError     atomic.Int32
 
 	// Round-robin response indexes (atomic for thread safety)
-	syntheticIdx  atomic.Int64
-	zaiIdx        atomic.Int64
-	anthropicIdx  atomic.Int64
-	copilotIdx    atomic.Int64
+	syntheticIdx atomic.Int64
+	zaiIdx       atomic.Int64
+	anthropicIdx atomic.Int64
+	copilotIdx   atomic.Int64
 
 	// Request counters (atomic for thread safety)
-	syntheticCount  atomic.Int64
-	zaiCount        atomic.Int64
-	anthropicCount  atomic.Int64
-	copilotCount    atomic.Int64
+	syntheticCount atomic.Int64
+	zaiCount       atomic.Int64
+	anthropicCount atomic.Int64
+	copilotCount   atomic.Int64
 }
 
 // MockOption configures a MockServer.

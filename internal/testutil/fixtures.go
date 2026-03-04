@@ -165,7 +165,7 @@ func AnthropicResponseJSON(fiveHour, sevenDay, sevenDaySonnet float64, fiveHourR
 	return string(data)
 }
 
-func strPtr(s string) *string    { return &s }
+func strPtr(s string) *string     { return &s }
 func floatPtr(f float64) *float64 { return &f }
 
 // DefaultAnthropicResponse returns a typical Anthropic response with moderate usage.
@@ -240,9 +240,9 @@ func AnthropicResponseNullQuotas() string {
 func CopilotResponseJSON(premiumRemaining, premiumEntitlement int, resetDateUTC string) string {
 	resp := map[string]interface{}{
 		"login":                "testuser",
-		"copilot_plan":        "individual_pro",
-		"access_type_sku":     "plus_monthly_subscriber_quota",
-		"quota_reset_date":    "2026-03-01",
+		"copilot_plan":         "individual_pro",
+		"access_type_sku":      "plus_monthly_subscriber_quota",
+		"quota_reset_date":     "2026-03-01",
 		"quota_reset_date_utc": resetDateUTC,
 		"quota_snapshots": map[string]interface{}{
 			"premium_interactions": map[string]interface{}{

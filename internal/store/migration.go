@@ -9,12 +9,12 @@ import (
 
 // MigrationResult contains the results of a cycle migration
 type MigrationResult struct {
-	Provider       string
-	QuotaType      string
-	CyclesFixed    int
-	CyclesCreated  int
-	CyclesDeleted  int
-	SnapshotsUsed  int
+	Provider      string
+	QuotaType     string
+	CyclesFixed   int
+	CyclesCreated int
+	CyclesDeleted int
+	SnapshotsUsed int
 }
 
 // RunCycleMigrationIfNeeded checks for bad cycles and fixes them if migration hasn't run yet.

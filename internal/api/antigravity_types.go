@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	AntigravityQuotaGroupClaudeGPT  = "antigravity_claude_gpt"
-	AntigravityQuotaGroupGeminiPro  = "antigravity_gemini_pro"
+	AntigravityQuotaGroupClaudeGPT   = "antigravity_claude_gpt"
+	AntigravityQuotaGroupGeminiPro   = "antigravity_gemini_pro"
 	AntigravityQuotaGroupGeminiFlash = "antigravity_gemini_flash"
 )
 
@@ -21,14 +21,14 @@ var antigravityQuotaGroupOrder = []string{
 }
 
 var antigravityQuotaGroupDisplayNames = map[string]string{
-	AntigravityQuotaGroupClaudeGPT:  "Claude + GPT Quota",
-	AntigravityQuotaGroupGeminiPro:  "Gemini Pro Quota",
+	AntigravityQuotaGroupClaudeGPT:   "Claude + GPT Quota",
+	AntigravityQuotaGroupGeminiPro:   "Gemini Pro Quota",
 	AntigravityQuotaGroupGeminiFlash: "Gemini Flash Quota",
 }
 
 var antigravityQuotaGroupColors = map[string]string{
-	AntigravityQuotaGroupClaudeGPT:  "#D97757",
-	AntigravityQuotaGroupGeminiPro:  "#10B981",
+	AntigravityQuotaGroupClaudeGPT:   "#D97757",
+	AntigravityQuotaGroupGeminiPro:   "#10B981",
 	AntigravityQuotaGroupGeminiFlash: "#3B82F6",
 }
 
@@ -206,24 +206,24 @@ type AntigravityQuotaInfo struct {
 
 // AntigravityClientModelConfig represents a single model's configuration.
 type AntigravityClientModelConfig struct {
-	Label         string                   `json:"label"`
-	ModelOrAlias  *AntigravityModelOrAlias `json:"modelOrAlias,omitempty"`
-	QuotaInfo     *AntigravityQuotaInfo    `json:"quotaInfo,omitempty"`
-	SupportsImages bool                    `json:"supportsImages,omitempty"`
-	IsRecommended  bool                    `json:"isRecommended,omitempty"`
+	Label          string                   `json:"label"`
+	ModelOrAlias   *AntigravityModelOrAlias `json:"modelOrAlias,omitempty"`
+	QuotaInfo      *AntigravityQuotaInfo    `json:"quotaInfo,omitempty"`
+	SupportsImages bool                     `json:"supportsImages,omitempty"`
+	IsRecommended  bool                     `json:"isRecommended,omitempty"`
 }
 
 // AntigravityPlanInfo contains subscription plan details.
 type AntigravityPlanInfo struct {
-	PlanName            string `json:"planName"`
-	TeamsTier           string `json:"teamsTier"`
-	MonthlyPromptCredits int   `json:"monthlyPromptCredits"`
+	PlanName             string `json:"planName"`
+	TeamsTier            string `json:"teamsTier"`
+	MonthlyPromptCredits int    `json:"monthlyPromptCredits"`
 }
 
 // AntigravityPlanStatus contains plan status with available credits.
 type AntigravityPlanStatus struct {
-	PlanInfo              *AntigravityPlanInfo `json:"planInfo,omitempty"`
-	AvailablePromptCredits float64             `json:"availablePromptCredits"`
+	PlanInfo               *AntigravityPlanInfo `json:"planInfo,omitempty"`
+	AvailablePromptCredits float64              `json:"availablePromptCredits"`
 }
 
 // AntigravityCascadeModelConfigData contains model configuration data.
@@ -248,25 +248,25 @@ type AntigravityUserStatusResponse struct {
 
 // AntigravityModelQuota represents a single normalized model quota for storage.
 type AntigravityModelQuota struct {
-	ModelID            string
-	Label              string
-	RemainingFraction  float64
-	RemainingPercent   float64
-	IsExhausted        bool
-	ResetTime          *time.Time
-	TimeUntilReset     time.Duration
+	ModelID           string
+	Label             string
+	RemainingFraction float64
+	RemainingPercent  float64
+	IsExhausted       bool
+	ResetTime         *time.Time
+	TimeUntilReset    time.Duration
 }
 
 // AntigravitySnapshot represents a point-in-time capture of Antigravity quotas.
 type AntigravitySnapshot struct {
-	ID              int64
-	CapturedAt      time.Time
-	Email           string
-	PlanName        string
-	PromptCredits   float64
-	MonthlyCredits  int
-	Models          []AntigravityModelQuota
-	RawJSON         string
+	ID             int64
+	CapturedAt     time.Time
+	Email          string
+	PlanName       string
+	PromptCredits  float64
+	MonthlyCredits int
+	Models         []AntigravityModelQuota
+	RawJSON        string
 }
 
 // AntigravityQuotaPool represents a group of models sharing the same quota.

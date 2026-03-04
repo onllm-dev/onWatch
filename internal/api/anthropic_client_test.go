@@ -299,4 +299,3 @@ func TestAnthropicClient_SetToken_ConcurrentSafe(t *testing.T) {
 		t.Error("expected some requests to be made")
 	}
 }
-

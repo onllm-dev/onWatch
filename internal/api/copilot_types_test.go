@@ -88,8 +88,8 @@ func TestCopilotActiveQuotaNames(t *testing.T) {
 	resp := CopilotUserResponse{
 		QuotaSnapshots: map[string]*CopilotQuotaSnapshot{
 			"premium_interactions": {Entitlement: 1500},
-			"chat":                {Unlimited: true},
-			"completions":         {Unlimited: true},
+			"chat":                 {Unlimited: true},
+			"completions":          {Unlimited: true},
 		},
 	}
 
