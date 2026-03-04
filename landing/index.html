@@ -2354,8 +2354,13 @@ a:hover { text-decoration: underline; }
             </div>
             <div class="install-label">One-command install</div>
             <div class="hero-install-group">
-                <div class="hero-install" onclick="copyHeroCmd(this)" title="Click to copy" role="button" tabindex="0" aria-label="Copy Homebrew install command" data-cmd="brew install onllm-dev/tap/onwatch">
+                <div class="hero-install" onclick="copyHeroCmd(this)" title="Click to copy" role="button" tabindex="0" aria-label="Copy Mac/Linux install command" data-cmd="curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash">
                     <span class="install-platform">Mac &amp; Linux</span>
+                    <code><span class="install-prefix">$</span> curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash</code>
+                    <span class="copy-hint">Copy</span>
+                </div>
+                <div class="hero-install" onclick="copyHeroCmd(this)" title="Click to copy" role="button" tabindex="0" aria-label="Copy Homebrew install command" data-cmd="brew install onllm-dev/tap/onwatch">
+                    <span class="install-platform">Homebrew</span>
                     <code><span class="install-prefix">$</span> brew install onllm-dev/tap/onwatch</code>
                     <span class="copy-hint">Copy</span>
                 </div>
