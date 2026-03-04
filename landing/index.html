@@ -48,7 +48,7 @@
       "url": "https://onwatch.onllm.dev",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux, Windows",
-      "softwareVersion": "2.11.2",
+      "softwareVersion": "2.11.5",
       "license": "https://www.gnu.org/licenses/gpl-3.0.en.html",
       "isAccessibleForFree": true,
       "offers": {
@@ -82,6 +82,8 @@
         "Local SQLite storage with zero telemetry",
         "Background daemon mode with <50 MB RAM footprint",
         "Cross-platform: macOS, Linux, Windows",
+        "Homebrew tap for macOS and Linux (brew install onllm-dev/tap/onwatch)",
+        "Interactive setup wizard with auto-detection of Claude Code and Codex credentials",
         "REST API with JSON endpoints",
         "Session-based auth with password management",
         "Email alerts via SMTP with encrypted password storage",
@@ -2293,7 +2295,7 @@ a:hover { text-decoration: underline; }
                 </svg>
             </button>
             <div class="nav-install-cmd" onclick="copyInstallCmd(this)" title="Click to copy install command" role="button" tabindex="0" aria-label="Copy install command">
-                <code>curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash</code>
+                <code>brew install onllm-dev/tap/onwatch</code>
                 <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </div>
             <a href="https://github.com/onllm-dev/onwatch" class="nav-cta" target="_blank" rel="noopener noreferrer">
@@ -2352,9 +2354,9 @@ a:hover { text-decoration: underline; }
             </div>
             <div class="install-label">One-command install</div>
             <div class="hero-install-group">
-                <div class="hero-install" onclick="copyHeroCmd(this)" title="Click to copy" role="button" tabindex="0" aria-label="Copy Mac/Linux install command" data-cmd="curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash">
+                <div class="hero-install" onclick="copyHeroCmd(this)" title="Click to copy" role="button" tabindex="0" aria-label="Copy Homebrew install command" data-cmd="brew install onllm-dev/tap/onwatch">
                     <span class="install-platform">Mac &amp; Linux</span>
-                    <code><span class="install-prefix">$</span> curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash</code>
+                    <code><span class="install-prefix">$</span> brew install onllm-dev/tap/onwatch</code>
                     <span class="copy-hint">Copy</span>
                 </div>
                 <div class="hero-install" onclick="copyHeroCmd(this)" title="Click to copy" role="button" tabindex="0" aria-label="Copy Windows install command" data-cmd="irm https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.ps1 | iex">
@@ -2363,7 +2365,7 @@ a:hover { text-decoration: underline; }
                     <span class="copy-hint">Copy</span>
                 </div>
             </div>
-            <p class="hero-meta"><span id="hero-version">v2.11.2</span> &middot; Go &middot; GPL-3.0 &middot; Zero Telemetry &middot; <50 MB RAM &middot; ~13 MB Binary</p>
+            <p class="hero-meta"><span id="hero-version">v2.11.5</span> &middot; Go &middot; GPL-3.0 &middot; Zero Telemetry &middot; <50 MB RAM &middot; ~13 MB Binary</p>
         </div>
 
         <!-- Dashboard Mockup -->
@@ -3167,7 +3169,7 @@ a:hover { text-decoration: underline; }
         </div>
 
         <div class="install-methods">
-            <!-- Method 1: One-liner Install (macOS & Linux) -->
+            <!-- Method 1: macOS & Linux -->
             <div class="install-method recommended fade-in">
                 <div class="method-badge">Recommended</div>
                 <div class="method-header">
@@ -3176,28 +3178,33 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="method-title">macOS &amp; Linux</div>
                 </div>
-                <p class="method-desc">Auto-detects your OS and architecture, downloads the binary to <code>~/.onwatch/</code>, creates <code>.env</code> config, sets up a systemd service (Linux) or self-daemonizes (macOS), adds to PATH, and starts tracking.</p>
+                <p class="method-desc">Install via Homebrew or the one-line shell installer. Both auto-detect Claude Code and Codex credentials. Homebrew handles PATH and updates natively; the shell installer sets up systemd (Linux) or self-daemonizes (macOS).</p>
                 <div class="method-code" style="margin-bottom:12px;">
                     <div class="method-code-header">
-                        <span class="method-code-lang">install</span>
+                        <span class="method-code-lang">Homebrew</span>
+                        <button class="method-code-copy" onclick="copyMethodCode(this)" aria-label="Copy">Copy</button>
+                    </div>
+                    <div class="method-code-body"><span class="code-cmd">brew</span> install onllm-dev/tap/onwatch
+<span class="code-cmd">onwatch</span> setup          <span class="code-comment"># interactive setup wizard</span></div>
+                </div>
+                <div class="method-code" style="margin-bottom:12px;">
+                    <div class="method-code-header">
+                        <span class="method-code-lang">Shell installer (alternative)</span>
                         <button class="method-code-copy" onclick="copyMethodCode(this)" aria-label="Copy">Copy</button>
                     </div>
                     <div class="method-code-body"><span class="code-cmd">curl</span> -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | <span class="code-cmd">bash</span></div>
                 </div>
                 <div class="method-code">
                     <div class="method-code-header">
-                        <span class="method-code-lang">configure &amp; manage (macOS)</span>
+                        <span class="method-code-lang">manage</span>
                         <button class="method-code-copy" onclick="copyMethodCode(this)" aria-label="Copy">Copy</button>
                     </div>
-                    <div class="method-code-body"><span class="code-comment"># Edit config</span>
-<span class="code-cmd">nano</span> ~/.onwatch/.env
-
-<span class="code-comment"># Manage daemon</span>
-<span class="code-cmd">onwatch</span>             <span class="code-comment"># start (background)</span>
-<span class="code-cmd">onwatch</span> stop        <span class="code-comment"># stop</span>
-<span class="code-cmd">onwatch</span> status      <span class="code-comment"># check status</span>
-<span class="code-cmd">onwatch</span> --debug     <span class="code-comment"># foreground mode</span>
-<span class="code-cmd">onwatch</span> update      <span class="code-comment"># self-update</span></div>
+                    <div class="method-code-body"><span class="code-cmd">onwatch</span>                <span class="code-comment"># start (background)</span>
+<span class="code-cmd">onwatch</span> stop           <span class="code-comment"># stop</span>
+<span class="code-cmd">onwatch</span> status         <span class="code-comment"># check status</span>
+<span class="code-cmd">onwatch</span> --debug        <span class="code-comment"># foreground mode</span>
+<span class="code-cmd">brew</span> upgrade onwatch   <span class="code-comment"># update (Homebrew)</span>
+<span class="code-cmd">onwatch</span> update         <span class="code-comment"># update (shell install)</span></div>
                 </div>
             </div>
 
@@ -3279,20 +3286,26 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="method-title">Build from Source</div>
                 </div>
-                <p class="method-desc">Clone the repo and build with <code>app.sh</code>. Requires Go 1.25+. Full control over build flags.</p>
-                <div class="method-code">
+                <p class="method-desc">Clone the repo and build with <code>app.sh</code>. Requires Go 1.25+. Full control over build flags and development workflow. Includes 486 tests with race detection.</p>
+                <div class="method-code" style="margin-bottom:12px;">
                     <div class="method-code-header">
-                        <span class="method-code-lang">bash</span>
+                        <span class="method-code-lang">clone &amp; build</span>
                         <button class="method-code-copy" onclick="copyMethodCode(this)" aria-label="Copy">Copy</button>
                     </div>
-                    <div class="method-code-body"><span class="code-comment"># Clone &amp; build</span>
-<span class="code-cmd">git</span> clone https://github.com/onllm-dev/onwatch.git
+                    <div class="method-code-body"><span class="code-cmd">git</span> clone https://github.com/onllm-dev/onwatch.git
 <span class="code-cmd">cd</span> onwatch
 <span class="code-cmd">cp</span> .env.example .env
 <span class="code-cmd">nano</span> .env              <span class="code-comment"># add your API keys</span>
-
-<span class="code-comment"># Build &amp; run</span>
-<span class="code-cmd">./app.sh</span> --build       <span class="code-comment"># build binary</span>
+<span class="code-cmd">./app.sh</span> --build       <span class="code-comment"># build binary</span></div>
+                </div>
+                <div class="method-code">
+                    <div class="method-code-header">
+                        <span class="method-code-lang">develop &amp; test</span>
+                        <button class="method-code-copy" onclick="copyMethodCode(this)" aria-label="Copy">Copy</button>
+                    </div>
+                    <div class="method-code-body"><span class="code-cmd">./app.sh</span> --test        <span class="code-comment"># run tests with -race</span>
+<span class="code-cmd">./app.sh</span> --smoke       <span class="code-comment"># quick pre-commit check</span>
+<span class="code-cmd">./onwatch</span> --debug      <span class="code-comment"># run in foreground</span>
 <span class="code-cmd">./onwatch</span>              <span class="code-comment"># start daemon</span></div>
                 </div>
             </div>
@@ -3313,7 +3326,7 @@ a:hover { text-decoration: underline; }
             <details class="faq-item">
                 <summary class="faq-question">How do I get started?</summary>
                 <div class="faq-answer">
-                    <p>Install with one command: <code>curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash</code>. Add your API keys to <code>~/.onwatch/.env</code> - set any combination of <code>SYNTHETIC_API_KEY</code>, <code>ZAI_API_KEY</code>, <code>ANTHROPIC_TOKEN</code>, <code>CODEX_TOKEN</code>, <code>COPILOT_TOKEN</code>, or <code>ANTIGRAVITY_ENABLED=true</code>. onWatch polls each configured provider every 60 seconds, stores snapshots in SQLite, and serves a dashboard at <code>localhost:9211</code> with live countdowns, charts, and cross-provider views.</p>
+                    <p>The fastest way is Homebrew: <code>brew install onllm-dev/tap/onwatch</code>, then <code>onwatch setup</code> to configure your providers interactively. Alternatively, install with one command: <code>curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash</code>. The setup wizard auto-detects Claude Code and Codex credentials, prompts for API keys, and configures dashboard credentials. onWatch polls each configured provider every 60 seconds, stores snapshots in SQLite, and serves a dashboard at <code>localhost:9211</code> with live countdowns, charts, and cross-provider views.</p>
                 </div>
             </details>
             <details class="faq-item">
@@ -3823,7 +3836,7 @@ function copyHeroCmd(el) {
 
 /* Copy nav install command */
 function copyInstallCmd(el) {
-    var cmd = 'curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash';
+    var cmd = 'brew install onllm-dev/tap/onwatch';
     navigator.clipboard.writeText(cmd).then(function() {
         el.classList.add('copied');
         el.querySelector('code').textContent = 'Copied!';
