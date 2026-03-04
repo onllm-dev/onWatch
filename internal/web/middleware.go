@@ -21,10 +21,10 @@ import (
 
 // Rate limiting constants
 const (
-	maxFailedAttempts = 5                // Max failures before blocking
-	blockDuration     = 5 * time.Minute  // How long to block an IP
-	maxTrackedIPs     = 1000             // Max IPs to track in memory
-	failureWindow     = 5 * time.Minute  // Window for counting failures
+	maxFailedAttempts = 5               // Max failures before blocking
+	blockDuration     = 5 * time.Minute // How long to block an IP
+	maxTrackedIPs     = 1000            // Max IPs to track in memory
+	failureWindow     = 5 * time.Minute // Window for counting failures
 )
 
 // HashPassword returns the bcrypt hash of a password.
@@ -540,4 +540,3 @@ func (l *LoginRateLimiter) EntryCountForTest() int {
 	defer l.mu.RUnlock()
 	return len(l.attempts)
 }
-
