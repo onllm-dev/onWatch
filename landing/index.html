@@ -3235,7 +3235,7 @@ a:hover { text-decoration: underline; }
                     <div class="method-code-body"><span class="code-comment"># Clone &amp; configure</span>
 <span class="code-cmd">git</span> clone https://github.com/onllm-dev/onwatch.git
 <span class="code-cmd">cd</span> onwatch && <span class="code-cmd">cp</span> .env.docker.example .env
-<span class="code-cmd">nano</span> .env              <span class="code-comment"># add your API keys</span>
+<span class="code-cmd">vim</span> .env               <span class="code-comment"># add your API keys</span>
 
 <span class="code-comment"># Run with Docker Compose</span>
 <span class="code-cmd">docker-compose</span> up -d
@@ -3267,8 +3267,7 @@ a:hover { text-decoration: underline; }
                         <span class="method-code-lang">configure &amp; manage (Linux)</span>
                         <button class="method-code-copy" onclick="copyMethodCode(this)" aria-label="Copy">Copy</button>
                     </div>
-                    <div class="method-code-body"><span class="code-comment"># Edit config</span>
-<span class="code-cmd">nano</span> ~/.onwatch/.env
+                    <div class="method-code-body"><span class="code-cmd">onwatch</span> setup                  <span class="code-comment"># configure providers</span>
 
 <span class="code-comment"># Manage via systemd</span>
 <span class="code-cmd">systemctl</span> start onwatch      <span class="code-comment"># start</span>
@@ -3295,7 +3294,7 @@ a:hover { text-decoration: underline; }
                     <div class="method-code-body"><span class="code-cmd">git</span> clone https://github.com/onllm-dev/onwatch.git
 <span class="code-cmd">cd</span> onwatch
 <span class="code-cmd">cp</span> .env.example .env
-<span class="code-cmd">nano</span> .env              <span class="code-comment"># add your API keys</span>
+<span class="code-cmd">vim</span> .env               <span class="code-comment"># add your API keys</span>
 <span class="code-cmd">./app.sh</span> --build       <span class="code-comment"># build binary</span></div>
                 </div>
                 <div class="method-code">
