@@ -405,6 +405,9 @@ func run() error {
 	if hasCommand("update", "--update") {
 		return runUpdate()
 	}
+	if hasCommand("setup", "--setup") {
+		return runSetup()
+	}
 	if hasCommand("--help", "-h") {
 		printHelp()
 		return nil
@@ -1379,6 +1382,7 @@ func printHelp() {
 	fmt.Println("Usage: onwatch [COMMAND] [OPTIONS]")
 	fmt.Println()
 	fmt.Println("Commands:")
+	fmt.Println("  setup, --setup     Interactive setup wizard (configure providers and .env)")
 	fmt.Println("  stop, --stop       Stop the running onwatch instance")
 	fmt.Println("  status, --status   Show status of the running instance")
 	fmt.Println("  update, --update   Check for updates and self-update")
@@ -1408,6 +1412,7 @@ func printHelp() {
 	fmt.Println("  ONWATCH_LOG_LEVEL       Log level: debug, info, warn, error")
 	fmt.Println()
 	fmt.Println("Examples:")
+	fmt.Println("  onwatch setup                     # Interactive setup wizard")
 	fmt.Println("  onwatch                           # Run in background mode")
 	fmt.Println("  onwatch --debug                   # Run in foreground mode")
 	fmt.Println("  onwatch --interval 30 --port 8080 # Custom interval and port")

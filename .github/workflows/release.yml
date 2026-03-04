@@ -184,3 +184,111 @@ jobs:
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Update Homebrew formula with new version and checksums
+  homebrew:
+    needs: [release, docker]
+    runs-on: ubuntu-latest
+    name: Update Homebrew Formula
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Download release binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/bins
+          TAG="${{ inputs.tag }}"
+          for bin in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do
+            gh release download "$TAG" -p "onwatch-${bin}" -D /tmp/bins/
+          done
+
+      - name: Compute checksums and update formula
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SHA_DARWIN_ARM64=$(sha256sum /tmp/bins/onwatch-darwin-arm64 | cut -d' ' -f1)
+          SHA_DARWIN_AMD64=$(sha256sum /tmp/bins/onwatch-darwin-amd64 | cut -d' ' -f1)
+          SHA_LINUX_ARM64=$(sha256sum /tmp/bins/onwatch-linux-arm64 | cut -d' ' -f1)
+          SHA_LINUX_AMD64=$(sha256sum /tmp/bins/onwatch-linux-amd64 | cut -d' ' -f1)
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/onllm-dev/homebrew-tap.git" /tmp/tap
+          cd /tmp/tap
+          mkdir -p Formula
+
+          cat > Formula/onwatch.rb << 'FORMULA'
+          class Onwatch < Formula
+            desc "CLI tool for tracking AI API quotas across multiple providers"
+            homepage "https://github.com/onllm-dev/onwatch"
+            version "VERSION_PLACEHOLDER"
+            license "GPL-3.0-only"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/onllm-dev/onwatch/releases/download/vVERSION_PLACEHOLDER/onwatch-darwin-arm64"
+                sha256 "SHA_DARWIN_ARM64_PLACEHOLDER"
+              else
+                url "https://github.com/onllm-dev/onwatch/releases/download/vVERSION_PLACEHOLDER/onwatch-darwin-amd64"
+                sha256 "SHA_DARWIN_AMD64_PLACEHOLDER"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/onllm-dev/onwatch/releases/download/vVERSION_PLACEHOLDER/onwatch-linux-arm64"
+                sha256 "SHA_LINUX_ARM64_PLACEHOLDER"
+              else
+                url "https://github.com/onllm-dev/onwatch/releases/download/vVERSION_PLACEHOLDER/onwatch-linux-amd64"
+                sha256 "SHA_LINUX_AMD64_PLACEHOLDER"
+              end
+            end
+
+            def install
+              bin.install Dir["onwatch-*"].first => "onwatch"
+            end
+
+            def caveats
+              <<~EOS
+                To configure onWatch, run the interactive setup wizard:
+
+                  onwatch setup
+
+                This will guide you through configuring API keys, dashboard
+                credentials, and polling settings. Configuration is stored
+                in ~/.onwatch/.env
+
+                After setup, start onWatch with:
+
+                  onwatch
+              EOS
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/onwatch --version")
+            end
+          end
+          FORMULA
+
+          # Replace placeholders with actual values
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" Formula/onwatch.rb
+          sed -i "s/SHA_DARWIN_ARM64_PLACEHOLDER/${SHA_DARWIN_ARM64}/g" Formula/onwatch.rb
+          sed -i "s/SHA_DARWIN_AMD64_PLACEHOLDER/${SHA_DARWIN_AMD64}/g" Formula/onwatch.rb
+          sed -i "s/SHA_LINUX_ARM64_PLACEHOLDER/${SHA_LINUX_ARM64}/g" Formula/onwatch.rb
+          sed -i "s/SHA_LINUX_AMD64_PLACEHOLDER/${SHA_LINUX_AMD64}/g" Formula/onwatch.rb
+
+          # Remove leading whitespace from heredoc (cat << 'FORMULA' adds indentation)
+          sed -i 's/^          //' Formula/onwatch.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/onwatch.rb
+          git commit -m "onwatch ${VERSION}"
+          git push

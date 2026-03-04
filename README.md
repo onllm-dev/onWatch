@@ -40,6 +40,13 @@ curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh |
 
 This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a systemd service (Linux) or self-daemonizes (macOS), and adds `onwatch` to your PATH.
 
+### Homebrew (macOS & Linux)
+
+```bash
+brew install onllm-dev/tap/onwatch
+onwatch setup    # Interactive setup wizard for API keys and config
+```
+
 ### Windows
 
 **One-line install** (PowerShell):
