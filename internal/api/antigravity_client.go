@@ -295,7 +295,19 @@ func (c *AntigravityClient) parseUnixProcessLine(line string) (*AntigravityProce
 
 // detectProcessWindows finds the process on Windows.
 func (c *AntigravityClient) detectProcessWindows(ctx context.Context) (*AntigravityProcessInfo, error) {
-	// Try WMIC first
+	// Primary: Use Get-CimInstance (modern, works on all Windows 10/11)
+	// Search for both "antigravity" and "language_server" in command lines,
+	// because the language server runs as a separate binary (language_server_windows_x64.exe).
+	if info, err := c.detectProcessWindowsCIM(ctx); err == nil {
+		return info, nil
+	}
+
+	// Fallback 1: PowerShell Get-Process (matches by process name)
+	if info, err := c.detectProcessWindowsPowerShell(ctx); err == nil {
+		return info, nil
+	}
+
+	// Fallback 2: WMIC (deprecated on newer Windows 11 but works on older builds)
 	cmd := exec.CommandContext(ctx, "wmic", "process", "where",
 		"name like '%antigravity%' or commandline like '%antigravity%'",
 		"get", "processid,commandline", "/format:csv")
@@ -307,8 +319,80 @@ func (c *AntigravityClient) detectProcessWindows(ctx context.Context) (*Antigrav
 		}
 	}
 
-	// Fallback to PowerShell
-	return c.detectProcessWindowsPowerShell(ctx)
+	return nil, ErrAntigravityProcessNotFound
+}
+
+// detectProcessWindowsCIM uses Get-CimInstance to find the language server process.
+// This is the most reliable method on modern Windows as it searches command lines
+// for both "antigravity" and "language_server" process names.
+func (c *AntigravityClient) detectProcessWindowsCIM(ctx context.Context) (*AntigravityProcessInfo, error) {
+	// Single PowerShell command that finds all candidate processes by command line content
+	psCmd := `Get-CimInstance Win32_Process | Where-Object {` +
+		` $_.CommandLine -and (` +
+		`$_.CommandLine -like '*antigravity*' -or ` +
+		`$_.Name -like '*language_server*'` +
+		`)} | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json`
+
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", psCmd)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("antigravity: CIM query failed: %w", err)
+	}
+
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return nil, ErrAntigravityProcessNotFound
+	}
+
+	type cimProcess struct {
+		ProcessId   int    `json:"ProcessId"`
+		Name        string `json:"Name"`
+		CommandLine string `json:"CommandLine"`
+	}
+
+	var processes []cimProcess
+	if err := json.Unmarshal([]byte(trimmed), &processes); err != nil {
+		// PowerShell returns a single object (not array) when only one match
+		var single cimProcess
+		if err := json.Unmarshal([]byte(trimmed), &single); err != nil {
+			return nil, ErrAntigravityProcessNotFound
+		}
+		processes = append(processes, single)
+	}
+
+	var best *AntigravityProcessInfo
+	bestScore := -1
+
+	for _, proc := range processes {
+		cmdLine := proc.CommandLine
+		if cmdLine == "" {
+			continue
+		}
+
+		// Filter: must have "antigravity" somewhere in the command line
+		if !strings.Contains(strings.ToLower(cmdLine), "antigravity") {
+			continue
+		}
+
+		info := &AntigravityProcessInfo{
+			PID:                 proc.ProcessId,
+			CSRFToken:           extractArgument(cmdLine, "--csrf_token"),
+			ExtensionServerPort: extractPortArgument(cmdLine, "--extension_server_port"),
+			CommandLine:         cmdLine,
+		}
+
+		score := scoreWindowsCandidate(info)
+		if score > bestScore {
+			best = info
+			bestScore = score
+		}
+	}
+
+	if best == nil {
+		return nil, ErrAntigravityProcessNotFound
+	}
+
+	return best, nil
 }
 
 // parseWMICOutput parses WMIC CSV output.
@@ -357,8 +441,9 @@ func (c *AntigravityClient) parseWMICOutput(output string) *AntigravityProcessIn
 
 // detectProcessWindowsPowerShell uses PowerShell as fallback.
 func (c *AntigravityClient) detectProcessWindowsPowerShell(ctx context.Context) (*AntigravityProcessInfo, error) {
-	cmd := exec.CommandContext(ctx, "powershell", "-Command",
-		"Get-Process | Where-Object { $_.ProcessName -like '*antigravity*' } | Select-Object Id, ProcessName | ConvertTo-Json")
+	// Search both "antigravity" and "language_server" process names
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command",
+		"Get-Process | Where-Object { $_.ProcessName -like '*antigravity*' -or $_.ProcessName -like '*language_server*' } | Select-Object Id, ProcessName | ConvertTo-Json")
 
 	output, err := cmd.Output()
 	if err != nil {

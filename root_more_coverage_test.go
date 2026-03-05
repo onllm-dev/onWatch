@@ -203,9 +203,21 @@ func TestMain_HelperProcess(t *testing.T) {
 
 func TestMain_SubprocessScenarios(t *testing.T) {
 	t.Run("main help exits successfully", func(t *testing.T) {
-		cmd := exec.Command(os.Args[0], "-test.run=TestMain_HelperProcess")
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", "HELPER_MAIN_MODE=help")
-		out, err := cmd.CombinedOutput()
+		// Retry once — under heavy parallel test load (race detector + 12 packages),
+		// the subprocess may transiently fail to start.
+		var out []byte
+		var err error
+		for attempt := 0; attempt < 2; attempt++ {
+			cmd := exec.Command(os.Args[0], "-test.run=TestMain_HelperProcess")
+			cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", "HELPER_MAIN_MODE=help")
+			out, err = cmd.CombinedOutput()
+			if err == nil && strings.Contains(string(out), "Usage: onwatch") {
+				return
+			}
+			if attempt == 0 {
+				t.Logf("attempt %d failed (retrying): %v", attempt+1, err)
+			}
+		}
 		if err != nil {
 			t.Fatalf("helper process failed: %v\noutput:\n%s", err, string(out))
 		}
