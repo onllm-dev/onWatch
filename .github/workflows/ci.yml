@@ -24,8 +24,17 @@ jobs:
           go fmt ./...
           go vet ./...
 
-      - name: Test with race detection
-        run: go test -race -cover -count=1 ./...
+      - name: Test with coverage
+        run: go test -race -coverprofile=coverage.out -covermode=atomic -count=1 ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: false
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Build
         run: go build -o onwatch .
