@@ -1495,6 +1495,14 @@ func TestRunStop_NonTestMode_WithPIDFilePort_LocalListener(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("lsof only available on macOS/Linux")
 	}
+	// Skip if real onwatch is running — runStop(false) scans default ports as fallback
+	for _, p := range []int{9211, 8932} {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 200*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			t.Skipf("skipping: real onwatch on port %d", p)
+		}
+	}
 
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
