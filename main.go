@@ -1396,7 +1396,7 @@ func printHelp() {
 	fmt.Println("Options:")
 	fmt.Println("  version, --version Print version and exit")
 	fmt.Println("  --help             Print this help message")
-	fmt.Println("  --interval SEC     Polling interval in seconds (default: 60)")
+	fmt.Println("  --interval SEC     Polling interval in seconds (default: 120)")
 	fmt.Println("  --port PORT        Dashboard HTTP port (default: 9211)")
 	fmt.Println("  --db PATH          SQLite database file path (default: ~/.onwatch/data/onwatch.db)")
 	fmt.Println("  --debug            Run in foreground mode, log to stdout")

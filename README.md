@@ -256,7 +256,7 @@ All agents run as parallel goroutines. Each polls its API at the configured inte
 
 | Flag         | Env Var                 | Default                      | Description                         |
 | ------------ | ----------------------- | ---------------------------- | ----------------------------------- |
-| `--interval` | `ONWATCH_POLL_INTERVAL` | `60`                         | Poll interval in seconds (10--3600) |
+| `--interval` | `ONWATCH_POLL_INTERVAL` | `120`                        | Poll interval in seconds (10--3600) |
 | `--port`     | `ONWATCH_PORT`          | `9211`                       | Dashboard HTTP port                 |
 | `--db`       | `ONWATCH_DB_PATH`       | `~/.onwatch/data/onwatch.db` | SQLite database path                |
 | `--debug`    | --                      | `false`                      | Foreground mode, log to stdout      |
@@ -420,7 +420,7 @@ Copy `.env.docker.example` to `.env` and set at least one provider key. See `.en
 | `CODEX_TOKEN`           | Codex OAuth access token (recommended; required for Codex-only) | -- |
 | `ONWATCH_ADMIN_USER`    | Dashboard username                         | `admin`    |
 | `ONWATCH_ADMIN_PASS`    | Dashboard password                         | `changeme` |
-| `ONWATCH_POLL_INTERVAL` | Polling interval (seconds)                 | `60`       |
+| `ONWATCH_POLL_INTERVAL` | Polling interval (seconds)                 | `120`      |
 | `ONWATCH_LOG_LEVEL`     | Log level                                  | `info`     |
 
 ### Storage

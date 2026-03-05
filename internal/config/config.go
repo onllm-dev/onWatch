@@ -241,7 +241,7 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 // applyDefaults sets default values for empty config fields.
 func (c *Config) applyDefaults() {
 	if c.PollInterval == 0 {
-		c.PollInterval = 60 * time.Second
+		c.PollInterval = 120 * time.Second
 	}
 	if c.Port == 0 {
 		c.Port = 9211

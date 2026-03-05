@@ -87,8 +87,8 @@ func TestConfig_DefaultValues(t *testing.T) {
 		t.Fatalf("Load() failed: %v", err)
 	}
 
-	if cfg.PollInterval != 60*time.Second {
-		t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, 60*time.Second)
+	if cfg.PollInterval != 120*time.Second {
+		t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, 120*time.Second)
 	}
 	if cfg.Port != 9211 {
 		t.Errorf("Port = %d, want %d", cfg.Port, 9211)

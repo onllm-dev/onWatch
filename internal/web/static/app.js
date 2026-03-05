@@ -1,7 +1,7 @@
 // onWatch Dashboard JavaScript
 
 const API_BASE = '';
-const REFRESH_INTERVAL = 60000;
+const REFRESH_INTERVAL = 120000;
 
 // ── Lazy Loading via IntersectionObserver ──
 const _lazyLoaded = new Set();
@@ -82,7 +82,7 @@ const State = {
   cyclesPage: 1,
   cyclesPageSize: 10,
   cyclesRange: 259200000,   // 3 days in ms (default)
-  cyclesBucket: 1,          // Polling history grouping bucket in minutes
+  cyclesBucket: 2,          // Polling history grouping bucket in minutes
   cyclesQuotaNames: [],     // dynamic quota column names
   // Sessions table state
   sessionsSort: { key: null, dir: 'desc' },

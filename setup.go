@@ -168,7 +168,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	}
 
 	for {
-		intervalStr := promptWithDefault(reader, "Polling interval in seconds", "60")
+		intervalStr := promptWithDefault(reader, "Polling interval in seconds", "120")
 		interval, err := strconv.Atoi(intervalStr)
 		if err == nil && interval >= 10 && interval <= 3600 {
 			cfg.pollInterval = interval

@@ -549,7 +549,7 @@ function Start-InteractiveSetup {
     }
 
     while ($true) {
-        $pollInterval = Read-PromptWithDefault -Prompt "Polling interval in seconds" -Default "60"
+        $pollInterval = Read-PromptWithDefault -Prompt "Polling interval in seconds" -Default "120"
         if (Test-Interval $pollInterval) { break }
     }
 
