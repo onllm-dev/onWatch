@@ -304,7 +304,7 @@ func (s *Store) QueryAnthropicCyclesSince(quotaName string, since time.Time) ([]
 		`SELECT id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
 		FROM anthropic_reset_cycles WHERE quota_name = ? AND cycle_end IS NOT NULL AND cycle_start >= ?
 		ORDER BY cycle_start DESC`,
-		quotaName, since.Format(time.RFC3339Nano),
+		quotaName, since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query anthropic cycles since: %w", err)
@@ -351,7 +351,7 @@ func (s *Store) QueryAnthropicUtilizationSeries(quotaName string, since time.Tim
 		JOIN anthropic_snapshots s ON s.id = qv.snapshot_id
 		WHERE qv.quota_name = ? AND s.captured_at >= ?
 		ORDER BY s.captured_at ASC`,
-		quotaName, since.Format(time.RFC3339Nano),
+		quotaName, since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query utilization series: %w", err)

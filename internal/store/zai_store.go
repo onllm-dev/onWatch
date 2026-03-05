@@ -470,7 +470,7 @@ func (s *Store) QueryZaiCyclesSince(quotaType string, since time.Time) ([]*ZaiRe
 	rows, err := s.db.Query(
 		`SELECT id, quota_type, cycle_start, cycle_end, next_reset, peak_value, total_delta
 		FROM zai_reset_cycles WHERE quota_type = ? AND cycle_start >= ? ORDER BY cycle_start DESC`,
-		quotaType, since.Format(time.RFC3339Nano),
+		quotaType, since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query zai cycles since: %w", err)

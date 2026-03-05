@@ -420,7 +420,7 @@ func (s *Store) QueryCodexCyclesSince(quotaName string, since time.Time) ([]*Cod
 		FROM codex_reset_cycles WHERE quota_name = ? AND cycle_end IS NOT NULL AND cycle_start >= ?
 		ORDER BY cycle_start DESC`,
 		quotaName,
-		since.Format(time.RFC3339Nano),
+		since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query codex cycles since: %w", err)
@@ -479,7 +479,7 @@ func (s *Store) QueryCodexUtilizationSeries(quotaName string, since time.Time) (
 		WHERE qv.quota_name = ? AND s.captured_at >= ?
 		ORDER BY s.captured_at ASC`,
 		quotaName,
-		since.Format(time.RFC3339Nano),
+		since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query codex utilization series: %w", err)

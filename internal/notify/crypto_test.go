@@ -2,6 +2,7 @@ package notify
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
 )
 
@@ -189,5 +190,132 @@ func TestDecrypt_InvalidKey(t *testing.T) {
 				t.Errorf("Expected error for key %q", tt.key)
 			}
 		})
+	}
+}
+
+func TestEncryptForStorage_RoundTrip(t *testing.T) {
+	key, err := GenerateEncryptionKey()
+	if err != nil {
+		t.Fatalf("GenerateEncryptionKey failed: %v", err)
+	}
+
+	plaintext := "my-secret-password"
+	stored, err := EncryptForStorage(plaintext, key)
+	if err != nil {
+		t.Fatalf("EncryptForStorage failed: %v", err)
+	}
+
+	// Should have the encrypted prefix
+	if !strings.HasPrefix(stored, "enc:") {
+		t.Errorf("Expected 'enc:' prefix, got %q", stored[:10])
+	}
+
+	// Should round-trip via DecryptFromStorage
+	decrypted, err := DecryptFromStorage(stored, key)
+	if err != nil {
+		t.Fatalf("DecryptFromStorage failed: %v", err)
+	}
+	if decrypted != plaintext {
+		t.Errorf("DecryptFromStorage = %q, want %q", decrypted, plaintext)
+	}
+}
+
+func TestDecryptFromStorage_PlaintextPassthrough(t *testing.T) {
+	key, _ := GenerateEncryptionKey()
+
+	// Value without "enc:" prefix should be returned as-is
+	plaintext := "my-plain-password"
+	result, err := DecryptFromStorage(plaintext, key)
+	if err != nil {
+		t.Fatalf("DecryptFromStorage failed: %v", err)
+	}
+	if result != plaintext {
+		t.Errorf("DecryptFromStorage = %q, want %q", result, plaintext)
+	}
+}
+
+func TestDecryptFromStorage_EmptyString(t *testing.T) {
+	key, _ := GenerateEncryptionKey()
+
+	result, err := DecryptFromStorage("", key)
+	if err != nil {
+		t.Fatalf("DecryptFromStorage failed for empty string: %v", err)
+	}
+	if result != "" {
+		t.Errorf("DecryptFromStorage = %q, want empty", result)
+	}
+}
+
+func TestIsEncryptedValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"encrypted value", "enc:base64ciphertext", true},
+		{"plain value", "my-password", false},
+		{"empty string", "", false},
+		{"just prefix", "enc:", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsEncryptedValue(tt.value)
+			if got != tt.want {
+				t.Errorf("IsEncryptedValue(%q) = %v, want %v", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEncryptForStorage_InvalidKey(t *testing.T) {
+	_, err := EncryptForStorage("test", "bad-key")
+	if err == nil {
+		t.Error("Expected error for invalid key")
+	}
+}
+
+func TestDecryptFromStorage_InvalidEncrypted(t *testing.T) {
+	key, _ := GenerateEncryptionKey()
+
+	// Has the prefix but not valid ciphertext
+	_, err := DecryptFromStorage("enc:not-valid-base64!!!", key)
+	if err == nil {
+		t.Error("Expected error for invalid encrypted value")
+	}
+}
+
+func TestEncryptDecrypt_WithAAD(t *testing.T) {
+	key, err := GenerateEncryptionKey()
+	if err != nil {
+		t.Fatalf("GenerateEncryptionKey failed: %v", err)
+	}
+
+	plaintext := "secret-with-aad"
+	aad := "context-binding"
+
+	ciphertext, err := Encrypt(plaintext, key, aad)
+	if err != nil {
+		t.Fatalf("Encrypt with AAD failed: %v", err)
+	}
+
+	// Decrypt with same AAD should succeed
+	decrypted, err := Decrypt(ciphertext, key, aad)
+	if err != nil {
+		t.Fatalf("Decrypt with correct AAD failed: %v", err)
+	}
+	if decrypted != plaintext {
+		t.Errorf("Decrypt = %q, want %q", decrypted, plaintext)
+	}
+
+	// Decrypt with wrong AAD should fail
+	_, err = Decrypt(ciphertext, key, "wrong-aad")
+	if err == nil {
+		t.Error("Expected error when decrypting with wrong AAD")
+	}
+
+	// Decrypt with no AAD should fail
+	_, err = Decrypt(ciphertext, key)
+	if err == nil {
+		t.Error("Expected error when decrypting without AAD")
 	}
 }

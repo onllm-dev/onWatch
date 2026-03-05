@@ -301,10 +301,14 @@ func IsSystemd() bool {
 	return os.Getenv("INVOCATION_ID") != ""
 }
 
+var readCgroupFile = func() ([]byte, error) {
+	return os.ReadFile("/proc/self/cgroup")
+}
+
 // DetectServiceName reads /proc/self/cgroup to find the systemd service name.
 // Falls back to "onwatch.service" if detection fails.
 func DetectServiceName() string {
-	data, err := os.ReadFile("/proc/self/cgroup")
+	data, err := readCgroupFile()
 	if err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
 			// cgroup v2 line: "0::/system.slice/onwatch.service"

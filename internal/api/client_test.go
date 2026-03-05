@@ -340,3 +340,26 @@ func TestClient_DefaultBaseURL(t *testing.T) {
 		t.Errorf("Default baseURL = %q, want %q", client.baseURL, expected)
 	}
 }
+
+func TestRedactAPIKey(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{name: "empty", key: "", want: "(empty)"},
+		{name: "non_syn_prefix", key: "abc123456", want: "syn_***...***"},
+		{name: "too_short", key: "syn_12", want: "syn_***...***"},
+		{name: "borderline_short", key: "syn_1234567", want: "syn_***...***"},
+		{name: "normal_syn_key", key: "syn_abcdefghijk", want: "syn_abcd***...***ijk"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := redactAPIKey(tt.key)
+			if got != tt.want {
+				t.Fatalf("redactAPIKey(%q) = %q, want %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}

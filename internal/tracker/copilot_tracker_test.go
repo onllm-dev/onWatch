@@ -236,3 +236,112 @@ func TestCopilotTracker_UsageSummary_Empty(t *testing.T) {
 		t.Errorf("CompletedCycles = %d, want 0", summary.CompletedCycles)
 	}
 }
+
+func TestCopilotTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelta(t *testing.T) {
+	s := newTestCopilotStore(t)
+	tr := NewCopilotTracker(s, slog.Default())
+
+	base := time.Date(2026, 3, 4, 8, 0, 0, 0, time.UTC)
+	resetDate := base.Add(24 * time.Hour)
+	if _, err := s.CreateCopilotCycle("premium_interactions", base, &resetDate); err != nil {
+		t.Fatalf("CreateCopilotCycle: %v", err)
+	}
+	if err := s.UpdateCopilotCycle("premium_interactions", 40, 12); err != nil {
+		t.Fatalf("UpdateCopilotCycle: %v", err)
+	}
+
+	quota := api.CopilotQuota{Name: "premium_interactions", Entitlement: 1500, Remaining: 1400}
+	if err := tr.processQuota(quota, base.Add(10*time.Minute), &resetDate, resetDate.Format(time.RFC3339Nano)); err != nil {
+		t.Fatalf("processQuota: %v", err)
+	}
+
+	cycle, err := s.QueryActiveCopilotCycle("premium_interactions")
+	if err != nil {
+		t.Fatalf("QueryActiveCopilotCycle: %v", err)
+	}
+	if cycle.PeakUsed != 100 {
+		t.Fatalf("PeakUsed = %d, want 100", cycle.PeakUsed)
+	}
+	if cycle.TotalDelta != 12 {
+		t.Fatalf("TotalDelta = %d, want 12", cycle.TotalDelta)
+	}
+}
+
+func TestCopilotTracker_UsageSummary_UsesSnapshotResetDateFallback(t *testing.T) {
+	s := newTestCopilotStore(t)
+	tr := NewCopilotTracker(s, slog.Default())
+
+	base := time.Date(2026, 3, 4, 14, 0, 0, 0, time.UTC)
+	resetDate := base.Add(48 * time.Hour)
+
+	if _, err := s.CreateCopilotCycle("premium_interactions", base, nil); err != nil {
+		t.Fatalf("CreateCopilotCycle: %v", err)
+	}
+	if err := s.UpdateCopilotCycle("premium_interactions", 500, 0); err != nil {
+		t.Fatalf("UpdateCopilotCycle: %v", err)
+	}
+
+	snap := &api.CopilotSnapshot{
+		CapturedAt: base.Add(time.Minute),
+		ResetDate:  &resetDate,
+		Quotas: []api.CopilotQuota{
+			{Name: "premium_interactions", Entitlement: 1500, Remaining: 1200, PercentRemaining: 80, Unlimited: false},
+		},
+	}
+	if _, err := s.InsertCopilotSnapshot(snap); err != nil {
+		t.Fatalf("InsertCopilotSnapshot: %v", err)
+	}
+
+	summary, err := tr.UsageSummary("premium_interactions")
+	if err != nil {
+		t.Fatalf("UsageSummary: %v", err)
+	}
+	if summary.ResetDate == nil {
+		t.Fatal("expected ResetDate to fall back to latest snapshot reset date")
+	}
+	if !summary.ResetDate.Equal(resetDate) {
+		t.Fatalf("ResetDate = %v, want %v", summary.ResetDate, resetDate)
+	}
+	if summary.CurrentUsed != 300 {
+		t.Fatalf("CurrentUsed = %d, want 300", summary.CurrentUsed)
+	}
+	if summary.UsagePercent != 20 {
+		t.Fatalf("UsagePercent = %v, want 20", summary.UsagePercent)
+	}
+}
+
+func TestCopilotTracker_UsageSummary_CalculatesRateAndClampsProjection(t *testing.T) {
+	s := newTestCopilotStore(t)
+	tr := NewCopilotTracker(s, slog.Default())
+
+	cycleStart := time.Now().UTC().Add(-2 * time.Hour)
+	resetDate := time.Now().UTC().Add(2 * time.Hour)
+	if _, err := s.CreateCopilotCycle("premium_interactions", cycleStart, &resetDate); err != nil {
+		t.Fatalf("CreateCopilotCycle: %v", err)
+	}
+	if err := s.UpdateCopilotCycle("premium_interactions", 1450, 200); err != nil {
+		t.Fatalf("UpdateCopilotCycle: %v", err)
+	}
+
+	snap := &api.CopilotSnapshot{
+		CapturedAt: time.Now().UTC(),
+		ResetDate:  &resetDate,
+		Quotas: []api.CopilotQuota{
+			{Name: "premium_interactions", Entitlement: 1500, Remaining: 100, PercentRemaining: 6.666, Unlimited: false},
+		},
+	}
+	if _, err := s.InsertCopilotSnapshot(snap); err != nil {
+		t.Fatalf("InsertCopilotSnapshot: %v", err)
+	}
+
+	summary, err := tr.UsageSummary("premium_interactions")
+	if err != nil {
+		t.Fatalf("UsageSummary: %v", err)
+	}
+	if summary.CurrentRate <= 0 {
+		t.Fatalf("CurrentRate = %v, want > 0", summary.CurrentRate)
+	}
+	if summary.ProjectedUsage != 1500 {
+		t.Fatalf("ProjectedUsage = %d, want 1500 (clamped)", summary.ProjectedUsage)
+	}
+}

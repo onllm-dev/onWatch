@@ -369,7 +369,7 @@ func (s *Store) QueryAntigravityUsageSeries(modelID string, since time.Time) ([]
 		JOIN antigravity_snapshots s ON s.id = mv.snapshot_id
 		WHERE mv.model_id = ? AND s.captured_at >= ?
 		ORDER BY s.captured_at ASC`,
-		modelID, since.Format(time.RFC3339Nano),
+		modelID, since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query antigravity usage series: %w", err)

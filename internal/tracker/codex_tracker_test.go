@@ -247,3 +247,114 @@ func TestCodexTracker_UsageSummary(t *testing.T) {
 		t.Fatal("expected ResetsAt")
 	}
 }
+
+func TestCodexTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelta(t *testing.T) {
+	s := newTestCodexStore(t)
+	tr := NewCodexTracker(s, slog.Default())
+
+	base := time.Date(2026, 3, 4, 9, 0, 0, 0, time.UTC)
+	reset := base.Add(3 * time.Hour)
+	if _, err := s.CreateCodexCycle("five_hour", base, &reset); err != nil {
+		t.Fatalf("CreateCodexCycle: %v", err)
+	}
+	if err := s.UpdateCodexCycle("five_hour", 10, 4); err != nil {
+		t.Fatalf("UpdateCodexCycle: %v", err)
+	}
+
+	quota := api.CodexQuota{Name: "five_hour", Utilization: 30, ResetsAt: &reset, Status: "healthy"}
+	if err := tr.processQuota(quota, base.Add(10*time.Minute)); err != nil {
+		t.Fatalf("processQuota: %v", err)
+	}
+
+	cycle, err := s.QueryActiveCodexCycle("five_hour")
+	if err != nil {
+		t.Fatalf("QueryActiveCodexCycle: %v", err)
+	}
+	if cycle.PeakUtilization != 30 {
+		t.Fatalf("PeakUtilization = %.1f, want 30", cycle.PeakUtilization)
+	}
+	if cycle.TotalDelta != 4 {
+		t.Fatalf("TotalDelta = %.1f, want 4", cycle.TotalDelta)
+	}
+}
+
+func TestCodexTracker_UsageSummary_UsesCycleResetWhenLatestQuotaMissing(t *testing.T) {
+	s := newTestCodexStore(t)
+	tr := NewCodexTracker(s, slog.Default())
+
+	base := time.Date(2026, 3, 4, 11, 0, 0, 0, time.UTC)
+	resetPrimary := base.Add(4 * time.Hour)
+	resetOther := base.Add(2 * time.Hour)
+
+	snap1 := &api.CodexSnapshot{
+		CapturedAt: base,
+		Quotas: []api.CodexQuota{
+			{Name: "five_hour", Utilization: 25, ResetsAt: &resetPrimary, Status: "healthy"},
+		},
+	}
+	if _, err := s.InsertCodexSnapshot(snap1); err != nil {
+		t.Fatalf("InsertCodexSnapshot snap1: %v", err)
+	}
+	if err := tr.Process(snap1); err != nil {
+		t.Fatalf("Process snap1: %v", err)
+	}
+
+	snap2 := &api.CodexSnapshot{
+		CapturedAt: base.Add(2 * time.Minute),
+		Quotas: []api.CodexQuota{
+			{Name: "other", Utilization: 10, ResetsAt: &resetOther, Status: "healthy"},
+		},
+	}
+	if _, err := s.InsertCodexSnapshot(snap2); err != nil {
+		t.Fatalf("InsertCodexSnapshot snap2: %v", err)
+	}
+
+	summary, err := tr.UsageSummary("five_hour")
+	if err != nil {
+		t.Fatalf("UsageSummary: %v", err)
+	}
+	if summary.ResetsAt == nil {
+		t.Fatal("expected ResetsAt from active cycle")
+	}
+	if !summary.ResetsAt.Equal(resetPrimary) {
+		t.Fatalf("ResetsAt = %v, want %v", summary.ResetsAt, resetPrimary)
+	}
+	if summary.CurrentUtil != 0 {
+		t.Fatalf("CurrentUtil = %.1f, want 0 when quota missing in latest snapshot", summary.CurrentUtil)
+	}
+}
+
+func TestCodexTracker_UsageSummary_CalculatesRateAndClampsProjectedUtil(t *testing.T) {
+	s := newTestCodexStore(t)
+	tr := NewCodexTracker(s, slog.Default())
+
+	cycleStart := time.Now().UTC().Add(-2 * time.Hour)
+	resetAt := time.Now().UTC().Add(2 * time.Hour)
+	if _, err := s.CreateCodexCycle("five_hour", cycleStart, &resetAt); err != nil {
+		t.Fatalf("CreateCodexCycle: %v", err)
+	}
+	if err := s.UpdateCodexCycle("five_hour", 95, 40); err != nil {
+		t.Fatalf("UpdateCodexCycle: %v", err)
+	}
+
+	snap := &api.CodexSnapshot{
+		CapturedAt: time.Now().UTC(),
+		Quotas: []api.CodexQuota{
+			{Name: "five_hour", Utilization: 90, ResetsAt: &resetAt, Status: "warning"},
+		},
+	}
+	if _, err := s.InsertCodexSnapshot(snap); err != nil {
+		t.Fatalf("InsertCodexSnapshot: %v", err)
+	}
+
+	summary, err := tr.UsageSummary("five_hour")
+	if err != nil {
+		t.Fatalf("UsageSummary: %v", err)
+	}
+	if summary.CurrentRate <= 0 {
+		t.Fatalf("CurrentRate = %v, want > 0", summary.CurrentRate)
+	}
+	if summary.ProjectedUtil != 100 {
+		t.Fatalf("ProjectedUtil = %v, want 100 (clamped)", summary.ProjectedUtil)
+	}
+}

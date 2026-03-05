@@ -17,19 +17,6 @@ type Store struct {
 	db *sql.DB
 }
 
-// validateOrderByColumn validates that the column name is in the allowlist.
-// This prevents SQL injection via ORDER BY clauses. The allowlist must contain
-// only known-safe column names. Usage with fmt.Sprintf is safe only when
-// combined with this validation.
-func validateOrderByColumn(column string, allowlist []string) (string, bool) {
-	for _, allowed := range allowlist {
-		if column == allowed {
-			return column, true
-		}
-	}
-	return "", false
-}
-
 // Session represents an agent session
 type Session struct {
 	ID                  string
@@ -965,7 +952,7 @@ func (s *Store) QueryCyclesSince(quotaType string, since time.Time) ([]*ResetCyc
 	rows, err := s.db.Query(
 		`SELECT id, quota_type, cycle_start, cycle_end, renews_at, peak_requests, total_delta
 		FROM reset_cycles WHERE quota_type = ? AND cycle_start >= ? ORDER BY cycle_start DESC`,
-		quotaType, since.Format(time.RFC3339Nano),
+		quotaType, since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cycles since: %w", err)

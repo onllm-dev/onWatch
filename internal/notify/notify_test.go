@@ -666,3 +666,595 @@ func TestNotificationEngine_ConfigureSMTP_WithEncryptedPassword(t *testing.T) {
 	_ = receivedData
 	mu.Unlock()
 }
+
+func TestNotificationEngine_SetEncryptionKey(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+
+	key, err := GenerateEncryptionKey()
+	if err != nil {
+		t.Fatalf("GenerateEncryptionKey failed: %v", err)
+	}
+
+	// Should not panic
+	engine.SetEncryptionKey(key)
+
+	// Verify it persists by using ConfigureSMTP with an encrypted password
+	encPass, err := Encrypt("my-smtp-password", key)
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+
+	// Store SMTP config with encrypted password (long enough to trigger decryption)
+	smtpJSON, _ := json.Marshal(smtpSettingsJSON{
+		Host:        "smtp.example.com",
+		Port:        587,
+		Username:    "user@test.com",
+		Password:    encPass,
+		Protocol:    "none",
+		FromAddress: "alerts@onwatch.dev",
+		FromName:    "onWatch",
+		To:          "admin@example.com",
+	})
+	s.SetSetting("smtp", string(smtpJSON))
+
+	// ConfigureSMTP should not error (password decryption attempted)
+	err = engine.ConfigureSMTP()
+	if err != nil {
+		t.Fatalf("ConfigureSMTP failed: %v", err)
+	}
+}
+
+func TestNotificationEngine_ConfigurePush(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+
+	// First call: no VAPID keys in DB, should generate new ones
+	err := engine.ConfigurePush()
+	if err != nil {
+		t.Fatalf("ConfigurePush failed: %v", err)
+	}
+
+	pubKey := engine.GetVAPIDPublicKey()
+	if pubKey == "" {
+		t.Error("Expected non-empty VAPID public key after ConfigurePush")
+	}
+
+	// Verify keys were saved to DB
+	keysJSON, err := s.GetSetting("vapid_keys")
+	if err != nil {
+		t.Fatalf("GetSetting vapid_keys failed: %v", err)
+	}
+	if keysJSON == "" {
+		t.Fatal("Expected vapid_keys to be saved in settings")
+	}
+
+	// Second call: should load existing keys from DB
+	engine2 := newTestEngine(t, s)
+	err = engine2.ConfigurePush()
+	if err != nil {
+		t.Fatalf("ConfigurePush (second call) failed: %v", err)
+	}
+
+	pubKey2 := engine2.GetVAPIDPublicKey()
+	if pubKey2 != pubKey {
+		t.Errorf("Expected same VAPID key on reload, got %q vs %q", pubKey2, pubKey)
+	}
+}
+
+func TestNotificationEngine_GetVAPIDPublicKey_Empty(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+	// Before ConfigurePush, key should be empty
+	if key := engine.GetVAPIDPublicKey(); key != "" {
+		t.Errorf("Expected empty VAPID key before ConfigurePush, got %q", key)
+	}
+}
+
+func TestNotificationEngine_SendTestPush_NotConfigured(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+
+	err := engine.SendTestPush()
+	if err == nil {
+		t.Error("Expected error when push not configured")
+	}
+	if !strings.Contains(err.Error(), "not configured") {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+func TestNotificationEngine_SendTestPush_NoSubscriptions(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+
+	// Configure push first
+	if err := engine.ConfigurePush(); err != nil {
+		t.Fatalf("ConfigurePush failed: %v", err)
+	}
+
+	err := engine.SendTestPush()
+	if err == nil {
+		t.Error("Expected error when no subscriptions found")
+	}
+	if !strings.Contains(err.Error(), "no push subscriptions") {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+func TestNotificationEngine_SendTestEmail_NotConfigured(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+
+	err := engine.SendTestEmail()
+	if err == nil {
+		t.Error("Expected error when SMTP not configured")
+	}
+	if !strings.Contains(err.Error(), "SMTP not configured") {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+func TestNotificationEngine_SendTestEmail_Success(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+
+	mailCount, cleanup := setupSMTPAndMailer(t, s, engine)
+	defer cleanup()
+
+	err := engine.SendTestEmail()
+	if err != nil {
+		t.Fatalf("SendTestEmail failed: %v", err)
+	}
+
+	if mailCount.Load() != 1 {
+		t.Errorf("Expected 1 email sent, got %d", mailCount.Load())
+	}
+}
+
+func TestNotificationEngine_Reload_InvalidJSON(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	s.SetSetting("notifications", "not valid json{{{")
+
+	engine := newTestEngine(t, s)
+	err := engine.Reload()
+	if err == nil {
+		t.Error("Expected error for invalid JSON")
+	}
+}
+
+func TestNotificationEngine_Reload_WithChannels(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	storeNotificationConfig(t, s, notificationSettingsJSON{
+		WarningThreshold:  80,
+		CriticalThreshold: 95,
+		NotifyWarning:     true,
+		NotifyCritical:    true,
+		CooldownMinutes:   30,
+		Channels:          &NotificationChannels{Email: true, Push: false},
+	})
+
+	engine := newTestEngine(t, s)
+	if err := engine.Reload(); err != nil {
+		t.Fatalf("Reload failed: %v", err)
+	}
+
+	cfg := engine.Config()
+	if !cfg.Channels.Email {
+		t.Error("Expected Email channel to be enabled")
+	}
+	if cfg.Channels.Push {
+		t.Error("Expected Push channel to be disabled")
+	}
+}
+
+func TestNotificationEngine_Reload_EmptyOverrideQuotaKey(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	storeNotificationConfig(t, s, notificationSettingsJSON{
+		WarningThreshold:  80,
+		CriticalThreshold: 95,
+		NotifyWarning:     true,
+		NotifyCritical:    true,
+		CooldownMinutes:   30,
+		Overrides: []struct {
+			QuotaKey   string  `json:"quota_key"`
+			Provider   string  `json:"provider"`
+			Warning    float64 `json:"warning"`
+			Critical   float64 `json:"critical"`
+			IsAbsolute bool    `json:"is_absolute"`
+		}{
+			{QuotaKey: "", Provider: "anthropic", Warning: 50, Critical: 75},
+			{QuotaKey: "five_hour", Provider: "", Warning: 60, Critical: 85},
+		},
+	})
+
+	engine := newTestEngine(t, s)
+	if err := engine.Reload(); err != nil {
+		t.Fatalf("Reload failed: %v", err)
+	}
+
+	cfg := engine.Config()
+	// Empty quota key should be skipped
+	if len(cfg.Overrides) != 1 {
+		t.Errorf("Expected 1 override (empty key skipped), got %d", len(cfg.Overrides))
+	}
+}
+
+func TestNormalizeNotificationProvider(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Anthropic", "anthropic"},
+		{"  CODEX  ", "codex"},
+		{"", "legacy"},
+		{"  ", "legacy"},
+		{"synthetic", "synthetic"},
+	}
+	for _, tt := range tests {
+		got := normalizeNotificationProvider(tt.input)
+		if got != tt.want {
+			t.Errorf("normalizeNotificationProvider(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestTitleCase(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"anthropic", "Anthropic"},
+		{"", ""},
+		{"A", "A"},
+		{"hello world", "Hello world"},
+	}
+	for _, tt := range tests {
+		got := titleCase(tt.input)
+		if got != tt.want {
+			t.Errorf("titleCase(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestBuildSubject(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+
+	tests := []struct {
+		name      string
+		status    QuotaStatus
+		notifType string
+		contains  string
+	}{
+		{
+			"critical",
+			QuotaStatus{Provider: "anthropic", QuotaKey: "five_hour", Utilization: 96.0},
+			"critical",
+			"[CRITICAL]",
+		},
+		{
+			"warning",
+			QuotaStatus{Provider: "codex", QuotaKey: "daily", Utilization: 82.0},
+			"warning",
+			"[WARNING]",
+		},
+		{
+			"reset",
+			QuotaStatus{Provider: "synthetic", QuotaKey: "monthly"},
+			"reset",
+			"[RESET]",
+		},
+		{
+			"unknown type",
+			QuotaStatus{Provider: "custom", QuotaKey: "test"},
+			"info",
+			"[info]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			subject := engine.buildSubject(tt.status, tt.notifType)
+			if !strings.Contains(subject, tt.contains) {
+				t.Errorf("buildSubject() = %q, want to contain %q", subject, tt.contains)
+			}
+		})
+	}
+}
+
+func TestBuildBody(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+
+	body := engine.buildBody(QuotaStatus{
+		Provider:    "anthropic",
+		QuotaKey:    "five_hour",
+		Utilization: 82.5,
+		Limit:       100,
+	}, "warning")
+
+	if !strings.Contains(body, "Provider: anthropic") {
+		t.Error("Body should contain provider name")
+	}
+	if !strings.Contains(body, "Quota: five_hour") {
+		t.Error("Body should contain quota key")
+	}
+	if !strings.Contains(body, "82.5%") {
+		t.Error("Body should contain utilization percentage")
+	}
+	if !strings.Contains(body, "Limit: 100") {
+		t.Error("Body should contain limit")
+	}
+	if !strings.Contains(body, "Alert Type: warning") {
+		t.Error("Body should contain alert type")
+	}
+	if !strings.Contains(body, "-- Sent by onWatch") {
+		t.Error("Body should contain footer")
+	}
+}
+
+func TestBuildBody_NoLimit(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+
+	body := engine.buildBody(QuotaStatus{
+		Provider:    "anthropic",
+		QuotaKey:    "five_hour",
+		Utilization: 82.5,
+		Limit:       0,
+	}, "warning")
+
+	if strings.Contains(body, "Limit:") {
+		t.Error("Body should not contain limit when limit is 0")
+	}
+}
+
+func TestNotificationEngine_ConfigureSMTP_EmptyHost(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	smtpJSON, _ := json.Marshal(smtpSettingsJSON{
+		Host:        "",
+		Port:        587,
+		Username:    "user@test.com",
+		Password:    "pass",
+		Protocol:    "none",
+		FromAddress: "alerts@onwatch.dev",
+		FromName:    "onWatch",
+		To:          "admin@example.com",
+	})
+	s.SetSetting("smtp", string(smtpJSON))
+
+	engine := newTestEngine(t, s)
+	err := engine.ConfigureSMTP()
+	if err != nil {
+		t.Fatalf("ConfigureSMTP should succeed with empty host (nil mailer): %v", err)
+	}
+
+	// Mailer should be nil
+	err = engine.SendTestEmail()
+	if err == nil {
+		t.Error("Expected error when mailer is nil")
+	}
+}
+
+func TestNotificationEngine_ConfigureSMTP_InvalidJSON(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	s.SetSetting("smtp", "not valid json{{{")
+
+	engine := newTestEngine(t, s)
+	err := engine.ConfigureSMTP()
+	if err == nil {
+		t.Error("Expected error for invalid SMTP JSON")
+	}
+}
+
+func TestNotificationEngine_ConfigureSMTP_MultipleRecipients(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	smtpJSON, _ := json.Marshal(smtpSettingsJSON{
+		Host:        "smtp.example.com",
+		Port:        587,
+		Username:    "user@test.com",
+		Password:    "pass",
+		Protocol:    "none",
+		FromAddress: "alerts@onwatch.dev",
+		FromName:    "onWatch",
+		To:          "admin@example.com, user2@example.com, user3@example.com",
+	})
+	s.SetSetting("smtp", string(smtpJSON))
+
+	engine := newTestEngine(t, s)
+	err := engine.ConfigureSMTP()
+	if err != nil {
+		t.Fatalf("ConfigureSMTP failed: %v", err)
+	}
+}
+
+func TestNotificationEngine_ConfigureSMTP_DefaultPort(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	smtpJSON, _ := json.Marshal(smtpSettingsJSON{
+		Host:        "smtp.example.com",
+		Port:        0, // Should default to 587
+		Username:    "user@test.com",
+		Password:    "pass",
+		Protocol:    "none",
+		FromAddress: "alerts@onwatch.dev",
+		FromName:    "onWatch",
+		To:          "admin@example.com",
+	})
+	s.SetSetting("smtp", string(smtpJSON))
+
+	engine := newTestEngine(t, s)
+	err := engine.ConfigureSMTP()
+	if err != nil {
+		t.Fatalf("ConfigureSMTP failed: %v", err)
+	}
+}
+
+func TestNotificationEngine_Check_AbsoluteOverride(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	storeNotificationConfig(t, s, notificationSettingsJSON{
+		WarningThreshold:  80,
+		CriticalThreshold: 95,
+		NotifyWarning:     true,
+		NotifyCritical:    true,
+		CooldownMinutes:   30,
+		Overrides: []struct {
+			QuotaKey   string  `json:"quota_key"`
+			Provider   string  `json:"provider"`
+			Warning    float64 `json:"warning"`
+			Critical   float64 `json:"critical"`
+			IsAbsolute bool    `json:"is_absolute"`
+		}{
+			{QuotaKey: "tokens", Provider: "anthropic", Warning: 800, Critical: 950, IsAbsolute: true},
+		},
+	})
+
+	engine := newTestEngine(t, s)
+	engine.Reload()
+
+	mailCount, cleanup := setupSMTPAndMailer(t, s, engine)
+	defer cleanup()
+
+	// Limit=1000, Warning=800 absolute -> 80%, Utilization=85% -> should trigger warning
+	engine.Check(QuotaStatus{
+		Provider:    "anthropic",
+		QuotaKey:    "tokens",
+		Utilization: 85.0,
+		Limit:       1000,
+	})
+
+	if mailCount.Load() != 1 {
+		t.Errorf("Expected 1 email for absolute override warning, got %d", mailCount.Load())
+	}
+}
+
+func TestNotificationEngine_Check_LegacyOverride(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	// Legacy override: no provider specified (empty provider -> "legacy" prefix not matched)
+	// This tests the fallback path that looks up by quota key only
+	storeNotificationConfig(t, s, notificationSettingsJSON{
+		WarningThreshold:  80,
+		CriticalThreshold: 95,
+		NotifyWarning:     true,
+		NotifyCritical:    true,
+		CooldownMinutes:   30,
+		Overrides: []struct {
+			QuotaKey   string  `json:"quota_key"`
+			Provider   string  `json:"provider"`
+			Warning    float64 `json:"warning"`
+			Critical   float64 `json:"critical"`
+			IsAbsolute bool    `json:"is_absolute"`
+		}{
+			// With empty provider, normalizeNotificationProvider returns "legacy"
+			// so the key becomes "legacy:five_hour" which won't match "anthropic:five_hour"
+			// We need to test the bare quota key fallback path
+		},
+	})
+
+	engine := newTestEngine(t, s)
+	engine.Reload()
+
+	// Manually inject a legacy override keyed by bare quota name
+	engine.mu.Lock()
+	engine.cfg.Overrides["five_hour"] = ThresholdOverride{Warning: 50, Critical: 75}
+	engine.mu.Unlock()
+
+	mailCount, cleanup := setupSMTPAndMailer(t, s, engine)
+	defer cleanup()
+
+	// 55% should trigger warning via legacy override (50%) but not global (80%)
+	engine.Check(QuotaStatus{
+		Provider:    "anthropic",
+		QuotaKey:    "five_hour",
+		Utilization: 55.0,
+		Limit:       100,
+	})
+
+	if mailCount.Load() != 1 {
+		t.Errorf("Expected 1 email from legacy override, got %d", mailCount.Load())
+	}
+}
+
+func TestNotificationEngine_Check_LegacyAbsoluteOverride(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	engine := newTestEngine(t, s)
+	engine.Reload()
+
+	// Manually inject a legacy absolute override
+	engine.mu.Lock()
+	engine.cfg.Overrides["tokens"] = ThresholdOverride{Warning: 800, Critical: 950, IsAbsolute: true}
+	engine.mu.Unlock()
+
+	mailCount, cleanup := setupSMTPAndMailer(t, s, engine)
+	defer cleanup()
+
+	// Limit=1000, Warning=800 absolute -> 80%, Utilization=85% -> should trigger warning
+	engine.Check(QuotaStatus{
+		Provider:    "newprovider",
+		QuotaKey:    "tokens",
+		Utilization: 85.0,
+		Limit:       1000,
+	})
+
+	if mailCount.Load() != 1 {
+		t.Errorf("Expected 1 email for legacy absolute override, got %d", mailCount.Load())
+	}
+}
+
+func TestNotificationOverrideKey(t *testing.T) {
+	tests := []struct {
+		provider string
+		quotaKey string
+		want     string
+	}{
+		{"anthropic", "five_hour", "anthropic:five_hour"},
+		{"CODEX", "daily", "codex:daily"},
+		{"  Synthetic ", "monthly", "synthetic:monthly"},
+	}
+	for _, tt := range tests {
+		got := notificationOverrideKey(tt.provider, tt.quotaKey)
+		if got != tt.want {
+			t.Errorf("notificationOverrideKey(%q, %q) = %q, want %q", tt.provider, tt.quotaKey, got, tt.want)
+		}
+	}
+}

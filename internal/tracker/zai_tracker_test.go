@@ -195,6 +195,32 @@ func TestZaiTracker_PeakTracking(t *testing.T) {
 	}
 }
 
+func TestZaiTracker_SetOnReset_Called(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	tr := NewZaiTracker(s, nil)
+	var resetQuota string
+	tr.SetOnReset(func(quotaName string) {
+		resetQuota = quotaName
+	})
+
+	baseTime := time.Now()
+	resetTime1 := baseTime.Add(24 * time.Hour)
+
+	s1 := makeZaiSnapshot(baseTime, 50000, 100, &resetTime1)
+	tr.Process(s1)
+
+	// Trigger tokens reset
+	resetTime2 := baseTime.Add(48 * time.Hour)
+	s2 := makeZaiSnapshot(baseTime.Add(time.Minute), 1000, 110, &resetTime2)
+	tr.Process(s2)
+
+	if resetQuota != "tokens" {
+		t.Errorf("onReset called with %q, want %q", resetQuota, "tokens")
+	}
+}
+
 func TestZaiTracker_UsageSummary_NoCycles(t *testing.T) {
 	s, _ := store.New(":memory:")
 	defer s.Close()

@@ -329,7 +329,7 @@ func (s *Store) QueryCopilotCyclesSince(quotaName string, since time.Time) ([]*C
 		`SELECT id, quota_name, cycle_start, cycle_end, reset_date, peak_used, total_delta
 		FROM copilot_reset_cycles WHERE quota_name = ? AND cycle_end IS NOT NULL AND cycle_start >= ?
 		ORDER BY cycle_start DESC`,
-		quotaName, since.Format(time.RFC3339Nano),
+		quotaName, since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query copilot cycles since: %w", err)
@@ -369,7 +369,7 @@ func (s *Store) QueryCopilotUsageSeries(quotaName string, since time.Time) ([]Co
 		JOIN copilot_snapshots s ON s.id = qv.snapshot_id
 		WHERE qv.quota_name = ? AND s.captured_at >= ?
 		ORDER BY s.captured_at ASC`,
-		quotaName, since.Format(time.RFC3339Nano),
+		quotaName, since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query copilot usage series: %w", err)

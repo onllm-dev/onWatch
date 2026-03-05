@@ -364,6 +364,69 @@ func TestTracker_UsageSummary_MultipleCycles(t *testing.T) {
 	}
 }
 
+func TestTracker_SetOnReset_Called(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	tracker := New(s, nil)
+	var resetQuota string
+	tracker.SetOnReset(func(quotaName string) {
+		resetQuota = quotaName
+	})
+
+	baseTime := time.Now()
+
+	// First snapshot
+	tracker.Process(&api.Snapshot{
+		CapturedAt: baseTime,
+		Sub:        api.QuotaInfo{Limit: 1000, Requests: 100, RenewsAt: baseTime.Add(5 * time.Hour)},
+		Search:     api.QuotaInfo{Limit: 250, Requests: 10, RenewsAt: baseTime.Add(100 * time.Hour)},
+		ToolCall:   api.QuotaInfo{Limit: 5000, Requests: 500, RenewsAt: baseTime.Add(100 * time.Hour)},
+	})
+
+	// Trigger subscription reset
+	tracker.Process(&api.Snapshot{
+		CapturedAt: baseTime.Add(time.Minute),
+		Sub:        api.QuotaInfo{Limit: 1000, Requests: 10, RenewsAt: baseTime.Add(10 * time.Hour)},
+		Search:     api.QuotaInfo{Limit: 250, Requests: 15, RenewsAt: baseTime.Add(100 * time.Hour)},
+		ToolCall:   api.QuotaInfo{Limit: 5000, Requests: 550, RenewsAt: baseTime.Add(100 * time.Hour)},
+	})
+
+	if resetQuota != "subscription" {
+		t.Errorf("onReset called with %q, want %q", resetQuota, "subscription")
+	}
+}
+
+func TestTracker_TimeBasedResetDetection(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	tracker := New(s, nil)
+	baseTime := time.Now()
+	renewsAt := baseTime.Add(1 * time.Hour)
+
+	// First snapshot
+	tracker.Process(&api.Snapshot{
+		CapturedAt: baseTime,
+		Sub:        api.QuotaInfo{Limit: 1000, Requests: 100, RenewsAt: renewsAt},
+		Search:     api.QuotaInfo{Limit: 250, Requests: 10, RenewsAt: baseTime.Add(100 * time.Hour)},
+		ToolCall:   api.QuotaInfo{Limit: 5000, Requests: 500, RenewsAt: baseTime.Add(100 * time.Hour)},
+	})
+
+	// Snapshot after renewsAt has passed (time-based reset)
+	tracker.Process(&api.Snapshot{
+		CapturedAt: baseTime.Add(2 * time.Hour),
+		Sub:        api.QuotaInfo{Limit: 1000, Requests: 5, RenewsAt: baseTime.Add(6 * time.Hour)},
+		Search:     api.QuotaInfo{Limit: 250, Requests: 15, RenewsAt: baseTime.Add(100 * time.Hour)},
+		ToolCall:   api.QuotaInfo{Limit: 5000, Requests: 550, RenewsAt: baseTime.Add(100 * time.Hour)},
+	})
+
+	history, _ := s.QueryCycleHistory("subscription")
+	if len(history) != 1 {
+		t.Errorf("Expected 1 closed cycle from time-based reset, got %d", len(history))
+	}
+}
+
 func TestTracker_MinuteLevelJitter_IgnoredAsNonReset(t *testing.T) {
 	s, _ := store.New(":memory:")
 	defer s.Close()
@@ -413,5 +476,89 @@ func TestTracker_MinuteLevelJitter_IgnoredAsNonReset(t *testing.T) {
 	expectedDelta := float64(30 * 2) // 2 per poll for 30 polls
 	if subCycle.TotalDelta != expectedDelta {
 		t.Errorf("TotalDelta = %v, want %v", subCycle.TotalDelta, expectedDelta)
+	}
+}
+
+func TestTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelta(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	baseTime := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	if _, err := s.CreateCycle("search", baseTime, baseTime.Add(2*time.Hour)); err != nil {
+		t.Fatalf("CreateCycle: %v", err)
+	}
+	if err := s.UpdateCycle("search", 10, 7); err != nil {
+		t.Fatalf("UpdateCycle: %v", err)
+	}
+
+	tracker := New(s, nil)
+	snapshot := &api.Snapshot{
+		CapturedAt: baseTime.Add(5 * time.Minute),
+		Sub:        api.QuotaInfo{Limit: 1000, Requests: 0, RenewsAt: baseTime.Add(5 * time.Hour)},
+		Search:     api.QuotaInfo{Limit: 250, Requests: 25, RenewsAt: baseTime.Add(2 * time.Hour)},
+		ToolCall:   api.QuotaInfo{Limit: 5000, Requests: 0, RenewsAt: baseTime.Add(3 * time.Hour)},
+	}
+
+	if err := tracker.processQuota("search", snapshot.CapturedAt, snapshot.Search, &tracker.lastSearchRequests); err != nil {
+		t.Fatalf("processQuota: %v", err)
+	}
+
+	cycle, err := s.QueryActiveCycle("search")
+	if err != nil {
+		t.Fatalf("QueryActiveCycle: %v", err)
+	}
+	if cycle.PeakRequests != 25 {
+		t.Fatalf("PeakRequests = %v, want 25", cycle.PeakRequests)
+	}
+	if cycle.TotalDelta != 7 {
+		t.Fatalf("TotalDelta = %v, want 7", cycle.TotalDelta)
+	}
+}
+
+func TestTracker_UsageSummary_SearchAndToolcallUseLatestSnapshotValues(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	tracker := New(s, nil)
+	baseTime := time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC)
+	snapshot := &api.Snapshot{
+		CapturedAt: baseTime,
+		Sub:        api.QuotaInfo{Limit: 1000, Requests: 100, RenewsAt: baseTime.Add(6 * time.Hour)},
+		Search:     api.QuotaInfo{Limit: 250, Requests: 50, RenewsAt: baseTime.Add(90 * time.Minute)},
+		ToolCall:   api.QuotaInfo{Limit: 5000, Requests: 1250, RenewsAt: baseTime.Add(4 * time.Hour)},
+	}
+	if _, err := s.InsertSnapshot(snapshot); err != nil {
+		t.Fatalf("InsertSnapshot: %v", err)
+	}
+	if err := tracker.Process(snapshot); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	searchSummary, err := tracker.UsageSummary("search")
+	if err != nil {
+		t.Fatalf("UsageSummary(search): %v", err)
+	}
+	if searchSummary.CurrentUsage != 50 {
+		t.Fatalf("search CurrentUsage = %v, want 50", searchSummary.CurrentUsage)
+	}
+	if searchSummary.CurrentLimit != 250 {
+		t.Fatalf("search CurrentLimit = %v, want 250", searchSummary.CurrentLimit)
+	}
+	if searchSummary.UsagePercent != 20 {
+		t.Fatalf("search UsagePercent = %v, want 20", searchSummary.UsagePercent)
+	}
+
+	toolSummary, err := tracker.UsageSummary("toolcall")
+	if err != nil {
+		t.Fatalf("UsageSummary(toolcall): %v", err)
+	}
+	if toolSummary.CurrentUsage != 1250 {
+		t.Fatalf("toolcall CurrentUsage = %v, want 1250", toolSummary.CurrentUsage)
+	}
+	if toolSummary.CurrentLimit != 5000 {
+		t.Fatalf("toolcall CurrentLimit = %v, want 5000", toolSummary.CurrentLimit)
+	}
+	if toolSummary.UsagePercent != 25 {
+		t.Fatalf("toolcall UsagePercent = %v, want 25", toolSummary.UsagePercent)
 	}
 }

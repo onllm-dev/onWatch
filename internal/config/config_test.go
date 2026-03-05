@@ -681,3 +681,196 @@ func TestConfig_String_ContainsProviders(t *testing.T) {
 		t.Error("String() should contain ZaiBaseURL")
 	}
 }
+
+func TestConfig_HasProvider_Copilot(t *testing.T) {
+	cfg := &Config{CopilotToken: "ghp_test_token"}
+	if !cfg.HasProvider("copilot") {
+		t.Error("HasProvider('copilot') should be true when CopilotToken is set")
+	}
+	if cfg.HasProvider("antigravity") {
+		t.Error("HasProvider('antigravity') should be false when only CopilotToken is set")
+	}
+}
+
+func TestConfig_HasProvider_Antigravity(t *testing.T) {
+	cfg := &Config{AntigravityEnabled: true}
+	if !cfg.HasProvider("antigravity") {
+		t.Error("HasProvider('antigravity') should be true when AntigravityEnabled is set")
+	}
+}
+
+func TestConfig_AvailableProviders_AllSix(t *testing.T) {
+	cfg := &Config{
+		AnthropicToken:     "sk-ant-test",
+		SyntheticAPIKey:    "syn_test",
+		ZaiAPIKey:          "zai_test",
+		CopilotToken:       "ghp_test",
+		CodexToken:         "codex_test",
+		AntigravityEnabled: true,
+	}
+	providers := cfg.AvailableProviders()
+	if len(providers) != 6 {
+		t.Errorf("AvailableProviders() = %v, want 6 providers", providers)
+	}
+	if !cfg.HasMultipleProviders() {
+		t.Error("HasMultipleProviders() should be true with 6 providers")
+	}
+}
+
+func TestConfig_IsDockerEnvironment_DockerContainer(t *testing.T) {
+	os.Setenv("DOCKER_CONTAINER", "true")
+	defer os.Unsetenv("DOCKER_CONTAINER")
+
+	cfg := &Config{}
+	if !cfg.IsDockerEnvironment() {
+		t.Error("IsDockerEnvironment() should return true when DOCKER_CONTAINER is set")
+	}
+}
+
+func TestConfig_IsDockerEnvironment_Kubernetes(t *testing.T) {
+	os.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	defer os.Unsetenv("KUBERNETES_SERVICE_HOST")
+
+	cfg := &Config{}
+	if !cfg.IsDockerEnvironment() {
+		t.Error("IsDockerEnvironment() should return true when KUBERNETES_SERVICE_HOST is set")
+	}
+}
+
+func TestConfig_IsDockerEnvironment_NotDocker(t *testing.T) {
+	// Ensure none of the Docker env vars are set
+	os.Unsetenv("DOCKER_CONTAINER")
+	os.Unsetenv("KUBERNETES_SERVICE_HOST")
+
+	cfg := &Config{}
+	// On a normal dev machine without /.dockerenv, this should be false
+	// (We cannot guarantee /.dockerenv doesn't exist, but on dev machines it won't)
+	result := cfg.IsDockerEnvironment()
+	_ = result // Just exercise the code path; result depends on host
+}
+
+func TestConfig_LogWriter_TestMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &Config{
+		DebugMode: false,
+		TestMode:  true,
+		DBPath:    filepath.Join(tmpDir, "test.db"),
+	}
+	writer, err := cfg.LogWriter()
+	if err != nil {
+		t.Fatalf("LogWriter() failed: %v", err)
+	}
+	if writer == os.Stdout {
+		t.Error("TestMode background should not return os.Stdout")
+	}
+	// Verify the test log file was created
+	logPath := filepath.Join(tmpDir, ".onwatch-test.log")
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		t.Errorf("Expected log file at %s", logPath)
+	}
+}
+
+func TestConfig_LoadWithArgs_TestFlag(t *testing.T) {
+	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	defer os.Clearenv()
+
+	cfg, err := loadWithArgs([]string{"--test"})
+	if err != nil {
+		t.Fatalf("loadWithArgs() failed: %v", err)
+	}
+	if !cfg.TestMode {
+		t.Error("TestMode should be true when --test flag is set")
+	}
+}
+
+func TestConfig_LoadWithArgs_DbEqualsSyntax(t *testing.T) {
+	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	defer os.Clearenv()
+
+	cfg, err := loadWithArgs([]string{"--db=/tmp/equals.db"})
+	if err != nil {
+		t.Fatalf("loadWithArgs() failed: %v", err)
+	}
+	if cfg.DBPath != "/tmp/equals.db" {
+		t.Errorf("DBPath = %q, want %q", cfg.DBPath, "/tmp/equals.db")
+	}
+}
+
+func TestConfig_LoadAntigravityFromEnv(t *testing.T) {
+	os.Setenv("ANTIGRAVITY_ENABLED", "true")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if !cfg.AntigravityEnabled {
+		t.Error("AntigravityEnabled should be true when ANTIGRAVITY_ENABLED=true")
+	}
+	if !cfg.HasProvider("antigravity") {
+		t.Error("HasProvider('antigravity') should be true")
+	}
+}
+
+func TestConfig_LoadCopilotFromEnv(t *testing.T) {
+	os.Setenv("COPILOT_TOKEN", "ghp_test_copilot_token")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.CopilotToken != "ghp_test_copilot_token" {
+		t.Errorf("CopilotToken = %q, want %q", cfg.CopilotToken, "ghp_test_copilot_token")
+	}
+}
+
+func TestConfig_SecureCookiesFromEnv(t *testing.T) {
+	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	os.Setenv("ONWATCH_SECURE_COOKIES", "true")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if !cfg.SecureCookies {
+		t.Error("SecureCookies should be true when ONWATCH_SECURE_COOKIES=true")
+	}
+}
+
+func TestConfig_SessionIdleTimeoutFromEnv(t *testing.T) {
+	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	os.Setenv("ONWATCH_SESSION_IDLE_TIMEOUT", "300")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.SessionIdleTimeout != 300*time.Second {
+		t.Errorf("SessionIdleTimeout = %v, want %v", cfg.SessionIdleTimeout, 300*time.Second)
+	}
+}
+
+func TestConfig_IsDefaultPassword(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		want     bool
+	}{
+		{"default password", "changeme", true},
+		{"custom password", "mysecretpassword", false},
+		{"empty password", "", false},
+		{"similar password", "changeme!", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{AdminPass: tt.password}
+			if got := cfg.IsDefaultPassword(); got != tt.want {
+				t.Errorf("IsDefaultPassword() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
