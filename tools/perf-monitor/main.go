@@ -64,7 +64,6 @@ type Report struct {
 var (
 	samples      []MemorySample
 	samplesMutex sync.RWMutex
-	stopMonitor  = make(chan struct{})
 )
 
 func main() {
@@ -151,11 +150,11 @@ func runMonitoring(pid, port int, totalDuration time.Duration) *Report {
 	fmt.Println("📊 PHASE 1: Monitoring IDLE state (no requests)")
 	fmt.Println("   Sampling memory every 5 seconds...")
 
-	stopMonitor = make(chan struct{})
-	go sampleMemory(pid, "idle")
+	idleStop := make(chan struct{})
+	go sampleMemory(pid, "idle", idleStop)
 
 	time.Sleep(halfDuration)
-	close(stopMonitor)
+	close(idleStop)
 	time.Sleep(100 * time.Millisecond)
 
 	// Collect idle samples
@@ -185,13 +184,13 @@ func runMonitoring(pid, port int, totalDuration time.Duration) *Report {
 	samples = []MemorySample{} // Reset samples
 	samplesMutex.Unlock()
 
-	stopMonitor = make(chan struct{})
-	go sampleMemory(pid, "load")
+	loadStop := make(chan struct{})
+	go sampleMemory(pid, "load", loadStop)
 
 	// Generate load
 	requestMetrics := generateLoad(baseURL, halfDuration)
 
-	close(stopMonitor)
+	close(loadStop)
 	time.Sleep(100 * time.Millisecond)
 
 	// Collect load samples
@@ -372,13 +371,13 @@ func startonWatch(port int) int {
 	return 0
 }
 
-func sampleMemory(pid int, phase string) {
+func sampleMemory(pid int, phase string, stop <-chan struct{}) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-stopMonitor:
+		case <-stop:
 			return
 		case <-ticker.C:
 			rss, vms := getProcessMemory(pid)

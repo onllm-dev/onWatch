@@ -192,6 +192,11 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		// Rate limited — log at WARN (not ERROR), skip retry to avoid worsening it
+		if errors.Is(err, api.ErrAnthropicRateLimited) {
+			a.logger.Warn("Anthropic rate limited, will retry next poll")
+			return
+		}
 		// On auth error (401 or 403), force token re-read and retry once
 		if isAuthError(err) && a.tokenRefresh != nil {
 			a.logger.Warn("Anthropic auth error, forcing credential re-read", "error", err)

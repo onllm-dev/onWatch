@@ -20,6 +20,7 @@ var (
 	ErrAnthropicServerError     = errors.New("anthropic: server error")
 	ErrAnthropicNetworkError    = errors.New("anthropic: network error")
 	ErrAnthropicInvalidResponse = errors.New("anthropic: invalid response")
+	ErrAnthropicRateLimited     = errors.New("anthropic: rate limited (429)")
 )
 
 // AnthropicClient is an HTTP client for the Anthropic API.
@@ -103,7 +104,7 @@ func (c *AnthropicClient) FetchQuotas(ctx context.Context) (*AnthropicQuotaRespo
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
-	req.Header.Set("User-Agent", "onwatch/1.0")
+	req.Header.Set("User-Agent", "claude-code/2.1.69")
 
 	// Log request (with redacted token)
 	c.logger.Debug("fetching Anthropic quotas",
@@ -134,6 +135,8 @@ func (c *AnthropicClient) FetchQuotas(ctx context.Context) (*AnthropicQuotaRespo
 		return nil, ErrAnthropicUnauthorized
 	case resp.StatusCode == http.StatusForbidden:
 		return nil, ErrAnthropicForbidden
+	case resp.StatusCode == http.StatusTooManyRequests:
+		return nil, ErrAnthropicRateLimited
 	case resp.StatusCode >= 500:
 		return nil, ErrAnthropicServerError
 	default:

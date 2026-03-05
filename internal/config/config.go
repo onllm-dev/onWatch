@@ -64,6 +64,19 @@ func envWithFallback(primary, fallback string) string {
 	return os.Getenv(fallback)
 }
 
+// expandTilde replaces a leading ~ with the user's home directory.
+// Shell does this automatically, but Go's os.Getenv returns the literal ~.
+func expandTilde(path string) string {
+	if !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	return filepath.Join(home, path[2:])
+}
+
 // flagValues holds parsed CLI flags.
 type flagValues struct {
 	interval int
@@ -183,10 +196,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// DB Path
 	if flags.db != "" {
-		cfg.DBPath = flags.db
+		cfg.DBPath = expandTilde(flags.db)
 		cfg.DBPathExplicit = true
 	} else if envDB := envWithFallback("ONWATCH_DB_PATH", "SYNTRACK_DB_PATH"); envDB != "" {
-		cfg.DBPath = envDB
+		cfg.DBPath = expandTilde(envDB)
 		cfg.DBPathExplicit = true
 	}
 

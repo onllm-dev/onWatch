@@ -67,7 +67,7 @@ func RefreshAnthropicToken(ctx context.Context, refreshToken string) (*OAuthToke
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "onwatch/1.0")
+	req.Header.Set("User-Agent", "claude-code/2.1.69")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

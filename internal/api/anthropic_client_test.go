@@ -84,8 +84,8 @@ func TestAnthropicClient_FetchQuotas_Headers(t *testing.T) {
 	}
 
 	ua, _ := gotUserAgent.Load().(string)
-	if ua != "onwatch/1.0" {
-		t.Errorf("expected 'onwatch/1.0', got %q", ua)
+	if ua != "claude-code/2.1.69" {
+		t.Errorf("expected 'claude-code/2.1.69', got %q", ua)
 	}
 }
 

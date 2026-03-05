@@ -443,6 +443,12 @@ func run() error {
 
 	isDaemonChild := os.Getenv("_ONWATCH_DAEMON") == "1"
 
+	// Write early diagnostic to stderr (inherited log file fd) BEFORE slog is configured.
+	// If the daemon child crashes during init, this ensures the log file isn't empty.
+	if isDaemonChild {
+		fmt.Fprintf(os.Stderr, "daemon child started (PID %d)\n", os.Getpid())
+	}
+
 	// Auto-fix systemd unit file BEFORE stopping the previous instance.
 	// When a post-update child runs this, the daemon-reload completes while
 	// the parent is still alive (systemd tracks it). After the child kills
