@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -178,77 +177,44 @@ func TestDaemonSysProcAttr_UnixSetsid(t *testing.T) {
 	}
 }
 
-func TestMain_HelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
-	}
-
-	mode := os.Getenv("HELPER_MAIN_MODE")
-	switch mode {
-	case "help":
-		os.Args = []string{"onwatch", "--help"}
-		main()
-		os.Exit(0)
-	case "error":
-		for _, key := range []string{"SYNTHETIC_API_KEY", "ZAI_API_KEY", "ANTHROPIC_TOKEN", "COPILOT_TOKEN", "CODEX_TOKEN", "ANTIGRAVITY_ENABLED", "ANTIGRAVITY_BASE_URL", "ANTIGRAVITY_CSRF_TOKEN"} {
-			_ = os.Unsetenv(key)
+func TestRun_HelpCommand(t *testing.T) {
+	setTestArgs(t, []string{"onwatch", "--help"})
+	out := captureStdout(t, func() {
+		if err := run(); err != nil {
+			t.Fatalf("run --help error: %v", err)
 		}
-		os.Args = []string{"onwatch"}
-		main() // expected to os.Exit(1)
-		os.Exit(2)
-	default:
-		os.Exit(3)
+	})
+	if !strings.Contains(out, "Usage: onwatch") {
+		t.Fatalf("expected help output, got:\n%s", out)
 	}
 }
 
-func TestMain_SubprocessScenarios(t *testing.T) {
-	t.Run("main help exits successfully", func(t *testing.T) {
-		// Retry once — under heavy parallel test load (race detector + 12 packages),
-		// the subprocess may transiently fail to start.
-		var out []byte
-		var err error
-		for attempt := 0; attempt < 2; attempt++ {
-			cmd := exec.Command(os.Args[0], "-test.run=TestMain_HelperProcess")
-			cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", "HELPER_MAIN_MODE=help")
-			out, err = cmd.CombinedOutput()
-			if err == nil && strings.Contains(string(out), "Usage: onwatch") {
-				return
-			}
-			if attempt == 0 {
-				t.Logf("attempt %d failed (retrying): %v", attempt+1, err)
-			}
-		}
-		if err != nil {
-			t.Fatalf("helper process failed: %v\noutput:\n%s", err, string(out))
-		}
-		if !strings.Contains(string(out), "Usage: onwatch") {
-			t.Fatalf("expected help output, got:\n%s", string(out))
-		}
-	})
+func TestMain_ErrorPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("ONWATCH_PORT", "1")
+	// Clear all API keys
+	for _, key := range []string{
+		"SYNTHETIC_API_KEY", "SYNTHETIC_COOKIE",
+		"ZAI_API_KEY", "ANTHROPIC_TOKEN",
+		"COPILOT_TOKEN", "CODEX_TOKEN",
+		"ANTIGRAVITY_ENABLED", "ANTIGRAVITY_BASE_URL", "ANTIGRAVITY_CSRF_TOKEN",
+	} {
+		t.Setenv(key, "")
+	}
 
-	t.Run("main error path exits with status 1", func(t *testing.T) {
-		home := t.TempDir()
-		cmd := exec.Command(os.Args[0], "-test.run=TestMain_HelperProcess")
-		cmd.Env = append(os.Environ(),
-			"GO_WANT_HELPER_PROCESS=1",
-			"HELPER_MAIN_MODE=error",
-			"HOME="+home,
-			"ONWATCH_PORT=1",
-		)
-		out, err := cmd.CombinedOutput()
-		if err == nil {
-			t.Fatalf("expected non-zero exit, output:\n%s", string(out))
-		}
-		exitErr, ok := err.(*exec.ExitError)
-		if !ok {
-			t.Fatalf("expected ExitError, got %T: %v", err, err)
-		}
-		if code := exitErr.ExitCode(); code != 1 {
-			t.Fatalf("expected exit code 1, got %d\noutput:\n%s", code, string(out))
-		}
-		if !strings.Contains(string(out), "failed to load config") {
-			t.Fatalf("expected config error in output, got:\n%s", string(out))
-		}
-	})
+	oldPIDFile := pidFile
+	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
+	t.Cleanup(func() { pidFile = oldPIDFile })
+
+	setTestArgs(t, []string{"onwatch"})
+
+	err := run()
+	if err == nil {
+		t.Fatal("expected error from run() with no config")
+	}
+	if !strings.Contains(err.Error(), "failed to load config") && !strings.Contains(err.Error(), "provider must be configured") {
+		t.Fatalf("expected config error, got: %v", err)
+	}
 }
 
