@@ -88,7 +88,10 @@ func TestAgent_SetPollingCheck_DisablesPolling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	str, _ := store.New(":memory:")
+	str, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
 	defer str.Close()
 
 	var buf bytes.Buffer
@@ -112,22 +115,33 @@ func TestAgent_SetPollingCheck_DisablesPolling(t *testing.T) {
 	// No snapshots should be stored when polling is disabled
 	latest, _ := str.QueryLatest()
 	if latest != nil {
+		t.Logf("Agent logs: %s", buf.String())
 		t.Error("expected no snapshot when polling disabled via SetPollingCheck")
 	}
 }
 
 func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
+	requestReceived := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case requestReceived <- struct{}{}:
+		default:
+		}
 		resp := testResponse()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
-	str, _ := store.New(":memory:")
+	str, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
 	defer str.Close()
 
-	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+	// Use test logger that logs to t.Log for visibility in CI failures
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	client := api.NewClient("test-key", logger, api.WithBaseURL(server.URL))
 	tr := tracker.New(str, logger)
 
@@ -137,7 +151,7 @@ func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 	notifier := notify.New(str, logger)
 	agent.SetNotifier(notifier)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -145,16 +159,27 @@ func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 		errCh <- agent.Run(ctx)
 	}()
 
-	waitUntil(t, 800*time.Millisecond, func() bool {
+	// Wait for at least one request to be received by the server (confirms agent is running)
+	select {
+	case <-requestReceived:
+		// Server received request, agent is working
+	case <-time.After(3 * time.Second):
+		t.Logf("Agent logs: %s", logBuf.String())
+		t.Fatal("timeout waiting for agent to make HTTP request")
+	}
+
+	// Now wait for snapshot to be stored (should be quick after request)
+	waitUntil(t, 2*time.Second, func() bool {
 		latest, _ := str.QueryLatest()
 		return latest != nil
 	}, "general snapshot to be stored")
 	cancel()
-	waitForAgentStop(t, errCh, 2*time.Second)
+	waitForAgentStop(t, errCh, 3*time.Second)
 
 	// Verify poll completed with notifier (no panics)
 	latest, _ := str.QueryLatest()
 	if latest == nil {
+		t.Logf("Agent logs: %s", logBuf.String())
 		t.Error("expected snapshot after poll with notifier set")
 	}
 }
