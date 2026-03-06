@@ -116,7 +116,7 @@ Track multiple ChatGPT/Codex accounts simultaneously. Each account's quota data 
 ### Save a Profile
 
 ```bash
-onwatch codex save <profile-name>
+onwatch codex profile save <profile-name>
 ```
 
 This saves credentials from your current `~/.codex/auth.json` as a named profile in `~/.onwatch/codex-profiles/<profile-name>.json`.
@@ -127,10 +127,10 @@ This saves credentials from your current `~/.codex/auth.json` as a named profile
 
 ```bash
 # Log into first account in Codex CLI, then save
-onwatch codex save work-account
+onwatch codex profile save work-account
 
 # Log into second account, then save
-onwatch codex save personal-account
+onwatch codex profile save personal-account
 ```
 
 ### Dashboard Usage
@@ -144,13 +144,13 @@ When multiple profiles exist:
 ### List Profiles
 
 ```bash
-onwatch codex list
+onwatch codex profile list
 ```
 
 ### Remove a Profile
 
 ```bash
-onwatch codex remove <profile-name>
+onwatch codex profile delete <profile-name>
 ```
 
 ### How It Works
