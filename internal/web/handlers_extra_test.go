@@ -5251,7 +5251,7 @@ func TestHandler_Cycles_Codex_WithActiveCycle(t *testing.T) {
 	// Create an active (unclosed) codex cycle
 	cycleStart := time.Now().Add(-2 * time.Hour)
 	resetsAt := time.Now().Add(3 * time.Hour)
-	id, err := s.CreateCodexCycle("five_hour", cycleStart, &resetsAt)
+	id, err := s.CreateCodexCycle(store.DefaultCodexAccountID, "five_hour", cycleStart, &resetsAt)
 	if err != nil || id == 0 {
 		t.Fatalf("failed to create codex cycle: %v", err)
 	}
@@ -5284,12 +5284,12 @@ func TestHandler_Cycles_Codex_WithHistory(t *testing.T) {
 	// Create and close a codex cycle
 	cycleStart := time.Now().Add(-10 * time.Hour)
 	resetsAt := time.Now().Add(-1 * time.Hour)
-	id, err := s.CreateCodexCycle("seven_day", cycleStart, &resetsAt)
+	id, err := s.CreateCodexCycle(store.DefaultCodexAccountID, "seven_day", cycleStart, &resetsAt)
 	if err != nil || id == 0 {
 		t.Fatalf("failed to create codex cycle: %v", err)
 	}
 	cycleEnd := time.Now().Add(-1 * time.Hour)
-	if err := s.CloseCodexCycle("seven_day", cycleEnd, 65.0, 60.0); err != nil {
+	if err := s.CloseCodexCycle(store.DefaultCodexAccountID, "seven_day", cycleEnd, 65.0, 60.0); err != nil {
 		t.Fatalf("failed to close codex cycle: %v", err)
 	}
 
@@ -8731,9 +8731,9 @@ func TestHandler_Cycles_Codex_WithDataCov(t *testing.T) {
 	resetsAt := now.Add(3 * time.Hour)
 
 	// Create closed + active cycles
-	s.CreateCodexCycle("five_hour", now.Add(-6*time.Hour), &resetsAt)
-	s.CloseCodexCycle("five_hour", now.Add(-1*time.Hour), 70, 50)
-	s.CreateCodexCycle("five_hour", now, &resetsAt)
+	s.CreateCodexCycle(store.DefaultCodexAccountID, "five_hour", now.Add(-6*time.Hour), &resetsAt)
+	s.CloseCodexCycle(store.DefaultCodexAccountID, "five_hour", now.Add(-1*time.Hour), 70, 50)
+	s.CreateCodexCycle(store.DefaultCodexAccountID, "five_hour", now, &resetsAt)
 
 	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
 
@@ -9349,7 +9349,7 @@ func TestHandler_Cycles_Both_AllProvidersWithData(t *testing.T) {
 
 	// Codex cycle
 	codexResets := now.Add(4 * time.Hour)
-	s.CreateCodexCycle("five_hour", now.Add(-5*time.Hour), &codexResets)
+	s.CreateCodexCycle(store.DefaultCodexAccountID, "five_hour", now.Add(-5*time.Hour), &codexResets)
 
 	// Antigravity cycle
 	agResets := now.Add(6 * time.Hour)
@@ -10039,9 +10039,9 @@ func TestHandler_Insights_Codex_WithDataCov(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		start := now.Add(-time.Duration(4-i) * 6 * time.Hour)
 		r := start.Add(5 * time.Hour)
-		s.CreateCodexCycle("five_hour", start, &r)
+		s.CreateCodexCycle(store.DefaultCodexAccountID, "five_hour", start, &r)
 		end := start.Add(5 * time.Hour)
-		s.CloseCodexCycle("five_hour", end, float64(30+i*10), float64(20+i*5))
+		s.CloseCodexCycle(store.DefaultCodexAccountID, "five_hour", end, float64(30+i*10), float64(20+i*5))
 	}
 
 	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
@@ -10376,9 +10376,9 @@ func TestHandler_Insights_Codex_WithWeeklyPace(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		start := now.Add(-time.Duration(6-i) * 7 * 24 * time.Hour)
 		r := start.Add(7 * 24 * time.Hour)
-		s.CreateCodexCycle("seven_day", start, &r)
+		s.CreateCodexCycle(store.DefaultCodexAccountID, "seven_day", start, &r)
 		end := start.Add(7 * 24 * time.Hour)
-		s.CloseCodexCycle("seven_day", end, float64(20+i*8), float64(15+i*5))
+		s.CloseCodexCycle(store.DefaultCodexAccountID, "seven_day", end, float64(20+i*8), float64(15+i*5))
 	}
 
 	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())

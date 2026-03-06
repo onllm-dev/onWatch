@@ -53,7 +53,7 @@ func TestCodexAgent_SinglePoll(t *testing.T) {
 	time.Sleep(250 * time.Millisecond)
 	cancel()
 
-	latest, err := st.QueryLatestCodex()
+	latest, err := st.QueryLatestCodex(store.DefaultCodexAccountID)
 	if err != nil {
 		t.Fatalf("QueryLatestCodex: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestCodexAgent_PollingCheck(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	cancel()
 
-	latest, err := st.QueryLatestCodex()
+	latest, err := st.QueryLatestCodex(store.DefaultCodexAccountID)
 	if err != nil {
 		t.Fatalf("QueryLatestCodex: %v", err)
 	}

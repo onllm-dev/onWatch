@@ -11,6 +11,7 @@ import (
 // CodexResetCycle represents a Codex quota reset cycle.
 type CodexResetCycle struct {
 	ID              int64
+	AccountID       int64
 	QuotaName       string
 	CycleStart      time.Time
 	CycleEnd        *time.Time
@@ -18,6 +19,9 @@ type CodexResetCycle struct {
 	PeakUtilization float64
 	TotalDelta      float64
 }
+
+// DefaultCodexAccountID is the default account ID for single-account setups.
+const DefaultCodexAccountID int64 = 1
 
 func parseCodexTime(value string, field string) (time.Time, error) {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
@@ -40,9 +44,15 @@ func (s *Store) InsertCodexSnapshot(snapshot *api.CodexSnapshot) (int64, error) 
 		creditsBalance = *snapshot.CreditsBalance
 	}
 
+	accountID := snapshot.AccountID
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
+
 	result, err := tx.Exec(
-		`INSERT INTO codex_snapshots (captured_at, plan_type, credits_balance, raw_json, quota_count) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO codex_snapshots (captured_at, account_id, plan_type, credits_balance, raw_json, quota_count) VALUES (?, ?, ?, ?, ?, ?)`,
 		snapshot.CapturedAt.Format(time.RFC3339Nano),
+		accountID,
 		snapshot.PlanType,
 		creditsBalance,
 		snapshot.RawJSON,
@@ -82,16 +92,20 @@ func (s *Store) InsertCodexSnapshot(snapshot *api.CodexSnapshot) (int64, error) 
 	return snapshotID, nil
 }
 
-// QueryLatestCodex returns the most recent Codex snapshot with quotas.
-func (s *Store) QueryLatestCodex() (*api.CodexSnapshot, error) {
+// QueryLatestCodex returns the most recent Codex snapshot with quotas for the given account.
+func (s *Store) QueryLatestCodex(accountID int64) (*api.CodexSnapshot, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
 	var snapshot api.CodexSnapshot
 	var capturedAt string
 	var planType sql.NullString
 	var creditsBalance sql.NullFloat64
 
 	err := s.db.QueryRow(
-		`SELECT id, captured_at, plan_type, credits_balance, quota_count FROM codex_snapshots ORDER BY captured_at DESC LIMIT 1`,
-	).Scan(&snapshot.ID, &capturedAt, &planType, &creditsBalance, new(int))
+		`SELECT id, captured_at, plan_type, credits_balance, quota_count, account_id FROM codex_snapshots WHERE account_id = ? ORDER BY captured_at DESC LIMIT 1`,
+		accountID,
+	).Scan(&snapshot.ID, &capturedAt, &planType, &creditsBalance, new(int), &snapshot.AccountID)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -144,17 +158,20 @@ func (s *Store) QueryLatestCodex() (*api.CodexSnapshot, error) {
 	return &snapshot, rows.Err()
 }
 
-// QueryCodexRange returns Codex snapshots within a time range.
-func (s *Store) QueryCodexRange(start, end time.Time, limit ...int) ([]*api.CodexSnapshot, error) {
-	query := `SELECT id, captured_at, plan_type, credits_balance, quota_count FROM codex_snapshots
-		WHERE captured_at BETWEEN ? AND ? ORDER BY captured_at ASC`
-	args := []interface{}{start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)}
+// QueryCodexRange returns Codex snapshots within a time range for the given account.
+func (s *Store) QueryCodexRange(accountID int64, start, end time.Time, limit ...int) ([]*api.CodexSnapshot, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
+	query := `SELECT id, captured_at, plan_type, credits_balance, quota_count, account_id FROM codex_snapshots
+		WHERE account_id = ? AND captured_at BETWEEN ? AND ? ORDER BY captured_at ASC`
+	args := []interface{}{accountID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)}
 	if len(limit) > 0 && limit[0] > 0 {
-		query = `SELECT id, captured_at, plan_type, credits_balance, quota_count
+		query = `SELECT id, captured_at, plan_type, credits_balance, quota_count, account_id
 			FROM (
-				SELECT id, captured_at, plan_type, credits_balance, quota_count
+				SELECT id, captured_at, plan_type, credits_balance, quota_count, account_id
 				FROM codex_snapshots
-				WHERE captured_at BETWEEN ? AND ?
+				WHERE account_id = ? AND captured_at BETWEEN ? AND ?
 				ORDER BY captured_at DESC
 				LIMIT ?
 			) recent
@@ -174,7 +191,7 @@ func (s *Store) QueryCodexRange(start, end time.Time, limit ...int) ([]*api.Code
 		var capturedAt string
 		var planType sql.NullString
 		var creditsBalance sql.NullFloat64
-		if err := rows.Scan(&snap.ID, &capturedAt, &planType, &creditsBalance, new(int)); err != nil {
+		if err := rows.Scan(&snap.ID, &capturedAt, &planType, &creditsBalance, new(int), &snap.AccountID); err != nil {
 			return nil, fmt.Errorf("failed to scan codex snapshot: %w", err)
 		}
 		parsedCapturedAt, err := parseCodexTime(capturedAt, "codex snapshot captured_at")
@@ -231,14 +248,19 @@ func (s *Store) QueryCodexRange(start, end time.Time, limit ...int) ([]*api.Code
 }
 
 // CreateCodexCycle creates a new Codex reset cycle.
-func (s *Store) CreateCodexCycle(quotaName string, cycleStart time.Time, resetsAt *time.Time) (int64, error) {
+func (s *Store) CreateCodexCycle(accountID int64, quotaName string, cycleStart time.Time, resetsAt *time.Time) (int64, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
+
 	var resetsAtVal interface{}
 	if resetsAt != nil {
 		resetsAtVal = resetsAt.Format(time.RFC3339Nano)
 	}
 
 	result, err := s.db.Exec(
-		`INSERT INTO codex_reset_cycles (quota_name, cycle_start, resets_at) VALUES (?, ?, ?)`,
+		`INSERT INTO codex_reset_cycles (account_id, quota_name, cycle_start, resets_at) VALUES (?, ?, ?, ?)`,
+		accountID,
 		quotaName,
 		cycleStart.Format(time.RFC3339Nano),
 		resetsAtVal,
@@ -255,13 +277,17 @@ func (s *Store) CreateCodexCycle(quotaName string, cycleStart time.Time, resetsA
 }
 
 // CloseCodexCycle closes a Codex reset cycle with final stats.
-func (s *Store) CloseCodexCycle(quotaName string, cycleEnd time.Time, peak, delta float64) error {
+func (s *Store) CloseCodexCycle(accountID int64, quotaName string, cycleEnd time.Time, peak, delta float64) error {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
 	_, err := s.db.Exec(
 		`UPDATE codex_reset_cycles SET cycle_end = ?, peak_utilization = ?, total_delta = ?
-		WHERE quota_name = ? AND cycle_end IS NULL`,
+		WHERE account_id = ? AND quota_name = ? AND cycle_end IS NULL`,
 		cycleEnd.Format(time.RFC3339Nano),
 		peak,
 		delta,
+		accountID,
 		quotaName,
 	)
 	if err != nil {
@@ -271,12 +297,16 @@ func (s *Store) CloseCodexCycle(quotaName string, cycleEnd time.Time, peak, delt
 }
 
 // UpdateCodexCycle updates the peak and delta for an active Codex cycle.
-func (s *Store) UpdateCodexCycle(quotaName string, peak, delta float64) error {
+func (s *Store) UpdateCodexCycle(accountID int64, quotaName string, peak, delta float64) error {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
 	_, err := s.db.Exec(
 		`UPDATE codex_reset_cycles SET peak_utilization = ?, total_delta = ?
-		WHERE quota_name = ? AND cycle_end IS NULL`,
+		WHERE account_id = ? AND quota_name = ? AND cycle_end IS NULL`,
 		peak,
 		delta,
+		accountID,
 		quotaName,
 	)
 	if err != nil {
@@ -286,7 +316,10 @@ func (s *Store) UpdateCodexCycle(quotaName string, peak, delta float64) error {
 }
 
 // UpdateCodexCycleResetsAt updates the reset timestamp for an active Codex cycle.
-func (s *Store) UpdateCodexCycleResetsAt(quotaName string, resetsAt *time.Time) error {
+func (s *Store) UpdateCodexCycleResetsAt(accountID int64, quotaName string, resetsAt *time.Time) error {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
 	var resetsAtValue interface{}
 	if resetsAt != nil {
 		resetsAtValue = resetsAt.Format(time.RFC3339Nano)
@@ -294,8 +327,9 @@ func (s *Store) UpdateCodexCycleResetsAt(quotaName string, resetsAt *time.Time) 
 
 	_, err := s.db.Exec(
 		`UPDATE codex_reset_cycles SET resets_at = ?
-		WHERE quota_name = ? AND cycle_end IS NULL`,
+		WHERE account_id = ? AND quota_name = ? AND cycle_end IS NULL`,
 		resetsAtValue,
+		accountID,
 		quotaName,
 	)
 	if err != nil {
@@ -305,17 +339,22 @@ func (s *Store) UpdateCodexCycleResetsAt(quotaName string, resetsAt *time.Time) 
 }
 
 // QueryActiveCodexCycle returns the active cycle for a Codex quota.
-func (s *Store) QueryActiveCodexCycle(quotaName string) (*CodexResetCycle, error) {
+func (s *Store) QueryActiveCodexCycle(accountID int64, quotaName string) (*CodexResetCycle, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
 	var cycle CodexResetCycle
 	var cycleStart string
 	var cycleEnd, resetsAt sql.NullString
 
 	err := s.db.QueryRow(
-		`SELECT id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
-		FROM codex_reset_cycles WHERE quota_name = ? AND cycle_end IS NULL`,
+		`SELECT id, account_id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
+		FROM codex_reset_cycles WHERE account_id = ? AND quota_name = ? AND cycle_end IS NULL`,
+		accountID,
 		quotaName,
 	).Scan(
 		&cycle.ID,
+		&cycle.AccountID,
 		&cycle.QuotaName,
 		&cycleStart,
 		&cycleEnd,
@@ -355,10 +394,13 @@ func (s *Store) QueryActiveCodexCycle(quotaName string) (*CodexResetCycle, error
 }
 
 // QueryCodexCycleHistory returns completed cycles for a Codex quota with optional limit.
-func (s *Store) QueryCodexCycleHistory(quotaName string, limit ...int) ([]*CodexResetCycle, error) {
-	query := `SELECT id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
-		FROM codex_reset_cycles WHERE quota_name = ? AND cycle_end IS NOT NULL ORDER BY cycle_start DESC`
-	args := []interface{}{quotaName}
+func (s *Store) QueryCodexCycleHistory(accountID int64, quotaName string, limit ...int) ([]*CodexResetCycle, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
+	query := `SELECT id, account_id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
+		FROM codex_reset_cycles WHERE account_id = ? AND quota_name = ? AND cycle_end IS NOT NULL ORDER BY cycle_start DESC`
+	args := []interface{}{accountID, quotaName}
 	if len(limit) > 0 && limit[0] > 0 {
 		query += ` LIMIT ?`
 		args = append(args, limit[0])
@@ -378,6 +420,7 @@ func (s *Store) QueryCodexCycleHistory(quotaName string, limit ...int) ([]*Codex
 
 		if err := rows.Scan(
 			&cycle.ID,
+			&cycle.AccountID,
 			&cycle.QuotaName,
 			&cycleStart,
 			&cycleEnd,
@@ -414,11 +457,15 @@ func (s *Store) QueryCodexCycleHistory(quotaName string, limit ...int) ([]*Codex
 }
 
 // QueryCodexCyclesSince returns completed cycles for a quota since a given time.
-func (s *Store) QueryCodexCyclesSince(quotaName string, since time.Time) ([]*CodexResetCycle, error) {
+func (s *Store) QueryCodexCyclesSince(accountID int64, quotaName string, since time.Time) ([]*CodexResetCycle, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
 	rows, err := s.db.Query(
-		`SELECT id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
-		FROM codex_reset_cycles WHERE quota_name = ? AND cycle_end IS NOT NULL AND cycle_start >= ?
+		`SELECT id, account_id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
+		FROM codex_reset_cycles WHERE account_id = ? AND quota_name = ? AND cycle_end IS NOT NULL AND cycle_start >= ?
 		ORDER BY cycle_start DESC`,
+		accountID,
 		quotaName,
 		since.UTC().Format(time.RFC3339Nano),
 	)
@@ -435,6 +482,7 @@ func (s *Store) QueryCodexCyclesSince(quotaName string, since time.Time) ([]*Cod
 
 		if err := rows.Scan(
 			&cycle.ID,
+			&cycle.AccountID,
 			&cycle.QuotaName,
 			&cycleStart,
 			&cycleEnd,
@@ -471,13 +519,17 @@ func (s *Store) QueryCodexCyclesSince(quotaName string, since time.Time) ([]*Cod
 }
 
 // QueryCodexUtilizationSeries returns per-quota utilization points since a given time.
-func (s *Store) QueryCodexUtilizationSeries(quotaName string, since time.Time) ([]UtilizationPoint, error) {
+func (s *Store) QueryCodexUtilizationSeries(accountID int64, quotaName string, since time.Time) ([]UtilizationPoint, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
 	rows, err := s.db.Query(
 		`SELECT s.captured_at, qv.utilization
 		FROM codex_quota_values qv
 		JOIN codex_snapshots s ON s.id = qv.snapshot_id
-		WHERE qv.quota_name = ? AND s.captured_at >= ?
+		WHERE s.account_id = ? AND qv.quota_name = ? AND s.captured_at >= ?
 		ORDER BY s.captured_at ASC`,
+		accountID,
 		quotaName,
 		since.UTC().Format(time.RFC3339Nano),
 	)
@@ -505,13 +557,16 @@ func (s *Store) QueryCodexUtilizationSeries(quotaName string, since time.Time) (
 
 // QueryCodexCycleOverview returns Codex cycles for a given quota
 // with cross-quota snapshot data at the peak moment of each cycle.
-func (s *Store) QueryCodexCycleOverview(groupBy string, limit int) ([]CycleOverviewRow, error) {
+func (s *Store) QueryCodexCycleOverview(accountID int64, groupBy string, limit int) ([]CycleOverviewRow, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
 	if limit <= 0 {
 		limit = 50
 	}
 
 	var cycles []*CodexResetCycle
-	activeCycle, err := s.QueryActiveCodexCycle(groupBy)
+	activeCycle, err := s.QueryActiveCodexCycle(accountID, groupBy)
 	if err != nil {
 		return nil, fmt.Errorf("store.QueryCodexCycleOverview: active: %w", err)
 	}
@@ -520,7 +575,7 @@ func (s *Store) QueryCodexCycleOverview(groupBy string, limit int) ([]CycleOverv
 		limit--
 	}
 
-	completedCycles, err := s.QueryCodexCycleHistory(groupBy, limit)
+	completedCycles, err := s.QueryCodexCycleHistory(accountID, groupBy, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store.QueryCodexCycleOverview: %w", err)
 	}
@@ -642,4 +697,157 @@ func (s *Store) QueryAllCodexQuotaNames() ([]string, error) {
 	}
 
 	return names, rows.Err()
+}
+
+// QueryCodexAccounts returns all distinct account IDs from Codex snapshots.
+func (s *Store) QueryCodexAccounts() ([]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT account_id FROM codex_snapshots ORDER BY account_id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query codex accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []int64
+	for rows.Next() {
+		var account int64
+		if err := rows.Scan(&account); err != nil {
+			return nil, fmt.Errorf("failed to scan codex account: %w", err)
+		}
+		accounts = append(accounts, account)
+	}
+
+	return accounts, rows.Err()
+}
+
+// ProviderAccount represents an account for a provider.
+type ProviderAccount struct {
+	ID        int64
+	Provider  string
+	Name      string
+	CreatedAt time.Time
+	Metadata  string
+}
+
+// QueryProviderAccounts returns all accounts for a given provider.
+func (s *Store) QueryProviderAccounts(provider string) ([]ProviderAccount, error) {
+	rows, err := s.db.Query(
+		`SELECT id, provider, name, created_at, COALESCE(metadata, '') FROM provider_accounts WHERE provider = ? ORDER BY id`,
+		provider,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query provider accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []ProviderAccount
+	for rows.Next() {
+		var acc ProviderAccount
+		var createdAt string
+		if err := rows.Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to scan provider account: %w", err)
+		}
+		acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		accounts = append(accounts, acc)
+	}
+
+	return accounts, rows.Err()
+}
+
+// GetOrCreateProviderAccount gets an existing account by name or creates a new one.
+// If the account doesn't exist and "default" is the only account for this provider,
+// it renames "default" to the new name (preserving historical data).
+func (s *Store) GetOrCreateProviderAccount(provider, name string) (*ProviderAccount, error) {
+	// Try to get existing account
+	var acc ProviderAccount
+	var createdAt string
+	err := s.db.QueryRow(
+		`SELECT id, provider, name, created_at, COALESCE(metadata, '') FROM provider_accounts WHERE provider = ? AND name = ?`,
+		provider, name,
+	).Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata)
+
+	if err == nil {
+		acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		return &acc, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to query provider account: %w", err)
+	}
+
+	// Account doesn't exist. Check if we should rename "default" instead of creating new.
+	// This preserves historical data when user saves their first custom profile.
+	if name != "default" {
+		var defaultAcc ProviderAccount
+		var defaultCreatedAt string
+		var accountCount int
+
+		// Check if "default" exists and is the only account
+		err = s.db.QueryRow(
+			`SELECT id, provider, name, created_at, COALESCE(metadata, '') FROM provider_accounts WHERE provider = ? AND name = 'default'`,
+			provider,
+		).Scan(&defaultAcc.ID, &defaultAcc.Provider, &defaultAcc.Name, &defaultCreatedAt, &defaultAcc.Metadata)
+
+		if err == nil {
+			// "default" exists, check if it's the only account
+			s.db.QueryRow(`SELECT COUNT(*) FROM provider_accounts WHERE provider = ?`, provider).Scan(&accountCount)
+
+			if accountCount == 1 {
+				// Only "default" exists - rename it to preserve historical data
+				_, err = s.db.Exec(
+					`UPDATE provider_accounts SET name = ? WHERE id = ?`,
+					name, defaultAcc.ID,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to rename default account: %w", err)
+				}
+
+				defaultAcc.Name = name
+				defaultAcc.CreatedAt, _ = time.Parse(time.RFC3339Nano, defaultCreatedAt)
+				return &defaultAcc, nil
+			}
+		}
+	}
+
+	// Create new account
+	result, err := s.db.Exec(
+		`INSERT INTO provider_accounts (provider, name, created_at) VALUES (?, ?, ?)`,
+		provider, name, time.Now().UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create provider account: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account ID: %w", err)
+	}
+
+	return &ProviderAccount{
+		ID:        id,
+		Provider:  provider,
+		Name:      name,
+		CreatedAt: time.Now().UTC(),
+	}, nil
+}
+
+// GetProviderAccountByID returns an account by its ID.
+func (s *Store) GetProviderAccountByID(id int64) (*ProviderAccount, error) {
+	var acc ProviderAccount
+	var createdAt string
+	err := s.db.QueryRow(
+		`SELECT id, provider, name, created_at, COALESCE(metadata, '') FROM provider_accounts WHERE id = ?`,
+		id,
+	).Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query provider account: %w", err)
+	}
+
+	acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+	return &acc, nil
 }

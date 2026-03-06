@@ -456,7 +456,7 @@ func TestCodexTracker_processQuota_ResetViaUtilizationDrop(t *testing.T) {
 		t.Fatalf("Process snap2: %v", err)
 	}
 
-	history, err := s.QueryCodexCycleHistory("five_hour")
+	history, err := s.QueryCodexCycleHistory(store.DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryCodexCycleHistory: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestCodexTracker_processQuota_LargeShift_NoUtilDrop_NoReset(t *testing.T) {
 		t.Fatalf("Process snap2: %v", err)
 	}
 
-	history, err := s.QueryCodexCycleHistory("five_hour")
+	history, err := s.QueryCodexCycleHistory(store.DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryCodexCycleHistory: %v", err)
 	}
@@ -527,10 +527,10 @@ func TestCodexTracker_UsageSummary_ActiveCycleWithRate(t *testing.T) {
 	// Create a cycle with start 2 hours ago and delta > 0
 	cycleStart := time.Now().UTC().Add(-2 * time.Hour)
 	resetAt := time.Now().UTC().Add(3 * time.Hour)
-	if _, err := s.CreateCodexCycle("daily", cycleStart, &resetAt); err != nil {
+	if _, err := s.CreateCodexCycle(store.DefaultCodexAccountID, "daily", cycleStart, &resetAt); err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
-	if err := s.UpdateCodexCycle("daily", 60, 30); err != nil {
+	if err := s.UpdateCodexCycle(store.DefaultCodexAccountID, "daily", 60, 30); err != nil {
 		t.Fatalf("UpdateCodexCycle: %v", err)
 	}
 
@@ -545,7 +545,7 @@ func TestCodexTracker_UsageSummary_ActiveCycleWithRate(t *testing.T) {
 	}
 
 	tr := NewCodexTracker(s, slog.Default())
-	summary, err := tr.UsageSummary("daily")
+	summary, err := tr.UsageSummary(store.DefaultCodexAccountID, "daily")
 	if err != nil {
 		t.Fatalf("UsageSummary: %v", err)
 	}
@@ -566,7 +566,7 @@ func TestCodexTracker_UsageSummary_NoCycles(t *testing.T) {
 	defer s.Close()
 
 	tr := NewCodexTracker(s, slog.Default())
-	summary, err := tr.UsageSummary("unknown_quota")
+	summary, err := tr.UsageSummary(store.DefaultCodexAccountID, "unknown_quota")
 	if err != nil {
 		t.Fatalf("UsageSummary: %v", err)
 	}
@@ -1075,7 +1075,7 @@ func TestCodexTracker_UsageSummary_WithHistory(t *testing.T) {
 		t.Fatalf("InsertCodexSnapshot: %v", err)
 	}
 
-	summary, err := tr.UsageSummary("five_hour")
+	summary, err := tr.UsageSummary(store.DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("UsageSummary: %v", err)
 	}
@@ -1100,16 +1100,16 @@ func TestCodexTracker_UsageSummary_ActiveCycleNoLatestSnapshot(t *testing.T) {
 	defer s.Close()
 
 	cycleStart := time.Now().UTC().Add(-1 * time.Hour)
-	if _, err := s.CreateCodexCycle("five_hour", cycleStart, nil); err != nil {
+	if _, err := s.CreateCodexCycle(store.DefaultCodexAccountID, "five_hour", cycleStart, nil); err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
-	if err := s.UpdateCodexCycle("five_hour", 50, 20); err != nil {
+	if err := s.UpdateCodexCycle(store.DefaultCodexAccountID, "five_hour", 50, 20); err != nil {
 		t.Fatalf("UpdateCodexCycle: %v", err)
 	}
 
 	// No snapshot inserted so QueryLatestCodex returns nil
 	tr := NewCodexTracker(s, slog.Default())
-	summary, err := tr.UsageSummary("five_hour")
+	summary, err := tr.UsageSummary(store.DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("UsageSummary: %v", err)
 	}
@@ -1759,10 +1759,10 @@ func TestCodexTracker_processQuota_NilCycleResetAt_QuotaHasResetAt(t *testing.T)
 
 	// Create cycle with nil ResetsAt
 	base := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	if _, err := s.CreateCodexCycle("five_hour", base, nil); err != nil {
+	if _, err := s.CreateCodexCycle(store.DefaultCodexAccountID, "five_hour", base, nil); err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
-	if err := s.UpdateCodexCycle("five_hour", 20, 5); err != nil {
+	if err := s.UpdateCodexCycle(store.DefaultCodexAccountID, "five_hour", 20, 5); err != nil {
 		t.Fatalf("UpdateCodexCycle: %v", err)
 	}
 
@@ -1770,12 +1770,12 @@ func TestCodexTracker_processQuota_NilCycleResetAt_QuotaHasResetAt(t *testing.T)
 	// Process quota with non-nil ResetsAt → triggers updateCycleResetAt branch
 	newReset := base.Add(5 * time.Hour)
 	quota := api.CodexQuota{Name: "five_hour", Utilization: 25, ResetsAt: &newReset, Status: "healthy"}
-	if err := tr.processQuota(quota, base.Add(10*time.Minute)); err != nil {
+	if err := tr.processQuota(store.DefaultCodexAccountID, quota, base.Add(10*time.Minute)); err != nil {
 		t.Fatalf("processQuota: %v", err)
 	}
 
 	// Cycle should now have a ResetsAt set
-	cycle, err := s.QueryActiveCodexCycle("five_hour")
+	cycle, err := s.QueryActiveCodexCycle(store.DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryActiveCodexCycle: %v", err)
 	}
@@ -2271,7 +2271,7 @@ func TestCodexTracker_processQuota_TimeBasedReset(t *testing.T) {
 		t.Fatalf("Process snap2 (time-based reset): %v", err)
 	}
 
-	history, err := s.QueryCodexCycleHistory("five_hour")
+	history, err := s.QueryCodexCycleHistory(store.DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryCodexCycleHistory: %v", err)
 	}
@@ -2322,7 +2322,7 @@ func TestCodexTracker_processQuota_TimeBasedReset_WithHasLast_PositiveDelta(t *t
 		t.Fatalf("Process snap3 (time-based reset with positive delta): %v", err)
 	}
 
-	history, err := s.QueryCodexCycleHistory("five_hour")
+	history, err := s.QueryCodexCycleHistory(store.DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryCodexCycleHistory: %v", err)
 	}
@@ -2606,10 +2606,10 @@ func TestCodexTracker_UsageSummary_ActiveCycleNilResetsAt_SnapshotHasIt(t *testi
 
 	cycleStart := time.Now().UTC().Add(-1 * time.Hour)
 	// Create cycle with nil ResetsAt
-	if _, err := s.CreateCodexCycle("five_hour", cycleStart, nil); err != nil {
+	if _, err := s.CreateCodexCycle(store.DefaultCodexAccountID, "five_hour", cycleStart, nil); err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
-	if err := s.UpdateCodexCycle("five_hour", 30, 10); err != nil {
+	if err := s.UpdateCodexCycle(store.DefaultCodexAccountID, "five_hour", 30, 10); err != nil {
 		t.Fatalf("UpdateCodexCycle: %v", err)
 	}
 
@@ -2626,7 +2626,7 @@ func TestCodexTracker_UsageSummary_ActiveCycleNilResetsAt_SnapshotHasIt(t *testi
 	}
 
 	tr := NewCodexTracker(s, slog.Default())
-	summary, err := tr.UsageSummary("five_hour")
+	summary, err := tr.UsageSummary(store.DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("UsageSummary: %v", err)
 	}

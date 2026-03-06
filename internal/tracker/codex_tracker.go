@@ -13,12 +13,15 @@ import (
 type CodexTracker struct {
 	store      *store.Store
 	logger     *slog.Logger
-	lastValues map[string]float64
-	lastResets map[string]time.Time
-	hasLast    bool
+	lastValues map[int64]map[string]float64    // accountID -> quotaName -> value
+	lastResets map[int64]map[string]time.Time  // accountID -> quotaName -> resetTime
+	hasLast    map[int64]bool                  // accountID -> hasLast
 
 	onReset func(quotaName string)
 }
+
+// DefaultCodexAccountID is the default account ID for single-account setups.
+const DefaultCodexAccountID int64 = 1
 
 const codexResetShiftThreshold = 60 * time.Minute
 
@@ -45,8 +48,9 @@ func NewCodexTracker(store *store.Store, logger *slog.Logger) *CodexTracker {
 	return &CodexTracker{
 		store:      store,
 		logger:     logger,
-		lastValues: make(map[string]float64),
-		lastResets: make(map[string]time.Time),
+		lastValues: make(map[int64]map[string]float64),
+		lastResets: make(map[int64]map[string]time.Time),
+		hasLast:    make(map[int64]bool),
 	}
 }
 
@@ -57,35 +61,48 @@ func (t *CodexTracker) SetOnReset(fn func(string)) {
 
 // Process iterates over all quotas in the snapshot, detects resets, and updates cycles.
 func (t *CodexTracker) Process(snapshot *api.CodexSnapshot) error {
+	accountID := snapshot.AccountID
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
+
 	for _, quota := range snapshot.Quotas {
-		if err := t.processQuota(quota, snapshot.CapturedAt); err != nil {
+		if err := t.processQuota(accountID, quota, snapshot.CapturedAt); err != nil {
 			return fmt.Errorf("codex tracker: %s: %w", quota.Name, err)
 		}
 	}
-	t.hasLast = true
+	t.hasLast[accountID] = true
 	return nil
 }
 
-func (t *CodexTracker) processQuota(quota api.CodexQuota, capturedAt time.Time) error {
+func (t *CodexTracker) processQuota(accountID int64, quota api.CodexQuota, capturedAt time.Time) error {
 	quotaName := quota.Name
 	currentUtil := quota.Utilization
 
-	cycle, err := t.store.QueryActiveCodexCycle(quotaName)
+	// Initialize per-account maps if needed
+	if t.lastValues[accountID] == nil {
+		t.lastValues[accountID] = make(map[string]float64)
+	}
+	if t.lastResets[accountID] == nil {
+		t.lastResets[accountID] = make(map[string]time.Time)
+	}
+
+	cycle, err := t.store.QueryActiveCodexCycle(accountID, quotaName)
 	if err != nil {
 		return fmt.Errorf("failed to query active cycle: %w", err)
 	}
 
 	if cycle == nil {
-		_, err := t.store.CreateCodexCycle(quotaName, capturedAt, quota.ResetsAt)
+		_, err := t.store.CreateCodexCycle(accountID, quotaName, capturedAt, quota.ResetsAt)
 		if err != nil {
 			return fmt.Errorf("failed to create cycle: %w", err)
 		}
-		if err := t.store.UpdateCodexCycle(quotaName, currentUtil, 0); err != nil {
+		if err := t.store.UpdateCodexCycle(accountID, quotaName, currentUtil, 0); err != nil {
 			return fmt.Errorf("failed to set initial peak: %w", err)
 		}
-		t.lastValues[quotaName] = currentUtil
+		t.lastValues[accountID][quotaName] = currentUtil
 		if quota.ResetsAt != nil {
-			t.lastResets[quotaName] = *quota.ResetsAt
+			t.lastResets[accountID][quotaName] = *quota.ResetsAt
 		}
 		return nil
 	}
@@ -98,7 +115,7 @@ func (t *CodexTracker) processQuota(quota api.CodexQuota, capturedAt time.Time) 
 	if !resetDetected {
 		if quota.ResetsAt != nil && cycle.ResetsAt != nil {
 			refReset := *cycle.ResetsAt
-			if lastReset, ok := t.lastResets[quotaName]; ok {
+			if lastReset, ok := t.lastResets[accountID][quotaName]; ok {
 				refReset = lastReset
 			}
 
@@ -110,8 +127,8 @@ func (t *CodexTracker) processQuota(quota api.CodexQuota, capturedAt time.Time) 
 			if diff > codexResetShiftThreshold {
 				// Some Codex responses use rolling reset timestamps. Only treat large
 				// reset-time shifts as a reset when utilization also drops materially.
-				if t.hasLast {
-					if lastUtil, ok := t.lastValues[quotaName]; ok && currentUtil+2 < lastUtil {
+				if t.hasLast[accountID] {
+					if lastUtil, ok := t.lastValues[accountID][quotaName]; ok && currentUtil+2 < lastUtil {
 						resetDetected = true
 					}
 				}
@@ -130,8 +147,8 @@ func (t *CodexTracker) processQuota(quota api.CodexQuota, capturedAt time.Time) 
 		if cycle.ResetsAt != nil && capturedAt.After(*cycle.ResetsAt) {
 			cycleEndTime = *cycle.ResetsAt
 		}
-		if t.hasLast {
-			if lastUtil, ok := t.lastValues[quotaName]; ok {
+		if t.hasLast[accountID] {
+			if lastUtil, ok := t.lastValues[accountID][quotaName]; ok {
 				delta := currentUtil - lastUtil
 				if delta > 0 {
 					cycle.TotalDelta += delta
@@ -141,18 +158,18 @@ func (t *CodexTracker) processQuota(quota api.CodexQuota, capturedAt time.Time) 
 				}
 			}
 		}
-		if err := t.store.CloseCodexCycle(quotaName, cycleEndTime, cycle.PeakUtilization, cycle.TotalDelta); err != nil {
+		if err := t.store.CloseCodexCycle(accountID, quotaName, cycleEndTime, cycle.PeakUtilization, cycle.TotalDelta); err != nil {
 			return fmt.Errorf("failed to close cycle: %w", err)
 		}
-		if _, err := t.store.CreateCodexCycle(quotaName, capturedAt, quota.ResetsAt); err != nil {
+		if _, err := t.store.CreateCodexCycle(accountID, quotaName, capturedAt, quota.ResetsAt); err != nil {
 			return fmt.Errorf("failed to create new cycle: %w", err)
 		}
-		if err := t.store.UpdateCodexCycle(quotaName, currentUtil, 0); err != nil {
+		if err := t.store.UpdateCodexCycle(accountID, quotaName, currentUtil, 0); err != nil {
 			return fmt.Errorf("failed to set initial peak: %w", err)
 		}
-		t.lastValues[quotaName] = currentUtil
+		t.lastValues[accountID][quotaName] = currentUtil
 		if quota.ResetsAt != nil {
-			t.lastResets[quotaName] = *quota.ResetsAt
+			t.lastResets[accountID][quotaName] = *quota.ResetsAt
 		}
 		if t.onReset != nil {
 			t.onReset(quotaName)
@@ -161,16 +178,16 @@ func (t *CodexTracker) processQuota(quota api.CodexQuota, capturedAt time.Time) 
 	}
 
 	if updateCycleResetAt {
-		if err := t.store.UpdateCodexCycleResetsAt(quotaName, quota.ResetsAt); err != nil {
+		if err := t.store.UpdateCodexCycleResetsAt(accountID, quotaName, quota.ResetsAt); err != nil {
 			return fmt.Errorf("failed to update cycle reset timestamp: %w", err)
 		}
 		if quota.ResetsAt != nil {
-			t.lastResets[quotaName] = *quota.ResetsAt
+			t.lastResets[accountID][quotaName] = *quota.ResetsAt
 		}
 	}
 
-	if t.hasLast {
-		if lastUtil, ok := t.lastValues[quotaName]; ok {
+	if t.hasLast[accountID] {
+		if lastUtil, ok := t.lastValues[accountID][quotaName]; ok {
 			delta := currentUtil - lastUtil
 			if delta > 0 {
 				cycle.TotalDelta += delta
@@ -178,29 +195,33 @@ func (t *CodexTracker) processQuota(quota api.CodexQuota, capturedAt time.Time) 
 			if currentUtil > cycle.PeakUtilization {
 				cycle.PeakUtilization = currentUtil
 			}
-			if err := t.store.UpdateCodexCycle(quotaName, cycle.PeakUtilization, cycle.TotalDelta); err != nil {
+			if err := t.store.UpdateCodexCycle(accountID, quotaName, cycle.PeakUtilization, cycle.TotalDelta); err != nil {
 				return fmt.Errorf("failed to update cycle: %w", err)
 			}
 		}
 	} else if currentUtil > cycle.PeakUtilization {
 		cycle.PeakUtilization = currentUtil
-		if err := t.store.UpdateCodexCycle(quotaName, cycle.PeakUtilization, cycle.TotalDelta); err != nil {
+		if err := t.store.UpdateCodexCycle(accountID, quotaName, cycle.PeakUtilization, cycle.TotalDelta); err != nil {
 			return fmt.Errorf("failed to update cycle: %w", err)
 		}
 	}
 
-	t.lastValues[quotaName] = currentUtil
+	t.lastValues[accountID][quotaName] = currentUtil
 	return nil
 }
 
 // UsageSummary returns computed stats for a specific Codex quota.
-func (t *CodexTracker) UsageSummary(quotaName string) (*CodexSummary, error) {
-	activeCycle, err := t.store.QueryActiveCodexCycle(quotaName)
+func (t *CodexTracker) UsageSummary(accountID int64, quotaName string) (*CodexSummary, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
+
+	activeCycle, err := t.store.QueryActiveCodexCycle(accountID, quotaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active cycle: %w", err)
 	}
 
-	history, err := t.store.QueryCodexCycleHistory(quotaName)
+	history, err := t.store.QueryCodexCycleHistory(accountID, quotaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cycle history: %w", err)
 	}
@@ -230,7 +251,7 @@ func (t *CodexTracker) UsageSummary(quotaName string) (*CodexSummary, error) {
 			summary.TimeUntilReset = time.Until(*activeCycle.ResetsAt)
 		}
 
-		latest, err := t.store.QueryLatestCodex()
+		latest, err := t.store.QueryLatestCodex(accountID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query latest: %w", err)
 		}

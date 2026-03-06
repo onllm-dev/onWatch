@@ -17,6 +17,9 @@
             {{end}}
         </div>
         {{end}}
+        <!-- Codex profile tabs (shown only when Codex/All is selected and multiple profiles exist) -->
+        <div class="codex-profile-tabs" id="codex-profile-tabs" role="tablist" aria-label="Select Codex profile" style="display: none;">
+        </div>
         <div class="header-actions">
             <button class="header-btn" id="refresh-btn" aria-label="Refresh data" title="Refresh now">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
@@ -417,7 +420,7 @@
                             {{else if eq .CurrentProvider "zai"}}
                             <th data-sort-key="snapshots" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "codex"}}
-                            <th data-sort-key="sub" role="button" tabindex="0">5-Hour Limit <span class="sort-arrow"></span></th>
+                            <th data-sort-key="sub" role="button" tabindex="0">LLMs <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Weekly All-Model <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "antigravity"}}
                             <th data-sort-key="sub" role="button" tabindex="0">Claude + GPT Quota <span class="sort-arrow"></span></th>

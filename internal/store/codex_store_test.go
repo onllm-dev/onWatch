@@ -39,7 +39,7 @@ func TestCodexStore_InsertAndQueryLatest(t *testing.T) {
 		t.Fatalf("id = %d, want > 0", id)
 	}
 
-	latest, err := s.QueryLatestCodex()
+	latest, err := s.QueryLatestCodex(DefaultCodexAccountID)
 	if err != nil {
 		t.Fatalf("QueryLatestCodex: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestCodexStore_QueryRange(t *testing.T) {
 		}
 	}
 
-	rows, err := s.QueryCodexRange(now.Add(-time.Minute), now.Add(10*time.Minute))
+	rows, err := s.QueryCodexRange(DefaultCodexAccountID, now.Add(-time.Minute), now.Add(10*time.Minute))
 	if err != nil {
 		t.Fatalf("QueryCodexRange: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestCodexStore_QueryRange(t *testing.T) {
 		t.Fatalf("len(rows) = %d, want 4", len(rows))
 	}
 
-	limited, err := s.QueryCodexRange(now.Add(-time.Minute), now.Add(10*time.Minute), 2)
+	limited, err := s.QueryCodexRange(DefaultCodexAccountID, now.Add(-time.Minute), now.Add(10*time.Minute), 2)
 	if err != nil {
 		t.Fatalf("QueryCodexRange(limit): %v", err)
 	}
@@ -108,7 +108,7 @@ func TestCodexStore_CyclesAndSeries(t *testing.T) {
 	now := time.Now().UTC()
 	resetsAt := now.Add(5 * time.Hour)
 
-	id, err := s.CreateCodexCycle("five_hour", now, &resetsAt)
+	id, err := s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", now, &resetsAt)
 	if err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
@@ -116,11 +116,11 @@ func TestCodexStore_CyclesAndSeries(t *testing.T) {
 		t.Fatalf("cycle id = %d, want > 0", id)
 	}
 
-	if err := s.UpdateCodexCycle("five_hour", 35.0, 12.5); err != nil {
+	if err := s.UpdateCodexCycle(DefaultCodexAccountID, "five_hour", 35.0, 12.5); err != nil {
 		t.Fatalf("UpdateCodexCycle: %v", err)
 	}
 
-	active, err := s.QueryActiveCodexCycle("five_hour")
+	active, err := s.QueryActiveCodexCycle(DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryActiveCodexCycle: %v", err)
 	}
@@ -132,11 +132,11 @@ func TestCodexStore_CyclesAndSeries(t *testing.T) {
 	}
 
 	end := now.Add(time.Hour)
-	if err := s.CloseCodexCycle("five_hour", end, 44.0, 18.0); err != nil {
+	if err := s.CloseCodexCycle(DefaultCodexAccountID, "five_hour", end, 44.0, 18.0); err != nil {
 		t.Fatalf("CloseCodexCycle: %v", err)
 	}
 
-	history, err := s.QueryCodexCycleHistory("five_hour")
+	history, err := s.QueryCodexCycleHistory(DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryCodexCycleHistory: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestCodexStore_CyclesAndSeries(t *testing.T) {
 		}
 	}
 
-	series, err := s.QueryCodexUtilizationSeries("five_hour", now.Add(-time.Minute))
+	series, err := s.QueryCodexUtilizationSeries(DefaultCodexAccountID, "five_hour", now.Add(-time.Minute))
 	if err != nil {
 		t.Fatalf("QueryCodexUtilizationSeries: %v", err)
 	}
@@ -175,14 +175,14 @@ func TestCodexStore_CycleOverviewAndQuotaNames(t *testing.T) {
 	if _, err := s.InsertCodexSnapshot(snap); err != nil {
 		t.Fatalf("InsertCodexSnapshot: %v", err)
 	}
-	if _, err := s.CreateCodexCycle("five_hour", now, &reset); err != nil {
+	if _, err := s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", now, &reset); err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
-	if err := s.UpdateCodexCycle("five_hour", 22.5, 4.0); err != nil {
+	if err := s.UpdateCodexCycle(DefaultCodexAccountID, "five_hour", 22.5, 4.0); err != nil {
 		t.Fatalf("UpdateCodexCycle: %v", err)
 	}
 
-	overview, err := s.QueryCodexCycleOverview("five_hour", 50)
+	overview, err := s.QueryCodexCycleOverview(DefaultCodexAccountID, "five_hour", 50)
 	if err != nil {
 		t.Fatalf("QueryCodexCycleOverview: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestCodexStore_QueryLatestCodex_ParseFailure(t *testing.T) {
 		t.Fatalf("insert snapshot: %v", err)
 	}
 
-	_, err = s.QueryLatestCodex()
+	_, err = s.QueryLatestCodex(DefaultCodexAccountID)
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
@@ -242,7 +242,7 @@ func TestCodexStore_QueryCodexRange_ParseFailure(t *testing.T) {
 		t.Fatalf("insert quota value: %v", err)
 	}
 
-	_, err = s.QueryCodexRange(now.Add(-time.Minute), now.Add(time.Minute))
+	_, err = s.QueryCodexRange(DefaultCodexAccountID, now.Add(-time.Minute), now.Add(time.Minute))
 	if err == nil {
 		t.Fatal("expected parse error")
 	}

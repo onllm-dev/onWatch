@@ -74,6 +74,7 @@ type CodexQuota struct {
 type CodexSnapshot struct {
 	ID             int64
 	CapturedAt     time.Time
+	AccountID      int64
 	Quotas         []CodexQuota
 	PlanType       string
 	CreditsBalance *float64
@@ -81,7 +82,7 @@ type CodexSnapshot struct {
 }
 
 var codexDisplayNames = map[string]string{
-	"five_hour":   "5-Hour Limit",
+	"five_hour":   "LLMs",
 	"seven_day":   "Weekly All-Model",
 	"code_review": "Review Requests",
 }

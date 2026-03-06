@@ -74,6 +74,48 @@ type Handler struct {
 	rateLimiter        *LoginRateLimiter // Per-IP rate limiting for login attempts
 }
 
+// DefaultCodexAccountID is the default account ID for single-account setups.
+const DefaultCodexAccountID int64 = 1
+
+// parseCodexAccountID extracts the account ID from query params, defaulting to 1.
+func parseCodexAccountID(r *http.Request) int64 {
+	accountStr := r.URL.Query().Get("account")
+	if accountStr == "" {
+		return DefaultCodexAccountID
+	}
+	accountID, err := strconv.ParseInt(accountStr, 10, 64)
+	if err != nil || accountID <= 0 {
+		return DefaultCodexAccountID
+	}
+	return accountID
+}
+
+// CodexProfiles returns available Codex profiles/accounts.
+func (h *Handler) CodexProfiles(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"profiles": []interface{}{}})
+		return
+	}
+
+	accounts, err := h.store.QueryProviderAccounts("codex")
+	if err != nil {
+		h.logger.Error("failed to query Codex profiles", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query profiles")
+		return
+	}
+
+	profiles := make([]map[string]interface{}, 0, len(accounts))
+	for _, acc := range accounts {
+		profiles = append(profiles, map[string]interface{}{
+			"id":        acc.ID,
+			"name":      acc.Name,
+			"createdAt": acc.CreatedAt.Format(time.RFC3339),
+		})
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"profiles": profiles})
+}
+
 // NewHandler creates a new Handler instance
 func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logger, sessions *SessionStore, cfg *config.Config, zaiTracker ...*tracker.ZaiTracker) *Handler {
 	if logger == nil {
@@ -520,7 +562,22 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 		response["copilot"] = h.buildCopilotCurrent()
 	}
 	if h.config.HasProvider("codex") {
-		response["codex"] = h.buildCodexCurrent()
+		// Return data for all Codex accounts
+		accounts, err := h.store.QueryProviderAccounts("codex")
+		if err == nil && len(accounts) > 1 {
+			// Multiple accounts: return array of account data
+			codexAccounts := make([]map[string]interface{}, 0, len(accounts))
+			for _, acc := range accounts {
+				data := h.buildCodexCurrent(acc.ID)
+				data["accountId"] = acc.ID
+				data["accountName"] = acc.Name
+				codexAccounts = append(codexAccounts, data)
+			}
+			response["codexAccounts"] = codexAccounts
+		} else {
+			// Single account: return as before for backward compatibility
+			response["codex"] = h.buildCodexCurrent(DefaultCodexAccountID)
+		}
 	}
 	if h.config.HasProvider("antigravity") {
 		response["antigravity"] = h.buildAntigravityCurrent()
@@ -985,7 +1042,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("codex") && h.store != nil {
-		snapshots, err := h.store.QueryCodexRange(start, now)
+		snapshots, err := h.store.QueryCodexRange(DefaultCodexAccountID, start, now)
 		if err == nil {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
@@ -1218,10 +1275,10 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 			codexType = "five_hour"
 		}
 		var codexCycles []map[string]interface{}
-		if active, err := h.store.QueryActiveCodexCycle(codexType); err == nil && active != nil {
+		if active, err := h.store.QueryActiveCodexCycle(DefaultCodexAccountID, codexType); err == nil && active != nil {
 			codexCycles = append(codexCycles, codexCycleToMap(active))
 		}
-		if history, err := h.store.QueryCodexCycleHistory(codexType, 200); err == nil {
+		if history, err := h.store.QueryCodexCycleHistory(DefaultCodexAccountID, codexType, 200); err == nil {
 			for _, c := range history {
 				codexCycles = append(codexCycles, codexCycleToMap(c))
 			}
@@ -1448,7 +1505,7 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 		response["copilot"] = h.buildCopilotSummaryMap()
 	}
 	if h.config.HasProvider("codex") {
-		response["codex"] = h.buildCodexSummaryMap()
+		response["codex"] = h.buildCodexSummaryMap(DefaultCodexAccountID)
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -1878,7 +1935,7 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 		response["copilot"] = h.buildCopilotInsights(hidden, rangeDur)
 	}
 	if h.config.HasProvider("codex") {
-		response["codex"] = h.buildCodexInsights(hidden, rangeDur)
+		response["codex"] = h.buildCodexInsights(DefaultCodexAccountID, hidden, rangeDur)
 	}
 	if h.config.HasProvider("antigravity") {
 		response["antigravity"] = h.buildAntigravityInsights(hidden, rangeDur)
@@ -4085,7 +4142,7 @@ func (h *Handler) cycleOverviewBoth(w http.ResponseWriter, r *http.Request) {
 		if groupBy == "" {
 			groupBy = "five_hour"
 		}
-		if rows, err := h.store.QueryCodexCycleOverview(groupBy, limit); err == nil {
+		if rows, err := h.store.QueryCodexCycleOverview(DefaultCodexAccountID, groupBy, limit); err == nil {
 			quotaNames := []string{}
 			for _, row := range rows {
 				if len(row.CrossQuotas) > 0 {
@@ -4536,10 +4593,11 @@ func codexInsightSeverity(util float64) string {
 // ── Codex Handlers ──
 
 func (h *Handler) currentCodex(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, h.buildCodexCurrent())
+	accountID := parseCodexAccountID(r)
+	respondJSON(w, http.StatusOK, h.buildCodexCurrent(accountID))
 }
 
-func (h *Handler) buildCodexCurrent() map[string]interface{} {
+func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 	now := time.Now().UTC()
 	response := map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
@@ -4549,7 +4607,7 @@ func (h *Handler) buildCodexCurrent() map[string]interface{} {
 		return response
 	}
 
-	latest, err := h.store.QueryLatestCodex()
+	latest, err := h.store.QueryLatestCodex(accountID)
 	if err != nil {
 		h.logger.Error("failed to query latest Codex snapshot", "error", err)
 		return response
@@ -4608,7 +4666,7 @@ func (h *Handler) buildCodexCurrent() map[string]interface{} {
 			qMap["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
 		if h.codexTracker != nil {
-			if summary, err := h.codexTracker.UsageSummary(q.Name); err == nil && summary != nil {
+			if summary, err := h.codexTracker.UsageSummary(accountID, q.Name); err == nil && summary != nil {
 				qMap["currentRate"] = summary.CurrentRate
 				qMap["projectedUtil"] = summary.ProjectedUtil
 			}
@@ -5050,6 +5108,7 @@ func (h *Handler) historyCodex(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, []interface{}{})
 		return
 	}
+	accountID := parseCodexAccountID(r)
 	duration, err := parseTimeRange(r.URL.Query().Get("range"))
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -5057,7 +5116,7 @@ func (h *Handler) historyCodex(w http.ResponseWriter, r *http.Request) {
 	}
 	end := time.Now().UTC()
 	start := end.Add(-duration)
-	snapshots, err := h.store.QueryCodexRange(start, end)
+	snapshots, err := h.store.QueryCodexRange(accountID, start, end)
 	if err != nil {
 		h.logger.Error("failed to query Codex history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
@@ -5085,6 +5144,7 @@ func (h *Handler) cyclesCodex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	accountID := parseCodexAccountID(r)
 	quotaName := r.URL.Query().Get("type")
 	if quotaName == "" {
 		quotaName = "five_hour"
@@ -5102,7 +5162,7 @@ func (h *Handler) cyclesCodex(w http.ResponseWriter, r *http.Request) {
 
 	response := []map[string]interface{}{}
 
-	active, err := h.store.QueryActiveCodexCycle(quotaName)
+	active, err := h.store.QueryActiveCodexCycle(accountID, quotaName)
 	if err != nil {
 		h.logger.Error("failed to query active Codex cycle", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycles")
@@ -5112,7 +5172,7 @@ func (h *Handler) cyclesCodex(w http.ResponseWriter, r *http.Request) {
 		response = append(response, codexCycleToMap(active))
 	}
 
-	history, err := h.store.QueryCodexCycleHistory(quotaName, 200)
+	history, err := h.store.QueryCodexCycleHistory(accountID, quotaName, 200)
 	if err != nil {
 		h.logger.Error("failed to query Codex cycle history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycles")
@@ -5200,20 +5260,21 @@ func antigravityCycleToMap(cycle *store.AntigravityResetCycle) map[string]interf
 }
 
 func (h *Handler) summaryCodex(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, h.buildCodexSummaryMap())
+	accountID := parseCodexAccountID(r)
+	respondJSON(w, http.StatusOK, h.buildCodexSummaryMap(accountID))
 }
 
-func (h *Handler) buildCodexSummaryMap() map[string]interface{} {
+func (h *Handler) buildCodexSummaryMap(accountID int64) map[string]interface{} {
 	response := map[string]interface{}{}
 	if h.codexTracker == nil || h.store == nil {
 		return response
 	}
-	latest, err := h.store.QueryLatestCodex()
+	latest, err := h.store.QueryLatestCodex(accountID)
 	if err != nil || latest == nil {
 		return response
 	}
 	for _, q := range latest.Quotas {
-		if summary, err := h.codexTracker.UsageSummary(q.Name); err == nil && summary != nil {
+		if summary, err := h.codexTracker.UsageSummary(accountID, q.Name); err == nil && summary != nil {
 			response[q.Name] = buildCodexSummaryResponse(summary)
 		}
 	}
@@ -5243,17 +5304,18 @@ func buildCodexSummaryResponse(summary *tracker.CodexSummary) map[string]interfa
 }
 
 func (h *Handler) insightsCodex(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
+	accountID := parseCodexAccountID(r)
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildCodexInsights(hidden, rangeDur))
+	respondJSON(w, http.StatusOK, h.buildCodexInsights(accountID, hidden, rangeDur))
 }
 
-func (h *Handler) buildCodexInsights(hidden map[string]bool, rangeDur time.Duration) insightsResponse {
+func (h *Handler) buildCodexInsights(accountID int64, hidden map[string]bool, rangeDur time.Duration) insightsResponse {
 	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
 	_ = rangeDur
 	if h.store == nil {
 		return resp
 	}
-	latest, err := h.store.QueryLatestCodex()
+	latest, err := h.store.QueryLatestCodex(accountID)
 	if err != nil || latest == nil {
 		resp.Insights = append(resp.Insights, insightItem{Type: "info", Severity: "info", Title: "Getting Started", Desc: "Keep onWatch running to collect Codex usage data. Insights will appear after a few snapshots."})
 		return resp
@@ -5262,7 +5324,7 @@ func (h *Handler) buildCodexInsights(hidden map[string]bool, rangeDur time.Durat
 	summaries := map[string]*tracker.CodexSummary{}
 	if h.codexTracker != nil {
 		for _, name := range quotaNames {
-			if s, err := h.codexTracker.UsageSummary(name); err == nil && s != nil {
+			if s, err := h.codexTracker.UsageSummary(accountID, name); err == nil && s != nil {
 				summaries[name] = s
 			}
 		}
@@ -5278,7 +5340,7 @@ func (h *Handler) buildCodexInsights(hidden map[string]bool, rangeDur time.Durat
 
 	// Replace "Last Sample" with historical behavior metrics.
 	windowStart := time.Now().UTC().Add(-30 * 24 * time.Hour)
-	fiveHourCycles, err := h.store.QueryCodexCyclesSince("five_hour", windowStart)
+	fiveHourCycles, err := h.store.QueryCodexCyclesSince(accountID, "five_hour", windowStart)
 	if err == nil && len(fiveHourCycles) > 0 {
 		var totalDelta float64
 		var peak float64
@@ -5290,22 +5352,22 @@ func (h *Handler) buildCodexInsights(hidden map[string]bool, rangeDur time.Durat
 		}
 		resp.Stats = append(resp.Stats, insightStat{
 			Value:    fmt.Sprintf("%.1f%%", totalDelta/float64(len(fiveHourCycles))),
-			Label:    "Average 5-Hour Usage/Cycle",
+			Label:    "Average LLMs Usage/Cycle",
 			Sublabel: fmt.Sprintf("%d cycles (30d)", len(fiveHourCycles)),
 		})
 		resp.Stats = append(resp.Stats, insightStat{
 			Value: fmt.Sprintf("%.1f%%", peak),
-			Label: "5-Hour Peak (30d)",
+			Label: "LLMs Peak (30d)",
 		})
-	} else if active, err := h.store.QueryActiveCodexCycle("five_hour"); err == nil && active != nil {
+	} else if active, err := h.store.QueryActiveCodexCycle(accountID, "five_hour"); err == nil && active != nil {
 		resp.Stats = append(resp.Stats, insightStat{
 			Value:    fmt.Sprintf("%.1f%%", active.TotalDelta),
-			Label:    "5-Hour Delta (Current)",
+			Label:    "LLMs Delta (Current)",
 			Sublabel: fmt.Sprintf("peak %.1f%%", active.PeakUtilization),
 		})
 		resp.Stats = append(resp.Stats, insightStat{
 			Value: fmt.Sprintf("%.1f%%", active.PeakUtilization),
-			Label: "5-Hour Peak (Current)",
+			Label: "LLMs Peak (Current)",
 		})
 	}
 
@@ -5314,15 +5376,17 @@ func (h *Handler) buildCodexInsights(hidden map[string]bool, rangeDur time.Durat
 		quotaByName[latest.Quotas[i].Name] = &latest.Quotas[i]
 	}
 
-	// Keep explicit 5-hour/weekly burn-rate insights.
+	// Keep explicit burn-rate insights using proper display names.
 	if !hidden["forecast_five_hour"] {
 		if q := quotaByName["five_hour"]; q != nil {
-			resp.Insights = append(resp.Insights, buildCodexQuotaBurnRateInsight("forecast_five_hour", "5-Hour Window Burn Rate", q, summaries["five_hour"]))
+			displayName := api.CodexDisplayName("five_hour")
+			resp.Insights = append(resp.Insights, buildCodexQuotaBurnRateInsight("forecast_five_hour", displayName+" Burn Rate", q, summaries["five_hour"]))
 		}
 	}
 	if !hidden["forecast_seven_day"] {
 		if q := quotaByName["seven_day"]; q != nil {
-			resp.Insights = append(resp.Insights, buildCodexQuotaBurnRateInsight("forecast_seven_day", "Weekly Window Burn Rate", q, summaries["seven_day"]))
+			displayName := api.CodexDisplayName("seven_day")
+			resp.Insights = append(resp.Insights, buildCodexQuotaBurnRateInsight("forecast_seven_day", displayName+" Burn Rate", q, summaries["seven_day"]))
 		}
 	}
 
@@ -5532,11 +5596,12 @@ func (h *Handler) cycleOverviewCodex(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
 		return
 	}
+	accountID := parseCodexAccountID(r)
 	groupBy := r.URL.Query().Get("groupBy")
 	if groupBy == "" {
 		groupBy = "five_hour"
 	}
-	rows, err := h.store.QueryCodexCycleOverview(groupBy, parseCycleOverviewLimit(r))
+	rows, err := h.store.QueryCodexCycleOverview(accountID, groupBy, parseCycleOverviewLimit(r))
 	if err != nil {
 		h.logger.Error("failed to query Codex cycle overview", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycle overview")
@@ -5977,8 +6042,9 @@ func (h *Handler) loggingHistoryCodex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	accountID := parseCodexAccountID(r)
 	start, end, limit := h.loggingHistoryRangeAndLimit(r)
-	snapshots, err := h.store.QueryCodexRange(start, end, limit)
+	snapshots, err := h.store.QueryCodexRange(accountID, start, end, limit)
 	if err != nil {
 		h.logger.Error("failed to query Codex snapshots", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query logging history")

@@ -114,7 +114,7 @@ func TestDroppedTable_QueryLatestCodex_QuotaValuesError(t *testing.T) {
 		t.Fatalf("Direct insert: %v", err)
 	}
 
-	_, err = s.QueryLatestCodex()
+	_, err = s.QueryLatestCodex(DefaultCodexAccountID)
 	if err == nil {
 		t.Fatal("Expected error when codex_quota_values table is missing")
 	}
@@ -133,7 +133,7 @@ func TestDroppedTable_QueryCodexRange_QuotaValuesError(t *testing.T) {
 		t.Fatalf("Direct insert: %v", err)
 	}
 
-	_, err = s.QueryCodexRange(now.Add(-time.Hour), now.Add(time.Hour))
+	_, err = s.QueryCodexRange(DefaultCodexAccountID, now.Add(-time.Hour), now.Add(time.Hour))
 	if err == nil {
 		t.Fatal("Expected error when codex_quota_values table is missing")
 	}
@@ -215,7 +215,7 @@ func TestCodexStore_QueryCodexCycleHistory_ParseError(t *testing.T) {
 		t.Fatalf("Direct insert: %v", err)
 	}
 
-	_, err = s.QueryCodexCycleHistory("five_hour")
+	_, err = s.QueryCodexCycleHistory(DefaultCodexAccountID, "five_hour")
 	if err == nil {
 		t.Fatal("Expected error from invalid time format in cycle_start")
 	}
@@ -238,7 +238,7 @@ func TestCodexStore_QueryCodexCyclesSince_ParseError(t *testing.T) {
 		t.Fatalf("Direct insert: %v", err)
 	}
 
-	_, err = s.QueryCodexCyclesSince("five_hour", time.Now().Add(-time.Hour))
+	_, err = s.QueryCodexCyclesSince(DefaultCodexAccountID, "five_hour", time.Now().Add(-time.Hour))
 	if err == nil {
 		t.Fatal("Expected error from invalid time format")
 	}
@@ -260,7 +260,7 @@ func TestCodexStore_QueryActiveCodexCycle_ParseErrorCycleStart(t *testing.T) {
 		t.Fatalf("Direct insert: %v", err)
 	}
 
-	_, err = s.QueryActiveCodexCycle("five_hour")
+	_, err = s.QueryActiveCodexCycle(DefaultCodexAccountID, "five_hour")
 	if err == nil {
 		t.Fatal("Expected error from invalid cycle_start time format")
 	}
@@ -369,7 +369,7 @@ func TestCodexStore_QueryCodexCycleOverview_WithCrossQuotas(t *testing.T) {
 	resetsAt := now.Add(5 * time.Hour)
 
 	// Create cycle
-	_, err = s.CreateCodexCycle("five_hour", now, &resetsAt)
+	_, err = s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", now, &resetsAt)
 	if err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
@@ -391,12 +391,12 @@ func TestCodexStore_QueryCodexCycleOverview_WithCrossQuotas(t *testing.T) {
 	}
 
 	// Close the cycle
-	err = s.CloseCodexCycle("five_hour", now.Add(5*time.Hour), 0.4, 0.4)
+	err = s.CloseCodexCycle(DefaultCodexAccountID, "five_hour", now.Add(5*time.Hour), 0.4, 0.4)
 	if err != nil {
 		t.Fatalf("CloseCodexCycle: %v", err)
 	}
 
-	overview, err := s.QueryCodexCycleOverview("five_hour", 10)
+	overview, err := s.QueryCodexCycleOverview(DefaultCodexAccountID, "five_hour", 10)
 	if err != nil {
 		t.Fatalf("QueryCodexCycleOverview: %v", err)
 	}

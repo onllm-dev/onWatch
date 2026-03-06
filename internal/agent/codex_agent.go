@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -36,6 +37,10 @@ type CodexAgent struct {
 	tokenRefresh CodexTokenRefreshFunc
 	lastToken    string
 
+	// Multi-account support
+	accountID   int64  // Database account ID from provider_accounts
+	profileName string // Profile name for logging
+
 	// Auth failure rate limiting
 	authFailCount   int
 	authPaused      bool
@@ -43,17 +48,27 @@ type CodexAgent struct {
 }
 
 // NewCodexAgent creates a new CodexAgent with the given dependencies.
-func NewCodexAgent(client *api.CodexClient, store *store.Store, tracker *tracker.CodexTracker, interval time.Duration, logger *slog.Logger, sm *SessionManager) *CodexAgent {
+// Uses DefaultCodexAccountID (1) for backward compatibility.
+func NewCodexAgent(client *api.CodexClient, st *store.Store, tracker *tracker.CodexTracker, interval time.Duration, logger *slog.Logger, sm *SessionManager) *CodexAgent {
+	return NewCodexAgentWithAccount(client, st, tracker, interval, logger, sm, store.DefaultCodexAccountID)
+}
+
+// NewCodexAgentWithAccount creates a new CodexAgent for a specific account.
+func NewCodexAgentWithAccount(client *api.CodexClient, st *store.Store, tracker *tracker.CodexTracker, interval time.Duration, logger *slog.Logger, sm *SessionManager, accountID int64) *CodexAgent {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if accountID == 0 {
+		accountID = store.DefaultCodexAccountID
+	}
 	return &CodexAgent{
-		client:   client,
-		store:    store,
-		tracker:  tracker,
-		interval: interval,
-		logger:   logger,
-		sm:       sm,
+		client:    client,
+		store:     st,
+		tracker:   tracker,
+		interval:  interval,
+		logger:    logger,
+		sm:        sm,
+		accountID: accountID,
 	}
 }
 
@@ -181,15 +196,16 @@ func (a *CodexAgent) poll(ctx context.Context) {
 
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
+	snapshot.AccountID = a.accountID // Set the database account ID
 
 	if _, err := a.store.InsertCodexSnapshot(snapshot); err != nil {
-		a.logger.Error("Failed to insert Codex snapshot", "error", err)
+		a.logger.Error("Failed to insert Codex snapshot", "error", err, "account_id", a.accountID)
 		return
 	}
 
 	if a.tracker != nil {
 		if err := a.tracker.Process(snapshot); err != nil {
-			a.logger.Error("Codex tracker processing failed", "error", err)
+			a.logger.Error("Codex tracker processing failed", "error", err, "account_id", a.accountID)
 		}
 	}
 
@@ -198,6 +214,7 @@ func (a *CodexAgent) poll(ctx context.Context) {
 			a.notifier.Check(notify.QuotaStatus{
 				Provider:    "codex",
 				QuotaKey:    q.Name,
+				AccountID:   fmt.Sprintf("%d", a.accountID),
 				Utilization: q.Utilization,
 				Limit:       100,
 			})
@@ -213,6 +230,6 @@ func (a *CodexAgent) poll(ctx context.Context) {
 	}
 
 	for _, q := range snapshot.Quotas {
-		a.logger.Info("Codex poll complete", "quota", q.Name, "utilization", q.Utilization, "plan", resp.PlanType)
+		a.logger.Info("Codex poll complete", "quota", q.Name, "utilization", q.Utilization, "plan", resp.PlanType, "account_id", a.accountID)
 	}
 }

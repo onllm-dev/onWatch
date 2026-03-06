@@ -1,0 +1,329 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/api"
+)
+
+// CodexProfile represents a saved Codex credential profile.
+type CodexProfile struct {
+	Name      string    `json:"name"`
+	AccountID string    `json:"account_id"`
+	SavedAt   time.Time `json:"saved_at"`
+	Tokens    struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		IDToken      string `json:"id_token"`
+	} `json:"tokens"`
+	APIKey string `json:"api_key,omitempty"`
+}
+
+// codexProfilesDir returns the directory for storing Codex profiles.
+func codexProfilesDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".onwatch", "codex-profiles")
+}
+
+// validProfileName checks if a profile name is valid (alphanumeric, hyphen, underscore).
+var validProfileName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// runCodexCommand handles the `onwatch codex` subcommand.
+func runCodexCommand() error {
+	args := os.Args[1:]
+
+	// Find "codex" position and parse subcommands after it
+	codexIdx := -1
+	for i, arg := range args {
+		if arg == "codex" {
+			codexIdx = i
+			break
+		}
+	}
+
+	if codexIdx == -1 || len(args) <= codexIdx+1 {
+		return printCodexHelp()
+	}
+
+	subArgs := args[codexIdx+1:]
+	if len(subArgs) == 0 || subArgs[0] != "profile" {
+		return printCodexHelp()
+	}
+
+	if len(subArgs) < 2 {
+		return printCodexHelp()
+	}
+
+	subCmd := subArgs[1]
+	switch subCmd {
+	case "save":
+		if len(subArgs) < 3 {
+			return fmt.Errorf("usage: onwatch codex profile save <name>")
+		}
+		return codexProfileSave(subArgs[2])
+	case "list":
+		return codexProfileList()
+	case "delete":
+		if len(subArgs) < 3 {
+			return fmt.Errorf("usage: onwatch codex profile delete <name>")
+		}
+		return codexProfileDelete(subArgs[2])
+	case "status":
+		return codexProfileStatus()
+	default:
+		return printCodexHelp()
+	}
+}
+
+// printCodexHelp prints help for Codex profile commands.
+func printCodexHelp() error {
+	fmt.Println("Codex Profile Management")
+	fmt.Println()
+	fmt.Println("Usage: onwatch codex profile <command> [args]")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  save <name>    Save current Codex credentials as a named profile")
+	fmt.Println("  list           List saved Codex profiles")
+	fmt.Println("  delete <name>  Delete a saved Codex profile")
+	fmt.Println("  status         Show polling status for all profiles")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  onwatch codex profile save work       # Save current credentials as 'work'")
+	fmt.Println("  onwatch codex profile save personal   # Save current credentials as 'personal'")
+	fmt.Println("  onwatch codex profile list            # List all saved profiles")
+	fmt.Println("  onwatch codex profile delete work     # Delete the 'work' profile")
+	fmt.Println()
+	fmt.Println("Workflow:")
+	fmt.Println("  1. Log into your first Codex account")
+	fmt.Println("  2. Run: onwatch codex profile save work")
+	fmt.Println("  3. Log into your second Codex account")
+	fmt.Println("  4. Run: onwatch codex profile save personal")
+	fmt.Println("  5. onWatch will poll both profiles simultaneously")
+	return nil
+}
+
+// codexProfileSave saves the current Codex credentials as a named profile.
+func codexProfileSave(name string) error {
+	// Validate profile name
+	if !validProfileName.MatchString(name) {
+		return fmt.Errorf("invalid profile name %q: use only letters, numbers, hyphens, and underscores", name)
+	}
+
+	// Detect current Codex credentials
+	creds := api.DetectCodexCredentials(nil)
+	if creds == nil {
+		return fmt.Errorf("no Codex credentials found. Run 'codex auth' first to authenticate")
+	}
+
+	if creds.AccessToken == "" && creds.APIKey == "" {
+		return fmt.Errorf("no valid Codex credentials found. Run 'codex auth' first to authenticate")
+	}
+
+	// Create profiles directory if needed
+	profilesDir := codexProfilesDir()
+	if profilesDir == "" {
+		return fmt.Errorf("could not determine home directory")
+	}
+
+	if err := os.MkdirAll(profilesDir, 0700); err != nil {
+		return fmt.Errorf("failed to create profiles directory: %w", err)
+	}
+
+	profilePath := filepath.Join(profilesDir, name+".json")
+
+	// Check if profile already exists with different account
+	if existing, err := loadCodexProfile(profilePath); err == nil && existing != nil {
+		if existing.AccountID != "" && creds.AccountID != "" && existing.AccountID != creds.AccountID {
+			fmt.Printf("Warning: Profile %q was for account %s, updating to account %s\n",
+				name, existing.AccountID, creds.AccountID)
+		}
+	}
+
+	// Check if another profile already uses this account
+	profiles, _ := listCodexProfiles()
+	for _, p := range profiles {
+		if p.Name != name && p.AccountID != "" && p.AccountID == creds.AccountID {
+			fmt.Printf("Warning: Account %s is already saved as profile %q\n", creds.AccountID, p.Name)
+		}
+	}
+
+	// Create profile
+	profile := CodexProfile{
+		Name:      name,
+		AccountID: creds.AccountID,
+		SavedAt:   time.Now().UTC(),
+		APIKey:    creds.APIKey,
+	}
+	profile.Tokens.AccessToken = creds.AccessToken
+	profile.Tokens.RefreshToken = creds.RefreshToken
+	profile.Tokens.IDToken = creds.IDToken
+
+	// Write profile with 0600 permissions
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal profile: %w", err)
+	}
+
+	if err := os.WriteFile(profilePath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write profile: %w", err)
+	}
+
+	fmt.Printf("Saved Codex profile %q", name)
+	if creds.AccountID != "" {
+		fmt.Printf(" (account: %s)", creds.AccountID)
+	}
+	fmt.Println()
+	fmt.Println("onWatch will poll this profile when running.")
+
+	return nil
+}
+
+// codexProfileList lists all saved Codex profiles.
+func codexProfileList() error {
+	profiles, err := listCodexProfiles()
+	if err != nil {
+		return err
+	}
+
+	if len(profiles) == 0 {
+		fmt.Println("No Codex profiles saved.")
+		fmt.Println()
+		fmt.Println("To save a profile:")
+		fmt.Println("  1. Log into Codex: codex auth")
+		fmt.Println("  2. Save profile: onwatch codex profile save <name>")
+		return nil
+	}
+
+	fmt.Println("Saved Codex profiles:")
+	fmt.Println()
+	for _, p := range profiles {
+		accountInfo := ""
+		if p.AccountID != "" {
+			accountInfo = fmt.Sprintf(" (account: %s)", p.AccountID)
+		}
+		fmt.Printf("  %s%s\n", p.Name, accountInfo)
+		fmt.Printf("    Saved: %s\n", p.SavedAt.Local().Format("2006-01-02 15:04:05"))
+	}
+
+	return nil
+}
+
+// codexProfileDelete deletes a saved Codex profile.
+func codexProfileDelete(name string) error {
+	profilesDir := codexProfilesDir()
+	if profilesDir == "" {
+		return fmt.Errorf("could not determine home directory")
+	}
+
+	profilePath := filepath.Join(profilesDir, name+".json")
+
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		return fmt.Errorf("profile %q not found", name)
+	}
+
+	if err := os.Remove(profilePath); err != nil {
+		return fmt.Errorf("failed to delete profile: %w", err)
+	}
+
+	fmt.Printf("Deleted Codex profile %q\n", name)
+	fmt.Println("Note: Historical data for this profile remains in the database.")
+
+	return nil
+}
+
+// codexProfileStatus shows the status of all saved profiles.
+func codexProfileStatus() error {
+	profiles, err := listCodexProfiles()
+	if err != nil {
+		return err
+	}
+
+	if len(profiles) == 0 {
+		fmt.Println("No Codex profiles saved.")
+		return nil
+	}
+
+	fmt.Println("Codex profile status:")
+	fmt.Println()
+
+	for _, p := range profiles {
+		status := "ready"
+		if p.Tokens.AccessToken == "" && p.APIKey == "" {
+			status = "no credentials"
+		}
+
+		accountInfo := ""
+		if p.AccountID != "" {
+			accountInfo = fmt.Sprintf(" (%s)", p.AccountID)
+		}
+
+		fmt.Printf("  %s%s: %s\n", p.Name, accountInfo, status)
+	}
+
+	fmt.Println()
+	fmt.Println("Profiles will be polled when onWatch is running.")
+
+	return nil
+}
+
+// listCodexProfiles returns all saved Codex profiles.
+func listCodexProfiles() ([]CodexProfile, error) {
+	profilesDir := codexProfilesDir()
+	if profilesDir == "" {
+		return nil, fmt.Errorf("could not determine home directory")
+	}
+
+	entries, err := os.ReadDir(profilesDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read profiles directory: %w", err)
+	}
+
+	var profiles []CodexProfile
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		profilePath := filepath.Join(profilesDir, entry.Name())
+		profile, err := loadCodexProfile(profilePath)
+		if err != nil {
+			continue // Skip invalid profiles
+		}
+		profiles = append(profiles, *profile)
+	}
+
+	return profiles, nil
+}
+
+// loadCodexProfile loads a single Codex profile from disk.
+func loadCodexProfile(path string) (*CodexProfile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var profile CodexProfile
+	if err := json.Unmarshal(data, &profile); err != nil {
+		return nil, err
+	}
+
+	// Derive name from filename if not set
+	if profile.Name == "" {
+		base := filepath.Base(path)
+		profile.Name = strings.TrimSuffix(base, ".json")
+	}
+
+	return &profile, nil
+}

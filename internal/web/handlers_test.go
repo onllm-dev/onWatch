@@ -1517,7 +1517,7 @@ func TestHandler_Dashboard_CodexSessionHeaders(t *testing.T) {
 	}
 
 	body := rr.Body.String()
-	if !strings.Contains(body, "5-Hour Limit") {
+	if !strings.Contains(body, "LLMs") {
 		t.Error("expected codex-specific 5-Hour Limit session column")
 	}
 	if !strings.Contains(body, "Weekly All-Model") {
@@ -2272,7 +2272,7 @@ func TestHandler_Current_WithCodexProvider(t *testing.T) {
 	if !ok {
 		t.Fatal("expected first quota to be a map")
 	}
-	if q0["displayName"] != "5-Hour Limit" {
+	if q0["displayName"] != "LLMs" {
 		t.Errorf("expected 5-Hour Limit displayName, got %v", q0["displayName"])
 	}
 
@@ -2547,7 +2547,7 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 		if st.Label == "Plan" {
 			hasPlan = true
 		}
-		if st.Label == "Average 5-Hour Usage/Cycle" || st.Label == "5-Hour Delta (Current)" {
+		if st.Label == "Average LLMs Usage/Cycle" || st.Label == "LLMs Delta (Current)" {
 			hasFiveHourBehaviorStat = true
 		}
 	}
@@ -2555,7 +2555,7 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 		t.Error("expected Plan stat in codex insights response")
 	}
 	if !hasFiveHourBehaviorStat {
-		t.Error("expected 5-Hour behavior stat in codex insights response")
+		t.Error("expected LLMs behavior stat in codex insights response")
 	}
 	for _, in := range response.Insights {
 		if in.Title == "Tracking Quality" {
@@ -2588,10 +2588,10 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 		if in.Title == "Short Window Burn Rate" {
 			t.Error("did not expect Short Window Burn Rate in codex insights response")
 		}
-		if in.Title == "Weekly Window Burn Rate" {
+		if in.Title == "Weekly All-Model Burn Rate" {
 			weeklyForecastFound = strings.Contains(in.Sublabel, "by reset")
 		}
-		if in.Title == "5-Hour Window Burn Rate" {
+		if in.Title == "LLMs Burn Rate" {
 			shortForecastFound = strings.Contains(in.Sublabel, "by reset")
 		}
 		if in.Title == "Weekly Pace" {
@@ -2605,10 +2605,10 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 		}
 	}
 	if !shortForecastFound {
-		t.Error("expected 5-Hour Window Burn Rate to show reset estimate sublabel")
+		t.Error("expected LLMs Burn Rate to show reset estimate sublabel")
 	}
 	if !weeklyForecastFound {
-		t.Error("expected Weekly Window Burn Rate to show reset estimate sublabel")
+		t.Error("expected Weekly All-Model Burn Rate to show reset estimate sublabel")
 	}
 	if !weeklyPaceFound {
 		t.Error("expected Weekly Pace insight in codex insights response")
@@ -8214,7 +8214,7 @@ func TestHandler_BuildCodexInsights_WithData(t *testing.T) {
 	h.SetCodexTracker(cxtr)
 
 	hidden := map[string]bool{}
-	resp := h.buildCodexInsights(hidden, 7*24*time.Hour)
+	resp := h.buildCodexInsights(store.DefaultCodexAccountID, hidden, 7*24*time.Hour)
 
 	if len(resp.Stats) == 0 {
 		t.Error("expected non-empty stats for codex with data")

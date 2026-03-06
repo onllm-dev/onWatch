@@ -86,7 +86,7 @@ func TestCodexStore_CreateCloseCodexCycle(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	resetsAt := now.Add(5 * time.Hour)
-	id, err := s.CreateCodexCycle("five_hour", now, &resetsAt)
+	id, err := s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", now, &resetsAt)
 	if err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
@@ -95,20 +95,20 @@ func TestCodexStore_CreateCloseCodexCycle(t *testing.T) {
 	}
 
 	// Update cycle
-	err = s.UpdateCodexCycle("five_hour", 0.75, 0.5)
+	err = s.UpdateCodexCycle(DefaultCodexAccountID, "five_hour", 0.75, 0.5)
 	if err != nil {
 		t.Fatalf("UpdateCodexCycle: %v", err)
 	}
 
 	// Close cycle
 	endTime := now.Add(5 * time.Hour)
-	err = s.CloseCodexCycle("five_hour", endTime, 0.75, 0.5)
+	err = s.CloseCodexCycle(DefaultCodexAccountID, "five_hour", endTime, 0.75, 0.5)
 	if err != nil {
 		t.Fatalf("CloseCodexCycle: %v", err)
 	}
 
 	// Verify history
-	history, err := s.QueryCodexCycleHistory("five_hour")
+	history, err := s.QueryCodexCycleHistory(DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryCodexCycleHistory: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestCodexStore_CreateCodexCycle_NilResetsAt(t *testing.T) {
 	defer s.Close()
 
 	now := time.Now().UTC().Truncate(time.Second)
-	id, err := s.CreateCodexCycle("daily", now, nil)
+	id, err := s.CreateCodexCycle(DefaultCodexAccountID, "daily", now, nil)
 	if err != nil {
 		t.Fatalf("CreateCodexCycle with nil resetsAt: %v", err)
 	}
@@ -488,7 +488,7 @@ func TestCodexStore_InsertWithQuotas_QueryRange_WithLimit(t *testing.T) {
 	end := now.Add(10 * time.Hour)
 
 	// Query with limit
-	results, err := s.QueryCodexRange(start, end, 2)
+	results, err := s.QueryCodexRange(DefaultCodexAccountID, start, end, 2)
 	if err != nil {
 		t.Fatalf("QueryCodexRange with limit: %v", err)
 	}
@@ -876,18 +876,18 @@ func TestCodexStore_QueryCodexCycleHistory_WithLimit(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		start := now.Add(time.Duration(i) * 24 * time.Hour)
 		resetsAt := start.Add(5 * time.Hour)
-		_, err := s.CreateCodexCycle("five_hour", start, &resetsAt)
+		_, err := s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", start, &resetsAt)
 		if err != nil {
 			t.Fatalf("CreateCodexCycle[%d]: %v", i, err)
 		}
 		end := start.Add(5 * time.Hour)
-		err = s.CloseCodexCycle("five_hour", end, float64(i)*0.1, float64(i)*0.05)
+		err = s.CloseCodexCycle(DefaultCodexAccountID, "five_hour", end, float64(i)*0.1, float64(i)*0.05)
 		if err != nil {
 			t.Fatalf("CloseCodexCycle[%d]: %v", i, err)
 		}
 	}
 
-	history, err := s.QueryCodexCycleHistory("five_hour", 3)
+	history, err := s.QueryCodexCycleHistory(DefaultCodexAccountID, "five_hour", 3)
 	if err != nil {
 		t.Fatalf("QueryCodexCycleHistory with limit: %v", err)
 	}
@@ -1059,7 +1059,7 @@ func TestCodexStore_QueryCodexUtilizationSeries(t *testing.T) {
 		}
 	}
 
-	series, err := s.QueryCodexUtilizationSeries("five_hour", now.Add(-time.Hour))
+	series, err := s.QueryCodexUtilizationSeries(DefaultCodexAccountID, "five_hour", now.Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("QueryCodexUtilizationSeries: %v", err)
 	}
@@ -1520,7 +1520,7 @@ func TestCodexStore_QueryLatestCodex_FullData(t *testing.T) {
 		t.Fatalf("InsertCodexSnapshot: %v", err)
 	}
 
-	latest, err := s.QueryLatestCodex()
+	latest, err := s.QueryLatestCodex(DefaultCodexAccountID)
 	if err != nil {
 		t.Fatalf("QueryLatestCodex: %v", err)
 	}
@@ -1747,18 +1747,18 @@ func TestCodexStore_QueryCodexCyclesSince_WithData(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		start := now.Add(time.Duration(i) * 24 * time.Hour)
 		resetsAt := start.Add(5 * time.Hour)
-		_, err := s.CreateCodexCycle("five_hour", start, &resetsAt)
+		_, err := s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", start, &resetsAt)
 		if err != nil {
 			t.Fatalf("CreateCodexCycle[%d]: %v", i, err)
 		}
 		end := start.Add(5 * time.Hour)
-		err = s.CloseCodexCycle("five_hour", end, float64(i)*0.1, float64(i)*0.05)
+		err = s.CloseCodexCycle(DefaultCodexAccountID, "five_hour", end, float64(i)*0.1, float64(i)*0.05)
 		if err != nil {
 			t.Fatalf("CloseCodexCycle[%d]: %v", i, err)
 		}
 	}
 
-	cycles, err := s.QueryCodexCyclesSince("five_hour", now.Add(-1*time.Hour))
+	cycles, err := s.QueryCodexCyclesSince(DefaultCodexAccountID, "five_hour", now.Add(-1*time.Hour))
 	if err != nil {
 		t.Fatalf("QueryCodexCyclesSince: %v", err)
 	}

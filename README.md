@@ -16,7 +16,7 @@ onWatch fills the gap between "current usage snapshot" and the historical, per-c
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![Website](https://img.shields.io/badge/onwatch.onllm.dev-7C3AED?style=for-the-badge&logo=globe&logoColor=white)](https://onwatch.onllm.dev)
-[![Version](https://img.shields.io/badge/Version-v2.11.11-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.11)
+[![Version](https://img.shields.io/badge/Version-v2.11.12-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.12)
 [![Coverage](https://img.shields.io/codecov/c/github/onllm-dev/onwatch?style=for-the-badge&logo=codecov&logoColor=white&label=Coverage)](https://codecov.io/gh/onllm-dev/onwatch)
 [![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/prakersh)
@@ -145,7 +145,7 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **Synthetic** -- Subscription, Search, and Tool Call quota cards
 - **Z.ai** -- Tokens, Time, and Tool Call quota cards
 - **Anthropic** -- Dynamic quota cards (5-Hour, 7-Day, 7-Day Sonnet, Monthly, etc.) with utilization percentages, OAuth token auto-refresh, and automatic rate limit bypass via token rotation
-- **Codex** -- Dynamic quota cards (5-Hour, 7-Day) with OAuth auth-state refresh and historical cycle analytics
+- **Codex** -- Dynamic quota cards (LLMs, Review Requests) with OAuth auth-state refresh, historical cycle analytics, and **multi-account support (Beta)** for tracking multiple ChatGPT accounts
 - **GitHub Copilot (Beta)** -- Premium Interactions, Chat, and Completions quota cards with monthly reset tracking
 - **Antigravity** -- Multi-model quota cards (Claude, Gemini, GPT) with grouped quota pools, logging history, and cycle overview
 - **All** -- Side-by-side view of all configured providers

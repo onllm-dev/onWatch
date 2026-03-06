@@ -57,6 +57,7 @@ type NotificationTypes struct {
 type QuotaStatus struct {
 	Provider      string
 	QuotaKey      string
+	AccountID     string  // For multi-account providers (e.g., Codex)
 	Utilization   float64
 	Limit         float64
 	ResetOccurred bool
@@ -368,8 +369,9 @@ func (e *NotificationEngine) Check(status QuotaStatus) {
 
 	// Handle reset: clear notification log so alerts can fire again in the new cycle
 	provider := normalizeNotificationProvider(status.Provider)
+	quotaKey := notificationQuotaKey(status)
 	if status.ResetOccurred {
-		if err := e.store.ClearNotificationLog(provider, status.QuotaKey); err != nil {
+		if err := e.store.ClearNotificationLog(provider, quotaKey); err != nil {
 			e.logger.Error("failed to clear notification log on reset", "error", err)
 		}
 		if cfg.Types.Reset {
@@ -451,7 +453,8 @@ func (e *NotificationEngine) SendTestEmail() error {
 // The notification_log entry is cleared on quota reset (see Check/resetOccurred).
 func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *PushSender, channels NotificationChannels, status QuotaStatus, notifType string) {
 	provider := normalizeNotificationProvider(status.Provider)
-	sentAt, _, err := e.store.GetLastNotification(provider, status.QuotaKey, notifType)
+	quotaKey := notificationQuotaKey(status)
+	sentAt, _, err := e.store.GetLastNotification(provider, quotaKey, notifType)
 	if err != nil {
 		e.logger.Error("failed to check notification log", "error", err)
 		return
@@ -459,7 +462,7 @@ func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *Pu
 	// Already sent for this cycle — skip (log is cleared on reset)
 	if !sentAt.IsZero() {
 		e.logger.Debug("notification already sent for this cycle",
-			"quota", status.QuotaKey, "type", notifType,
+			"quota", quotaKey, "type", notifType,
 			"sent_at", sentAt)
 		return
 	}
@@ -472,7 +475,7 @@ func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *Pu
 	if channels.Email && mailer != nil {
 		if err := mailer.Send(subject, body); err != nil {
 			e.logger.Error("failed to send email notification", "error", err,
-				"quota", status.QuotaKey, "type", notifType)
+				"quota", quotaKey, "type", notifType)
 		} else {
 			sent = true
 		}
@@ -504,7 +507,7 @@ func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *Pu
 
 	// Log the notification only if at least one channel succeeded
 	if sent {
-		if err := e.store.UpsertNotificationLog(provider, status.QuotaKey, notifType, status.Utilization); err != nil {
+		if err := e.store.UpsertNotificationLog(provider, quotaKey, notifType, status.Utilization); err != nil {
 			e.logger.Error("failed to log notification", "error", err)
 		}
 	}
@@ -520,6 +523,18 @@ func normalizeNotificationProvider(provider string) string {
 
 func notificationOverrideKey(provider, quotaKey string) string {
 	return normalizeNotificationProvider(provider) + ":" + strings.TrimSpace(quotaKey)
+}
+
+// notificationQuotaKey generates a unique key for notification tracking.
+// For multi-account providers like Codex, the key includes the account ID.
+func notificationQuotaKey(status QuotaStatus) string {
+	key := status.QuotaKey
+	// Include account ID for multi-account providers (Codex)
+	// AccountID "1" is the default account, so we only prefix for other accounts
+	if status.AccountID != "" && status.AccountID != "1" {
+		key = status.AccountID + ":" + key
+	}
+	return key
 }
 
 // titleCase capitalizes the first letter of a string.

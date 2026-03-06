@@ -390,6 +390,10 @@ func run() error {
 	}
 
 	// Phase 2: Handle subcommands (both with and without -- prefix)
+	// Note: "codex" must be checked before "status" because "codex profile status" contains "status"
+	if hasCommand("codex") {
+		return runCodexCommand()
+	}
 	if hasCommand("stop", "--stop") {
 		return runStop(testMode)
 	}
@@ -712,13 +716,10 @@ func run() error {
 		codexTr = tracker.NewCodexTracker(db, logger)
 	}
 
-	var codexAg *agent.CodexAgent
-	if codexClient != nil {
-		codexSm := agent.NewSessionManager(db, "codex", idleTimeout, logger)
-		codexAg = agent.NewCodexAgent(codexClient, db, codexTr, cfg.PollInterval, logger, codexSm)
-		codexAg.SetTokenRefresh(func() string {
-			return api.DetectCodexToken(logger)
-		})
+	// Create Codex agent manager for multi-account support
+	var codexMgr *agent.CodexAgentManager
+	if cfg.HasProvider("codex") {
+		codexMgr = agent.NewCodexAgentManager(db, codexTr, cfg.PollInterval, logger)
 	}
 
 	// Create Antigravity tracker
@@ -753,8 +754,8 @@ func run() error {
 	if copilotAg != nil {
 		copilotAg.SetNotifier(notifier)
 	}
-	if codexAg != nil {
-		codexAg.SetNotifier(notifier)
+	if codexMgr != nil {
+		codexMgr.SetNotifier(notifier)
 	}
 	if antigravityAg != nil {
 		antigravityAg.SetNotifier(notifier)
@@ -789,8 +790,38 @@ func run() error {
 	if copilotAg != nil {
 		copilotAg.SetPollingCheck(func() bool { return isPollingEnabled("copilot") })
 	}
-	if codexAg != nil {
-		codexAg.SetPollingCheck(func() bool { return isPollingEnabled("codex") })
+	if codexMgr != nil {
+		codexMgr.SetPollingCheck(func() bool { return isPollingEnabled("codex") })
+		// Per-account polling check for Codex multi-account support
+		codexMgr.SetAccountPollingCheck(func(accountID int64) bool {
+			v, err := db.GetSetting("provider_visibility")
+			if err != nil || v == "" {
+				return true // default: polling enabled
+			}
+			var vis map[string]interface{}
+			if json.Unmarshal([]byte(v), &vis) != nil {
+				return true
+			}
+			codexVis, ok := vis["codex"].(map[string]interface{})
+			if !ok {
+				return true
+			}
+			accounts, ok := codexVis["accounts"].(map[string]interface{})
+			if !ok {
+				return true // No per-account settings, default to enabled
+			}
+			accountKey := fmt.Sprintf("%d", accountID)
+			accountSettings, ok := accounts[accountKey].(map[string]interface{})
+			if !ok {
+				return true // No settings for this account, default to enabled
+			}
+			if polling, exists := accountSettings["polling"]; exists {
+				if p, ok := polling.(bool); ok {
+					return p
+				}
+			}
+			return true
+		})
 	}
 	if antigravityAg != nil {
 		antigravityAg.SetPollingCheck(func() bool { return isPollingEnabled("antigravity") })
@@ -922,18 +953,18 @@ func run() error {
 		}()
 	}
 
-	if codexAg != nil {
+	if codexMgr != nil {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logger.Error("Codex agent panicked", "panic", r)
-					agentErr <- fmt.Errorf("codex agent panic: %v", r)
+					logger.Error("Codex agent manager panicked", "panic", r)
+					agentErr <- fmt.Errorf("codex agent manager panic: %v", r)
 				}
 			}()
 			time.Sleep(800 * time.Millisecond) // stagger to avoid SQLite BUSY
-			logger.Info("Starting Codex agent", "interval", cfg.PollInterval)
-			if err := codexAg.Run(ctx); err != nil {
-				agentErr <- fmt.Errorf("codex agent error: %w", err)
+			logger.Info("Starting Codex agent manager", "interval", cfg.PollInterval)
+			if err := codexMgr.Run(ctx); err != nil {
+				agentErr <- fmt.Errorf("codex agent manager error: %w", err)
 			}
 		}()
 	}
@@ -954,7 +985,7 @@ func run() error {
 		}()
 	}
 
-	if ag == nil && zaiAg == nil && anthropicAg == nil && copilotAg == nil && codexAg == nil && antigravityAg == nil {
+	if ag == nil && zaiAg == nil && anthropicAg == nil && copilotAg == nil && codexMgr == nil && antigravityAg == nil {
 		logger.Info("No agents configured")
 	}
 
@@ -1392,6 +1423,12 @@ func printHelp() {
 	fmt.Println("  stop, --stop       Stop the running onwatch instance")
 	fmt.Println("  status, --status   Show status of the running instance")
 	fmt.Println("  update, --update   Check for updates and self-update")
+	fmt.Println()
+	fmt.Println("Codex Profile Management:")
+	fmt.Println("  codex profile save <name>    Save current Codex credentials as a named profile")
+	fmt.Println("  codex profile list           List saved Codex profiles")
+	fmt.Println("  codex profile delete <name>  Delete a saved Codex profile")
+	fmt.Println("  codex profile status         Show polling status for all profiles")
 	fmt.Println()
 	fmt.Println("Options:")
 	fmt.Println("  version, --version Print version and exit")

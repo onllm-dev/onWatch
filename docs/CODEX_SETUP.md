@@ -1,6 +1,6 @@
 # Codex Setup Guide
 
-Track Codex quota usage in onWatch (`v2.10.4`).
+Track Codex quota usage in onWatch (`v2.11.12`).
 
 ---
 
@@ -107,6 +107,61 @@ Set `CODEX_HOME` to your custom Codex directory so onWatch reads `CODEX_HOME/aut
 
 ---
 
+## Multi-Account Support (v2.11.12+) — Beta
+
+> **Beta Feature**: Multi-account support is currently in beta. Please report any issues on [GitHub](https://github.com/onllm-dev/onwatch/issues).
+
+Track multiple ChatGPT/Codex accounts simultaneously. Each account's quota data is stored and displayed separately.
+
+### Save a Profile
+
+```bash
+onwatch codex save <profile-name>
+```
+
+This saves credentials from your current `~/.codex/auth.json` as a named profile in `~/.onwatch/codex-profiles/<profile-name>.json`.
+
+**First profile behavior:** When you save your first profile, onWatch renames the existing "default" account to your profile name, preserving all historical data.
+
+### Example: Adding Multiple Accounts
+
+```bash
+# Log into first account in Codex CLI, then save
+onwatch codex save work-account
+
+# Log into second account, then save
+onwatch codex save personal-account
+```
+
+### Dashboard Usage
+
+When multiple profiles exist:
+- **Profile tabs** appear in the header next to provider tabs
+- Click a profile tab to switch accounts
+- All data (quotas, charts, cycles, logging history) updates for the selected account
+- In **All** view, cards for each Codex account are shown with account name headers
+
+### List Profiles
+
+```bash
+onwatch codex list
+```
+
+### Remove a Profile
+
+```bash
+onwatch codex remove <profile-name>
+```
+
+### How It Works
+
+- Profiles are stored as JSON files in `~/.onwatch/codex-profiles/`
+- Each profile gets its own polling agent
+- Data is stored with account-specific IDs in SQLite
+- Historical data is preserved per account
+
+---
+
 ## Step 4: Restart onWatch
 
 ```bash
@@ -127,9 +182,10 @@ onwatch --debug
 Open `http://localhost:9211` and select the **Codex** tab.
 
 You should see:
-- **5-Hour Limit** utilization
-- **Weekly All-Model** utilization
+- **LLMs** utilization (rolling limit quota)
+- **Review Requests** (code review quota)
 - Reset timers, usage history, and projections
+- Profile tabs (when multiple accounts are configured)
 
 ---
 

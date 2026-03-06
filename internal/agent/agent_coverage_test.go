@@ -372,13 +372,13 @@ func TestCodexAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 		errCh <- ag.Run(ctx)
 	}()
 	waitUntil(t, 800*time.Millisecond, func() bool {
-		latest, _ := st.QueryLatestCodex()
+		latest, _ := st.QueryLatestCodex(store.DefaultCodexAccountID)
 		return latest != nil
 	}, "codex snapshot to be stored")
 	cancel()
 	waitForAgentStop(t, errCh, 2*time.Second)
 
-	latest, _ := st.QueryLatestCodex()
+	latest, _ := st.QueryLatestCodex(store.DefaultCodexAccountID)
 	if latest == nil {
 		t.Fatal("expected Codex snapshot after poll with notifier set")
 	}

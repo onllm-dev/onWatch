@@ -278,6 +278,18 @@ func (s *Store) createTables() error {
 			created_at TEXT NOT NULL
 		);
 
+		-- Provider accounts (unified multi-account support)
+		-- Each provider can have multiple accounts, referenced by integer ID
+		CREATE TABLE IF NOT EXISTS provider_accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			provider TEXT NOT NULL,
+			name TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			metadata TEXT,
+			UNIQUE(provider, name)
+		);
+		CREATE INDEX IF NOT EXISTS idx_provider_accounts_provider ON provider_accounts(provider);
+
 		-- Copilot-specific tables
 		CREATE TABLE IF NOT EXISTS copilot_snapshots (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -320,6 +332,7 @@ func (s *Store) createTables() error {
 		CREATE TABLE IF NOT EXISTS codex_snapshots (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			captured_at TEXT NOT NULL,
+			account_id INTEGER NOT NULL DEFAULT 1,
 			plan_type TEXT,
 			credits_balance REAL,
 			raw_json TEXT,
@@ -338,6 +351,7 @@ func (s *Store) createTables() error {
 
 		CREATE TABLE IF NOT EXISTS codex_reset_cycles (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			account_id INTEGER NOT NULL DEFAULT 1,
 			quota_name TEXT NOT NULL,
 			cycle_start TEXT NOT NULL,
 			cycle_end TEXT,
@@ -351,6 +365,8 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_codex_quota_values_snapshot ON codex_quota_values(snapshot_id);
 		CREATE INDEX IF NOT EXISTS idx_codex_cycles_name_start ON codex_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_codex_cycles_name_active ON codex_reset_cycles(quota_name) WHERE cycle_end IS NULL;
+		-- Note: idx_codex_snapshots_account and idx_codex_cycles_account are created in migrateSchema()
+		-- to support both new installs and upgrades from older versions without account_id column.
 
 		-- Antigravity-specific tables
 		CREATE TABLE IF NOT EXISTS antigravity_snapshots (
@@ -476,6 +492,76 @@ func (s *Store) migrateSchema() error {
 	// Migrate notification_log to provider-scoped dedupe keys.
 	if err := s.migrateNotificationLogProviderScope(); err != nil {
 		return fmt.Errorf("failed to migrate notification_log provider scope: %w", err)
+	}
+
+	// Create provider_accounts table for unified multi-account support
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS provider_accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			provider TEXT NOT NULL,
+			name TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			metadata TEXT,
+			UNIQUE(provider, name)
+		)
+	`); err != nil {
+		return fmt.Errorf("failed to create provider_accounts table: %w", err)
+	}
+
+	// Ensure default account exists for codex (id=1)
+	if _, err := s.db.Exec(`
+		INSERT OR IGNORE INTO provider_accounts (id, provider, name, created_at)
+		VALUES (1, 'codex', 'default', datetime('now'))
+	`); err != nil {
+		return fmt.Errorf("failed to insert default codex account: %w", err)
+	}
+
+	// Add account_id column to codex_snapshots for multi-account support
+	// Using INTEGER DEFAULT 1 (references provider_accounts.id)
+	if _, err := s.db.Exec(`
+		ALTER TABLE codex_snapshots ADD COLUMN account_id INTEGER NOT NULL DEFAULT 1
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") &&
+			!strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to add account_id to codex_snapshots: %w", err)
+		}
+	}
+
+	// Migrate existing TEXT 'default' values to INTEGER 1
+	if _, err := s.db.Exec(`
+		UPDATE codex_snapshots SET account_id = 1 WHERE account_id = 'default' OR account_id = ''
+	`); err != nil {
+		// Ignore errors - may already be INTEGER
+	}
+
+	// Add account_id column to codex_reset_cycles for multi-account support
+	if _, err := s.db.Exec(`
+		ALTER TABLE codex_reset_cycles ADD COLUMN account_id INTEGER NOT NULL DEFAULT 1
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") &&
+			!strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to add account_id to codex_reset_cycles: %w", err)
+		}
+	}
+
+	// Migrate existing TEXT 'default' values to INTEGER 1
+	if _, err := s.db.Exec(`
+		UPDATE codex_reset_cycles SET account_id = 1 WHERE account_id = 'default' OR account_id = ''
+	`); err != nil {
+		// Ignore errors - may already be INTEGER
+	}
+
+	// Add Codex multi-account indexes
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_codex_snapshots_account ON codex_snapshots(account_id, captured_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_codex_cycles_account ON codex_reset_cycles(account_id, quota_name)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_accounts_provider ON provider_accounts(provider)`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("failed codex account index migration: %w", err)
+			}
+		}
 	}
 
 	return nil

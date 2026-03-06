@@ -394,7 +394,7 @@ func TestClosedDB_InsertCodexSnapshot(t *testing.T) {
 
 func TestClosedDB_QueryLatestCodex(t *testing.T) {
 	s := closedStore(t)
-	_, err := s.QueryLatestCodex()
+	_, err := s.QueryLatestCodex(DefaultCodexAccountID)
 	if err == nil {
 		t.Fatal("Expected error from QueryLatestCodex on closed DB")
 	}
@@ -403,7 +403,7 @@ func TestClosedDB_QueryLatestCodex(t *testing.T) {
 func TestClosedDB_QueryCodexRange(t *testing.T) {
 	s := closedStore(t)
 	now := time.Now().UTC()
-	_, err := s.QueryCodexRange(now.Add(-time.Hour), now)
+	_, err := s.QueryCodexRange(DefaultCodexAccountID, now.Add(-time.Hour), now)
 	if err == nil {
 		t.Fatal("Expected error from QueryCodexRange on closed DB")
 	}
@@ -411,7 +411,7 @@ func TestClosedDB_QueryCodexRange(t *testing.T) {
 
 func TestClosedDB_CreateCodexCycle(t *testing.T) {
 	s := closedStore(t)
-	_, err := s.CreateCodexCycle("five_hour", time.Now().UTC(), nil)
+	_, err := s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", time.Now().UTC(), nil)
 	if err == nil {
 		t.Fatal("Expected error from CreateCodexCycle on closed DB")
 	}
@@ -419,7 +419,7 @@ func TestClosedDB_CreateCodexCycle(t *testing.T) {
 
 func TestClosedDB_CloseCodexCycle(t *testing.T) {
 	s := closedStore(t)
-	err := s.CloseCodexCycle("five_hour", time.Now().UTC(), 0.5, 0.1)
+	err := s.CloseCodexCycle(DefaultCodexAccountID, "five_hour", time.Now().UTC(), 0.5, 0.1)
 	if err == nil {
 		t.Fatal("Expected error from CloseCodexCycle on closed DB")
 	}
@@ -427,7 +427,7 @@ func TestClosedDB_CloseCodexCycle(t *testing.T) {
 
 func TestClosedDB_UpdateCodexCycle(t *testing.T) {
 	s := closedStore(t)
-	err := s.UpdateCodexCycle("five_hour", 0.5, 0.1)
+	err := s.UpdateCodexCycle(DefaultCodexAccountID, "five_hour", 0.5, 0.1)
 	if err == nil {
 		t.Fatal("Expected error from UpdateCodexCycle on closed DB")
 	}
@@ -435,7 +435,7 @@ func TestClosedDB_UpdateCodexCycle(t *testing.T) {
 
 func TestClosedDB_QueryActiveCodexCycle(t *testing.T) {
 	s := closedStore(t)
-	_, err := s.QueryActiveCodexCycle("five_hour")
+	_, err := s.QueryActiveCodexCycle(DefaultCodexAccountID, "five_hour")
 	if err == nil {
 		t.Fatal("Expected error from QueryActiveCodexCycle on closed DB")
 	}
@@ -443,7 +443,7 @@ func TestClosedDB_QueryActiveCodexCycle(t *testing.T) {
 
 func TestClosedDB_QueryCodexCycleHistory(t *testing.T) {
 	s := closedStore(t)
-	_, err := s.QueryCodexCycleHistory("five_hour")
+	_, err := s.QueryCodexCycleHistory(DefaultCodexAccountID, "five_hour")
 	if err == nil {
 		t.Fatal("Expected error from QueryCodexCycleHistory on closed DB")
 	}
@@ -451,7 +451,7 @@ func TestClosedDB_QueryCodexCycleHistory(t *testing.T) {
 
 func TestClosedDB_QueryCodexCyclesSince(t *testing.T) {
 	s := closedStore(t)
-	_, err := s.QueryCodexCyclesSince("five_hour", time.Now().UTC())
+	_, err := s.QueryCodexCyclesSince(DefaultCodexAccountID, "five_hour", time.Now().UTC())
 	if err == nil {
 		t.Fatal("Expected error from QueryCodexCyclesSince on closed DB")
 	}
@@ -459,7 +459,7 @@ func TestClosedDB_QueryCodexCyclesSince(t *testing.T) {
 
 func TestClosedDB_QueryCodexUtilizationSeries(t *testing.T) {
 	s := closedStore(t)
-	_, err := s.QueryCodexUtilizationSeries("five_hour", time.Now().UTC())
+	_, err := s.QueryCodexUtilizationSeries(DefaultCodexAccountID, "five_hour", time.Now().UTC())
 	if err == nil {
 		t.Fatal("Expected error from QueryCodexUtilizationSeries on closed DB")
 	}
@@ -467,7 +467,7 @@ func TestClosedDB_QueryCodexUtilizationSeries(t *testing.T) {
 
 func TestClosedDB_QueryCodexCycleOverview(t *testing.T) {
 	s := closedStore(t)
-	_, err := s.QueryCodexCycleOverview("sub", 10)
+	_, err := s.QueryCodexCycleOverview(DefaultCodexAccountID, "sub", 10)
 	if err == nil {
 		t.Fatal("Expected error from QueryCodexCycleOverview on closed DB")
 	}
@@ -484,7 +484,7 @@ func TestClosedDB_QueryAllCodexQuotaNames(t *testing.T) {
 func TestClosedDB_UpdateCodexCycleResetsAt(t *testing.T) {
 	s := closedStore(t)
 	now := time.Now().UTC()
-	err := s.UpdateCodexCycleResetsAt("five_hour", &now)
+	err := s.UpdateCodexCycleResetsAt(DefaultCodexAccountID, "five_hour", &now)
 	if err == nil {
 		t.Fatal("Expected error from UpdateCodexCycleResetsAt on closed DB")
 	}

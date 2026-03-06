@@ -69,6 +69,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc("/api/push/vapid", handler.PushVAPIDKey)
 	mux.HandleFunc("/api/push/subscribe", handler.PushSubscribe)
 	mux.HandleFunc("/api/push/test", handler.PushTest)
+	mux.HandleFunc("/api/codex/profiles", handler.CodexProfiles)
 
 	// Service worker (must be served from root scope, no-cache)
 	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {

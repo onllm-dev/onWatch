@@ -2500,7 +2500,76 @@ select.settings-input {
 }
 
 /* ═══════════════════════════════════════════
-   17. REDUCED MOTION
+   17. CODEX PROFILE TABS
+   ═══════════════════════════════════════════ */
+
+.codex-profile-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-inset);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  margin-left: 8px;
+}
+
+.codex-profile-tabs::before {
+  content: '';
+  width: 1px;
+  background: var(--border-default);
+  margin: 4px 6px 4px 0;
+}
+
+.profile-tab {
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.profile-tab:hover {
+  color: var(--text-primary);
+  background: var(--surface-card);
+}
+
+.profile-tab.active {
+  background: var(--surface-card);
+  color: var(--accent-codex);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+}
+
+/* Codex account headers for "both" view */
+.codex-account-header {
+  grid-column: 1 / -1;
+  padding: 8px 0 4px;
+  margin-top: 8px;
+}
+
+.codex-account-header:first-child {
+  margin-top: 0;
+}
+
+.codex-account-name {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-codex);
+  opacity: 0.8;
+}
+
+.codex-account-cards {
+  display: contents;
+}
+
+/* ═══════════════════════════════════════════
+   18. REDUCED MOTION
    ═══════════════════════════════════════════ */
 
 @media (prefers-reduced-motion: reduce) {

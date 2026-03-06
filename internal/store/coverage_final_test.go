@@ -20,7 +20,7 @@ func TestCodexStore_QueryCodexCycleOverview_CompletedWithSnapshots(t *testing.T)
 	resetsAt := base.Add(5 * time.Hour)
 
 	// Create a cycle
-	_, err = s.CreateCodexCycle("five_hour", base, &resetsAt)
+	_, err = s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", base, &resetsAt)
 	if err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
@@ -43,12 +43,12 @@ func TestCodexStore_QueryCodexCycleOverview_CompletedWithSnapshots(t *testing.T)
 	}
 
 	// Close the cycle
-	err = s.CloseCodexCycle("five_hour", base.Add(5*time.Hour), 80, 72)
+	err = s.CloseCodexCycle(DefaultCodexAccountID, "five_hour", base.Add(5*time.Hour), 80, 72)
 	if err != nil {
 		t.Fatalf("CloseCodexCycle: %v", err)
 	}
 
-	rows, err := s.QueryCodexCycleOverview("five_hour", 10)
+	rows, err := s.QueryCodexCycleOverview(DefaultCodexAccountID, "five_hour", 10)
 	if err != nil {
 		t.Fatalf("QueryCodexCycleOverview: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestCodexStore_QueryCodexCycleOverview_NoCycles(t *testing.T) {
 	}
 	defer s.Close()
 
-	rows, err := s.QueryCodexCycleOverview("five_hour", 10)
+	rows, err := s.QueryCodexCycleOverview(DefaultCodexAccountID, "five_hour", 10)
 	if err != nil {
 		t.Fatalf("QueryCodexCycleOverview: %v", err)
 	}
@@ -98,16 +98,16 @@ func TestCodexStore_QueryCodexCycleOverview_NoSnapshots(t *testing.T) {
 	base := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	resetsAt := base.Add(5 * time.Hour)
 
-	_, err = s.CreateCodexCycle("five_hour", base, &resetsAt)
+	_, err = s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", base, &resetsAt)
 	if err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
-	err = s.CloseCodexCycle("five_hour", base.Add(5*time.Hour), 0, 0)
+	err = s.CloseCodexCycle(DefaultCodexAccountID, "five_hour", base.Add(5*time.Hour), 0, 0)
 	if err != nil {
 		t.Fatalf("CloseCodexCycle: %v", err)
 	}
 
-	rows, err := s.QueryCodexCycleOverview("five_hour", 10)
+	rows, err := s.QueryCodexCycleOverview(DefaultCodexAccountID, "five_hour", 10)
 	if err != nil {
 		t.Fatalf("QueryCodexCycleOverview: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestCodexStore_QueryCodexCycleOverview_DefaultLimit(t *testing.T) {
 	}
 	defer s.Close()
 
-	rows, err := s.QueryCodexCycleOverview("five_hour", 0)
+	rows, err := s.QueryCodexCycleOverview(DefaultCodexAccountID, "five_hour", 0)
 	if err != nil {
 		t.Fatalf("QueryCodexCycleOverview: %v", err)
 	}
@@ -192,12 +192,12 @@ func TestCodexStore_QueryActiveCodexCycle_WithResetsAt(t *testing.T) {
 	now := time.Now().UTC()
 	resetsAt := now.Add(5 * time.Hour)
 
-	_, err = s.CreateCodexCycle("five_hour", now, &resetsAt)
+	_, err = s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", now, &resetsAt)
 	if err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
 
-	cycle, err := s.QueryActiveCodexCycle("five_hour")
+	cycle, err := s.QueryActiveCodexCycle(DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryActiveCodexCycle: %v", err)
 	}
@@ -220,12 +220,12 @@ func TestCodexStore_QueryActiveCodexCycle_NoResetsAt(t *testing.T) {
 	defer s.Close()
 
 	now := time.Now().UTC()
-	_, err = s.CreateCodexCycle("five_hour", now, nil)
+	_, err = s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", now, nil)
 	if err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
 
-	cycle, err := s.QueryActiveCodexCycle("five_hour")
+	cycle, err := s.QueryActiveCodexCycle(DefaultCodexAccountID, "five_hour")
 	if err != nil {
 		t.Fatalf("QueryActiveCodexCycle: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestCodexStore_QueryActiveCodexCycle_Empty(t *testing.T) {
 	}
 	defer s.Close()
 
-	cycle, err := s.QueryActiveCodexCycle("nonexistent")
+	cycle, err := s.QueryActiveCodexCycle(DefaultCodexAccountID, "nonexistent")
 	if err != nil {
 		t.Fatalf("QueryActiveCodexCycle: %v", err)
 	}
@@ -1233,7 +1233,7 @@ func TestCodexStore_QueryCodexCycleOverview_ActiveWithSnapshots(t *testing.T) {
 	base := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	resetsAt := base.Add(5 * time.Hour)
 
-	_, err = s.CreateCodexCycle("five_hour", base, &resetsAt)
+	_, err = s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", base, &resetsAt)
 	if err != nil {
 		t.Fatalf("CreateCodexCycle: %v", err)
 	}
@@ -1254,7 +1254,7 @@ func TestCodexStore_QueryCodexCycleOverview_ActiveWithSnapshots(t *testing.T) {
 		}
 	}
 
-	rows, err := s.QueryCodexCycleOverview("five_hour", 10)
+	rows, err := s.QueryCodexCycleOverview(DefaultCodexAccountID, "five_hour", 10)
 	if err != nil {
 		t.Fatalf("QueryCodexCycleOverview: %v", err)
 	}

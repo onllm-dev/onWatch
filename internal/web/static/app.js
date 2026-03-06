@@ -60,7 +60,13 @@ function getCurrentProvider() {
 }
 
 function providerParam() {
-  return `provider=${getCurrentProvider()}`;
+  const provider = getCurrentProvider();
+  let param = `provider=${provider}`;
+  // Append account parameter for Codex provider
+  if (provider === 'codex' || provider === 'both') {
+    param += codexAccountParam();
+  }
+  return param;
 }
 
 // ── Global State ──
@@ -107,6 +113,9 @@ const State = {
   overviewSort: { key: null, dir: 'desc' },
   overviewPage: 1,
   overviewPageSize: 10,
+  // Codex profile selection (multi-account beta)
+  codexAccount: 1,
+  codexProfiles: [],
 };
 
 // ── Persistence ──
@@ -129,6 +138,132 @@ function saveHiddenQuotas() {
   } catch (e) {
     // silent
   }
+}
+
+// ── Codex Profile Persistence (multi-account beta) ──
+
+function loadCodexAccount() {
+  try {
+    const stored = localStorage.getItem('onwatch-codex-account');
+    if (stored) {
+      const parsed = parseInt(stored, 10);
+      State.codexAccount = isNaN(parsed) ? 1 : parsed;
+    }
+  } catch (e) {
+    State.codexAccount = 1;
+  }
+}
+
+function saveCodexAccount(account) {
+  State.codexAccount = account;
+  try {
+    localStorage.setItem('onwatch-codex-account', account);
+  } catch (e) {
+    // silent
+  }
+}
+
+async function loadCodexProfiles() {
+  try {
+    const res = await authFetch(`${API_BASE}/api/codex/profiles`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.profiles && data.profiles.length > 0) {
+      // Filter out "default" profile if there are custom profiles
+      const customProfiles = data.profiles.filter(p => p.name !== 'default');
+      if (customProfiles.length > 0) {
+        State.codexProfiles = customProfiles;
+      } else {
+        State.codexProfiles = data.profiles;
+      }
+      populateCodexProfileTabs();
+      updateCodexProfileTabsVisibility();
+    }
+  } catch (e) {
+    // silent — profiles endpoint may not exist on older versions
+  }
+}
+
+function populateCodexProfileTabs() {
+  const container = document.getElementById('codex-profile-tabs');
+  if (!container) return;
+
+  // Only show tabs if there are multiple profiles
+  if (State.codexProfiles.length <= 1) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.innerHTML = '';
+
+  for (const profile of State.codexProfiles) {
+    const btn = document.createElement('button');
+    btn.className = 'profile-tab' + (profile.id === State.codexAccount ? ' active' : '');
+    btn.dataset.accountId = profile.id;
+    btn.textContent = profile.name;
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', profile.id === State.codexAccount ? 'true' : 'false');
+    btn.addEventListener('click', () => switchCodexProfile(profile.id));
+    container.appendChild(btn);
+  }
+
+  // If current account not in list, reset to first profile
+  if (!State.codexProfiles.find(p => p.id === State.codexAccount)) {
+    State.codexAccount = State.codexProfiles[0].id;
+    saveCodexAccount(State.codexAccount);
+    updateProfileTabsActive();
+  }
+}
+
+function switchCodexProfile(accountId) {
+  if (State.codexAccount === accountId) return;
+  State.codexAccount = accountId;
+  saveCodexAccount(accountId);
+  updateProfileTabsActive();
+  refreshAll();
+}
+
+function updateProfileTabsActive() {
+  const container = document.getElementById('codex-profile-tabs');
+  if (!container) return;
+  container.querySelectorAll('.profile-tab').forEach(tab => {
+    const isActive = parseInt(tab.dataset.accountId, 10) === State.codexAccount;
+    tab.classList.toggle('active', isActive);
+    tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+}
+
+// Show/hide profile tabs based on current provider and profile count
+function updateCodexProfileTabsVisibility() {
+  const container = document.getElementById('codex-profile-tabs');
+  if (!container) return;
+
+  const provider = getCurrentProvider();
+  const showTabs = (provider === 'codex' || provider === 'both') && State.codexProfiles.length > 1;
+  container.style.display = showTabs ? 'flex' : 'none';
+}
+
+// Refresh all dashboard data (used when switching profiles)
+function refreshAll() {
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) refreshBtn.classList.add('spinning');
+  Promise.all([
+    fetchCurrent(),
+    fetchDeepInsights(),
+    fetchHistory(),
+    fetchCycles(),
+    fetchSessions()
+  ]).finally(() => {
+    if (refreshBtn) setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
+  });
+}
+
+function initCodexProfileTabs() {
+  // Profile tabs are initialized via populateCodexProfileTabs after loading profiles
+}
+
+function codexAccountParam() {
+  return State.codexAccount ? `&account=${encodeURIComponent(State.codexAccount)}` : '';
 }
 
 // ── Insight Visibility (DB-persisted) ──
@@ -313,13 +448,13 @@ const copilotDisplayNames = {
 };
 
 const codexDisplayNames = {
-  five_hour: '5-Hour Limit',
+  five_hour: 'LLMs',
   seven_day: 'Weekly All-Model',
   code_review: 'Review Requests'
 };
 
 const codexSessionLabels = {
-  sub: '5-Hour Limit',
+  sub: 'LLMs',
   search: 'Weekly All-Model'
 };
 
@@ -375,7 +510,7 @@ const renewalCategories = {
     { label: 'Completions', groupBy: 'completions' }
   ],
   codex: [
-    { label: '5-Hour', groupBy: 'five_hour' },
+    { label: 'LLMs', groupBy: 'five_hour' },
     { label: 'Weekly', groupBy: 'seven_day' },
     { label: 'Review', groupBy: 'code_review' }
   ],
@@ -391,7 +526,7 @@ const overviewQuotaDisplayNames = {
   toolcall: 'Tool Calls',
   tokens: 'Tokens',
   time: 'Time',
-  five_hour: '5-Hour',
+  five_hour: '5-Hour', // Default for Anthropic
   seven_day: 'Weekly',
   code_review: 'Review',
   seven_day_sonnet: 'Sonnet',
@@ -403,6 +538,24 @@ const overviewQuotaDisplayNames = {
   antigravity_claude_gpt: 'Claude + GPT Quota',
   antigravity_gemini_pro: 'Gemini Pro Quota',
   antigravity_gemini_flash: 'Gemini Flash Quota'
+};
+
+// Provider-specific display name overrides
+const providerQuotaDisplayOverrides = {
+  codex: {
+    five_hour: 'LLMs'
+  }
+};
+
+// Get quota display name with provider context
+function getQuotaDisplayName(quotaKey, provider) {
+  // Check for provider-specific override
+  if (provider && providerQuotaDisplayOverrides[provider]) {
+    const override = providerQuotaDisplayOverrides[provider][quotaKey];
+    if (override) return override;
+  }
+  // Fall back to generic display name
+  return overviewQuotaDisplayNames[quotaKey] || quotaKey;
 };
 
 // ── Anthropic Dynamic Card Rendering ──
@@ -1271,6 +1424,57 @@ function renderCodexQuotaCards(quotas, containerId) {
   });
 }
 
+// Render Codex cards for a specific account (used in "both" view with multiple accounts)
+function renderCodexQuotaCardsForAccount(quotas, container, accountName) {
+  // Add account header
+  const header = document.createElement('div');
+  header.className = 'codex-account-header';
+  header.innerHTML = `<span class="codex-account-name">${accountName}</span>`;
+  container.appendChild(header);
+
+  // Add cards for this account
+  const cardsHtml = quotas.map((q, i) => {
+    const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
+    const displayName = q.displayName || codexDisplayNames[q.name] || q.name;
+    const cardPercent = q.cardPercent != null ? q.cardPercent : (q.utilization || 0);
+    const utilPct = cardPercent.toFixed(1);
+    const cardLabel = q.cardLabel || 'Utilization';
+    const status = q.status || 'healthy';
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+
+    return `<article class="quota-card codex-card" data-quota="${q.name}" data-provider="codex" data-account="${accountName}" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+      <header class="card-header">
+        <h2 class="quota-title">
+          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+          ${displayName}
+        </h2>
+        <span class="countdown">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent">${utilPct}%</span>
+        <span class="usage-fraction">${cardLabel}</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(cardPercent)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" style="width: ${utilPct}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time">${q.resetsAt ? 'Resets: ' + formatDateTime(q.resetsAt) : ''}</span>
+      </footer>
+    </article>`;
+  }).join('');
+
+  const cardsDiv = document.createElement('div');
+  cardsDiv.className = 'codex-account-cards';
+  cardsDiv.innerHTML = cardsHtml;
+  container.appendChild(cardsDiv);
+}
+
 function updateCodexCard(quota) {
   const key = `codex-${quota.name}`;
   const prev = State.currentQuotas[key];
@@ -1394,7 +1598,7 @@ async function loadCodexModalChart(quotaName) {
   const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : 'hour';
 
   try {
-    const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=codex`);
+    const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=codex${codexAccountParam()}`);
     if (!res.ok) return;
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) return;
@@ -1432,7 +1636,7 @@ async function loadCodexModalChart(quotaName) {
 
 async function loadCodexModalCycles(quotaName) {
   try {
-    const res = await authFetch(`${API_BASE}/api/cycles?type=${quotaName}&provider=codex`);
+    const res = await authFetch(`${API_BASE}/api/cycles?type=${quotaName}&provider=codex${codexAccountParam()}`);
     if (!res.ok) return;
     const cycles = await res.json();
     const tbody = document.getElementById('modal-cycles-tbody');
@@ -1908,7 +2112,19 @@ async function fetchCurrent() {
             data.copilot.quotas.forEach(q => updateCopilotCard(q));
           }
         }
-        if (data.codex && data.codex.quotas) {
+        // Handle multiple Codex accounts or single account
+        if (data.codexAccounts && data.codexAccounts.length > 0) {
+          // Multiple accounts: render cards for each account
+          const container = document.getElementById('quota-grid-codex-both');
+          if (container) {
+            container.innerHTML = '';
+            for (const account of data.codexAccounts) {
+              if (account.quotas) {
+                renderCodexQuotaCardsForAccount(account.quotas, container, account.accountName);
+              }
+            }
+          }
+        } else if (data.codex && data.codex.quotas) {
           const container = document.getElementById('quota-grid-codex-both');
           if (container && container.children.length === 0) {
             renderCodexQuotaCards(data.codex.quotas, 'quota-grid-codex-both');
@@ -3003,7 +3219,8 @@ async function fetchCycles() {
     // Calculate limit based on range: 1 minute polling = rangeDays * 24 * 60 records
     // Cap at 50000 for performance (enough for ~35 days of 1-minute data)
     const dynamicLimit = Math.min(50000, rangeDays * 24 * 60);
-    const url = `/api/logging-history?provider=${provider}&limit=${dynamicLimit}&range=${rangeDays}`;
+    const accountParam = provider === 'codex' ? codexAccountParam() : '';
+    const url = `/api/logging-history?provider=${provider}&limit=${dynamicLimit}&range=${rangeDays}${accountParam}`;
     try {
       const res = await authFetch(url);
       if (!res.ok) throw new Error('Failed to fetch logging history');
@@ -3155,7 +3372,7 @@ function renderCyclesTable() {
   }
 
   quotaNames.forEach(qn => {
-    const displayName = overviewQuotaDisplayNames[qn] || qn;
+    const displayName = getQuotaDisplayName(qn, provider);
     const suffix = usePercent ? ' %' : '';
     headerHtml += `<th data-sort-key="cq_${qn}" role="button" tabindex="0">${displayName}${suffix} <span class="sort-arrow"></span></th>`;
   });
@@ -3562,7 +3779,7 @@ function renderSessionsTable() {
       return mainRow + detailRow;
     }).join('');
   } else if (isCodex) {
-    // Codex: show Session, Start, End, Duration, 5-Hour, Weekly
+    // Codex: show Session, Start, End, Duration, LLMs, Weekly
     tbody.innerHTML = pageData.map(session => {
       const c = session._computed;
       const isExpanded = State.expandedSessionId === session.id;
@@ -3959,7 +4176,8 @@ async function loadModalCycles(quotaType, effectiveProvider) {
     apiType = quotaType === 'toolCalls' ? 'toolcall' : quotaType;
   }
   try {
-    const res = await authFetch(`${API_BASE}/api/cycles?type=${apiType}&provider=${provider}`);
+    const accountParam = provider === 'codex' ? codexAccountParam() : '';
+    const res = await authFetch(`${API_BASE}/api/cycles?type=${apiType}&provider=${provider}${accountParam}`);
     if (!res.ok) return;
     const cycles = await res.json();
 
@@ -4131,7 +4349,8 @@ async function fetchCycleOverview() {
         break;
       }
     }
-    url = `/api/cycle-overview?provider=${effectiveProvider}&groupBy=${State.overviewGroupBy}&limit=50`;
+    const accountParam = effectiveProvider === 'codex' ? codexAccountParam() : '';
+    url = `/api/cycle-overview?provider=${effectiveProvider}&groupBy=${State.overviewGroupBy}&limit=50${accountParam}`;
   } else {
     url = `/api/cycle-overview?${providerParam()}&groupBy=${State.overviewGroupBy}&limit=50`;
   }
@@ -4170,7 +4389,7 @@ function renderOverviewTable() {
 
   quotaNames.forEach(qn => {
     const isPrimary = qn === State.overviewGroupBy;
-    const displayName = overviewQuotaDisplayNames[qn] || qn;
+    const displayName = getQuotaDisplayName(qn, overviewProv);
     const suffix = usePercent ? ' %' : '';
     const maxIndicator = isPrimary ? ' Max' : '';
     headerHtml += `<th data-sort-key="cq_${qn}" role="button" tabindex="0" ${isPrimary ? 'class="overview-primary-col"' : ''}>${displayName}${maxIndicator}${suffix} <span class="sort-arrow"></span></th>`;
@@ -5141,7 +5360,7 @@ const _overrideQuotasByProvider = {
     { key: 'monthly_limit', label: 'Monthly Limit' },
   ],
   codex: [
-    { key: 'five_hour', label: '5-Hour Limit' },
+    { key: 'five_hour', label: 'LLMs' },
     { key: 'seven_day', label: 'Weekly All-Model' },
   ],
   synthetic: [
@@ -5282,6 +5501,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load persisted state (localStorage only — no API calls before auth check)
   loadHiddenQuotas();
+  loadCodexAccount();
 
   initTheme();
   initTimezoneBadge();
@@ -5296,6 +5516,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (document.getElementById('usage-chart') || document.getElementById('both-view')) {
     initChart();
+
+    // Initialize Codex profile selector (multi-account beta)
+    initCodexProfileTabs();
+    if (getCurrentProvider() === 'codex' || getCurrentProvider() === 'both') {
+      loadCodexProfiles();
+    }
 
     // Critical path: fetch above-fold data in parallel
     Promise.all([
