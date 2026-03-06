@@ -483,7 +483,7 @@ button, input, select { font-family: inherit; }
 
 .quota-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 20px;
   margin-bottom: 28px;
 }
@@ -865,7 +865,7 @@ button, input, select { font-family: inherit; }
 /* Insight Cards Grid */
 .insights-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
 }
 .insights-cards:empty { display: none; }
@@ -1892,7 +1892,7 @@ button, input, select { font-family: inherit; }
   .cycles-filters-inline .filter-pills { flex: 1; }
   .filter-pill { flex: 1; text-align: center; padding: 5px 6px; font-size: 11px; }
   .insights-stats { grid-template-columns: repeat(2, 1fr); }
-  .insights-cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .insights-cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
   .welcome-title { font-size: 22px; }
   .both-view { grid-template-columns: 1fr; gap: 16px; }
   .chart-container.both-charts { grid-template-columns: 1fr; }
