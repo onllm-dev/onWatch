@@ -793,6 +793,7 @@ func run() error {
 	if codexMgr != nil {
 		codexMgr.SetPollingCheck(func() bool { return isPollingEnabled("codex") })
 		// Per-account polling check for Codex multi-account support
+		// Uses flat keys like "codex:1", "codex:2" for per-account settings
 		codexMgr.SetAccountPollingCheck(func(accountID int64) bool {
 			v, err := db.GetSetting("provider_visibility")
 			if err != nil || v == "" {
@@ -802,22 +803,21 @@ func run() error {
 			if json.Unmarshal([]byte(v), &vis) != nil {
 				return true
 			}
-			codexVis, ok := vis["codex"].(map[string]interface{})
-			if !ok {
-				return true
+			// Check for per-account key first (e.g., "codex:1")
+			accountKey := fmt.Sprintf("codex:%d", accountID)
+			if accountVis, ok := vis[accountKey].(map[string]interface{}); ok {
+				if polling, exists := accountVis["polling"]; exists {
+					if p, ok := polling.(bool); ok {
+						return p
+					}
+				}
 			}
-			accounts, ok := codexVis["accounts"].(map[string]interface{})
-			if !ok {
-				return true // No per-account settings, default to enabled
-			}
-			accountKey := fmt.Sprintf("%d", accountID)
-			accountSettings, ok := accounts[accountKey].(map[string]interface{})
-			if !ok {
-				return true // No settings for this account, default to enabled
-			}
-			if polling, exists := accountSettings["polling"]; exists {
-				if p, ok := polling.(bool); ok {
-					return p
+			// Fallback to global codex setting
+			if codexVis, ok := vis["codex"].(map[string]interface{}); ok {
+				if polling, exists := codexVis["polling"]; exists {
+					if p, ok := polling.(bool); ok {
+						return p
+					}
 				}
 			}
 			return true

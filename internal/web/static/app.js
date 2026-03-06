@@ -4948,47 +4948,89 @@ function populateTimezoneSelect() {
   });
 }
 
-function populateProviderToggles(visibility) {
+async function populateProviderToggles(visibility) {
   const container = document.getElementById('provider-toggles');
   if (!container) return;
+
+  // Base providers (non-Codex)
   const providers = [
     { key: 'anthropic', name: 'Anthropic', desc: 'Claude Code usage tracking' },
     { key: 'synthetic', name: 'Synthetic', desc: 'Synthetic API quota monitoring' },
     { key: 'zai', name: 'Z.ai', desc: 'Z.ai API usage tracking' },
-    { key: 'codex', name: 'Codex', desc: 'Codex API usage tracking' },
   ];
 
   container.innerHTML = '';
+
+  // Render base providers
   providers.forEach(p => {
     const vis = visibility[p.key] || { dashboard: true, polling: true };
-    const row = document.createElement('div');
-    row.className = 'settings-toggle-row settings-toggle-row-dual';
-    row.innerHTML = `
-      <div class="settings-toggle-info">
-        <div class="settings-toggle-label">${p.name}</div>
-        <div class="settings-toggle-sublabel">${p.desc}</div>
-      </div>
-      <div class="settings-toggle-group">
-        <div class="settings-toggle-item">
-          <div class="settings-toggle-item-label">Telemetry</div>
-          <div class="settings-toggle-item-hint">Track usage data in background</div>
-          <label class="settings-toggle" title="Telemetry">
-            <input type="checkbox" data-provider="${p.key}" data-role="polling" ${vis.polling !== false ? 'checked' : ''}>
-            <span class="settings-toggle-track"></span>
-          </label>
-        </div>
-        <div class="settings-toggle-item">
-          <div class="settings-toggle-item-label">Dashboard</div>
-          <div class="settings-toggle-item-hint">Show as individual tab</div>
-          <label class="settings-toggle" title="Dashboard">
-            <input type="checkbox" data-provider="${p.key}" data-role="dashboard" ${vis.dashboard !== false ? 'checked' : ''}>
-            <span class="settings-toggle-track"></span>
-          </label>
-        </div>
-      </div>
-    `;
-    container.appendChild(row);
+    container.appendChild(createProviderToggleRow(p.key, p.name, p.desc, vis));
   });
+
+  // Fetch Codex accounts and render per-account toggles
+  try {
+    const res = await authFetch(`${API_BASE}/api/codex/profiles`);
+    if (res.ok) {
+      const data = await res.json();
+      const profiles = data.profiles || [];
+
+      if (profiles.length > 1) {
+        // Multiple accounts: show per-account toggles
+        profiles.forEach(profile => {
+          const key = `codex:${profile.id}`;
+          const vis = visibility[key] || { dashboard: true, polling: true };
+          container.appendChild(createProviderToggleRow(
+            key,
+            `Codex — ${profile.name}`,
+            `ChatGPT account: ${profile.name}`,
+            vis
+          ));
+        });
+      } else {
+        // Single or no accounts: show single Codex toggle
+        const vis = visibility['codex'] || { dashboard: true, polling: true };
+        container.appendChild(createProviderToggleRow('codex', 'Codex', 'Codex API usage tracking', vis));
+      }
+    } else {
+      // Fallback: show single Codex toggle
+      const vis = visibility['codex'] || { dashboard: true, polling: true };
+      container.appendChild(createProviderToggleRow('codex', 'Codex', 'Codex API usage tracking', vis));
+    }
+  } catch (e) {
+    // Fallback: show single Codex toggle
+    const vis = visibility['codex'] || { dashboard: true, polling: true };
+    container.appendChild(createProviderToggleRow('codex', 'Codex', 'Codex API usage tracking', vis));
+  }
+}
+
+function createProviderToggleRow(key, name, desc, vis) {
+  const row = document.createElement('div');
+  row.className = 'settings-toggle-row settings-toggle-row-dual';
+  row.innerHTML = `
+    <div class="settings-toggle-info">
+      <div class="settings-toggle-label">${name}</div>
+      <div class="settings-toggle-sublabel">${desc}</div>
+    </div>
+    <div class="settings-toggle-group">
+      <div class="settings-toggle-item">
+        <div class="settings-toggle-item-label">Telemetry</div>
+        <div class="settings-toggle-item-hint">Track usage data in background</div>
+        <label class="settings-toggle" title="Telemetry">
+          <input type="checkbox" data-provider="${key}" data-role="polling" ${vis.polling !== false ? 'checked' : ''}>
+          <span class="settings-toggle-track"></span>
+        </label>
+      </div>
+      <div class="settings-toggle-item">
+        <div class="settings-toggle-item-label">Dashboard</div>
+        <div class="settings-toggle-item-hint">Show as individual tab</div>
+        <label class="settings-toggle" title="Dashboard">
+          <input type="checkbox" data-provider="${key}" data-role="dashboard" ${vis.dashboard !== false ? 'checked' : ''}>
+          <span class="settings-toggle-track"></span>
+        </label>
+      </div>
+    </div>
+  `;
+  return row;
 }
 
 function gatherSettings() {
