@@ -74,3 +74,7 @@ go test -race ./... && go vet ./...   # Pre-commit (mandatory)
 - `internal/api/anthropic_token_windows.go`: Writes to credentials file
 - Refresh tokens are one-time use (OAuth rotation) - MUST save new refresh token after each refresh
 - See: [issue #16](https://github.com/onllm-dev/onWatch/issues/16), [anthropics/claude-code#31021](https://github.com/anthropics/claude-code/issues/31021)
+
+## Style
+
+- Use `-` (hyphen) instead of `—` (em dash) in all text
