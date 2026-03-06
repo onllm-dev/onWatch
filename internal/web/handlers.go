@@ -152,6 +152,14 @@ func (h *Handler) SetNotifier(n Notifier) {
 	h.notifier = n
 }
 
+// getPollIntervalSec returns the poll interval in seconds, defaulting to 120 if not configured.
+func (h *Handler) getPollIntervalSec() int {
+	if h.config != nil && h.config.PollInterval > 0 {
+		return int(h.config.PollInterval.Seconds())
+	}
+	return 120
+}
+
 // GetSessionStore returns the session store for token eviction.
 func (h *Handler) GetSessionStore() *SessionStore {
 	return h.sessions
@@ -457,6 +465,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		"HasCopilot":      hasCopilot,
 		"HasCodex":        hasCodex,
 		"HasAntigravity":  hasAntigravity,
+		"PollIntervalSec": h.getPollIntervalSec(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

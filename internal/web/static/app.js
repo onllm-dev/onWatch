@@ -579,6 +579,8 @@ async function loadAnthropicModalChart(quotaName) {
   if (State.modalChart) { State.modalChart.destroy(); State.modalChart = null; }
 
   const range = State.currentRange || '6h';
+  const rangeKey = range.toLowerCase();
+  const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : 'hour';
 
   try {
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=anthropic`);
@@ -587,20 +589,19 @@ async function loadAnthropicModalChart(quotaName) {
     if (!Array.isArray(data) || data.length === 0) return;
 
     const colors = getThemeColors();
-    const chartData = data.map(d => d[quotaName] || 0);
-    const maxVal = Math.max(...chartData, 0);
+    const chartData = data.map(d => ({ x: new Date(d.capturedAt), y: d[quotaName] || 0 }));
+    const maxVal = Math.max(...data.map(d => d[quotaName] || 0), 0);
     let yMax = maxVal <= 0 ? 10 : maxVal < 5 ? 10 : Math.min(Math.max(Math.ceil((maxVal * 1.2) / 5) * 5, 10), 100);
 
     State.modalChart = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: data.map(d => formatChartXAxisLabel(d.capturedAt, range)),
         datasets: [(() => { const c = anthropicChartColorMap[quotaName] || { border: '#D97706', bg: 'rgba(217, 119, 6, 0.08)' }; return {
           label: anthropicDisplayNames[quotaName] || quotaName,
           data: chartData,
           borderColor: c.border,
           backgroundColor: c.bg,
-          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5
+          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, spanGaps: false
         }; })()]
       },
       options: {
@@ -610,7 +611,7 @@ async function loadAnthropicModalChart(quotaName) {
           tooltip: { backgroundColor: colors.surfaceContainer, titleColor: colors.onSurface, bodyColor: colors.text, borderColor: colors.outline, borderWidth: 1, callbacks: { label: c => `${c.parsed.y.toFixed(1)}%` } }
         },
         scales: {
-          x: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6 } },
+          x: { type: 'time', time: { unit: timeUnit, displayFormats: { minute: 'HH:mm', hour: ['7d', '30d', '15d', '24h', '3d'].includes(rangeKey) ? 'MMM d, HH:mm' : 'HH:mm', day: 'MMM d' } }, grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' } },
           y: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, callback: v => v + '%' }, min: 0, max: yMax }
         }
       }
@@ -838,6 +839,8 @@ function openCopilotModal(quotaName, providerOverride) {
 
 async function loadCopilotModalChart(quotaName) {
   const range = State.currentRange || '6h';
+  const rangeKey = range.toLowerCase();
+  const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : 'hour';
   try {
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=copilot`);
     if (!res.ok) return;
@@ -866,20 +869,19 @@ async function loadCopilotModalChart(quotaName) {
     }
 
     const colors = getThemeColors();
-    const chartData = data.map(d => d.usagePercent);
-    const maxVal = Math.max(...chartData, 10);
+    const chartData = data.map(d => ({ x: new Date(d.capturedAt), y: d.usagePercent }));
+    const maxVal = Math.max(...data.map(d => d.usagePercent), 10);
     const yMax = Math.min(Math.ceil(maxVal / 10) * 10 + 10, 110);
 
     State.modalChart = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: data.map(d => formatChartXAxisLabel(d.capturedAt, range)),
         datasets: [(() => { const c = copilotChartColorMap[quotaName] || { border: '#6e40c9', bg: 'rgba(110, 64, 201, 0.08)' }; return {
           label: copilotDisplayNames[quotaName] || quotaName,
           data: chartData,
           borderColor: c.border,
           backgroundColor: c.bg,
-          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5
+          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, spanGaps: false
         }; })()]
       },
       options: {
@@ -889,7 +891,7 @@ async function loadCopilotModalChart(quotaName) {
           tooltip: { backgroundColor: colors.surfaceContainer, titleColor: colors.onSurface, bodyColor: colors.text, borderColor: colors.outline, borderWidth: 1, callbacks: { label: c => `${c.parsed.y.toFixed(1)}%` } }
         },
         scales: {
-          x: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6 } },
+          x: { type: 'time', time: { unit: timeUnit, displayFormats: { minute: 'HH:mm', hour: ['7d', '30d', '15d', '24h', '3d'].includes(rangeKey) ? 'MMM d, HH:mm' : 'HH:mm', day: 'MMM d' } }, grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' } },
           y: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, callback: v => v + '%' }, min: 0, max: yMax }
         }
       }
@@ -1132,6 +1134,9 @@ function openAntigravityModal(groupKey, providerOverride) {
 
 async function loadAntigravityModalChart(groupKey) {
   const range = State.currentRange || '6h';
+  const rangeKey = range.toLowerCase();
+  const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : 'hour';
+  const colors = getThemeColors();
   try {
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=antigravity`);
     if (!res.ok) return;
@@ -1146,17 +1151,20 @@ async function loadAntigravityModalChart(groupKey) {
 
     if (State.modalChart) State.modalChart.destroy();
 
+    const labels = data.labels || [];
+    const chartData = (modelDataset.data || []).map((y, i) => ({ x: new Date(labels[i]), y }));
+
     State.modalChart = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: data.labels || [],
         datasets: [{
           label: modelDataset.label || groupKey,
-          data: modelDataset.data || [],
+          data: chartData,
           borderColor: '#6e40c9',
           backgroundColor: 'rgba(110, 64, 201, 0.1)',
           tension: 0.3,
-          fill: true
+          fill: true,
+          spanGaps: false
         }]
       },
       options: {
@@ -1164,8 +1172,8 @@ async function loadAntigravityModalChart(groupKey) {
         maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
-          y: { beginAtZero: true, max: 100, title: { display: true, text: 'Usage %' } },
-          x: { title: { display: true, text: 'Time' } }
+          x: { type: 'time', time: { unit: timeUnit, displayFormats: { minute: 'HH:mm', hour: ['7d', '30d', '15d', '24h', '3d'].includes(rangeKey) ? 'MMM d, HH:mm' : 'HH:mm', day: 'MMM d' } }, grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' }, title: { display: true, text: 'Time' } },
+          y: { beginAtZero: true, max: 100, title: { display: true, text: 'Usage %' } }
         }
       }
     });
@@ -1382,6 +1390,8 @@ async function loadCodexModalChart(quotaName) {
   if (State.modalChart) { State.modalChart.destroy(); State.modalChart = null; }
 
   const range = State.currentRange || '6h';
+  const rangeKey = range.toLowerCase();
+  const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : 'hour';
 
   try {
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=codex`);
@@ -1390,20 +1400,19 @@ async function loadCodexModalChart(quotaName) {
     if (!Array.isArray(data) || data.length === 0) return;
 
     const colors = getThemeColors();
-    const chartData = data.map(d => d[quotaName] || 0);
-    const maxVal = Math.max(...chartData, 0);
+    const chartData = data.map(d => ({ x: new Date(d.capturedAt), y: d[quotaName] || 0 }));
+    const maxVal = Math.max(...data.map(d => d[quotaName] || 0), 0);
     const yMax = maxVal <= 0 ? 10 : maxVal < 5 ? 10 : Math.min(Math.max(Math.ceil((maxVal * 1.2) / 5) * 5, 10), 100);
 
     State.modalChart = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: data.map(d => formatChartXAxisLabel(d.capturedAt, range)),
         datasets: [(() => { const c = codexChartColorMap[quotaName] || { border: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.08)' }; return {
           label: codexDisplayNames[quotaName] || quotaName,
           data: chartData,
           borderColor: c.border,
           backgroundColor: c.bg,
-          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5
+          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, spanGaps: false
         }; })()]
       },
       options: {
@@ -1413,7 +1422,7 @@ async function loadCodexModalChart(quotaName) {
           tooltip: { backgroundColor: colors.surfaceContainer, titleColor: colors.onSurface, bodyColor: colors.text, borderColor: colors.outline, borderWidth: 1, callbacks: { label: c => `${c.parsed.y.toFixed(1)}%` } }
         },
         scales: {
-          x: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6 } },
+          x: { type: 'time', time: { unit: timeUnit, displayFormats: { minute: 'HH:mm', hour: ['7d', '30d', '15d', '24h', '3d'].includes(rangeKey) ? 'MMM d, HH:mm' : 'HH:mm', day: 'MMM d' } }, grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' } },
           y: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, callback: v => v + '%' }, min: 0, max: yMax }
         }
       }
@@ -2386,7 +2395,8 @@ function computeYMax(datasets, chart) {
   let maxVal = 0;
   visibleDatasets.forEach(ds => {
     ds.data.forEach(v => {
-      const val = typeof v === 'number' ? v : 0;
+      // Handle both {x, y} objects and raw numbers
+      const val = typeof v === 'number' ? v : (v && typeof v.y === 'number' ? v.y : 0);
       if (val > maxVal) maxVal = val;
     });
   });
@@ -2479,7 +2489,12 @@ function initChart() {
         }
       },
       scales: {
-        x: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6 } },
+        x: {
+          type: 'time',
+          time: { unit: 'hour', displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'MMM d' } },
+          grid: { color: colors.grid, drawBorder: false },
+          ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' }
+        },
         y: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, callback: v => v + '%' }, min: 0, max: State.chartYMax }
       }
     }
@@ -2543,19 +2558,30 @@ async function fetchHistory(range) {
     if (provider === 'antigravity') {
       // Antigravity history: { labels: [...], datasets: [...] }
       const defaultColors = ['#D97757', '#10B981', '#3B82F6'];
-      State.chart.data.labels = (data.labels || []).map(label => formatChartXAxisLabel(label, range));
-      State.chart.data.datasets = (data.datasets || []).map((ds, idx) => ({
-        label: ds.label || ds.modelId,
-        data: ds.data || [],
-        borderColor: ds.borderColor || defaultColors[idx % defaultColors.length],
-        backgroundColor: (ds.borderColor || defaultColors[idx % defaultColors.length]) + '15',
-        fill: true,
-        tension: 0.4,
-        borderWidth: 2,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        hidden: State.hiddenQuotas.has(ds.modelId)
-      }));
+      const labels = data.labels || [];
+      const datasets = [];
+      (data.datasets || []).forEach((ds, idx) => {
+        const rawData = (ds.data || []).map((y, i) => ({ x: new Date(labels[i]), y }));
+        const color = ds.borderColor || defaultColors[idx % defaultColors.length];
+        const { data: processedData, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        const mainDataset = {
+          label: ds.label || ds.modelId,
+          data: processedData,
+          borderColor: color,
+          backgroundColor: color + '15',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: pointRadii,
+          pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(ds.modelId),
+          spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color)
+        };
+        datasets.push(mainDataset);
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
@@ -2563,7 +2589,6 @@ async function fetchHistory(range) {
     }
 
     const historyRows = Array.isArray(data) ? data : [];
-    State.chart.data.labels = historyRows.map(d => formatChartXAxisLabel(d.capturedAt, range));
 
     if (provider === 'anthropic') {
       // Anthropic history: array of { capturedAt, five_hour, seven_day, ... }
@@ -2574,18 +2599,27 @@ async function fetchHistory(range) {
       });
       const sortedKeys = [...quotaKeys].sort();
       let fallbackIdx = 0;
-      State.chart.data.datasets = sortedKeys.map((key) => {
+      const datasets = [];
+      sortedKeys.forEach((key) => {
         const color = anthropicChartColorMap[key] || anthropicChartColorFallback[fallbackIdx++ % anthropicChartColorFallback.length];
-        return {
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        const mainDataset = {
           label: anthropicDisplayNames[key] || key,
-          data: historyRows.map(d => d[key] || 0),
+          data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
-          fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
-          hidden: State.hiddenQuotas.has(key)
+          fill: true, tension: 0.4, borderWidth: 2,
+          pointRadius: pointRadii,
+          pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key),
+          spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
         };
+        datasets.push(mainDataset);
       });
-      State.chart.data.labels = historyRows.map(d => formatChartXAxisLabel(d.capturedAt, range));
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
@@ -2601,21 +2635,30 @@ async function fetchHistory(range) {
       });
       const sortedKeys = [...quotaKeys].sort();
       let fallbackIdx = 0;
-      State.chart.data.datasets = sortedKeys.map((key) => {
+      const datasets = [];
+      sortedKeys.forEach((key) => {
         const color = copilotChartColorMap[key] || copilotChartColorFallback[fallbackIdx++ % copilotChartColorFallback.length];
-        return {
+        const rawData = historyRows.map(d => {
+          const q = d.quotas ? d.quotas.find(q => q.name === key) : null;
+          return { x: new Date(d.capturedAt), y: q ? (q.usagePercent || 0) : 0 };
+        });
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        const mainDataset = {
           label: copilotDisplayNames[key] || key,
-          data: historyRows.map(d => {
-            const q = d.quotas ? d.quotas.find(q => q.name === key) : null;
-            return q ? (q.usagePercent || 0) : 0;
-          }),
+          data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
-          fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
-          hidden: State.hiddenQuotas.has(key)
+          fill: true, tension: 0.4, borderWidth: 2,
+          pointRadius: pointRadii,
+          pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key),
+          spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
         };
+        datasets.push(mainDataset);
       });
-      State.chart.data.labels = historyRows.map(d => formatChartXAxisLabel(d.capturedAt, range));
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
@@ -2630,18 +2673,25 @@ async function fetchHistory(range) {
       });
       const sortedKeys = [...quotaKeys].sort();
       let fallbackIdx = 0;
-      State.chart.data.datasets = sortedKeys.map((key) => {
+      const datasets = [];
+      sortedKeys.forEach((key) => {
         const color = codexChartColorMap[key] || codexChartColorFallback[fallbackIdx++ % codexChartColorFallback.length];
-        return {
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        const mainDataset = {
           label: codexDisplayNames[key] || key,
-          data: historyRows.map(d => d[key] || 0),
+          data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
-          fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
-          hidden: State.hiddenQuotas.has(key)
+          fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key),
+          spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
         };
+        datasets.push(mainDataset);
       });
-      State.chart.data.labels = historyRows.map(d => formatChartXAxisLabel(d.capturedAt, range));
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
@@ -2649,39 +2699,37 @@ async function fetchHistory(range) {
     }
 
     if (provider === 'zai') {
-      while (State.chart.data.datasets.length > 3) State.chart.data.datasets.pop();
-      if (State.chart.data.datasets.length < 3) {
-        State.chart.data.datasets = [
-          { label: 'Tokens', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
-          { label: 'Time', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('timeLimit') },
-          { label: 'Tool Calls', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('toolCalls') },
-        ];
-      }
-      State.chart.data.datasets[0].label = 'Tokens';
-      State.chart.data.datasets[0].data = historyRows.map(d => d.tokensPercent);
-      State.chart.data.datasets[0].hidden = State.hiddenQuotas.has('tokensLimit');
-      State.chart.data.datasets[1].label = 'Time';
-      State.chart.data.datasets[1].data = historyRows.map(d => d.timePercent);
-      State.chart.data.datasets[1].hidden = State.hiddenQuotas.has('timeLimit');
-      State.chart.data.datasets[2].label = 'Tool Calls';
-      State.chart.data.datasets[2].data = historyRows.map(d => d.toolCallsPercent);
-      State.chart.data.datasets[2].hidden = State.hiddenQuotas.has('toolCalls');
+      const style = getComputedStyle(document.documentElement);
+      const datasets = [];
+      const configs = [
+        { label: 'Tokens', key: 'tokensPercent', hiddenKey: 'tokensLimit', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+        { label: 'Time', key: 'timePercent', hiddenKey: 'timeLimit', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
+        { label: 'Tool Calls', key: 'toolCallsPercent', hiddenKey: 'toolCalls', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
+      ];
+      configs.forEach(cfg => {
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        const mainDataset = { label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, hidden: State.hiddenQuotas.has(cfg.hiddenKey), spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
+        datasets.push(mainDataset);
+      });
+      State.chart.data.datasets = datasets;
     } else {
-      while (State.chart.data.datasets.length < 3) {
-        State.chart.data.datasets.push({ label: '', data: [], borderColor: '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 });
-      }
-      while (State.chart.data.datasets.length > 3) State.chart.data.datasets.pop();
-      State.chart.data.datasets[0].label = 'Subscription';
-      State.chart.data.datasets[0].data = historyRows.map(d => d.subscriptionPercent);
-      State.chart.data.datasets[0].hidden = State.hiddenQuotas.has('subscription');
-      State.chart.data.datasets[1].label = 'Search';
-      State.chart.data.datasets[1].data = historyRows.map(d => d.searchPercent);
-      State.chart.data.datasets[1].hidden = State.hiddenQuotas.has('search');
-      State.chart.data.datasets[2].label = 'Tool Calls';
-      State.chart.data.datasets[2].data = historyRows.map(d => d.toolCallsPercent);
-      State.chart.data.datasets[2].hidden = State.hiddenQuotas.has('toolCalls');
+      const datasets = [];
+      const configs = [
+        { label: 'Subscription', key: 'subscriptionPercent', hiddenKey: 'subscription', color: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+        { label: 'Search', key: 'searchPercent', hiddenKey: 'search', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
+        { label: 'Tool Calls', key: 'toolCallsPercent', hiddenKey: 'toolCalls', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
+      ];
+      configs.forEach(cfg => {
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        const mainDataset = { label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, hidden: State.hiddenQuotas.has(cfg.hiddenKey), spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
+        datasets.push(mainDataset);
+      });
+      State.chart.data.datasets = datasets;
     }
 
+    updateTimeScale(State.chart, range);
     State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
     State.chart.options.scales.y.max = State.chartYMax;
     State.chart.update();
@@ -2733,18 +2781,21 @@ function updateBothCharts(data, range = '6h') {
   if (synCanvas && data.synthetic) {
     if (State.chartSyn) State.chartSyn.destroy();
     const synData = data.synthetic;
-    const synDatasets = [
-      { label: 'Subscription', data: synData.map(d => d.subscriptionPercent), borderColor: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13,148,136,0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
-      { label: 'Search', data: synData.map(d => d.searchPercent), borderColor: style.getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245,158,11,0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
-      { label: 'Tool Calls', data: synData.map(d => d.toolCallsPercent), borderColor: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59,130,246,0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 }
-    ];
+    const synDatasets = [];
+    [
+      { label: 'Subscription', key: 'subscriptionPercent', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13,148,136,0.06)' },
+      { label: 'Search', key: 'searchPercent', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245,158,11,0.06)' },
+      { label: 'Tool Calls', key: 'toolCallsPercent', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59,130,246,0.06)' }
+    ].forEach(cfg => {
+      const rawData = synData.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
+      const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+      const main = { label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
+      synDatasets.push(main);
+    });
     State.chartSyn = new Chart(synCanvas, {
       type: 'line',
-      data: {
-        labels: synData.map(d => formatChartXAxisLabel(d.capturedAt, range)),
-        datasets: synDatasets
-      },
-      options: buildChartOptions(colors, computeYMax(synDatasets))
+      data: { datasets: synDatasets },
+      options: buildChartOptions(colors, computeYMax(synDatasets), range)
     });
   }
 
@@ -2753,18 +2804,21 @@ function updateBothCharts(data, range = '6h') {
   if (zaiCanvas && data.zai) {
     if (State.chartZai) State.chartZai.destroy();
     const zaiData = data.zai;
-    const zaiDatasets = [
-      { label: 'Tokens', data: zaiData.map(d => d.tokensPercent), borderColor: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13,148,136,0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
-      { label: 'Time', data: zaiData.map(d => d.timePercent), borderColor: style.getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245,158,11,0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
-      { label: 'Tool Calls', data: zaiData.map(d => d.toolCallsPercent), borderColor: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59,130,246,0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 }
-    ];
+    const zaiDatasets = [];
+    [
+      { label: 'Tokens', key: 'tokensPercent', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13,148,136,0.06)' },
+      { label: 'Time', key: 'timePercent', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245,158,11,0.06)' },
+      { label: 'Tool Calls', key: 'toolCallsPercent', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59,130,246,0.06)' }
+    ].forEach(cfg => {
+      const rawData = zaiData.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
+      const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+      const main = { label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
+      zaiDatasets.push(main);
+    });
     State.chartZai = new Chart(zaiCanvas, {
       type: 'line',
-      data: {
-        labels: zaiData.map(d => formatChartXAxisLabel(d.capturedAt, range)),
-        datasets: zaiDatasets
-      },
-      options: buildChartOptions(colors, computeYMax(zaiDatasets))
+      data: { datasets: zaiDatasets },
+      options: buildChartOptions(colors, computeYMax(zaiDatasets), range)
     });
   }
 
@@ -2773,28 +2827,24 @@ function updateBothCharts(data, range = '6h') {
   if (anthCanvas && hasAnthData) {
     if (State.chartAnth) State.chartAnth.destroy();
     const anthData = data.anthropic;
-    // Discover dynamic quota keys
     const quotaKeys = new Set();
     anthData.forEach(d => {
       Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
     });
     const sortedKeys = [...quotaKeys].sort();
-    const anthDatasets = (() => { let fi = 0; return sortedKeys.map((key) => {
+    const anthDatasets = [];
+    let fi = 0;
+    sortedKeys.forEach((key) => {
       const color = anthropicChartColorMap[key] || anthropicChartColorFallback[fi++ % anthropicChartColorFallback.length];
-      return {
-        label: anthropicDisplayNames[key] || key,
-        data: anthData.map(d => d[key] || 0),
-        borderColor: color.border, backgroundColor: color.bg,
-        fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4
-      };
-    }); })();
+      const rawData = anthData.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+      const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+      const main = { label: anthropicDisplayNames[key] || key, data: data, borderColor: color.border, backgroundColor: color.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, spanGaps: true, segment: getSegmentStyle(gapSegments, color.border) };
+      anthDatasets.push(main);
+    });
     State.chartAnth = new Chart(anthCanvas, {
       type: 'line',
-      data: {
-        labels: anthData.map(d => formatChartXAxisLabel(d.capturedAt, range)),
-        datasets: anthDatasets
-      },
-      options: buildChartOptions(colors, computeYMax(anthDatasets))
+      data: { datasets: anthDatasets },
+      options: buildChartOptions(colors, computeYMax(anthDatasets), range)
     });
   }
 
@@ -2808,36 +2858,32 @@ function updateBothCharts(data, range = '6h') {
       Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
     });
     const sortedKeys = [...quotaKeys].sort();
-    const codexDatasets = (() => {
-      let fi = 0;
-      return sortedKeys.map((key) => {
-        const color = codexChartColorMap[key] || codexChartColorFallback[fi++ % codexChartColorFallback.length];
-        return {
-          label: codexDisplayNames[key] || key,
-          data: codexData.map(d => d[key] || 0),
-          borderColor: color.border,
-          backgroundColor: color.bg,
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-          pointHoverRadius: 4
-        };
-      });
-    })();
+    const codexDatasets = [];
+    let fi = 0;
+    sortedKeys.forEach((key) => {
+      const color = codexChartColorMap[key] || codexChartColorFallback[fi++ % codexChartColorFallback.length];
+      const rawData = codexData.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+      const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+      const main = { label: codexDisplayNames[key] || key, data: data, borderColor: color.border, backgroundColor: color.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, spanGaps: true, segment: getSegmentStyle(gapSegments, color.border) };
+      codexDatasets.push(main);
+    });
 
     State.chartCodex = new Chart(codexCanvas, {
       type: 'line',
-      data: {
-        labels: codexData.map(d => formatChartXAxisLabel(d.capturedAt, range)),
-        datasets: codexDatasets
-      },
-      options: buildChartOptions(colors, computeYMax(codexDatasets))
+      data: { datasets: codexDatasets },
+      options: buildChartOptions(colors, computeYMax(codexDatasets), range)
     });
   }
 }
 
-function buildChartOptions(colors, yMax) {
+function buildChartOptions(colors, yMax, range) {
+  const rangeKey = (range || '6h').toLowerCase();
+  const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : ['24h', '3d'].includes(rangeKey) ? 'hour' : 'hour';
+  const displayFormats = {
+    minute: 'HH:mm',
+    hour: ['7d', '30d', '15d', '24h', '3d'].includes(rangeKey) ? 'MMM d, HH:mm' : 'HH:mm',
+    day: 'MMM d'
+  };
   return {
     responsive: true,
     maintainAspectRatio: false,
@@ -2851,12 +2897,96 @@ function buildChartOptions(colors, yMax) {
         bodyColor: colors.text || '#CAC4D0',
         borderColor: colors.outline || '#938F99',
         borderWidth: 1, padding: 12, displayColors: true, usePointStyle: true,
-        callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%` }
+        callbacks: {
+          label: ctx => ctx.parsed.y != null ? `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%` : null
+        }
       }
     },
     scales: {
-      x: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 4 } },
+      x: {
+        type: 'time',
+        time: { unit: timeUnit, displayFormats },
+        grid: { color: colors.grid, drawBorder: false },
+        ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' }
+      },
       y: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, callback: v => v + '%' }, min: 0, max: yMax || 100 }
+    }
+  };
+}
+
+// Get configured poll interval from page (in seconds), default 120s
+function getPollIntervalMs() {
+  const app = document.querySelector('.app');
+  const intervalSec = app ? parseInt(app.dataset.pollInterval, 10) : 120;
+  return (intervalSec || 120) * 1000;
+}
+
+// Analyze data and return gap indices + point visibility
+// Solid lines for continuous data, dotted/faded for gaps
+function processDataWithGaps(dataPoints, range = '6h') {
+  // Dynamic gap threshold: multiplier × poll interval
+  // 1h: 3 polls, 6h: 5 polls, 24h: 10 polls, 7d: 30 polls, 30d: 60 polls
+  const pollMs = getPollIntervalMs();
+  const multipliers = {
+    '1h': 3,
+    '6h': 5,
+    '24h': 10,
+    '7d': 30,
+    '30d': 60
+  };
+  const gapThresholdMs = pollMs * (multipliers[range] || 5);
+
+  if (!dataPoints || dataPoints.length === 0) return { data: [], gapSegments: new Set(), pointRadii: [] };
+  if (dataPoints.length === 1) return { data: dataPoints, gapSegments: new Set(), pointRadii: [2] };
+
+  const gapSegments = new Set();
+  const pointRadii = [];
+  const getTime = pt => pt.x instanceof Date ? pt.x.getTime() : new Date(pt.x).getTime();
+
+  for (let i = 0; i < dataPoints.length; i++) {
+    const prevGap = i === 0 ? Infinity : getTime(dataPoints[i]) - getTime(dataPoints[i - 1]);
+    const nextGap = i === dataPoints.length - 1 ? Infinity : getTime(dataPoints[i + 1]) - getTime(dataPoints[i]);
+
+    // Mark segment as gap
+    if (nextGap > gapThresholdMs) {
+      gapSegments.add(i);
+    }
+
+    // Show point if isolated or at edge of a short burst
+    const isIsolated = prevGap > gapThresholdMs && nextGap > gapThresholdMs;
+    const isEdgeOfBurst = (prevGap > gapThresholdMs || nextGap > gapThresholdMs);
+    pointRadii.push(isIsolated ? 2 : (isEdgeOfBurst ? 1 : 0));
+  }
+
+  return { data: dataPoints, gapSegments, pointRadii };
+}
+
+// Create segment styling: solid for continuous, dotted/faded for gaps
+function getSegmentStyle(gapSegments, baseColor) {
+  let fadedColor = baseColor;
+  if (baseColor.startsWith('#')) {
+    const r = parseInt(baseColor.slice(1, 3), 16);
+    const g = parseInt(baseColor.slice(3, 5), 16);
+    const b = parseInt(baseColor.slice(5, 7), 16);
+    fadedColor = `rgba(${r}, ${g}, ${b}, 0.35)`;
+  }
+  return {
+    borderColor: ctx => gapSegments.has(ctx.p0DataIndex) ? fadedColor : baseColor,
+    borderDash: ctx => gapSegments.has(ctx.p0DataIndex) ? [5, 3] : []
+  };
+}
+
+
+function updateTimeScale(chart, range) {
+  if (!chart || !chart.options || !chart.options.scales || !chart.options.scales.x) return;
+  const rangeKey = (range || '6h').toLowerCase();
+  const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : 'hour';
+  chart.options.scales.x.time = {
+    unit: timeUnit,
+    displayFormats: {
+      minute: 'HH:mm',
+      hour: ['7d', '30d', '15d', '24h', '3d'].includes(rangeKey) ? 'MMM d, HH:mm' : 'HH:mm',
+      day: 'MMM d'
     }
   };
 }
@@ -3744,6 +3874,8 @@ async function loadModalChart(quotaType, effectiveProvider) {
   }
 
   const range = State.currentRange || '6h';
+  const rangeKey = range.toLowerCase();
+  const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : 'hour';
 
   const provider = effectiveProvider || getCurrentProvider();
   try {
@@ -3763,9 +3895,9 @@ async function loadModalChart(quotaType, effectiveProvider) {
     const bgMap = { subscription: 'rgba(13,148,136,0.08)', search: 'rgba(245,158,11,0.08)', toolCalls: 'rgba(59,130,246,0.08)', tokensLimit: 'rgba(13,148,136,0.08)', timeLimit: 'rgba(245,158,11,0.08)' };
 
     const colors = getThemeColors();
-    const chartData = historyRows.map(d => d[datasetKey]);
-    const maxVal = Math.max(...chartData, 0);
-    
+    const chartData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[datasetKey] }));
+    const maxVal = Math.max(...historyRows.map(d => d[datasetKey]), 0);
+
     // Dynamic Y-axis: if max is 0 or very low, show up to 10%
     // Otherwise add 20% padding, rounded to nearest 5
     let yMax;
@@ -3780,7 +3912,6 @@ async function loadModalChart(quotaType, effectiveProvider) {
     State.modalChart = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: historyRows.map(d => formatChartXAxisLabel(d.capturedAt, range)),
         datasets: [{
           label: (provider === 'zai' ? { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit', toolCalls: 'Tool Calls' } : quotaNames)[quotaType] || quotaType,
           data: chartData,
@@ -3790,7 +3921,8 @@ async function loadModalChart(quotaType, effectiveProvider) {
           tension: 0.3,
           borderWidth: 2.5,
           pointRadius: 0,
-          pointHoverRadius: 5
+          pointHoverRadius: 5,
+          spanGaps: false
         }]
       },
       options: {
@@ -3808,7 +3940,7 @@ async function loadModalChart(quotaType, effectiveProvider) {
           }
         },
         scales: {
-          x: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6 } },
+          x: { type: 'time', time: { unit: timeUnit, displayFormats: { minute: 'HH:mm', hour: ['7d', '30d', '15d', '24h', '3d'].includes(rangeKey) ? 'MMM d, HH:mm' : 'HH:mm', day: 'MMM d' } }, grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' } },
           y: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, callback: v => v + '%' }, min: 0, max: yMax }
         }
       }
