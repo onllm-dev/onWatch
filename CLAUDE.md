@@ -66,3 +66,11 @@ go test -race ./... && go vet ./...   # Pre-commit (mandatory)
 **Containers:** `IsDockerEnvironment()` in `config.go` detects Docker/K8s. Containers run foreground only.
 
 **Release:** `./app.sh --release` → cross-compile 5 platforms → include all binaries in GitHub release.
+
+**Anthropic Rate Limit Bypass:** Anthropic's usage API has aggressive rate limits (~5 requests per token, then 429 for ~5 min). onWatch bypasses this by refreshing the OAuth token when rate limited - each new access token gets a fresh rate limit window. Implementation details:
+- `internal/agent/anthropic_agent.go`: Detects 429, calls `RefreshAnthropicToken`, saves new tokens, retries
+- `internal/api/anthropic_oauth.go`: OAuth token refresh endpoint (`console.anthropic.com/v1/oauth/token`)
+- `internal/api/anthropic_token_unix.go`: Writes to macOS Keychain + file for persistence
+- `internal/api/anthropic_token_windows.go`: Writes to credentials file
+- Refresh tokens are one-time use (OAuth rotation) - MUST save new refresh token after each refresh
+- See: [issue #16](https://github.com/onllm-dev/onWatch/issues/16), [anthropics/claude-code#31021](https://github.com/anthropics/claude-code/issues/31021)

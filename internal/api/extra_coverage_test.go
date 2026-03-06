@@ -665,14 +665,16 @@ func TestWriteAnthropicCredentials_Success(t *testing.T) {
 }
 
 func TestWriteAnthropicCredentials_NoFile(t *testing.T) {
-	// No credentials file exists - should fail gracefully
+	// No credentials file exists - on macOS/Linux this is OK because
+	// Keychain/keyring is the primary store. File write is skipped.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	// Don't create .claude directory
 	err := WriteAnthropicCredentials("token", "refresh", 3600)
-	if err == nil {
-		t.Fatal("expected error when credentials file doesn't exist")
+	// File not existing is OK (Keychain/keyring is primary).
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -2446,14 +2448,16 @@ func TestDetectCodexToken_WithAccessToken_ReturnsToken(t *testing.T) {
 
 func TestWriteAnthropicCredentials_FileNotFound(t *testing.T) {
 	// getCredentialsFilePath uses HOME. Set it to a temp dir that exists but
-	// has no .claude/.credentials.json → ReadFile fails → WriteAnthropicCredentials
-	// returns the ReadFile error.
+	// has no .claude/.credentials.json. On macOS/Linux, this is OK because
+	// Keychain/keyring is the primary store - file write is skipped silently.
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
 	err := WriteAnthropicCredentials("access_token", "refresh_token", 3600)
-	if err == nil {
-		t.Error("expected error when credentials file does not exist")
+	// File not existing is OK (Keychain/keyring is primary on macOS/Linux).
+	// writeCredentialsToFile returns nil when file doesn't exist.
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 

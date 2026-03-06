@@ -192,11 +192,73 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		// Rate limited — log at WARN (not ERROR), skip retry to avoid worsening it
+		// Rate limited (429) — attempt token refresh to get fresh rate limit window.
+		//
+		// WORKAROUND for Anthropic API rate limiting (GitHub issue #16):
+		// Anthropic's /api/oauth/usage endpoint has aggressive rate limits (~5 requests
+		// per token before 429). However, each NEW access token gets a fresh rate limit
+		// window. By refreshing the OAuth token when rate limited, we can bypass the
+		// limit and continue polling without waiting 5+ minutes.
+		//
+		// Key insight: Rate limits are per-access-token, not per-account. Refresh tokens
+		// are one-time use (OAuth refresh token rotation), so we MUST save both the new
+		// access token AND new refresh token after each refresh.
+		//
+		// See: https://github.com/anthropics/claude-code/issues/31021
 		if errors.Is(err, api.ErrAnthropicRateLimited) {
-			a.logger.Warn("Anthropic rate limited, will retry next poll")
-			return
+			a.logger.Warn("Anthropic rate limited (429), attempting token refresh bypass")
+
+			// Try to refresh token to get fresh rate limit window
+			if a.credsRefresh != nil {
+				if creds := a.credsRefresh(); creds != nil && creds.RefreshToken != "" {
+					newTokens, refreshErr := api.RefreshAnthropicToken(ctx, creds.RefreshToken)
+					if refreshErr != nil {
+						a.logger.Warn("Rate limit bypass failed - token refresh error",
+							"error", refreshErr)
+						return
+					}
+
+					// Save new tokens immediately (refresh tokens are one-time use!)
+					if saveErr := api.WriteAnthropicCredentials(newTokens.AccessToken, newTokens.RefreshToken, newTokens.ExpiresIn); saveErr != nil {
+						a.logger.Error("Failed to save refreshed credentials", "error", saveErr)
+						// Continue anyway - we have the new token in memory
+					}
+
+					// Update client with new token and retry
+					a.client.SetToken(newTokens.AccessToken)
+					a.lastToken = newTokens.AccessToken
+					a.logger.Info("Token refreshed to bypass rate limit, retrying...")
+
+					// Retry with fresh token
+					resp, err = a.client.FetchQuotas(ctx)
+					if err != nil {
+						if ctx.Err() != nil {
+							return
+						}
+						if errors.Is(err, api.ErrAnthropicRateLimited) {
+							a.logger.Warn("Still rate limited after token refresh, will retry next poll")
+						} else {
+							a.logger.Error("Retry after token refresh failed", "error", err)
+						}
+						return
+					}
+					// Success! Fall through to process the response
+					a.logger.Info("Rate limit bypassed successfully with refreshed token")
+				} else {
+					a.logger.Warn("Rate limit bypass unavailable - no refresh token")
+					return
+				}
+			} else {
+				a.logger.Warn("Rate limit bypass unavailable - no credentials refresh configured")
+				return
+			}
 		}
+
+		// Skip remaining error handling if rate limit was successfully bypassed (err is now nil)
+		if err == nil {
+			goto processResponse
+		}
+
 		// On auth error (401 or 403), force token re-read and retry once
 		if isAuthError(err) && a.tokenRefresh != nil {
 			a.logger.Warn("Anthropic auth error, forcing credential re-read", "error", err)
@@ -245,6 +307,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 		a.authFailCount = 0
 	}
 
+processResponse:
 	// Convert to snapshot and store
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)

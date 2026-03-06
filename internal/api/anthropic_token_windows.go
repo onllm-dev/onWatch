@@ -35,8 +35,17 @@ func detectAnthropicCredentialsPlatform(logger *slog.Logger) *AnthropicCredentia
 }
 
 // WriteAnthropicCredentials updates the credentials file with new OAuth tokens on Windows.
-// Creates a backup before modifying. Uses atomic write (temp file + rename).
-// Preserves existing fields (scopes, subscriptionType, etc.) from the original file.
+//
+// IMPORTANT: This function MUST be called after every successful OAuth token refresh
+// because Anthropic uses refresh token rotation (one-time use refresh tokens).
+// Failing to save the new refresh token will break future refresh attempts.
+//
+// Safety features:
+//   - Creates a backup (.credentials.json.bak) before modifying
+//   - Uses atomic write (temp file + rename) to prevent corruption
+//   - Preserves existing fields (scopes, subscriptionType, etc.) from the original file
+//
+// Related: https://github.com/onllm-dev/onWatch/issues/16
 func WriteAnthropicCredentials(accessToken, refreshToken string, expiresIn int) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
