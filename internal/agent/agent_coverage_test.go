@@ -162,24 +162,41 @@ func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 	// Wait for at least one request to be received by the server (confirms agent is running)
 	select {
 	case <-requestReceived:
-		// Server received request, agent is working
+		t.Log("Server received HTTP request from agent")
 	case <-time.After(3 * time.Second):
-		t.Logf("Agent logs: %s", logBuf.String())
+		t.Logf("Agent logs:\n%s", logBuf.String())
 		t.Fatal("timeout waiting for agent to make HTTP request")
 	}
 
 	// Now wait for snapshot to be stored (should be quick after request)
-	waitUntil(t, 2*time.Second, func() bool {
-		latest, _ := str.QueryLatest()
-		return latest != nil
-	}, "general snapshot to be stored")
+	// Don't use waitUntil since it doesn't print logs on failure
+	snapshotDeadline := time.Now().Add(2 * time.Second)
+	var snapshotFound bool
+	for time.Now().Before(snapshotDeadline) {
+		latest, err := str.QueryLatest()
+		if err != nil {
+			t.Logf("QueryLatest error: %v", err)
+		}
+		if latest != nil {
+			snapshotFound = true
+			t.Log("Snapshot found in store")
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if !snapshotFound {
+		t.Logf("Agent logs:\n%s", logBuf.String())
+		t.Fatal("timeout waiting for general snapshot to be stored")
+	}
+
 	cancel()
 	waitForAgentStop(t, errCh, 3*time.Second)
 
 	// Verify poll completed with notifier (no panics)
 	latest, _ := str.QueryLatest()
 	if latest == nil {
-		t.Logf("Agent logs: %s", logBuf.String())
+		t.Logf("Agent logs:\n%s", logBuf.String())
 		t.Error("expected snapshot after poll with notifier set")
 	}
 }
