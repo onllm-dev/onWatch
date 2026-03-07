@@ -36,6 +36,11 @@ type codexFloat64 struct {
 	Value *float64
 }
 
+const (
+	codexFiveHourWindowSeconds = int64(5 * 60 * 60)
+	codexSevenDayWindowSeconds = int64(7 * 24 * 60 * 60)
+)
+
 func (f *codexFloat64) UnmarshalJSON(data []byte) error {
 	s := strings.TrimSpace(string(data))
 	if s == "null" || s == "" {
@@ -116,8 +121,8 @@ func (r CodexUsageResponse) ToSnapshot(capturedAt time.Time) *CodexSnapshot {
 		snapshot.CreditsBalance = &balance
 	}
 
-	if r.RateLimit.PrimaryWindow != nil {
-		snapshot.Quotas = append(snapshot.Quotas, codexQuotaFromWindow("five_hour", r.RateLimit.PrimaryWindow))
+	if name := codexPrimaryQuotaName(r.PlanType, r.RateLimit.PrimaryWindow, r.RateLimit.SecondaryWindow); name != "" {
+		snapshot.Quotas = append(snapshot.Quotas, codexQuotaFromWindow(name, r.RateLimit.PrimaryWindow))
 	}
 	if r.RateLimit.SecondaryWindow != nil {
 		snapshot.Quotas = append(snapshot.Quotas, codexQuotaFromWindow("seven_day", r.RateLimit.SecondaryWindow))
@@ -140,6 +145,28 @@ func (r CodexUsageResponse) ToSnapshot(capturedAt time.Time) *CodexSnapshot {
 	}
 
 	return snapshot
+}
+
+func codexPrimaryQuotaName(planType string, primary, secondary *codexWindow) string {
+	if primary == nil {
+		return ""
+	}
+	// Paid plans typically expose 5-hour + weekly windows.
+	if secondary != nil {
+		return "five_hour"
+	}
+	// Free plans expose only a weekly window in primary.
+	if strings.EqualFold(strings.TrimSpace(planType), "free") {
+		return "seven_day"
+	}
+	switch {
+	case primary.LimitWindowSeconds >= codexSevenDayWindowSeconds:
+		return "seven_day"
+	case primary.LimitWindowSeconds > 0 && primary.LimitWindowSeconds <= codexFiveHourWindowSeconds:
+		return "five_hour"
+	default:
+		return "five_hour"
+	}
 }
 
 func codexQuotaFromWindow(name string, window *codexWindow) CodexQuota {

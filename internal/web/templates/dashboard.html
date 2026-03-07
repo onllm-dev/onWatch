@@ -17,7 +17,6 @@
             {{end}}
         </div>
         {{end}}
-        <!-- Codex profile tabs (shown only when Codex/All is selected and multiple profiles exist) -->
         <div class="codex-profile-tabs" id="codex-profile-tabs" role="tablist" aria-label="Select Codex profile" style="display: none;">
         </div>
         <div class="header-actions">
@@ -151,7 +150,7 @@
             {{if .HasCodex}}
             <section class="provider-column" data-provider="codex">
                 <h3 class="provider-label">Codex</h3>
-                <div id="codex-accounts-container" class="codex-accounts-container" data-provider="codex"></div>
+                <div id="codex-accounts-container-both" class="codex-accounts-container" data-provider="codex"></div>
             </section>
             {{end}}
             {{if .HasAntigravity}}
@@ -168,7 +167,7 @@
         <!-- Anthropic quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-anthropic" data-provider="anthropic"></div>
         {{else if eq .CurrentProvider "codex"}}
-        <!-- Codex quota cards (dynamically populated by JS) -->
+        <!-- Codex quota cards for selected profile (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-codex" data-provider="codex"></div>
         {{else if eq .CurrentProvider "antigravity"}}
         <!-- Antigravity quota cards (dynamically populated by JS) -->
@@ -403,7 +402,8 @@
             </div>
         </section>
 
-        <section class="sessions-section section-collapsible" id="sessions-section">
+        {{if ne .CurrentProvider "both"}}
+        <section class="sessions-section" id="sessions-section">
             <header class="section-header">
                 <h3 class="section-title">
                     <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -414,12 +414,6 @@
                     Session History
                 </h3>
                 <div class="table-controls">
-                    <button class="section-toggle" type="button" data-section-id="sessions-section" aria-expanded="true" title="Collapse Session History table">
-                        <svg class="section-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="m9 6 6 6-6 6"/>
-                        </svg>
-                        <span class="section-toggle-text">Collapse</span>
-                    </button>
                     <select class="page-size-select" id="sessions-page-size" aria-label="Rows per page">
                         <option value="10">10</option>
                         <option value="20">20</option>
@@ -443,8 +437,8 @@
                             {{else if eq .CurrentProvider "zai"}}
                             <th data-sort-key="snapshots" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "codex"}}
-                            <th data-sort-key="sub" role="button" tabindex="0">5-Hour Limit <span class="sort-arrow"></span></th>
-                            <th data-sort-key="search" role="button" tabindex="0">Weekly All-Model <span class="sort-arrow"></span></th>
+                            <th data-sort-key="sub" role="button" tabindex="0" id="codex-session-col-0">5-Hour Limit <span class="sort-arrow"></span></th>
+                            <th data-sort-key="search" role="button" tabindex="0" id="codex-session-col-1">Weekly All-Model <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "antigravity"}}
                             <th data-sort-key="sub" role="button" tabindex="0">Claude + GPT Quota <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Gemini Pro Quota <span class="sort-arrow"></span></th>
@@ -477,7 +471,7 @@
             </div>
         </section>
 
-        <section class="cycles-section section-collapsible" id="cycles-section">
+        <section class="cycles-section" id="cycles-section">
             <header class="section-header">
                 <h3 class="section-title">
                     <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -487,12 +481,6 @@
                     Logging History
                 </h3>
                 <div class="cycles-filters-inline">
-                    <button class="section-toggle" type="button" data-section-id="cycles-section" aria-expanded="true" title="Collapse Logging History table">
-                        <svg class="section-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="m9 6 6 6-6 6"/>
-                        </svg>
-                        <span class="section-toggle-text">Collapse</span>
-                    </button>
                     <div class="filter-group">
                         <span class="filter-label">Range</span>
                         <div class="filter-pills" id="cycle-range-pills" role="group" aria-label="Time range">
@@ -580,6 +568,7 @@
                 <div class="table-pagination" id="overview-pagination"></div>
             </div>
         </section>
+        {{end}}
     </main>
 
     <footer class="app-footer">
