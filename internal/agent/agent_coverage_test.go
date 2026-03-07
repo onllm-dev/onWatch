@@ -159,17 +159,17 @@ func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 		errCh <- agent.Run(ctx)
 	}()
 
-	// Wait for at least one request to be received by the server (confirms agent is running)
+	// Wait for at least one request to be received by the server (confirms agent is running).
+	var requestTimeout bool
 	select {
 	case <-requestReceived:
 		t.Log("Server received HTTP request from agent")
 	case <-time.After(3 * time.Second):
-		t.Logf("Agent logs:\n%s", logBuf.String())
-		t.Fatal("timeout waiting for agent to make HTTP request")
+		requestTimeout = true
 	}
 
-	// Now wait for snapshot to be stored (should be quick after request)
-	// Don't use waitUntil since it doesn't print logs on failure
+	// Now wait for snapshot to be stored (should be quick after request).
+	// Don't use waitUntil since it doesn't print logs on failure.
 	snapshotDeadline := time.Now().Add(2 * time.Second)
 	var snapshotFound bool
 	for time.Now().Before(snapshotDeadline) {
@@ -185,18 +185,24 @@ func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if !snapshotFound {
-		t.Logf("Agent logs:\n%s", logBuf.String())
-		t.Fatal("timeout waiting for general snapshot to be stored")
-	}
-
 	cancel()
 	waitForAgentStop(t, errCh, 3*time.Second)
+	logs := logBuf.String()
+
+	if requestTimeout {
+		t.Logf("Agent logs:\n%s", logs)
+		t.Fatal("timeout waiting for agent to make HTTP request")
+	}
+
+	if !snapshotFound {
+		t.Logf("Agent logs:\n%s", logs)
+		t.Fatal("timeout waiting for general snapshot to be stored")
+	}
 
 	// Verify poll completed with notifier (no panics)
 	latest, _ := str.QueryLatest()
 	if latest == nil {
-		t.Logf("Agent logs:\n%s", logBuf.String())
+		t.Logf("Agent logs:\n%s", logs)
 		t.Error("expected snapshot after poll with notifier set")
 	}
 }
