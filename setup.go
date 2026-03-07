@@ -71,7 +71,7 @@ func runSetup() error {
 		if anyProviderConfigured(existing) {
 			return addMissingProviders(reader, envFile, existing)
 		}
-		// .env exists but no providers — remove and start fresh
+		// .env exists but no providers - remove and start fresh
 		fmt.Printf("  %swarn%s  Existing .env found but no API keys configured\n", colorYellow, colorReset)
 		os.Remove(envFile)
 	}

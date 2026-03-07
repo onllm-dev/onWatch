@@ -80,7 +80,7 @@ func (t *ZaiTracker) processTokensQuota(snapshot *api.ZaiSnapshot) error {
 	}
 
 	if cycle == nil {
-		// First snapshot — create new cycle
+		// First snapshot - create new cycle
 		_, err := t.store.CreateZaiCycle(quotaType, snapshot.CapturedAt, snapshot.TokensNextResetTime)
 		if err != nil {
 			return fmt.Errorf("failed to create cycle: %w", err)
@@ -167,7 +167,7 @@ func (t *ZaiTracker) processTokensQuota(snapshot *api.ZaiSnapshot) error {
 		return nil
 	}
 
-	// Same cycle — update stats
+	// Same cycle - update stats
 	if t.hasLastValues {
 		delta := currentValue - t.lastTokensValue
 		if delta > 0 {
@@ -180,7 +180,7 @@ func (t *ZaiTracker) processTokensQuota(snapshot *api.ZaiSnapshot) error {
 			return fmt.Errorf("failed to update cycle: %w", err)
 		}
 	} else {
-		// First snapshot after restart — update peak if higher
+		// First snapshot after restart - update peak if higher
 		if int64(currentValue) > cycle.PeakValue {
 			cycle.PeakValue = int64(currentValue)
 			if err := t.store.UpdateZaiCycle(quotaType, cycle.PeakValue, cycle.TotalDelta); err != nil {
@@ -205,7 +205,7 @@ func (t *ZaiTracker) processTimeQuota(snapshot *api.ZaiSnapshot) error {
 	}
 
 	if cycle == nil {
-		// First snapshot — create new cycle (no nextReset for TIME_LIMIT)
+		// First snapshot - create new cycle (no nextReset for TIME_LIMIT)
 		_, err := t.store.CreateZaiCycle(quotaType, snapshot.CapturedAt, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create cycle: %w", err)
@@ -252,7 +252,7 @@ func (t *ZaiTracker) processTimeQuota(snapshot *api.ZaiSnapshot) error {
 		return nil
 	}
 
-	// Same cycle — update stats
+	// Same cycle - update stats
 	if t.hasLastValues {
 		delta := currentValue - t.lastTimeValue
 		if delta > 0 {

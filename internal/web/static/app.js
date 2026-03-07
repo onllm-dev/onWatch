@@ -122,7 +122,7 @@ const State = {
   hiddenInsights: new Set(),
   // Insights time range (1d / 7d / 30d)
   insightsRange: '7d',
-  // Anthropic session column names (sorted, max 3 — mirrors backend positional mapping)
+  // Anthropic session column names (sorted, max 3 - mirrors backend positional mapping)
   anthropicSessionQuotas: [],
   // Cycle Overview state
   allOverviewData: [],
@@ -139,6 +139,7 @@ const State = {
   allProvidersCurrent: null,
   allProvidersInsights: null,
   allProvidersHistory: null,
+  providerVisibility: {},
 };
 
 // ── Persistence ──
@@ -150,7 +151,7 @@ function loadHiddenQuotas() {
       State.hiddenQuotas = new Set(JSON.parse(stored));
     }
   } catch (e) {
-    // silent — localStorage read failure is non-critical
+    // silent - localStorage read failure is non-critical
     State.hiddenQuotas = new Set();
   }
 }
@@ -203,7 +204,7 @@ async function loadCodexProfiles() {
       updateCodexProfileTabsVisibility();
     }
   } catch (e) {
-    // silent — profiles endpoint may not exist on older versions
+    // silent - profiles endpoint may not exist on older versions
   }
 }
 
@@ -326,6 +327,15 @@ async function loadHiddenInsights() {
       const data = await res.json();
       if (data.hidden_insights && Array.isArray(data.hidden_insights)) {
         State.hiddenInsights = new Set(data.hidden_insights);
+      }
+      if (data.provider_visibility && typeof data.provider_visibility === 'object') {
+        State.providerVisibility = data.provider_visibility;
+      } else {
+        State.providerVisibility = {};
+      }
+
+      if (getCurrentProvider() === 'both' && (State.allProvidersCurrent || State.allProvidersInsights || State.allProvidersHistory)) {
+        renderAllProvidersView();
       }
     }
   } catch (e) {
@@ -867,7 +877,7 @@ async function loadAnthropicModalChart(quotaName) {
         }
       }
     });
-  } catch (err) { /* modal chart error — non-critical */ }
+  } catch (err) { /* modal chart error - non-critical */ }
 }
 
 async function loadAnthropicModalCycles(quotaName) {
@@ -894,7 +904,7 @@ async function loadAnthropicModalCycles(quotaName) {
         <td>${formatNumber(cycle.totalDelta || 0)}%</td>
       </tr>`;
     }).join('');
-  } catch (err) { /* modal cycles error — non-critical */ }
+  } catch (err) { /* modal cycles error - non-critical */ }
 }
 
 // ── Copilot Dynamic Card Rendering ──
@@ -1147,7 +1157,7 @@ async function loadCopilotModalChart(quotaName) {
         }
       }
     });
-  } catch (err) { /* modal chart error — non-critical */ }
+  } catch (err) { /* modal chart error - non-critical */ }
 }
 
 async function loadCopilotModalCycles(quotaName) {
@@ -1174,7 +1184,7 @@ async function loadCopilotModalCycles(quotaName) {
         <td>${formatNumber(cycle.totalDelta || 0)}</td>
       </tr>`;
     }).join('');
-  } catch (err) { /* modal cycles error — non-critical */ }
+  } catch (err) { /* modal cycles error - non-critical */ }
 }
 
 // ── Antigravity Dynamic Card Rendering ──
@@ -1428,7 +1438,7 @@ async function loadAntigravityModalChart(groupKey) {
         }
       }
     });
-  } catch (err) { /* modal chart error — non-critical */ }
+  } catch (err) { /* modal chart error - non-critical */ }
 }
 
 async function loadAntigravityModalCycles(groupKey) {
@@ -1459,7 +1469,7 @@ async function loadAntigravityModalCycles(groupKey) {
         <td>${formatNumber(cycle.totalDelta || 0)}%</td>
       </tr>`;
     }).join('');
-  } catch (err) { /* modal cycles error — non-critical */ }
+  } catch (err) { /* modal cycles error - non-critical */ }
 }
 
 // ── Codex Dynamic Card Rendering ──
@@ -1773,7 +1783,7 @@ async function loadCodexModalChart(quotaName) {
         }
       }
     });
-  } catch (err) { /* modal chart error — non-critical */ }
+  } catch (err) { /* modal chart error - non-critical */ }
 }
 
 async function loadCodexModalCycles(quotaName) {
@@ -1800,7 +1810,7 @@ async function loadCodexModalCycles(quotaName) {
         <td>${formatNumber(cycle.totalDelta || 0)}%</td>
       </tr>`;
     }).join('');
-  } catch (err) { /* modal cycles error — non-critical */ }
+  } catch (err) { /* modal cycles error - non-critical */ }
 }
 
 // ── Utilities ──
@@ -2342,7 +2352,7 @@ async function fetchCurrent() {
 
     });
   } catch (err) {
-    // fetch error — cards show fallback state
+    // fetch error - cards show fallback state
     const statusDot = document.getElementById('status-dot');
     if (statusDot) statusDot.classList.add('stale');
   }
@@ -2404,7 +2414,7 @@ async function fetchCodexUsage(options = {}) {
 
     visibleQuotas.forEach(q => updateCodexCard(q));
   } catch (err) {
-    // codex usage fetch error — non-critical
+    // codex usage fetch error - non-critical
   }
 }
 
@@ -2536,7 +2546,7 @@ async function fetchDeepInsights() {
     // Render hidden insights badge
     renderHiddenInsightsBadge();
   } catch (err) {
-    // insights fetch error — panel shows fallback state
+    // insights fetch error - panel shows fallback state
     if (provider === 'both') return;
     if (statsEl) statsEl.innerHTML = '';
     cardsEl.innerHTML = '<p class="insight-text">Unable to load insights.</p>';
@@ -2762,7 +2772,7 @@ const crosshairPlugin = {
 // ── Chart Init & Update ──
 
 function computeYMax(datasets, chart) {
-  // Filter out hidden datasets — check both ds.hidden and chart metadata visibility
+  // Filter out hidden datasets - check both ds.hidden and chart metadata visibility
   const visibleDatasets = datasets.filter((ds, i) => {
     if (ds.hidden) return false;
     if (chart && chart.getDatasetMeta(i).hidden) return false;
@@ -2806,7 +2816,7 @@ function initChart() {
   const provider = getCurrentProvider();
   let defaultDatasets;
   if (provider === 'antigravity') {
-    defaultDatasets = []; // Antigravity datasets are dynamic — populated when history data arrives
+    defaultDatasets = []; // Antigravity datasets are dynamic - populated when history data arrives
   } else if (provider === 'zai') {
     defaultDatasets = [
       { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
@@ -3119,7 +3129,7 @@ async function fetchHistory(range) {
     State.chart.options.scales.y.max = State.chartYMax;
     State.chart.update();
   } catch (err) {
-    // history fetch error — chart shows empty state
+    // history fetch error - chart shows empty state
   }
 }
 
@@ -3175,6 +3185,26 @@ function saveProviderCardCollapseState(state) {
   } catch (e) {
     // silent
   }
+}
+
+function isProviderTelemetryEnabled(provider, accountID) {
+  const visibility = State.providerVisibility && typeof State.providerVisibility === 'object'
+    ? State.providerVisibility
+    : {};
+
+  if (provider === 'codex' && accountID != null) {
+    const accountKey = `codex:${accountID}`;
+    const accountVis = visibility[accountKey];
+    if (accountVis && typeof accountVis === 'object' && accountVis.polling === false) {
+      return false;
+    }
+  }
+
+  const providerVis = visibility[provider];
+  if (providerVis && typeof providerVis === 'object' && providerVis.polling === false) {
+    return false;
+  }
+  return true;
 }
 
 function normalizeBothQuotas(provider, payload) {
@@ -3300,6 +3330,7 @@ function buildAllProviderEntries() {
 
       currentAccounts.forEach((account, idx) => {
         const accountID = account.accountId || account.id || idx + 1;
+        if (!isProviderTelemetryEnabled('codex', accountID)) return;
         const accountName = account.accountName || account.name || `Account ${idx + 1}`;
         const cardKey = sanitizeProviderCardKey(`codex-${accountID}`);
         const insightPayload = insightAccounts.find(acc => String(acc.accountId || '') === String(accountID))
@@ -3324,6 +3355,7 @@ function buildAllProviderEntries() {
 
     const payload = current[provider];
     if (!payload) return;
+    if (!isProviderTelemetryEnabled(provider)) return;
     entries.push({
       provider,
       cardKey: sanitizeProviderCardKey(provider),
@@ -3896,7 +3928,7 @@ async function fetchCycles() {
       State.isLoggingHistory = true;
       renderCyclesTable();
     } catch (err) {
-      // logging history fetch error — table shows empty state
+      // logging history fetch error - table shows empty state
     }
     return;
   }
@@ -3915,7 +3947,7 @@ async function fetchCycles() {
     State.isLoggingHistory = false;
     renderCyclesTable();
   } catch (err) {
-    // cycles fetch error — table shows empty state
+    // cycles fetch error - table shows empty state
   }
 }
 
@@ -4249,7 +4281,7 @@ async function fetchSessions() {
       updateCodexSessionHeaders();
     }
   } catch (err) {
-    // sessions fetch error — table shows empty state
+    // sessions fetch error - table shows empty state
   }
 }
 
@@ -4827,7 +4859,7 @@ async function loadModalChart(quotaType, effectiveProvider) {
       }
     });
   } catch (err) {
-    // modal chart error — non-critical
+    // modal chart error - non-critical
   }
 }
 
@@ -4865,7 +4897,7 @@ async function loadModalCycles(quotaType, effectiveProvider) {
       </tr>`;
     }).join('');
   } catch (err) {
-    // modal cycles error — non-critical
+    // modal cycles error - non-critical
   }
 }
 
@@ -5096,7 +5128,7 @@ async function fetchCycleOverview() {
     State.overviewQuotaNames = data.quotaNames || [];
     renderOverviewTable();
   } catch (e) {
-    // cycle overview fetch error — non-critical
+    // cycle overview fetch error - non-critical
   }
 }
 
@@ -5487,7 +5519,7 @@ async function checkForUpdate() {
       badge.hidden = true;
     }
   } catch (e) {
-    // Silent fail — update check is best-effort
+    // Silent fail - update check is best-effort
   }
 }
 
@@ -5505,7 +5537,7 @@ async function applyUpdate() {
       const data = await res.json();
       btn.textContent = 'Update failed';
       btn.disabled = false;
-      // update failed — error shown in UI
+      // update failed - error shown in UI
       setTimeout(() => { btn.textContent = origText; }, 3000);
       return;
     }
@@ -5525,11 +5557,11 @@ function pollForRestart() {
     try {
       await fetch('/api/update/check');
       if (serverWentDown) {
-        // Server is back up after going down — force fresh page load (no cache)
+        // Server is back up after going down - force fresh page load (no cache)
         clearInterval(interval);
         window.location.href = window.location.pathname + '?_=' + Date.now();
       }
-      // Server still responding (hasn't died yet) — keep waiting
+      // Server still responding (hasn't died yet) - keep waiting
     } catch (e) {
       // Network error = server went down
       serverWentDown = true;
@@ -5714,7 +5746,7 @@ async function populateProviderToggles(visibility) {
           const vis = visibility[key] || { dashboard: true, polling: true };
           container.appendChild(createProviderToggleRow(
             key,
-            `Codex — ${profile.name}`,
+            `Codex - ${profile.name}`,
             `ChatGPT account: ${profile.name}`,
             vis
           ));
@@ -5954,11 +5986,11 @@ function setupPushNotifications() {
     return reg.pushManager.getSubscription();
   }).then(function(sub) {
     if (sub) {
-      statusLabel.textContent = 'Subscribed — push notifications active';
+      statusLabel.textContent = 'Subscribed - push notifications active';
       if (subscribeBtn) { subscribeBtn.hidden = true; }
       if (testActions) { testActions.hidden = false; }
     } else {
-      statusLabel.textContent = 'Not subscribed — click Enable to subscribe';
+      statusLabel.textContent = 'Not subscribed - click Enable to subscribe';
       if (subscribeBtn) { subscribeBtn.hidden = false; }
     }
   }).catch(function() {
@@ -5993,7 +6025,7 @@ function setupPushNotifications() {
         });
         if (!saveResp.ok) throw new Error('Failed to save subscription');
 
-        statusLabel.textContent = 'Subscribed — push notifications active';
+        statusLabel.textContent = 'Subscribed - push notifications active';
         subscribeBtn.hidden = true;
         if (testActions) testActions.hidden = false;
         if (channelToggle) channelToggle.checked = true;
@@ -6022,7 +6054,7 @@ function setupPushNotifications() {
               body: JSON.stringify({ endpoint: endpoint })
             });
           }
-          statusLabel.textContent = 'Not subscribed — click Enable to subscribe';
+          statusLabel.textContent = 'Not subscribed - click Enable to subscribe';
           if (subscribeBtn) subscribeBtn.hidden = false;
           if (testActions) testActions.hidden = true;
         } catch (e) {
@@ -6276,7 +6308,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Load persisted state (localStorage only — no API calls before auth check)
+  // Load persisted state (localStorage only - no API calls before auth check)
   loadHiddenQuotas();
   loadCodexAccount();
   if (getCurrentProvider() === 'codex') {

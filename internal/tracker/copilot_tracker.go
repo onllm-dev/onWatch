@@ -76,7 +76,7 @@ func (t *CopilotTracker) Process(snapshot *api.CopilotSnapshot) error {
 }
 
 // processQuota handles cycle detection and tracking for a single Copilot quota.
-// Reset detection: compare the reset_date string — if it changed, a quota reset occurred.
+// Reset detection: compare the reset_date string - if it changed, a quota reset occurred.
 func (t *CopilotTracker) processQuota(quota api.CopilotQuota, capturedAt time.Time, resetDate *time.Time, resetDateStr string) error {
 	quotaName := quota.Name
 	currentUsed := quota.Entitlement - quota.Remaining
@@ -87,7 +87,7 @@ func (t *CopilotTracker) processQuota(quota api.CopilotQuota, capturedAt time.Ti
 	}
 
 	if cycle == nil {
-		// First snapshot for this quota — create new cycle
+		// First snapshot for this quota - create new cycle
 		_, err := t.store.CreateCopilotCycle(quotaName, capturedAt, resetDate)
 		if err != nil {
 			return fmt.Errorf("failed to create cycle: %w", err)
@@ -155,7 +155,7 @@ func (t *CopilotTracker) processQuota(quota api.CopilotQuota, capturedAt time.Ti
 		return nil
 	}
 
-	// Same cycle — update stats
+	// Same cycle - update stats
 	if t.hasLastValues {
 		if lastRemaining, ok := t.lastValues[quotaName]; ok {
 			usageDelta := lastRemaining - quota.Remaining

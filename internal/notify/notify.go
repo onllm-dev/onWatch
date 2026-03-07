@@ -459,7 +459,7 @@ func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *Pu
 		e.logger.Error("failed to check notification log", "error", err)
 		return
 	}
-	// Already sent for this cycle — skip (log is cleared on reset)
+	// Already sent for this cycle - skip (log is cleared on reset)
 	if !sentAt.IsZero() {
 		e.logger.Debug("notification already sent for this cycle",
 			"quota", quotaKey, "type", notifType,

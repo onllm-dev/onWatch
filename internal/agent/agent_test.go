@@ -299,7 +299,7 @@ func TestAgent_TrackerError_StillStoresSnapshot(t *testing.T) {
 
 	agent := New(client, str, tr, 50*time.Millisecond, logger, nil)
 
-	// Use generous timeout — race detector adds significant overhead
+	// Use generous timeout - race detector adds significant overhead
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 

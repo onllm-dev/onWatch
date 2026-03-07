@@ -10754,7 +10754,7 @@ func TestHandler_BuildAnthropicInsights_HighProjected(t *testing.T) {
 
 	// Moderate utilization increase that projects to >80% at reset
 	for i := 0; i < 20; i++ {
-		util := 30.0 + float64(i)*2.5 // 30..77.5 — moderate pace
+		util := 30.0 + float64(i)*2.5 // 30..77.5 - moderate pace
 		snapshot := &api.AnthropicSnapshot{
 			CapturedAt: now.Add(-time.Duration(20-i) * 3 * time.Minute),
 			Quotas: []api.AnthropicQuota{
@@ -10785,7 +10785,7 @@ func TestHandler_BuildAnthropicInsights_IdleRate(t *testing.T) {
 	now := time.Now().UTC()
 	resetsAt := now.Add(3 * time.Hour)
 
-	// Flat utilization (idle) — should trigger rate < 0.01 branch
+	// Flat utilization (idle) - should trigger rate < 0.01 branch
 	for i := 0; i < 15; i++ {
 		snapshot := &api.AnthropicSnapshot{
 			CapturedAt: now.Add(-time.Duration(15-i) * 5 * time.Minute),

@@ -669,7 +669,7 @@ func (s *Store) fixBadZaiCycles(logger *slog.Logger) ([]MigrationResult, error) 
 
 // countBadCopilotCycles counts Copilot cycles with abnormal durations
 func (s *Store) countBadCopilotCycles() (int, error) {
-	// Copilot quotas reset monthly — cycles > 35 days are suspicious
+	// Copilot quotas reset monthly - cycles > 35 days are suspicious
 	query := `
 		SELECT COUNT(*) FROM copilot_reset_cycles
 		WHERE cycle_end IS NOT NULL AND

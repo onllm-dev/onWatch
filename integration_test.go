@@ -77,7 +77,7 @@ func TestIntegration_FullCycle(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	// Setup mock API responses — need at least 2 with different values
+	// Setup mock API responses - need at least 2 with different values
 	// so SessionManager detects usage change and creates a session
 	now := time.Now().UTC()
 	responses := []api.QuotaResponse{
@@ -141,7 +141,7 @@ func TestIntegration_FullCycle(t *testing.T) {
 	sm := agent.NewSessionManager(db, "synthetic", 5*time.Minute, discardLogger())
 	ag := agent.New(client, db, tr, 100*time.Millisecond, discardLogger(), sm)
 
-	// Run agent for a short time — enough for 2+ polls to detect session
+	// Run agent for a short time - enough for 2+ polls to detect session
 	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 
@@ -283,7 +283,7 @@ func TestIntegration_ResetDetection(t *testing.T) {
 	client := api.NewClient("syn_test_key", discardLogger(), api.WithBaseURL(server.URL+"/v2/quotas"))
 	tr := tracker.New(db, discardLogger())
 
-	// First poll — runs once immediately then exits via short timeout
+	// First poll - runs once immediately then exits via short timeout
 	sm1 := agent.NewSessionManager(db, "synthetic", 5*time.Minute, discardLogger())
 	ag1 := agent.New(client, db, tr, 1*time.Hour, discardLogger(), sm1)
 	ctx1, cancel1 := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -490,7 +490,7 @@ func TestIntegration_GracefulShutdown(t *testing.T) {
 	go webServer.Start()
 	time.Sleep(100 * time.Millisecond)
 
-	// Start agent in background — needs 2 polls to create session
+	// Start agent in background - needs 2 polls to create session
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go ag.Run(ctx)

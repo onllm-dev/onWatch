@@ -66,7 +66,7 @@ func TestZaiTracker_TokensIncrement_UpdatesDelta(t *testing.T) {
 	s1 := makeZaiSnapshot(baseTime, 50000, 100, &resetTime)
 	tr.Process(s1)
 
-	// Second snapshot — tokens increased
+	// Second snapshot - tokens increased
 	s2 := makeZaiSnapshot(baseTime.Add(time.Minute), 80000, 150, &resetTime)
 	err := tr.Process(s2)
 	if err != nil {
@@ -94,7 +94,7 @@ func TestZaiTracker_DetectsTokensReset(t *testing.T) {
 	s1 := makeZaiSnapshot(baseTime, 50000, 100, &resetTime1)
 	tr.Process(s1)
 
-	// Second snapshot — different nextResetTime = reset
+	// Second snapshot - different nextResetTime = reset
 	resetTime2 := baseTime.Add(48 * time.Hour)
 	s2 := makeZaiSnapshot(baseTime.Add(time.Minute), 1000, 110, &resetTime2)
 	err := tr.Process(s2)
@@ -127,7 +127,7 @@ func TestZaiTracker_DetectsTimeReset_ValueDrop(t *testing.T) {
 	s1 := makeZaiSnapshot(baseTime, 50000, 800, &resetTime)
 	tr.Process(s1)
 
-	// Second snapshot — time value drops >50% = reset
+	// Second snapshot - time value drops >50% = reset
 	s2 := makeZaiSnapshot(baseTime.Add(time.Minute), 55000, 100, &resetTime)
 	err := tr.Process(s2)
 	if err != nil {
@@ -159,7 +159,7 @@ func TestZaiTracker_NegativeDelta_Ignored(t *testing.T) {
 	s1 := makeZaiSnapshot(baseTime, 80000, 500, &resetTime)
 	tr.Process(s1)
 
-	// Second snapshot — slight drop (not enough for reset, within same cycle)
+	// Second snapshot - slight drop (not enough for reset, within same cycle)
 	s2 := makeZaiSnapshot(baseTime.Add(time.Minute), 75000, 490, &resetTime)
 	tr.Process(s2)
 

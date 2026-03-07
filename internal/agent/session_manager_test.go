@@ -24,7 +24,7 @@ func newTestSessionManager(t *testing.T, idleTimeout time.Duration) (*SessionMan
 func TestSessionManager_NoSessionWithoutUsageChange(t *testing.T) {
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
-	// Report same values twice — no change, no session should be created
+	// Report same values twice - no change, no session should be created
 	sm.ReportPoll([]float64{100, 50, 500})
 	sm.ReportPoll([]float64{100, 50, 500})
 
@@ -76,7 +76,7 @@ func TestSessionManager_ClosesSessionAfterIdleTimeout(t *testing.T) {
 	// Wait for idle timeout to elapse
 	time.Sleep(150 * time.Millisecond)
 
-	// Report same values — should close session
+	// Report same values - should close session
 	sm.ReportPoll([]float64{110, 50, 500})
 
 	sessions, _ := str.QuerySessionHistory("synthetic")
@@ -135,14 +135,14 @@ func TestSessionManager_CloseClosesActiveSession(t *testing.T) {
 func TestSessionManager_CloseNoopWithoutActiveSession(t *testing.T) {
 	sm, _ := newTestSessionManager(t, 10*time.Second)
 
-	// Close without any session — should not panic
+	// Close without any session - should not panic
 	sm.Close()
 }
 
 func TestSessionManager_FirstPollNeverCreatesSession(t *testing.T) {
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
-	// Only one poll — establishes baseline, no session
+	// Only one poll - establishes baseline, no session
 	sm.ReportPoll([]float64{100, 50, 500})
 
 	sessions, _ := str.QuerySessionHistory("synthetic")

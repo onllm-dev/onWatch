@@ -479,7 +479,7 @@ func (h *Handler) getProviderFromRequest(r *http.Request) (string, error) {
 	// Normalize provider name
 	provider = strings.ToLower(provider)
 
-	// "both" is a virtual provider — allowed when multiple are configured
+	// "both" is a virtual provider - allowed when multiple are configured
 	if provider == "both" {
 		if h.config.HasMultipleProviders() {
 			return "both", nil
@@ -493,6 +493,55 @@ func (h *Handler) getProviderFromRequest(r *http.Request) (string, error) {
 	}
 
 	return provider, nil
+}
+
+func (h *Handler) providerVisibilitySettings() map[string]interface{} {
+	if h.store == nil {
+		return map[string]interface{}{}
+	}
+	visJSON, err := h.store.GetSetting("provider_visibility")
+	if err != nil || visJSON == "" {
+		return map[string]interface{}{}
+	}
+	var vis map[string]interface{}
+	if err := json.Unmarshal([]byte(visJSON), &vis); err != nil {
+		return map[string]interface{}{}
+	}
+	return vis
+}
+
+func providerPollingValue(entry interface{}) (bool, bool) {
+	switch v := entry.(type) {
+	case map[string]interface{}:
+		raw, exists := v["polling"]
+		if !exists {
+			return true, false
+		}
+		b, ok := raw.(bool)
+		return b, ok
+	case map[string]bool:
+		b, exists := v["polling"]
+		return b, exists
+	}
+	return true, false
+}
+
+func providerTelemetryEnabled(visibility map[string]interface{}, providerKey string) bool {
+	if visibility == nil {
+		return true
+	}
+	if polling, exists := providerPollingValue(visibility[providerKey]); exists {
+		return polling
+	}
+	return true
+}
+
+func codexAccountTelemetryEnabled(visibility map[string]interface{}, accountID int64) bool {
+	accountKey := fmt.Sprintf("codex:%d", accountID)
+	if polling, exists := providerPollingValue(visibility[accountKey]); exists {
+		return polling
+	}
+	return providerTelemetryEnabled(visibility, "codex")
 }
 
 // Providers returns available providers configuration
@@ -662,29 +711,40 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 // currentBoth returns combined quota status for all configured providers.
 func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{}
-	if h.config.HasProvider("synthetic") {
+	visibility := h.providerVisibilitySettings()
+
+	if h.config.HasProvider("synthetic") && providerTelemetryEnabled(visibility, "synthetic") {
 		response["synthetic"] = h.buildSyntheticCurrent()
 	}
-	if h.config.HasProvider("zai") {
+	if h.config.HasProvider("zai") && providerTelemetryEnabled(visibility, "zai") {
 		response["zai"] = h.buildZaiCurrent()
 	}
-	if h.config.HasProvider("anthropic") {
+	if h.config.HasProvider("anthropic") && providerTelemetryEnabled(visibility, "anthropic") {
 		response["anthropic"] = h.buildAnthropicCurrent()
 	}
-	if h.config.HasProvider("copilot") {
+	if h.config.HasProvider("copilot") && providerTelemetryEnabled(visibility, "copilot") {
 		response["copilot"] = h.buildCopilotCurrent()
 	}
-	if h.config.HasProvider("codex") {
+	if h.config.HasProvider("codex") && providerTelemetryEnabled(visibility, "codex") {
 		codexAccounts := h.codexUsageAccounts()
+		originalAccountCount := len(codexAccounts)
+		filteredAccounts := make([]map[string]interface{}, 0, len(codexAccounts))
+		for _, acc := range codexAccounts {
+			accountID := codexUsageAccountID(acc)
+			if codexAccountTelemetryEnabled(visibility, accountID) {
+				filteredAccounts = append(filteredAccounts, acc)
+			}
+		}
+		codexAccounts = filteredAccounts
 		if len(codexAccounts) > 1 {
 			response["codexAccounts"] = codexAccounts
 		} else if len(codexAccounts) == 1 {
 			response["codex"] = codexAccounts[0]
-		} else {
+		} else if originalAccountCount == 0 {
 			response["codex"] = h.buildCodexCurrent(DefaultCodexAccountID)
 		}
 	}
-	if h.config.HasProvider("antigravity") {
+	if h.config.HasProvider("antigravity") && providerTelemetryEnabled(visibility, "antigravity") {
 		response["antigravity"] = h.buildAntigravityCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
@@ -1027,6 +1087,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 // historyBoth returns both providers' history.
 func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{}
+	visibility := h.providerVisibilitySettings()
 
 	rangeStr := r.URL.Query().Get("range")
 	duration, err := parseTimeRange(rangeStr)
@@ -1038,7 +1099,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	start := now.Add(-duration)
 
-	if h.config.HasProvider("synthetic") && h.store != nil {
+	if h.config.HasProvider("synthetic") && providerTelemetryEnabled(visibility, "synthetic") && h.store != nil {
 		snapshots, err := h.store.QueryRange(start, now)
 		if err == nil {
 			step := downsampleStep(len(snapshots), maxChartPoints)
@@ -1075,7 +1136,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.config.HasProvider("zai") && h.store != nil {
+	if h.config.HasProvider("zai") && providerTelemetryEnabled(visibility, "zai") && h.store != nil {
 		snapshots, err := h.store.QueryZaiRange(start, now)
 		if err == nil {
 			step := downsampleStep(len(snapshots), maxChartPoints)
@@ -1100,7 +1161,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.config.HasProvider("anthropic") && h.store != nil {
+	if h.config.HasProvider("anthropic") && providerTelemetryEnabled(visibility, "anthropic") && h.store != nil {
 		snapshots, err := h.store.QueryAnthropicRange(start, now)
 		if err == nil {
 			step := downsampleStep(len(snapshots), maxChartPoints)
@@ -1122,7 +1183,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.config.HasProvider("copilot") && h.store != nil {
+	if h.config.HasProvider("copilot") && providerTelemetryEnabled(visibility, "copilot") && h.store != nil {
 		snapshots, err := h.store.QueryCopilotRange(start, now)
 		if err == nil {
 			step := downsampleStep(len(snapshots), maxChartPoints)
@@ -1146,11 +1207,14 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.config.HasProvider("codex") && h.store != nil {
+	if h.config.HasProvider("codex") && providerTelemetryEnabled(visibility, "codex") && h.store != nil {
 		codexAccounts := h.codexUsageAccounts()
 		codexHistories := make([]map[string]interface{}, 0, len(codexAccounts))
 		for _, acc := range codexAccounts {
 			accountID := codexUsageAccountID(acc)
+			if !codexAccountTelemetryEnabled(visibility, accountID) {
+				continue
+			}
 			snapshots, err := h.store.QueryCodexRange(accountID, start, now)
 			if err != nil {
 				continue
@@ -2026,7 +2090,7 @@ var insightCorrelations = [][]string{
 	{"tool_share", "tool_breakdown"},
 	{"trend", "trend_24h"},
 	{"weekly_pace", "usage_7d"},
-	// "coverage" uses the same key for both providers — auto-correlated
+	// "coverage" uses the same key for both providers - auto-correlated
 }
 
 // getHiddenInsightKeys loads hidden insight keys from DB and expands correlations.
@@ -2102,24 +2166,28 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
 	response := map[string]interface{}{}
+	visibility := h.providerVisibilitySettings()
 
-	if h.config.HasProvider("synthetic") {
+	if h.config.HasProvider("synthetic") && providerTelemetryEnabled(visibility, "synthetic") {
 		response["synthetic"] = h.buildSyntheticInsights(hidden, rangeDur)
 	}
-	if h.config.HasProvider("zai") {
+	if h.config.HasProvider("zai") && providerTelemetryEnabled(visibility, "zai") {
 		response["zai"] = h.buildZaiInsights(hidden)
 	}
-	if h.config.HasProvider("anthropic") {
+	if h.config.HasProvider("anthropic") && providerTelemetryEnabled(visibility, "anthropic") {
 		response["anthropic"] = h.buildAnthropicInsights(hidden, rangeDur)
 	}
-	if h.config.HasProvider("copilot") {
+	if h.config.HasProvider("copilot") && providerTelemetryEnabled(visibility, "copilot") {
 		response["copilot"] = h.buildCopilotInsights(hidden, rangeDur)
 	}
-	if h.config.HasProvider("codex") {
+	if h.config.HasProvider("codex") && providerTelemetryEnabled(visibility, "codex") {
 		codexAccounts := h.codexUsageAccounts()
 		codexInsights := make([]map[string]interface{}, 0, len(codexAccounts))
 		for _, acc := range codexAccounts {
 			accountID := codexUsageAccountID(acc)
+			if !codexAccountTelemetryEnabled(visibility, accountID) {
+				continue
+			}
 			ins := h.buildCodexInsights(accountID, hidden, rangeDur)
 			codexInsights = append(codexInsights, map[string]interface{}{
 				"accountId":   accountID,
@@ -2135,7 +2203,7 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 			response["codexAccounts"] = codexInsights
 		}
 	}
-	if h.config.HasProvider("antigravity") {
+	if h.config.HasProvider("antigravity") && providerTelemetryEnabled(visibility, "antigravity") {
 		response["antigravity"] = h.buildAntigravityInsights(hidden, rangeDur)
 	}
 
@@ -2208,7 +2276,7 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool, rangeDur time.D
 	resp.Stats = append(resp.Stats, insightStat{Value: compactNum(toolRange), Label: fmt.Sprintf("Tool Calls (%s)", rangeLabel)})
 	resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%d", sessionsInRange), Label: "Sessions"})
 
-	// ═══ Deep Insights (analytical cards only — no session avg, no live quota duplicates) ═══
+	// ═══ Deep Insights (analytical cards only - no session avg, no live quota duplicates) ═══
 
 	// 1. Avg Cycle Utilization %
 	if !hidden["cycle_utilization"] && subAvg > 0 && subLimit > 0 {
@@ -2216,19 +2284,19 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool, rangeDur time.D
 		var desc, sev string
 		switch {
 		case util < 25:
-			desc = fmt.Sprintf("You average ~%.0f%% of your %.0f quota per cycle. Significantly under-utilizing — a lower tier could save costs.", util, subLimit)
+			desc = fmt.Sprintf("You average ~%.0f%% of your %.0f quota per cycle. Significantly under-utilizing - a lower tier could save costs.", util, subLimit)
 			sev = "warning"
 		case util < 50:
-			desc = fmt.Sprintf("You average ~%.0f%% of your %.0f quota per cycle. Comfortable headroom — consider downgrading if optimizing costs.", util, subLimit)
+			desc = fmt.Sprintf("You average ~%.0f%% of your %.0f quota per cycle. Comfortable headroom - consider downgrading if optimizing costs.", util, subLimit)
 			sev = "info"
 		case util < 80:
 			desc = fmt.Sprintf("You average ~%.0f%% of your %.0f quota per cycle. Plan fits your usage well.", util, subLimit)
 			sev = "positive"
 		case util < 95:
-			desc = fmt.Sprintf("You average ~%.0f%% of your %.0f quota per cycle. Approaching your limit frequently — monitor closely.", util, subLimit)
+			desc = fmt.Sprintf("You average ~%.0f%% of your %.0f quota per cycle. Approaching your limit frequently - monitor closely.", util, subLimit)
 			sev = "warning"
 		default:
-			desc = fmt.Sprintf("You average ~%.0f%% of your %.0f quota per cycle. Consistently near limit — consider upgrading.", util, subLimit)
+			desc = fmt.Sprintf("You average ~%.0f%% of your %.0f quota per cycle. Consistently near limit - consider upgrading.", util, subLimit)
 			sev = "negative"
 		}
 		resp.Insights = append(resp.Insights, insightItem{
@@ -2285,7 +2353,7 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool, rangeDur time.D
 				Title:    "High Variance",
 				Metric:   fmt.Sprintf("+%.0f%%", diff),
 				Sublabel: "peak above avg",
-				Desc:     fmt.Sprintf("Peak cycle hit %.0f%% of limit (%.0f requests) — %.0f%% above your average of %.0f. Usage varies significantly.", peakPct, subPeak, diff, subAvg),
+				Desc:     fmt.Sprintf("Peak cycle hit %.0f%% of limit (%.0f requests) - %.0f%% above your average of %.0f. Usage varies significantly.", peakPct, subPeak, diff, subAvg),
 			}
 		case diff > 10:
 			item = insightItem{Key: "variance", Type: "factual", Severity: "info",
@@ -2316,15 +2384,15 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool, rangeDur time.D
 			switch {
 			case change > 15:
 				metric = fmt.Sprintf("+%.0f%%", change)
-				desc = fmt.Sprintf("Recent cycles avg %.0f vs earlier %.0f — usage is increasing.", recentAvg, olderAvg)
+				desc = fmt.Sprintf("Recent cycles avg %.0f vs earlier %.0f - usage is increasing.", recentAvg, olderAvg)
 				sev = "warning"
 			case change < -15:
 				metric = fmt.Sprintf("%.0f%%", change)
-				desc = fmt.Sprintf("Recent cycles avg %.0f vs earlier %.0f — usage is decreasing.", recentAvg, olderAvg)
+				desc = fmt.Sprintf("Recent cycles avg %.0f vs earlier %.0f - usage is decreasing.", recentAvg, olderAvg)
 				sev = "positive"
 			default:
 				metric = "Stable"
-				desc = fmt.Sprintf("Recent avg %.0f vs earlier %.0f — steady usage pattern.", recentAvg, olderAvg)
+				desc = fmt.Sprintf("Recent avg %.0f vs earlier %.0f - steady usage pattern.", recentAvg, olderAvg)
 				sev = "positive"
 			}
 			resp.Insights = append(resp.Insights, insightItem{
@@ -2420,7 +2488,7 @@ func (h *Handler) buildZaiInsights(hidden map[string]bool) insightsResponse {
 		avgTokensPerCall = tokensUsed / totalToolCalls
 	}
 
-	// ═══ Stats Cards (quick KPI numbers — no duplicates with insights below) ═══
+	// ═══ Stats Cards (quick KPI numbers - no duplicates with insights below) ═══
 	resp.Stats = append(resp.Stats, insightStat{
 		Value: fmt.Sprintf("%d%%", latest.TokensPercentage),
 		Label: "Tokens Used",
@@ -2472,7 +2540,7 @@ func (h *Handler) buildZaiInsights(hidden map[string]bool) insightsResponse {
 					if projectedPct >= 100 {
 						projDesc += " Likely to exhaust budget before reset."
 					} else if projectedPct >= 80 {
-						projDesc += " Approaching limit — monitor closely."
+						projDesc += " Approaching limit - monitor closely."
 					} else {
 						projDesc += " Comfortable headroom."
 					}
@@ -2489,9 +2557,9 @@ func (h *Handler) buildZaiInsights(hidden map[string]bool) insightsResponse {
 		}
 	}
 
-	// 4. Time Budget (only when no per-tool details — Top Tool insight covers breakdown)
+	// 4. Time Budget (only when no per-tool details - Top Tool insight covers breakdown)
 	if !hidden["time_budget"] && latest.TimeUsageDetails == "" {
-		// No per-tool details — show basic time budget insight
+		// No per-tool details - show basic time budget insight
 		timeSev := severityFromPercent(timePercent)
 		resp.Insights = append(resp.Insights, insightItem{
 			Key:  "time_budget",
@@ -2946,7 +3014,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 				Sublabel: fmt.Sprintf("across %d %s", count, periodWord),
 			})
 		} else {
-			// No completed cycles yet — show current with "Now" label
+			// No completed cycles yet - show current with "Now" label
 			resp.Stats = append(resp.Stats, insightStat{
 				Value: fmt.Sprintf("%.0f%%", q.Utilization),
 				Label: fmt.Sprintf("%s (now)", api.AnthropicDisplayName(q.Name)),
@@ -2980,14 +3048,14 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 		}
 
 		if !rate.HasRate {
-			// Insufficient data — show analyzing state with preview
+			// Insufficient data - show analyzing state with preview
 			item.Type = "factual"
 			item.Severity = "info"
 			item.Metric = "Analyzing..."
 			item.Sublabel = "burn rate & forecast"
 			item.Desc = fmt.Sprintf("Collecting usage patterns to calculate burn rate and exhaustion forecasts. Currently at %.0f%%. This typically requires ~10 minutes of data.", q.Utilization)
 		} else if rate.Rate < 0.01 {
-			// Idle — truly zero consumption
+			// Idle - truly zero consumption
 			item.Type = "factual"
 			item.Severity = "info"
 			item.Metric = "Idle"
@@ -2998,7 +3066,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 			}
 			item.Desc = fmt.Sprintf("No consumption detected recently. Currently at %.0f%%.", q.Utilization)
 		} else if rate.ExhaustsFirst {
-			// Exhausts before reset — danger
+			// Exhausts before reset - danger
 			item.Type = "recommendation"
 			item.Severity = "negative"
 			item.Metric = fmt.Sprintf("%.1f%%/hr", rate.Rate)
@@ -3010,7 +3078,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 			}
 			item.Desc = desc
 		} else if rate.ProjectedPct > 80 {
-			// High projected usage at reset — warning
+			// High projected usage at reset - warning
 			item.Type = "recommendation"
 			item.Severity = "warning"
 			item.Metric = fmt.Sprintf("%.1f%%/hr", rate.Rate)
@@ -3021,7 +3089,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 			}
 			item.Desc = fmt.Sprintf("Consuming at %.1f%%/hr. Projected ~%.0f%% at reset.", rate.Rate, rate.ProjectedPct)
 		} else {
-			// Safe — comfortable headroom
+			// Safe - comfortable headroom
 			item.Type = "factual"
 			item.Severity = "positive"
 			item.Metric = fmt.Sprintf("%.1f%%/hr", rate.Rate)
@@ -3054,17 +3122,17 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 		case diff > 50:
 			item = insightItem{Key: key, Type: "factual", Severity: "warning",
 				Title: "High Variance", Metric: fmt.Sprintf("+%.0f%%", diff), Sublabel: api.AnthropicDisplayName(name),
-				Desc: fmt.Sprintf("Peak period %.0f%% vs average %.0f%% for %s — usage varies significantly.", peak, avg, api.AnthropicDisplayName(name)),
+				Desc: fmt.Sprintf("Peak period %.0f%% vs average %.0f%% for %s - usage varies significantly.", peak, avg, api.AnthropicDisplayName(name)),
 			}
 		case diff > 10:
 			item = insightItem{Key: key, Type: "factual", Severity: "info",
 				Title: "Usage Spread", Metric: fmt.Sprintf("+%.0f%%", diff), Sublabel: api.AnthropicDisplayName(name),
-				Desc: fmt.Sprintf("Peak: %.0f%%, average: %.0f%% for %s — moderately consistent.", peak, avg, api.AnthropicDisplayName(name)),
+				Desc: fmt.Sprintf("Peak: %.0f%%, average: %.0f%% for %s - moderately consistent.", peak, avg, api.AnthropicDisplayName(name)),
 			}
 		default:
 			item = insightItem{Key: key, Type: "factual", Severity: "positive",
 				Title: "Consistent", Metric: fmt.Sprintf("~%.0f%%", avg), Sublabel: api.AnthropicDisplayName(name),
-				Desc: fmt.Sprintf("Peak (%.0f%%) close to average (%.0f%%) for %s — predictable usage.", peak, avg, api.AnthropicDisplayName(name)),
+				Desc: fmt.Sprintf("Peak (%.0f%%) close to average (%.0f%%) for %s - predictable usage.", peak, avg, api.AnthropicDisplayName(name)),
 			}
 		}
 		resp.Insights = append(resp.Insights, item)
@@ -3099,15 +3167,15 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 		switch {
 		case change > 15:
 			metric = fmt.Sprintf("+%.0f%%", change)
-			desc = fmt.Sprintf("Recent %s periods avg %.0f%% vs earlier %.0f%% — usage is increasing.", api.AnthropicDisplayName(name), recentAvg, olderAvg)
+			desc = fmt.Sprintf("Recent %s periods avg %.0f%% vs earlier %.0f%% - usage is increasing.", api.AnthropicDisplayName(name), recentAvg, olderAvg)
 			sev = "warning"
 		case change < -15:
 			metric = fmt.Sprintf("%.0f%%", change)
-			desc = fmt.Sprintf("Recent %s periods avg %.0f%% vs earlier %.0f%% — usage is decreasing.", api.AnthropicDisplayName(name), recentAvg, olderAvg)
+			desc = fmt.Sprintf("Recent %s periods avg %.0f%% vs earlier %.0f%% - usage is decreasing.", api.AnthropicDisplayName(name), recentAvg, olderAvg)
 			sev = "positive"
 		default:
 			metric = "Stable"
-			desc = fmt.Sprintf("Recent %s periods avg %.0f%% vs earlier %.0f%% — steady usage.", api.AnthropicDisplayName(name), recentAvg, olderAvg)
+			desc = fmt.Sprintf("Recent %s periods avg %.0f%% vs earlier %.0f%% - steady usage.", api.AnthropicDisplayName(name), recentAvg, olderAvg)
 			sev = "positive"
 		}
 		resp.Insights = append(resp.Insights, insightItem{
@@ -3182,7 +3250,7 @@ func (h *Handler) computeAnthropicRate(quotaName string, currentUtil float64, su
 					result.Rate = delta / elapsed.Hours()
 					result.HasRate = true
 				} else {
-					// Utilization didn't increase — idle
+					// Utilization didn't increase - idle
 					result.Rate = 0
 					result.HasRate = true
 				}
@@ -3346,7 +3414,7 @@ func groupAnthropicBillingPeriods(cycles []*store.AnthropicResetCycle) []anthrop
 	for i := last - 1; i >= 0; i-- {
 		c := cycles[i]
 		if current.maxPeak > 5 && c.PeakUtilization < current.maxPeak*0.5 {
-			// Peak dropped significantly — this is a real reset
+			// Peak dropped significantly - this is a real reset
 			periods = append(periods, current)
 			current = anthropicBillingPeriod{
 				start:   c.CycleStart,
@@ -3435,7 +3503,7 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		if smtpJSON != "" {
 			var smtp map[string]interface{}
 			if json.Unmarshal([]byte(smtpJSON), &smtp) == nil {
-				// Mask the password — only indicate whether one is set
+				// Mask the password - only indicate whether one is set
 				if _, ok := smtp["password"]; ok {
 					pwd, _ := smtp["password"].(string)
 					smtp["password"] = ""
@@ -4750,7 +4818,7 @@ func (h *Handler) buildCopilotInsights(hidden map[string]bool, rangeDur time.Dur
 		}
 	}
 
-	// 3. Coverage — how long we've been tracking
+	// 3. Coverage - how long we've been tracking
 	if !hidden["coverage"] {
 		snapCount := 0
 		since := time.Now().Add(-rangeDur)

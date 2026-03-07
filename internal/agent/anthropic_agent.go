@@ -192,7 +192,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		// Rate limited (429) — attempt token refresh to get fresh rate limit window.
+		// Rate limited (429) - attempt token refresh to get fresh rate limit window.
 		//
 		// WORKAROUND for Anthropic API rate limiting (GitHub issue #16):
 		// Anthropic's /api/oauth/usage endpoint has aggressive rate limits (~5 requests
@@ -292,7 +292,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 					}
 					return
 				}
-				// Retry succeeded — reset auth failure count and fall through
+				// Retry succeeded - reset auth failure count and fall through
 				a.authFailCount = 0
 			} else {
 				a.logger.Error("No Anthropic token available after re-read")
@@ -303,7 +303,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 			return
 		}
 	} else {
-		// Success — reset auth failure count
+		// Success - reset auth failure count
 		a.authFailCount = 0
 	}
 
@@ -335,7 +335,7 @@ processResponse:
 		}
 	}
 
-	// Report to session manager — extract utilization values for change detection.
+	// Report to session manager - extract utilization values for change detection.
 	// Use fixed order matching UI columns: five_hour, seven_day, seven_day_sonnet
 	// (alphabetical sort would put monthly_limit between them, breaking the mapping).
 	if a.sm != nil {

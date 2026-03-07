@@ -172,7 +172,7 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 		cfg.AntigravityEnabled = true
 	}
 
-	// Poll Interval (seconds) — ONWATCH_* first, SYNTRACK_* fallback
+	// Poll Interval (seconds) - ONWATCH_* first, SYNTRACK_* fallback
 	if flags.interval > 0 {
 		cfg.PollInterval = time.Duration(flags.interval) * time.Second
 	} else if env := envWithFallback("ONWATCH_POLL_INTERVAL", "SYNTRACK_POLL_INTERVAL"); env != "" {

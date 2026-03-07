@@ -57,7 +57,7 @@ func (sm *SessionManager) ReportPoll(values []float64) bool {
 
 	if changed {
 		if sm.sessionID == "" {
-			// Start new session — pass previous values as start values (baseline before the change)
+			// Start new session - pass previous values as start values (baseline before the change)
 			sm.sessionID = uuid.New().String()
 			sm.lastActivityTime = now
 
@@ -92,7 +92,7 @@ func (sm *SessionManager) ReportPoll(values []float64) bool {
 			// Idle timeout exceeded → close session
 			sm.closeSession(now)
 		} else {
-			// Still within idle window — count the snapshot
+			// Still within idle window - count the snapshot
 			sm.incrementAndUpdate(values)
 		}
 	}

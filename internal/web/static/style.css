@@ -1,4 +1,4 @@
-/* onWatch — Clean Minimal Dashboard Theme
+/* onWatch - Clean Minimal Dashboard Theme
    Inspired by: logip project management UI
    Palette: Teal + Peach accents, soft shadows, rounded cards */
 
@@ -15,7 +15,7 @@
   --surface-inset: #F3F4F6;
   --surface-overlay: rgba(0, 0, 0, 0.45);
 
-  /* Text — all pass WCAG AA 4.5:1 on white */
+  /* Text - all pass WCAG AA 4.5:1 on white */
   --text-primary: #1A1D21;
   --text-secondary: #4B5563;
   --text-muted: #6B7280;
@@ -117,7 +117,7 @@
   --surface-inset: #161921;
   --surface-overlay: rgba(0, 0, 0, 0.65);
 
-  /* Text — all pass WCAG AA 4.5:1 on #1A1D24 */
+  /* Text - all pass WCAG AA 4.5:1 on #1A1D24 */
   --text-primary: #F1F3F5;
   --text-secondary: #ABB5C2;
   --text-muted: #8891A0;
@@ -725,7 +725,7 @@ button, input, select { font-family: inherit; }
   height: 100% !important;
 }
 
-/* Both View — Multi-Column Layout */
+/* Both View - Multi-Column Layout */
 .both-view {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(var(--layout-card-min), 1fr));

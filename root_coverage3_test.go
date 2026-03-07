@@ -18,11 +18,11 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// run() — stop / status with no PID file
+// run() - stop / status with no PID file
 // ---------------------------------------------------------------------------
 
 func TestRun_StopNoPIDFile(t *testing.T) {
-	// Skip if a real onwatch is running on default ports — port scanning would find it
+	// Skip if a real onwatch is running on default ports - port scanning would find it
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 500*time.Millisecond)
 		if err == nil {
@@ -48,7 +48,7 @@ func TestRun_StopNoPIDFile(t *testing.T) {
 }
 
 func TestRun_StatusNoPIDFile(t *testing.T) {
-	// Skip if a real onwatch is running on default ports — port scanning would find it
+	// Skip if a real onwatch is running on default ports - port scanning would find it
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 500*time.Millisecond)
 		if err == nil {
@@ -120,7 +120,7 @@ func TestRun_StatusTestModeNoPIDFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// run() — _ONWATCH_DAEMON=1 error path (config load fails)
+// run() - _ONWATCH_DAEMON=1 error path (config load fails)
 // ---------------------------------------------------------------------------
 
 func TestRun_DaemonChildConfigError(t *testing.T) {
@@ -147,7 +147,7 @@ func TestRun_DaemonChildConfigError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// freshSetup() — choices 1 (Synthetic), 2 (Z.ai), 3 (Multiple)
+// freshSetup() - choices 1 (Synthetic), 2 (Z.ai), 3 (Multiple)
 // ---------------------------------------------------------------------------
 
 func TestFreshSetup_SyntheticOnly(t *testing.T) {
@@ -336,7 +336,7 @@ func TestFreshSetup_CodexOnly(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — all providers answered "n"
+// addMissingProviders() - all providers answered "n"
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_AllSkipped(t *testing.T) {
@@ -422,7 +422,7 @@ func TestAddMissingProviders_ZaiSkippedAnthropicAdded(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// collectAnthropicToken() — auto-detect via .claude/.credentials.json
+// collectAnthropicToken() - auto-detect via .claude/.credentials.json
 // ---------------------------------------------------------------------------
 
 func TestCollectAnthropicToken_AutoDetect_Accept(t *testing.T) {
@@ -487,7 +487,7 @@ func TestCollectAnthropicToken_AutoDetect_Decline(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// collectCodexToken() — auto-detect via CODEX_HOME/auth.json
+// collectCodexToken() - auto-detect via CODEX_HOME/auth.json
 // ---------------------------------------------------------------------------
 
 func TestCollectCodexToken_AutoDetect_Accept(t *testing.T) {
@@ -541,7 +541,7 @@ func TestCollectCodexToken_NoAutoDetect_ManualEntry(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// findOnwatchOnPort() — test with local listener and non-responding port
+// findOnwatchOnPort() - test with local listener and non-responding port
 // ---------------------------------------------------------------------------
 
 func TestFindOnwatchOnPort_NonRespondingPort(t *testing.T) {
@@ -549,9 +549,9 @@ func TestFindOnwatchOnPort_NonRespondingPort(t *testing.T) {
 		t.Skip("lsof only available on macOS/Linux")
 	}
 
-	// Use a port that's not in use — lsof will return nothing
+	// Use a port that's not in use - lsof will return nothing
 	pids := findOnwatchOnPort(1) // port 1 requires root, lsof will fail
-	// Result can be nil or empty — both are valid
+	// Result can be nil or empty - both are valid
 	if len(pids) > 0 {
 		t.Logf("unexpectedly got pids %v for port 1 (may be running as root)", pids)
 	}
@@ -572,7 +572,7 @@ func TestFindOnwatchOnPort_WithLocalListener(t *testing.T) {
 	addr := ln.Addr().(*net.TCPAddr)
 	port := addr.Port
 
-	// findOnwatchOnPort may return 0 or more pids — the process is "go test" not "onwatch"
+	// findOnwatchOnPort may return 0 or more pids - the process is "go test" not "onwatch"
 	// so isOnwatchProcess will filter it out. We just verify no panic.
 	pids := findOnwatchOnPort(port)
 	t.Logf("findOnwatchOnPort(%d) = %v (expected empty since process is 'go test')", port, pids)
@@ -590,7 +590,7 @@ func TestFindOnwatchOnPort_WindowsReturnsNil(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runUpdate() — error path from Check() (via bad version / network error)
+// runUpdate() - error path from Check() (via bad version / network error)
 // ---------------------------------------------------------------------------
 
 func TestRunUpdate_CheckFailsOnNetworkError(t *testing.T) {
@@ -666,7 +666,7 @@ func TestRunUpdate_WithStalePIDFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStop() / runStatus() — non-test mode no PID file path
+// runStop() / runStatus() - non-test mode no PID file path
 // ---------------------------------------------------------------------------
 
 func TestRunStop_NonTestMode_NoPIDFile(t *testing.T) {
@@ -718,7 +718,7 @@ func TestRunStatus_NonTestMode_NoPIDFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — PID file with valid running process (self PID)
+// runStatus() - PID file with valid running process (self PID)
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_SelfPIDRunning(t *testing.T) {
@@ -727,7 +727,7 @@ func TestRunStatus_SelfPIDRunning(t *testing.T) {
 	t.Cleanup(func() { pidFile = oldPIDFile })
 
 	self := os.Getpid()
-	// Write a different PID — use the parent PID or self+1 workaround.
+	// Write a different PID - use the parent PID or self+1 workaround.
 	// We need a PID that's running but != self. Let's use the parent PID if available.
 	ppid := os.Getppid()
 	if ppid <= 0 {
@@ -751,7 +751,7 @@ func TestRunStatus_SelfPIDRunning(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — auto-detect anthropic path
+// addMissingProviders() - auto-detect anthropic path
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_AnthropicAutoDetected(t *testing.T) {
@@ -804,7 +804,7 @@ func TestAddMissingProviders_AnthropicAutoDetected(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — file open error path
+// addMissingProviders() - file open error path
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_FileOpenError(t *testing.T) {
@@ -828,7 +828,7 @@ func TestAddMissingProviders_FileOpenError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — zai added path
+// addMissingProviders() - zai added path
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_ZaiAdded(t *testing.T) {
@@ -868,7 +868,7 @@ func TestAddMissingProviders_ZaiAdded(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — antigravity added path
+// addMissingProviders() - antigravity added path
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_AntigravityAdded(t *testing.T) {
@@ -906,7 +906,7 @@ func TestAddMissingProviders_AntigravityAdded(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — codex manual path (no auto-detect)
+// addMissingProviders() - codex manual path (no auto-detect)
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_CodexManualPath(t *testing.T) {
@@ -945,7 +945,7 @@ func TestAddMissingProviders_CodexManualPath(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — anthropic auto-detect decline path
+// addMissingProviders() - anthropic auto-detect decline path
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_AnthropicAutoDetectDeclined(t *testing.T) {
@@ -998,7 +998,7 @@ func TestAddMissingProviders_AnthropicAutoDetectDeclined(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — codex auto-detect decline path
+// addMissingProviders() - codex auto-detect decline path
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_CodexAutoDetectDeclined(t *testing.T) {
@@ -1043,7 +1043,7 @@ func TestAddMissingProviders_CodexAutoDetectDeclined(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — synthetic added path
+// addMissingProviders() - synthetic added path
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_SyntheticAdded(t *testing.T) {
@@ -1082,7 +1082,7 @@ func TestAddMissingProviders_SyntheticAdded(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — codex auto-detected path
+// addMissingProviders() - codex auto-detected path
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_CodexAutoDetected(t *testing.T) {
@@ -1126,7 +1126,7 @@ func TestAddMissingProviders_CodexAutoDetected(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// stopPreviousInstance() — non-test mode with port check
+// stopPreviousInstance() - non-test mode with port check
 // ---------------------------------------------------------------------------
 
 func TestStopPreviousInstance_NonTestModeNoPIDFile(t *testing.T) {
@@ -1134,7 +1134,7 @@ func TestStopPreviousInstance_NonTestModeNoPIDFile(t *testing.T) {
 	pidFile = filepath.Join(t.TempDir(), "no.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
 
-	// Should not panic or error — just no-op since no pid file and port not in use
+	// Should not panic or error - just no-op since no pid file and port not in use
 	stopPreviousInstance(1, false)
 }
 
@@ -1161,7 +1161,7 @@ func TestStopPreviousInstance_WithPIDFilePortAndListener(t *testing.T) {
 		t.Fatalf("write pid file: %v", err)
 	}
 
-	// Call stopPreviousInstance — pid is stale, port is open, exercises port-scan branch
+	// Call stopPreviousInstance - pid is stale, port is open, exercises port-scan branch
 	stopPreviousInstance(port, false)
 }
 
@@ -1185,7 +1185,7 @@ func TestStopPreviousInstance_WithSelfPIDFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// migrateDBLocation() — branch where new DB already exists
+// migrateDBLocation() - branch where new DB already exists
 // ---------------------------------------------------------------------------
 
 func TestMigrateDBLocation_NewAlreadyExists(t *testing.T) {
@@ -1238,7 +1238,7 @@ func TestMigrateDBLocation_OldPathEqualsNew(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// freshSetup() error path — no providers selected
+// freshSetup() error path - no providers selected
 // ---------------------------------------------------------------------------
 
 func TestFreshSetup_NoProviderSelected_ReturnsError(t *testing.T) {
@@ -1269,7 +1269,7 @@ func TestFreshSetup_NoProviderSelected_ReturnsError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// defaultPIDDir() — verify it returns a valid directory path
+// defaultPIDDir() - verify it returns a valid directory path
 // ---------------------------------------------------------------------------
 
 func TestDefaultPIDDir_ReturnsNonEmpty(t *testing.T) {
@@ -1293,7 +1293,7 @@ func TestDaemonChildRun_HelperProcess(t *testing.T) {
 	mode := os.Getenv("DAEMON_HELPER_MODE")
 	switch mode {
 	case "debug_antigravity":
-		// Run in debug mode with antigravity enabled — exercises daemon child path
+		// Run in debug mode with antigravity enabled - exercises daemon child path
 		os.Args = []string{"onwatch", "--debug", "--test"}
 		main()
 		os.Exit(0)
@@ -1348,7 +1348,7 @@ func TestDaemonChildRun_HelperProcess(t *testing.T) {
 			os.Exit(3)
 		}
 		port := ln.Addr().(*net.TCPAddr).Port
-		// Keep ln open so server can't bind — set the env var BEFORE calling main()
+		// Keep ln open so server can't bind - set the env var BEFORE calling main()
 		_ = os.Setenv("ONWATCH_PORT", strconv.Itoa(port))
 		os.Args = []string{"onwatch", "--debug", "--test"}
 		main() // server fails to bind → serverErr → run() logs error and exits
@@ -1495,7 +1495,7 @@ func TestRunStop_NonTestMode_WithPIDFilePort_LocalListener(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("lsof only available on macOS/Linux")
 	}
-	// Skip if real onwatch is running — runStop(false) scans default ports as fallback
+	// Skip if real onwatch is running - runStop(false) scans default ports as fallback
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 200*time.Millisecond)
 		if err == nil {
@@ -1653,7 +1653,7 @@ func TestRunStatus_LegacyPIDFormat(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runSetup() — .env exists but no providers, then fresh setup
+// runSetup() - .env exists but no providers, then fresh setup
 // ---------------------------------------------------------------------------
 
 func TestRunSetup_ExistingEnvNoProviders_FreshSetup(t *testing.T) {
@@ -1698,7 +1698,7 @@ func TestRunSetup_ExistingEnvNoProviders_FreshSetup(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runSetup() — .env exists with some providers, triggers addMissingProviders
+// runSetup() - .env exists with some providers, triggers addMissingProviders
 // ---------------------------------------------------------------------------
 
 func TestRunSetup_ExistingEnvSomeProviders_AddsMore(t *testing.T) {
@@ -1734,7 +1734,7 @@ func TestRunSetup_ExistingEnvSomeProviders_AddsMore(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// collectMultipleProviders() — all "no" answers (already covered via freshSetup,
+// collectMultipleProviders() - all "no" answers (already covered via freshSetup,
 // but test directly to hit the false branches)
 // ---------------------------------------------------------------------------
 
@@ -1789,7 +1789,7 @@ func TestCollectMultipleProviders_AnthropicAndCodexAdded(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// generatePassword() — fallback path (hard to test directly, but ensure
+// generatePassword() - fallback path (hard to test directly, but ensure
 // the normal path is exercised; fallback requires rand.Read to fail)
 // ---------------------------------------------------------------------------
 
@@ -2108,7 +2108,7 @@ func TestDaemonChildRun_WithAntigravityManualURL(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// writePIDFile() — ensure error is returned if mkdir fails
+// writePIDFile() - ensure error is returned if mkdir fails
 // ---------------------------------------------------------------------------
 
 func TestWritePIDFile_InvalidDir(t *testing.T) {
@@ -2134,7 +2134,7 @@ func TestWritePIDFile_InvalidDir(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStop() — successfully stops a live subprocess via SIGTERM
+// runStop() - successfully stops a live subprocess via SIGTERM
 // ---------------------------------------------------------------------------
 
 // startSleepSubprocess starts a long-running subprocess and returns its PID.
@@ -2222,7 +2222,7 @@ func TestRunStop_WithLivePIDLegacyFormat(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — shows "is running" for a live PID with port
+// runStatus() - shows "is running" for a live PID with port
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_WithLivePIDAndPort(t *testing.T) {
@@ -2287,7 +2287,7 @@ func TestRunStatus_WithLivePIDLegacyFormat(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// stopPreviousInstance() — successfully stops a live subprocess via SIGTERM
+// stopPreviousInstance() - successfully stops a live subprocess via SIGTERM
 // ---------------------------------------------------------------------------
 
 func TestStopPreviousInstance_WithLivePID(t *testing.T) {
@@ -2347,14 +2347,14 @@ func TestStopPreviousInstance_WithLivePIDLegacyFormat(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// migrateDBLocation() — mkdir fails (parent dir is a file)
+// migrateDBLocation() - mkdir fails (parent dir is a file)
 // ---------------------------------------------------------------------------
 
 func TestMigrateDBLocation_MkdirFails(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	// Create a file where the old DB is expected — to simulate "file exists" but in wrong place
+	// Create a file where the old DB is expected - to simulate "file exists" but in wrong place
 	oldDB := filepath.Join(home, ".onwatch", "onwatch.db")
 	if err := os.MkdirAll(filepath.Dir(oldDB), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -2363,7 +2363,7 @@ func TestMigrateDBLocation_MkdirFails(t *testing.T) {
 		t.Fatalf("write old db: %v", err)
 	}
 
-	// The new path's parent is a file (not a dir) — MkdirAll will fail
+	// The new path's parent is a file (not a dir) - MkdirAll will fail
 	blockFile := filepath.Join(home, "block")
 	if err := os.WriteFile(blockFile, []byte("block"), 0o600); err != nil {
 		t.Fatalf("write block: %v", err)
@@ -2372,7 +2372,7 @@ func TestMigrateDBLocation_MkdirFails(t *testing.T) {
 	newDB := filepath.Join(blockFile, "data", "onwatch.db")
 	// This exercises the "Failed to create data directory" warn branch
 	migrateDBLocation(newDB, testLogger())
-	// Should not panic — error is just logged
+	// Should not panic - error is just logged
 }
 
 func TestMigrateDBLocation_RenameFails(t *testing.T) {
@@ -2388,7 +2388,7 @@ func TestMigrateDBLocation_RenameFails(t *testing.T) {
 		t.Fatalf("write old db: %v", err)
 	}
 
-	// The new path's parent directory — make it read-only to cause rename to fail
+	// The new path's parent directory - make it read-only to cause rename to fail
 	newDir := filepath.Join(home, ".onwatch", "data")
 	if err := os.MkdirAll(newDir, 0o755); err != nil {
 		t.Fatalf("mkdir new dir: %v", err)
@@ -2402,14 +2402,14 @@ func TestMigrateDBLocation_RenameFails(t *testing.T) {
 	newDB := filepath.Join(newDir, "onwatch.db")
 	// rename should fail because dir is read-only (on Unix)
 	migrateDBLocation(newDB, testLogger())
-	// Should not panic — error is just logged
+	// Should not panic - error is just logged
 
 	// Restore permissions
 	os.Chmod(newDir, 0o755)
 }
 
 // ---------------------------------------------------------------------------
-// runUpdate() — covers the "with stale PID in legacy format" restart path
+// runUpdate() - covers the "with stale PID in legacy format" restart path
 // ---------------------------------------------------------------------------
 
 func TestRunUpdate_WithLegacyPIDFormat(t *testing.T) {
@@ -2439,7 +2439,7 @@ func TestRunUpdate_WithLegacyPIDFormat(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// generatePassword() — validate it returns a hex string
+// generatePassword() - validate it returns a hex string
 // ---------------------------------------------------------------------------
 
 func TestGeneratePassword_ReturnsHexString(t *testing.T) {
@@ -2454,7 +2454,7 @@ func TestGeneratePassword_ReturnsHexString(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// initEncryptionSalt() — coverage via subprocess (salt generation path)
+// initEncryptionSalt() - coverage via subprocess (salt generation path)
 // ---------------------------------------------------------------------------
 
 // TestDaemonChildRun_DebugModeAllProvidersWithCopilot covers copilot agent init.
@@ -2492,7 +2492,7 @@ func TestDaemonChildRun_DebugModeAllProvidersWithCopilot(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — test mode, with port in PID file (shows Dashboard URL)
+// runStatus() - test mode, with port in PID file (shows Dashboard URL)
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_ShowsDashboardURL(t *testing.T) {
@@ -2509,7 +2509,7 @@ func TestRunStatus_ShowsDashboardURL(t *testing.T) {
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 
 	pid := cmd.Process.Pid
-	// Write PID:PORT format — port 9211 is in PID file
+	// Write PID:PORT format - port 9211 is in PID file
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d:9211", pid)), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
@@ -2560,7 +2560,7 @@ func TestRunStop_ShowsPortInOutput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// run() — server error path via subprocess (server can't bind to busy port)
+// run() - server error path via subprocess (server can't bind to busy port)
 // ---------------------------------------------------------------------------
 
 // TestDaemonChildRun_ServerError starts a daemon subprocess where the port
@@ -2578,7 +2578,7 @@ func TestDaemonChildRun_ServerError(t *testing.T) {
 	dbPath := filepath.Join(home, "onwatch.db")
 
 	// The subprocess will bind the port itself (via server_error_test mode)
-	// and then send SIGTERM to itself after server fails — we use runDaemonSubprocess
+	// and then send SIGTERM to itself after server fails - we use runDaemonSubprocess
 	// which sends SIGINT to trigger graceful shutdown.
 	runDaemonSubprocess(t, append(os.Environ(),
 		"GO_DAEMON_HELPER=1",
@@ -2598,7 +2598,7 @@ func TestDaemonChildRun_ServerError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// run() — coverage for "fixExplicitDBPath" redirect branch (explicit path
+// run() - coverage for "fixExplicitDBPath" redirect branch (explicit path
 //         smaller than canonical -> redirect to canonical)
 // ---------------------------------------------------------------------------
 
@@ -2651,7 +2651,7 @@ func TestDaemonChildRun_FixExplicitDBPath(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — covers log file and DB file display branches
+// runStatus() - covers log file and DB file display branches
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_WithLogAndDBFiles(t *testing.T) {
@@ -2709,7 +2709,7 @@ func TestRunStatus_WithLogAndDBFiles(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStop() — stale PID with PID:PORT format (dead process)
+// runStop() - stale PID with PID:PORT format (dead process)
 // ---------------------------------------------------------------------------
 
 func TestRunStop_StalePIDWithPort(t *testing.T) {
@@ -2741,7 +2741,7 @@ func TestRunStop_SelfPIDInFile(t *testing.T) {
 	pidFile = filepath.Join(tmpDir, "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
 
-	// Write our own PID — runStop should skip killing self
+	// Write our own PID - runStop should skip killing self
 	self := os.Getpid()
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d:9211", self)), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
@@ -2759,7 +2759,7 @@ func TestRunStop_SelfPIDInFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — stale PID with PID:PORT format and legacy format
+// runStatus() - stale PID with PID:PORT format and legacy format
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_StalePIDWithPort(t *testing.T) {
@@ -2791,7 +2791,7 @@ func TestRunStatus_SelfPIDInFile(t *testing.T) {
 	pidFile = filepath.Join(tmpDir, "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
 
-	// Write our own PID — should be skipped (pid != myPID check fails)
+	// Write our own PID - should be skipped (pid != myPID check fails)
 	self := os.Getpid()
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d:9211", self)), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
@@ -2809,7 +2809,7 @@ func TestRunStatus_SelfPIDInFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — running process with port displayed directly
+// runStatus() - running process with port displayed directly
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_RunningProcessWithPort(t *testing.T) {
@@ -2847,7 +2847,7 @@ func TestRunStatus_RunningProcessWithPort(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// stopPreviousInstance() — various edge cases
+// stopPreviousInstance() - various edge cases
 // ---------------------------------------------------------------------------
 
 func TestStopPreviousInstance_SelfPIDInFile(t *testing.T) {
@@ -2861,7 +2861,7 @@ func TestStopPreviousInstance_SelfPIDInFile(t *testing.T) {
 		pidFile = oldPIDFile
 	})
 
-	// Write our own PID — should NOT kill self
+	// Write our own PID - should NOT kill self
 	self := os.Getpid()
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d:12345", self)), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
@@ -2898,7 +2898,7 @@ func TestStopPreviousInstance_StalePIDPortFormat(t *testing.T) {
 	out := captureStdout(t, func() {
 		stopPreviousInstance(54321, true)
 	})
-	// Dead process — signal will fail, no "Stopped" output expected
+	// Dead process - signal will fail, no "Stopped" output expected
 	_ = out
 }
 
@@ -2940,14 +2940,14 @@ func TestStopPreviousInstance_NoPIDFile(t *testing.T) {
 		pidFile = oldPIDFile
 	})
 
-	// No PID file exists, no port in use — should be a no-op
+	// No PID file exists, no port in use - should be a no-op
 	captureStdout(t, func() {
 		stopPreviousInstance(0, true)
 	})
 }
 
 // ---------------------------------------------------------------------------
-// runUpdate() — test with high version (already latest via GitHub API)
+// runUpdate() - test with high version (already latest via GitHub API)
 // ---------------------------------------------------------------------------
 
 func TestRunUpdate_HighVersionAlreadyLatest(t *testing.T) {
@@ -3098,7 +3098,7 @@ func TestRunUpdate_CheckErrorPath(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// run() — via setTestArgs for update command with real version
+// run() - via setTestArgs for update command with real version
 // ---------------------------------------------------------------------------
 
 func TestRun_UpdateCommand(t *testing.T) {
@@ -3150,7 +3150,7 @@ func TestRun_UpdateCommandDashDash(t *testing.T) {
 
 
 // ---------------------------------------------------------------------------
-// runStop() — test mode with running parent PID (exercises SIGTERM path)
+// runStop() - test mode with running parent PID (exercises SIGTERM path)
 // ---------------------------------------------------------------------------
 
 func TestRunStop_TestModeWithRunningPID(t *testing.T) {
@@ -3164,7 +3164,7 @@ func TestRunStop_TestModeWithRunningPID(t *testing.T) {
 		pidFile = oldPIDFile
 	})
 
-	// Use parent PID which should be running — but we don't actually want to kill it.
+	// Use parent PID which should be running - but we don't actually want to kill it.
 	// Write a PID that doesn't exist (dead process) with port to cover the port branch.
 	deadPID := 999991
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d:7777", deadPID)), 0o644); err != nil {
@@ -3187,7 +3187,7 @@ func TestRunStop_TestModeWithRunningPID(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — test mode with running process, no port in PID file
+// runStatus() - test mode with running process, no port in PID file
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_RunningProcessNoPort(t *testing.T) {
@@ -3223,7 +3223,7 @@ func TestRunStatus_RunningProcessNoPort(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// fixExplicitDBPath() — explicit path doesn't exist, redirects to canonical
+// fixExplicitDBPath() - explicit path doesn't exist, redirects to canonical
 // ---------------------------------------------------------------------------
 
 func TestFixExplicitDBPath_ExplicitNotExist(t *testing.T) {
@@ -3242,7 +3242,7 @@ func TestFixExplicitDBPath_ExplicitNotExist(t *testing.T) {
 		t.Fatalf("write canonical db: %v", err)
 	}
 
-	// We need to override UserHomeDir — but we can't easily. Instead,
+	// We need to override UserHomeDir - but we can't easily. Instead,
 	// test the case where explicit path doesn't exist by pointing cfg.DBPath
 	// to a nonexistent file within the temp home.
 	tmpHome := filepath.Dir(filepath.Dir(canonDir)) // the temp dir itself
@@ -3262,7 +3262,7 @@ func TestFixExplicitDBPath_ExplicitNotExist(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// stopPreviousInstance() — PID file with invalid content
+// stopPreviousInstance() - PID file with invalid content
 // ---------------------------------------------------------------------------
 
 func TestStopPreviousInstance_InvalidPIDContent(t *testing.T) {
@@ -3276,7 +3276,7 @@ func TestStopPreviousInstance_InvalidPIDContent(t *testing.T) {
 		pidFile = oldPIDFile
 	})
 
-	// Write garbage content — pid will parse as 0, should be skipped
+	// Write garbage content - pid will parse as 0, should be skipped
 	if err := os.WriteFile(pidFile, []byte("garbage:content"), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
@@ -3313,11 +3313,11 @@ func TestStopPreviousInstance_EmptyPIDFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// run() — setup command branch
+// run() - setup command branch
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// runStop() — non-test mode with PID file port branch
+// runStop() - non-test mode with PID file port branch
 // ---------------------------------------------------------------------------
 
 func TestRunStop_NonTestMode_PIDFilePortBranch(t *testing.T) {
@@ -3363,7 +3363,7 @@ func TestRunStop_NonTestMode_PIDFilePortBranch(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — non-test mode with port from PID file and fallback port scan
+// runStatus() - non-test mode with port from PID file and fallback port scan
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_NonTestMode_PIDFilePortBranch(t *testing.T) {
@@ -3445,7 +3445,7 @@ func TestRunStatus_NonTestMode_NoPIDFileFallback(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — running process with no port, non-test mode (covers port scan fallback)
+// runStatus() - running process with no port, non-test mode (covers port scan fallback)
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_NonTestMode_RunningProcessNoPort(t *testing.T) {
@@ -3481,7 +3481,7 @@ func TestRunStatus_NonTestMode_RunningProcessNoPort(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// stopPreviousInstance() — non-test mode with port fallback
+// stopPreviousInstance() - non-test mode with port fallback
 // ---------------------------------------------------------------------------
 
 func TestStopPreviousInstance_NonTestMode_PortFallback(t *testing.T) {
@@ -3507,7 +3507,7 @@ func TestStopPreviousInstance_NonTestMode_PortFallback(t *testing.T) {
 	defer ln.Close()
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	// Call with non-test mode and the port — will try to find onwatch on the port
+	// Call with non-test mode and the port - will try to find onwatch on the port
 	// go test is not onwatch, so findOnwatchOnPort returns empty
 	captureStdout(t, func() {
 		stopPreviousInstance(port, false)
@@ -3580,7 +3580,7 @@ func TestRun_SetupCommand(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// run() — in-process daemon child that fails on server bind
+// run() - in-process daemon child that fails on server bind
 // This covers database setup, agent creation, and server error path.
 // ---------------------------------------------------------------------------
 
@@ -3633,7 +3633,7 @@ func TestRun_InProcessDaemonChild_ServerBindFails(t *testing.T) {
 
 	select {
 	case err := <-done:
-		// run() returned — either due to server error or other error
+		// run() returned - either due to server error or other error
 		if err != nil {
 			t.Logf("run() returned error (expected for port conflict): %v", err)
 		}
@@ -3643,7 +3643,7 @@ func TestRun_InProcessDaemonChild_ServerBindFails(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// run() — in-process daemon child with all providers configured
+// run() - in-process daemon child with all providers configured
 // This exercises more agent/tracker creation branches.
 // ---------------------------------------------------------------------------
 
@@ -3701,7 +3701,7 @@ func TestRun_InProcessDaemonChild_AllProviders(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// collectSyntheticKey() — empty key then valid key
+// collectSyntheticKey() - empty key then valid key
 // ---------------------------------------------------------------------------
 
 func TestCollectSyntheticKey_EmptyThenValid(t *testing.T) {
@@ -3715,7 +3715,7 @@ func TestCollectSyntheticKey_EmptyThenValid(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// addMissingProviders() — existing env with antigravity already enabled
+// addMissingProviders() - existing env with antigravity already enabled
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_AntigravityAlreadyEnabled(t *testing.T) {
@@ -3744,7 +3744,7 @@ func TestAddMissingProviders_AntigravityAlreadyEnabled(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// fixExplicitDBPath() — when explicit path IS the canonical path
+// fixExplicitDBPath() - when explicit path IS the canonical path
 // ---------------------------------------------------------------------------
 
 func TestFixExplicitDBPath_AlreadyCanonical(t *testing.T) {
@@ -3767,7 +3767,7 @@ func TestFixExplicitDBPath_AlreadyCanonical(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// fixExplicitDBPath() — canonical has more data than explicit
+// fixExplicitDBPath() - canonical has more data than explicit
 // ---------------------------------------------------------------------------
 
 func TestFixExplicitDBPath_CanonicalHasMoreData(t *testing.T) {
@@ -3803,7 +3803,7 @@ func TestFixExplicitDBPath_CanonicalHasMoreData(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// fixExplicitDBPath() — canonical path doesn't exist
+// fixExplicitDBPath() - canonical path doesn't exist
 // ---------------------------------------------------------------------------
 
 func TestFixExplicitDBPath_CanonicalDoesNotExist(t *testing.T) {
@@ -3828,7 +3828,7 @@ func TestFixExplicitDBPath_CanonicalDoesNotExist(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// fixExplicitDBPath() — explicit path doesn't exist, canonical does
+// fixExplicitDBPath() - explicit path doesn't exist, canonical does
 // ---------------------------------------------------------------------------
 
 func TestFixExplicitDBPath_ExplicitMissingCanonicalExists(t *testing.T) {
@@ -3859,7 +3859,7 @@ func TestFixExplicitDBPath_ExplicitMissingCanonicalExists(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// initEncryptionSalt() — test with existing valid salt in DB
+// initEncryptionSalt() - test with existing valid salt in DB
 // ---------------------------------------------------------------------------
 
 func TestInitEncryptionSalt_ExistingSalt(t *testing.T) {
@@ -3885,7 +3885,7 @@ func TestInitEncryptionSalt_ExistingSalt(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// initEncryptionSalt() — test with invalid salt in DB (should regenerate)
+// initEncryptionSalt() - test with invalid salt in DB (should regenerate)
 // ---------------------------------------------------------------------------
 
 func TestInitEncryptionSalt_InvalidSaltInDB(t *testing.T) {
@@ -3920,7 +3920,7 @@ func TestInitEncryptionSalt_InvalidSaltInDB(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStop() — non-test mode with PID:PORT stale PID (port branch fallback)
+// runStop() - non-test mode with PID:PORT stale PID (port branch fallback)
 // ---------------------------------------------------------------------------
 
 func TestRunStop_NonTestMode_StalePIDWithPortFallback(t *testing.T) {
@@ -3948,7 +3948,7 @@ func TestRunStop_NonTestMode_StalePIDWithPortFallback(t *testing.T) {
 	defer ln.Close()
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	// Write stale PID:PORT — dead PID but port is active (not onwatch)
+	// Write stale PID:PORT - dead PID but port is active (not onwatch)
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("999985:%d", port)), 0o644); err != nil {
 		t.Fatalf("write pid: %v", err)
 	}
@@ -3965,11 +3965,11 @@ func TestRunStop_NonTestMode_StalePIDWithPortFallback(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runStatus() — stale PID non-test mode
+// runStatus() - stale PID non-test mode
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// run() — daemon child with signal-based shutdown (covers signal handler path)
+// run() - daemon child with signal-based shutdown (covers signal handler path)
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_NonTestMode_StalePIDNoPort(t *testing.T) {

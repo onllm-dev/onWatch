@@ -1,4 +1,4 @@
-// onWatch Service Worker — push notifications only, no offline caching.
+// onWatch Service Worker - push notifications only, no offline caching.
 self.addEventListener('push', function(event) {
   var data = { title: 'onWatch', body: 'Quota alert' };
   if (event.data) {

@@ -469,7 +469,7 @@ func (s *Store) migrateSchema() error {
 		ALTER TABLE zai_snapshots ADD COLUMN time_usage_details TEXT NOT NULL DEFAULT ''
 	`); err != nil {
 		if !strings.Contains(err.Error(), "duplicate column name") {
-			// Table might not exist yet (new install) — ignore
+			// Table might not exist yet (new install) - ignore
 			if !strings.Contains(err.Error(), "no such table") {
 				return fmt.Errorf("failed to add time_usage_details to zai_snapshots: %w", err)
 			}
@@ -1329,7 +1329,7 @@ func (s *Store) migrateZaiSessions(idleTimeout time.Duration) error {
 
 // migrateAnthropicSessions walks through Anthropic snapshots and creates usage-based sessions.
 func (s *Store) migrateAnthropicSessions(idleTimeout time.Duration) error {
-	// Anthropic has normalized data — we need to pivot per-snapshot quota values into a flat slice.
+	// Anthropic has normalized data - we need to pivot per-snapshot quota values into a flat slice.
 	// Walk snapshot by snapshot.
 	snapRows, err := s.db.Query(
 		`SELECT id, captured_at FROM anthropic_snapshots ORDER BY captured_at ASC`,
@@ -1413,7 +1413,7 @@ func (s *Store) migrateAnthropicSessions(idleTimeout time.Duration) error {
 		// Determine if values changed
 		changed := false
 		if prevValues == nil {
-			// First snapshot — baseline
+			// First snapshot - baseline
 			prevValues = currentValues
 			continue
 		}

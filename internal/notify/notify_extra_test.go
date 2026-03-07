@@ -19,7 +19,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// sendNotification — email path coverage
+// sendNotification - email path coverage
 // ---------------------------------------------------------------------------
 
 // TestSendNotification_EmailSent verifies that sendNotification sends an email
@@ -113,7 +113,7 @@ func TestSendNotification_EmailFailure(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// sendNotification — push path coverage (subscription send + 410 delete)
+// sendNotification - push path coverage (subscription send + 410 delete)
 // ---------------------------------------------------------------------------
 
 // makeTLSPushSender creates a PushSender whose HTTP client trusts the provided
@@ -219,7 +219,7 @@ func TestSendNotification_Push410DeletesSubscription(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// SendTestPush — send error path
+// SendTestPush - send error path
 // ---------------------------------------------------------------------------
 
 // TestSendTestPush_SendError verifies that SendTestPush returns the last error
@@ -249,7 +249,7 @@ func TestSendTestPush_SendError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// smtp.connect — tls and starttls error paths
+// smtp.connect - tls and starttls error paths
 // ---------------------------------------------------------------------------
 
 // TestSMTPConnect_TLSDialError verifies that the "tls" protocol path returns
@@ -335,7 +335,7 @@ func TestSMTPConnect_StartTLS_DialError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// GenerateEncryptionKey — concurrent call pattern for race detection
+// GenerateEncryptionKey - concurrent call pattern for race detection
 // ---------------------------------------------------------------------------
 
 // TestGenerateEncryptionKey_ConcurrentCalls exercises GenerateEncryptionKey from
@@ -373,7 +373,7 @@ func TestGenerateEncryptionKey_ConcurrentCalls(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ConfigurePush — error paths
+// ConfigurePush - error paths
 // ---------------------------------------------------------------------------
 
 // TestConfigurePush_GetSettingError verifies that ConfigurePush returns an error
@@ -417,7 +417,7 @@ func TestConfigurePush_InvalidVAPIDJSON(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ConfigureSMTP — store error path
+// ConfigureSMTP - store error path
 // ---------------------------------------------------------------------------
 
 // TestConfigureSMTP_StoreError verifies that ConfigureSMTP returns an error when
@@ -440,7 +440,7 @@ func TestConfigureSMTP_StoreError(t *testing.T) {
 }
 
 // TestConfigureSMTP_DecryptionFailure verifies that ConfigureSMTP does not error
-// when password decryption fails — it simply keeps the plaintext password.
+// when password decryption fails - it simply keeps the plaintext password.
 // This exercises the decrypt-failure debug-log branch.
 func TestConfigureSMTP_DecryptionFailure(t *testing.T) {
 	s := newTestStore(t)
@@ -454,7 +454,7 @@ func TestConfigureSMTP_DecryptionFailure(t *testing.T) {
 	}
 
 	// A 30-char "password" that is long enough (>24) to trigger decryption attempt
-	// but is not valid base64 ciphertext — decryption will fail silently.
+	// but is not valid base64 ciphertext - decryption will fail silently.
 	fakeEncryptedPass := "dGhpcyBpcyBub3QgcmVhbGx5IGVuY3J5cHRlZCBidXQgbG9uZw"
 
 	smtpJSON, _ := json.Marshal(smtpSettingsJSON{
@@ -479,7 +479,7 @@ func TestConfigureSMTP_DecryptionFailure(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// SendTestPush — GetPushSubscriptions error path and partial success
+// SendTestPush - GetPushSubscriptions error path and partial success
 // ---------------------------------------------------------------------------
 
 // TestSendTestPush_GetSubscriptionsError verifies that SendTestPush returns an
@@ -526,7 +526,7 @@ func TestSendTestPush_PartialSuccess(t *testing.T) {
 	}))
 	defer failServer.Close()
 
-	// Both subscriptions saved — but the push sender uses one TLS client,
+	// Both subscriptions saved - but the push sender uses one TLS client,
 	// so we save both pointing at the success server to test the sent>0 path.
 	// For partial failure: save subscription with success server endpoint only
 	// (sent==1, lastErr==nil => returns nil).
@@ -548,7 +548,7 @@ func TestSendTestPush_PartialSuccess(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// sendNotification — GetLastNotification error path
+// sendNotification - GetLastNotification error path
 // ---------------------------------------------------------------------------
 
 // TestSendNotification_StoreError verifies that sendNotification returns early
@@ -613,7 +613,7 @@ func TestSendNotification_PushGetSubscriptionsError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestConnection — no-username path (skips auth)
+// TestConnection - no-username path (skips auth)
 // ---------------------------------------------------------------------------
 
 // TestSMTPMailer_TestConnection_NoUsername verifies that TestConnection skips
@@ -645,7 +645,7 @@ func TestSMTPMailer_TestConnection_NoUsername(t *testing.T) {
 		Host:     host,
 		Port:     port,
 		Protocol: "none",
-		// Username left empty — auth is skipped.
+		// Username left empty - auth is skipped.
 		FromAddr: "sender@test.com",
 		FromName: "Test",
 		ToAddrs:  []string{"recipient@test.com"},
@@ -659,7 +659,7 @@ func TestSMTPMailer_TestConnection_NoUsername(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// smtp.Send — MAIL FROM error path
+// smtp.Send - MAIL FROM error path
 // ---------------------------------------------------------------------------
 
 // TestSMTPMailer_Send_MailFromError verifies that Send returns an error when
@@ -714,7 +714,7 @@ func TestSMTPMailer_Send_MailFromError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// smtp.Send — RCPT TO error path
+// smtp.Send - RCPT TO error path
 // ---------------------------------------------------------------------------
 
 // TestSMTPMailer_Send_RcptToError verifies that Send returns an error when

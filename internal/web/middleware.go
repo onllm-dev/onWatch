@@ -155,7 +155,7 @@ func (s *SessionStore) ValidateToken(token string) bool {
 		}
 		return true
 	}
-	// Not in cache — check SQLite (handles tokens from previous daemon run)
+	// Not in cache - check SQLite (handles tokens from previous daemon run)
 	if s.store != nil {
 		dbExpiry, found, err := s.store.GetAuthTokenExpiry(token)
 		if err != nil || !found {
@@ -165,7 +165,7 @@ func (s *SessionStore) ValidateToken(token string) bool {
 			s.store.DeleteAuthToken(token)
 			return false
 		}
-		// Valid in DB — add to in-memory cache
+		// Valid in DB - add to in-memory cache
 		s.mu.Lock()
 		s.tokens[token] = dbExpiry
 		s.mu.Unlock()

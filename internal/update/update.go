@@ -239,14 +239,14 @@ func (u *Updater) Apply() error {
 
 	// Replace the binary.
 	// Strategy 1 (Unix): remove current binary then rename temp into place.
-	// On Unix, deleting a running binary is safe — the kernel keeps the inode
+	// On Unix, deleting a running binary is safe - the kernel keeps the inode
 	// alive until all file descriptors are closed (i.e., until this process exits).
 	// Strategy 2 (Windows fallback): rename current to .old, rename temp to current.
 	if err := replaceBinary(exePath, tmpPath, u.logger); err != nil {
 		return fmt.Errorf("update.Apply: %w", err)
 	}
 
-	// Store path for Restart() — after Apply, /proc/self/exe may show "(deleted)"
+	// Store path for Restart() - after Apply, /proc/self/exe may show "(deleted)"
 	u.mu.Lock()
 	u.lastAppliedPath = exePath
 	u.mu.Unlock()
@@ -350,10 +350,10 @@ func findUnitFile(serviceName string) string {
 // policy and automatically starts a fresh instance of the new binary.
 //
 // This is the mechanism that makes self-updates work under systemd with
-// zero manual intervention — even when the OLD binary's Restart() code
+// zero manual intervention - even when the OLD binary's Restart() code
 // used the broken spawn-and-kill approach.
 //
-// Safe to call on every startup — no-op if already up to date or not under systemd.
+// Safe to call on every startup - no-op if already up to date or not under systemd.
 func MigrateSystemdUnit(logger *slog.Logger) {
 	if !IsSystemd() {
 		return
@@ -391,7 +391,7 @@ func MigrateSystemdUnit(logger *slog.Logger) {
 		return
 	}
 
-	// Reload systemd configuration synchronously — MUST complete before
+	// Reload systemd configuration synchronously - MUST complete before
 	// stopPreviousInstance() kills the parent, so systemd sees the new
 	// Restart=always policy when the parent PID dies.
 	var cmd *exec.Cmd
@@ -416,7 +416,7 @@ func MigrateSystemdUnit(logger *slog.Logger) {
 func (u *Updater) Restart() error {
 	if IsSystemd() {
 		serviceName := DetectServiceName()
-		u.logger.Info("Running under systemd — triggering service restart", "service", serviceName)
+		u.logger.Info("Running under systemd - triggering service restart", "service", serviceName)
 
 		// Run systemctl restart in a detached process.
 		// systemctl will SIGTERM us, then start the new binary.

@@ -7066,6 +7066,93 @@ func TestHandler_Providers_WithVisibility(t *testing.T) {
 	}
 }
 
+func TestHandler_Current_Both_RespectsTelemetryVisibility(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	_ = s.SetSetting("provider_visibility", `{"synthetic":{"polling":false},"zai":{"polling":true}}`)
+
+	cfg := createTestConfigWithBoth()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/current?provider=both", nil)
+	rr := httptest.NewRecorder()
+	h.Current(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	if _, ok := response["synthetic"]; ok {
+		t.Error("expected synthetic to be excluded when telemetry is disabled")
+	}
+	if _, ok := response["zai"]; !ok {
+		t.Error("expected zai to remain visible when telemetry is enabled")
+	}
+}
+
+func TestHandler_History_Both_RespectsTelemetryVisibility(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	_ = s.SetSetting("provider_visibility", `{"synthetic":{"polling":false}}`)
+
+	cfg := createTestConfigWithBoth()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/history?provider=both&range=1h", nil)
+	rr := httptest.NewRecorder()
+	h.History(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	if _, ok := response["synthetic"]; ok {
+		t.Error("expected synthetic history to be excluded when telemetry is disabled")
+	}
+}
+
+func TestHandler_Insights_Both_RespectsTelemetryVisibility(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	_ = s.SetSetting("provider_visibility", `{"synthetic":{"polling":false},"zai":{"polling":true}}`)
+
+	cfg := createTestConfigWithBoth()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/insights?provider=both", nil)
+	rr := httptest.NewRecorder()
+	h.Insights(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	if _, ok := response["synthetic"]; ok {
+		t.Error("expected synthetic insights to be excluded when telemetry is disabled")
+	}
+	if _, ok := response["zai"]; !ok {
+		t.Error("expected zai insights to remain visible when telemetry is enabled")
+	}
+}
+
 func TestHandler_Providers_NilConfig(t *testing.T) {
 	h := NewHandler(nil, nil, nil, nil, nil)
 

@@ -152,7 +152,7 @@ func stopPreviousInstance(port int, testMode bool) {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
 		if err == nil {
 			conn.Close()
-			// Port is occupied — find which process holds it
+			// Port is occupied - find which process holds it
 			if pids := findOnwatchOnPort(port); len(pids) > 0 {
 				for _, pid := range pids {
 					if pid == myPID {
@@ -284,7 +284,7 @@ func fixExplicitDBPath(cfg *config.Config, logger *slog.Logger) {
 
 	canonicalPath := filepath.Join(home, ".onwatch", "data", "onwatch.db")
 
-	// Already using the canonical path — nothing to fix
+	// Already using the canonical path - nothing to fix
 	absExplicit, _ := filepath.Abs(cfg.DBPath)
 	absCan, _ := filepath.Abs(canonicalPath)
 	if absExplicit == absCan {
@@ -300,14 +300,14 @@ func fixExplicitDBPath(cfg *config.Config, logger *slog.Logger) {
 	// Check if the explicit path exists
 	expInfo, err := os.Stat(cfg.DBPath)
 	if err != nil {
-		// Explicit path doesn't even exist — use canonical
+		// Explicit path doesn't even exist - use canonical
 		logger.Info("Explicit DB path not found, redirecting to canonical",
 			"explicit", cfg.DBPath, "canonical", canonicalPath)
 		cfg.DBPath = canonicalPath
 		return
 	}
 
-	// Both exist — use whichever is larger (has more data)
+	// Both exist - use whichever is larger (has more data)
 	if canInfo.Size() > expInfo.Size() {
 		logger.Warn("Explicit DB path has less data than canonical path, redirecting",
 			"explicit", cfg.DBPath, "explicitSize", expInfo.Size(),
@@ -514,7 +514,7 @@ func run() error {
 
 	// Warn if using default password
 	if cfg.IsDefaultPassword() {
-		logger.Warn("⚠️  USING DEFAULT PASSWORD — set ONWATCH_ADMIN_PASS in .env for production")
+		logger.Warn("⚠️  USING DEFAULT PASSWORD - set ONWATCH_ADMIN_PASS in .env for production")
 	}
 
 	// Print startup banner (only in debug/foreground mode)
@@ -552,11 +552,11 @@ func run() error {
 	// Password precedence: DB-stored hash takes priority over .env
 	dbHash, hashErr := db.GetUser(cfg.AdminUser)
 	if hashErr == nil && dbHash != "" {
-		// DB has stored password — use it
+		// DB has stored password - use it
 		cfg.AdminPassHash = dbHash
 		logger.Info("Using database-stored password for auth")
 	} else {
-		// No DB password — hash the .env password and store it
+		// No DB password - hash the .env password and store it
 		cfg.AdminPassHash = sha256hex(cfg.AdminPass)
 		if storeErr := db.UpsertUser(cfg.AdminUser, cfg.AdminPassHash); storeErr != nil {
 			logger.Warn("Failed to store initial password hash", "error", storeErr)
@@ -686,12 +686,12 @@ func run() error {
 	if anthropicClient != nil {
 		anthropicSm := agent.NewSessionManager(db, "anthropic", idleTimeout, logger)
 		anthropicAg = agent.NewAnthropicAgent(anthropicClient, db, anthropicTr, cfg.PollInterval, logger, anthropicSm)
-		// Enable automatic token refresh — re-reads credentials before each poll
+		// Enable automatic token refresh - re-reads credentials before each poll
 		// so expired OAuth tokens get picked up when Claude Code rotates them.
 		anthropicAg.SetTokenRefresh(func() string {
 			return api.DetectAnthropicToken(logger)
 		})
-		// Enable proactive OAuth refresh — refreshes token via OAuth API before expiry
+		// Enable proactive OAuth refresh - refreshes token via OAuth API before expiry
 		// and saves new tokens to credentials file immediately.
 		anthropicAg.SetCredentialsRefresh(func() *api.AnthropicCredentials {
 			return api.DetectAnthropicCredentials(logger)
@@ -761,7 +761,7 @@ func run() error {
 		antigravityAg.SetNotifier(notifier)
 	}
 
-	// Wire polling checks — agents skip poll when telemetry disabled
+	// Wire polling checks - agents skip poll when telemetry disabled
 	isPollingEnabled := func(providerKey string) bool {
 		v, err := db.GetSetting("provider_visibility")
 		if err != nil || v == "" {
@@ -1124,7 +1124,7 @@ func runStop(testMode bool) error {
 		}
 	}
 
-	// Method 2: Port-based fallback — check default ports
+	// Method 2: Port-based fallback - check default ports
 	// Skip in test mode to avoid killing production instances
 	if !testMode && !stopped {
 		// Check both old (8932) and new (9211) default ports for backwards compatibility
@@ -1238,7 +1238,7 @@ func runStatus(testMode bool) error {
 		}
 	}
 
-	// No PID file — try port check (skip in test mode to avoid confusion with production)
+	// No PID file - try port check (skip in test mode to avoid confusion with production)
 	if !testMode {
 		for _, port := range []int{9211, 8932} {
 			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
@@ -1278,7 +1278,7 @@ func runUpdate() error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	u := update.NewUpdater(version, logger)
 
-	fmt.Printf("onWatch v%s — checking for updates...\n", version)
+	fmt.Printf("onWatch v%s - checking for updates...\n", version)
 
 	info, err := u.Check()
 	if err != nil {
