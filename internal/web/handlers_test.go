@@ -1550,8 +1550,11 @@ func TestHandler_Dashboard_AllView_UsesCodexMultiAccountLayout(t *testing.T) {
 	}
 
 	body := rr.Body.String()
-	if !strings.Contains(body, `id="codex-accounts-container-both"`) {
-		t.Error("expected all-view codex multi-account container")
+	if !strings.Contains(body, `id="all-providers-container"`) {
+		t.Error("expected all-view provider cards container")
+	}
+	if strings.Contains(body, `id="codex-accounts-container-both"`) {
+		t.Error("did not expect legacy codex multi-account container in all view")
 	}
 	if strings.Contains(body, `id="sessions-section"`) {
 		t.Error("did not expect Session History section on all view")

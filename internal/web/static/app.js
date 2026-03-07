@@ -45,7 +45,7 @@ async function authFetch(url, options) {
 
 // ── Provider State ──
 function getCurrentProvider() {
-  const bothView = document.getElementById('both-view');
+  const bothView = document.getElementById('both-view') || document.getElementById('all-providers-container');
   if (bothView) return 'both';
   const anthropicGrid = document.getElementById('quota-grid-anthropic');
   if (anthropicGrid) return 'anthropic';
@@ -76,11 +76,13 @@ function shouldShowHistoryTables(provider = getCurrentProvider()) {
 }
 
 function getBothViewProviders() {
-  const bothView = document.getElementById('both-view');
-  if (!bothView) return [];
-  return [...bothView.querySelectorAll('.provider-column[data-provider]')]
-    .map(el => el.dataset.provider)
-    .filter(Boolean);
+  const tabs = document.querySelectorAll('#provider-tabs .provider-tab[data-provider]');
+  if (tabs.length > 0) {
+    return [...tabs]
+      .map(el => el.dataset.provider)
+      .filter((provider) => provider && provider !== 'both');
+  }
+  return [];
 }
 
 // ── Global State ──
@@ -91,6 +93,7 @@ const State = {
   chartAnth: null,
   chartCodex: null,
   chartCodexByAccount: {},
+  providerCharts: {},
   modalChart: null,
   countdownInterval: null,
   refreshInterval: null,
@@ -133,6 +136,9 @@ const State = {
   codexProfiles: [],
   codexPlanType: '',
   codexQuotaNames: [],
+  allProvidersCurrent: null,
+  allProvidersInsights: null,
+  allProvidersHistory: null,
 };
 
 // ── Persistence ──
@@ -2096,7 +2102,7 @@ function initTheme() {
     const next = current === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('onwatch-theme', next);
-    if (State.chart) updateChartTheme();
+    updateChartTheme();
   });
 }
 
@@ -2123,6 +2129,17 @@ function setLayoutDensity(mode) {
   } catch (e) {
     // silent
   }
+
+  requestAnimationFrame(() => {
+    if (State.chart && typeof State.chart.resize === 'function') {
+      State.chart.resize();
+    }
+    Object.values(State.providerCharts || {}).forEach((chart) => {
+      if (chart && typeof chart.resize === 'function') {
+        chart.resize();
+      }
+    });
+  });
 }
 
 function initLayoutToggle() {
@@ -2266,50 +2283,8 @@ async function fetchCurrent() {
     requestAnimationFrame(() => {
       const provider = getCurrentProvider();
       if (provider === 'both') {
-        // "both" response: { synthetic: {...}, zai: {...}, anthropic: {...} }
-        if (data.synthetic) {
-          updateCard('subscription', data.synthetic.subscription);
-          updateCard('search', data.synthetic.search);
-          updateCard('toolCalls', data.synthetic.toolCalls, 'syn');
-        }
-        if (data.zai) {
-          updateCard('tokensLimit', data.zai.tokensLimit);
-          updateCard('timeLimit', data.zai.timeLimit);
-          updateCard('toolCalls', data.zai.toolCalls, 'zai');
-        }
-        if (data.anthropic && data.anthropic.quotas) {
-          const container = document.getElementById('quota-grid-anthropic-both');
-          if (container && container.children.length === 0) {
-            renderAnthropicQuotaCards(data.anthropic.quotas, 'quota-grid-anthropic-both');
-          } else {
-            data.anthropic.quotas.forEach(q => updateAnthropicCard(q));
-          }
-        }
-        if (data.copilot && data.copilot.quotas) {
-          const container = document.getElementById('quota-grid-copilot-both');
-          if (container && container.children.length === 0) {
-            renderCopilotQuotaCards(data.copilot.quotas, 'quota-grid-copilot-both');
-          } else {
-            data.copilot.quotas.forEach(q => updateCopilotCard(q));
-          }
-        }
-        if (document.getElementById('codex-accounts-container-both')) {
-          if (data.codexAccounts && data.codexAccounts.length > 0) {
-            fetchCodexUsage({ mode: 'both', data: data.codexAccounts });
-          } else if (data.codex && data.codex.quotas) {
-            fetchCodexUsage({ mode: 'both', data: [data.codex] });
-          } else {
-            fetchCodexUsage({ mode: 'both' });
-          }
-        }
-        if (data.antigravity && data.antigravity.quotas) {
-          const container = document.getElementById('quota-grid-antigravity-both');
-          if (container && container.children.length === 0) {
-            renderAntigravityQuotaCards(data.antigravity.quotas, 'quota-grid-antigravity-both');
-          } else {
-            data.antigravity.quotas.forEach(q => updateAntigravityCard(q));
-          }
-        }
+        State.allProvidersCurrent = data;
+        renderAllProvidersView();
       } else if (provider === 'copilot') {
         // Copilot response: { capturedAt: ..., quotas: [...] }
         if (data.quotas) {
@@ -2514,24 +2489,26 @@ const insightIcons = {
 };
 
 async function fetchDeepInsights() {
+  const provider = getCurrentProvider();
   const panel = document.querySelector('.insights-panel');
   const statsEl = document.getElementById('insights-stats');
   const cardsEl = document.getElementById('insights-cards');
-  if (!cardsEl) return;
+  if (provider !== 'both' && !cardsEl) return;
 
   // Render range selector pills in the insights header (once)
-  renderInsightsRangePills();
+  if (provider !== 'both') {
+    renderInsightsRangePills();
+  }
 
   try {
     const res = await authFetch(`${API_BASE}/api/insights?${providerParam()}&range=${State.insightsRange}`);
     if (!res.ok) throw new Error('Failed to fetch insights');
     const data = await res.json();
 
-    const provider = getCurrentProvider();
-
     if (provider === 'both') {
-      // "both" mode: render two separate provider boxes
-      renderBothInsights(data, statsEl, cardsEl);
+      State.allProvidersInsights = data;
+      renderAllProvidersView();
+      return;
     } else {
       // Single provider mode
       const allStats = data.stats || [];
@@ -2560,6 +2537,7 @@ async function fetchDeepInsights() {
     renderHiddenInsightsBadge();
   } catch (err) {
     // insights fetch error — panel shows fallback state
+    if (provider === 'both') return;
     if (statsEl) statsEl.innerHTML = '';
     cardsEl.innerHTML = '<p class="insight-text">Unable to load insights.</p>';
   }
@@ -2905,8 +2883,12 @@ function initChart() {
 
 function updateChartTheme() {
   if (getCurrentProvider() === 'both') {
-    // Re-fetch to rebuild both charts with new theme colors
-    fetchHistory();
+    // Re-render both-mode provider cards so Chart.js picks up updated theme tokens.
+    if (State.allProvidersCurrent || State.allProvidersInsights || State.allProvidersHistory) {
+      renderAllProvidersView();
+    } else {
+      fetchHistory();
+    }
     return;
   }
   if (!State.chart) return;
@@ -2941,6 +2923,7 @@ async function fetchHistory(range) {
     const activeBtn = document.querySelector('.range-btn[data-range].active');
     range = activeBtn ? activeBtn.dataset.range : '6h';
   }
+  State.currentRange = range;
   try {
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch history');
@@ -2949,8 +2932,8 @@ async function fetchHistory(range) {
     const provider = getCurrentProvider();
 
     if (provider === 'both') {
-      // "both" response: { synthetic: [...], zai: [...] }
-      updateBothCharts(data, range);
+      State.allProvidersHistory = data;
+      renderAllProvidersView();
       return;
     }
 
@@ -3140,7 +3123,469 @@ async function fetchHistory(range) {
   }
 }
 
-// ── "Both" Mode: Dual Charts ──
+// ── "Both" Mode: Provider Cards ──
+
+const bothProviderNames = {
+  synthetic: 'Synthetic',
+  zai: 'Z.ai',
+  anthropic: 'Anthropic',
+  copilot: 'Copilot',
+  codex: 'Codex',
+  antigravity: 'Antigravity',
+};
+
+function escapeHTML(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function toTitleCase(value) {
+  return String(value || '')
+    .replaceAll('_', ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function sanitizeProviderCardKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function loadProviderCardCollapseState() {
+  try {
+    const raw = localStorage.getItem('onwatch-provider-card-collapsed');
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveProviderCardCollapseState(state) {
+  try {
+    localStorage.setItem('onwatch-provider-card-collapsed', JSON.stringify(state));
+  } catch (e) {
+    // silent
+  }
+}
+
+function normalizeBothQuotas(provider, payload) {
+  if (!payload) return [];
+
+  if (provider === 'synthetic') {
+    const map = [
+      { key: 'subscription', label: 'Subscription' },
+      { key: 'search', label: 'Search (Hourly)' },
+      { key: 'toolCalls', label: 'Tool Calls' },
+    ];
+    return map
+      .map(({ key, label }) => {
+        const item = payload[key];
+        if (!item) return null;
+        return {
+          name: key,
+          displayName: label,
+          cardPercent: item.percent ?? 0,
+          cardLabel: 'Utilization',
+          status: item.status || 'healthy',
+          timeUntilResetSeconds: item.timeUntilResetSeconds || 0,
+          resetsAt: item.renewsAt || '',
+        };
+      })
+      .filter(Boolean);
+  }
+
+  if (provider === 'zai') {
+    const map = [
+      { key: 'tokensLimit', label: 'Tokens Limit' },
+      { key: 'timeLimit', label: 'Time Limit' },
+      { key: 'toolCalls', label: 'Tool Calls' },
+    ];
+    return map
+      .map(({ key, label }) => {
+        const item = payload[key];
+        if (!item) return null;
+        return {
+          name: key,
+          displayName: label,
+          cardPercent: item.percent ?? 0,
+          cardLabel: 'Utilization',
+          status: item.status || 'healthy',
+          timeUntilResetSeconds: item.timeUntilResetSeconds || 0,
+          resetsAt: item.renewsAt || '',
+        };
+      })
+      .filter(Boolean);
+  }
+
+  if (!Array.isArray(payload.quotas)) return [];
+  const rawQuotas = provider === 'codex'
+    ? filterCodexQuotasForPlan(payload.quotas, payload.planType || State.codexPlanType)
+    : payload.quotas;
+  return rawQuotas.map((quota) => {
+    const percent = quota.cardPercent != null
+      ? quota.cardPercent
+      : (quota.utilization != null ? quota.utilization : (quota.percent ?? 0));
+    return {
+      ...quota,
+      cardPercent: percent,
+      displayName: quota.displayName
+        || codexDisplayNames[quota.name]
+        || anthropicDisplayNames[quota.name]
+        || copilotDisplayNames[quota.name]
+        || getQuotaDisplayName(quota.name, provider),
+      cardLabel: quota.cardLabel || 'Utilization',
+      status: quota.status || 'healthy',
+      timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
+      resetsAt: quota.resetsAt || quota.renewsAt || '',
+    };
+  });
+}
+
+function buildAllProviderEntries() {
+  const current = State.allProvidersCurrent || {};
+  const insights = State.allProvidersInsights || {};
+  const history = State.allProvidersHistory || {};
+  const configuredOrder = getBothViewProviders();
+  const providerSet = new Set(configuredOrder);
+  const addProviderFromKey = (key) => {
+    if (!key) return;
+    if (key === 'codex' || key === 'codexAccounts') {
+      providerSet.add('codex');
+      return;
+    }
+    if (bothProviderNames[key]) {
+      providerSet.add(key);
+    }
+  };
+  Object.keys(current).forEach(addProviderFromKey);
+  Object.keys(insights).forEach(addProviderFromKey);
+  Object.keys(history).forEach(addProviderFromKey);
+
+  const order = [];
+  const seen = new Set();
+  configuredOrder.forEach((provider) => {
+    if (providerSet.has(provider) && !seen.has(provider)) {
+      seen.add(provider);
+      order.push(provider);
+    }
+  });
+  [...providerSet]
+    .filter(provider => !seen.has(provider))
+    .sort((a, b) => a.localeCompare(b))
+    .forEach((provider) => {
+      seen.add(provider);
+      order.push(provider);
+    });
+
+  const entries = [];
+
+  const addProviderEntry = (provider) => {
+    if (provider === 'codex') {
+      const currentAccounts = Array.isArray(current.codexAccounts)
+        ? current.codexAccounts
+        : (current.codex ? [current.codex] : []);
+      if (currentAccounts.length === 0) return;
+
+      const insightAccounts = Array.isArray(insights.codexAccounts) ? insights.codexAccounts : [];
+      const historyAccounts = Array.isArray(history.codexAccounts) ? history.codexAccounts : [];
+
+      currentAccounts.forEach((account, idx) => {
+        const accountID = account.accountId || account.id || idx + 1;
+        const accountName = account.accountName || account.name || `Account ${idx + 1}`;
+        const cardKey = sanitizeProviderCardKey(`codex-${accountID}`);
+        const insightPayload = insightAccounts.find(acc => String(acc.accountId || '') === String(accountID))
+          || insights.codex
+          || { stats: [], insights: [] };
+        const historyPayload = historyAccounts.find(acc => String(acc.accountId || '') === String(accountID));
+        entries.push({
+          provider: 'codex',
+          cardKey,
+          title: `Codex - Account: ${accountName}`,
+          badge: toTitleCase(account.planType || ''),
+          planType: account.planType || '',
+          quotas: normalizeBothQuotas('codex', account),
+          insights: insightPayload,
+          historyRows: Array.isArray(historyPayload?.history)
+            ? historyPayload.history
+            : (Array.isArray(history.codex) ? history.codex : []),
+        });
+      });
+      return;
+    }
+
+    const payload = current[provider];
+    if (!payload) return;
+    entries.push({
+      provider,
+      cardKey: sanitizeProviderCardKey(provider),
+      title: bothProviderNames[provider] || toTitleCase(provider),
+      badge: provider === 'copilot' ? 'Beta' : toTitleCase(payload.planType || ''),
+      planType: payload.planType || '',
+      quotas: normalizeBothQuotas(provider, payload),
+      insights: insights[provider] || { stats: [], insights: [] },
+      historyRows: Array.isArray(history[provider]) ? history[provider] : [],
+    });
+  };
+
+  order.forEach(addProviderEntry);
+  return entries;
+}
+
+function renderProviderKPIHTML(quotas) {
+  if (!Array.isArray(quotas) || quotas.length === 0) {
+    return '<p class="insight-text">No KPI data available yet.</p>';
+  }
+  return quotas.map((quota) => {
+    const percent = Number(quota.cardPercent ?? 0);
+    const status = quota.status || 'healthy';
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const displayName = quota.displayName || quota.name || 'Quota';
+    const label = quota.cardLabel || 'Utilization';
+    const icon = anthropicQuotaIcons[quota.name]
+      || quotaIcons[quota.name]
+      || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
+    const resetText = quota.resetsAt ? `Resets: ${formatDateTime(quota.resetsAt)}` : '';
+    const countdown = quota.timeUntilResetSeconds > 0 ? formatDuration(quota.timeUntilResetSeconds) : '--:--';
+
+    return `<article class="quota-card provider-kpi-card" data-quota="${escapeHTML(quota.name || '')}">
+      <header class="card-header">
+        <h2 class="quota-title">
+          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+          ${escapeHTML(displayName)}
+        </h2>
+        <span class="countdown">${escapeHTML(countdown)}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent">${percent.toFixed(1)}%</span>
+        <span class="usage-fraction">${escapeHTML(label)}</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(percent)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" style="width: ${Math.max(0, Math.min(percent, 100)).toFixed(1)}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time">${escapeHTML(resetText)}</span>
+      </footer>
+    </article>`;
+  }).join('');
+}
+
+function renderProviderInsightsHTML(payload) {
+  const stats = Array.isArray(payload?.stats) ? payload.stats : [];
+  const insights = Array.isArray(payload?.insights) ? payload.insights : [];
+  const items = [];
+
+  stats.slice(0, 3).forEach((stat) => {
+    items.push(`<article class="insight-card provider-mini-insight severity-info">
+      <div class="insight-card-header">
+        <span class="insight-card-title">${escapeHTML(stat.label || 'Metric')}</span>
+        <span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(stat.value || '--')}</span></span>
+      </div>
+    </article>`);
+  });
+
+  insights.slice(0, 2).forEach((insight) => {
+    items.push(`<article class="insight-card provider-mini-insight severity-${escapeHTML(insight.severity || 'info')}">
+      <div class="insight-card-header">
+        <span class="insight-card-title">${escapeHTML(insight.title || 'Insight')}</span>
+        ${insight.metric ? `<span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(insight.metric)}</span></span>` : ''}
+      </div>
+    </article>`);
+  });
+
+  if (items.length === 0) {
+    return '<p class="insight-text">No insights available yet.</p>';
+  }
+  return items.join('');
+}
+
+function buildFixedDatasetsForRows(rows, range, configs) {
+  const datasets = [];
+  configs.forEach((cfg) => {
+    const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
+    const processed = processDataWithGaps(rawData, range);
+    datasets.push({
+      label: cfg.label,
+      data: processed.data,
+      borderColor: cfg.color,
+      backgroundColor: cfg.bg,
+      fill: true,
+      tension: 0.4,
+      borderWidth: 2,
+      pointRadius: processed.pointRadii,
+      pointHoverRadius: 4,
+      spanGaps: true,
+      segment: getSegmentStyle(processed.gapSegments, cfg.color),
+    });
+  });
+  return datasets;
+}
+
+function buildDynamicDatasetsForRows(rows, range, labelMap, colorMap, colorFallback, providerKey) {
+  const keys = new Set();
+  rows.forEach((row) => {
+    Object.keys(row).forEach((key) => {
+      if (key !== 'capturedAt') keys.add(key);
+    });
+  });
+
+  const datasets = [];
+  let idx = 0;
+  [...keys].sort().forEach((key) => {
+    const color = colorMap[key] || colorFallback[idx++ % colorFallback.length];
+    const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+    const processed = processDataWithGaps(rawData, range);
+    datasets.push({
+      label: (labelMap[key] || getQuotaDisplayName(key, providerKey) || key),
+      data: processed.data,
+      borderColor: color.border,
+      backgroundColor: color.bg,
+      fill: true,
+      tension: 0.4,
+      borderWidth: 2,
+      pointRadius: processed.pointRadii,
+      pointHoverRadius: 4,
+      spanGaps: true,
+      segment: getSegmentStyle(processed.gapSegments, color.border),
+    });
+  });
+  return datasets;
+}
+
+function buildProviderCardDatasets(provider, rows, range) {
+  const style = getComputedStyle(document.documentElement);
+  if (provider === 'synthetic') {
+    return buildFixedDatasetsForRows(rows, range, [
+      { label: 'Subscription', key: 'subscriptionPercent', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13,148,136,0.06)' },
+      { label: 'Search', key: 'searchPercent', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245,158,11,0.06)' },
+      { label: 'Tool Calls', key: 'toolCallsPercent', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59,130,246,0.06)' },
+    ]);
+  }
+  if (provider === 'zai') {
+    return buildFixedDatasetsForRows(rows, range, [
+      { label: 'Tokens', key: 'tokensPercent', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13,148,136,0.06)' },
+      { label: 'Time', key: 'timePercent', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245,158,11,0.06)' },
+      { label: 'Tool Calls', key: 'toolCallsPercent', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59,130,246,0.06)' },
+    ]);
+  }
+  if (provider === 'anthropic') {
+    return buildDynamicDatasetsForRows(rows, range, anthropicDisplayNames, anthropicChartColorMap, anthropicChartColorFallback, 'anthropic');
+  }
+  if (provider === 'codex') {
+    return buildDynamicDatasetsForRows(rows, range, codexDisplayNames, codexChartColorMap, codexChartColorFallback, 'codex');
+  }
+  if (provider === 'copilot') {
+    return buildDynamicDatasetsForRows(rows, range, copilotDisplayNames, copilotChartColorMap, copilotChartColorFallback, 'copilot');
+  }
+  if (provider === 'antigravity') {
+    return buildDynamicDatasetsForRows(rows, range, {}, antigravityChartColorMap, antigravityChartColorFallback, 'antigravity');
+  }
+  return [];
+}
+
+function destroyProviderCardCharts() {
+  Object.values(State.providerCharts || {}).forEach((chart) => {
+    if (chart && typeof chart.destroy === 'function') {
+      chart.destroy();
+    }
+  });
+  State.providerCharts = {};
+}
+
+function renderAllProvidersView() {
+  const container = document.getElementById('all-providers-container');
+  if (!container) return;
+
+  const entries = buildAllProviderEntries();
+  const collapsedState = loadProviderCardCollapseState();
+  destroyProviderCardCharts();
+
+  if (entries.length === 0) {
+    container.innerHTML = '<p class="insight-text">No provider data available yet.</p>';
+    return;
+  }
+
+  container.innerHTML = entries.map((entry) => {
+    const collapsed = Boolean(collapsedState[entry.cardKey]);
+    const badge = entry.badge ? `<span class="provider-card-badge">${escapeHTML(entry.badge)}</span>` : '';
+    return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
+      <header class="provider-card-header">
+        <div class="provider-card-title">
+          <span>${escapeHTML(entry.title)}</span>
+          ${badge}
+        </div>
+        <button class="provider-card-collapse-btn" type="button" data-card-key="${entry.cardKey}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${escapeHTML(entry.title)}">
+          <svg class="provider-card-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="m9 6 6 6-6 6"/>
+          </svg>
+        </button>
+      </header>
+      <div class="provider-card-body">
+        <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas)}</div>
+        <div class="provider-insights">${renderProviderInsightsHTML(entry.insights)}</div>
+        <div class="provider-chart">
+          <canvas id="provider-chart-${entry.cardKey}"></canvas>
+        </div>
+      </div>
+    </section>`;
+  }).join('');
+
+  container.querySelectorAll('.provider-card-collapse-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cardKey = btn.dataset.cardKey;
+      const card = container.querySelector(`.provider-card[data-card-key="${cardKey}"]`);
+      if (!card) return;
+      card.classList.toggle('collapsed');
+      const collapsed = card.classList.contains('collapsed');
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      const title = card.querySelector('.provider-card-title span')?.textContent || 'provider card';
+      btn.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${title}`);
+      collapsedState[cardKey] = collapsed;
+      saveProviderCardCollapseState(collapsedState);
+    });
+  });
+
+  const chartRange = State.currentRange || '6h';
+  const colors = getThemeColors();
+  entries.forEach((entry) => {
+    const chartHost = container.querySelector(`.provider-card[data-card-key="${entry.cardKey}"] .provider-chart`);
+    const canvas = container.querySelector(`#provider-chart-${entry.cardKey}`);
+    const rows = Array.isArray(entry.historyRows) ? entry.historyRows : [];
+    if (!chartHost || !canvas || rows.length === 0) {
+      if (chartHost) chartHost.innerHTML = '<p class="insight-text">No chart data available.</p>';
+      return;
+    }
+
+    const datasets = buildProviderCardDatasets(entry.provider, rows, chartRange);
+    if (!datasets.length) {
+      chartHost.innerHTML = '<p class="insight-text">No chart data available.</p>';
+      return;
+    }
+
+    const chart = new Chart(canvas, {
+      type: 'line',
+      data: { datasets },
+      options: buildChartOptions(colors, computeYMax(datasets), chartRange)
+    });
+    State.providerCharts[entry.cardKey] = chart;
+  });
+}
+
+// ── "Both" Mode: Dual Charts (legacy fallback) ──
 
 function updateBothCharts(data, range = '6h') {
   const container = document.querySelector('.chart-container');
@@ -5853,7 +6298,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupHeaderActions();
   setupCardModals();
 
-  if (document.getElementById('usage-chart') || document.getElementById('both-view')) {
+  if (document.getElementById('usage-chart') || document.getElementById('both-view') || document.getElementById('all-providers-container')) {
     initChart();
 
     // Critical path: fetch above-fold data in parallel
