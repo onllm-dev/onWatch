@@ -727,26 +727,30 @@ button, input, select { font-family: inherit; }
 
 .provider-chart {
   position: relative;
-  height: 180px;
-}
-
-.provider-chart.provider-chart-empty {
   min-height: 0;
   height: auto;
-  padding-top: 8px;
-}
-
-.provider-chart.provider-chart-empty .insight-text {
-  margin: 0;
-  padding: 8px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 .provider-chart canvas {
   width: 100% !important;
-  height: 100% !important;
+  height: 180px !important;
+  max-height: 180px;
+}
+
+.provider-chart.provider-chart-empty,
+.provider-chart:not(:has(canvas)) {
+  min-height: 0;
+  height: auto;
+  padding: 8px 0;
+}
+
+.provider-chart.provider-chart-empty .insight-text,
+.provider-chart .insight-text:only-child {
+  margin: 0;
+  padding: 8px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 /* Both View - Multi-Column Layout */
@@ -2187,7 +2191,7 @@ button, input, select { font-family: inherit; }
   .provider-card-header { padding: 14px 16px; }
   .provider-card-body { padding: 16px; }
   .provider-kpis { grid-template-columns: 1fr; }
-  .provider-chart { height: 170px; }
+  .provider-chart canvas { height: 170px !important; max-height: 170px; }
   .quota-card { padding: 18px; }
   .range-selector { width: 100%; }
   .range-btn { flex: 1; padding: 8px; font-size: 12px; }
@@ -2218,7 +2222,7 @@ button, input, select { font-family: inherit; }
   .provider-card-body { padding: 14px; }
   .provider-card-title { font-size: 14px; }
   .provider-card-badge { font-size: 10px; }
-  .provider-chart { height: 160px; }
+  .provider-chart canvas { height: 160px !important; max-height: 160px; }
   .quota-card { padding: 16px; border-radius: var(--radius-md); }
   .usage-percent { font-size: 26px; }
   .countdown { font-size: 12px; }

@@ -3622,6 +3622,14 @@ function renderAllProvidersView() {
   container.innerHTML = entries.map((entry) => {
     const collapsed = Boolean(collapsedState[entry.cardKey]);
     const badge = entry.badge ? `<span class="provider-card-badge">${escapeHTML(entry.badge)}</span>` : '';
+    const hasChartData = Array.isArray(entry.historyRows) && entry.historyRows.length > 0;
+    const chartSection = hasChartData
+      ? `<div class="provider-chart">
+          <canvas id="provider-chart-${entry.cardKey}"></canvas>
+        </div>`
+      : `<div class="provider-chart provider-chart-empty">
+          <p class="insight-text">Collecting data...</p>
+        </div>`;
     return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
       <header class="provider-card-header">
         <div class="provider-card-title">
@@ -3637,9 +3645,7 @@ function renderAllProvidersView() {
       <div class="provider-card-body">
         <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas)}</div>
         <div class="provider-insights">${renderProviderInsightsHTML(entry.insights)}</div>
-        <div class="provider-chart">
-          <canvas id="provider-chart-${entry.cardKey}"></canvas>
-        </div>
+        ${chartSection}
       </div>
     </section>`;
   }).join('');
@@ -3665,13 +3671,7 @@ function renderAllProvidersView() {
     const chartHost = container.querySelector(`.provider-card[data-card-key="${entry.cardKey}"] .provider-chart`);
     const canvas = container.querySelector(`#provider-chart-${entry.cardKey}`);
     const rows = Array.isArray(entry.historyRows) ? entry.historyRows : [];
-    if (!chartHost || !canvas || rows.length === 0) {
-      if (chartHost) {
-        chartHost.classList.add('provider-chart-empty');
-        chartHost.innerHTML = '<p class="insight-text">Collecting data...</p>';
-      }
-      return;
-    }
+    if (!chartHost || !canvas) return;
 
     const datasets = buildProviderCardDatasets(entry.provider, rows, chartRange);
     if (!datasets.length) {
