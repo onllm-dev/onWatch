@@ -604,8 +604,9 @@ func (s *Store) QueryCodexCycleOverview(accountID int64, groupBy string, limit i
 		err := s.db.QueryRow(
 			`SELECT s.id, s.captured_at FROM codex_snapshots s
 			JOIN codex_quota_values qv ON qv.snapshot_id = s.id
-			WHERE qv.quota_name = ? AND s.captured_at >= ? AND s.captured_at < ?
+			WHERE s.account_id = ? AND qv.quota_name = ? AND s.captured_at >= ? AND s.captured_at < ?
 			ORDER BY qv.utilization DESC LIMIT 1`,
+			accountID,
 			groupBy,
 			c.CycleStart.Format(time.RFC3339Nano),
 			endBoundary.Format(time.RFC3339Nano),
@@ -629,8 +630,9 @@ func (s *Store) QueryCodexCycleOverview(accountID int64, groupBy string, limit i
 		var firstSnapshotID int64
 		err = s.db.QueryRow(
 			`SELECT id FROM codex_snapshots
-			WHERE captured_at >= ? AND captured_at < ?
+			WHERE account_id = ? AND captured_at >= ? AND captured_at < ?
 			ORDER BY captured_at ASC LIMIT 1`,
+			accountID,
 			c.CycleStart.Format(time.RFC3339Nano),
 			endBoundary.Format(time.RFC3339Nano),
 		).Scan(&firstSnapshotID)

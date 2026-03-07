@@ -199,6 +199,84 @@ func TestCodexStore_CycleOverviewAndQuotaNames(t *testing.T) {
 	}
 }
 
+func TestCodexStore_QueryCodexCycleOverview_UsesAccountScopedSnapshots(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	reset := now.Add(5 * time.Hour)
+
+	accountA := int64(101)
+	accountB := int64(202)
+
+	if _, err := s.CreateCodexCycle(accountA, "five_hour", now, &reset); err != nil {
+		t.Fatalf("CreateCodexCycle accountA: %v", err)
+	}
+	if err := s.UpdateCodexCycle(accountA, "five_hour", 30.0, 12.0); err != nil {
+		t.Fatalf("UpdateCodexCycle accountA: %v", err)
+	}
+
+	if _, err := s.CreateCodexCycle(accountB, "five_hour", now, &reset); err != nil {
+		t.Fatalf("CreateCodexCycle accountB: %v", err)
+	}
+	if err := s.UpdateCodexCycle(accountB, "five_hour", 99.0, 50.0); err != nil {
+		t.Fatalf("UpdateCodexCycle accountB: %v", err)
+	}
+
+	snapA := &api.CodexSnapshot{
+		AccountID:  accountA,
+		CapturedAt: now.Add(20 * time.Second),
+		PlanType:   "plus",
+		RawJSON:    `{"test":true}`,
+		Quotas: []api.CodexQuota{
+			{Name: "five_hour", Utilization: 30.0, Status: "warning"},
+			{Name: "seven_day", Utilization: 35.0, Status: "healthy"},
+		},
+	}
+	if _, err := s.InsertCodexSnapshot(snapA); err != nil {
+		t.Fatalf("InsertCodexSnapshot accountA: %v", err)
+	}
+
+	snapB := &api.CodexSnapshot{
+		AccountID:  accountB,
+		CapturedAt: now.Add(25 * time.Second),
+		PlanType:   "plus",
+		RawJSON:    `{"test":true}`,
+		Quotas: []api.CodexQuota{
+			{Name: "five_hour", Utilization: 99.0, Status: "critical"},
+			{Name: "seven_day", Utilization: 88.0, Status: "danger"},
+		},
+	}
+	if _, err := s.InsertCodexSnapshot(snapB); err != nil {
+		t.Fatalf("InsertCodexSnapshot accountB: %v", err)
+	}
+
+	rows, err := s.QueryCodexCycleOverview(accountA, "five_hour", 10)
+	if err != nil {
+		t.Fatalf("QueryCodexCycleOverview: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("expected overview row")
+	}
+
+	var fiveHour, sevenDay float64
+	for _, cq := range rows[0].CrossQuotas {
+		if cq.Name == "five_hour" {
+			fiveHour = cq.Percent
+		}
+		if cq.Name == "seven_day" {
+			sevenDay = cq.Percent
+		}
+	}
+
+	if fiveHour != 30.0 || sevenDay != 35.0 {
+		t.Fatalf("expected account-scoped cross quotas five_hour=30 seven_day=35, got five_hour=%.1f seven_day=%.1f", fiveHour, sevenDay)
+	}
+}
+
 func TestCodexStore_QueryLatestCodex_ParseFailure(t *testing.T) {
 	s, err := New(":memory:")
 	if err != nil {

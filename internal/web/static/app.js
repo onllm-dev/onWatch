@@ -140,6 +140,12 @@ const State = {
   allProvidersInsights: null,
   allProvidersHistory: null,
   providerVisibility: {},
+  currentRequestSeq: 0,
+  insightsRequestSeq: 0,
+  historyRequestSeq: 0,
+  cyclesRequestSeq: 0,
+  sessionsRequestSeq: 0,
+  overviewRequestSeq: 0,
 };
 
 // ── Persistence ──
@@ -2285,13 +2291,22 @@ function startCountdowns() {
 // ── Data Fetching ──
 
 async function fetchCurrent() {
+  const requestProvider = getCurrentProvider();
+  const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
+  const requestSeq = (State.currentRequestSeq || 0) + 1;
+  State.currentRequestSeq = requestSeq;
+
   try {
     const res = await authFetch(`${API_BASE}/api/current?${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch');
     const data = await res.json();
 
     requestAnimationFrame(() => {
-      const provider = getCurrentProvider();
+      if (State.currentRequestSeq !== requestSeq) return;
+      if (getCurrentProvider() !== requestProvider) return;
+      if (requestProvider === 'codex' && State.codexAccount !== requestAccount) return;
+
+      const provider = requestProvider;
       if (provider === 'both') {
         State.allProvidersCurrent = data;
         renderAllProvidersView();
@@ -2353,6 +2368,7 @@ async function fetchCurrent() {
     });
   } catch (err) {
     // fetch error - cards show fallback state
+    if (State.currentRequestSeq !== requestSeq) return;
     const statusDot = document.getElementById('status-dot');
     if (statusDot) statusDot.classList.add('stale');
   }
@@ -2500,6 +2516,11 @@ const insightIcons = {
 
 async function fetchDeepInsights() {
   const provider = getCurrentProvider();
+  const requestProvider = provider;
+  const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
+  const requestRange = State.insightsRange;
+  const requestSeq = (State.insightsRequestSeq || 0) + 1;
+  State.insightsRequestSeq = requestSeq;
   const panel = document.querySelector('.insights-panel');
   const statsEl = document.getElementById('insights-stats');
   const cardsEl = document.getElementById('insights-cards');
@@ -2511,11 +2532,16 @@ async function fetchDeepInsights() {
   }
 
   try {
-    const res = await authFetch(`${API_BASE}/api/insights?${providerParam()}&range=${State.insightsRange}`);
+    const res = await authFetch(`${API_BASE}/api/insights?${providerParam()}&range=${requestRange}`);
     if (!res.ok) throw new Error('Failed to fetch insights');
     const data = await res.json();
 
-    if (provider === 'both') {
+    if (State.insightsRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (requestProvider === 'codex' && State.codexAccount !== requestAccount) return;
+    if (State.insightsRange !== requestRange) return;
+
+    if (requestProvider === 'both') {
       State.allProvidersInsights = data;
       renderAllProvidersView();
       return;
@@ -2547,7 +2573,9 @@ async function fetchDeepInsights() {
     renderHiddenInsightsBadge();
   } catch (err) {
     // insights fetch error - panel shows fallback state
-    if (provider === 'both') return;
+    if (State.insightsRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (requestProvider === 'both') return;
     if (statsEl) statsEl.innerHTML = '';
     cardsEl.innerHTML = '<p class="insight-text">Unable to load insights.</p>';
   }
@@ -2934,12 +2962,23 @@ async function fetchHistory(range) {
     range = activeBtn ? activeBtn.dataset.range : '6h';
   }
   State.currentRange = range;
+  const requestProvider = getCurrentProvider();
+  const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
+  const requestRange = range;
+  const requestSeq = (State.historyRequestSeq || 0) + 1;
+  State.historyRequestSeq = requestSeq;
+
   try {
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch history');
     const data = await res.json();
 
-    const provider = getCurrentProvider();
+    if (State.historyRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (requestProvider === 'codex' && State.codexAccount !== requestAccount) return;
+    if (State.currentRange !== requestRange) return;
+
+    const provider = requestProvider;
 
     if (provider === 'both') {
       State.allProvidersHistory = data;
@@ -3901,7 +3940,12 @@ function updateTimeScale(chart, range) {
 
 async function fetchCycles() {
   if (!shouldShowHistoryTables()) return;
-  const provider = getCurrentProvider();
+  const requestProvider = getCurrentProvider();
+  const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
+  const requestRange = State.cyclesRange;
+  const requestSeq = (State.cyclesRequestSeq || 0) + 1;
+  State.cyclesRequestSeq = requestSeq;
+  const provider = requestProvider;
   const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity']);
 
   if (loggingHistoryProviders.has(provider)) {
@@ -3916,6 +3960,11 @@ async function fetchCycles() {
       const res = await authFetch(url);
       if (!res.ok) throw new Error('Failed to fetch logging history');
       const data = await res.json();
+      if (State.cyclesRequestSeq !== requestSeq) return;
+      if (getCurrentProvider() !== requestProvider) return;
+      if (requestProvider === 'codex' && State.codexAccount !== requestAccount) return;
+      if (State.cyclesRange !== requestRange) return;
+
       State.allCyclesData = (data.logs || []).map(log => ({
         cycleId: log.id,
         cycleStart: log.capturedAt,
@@ -3941,6 +3990,11 @@ async function fetchCycles() {
     const res = await authFetch(url);
     if (!res.ok) throw new Error('Failed to fetch cycles');
     const data = await res.json();
+    if (State.cyclesRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (requestProvider === 'codex' && State.codexAccount !== requestAccount) return;
+    if (State.cyclesRange !== requestRange) return;
+
     State.allCyclesData = data.cycles || [];
     State.cyclesQuotaNames = data.quotaNames || [];
     State.cyclesPage = 1;
@@ -4254,11 +4308,20 @@ function renderCyclesTable() {
 
 async function fetchSessions() {
   if (!shouldShowHistoryTables()) return;
+  const requestProvider = getCurrentProvider();
+  const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
+  const requestSeq = (State.sessionsRequestSeq || 0) + 1;
+  State.sessionsRequestSeq = requestSeq;
+
   try {
     const res = await authFetch(`${API_BASE}/api/sessions?${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch sessions');
     const data = await res.json();
-    const provider = getCurrentProvider();
+    if (State.sessionsRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (requestProvider === 'codex' && State.codexAccount !== requestAccount) return;
+
+    const provider = requestProvider;
 
     if (provider === 'both') {
       // "both" response: { synthetic: [...], zai: [...], anthropic: [...], codex: [...] }
@@ -5097,33 +5160,43 @@ function truncateLabel(str, maxLen) {
 async function fetchCycleOverview() {
   if (!shouldShowHistoryTables()) return;
   const provider = getCurrentProvider();
+  const requestProvider = provider;
+  const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
   const categories = getOverviewCategories();
   if (categories.length === 0) return;
   if (!categories.some(cat => cat.groupBy === State.overviewGroupBy)) {
     State.overviewGroupBy = categories[0].groupBy;
   }
   if (!State.overviewGroupBy) return;
+  const requestGroupBy = State.overviewGroupBy;
+  const requestSeq = (State.overviewRequestSeq || 0) + 1;
+  State.overviewRequestSeq = requestSeq;
 
   let url;
   if (provider === 'both') {
     // Determine which provider this groupBy belongs to
     let effectiveProvider = 'synthetic';
     for (const [prov, cats] of Object.entries(renewalCategories)) {
-      if (cats.some(c => c.groupBy === State.overviewGroupBy)) {
+      if (cats.some(c => c.groupBy === requestGroupBy)) {
         effectiveProvider = prov;
         break;
       }
     }
     const accountParam = effectiveProvider === 'codex' ? codexAccountParam() : '';
-    url = `/api/cycle-overview?provider=${effectiveProvider}&groupBy=${State.overviewGroupBy}&limit=50${accountParam}`;
+    url = `/api/cycle-overview?provider=${effectiveProvider}&groupBy=${requestGroupBy}&limit=50${accountParam}`;
   } else {
-    url = `/api/cycle-overview?${providerParam()}&groupBy=${State.overviewGroupBy}&limit=50`;
+    url = `/api/cycle-overview?${providerParam()}&groupBy=${requestGroupBy}&limit=50`;
   }
 
   try {
     const res = await authFetch(url);
     if (!res.ok) return;
     const data = await res.json();
+    if (State.overviewRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (requestProvider === 'codex' && State.codexAccount !== requestAccount) return;
+    if (State.overviewGroupBy !== requestGroupBy) return;
+
     State.allOverviewData = data.cycles || [];
     State.overviewQuotaNames = data.quotaNames || [];
     renderOverviewTable();
