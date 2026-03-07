@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +38,8 @@ func codexProfilesDir() string {
 
 // validProfileName checks if a profile name is valid (alphanumeric, hyphen, underscore).
 var validProfileName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+var errCodexProfileRefreshAborted = errors.New("codex profile refresh aborted")
 
 // runCodexCommand handles the `onwatch codex` subcommand.
 func runCodexCommand() error {
@@ -79,6 +83,11 @@ func runCodexCommand() error {
 		return codexProfileDelete(subArgs[2])
 	case "status":
 		return codexProfileStatus()
+	case "refresh":
+		if len(subArgs) < 3 {
+			return fmt.Errorf("usage: onwatch codex profile refresh <name>")
+		}
+		return codexProfileRefresh(subArgs[2])
 	default:
 		return printCodexHelp()
 	}
@@ -92,12 +101,14 @@ func printCodexHelp() error {
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  save <name>    Save current Codex credentials as a named profile")
+	fmt.Println("  refresh <name> Refresh a saved profile from current Codex auth session")
 	fmt.Println("  list           List saved Codex profiles")
 	fmt.Println("  delete <name>  Delete a saved Codex profile")
 	fmt.Println("  status         Show polling status for all profiles")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  onwatch codex profile save work       # Save current credentials as 'work'")
+	fmt.Println("  onwatch codex profile refresh work    # Refresh profile 'work' from current auth")
 	fmt.Println("  onwatch codex profile save personal   # Save current credentials as 'personal'")
 	fmt.Println("  onwatch codex profile list            # List all saved profiles")
 	fmt.Println("  onwatch codex profile delete work     # Delete the 'work' profile")
@@ -108,6 +119,169 @@ func printCodexHelp() error {
 	fmt.Println("  3. Log into your second Codex account")
 	fmt.Println("  4. Run: onwatch codex profile save personal")
 	fmt.Println("  5. onWatch will poll both profiles simultaneously")
+	return nil
+}
+
+type codexRefreshAuthFile struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
+	AccountID    string `json:"account_id"`
+	OpenAIAPIKey string `json:"OPENAI_API_KEY"`
+	Tokens       struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		IDToken      string `json:"id_token"`
+		AccountID    string `json:"account_id"`
+	} `json:"tokens"`
+}
+
+type codexRefreshAuthCredentials struct {
+	AccessToken  string
+	RefreshToken string
+	IDToken      string
+	AccountID    string
+	APIKey       string
+}
+
+func codexAuthRefreshPath() string {
+	if codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME")); codexHome != "" {
+		return filepath.Join(codexHome, "auth.json")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".codex", "auth.json")
+}
+
+func loadCodexAuthForRefresh() (*codexRefreshAuthCredentials, error) {
+	authPath := codexAuthRefreshPath()
+	if authPath == "" {
+		return nil, fmt.Errorf("cannot determine Codex auth.json path")
+	}
+
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read Codex auth.json: %w\nHint: Run 'codex auth' first to authenticate", err)
+	}
+
+	var auth codexRefreshAuthFile
+	if err := json.Unmarshal(data, &auth); err != nil {
+		return nil, fmt.Errorf("invalid auth.json format: %w", err)
+	}
+
+	creds := &codexRefreshAuthCredentials{
+		AccessToken:  strings.TrimSpace(auth.Tokens.AccessToken),
+		RefreshToken: strings.TrimSpace(auth.Tokens.RefreshToken),
+		IDToken:      strings.TrimSpace(auth.Tokens.IDToken),
+		AccountID:    strings.TrimSpace(auth.Tokens.AccountID),
+		APIKey:       strings.TrimSpace(auth.OpenAIAPIKey),
+	}
+
+	// Backward/alternate support for flat auth.json shape.
+	if creds.AccessToken == "" {
+		creds.AccessToken = strings.TrimSpace(auth.AccessToken)
+	}
+	if creds.RefreshToken == "" {
+		creds.RefreshToken = strings.TrimSpace(auth.RefreshToken)
+	}
+	if creds.IDToken == "" {
+		creds.IDToken = strings.TrimSpace(auth.IDToken)
+	}
+	if creds.AccountID == "" {
+		creds.AccountID = strings.TrimSpace(auth.AccountID)
+	}
+
+	if creds.AccessToken == "" {
+		return nil, fmt.Errorf("auth.json has no access_token - run 'codex auth' first")
+	}
+
+	return creds, nil
+}
+
+// codexProfileRefresh updates a saved profile with the current Codex auth session.
+func codexProfileRefresh(name string) error {
+	if !validProfileName.MatchString(name) {
+		return fmt.Errorf("invalid profile name %q: use only letters, numbers, hyphens, and underscores", name)
+	}
+
+	creds, err := loadCodexAuthForRefresh()
+	if err != nil {
+		return err
+	}
+
+	profilesDir := codexProfilesDir()
+	if profilesDir == "" {
+		return fmt.Errorf("could not determine home directory")
+	}
+	profilePath := filepath.Join(profilesDir, name+".json")
+
+	var (
+		profile         CodexProfile
+		isNewProfile    bool
+		accountOverride bool
+	)
+
+	existing, err := loadCodexProfile(profilePath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("cannot read profile: %w", err)
+		}
+		isNewProfile = true
+		profile = CodexProfile{Name: name}
+	} else if existing != nil {
+		profile = *existing
+	}
+
+	if !isNewProfile && profile.AccountID != "" && creds.AccountID != "" && profile.AccountID != creds.AccountID {
+		fmt.Printf("Current Codex session is for account '%s' but profile '%s' is linked to '%s'.\n", creds.AccountID, name, profile.AccountID)
+		fmt.Printf("Override profile '%s' with '%s' credentials? [y/N]: ", name, creds.AccountID)
+
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
+
+		if response != "y" && response != "yes" {
+			fmt.Println("Aborted. No changes made.")
+			return errCodexProfileRefreshAborted
+		}
+		accountOverride = true
+	}
+
+	profile.Name = name
+	profile.AccountID = creds.AccountID
+	profile.SavedAt = time.Now().UTC()
+	profile.Tokens.AccessToken = creds.AccessToken
+	profile.Tokens.RefreshToken = creds.RefreshToken
+	profile.Tokens.IDToken = creds.IDToken
+	if creds.APIKey != "" {
+		profile.APIKey = creds.APIKey
+	}
+
+	if err := os.MkdirAll(profilesDir, 0700); err != nil {
+		return fmt.Errorf("failed to create profiles directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal profile: %w", err)
+	}
+	if err := os.WriteFile(profilePath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write profile: %w", err)
+	}
+
+	if isNewProfile {
+		fmt.Printf("Profile '%s' created successfully for account '%s'\n", name, creds.AccountID)
+	} else if accountOverride {
+		fmt.Printf("Profile '%s' updated to account '%s'\n", name, creds.AccountID)
+	} else {
+		fmt.Printf("Profile '%s' refreshed successfully\n", name)
+	}
+	fmt.Println()
+	fmt.Println("The running daemon will detect this change within 30 seconds.")
+	fmt.Println("Or restart the daemon to apply immediately.")
+
 	return nil
 }
 

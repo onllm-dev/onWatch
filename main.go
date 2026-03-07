@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -44,7 +45,9 @@ func init() {
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if !errors.Is(err, errCodexProfileRefreshAborted) {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 
 		// On Windows, if the error is about missing configuration and we're likely
 		// running from a double-click (no arguments), show installation instructions
@@ -1426,6 +1429,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Codex Profile Management:")
 	fmt.Println("  codex profile save <name>    Save current Codex credentials as a named profile")
+	fmt.Println("  codex profile refresh <name> Refresh a saved profile from current Codex auth session")
 	fmt.Println("  codex profile list           List saved Codex profiles")
 	fmt.Println("  codex profile delete <name>  Delete a saved Codex profile")
 	fmt.Println("  codex profile status         Show polling status for all profiles")

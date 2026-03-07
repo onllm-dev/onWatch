@@ -351,12 +351,16 @@ button, input, select { font-family: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  min-height: 32px;
+  padding: 0 10px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -370,11 +374,6 @@ button, input, select { font-family: inherit; }
   color: var(--accent-teal);
   background: var(--surface-card);
   box-shadow: var(--shadow-xs);
-}
-
-.layout-btn svg {
-  width: 16px;
-  height: 16px;
 }
 
 .header-btn {
