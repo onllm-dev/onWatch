@@ -856,7 +856,8 @@ async function loadAnthropicModalChart(quotaName) {
     if (!Array.isArray(data) || data.length === 0) return;
 
     const colors = getThemeColors();
-    const chartData = data.map(d => ({ x: new Date(d.capturedAt), y: d[quotaName] || 0 }));
+    const rawData = data.map(d => ({ x: new Date(d.capturedAt), y: d[quotaName] || 0 }));
+    const processed = processDataWithGaps(rawData, range);
     const maxVal = Math.max(...data.map(d => d[quotaName] || 0), 0);
     let yMax = maxVal <= 0 ? 10 : maxVal < 5 ? 10 : Math.min(Math.max(Math.ceil((maxVal * 1.2) / 5) * 5, 10), 100);
 
@@ -865,10 +866,16 @@ async function loadAnthropicModalChart(quotaName) {
       data: {
         datasets: [(() => { const c = anthropicChartColorMap[quotaName] || { border: '#D97706', bg: 'rgba(217, 119, 6, 0.08)' }; return {
           label: anthropicDisplayNames[quotaName] || quotaName,
-          data: chartData,
+          data: processed.data,
           borderColor: c.border,
           backgroundColor: c.bg,
-          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, spanGaps: false
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2.5,
+          pointRadius: processed.pointRadii,
+          pointHoverRadius: 5,
+          spanGaps: true,
+          segment: getSegmentStyle(processed.gapSegments, c.border)
         }; })()]
       },
       options: {
@@ -1136,7 +1143,8 @@ async function loadCopilotModalChart(quotaName) {
     }
 
     const colors = getThemeColors();
-    const chartData = data.map(d => ({ x: new Date(d.capturedAt), y: d.usagePercent }));
+    const rawData = data.map(d => ({ x: new Date(d.capturedAt), y: d.usagePercent }));
+    const processed = processDataWithGaps(rawData, range);
     const maxVal = Math.max(...data.map(d => d.usagePercent), 10);
     const yMax = Math.min(Math.ceil(maxVal / 10) * 10 + 10, 110);
 
@@ -1145,10 +1153,16 @@ async function loadCopilotModalChart(quotaName) {
       data: {
         datasets: [(() => { const c = copilotChartColorMap[quotaName] || { border: '#6e40c9', bg: 'rgba(110, 64, 201, 0.08)' }; return {
           label: copilotDisplayNames[quotaName] || quotaName,
-          data: chartData,
+          data: processed.data,
           borderColor: c.border,
           backgroundColor: c.bg,
-          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, spanGaps: false
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2.5,
+          pointRadius: processed.pointRadii,
+          pointHoverRadius: 5,
+          spanGaps: true,
+          segment: getSegmentStyle(processed.gapSegments, c.border)
         }; })()]
       },
       options: {
@@ -1419,19 +1433,25 @@ async function loadAntigravityModalChart(groupKey) {
     if (State.modalChart) State.modalChart.destroy();
 
     const labels = data.labels || [];
-    const chartData = (modelDataset.data || []).map((y, i) => ({ x: new Date(labels[i]), y }));
+    const rawData = (modelDataset.data || []).map((y, i) => ({ x: new Date(labels[i]), y }));
+    const processed = processDataWithGaps(rawData, range);
+    const borderColor = '#6e40c9';
 
     State.modalChart = new Chart(ctx, {
       type: 'line',
       data: {
         datasets: [{
           label: modelDataset.label || groupKey,
-          data: chartData,
-          borderColor: '#6e40c9',
+          data: processed.data,
+          borderColor: borderColor,
           backgroundColor: 'rgba(110, 64, 201, 0.1)',
           tension: 0.3,
+          borderWidth: 2.5,
+          pointRadius: processed.pointRadii,
+          pointHoverRadius: 5,
           fill: true,
-          spanGaps: false
+          spanGaps: true,
+          segment: getSegmentStyle(processed.gapSegments, borderColor)
         }]
       },
       options: {
@@ -1762,7 +1782,8 @@ async function loadCodexModalChart(quotaName) {
     if (!Array.isArray(data) || data.length === 0) return;
 
     const colors = getThemeColors();
-    const chartData = data.map(d => ({ x: new Date(d.capturedAt), y: d[quotaName] || 0 }));
+    const rawData = data.map(d => ({ x: new Date(d.capturedAt), y: d[quotaName] || 0 }));
+    const processed = processDataWithGaps(rawData, range);
     const maxVal = Math.max(...data.map(d => d[quotaName] || 0), 0);
     const yMax = maxVal <= 0 ? 10 : maxVal < 5 ? 10 : Math.min(Math.max(Math.ceil((maxVal * 1.2) / 5) * 5, 10), 100);
 
@@ -1771,10 +1792,16 @@ async function loadCodexModalChart(quotaName) {
       data: {
         datasets: [(() => { const c = codexChartColorMap[quotaName] || { border: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.08)' }; return {
           label: codexDisplayNames[quotaName] || quotaName,
-          data: chartData,
+          data: processed.data,
           borderColor: c.border,
           backgroundColor: c.bg,
-          fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, spanGaps: false
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2.5,
+          pointRadius: processed.pointRadii,
+          pointHoverRadius: 5,
+          spanGaps: true,
+          segment: getSegmentStyle(processed.gapSegments, c.border)
         }; })()]
       },
       options: {
@@ -4871,7 +4898,8 @@ async function loadModalChart(quotaType, effectiveProvider) {
     const bgMap = { subscription: 'rgba(13,148,136,0.08)', search: 'rgba(245,158,11,0.08)', toolCalls: 'rgba(59,130,246,0.08)', tokensLimit: 'rgba(13,148,136,0.08)', timeLimit: 'rgba(245,158,11,0.08)' };
 
     const colors = getThemeColors();
-    const chartData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[datasetKey] }));
+    const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[datasetKey] }));
+    const processed = processDataWithGaps(rawData, range);
     const maxVal = Math.max(...historyRows.map(d => d[datasetKey]), 0);
 
     // Dynamic Y-axis: if max is 0 or very low, show up to 10%
@@ -4890,15 +4918,16 @@ async function loadModalChart(quotaType, effectiveProvider) {
       data: {
         datasets: [{
           label: (provider === 'zai' ? { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit', toolCalls: 'Tool Calls' } : quotaNames)[quotaType] || quotaType,
-          data: chartData,
+          data: processed.data,
           borderColor: colorMap[quotaType] || '#3B82F6',
           backgroundColor: bgMap[quotaType] || 'rgba(59,130,246,0.08)',
           fill: true,
           tension: 0.3,
           borderWidth: 2.5,
-          pointRadius: 0,
+          pointRadius: processed.pointRadii,
           pointHoverRadius: 5,
-          spanGaps: false
+          spanGaps: true,
+          segment: getSegmentStyle(processed.gapSegments, colorMap[quotaType] || '#3B82F6')
         }]
       },
       options: {
