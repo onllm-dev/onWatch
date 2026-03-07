@@ -116,6 +116,57 @@ func (h *Handler) CodexProfiles(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{"profiles": profiles})
 }
 
+func (h *Handler) codexUsageAccounts() []map[string]interface{} {
+	if h.store == nil {
+		return []map[string]interface{}{}
+	}
+
+	accounts, err := h.store.QueryProviderAccounts("codex")
+	if err != nil {
+		h.logger.Error("failed to query Codex accounts", "error", err)
+		return []map[string]interface{}{}
+	}
+	if len(accounts) == 0 {
+		accounts = []store.ProviderAccount{
+			{ID: DefaultCodexAccountID, Name: "default"},
+		}
+	}
+
+	usages := make([]map[string]interface{}, 0, len(accounts))
+	for _, acc := range accounts {
+		usage := h.buildCodexCurrent(acc.ID)
+		usage["accountId"] = acc.ID
+		usage["accountName"] = acc.Name
+		usage["id"] = acc.ID
+		usage["name"] = acc.Name
+		usages = append(usages, usage)
+	}
+	return usages
+}
+
+// CodexUsage returns Codex usage for a single account by default, or all accounts with ?all=true.
+func (h *Handler) CodexUsage(w http.ResponseWriter, r *http.Request) {
+	all := strings.EqualFold(r.URL.Query().Get("all"), "true")
+	if all {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"accounts": h.codexUsageAccounts(),
+		})
+		return
+	}
+
+	accountID := parseCodexAccountID(r)
+	response := h.buildCodexCurrent(accountID)
+	response["accountId"] = accountID
+	respondJSON(w, http.StatusOK, response)
+}
+
+// CodexAccountsUsage returns Codex usage across all configured accounts.
+func (h *Handler) CodexAccountsUsage(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"accounts": h.codexUsageAccounts(),
+	})
+}
+
 // NewHandler creates a new Handler instance
 func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logger, sessions *SessionStore, cfg *config.Config, zaiTracker ...*tracker.ZaiTracker) *Handler {
 	if logger == nil {
@@ -562,20 +613,12 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 		response["copilot"] = h.buildCopilotCurrent()
 	}
 	if h.config.HasProvider("codex") {
-		// Return data for all Codex accounts
-		accounts, err := h.store.QueryProviderAccounts("codex")
-		if err == nil && len(accounts) > 1 {
-			// Multiple accounts: return array of account data
-			codexAccounts := make([]map[string]interface{}, 0, len(accounts))
-			for _, acc := range accounts {
-				data := h.buildCodexCurrent(acc.ID)
-				data["accountId"] = acc.ID
-				data["accountName"] = acc.Name
-				codexAccounts = append(codexAccounts, data)
-			}
+		codexAccounts := h.codexUsageAccounts()
+		if len(codexAccounts) > 1 {
 			response["codexAccounts"] = codexAccounts
+		} else if len(codexAccounts) == 1 {
+			response["codex"] = codexAccounts[0]
 		} else {
-			// Single account: return as before for backward compatibility
 			response["codex"] = h.buildCodexCurrent(DefaultCodexAccountID)
 		}
 	}
@@ -1733,9 +1776,18 @@ func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := h.store.QuerySessionHistory(provider)
-	if err != nil {
-		h.logger.Error("failed to query sessions", "error", err)
+	var (
+		sessions []*store.Session
+		queryErr error
+	)
+	if provider == "codex" {
+		accountID := parseCodexAccountID(r)
+		sessions, queryErr = h.queryCodexSessionsByAccount(accountID)
+	} else {
+		sessions, queryErr = h.store.QuerySessionHistory(provider)
+	}
+	if queryErr != nil {
+		h.logger.Error("failed to query sessions", "error", queryErr)
 		respondError(w, http.StatusInternalServerError, "failed to query sessions")
 		return
 	}
@@ -1769,9 +1821,18 @@ func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
 // sessionsBoth returns sessions from both providers.
 func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{}
+	codexAccountID := parseCodexAccountID(r)
 
 	buildSessionList := func(provider string) []map[string]interface{} {
-		sessions, err := h.store.QuerySessionHistory(provider)
+		var (
+			sessions []*store.Session
+			err      error
+		)
+		if provider == "codex" {
+			sessions, err = h.queryCodexSessionsByAccount(codexAccountID)
+		} else {
+			sessions, err = h.store.QuerySessionHistory(provider)
+		}
 		if err != nil {
 			return nil
 		}
@@ -1818,6 +1879,44 @@ func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) queryCodexSessionsByAccount(accountID int64) ([]*store.Session, error) {
+	targetProvider := fmt.Sprintf("codex:%d", accountID)
+	sessions, err := h.store.QuerySessionHistory(targetProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	// Backward compatibility for older single-account sessions stored as plain "codex".
+	if accountID == DefaultCodexAccountID {
+		legacy, legacyErr := h.store.QuerySessionHistory("codex")
+		if legacyErr != nil {
+			return nil, legacyErr
+		}
+		sessions = append(sessions, legacy...)
+	}
+
+	if len(sessions) <= 1 {
+		return sessions, nil
+	}
+
+	byID := make(map[string]*store.Session, len(sessions))
+	for _, sess := range sessions {
+		if _, exists := byID[sess.ID]; !exists {
+			byID[sess.ID] = sess
+		}
+	}
+
+	merged := make([]*store.Session, 0, len(byID))
+	for _, sess := range byID {
+		merged = append(merged, sess)
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].StartedAt.After(merged[j].StartedAt)
+	})
+
+	return merged, nil
 }
 
 // ── Deep Insights ──
@@ -5352,22 +5451,22 @@ func (h *Handler) buildCodexInsights(accountID int64, hidden map[string]bool, ra
 		}
 		resp.Stats = append(resp.Stats, insightStat{
 			Value:    fmt.Sprintf("%.1f%%", totalDelta/float64(len(fiveHourCycles))),
-			Label:    "Average LLMs Usage/Cycle",
+			Label:    "Average 5-Hour Limit Usage/Cycle",
 			Sublabel: fmt.Sprintf("%d cycles (30d)", len(fiveHourCycles)),
 		})
 		resp.Stats = append(resp.Stats, insightStat{
 			Value: fmt.Sprintf("%.1f%%", peak),
-			Label: "LLMs Peak (30d)",
+			Label: "5-Hour Limit Peak (30d)",
 		})
 	} else if active, err := h.store.QueryActiveCodexCycle(accountID, "five_hour"); err == nil && active != nil {
 		resp.Stats = append(resp.Stats, insightStat{
 			Value:    fmt.Sprintf("%.1f%%", active.TotalDelta),
-			Label:    "LLMs Delta (Current)",
+			Label:    "5-Hour Limit Delta (Current)",
 			Sublabel: fmt.Sprintf("peak %.1f%%", active.PeakUtilization),
 		})
 		resp.Stats = append(resp.Stats, insightStat{
 			Value: fmt.Sprintf("%.1f%%", active.PeakUtilization),
-			Label: "LLMs Peak (Current)",
+			Label: "5-Hour Limit Peak (Current)",
 		})
 	}
 

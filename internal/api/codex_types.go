@@ -82,7 +82,7 @@ type CodexSnapshot struct {
 }
 
 var codexDisplayNames = map[string]string{
-	"five_hour":   "LLMs",
+	"five_hour":   "5-Hour Limit",
 	"seven_day":   "Weekly All-Model",
 	"code_review": "Review Requests",
 }

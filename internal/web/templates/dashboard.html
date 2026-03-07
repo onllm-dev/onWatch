@@ -40,6 +40,23 @@
             <button class="header-btn" id="change-password-btn" aria-label="Change password" title="Change password">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             </button>
+            <div class="layout-toggle" id="layout-toggle" role="group" aria-label="Layout density">
+                <button class="layout-btn" data-layout="compact" aria-label="Compact layout" title="Compact layout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M4 7h16M4 12h16M4 17h16"/>
+                    </svg>
+                </button>
+                <button class="layout-btn" data-layout="normal" aria-label="Normal layout" title="Normal layout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M5 7h14M5 12h14M5 17h14"/>
+                    </svg>
+                </button>
+                <button class="layout-btn" data-layout="wide" aria-label="Wide layout" title="Wide layout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M3 7h18M3 12h18M3 17h18"/>
+                    </svg>
+                </button>
+            </div>
             <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
                 <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="5"/>
@@ -134,7 +151,7 @@
             {{if .HasCodex}}
             <section class="provider-column" data-provider="codex">
                 <h3 class="provider-label">Codex</h3>
-                <div class="quota-grid quota-grid-stacked" id="quota-grid-codex-both" data-provider="codex"></div>
+                <div id="codex-accounts-container" class="codex-accounts-container" data-provider="codex"></div>
             </section>
             {{end}}
             {{if .HasAntigravity}}
@@ -386,7 +403,7 @@
             </div>
         </section>
 
-        <section class="sessions-section">
+        <section class="sessions-section section-collapsible" id="sessions-section">
             <header class="section-header">
                 <h3 class="section-title">
                     <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -397,6 +414,12 @@
                     Session History
                 </h3>
                 <div class="table-controls">
+                    <button class="section-toggle" type="button" data-section-id="sessions-section" aria-expanded="true" title="Collapse Session History table">
+                        <svg class="section-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="m9 6 6 6-6 6"/>
+                        </svg>
+                        <span class="section-toggle-text">Collapse</span>
+                    </button>
                     <select class="page-size-select" id="sessions-page-size" aria-label="Rows per page">
                         <option value="10">10</option>
                         <option value="20">20</option>
@@ -420,7 +443,7 @@
                             {{else if eq .CurrentProvider "zai"}}
                             <th data-sort-key="snapshots" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "codex"}}
-                            <th data-sort-key="sub" role="button" tabindex="0">LLMs <span class="sort-arrow"></span></th>
+                            <th data-sort-key="sub" role="button" tabindex="0">5-Hour Limit <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Weekly All-Model <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "antigravity"}}
                             <th data-sort-key="sub" role="button" tabindex="0">Claude + GPT Quota <span class="sort-arrow"></span></th>
@@ -454,7 +477,7 @@
             </div>
         </section>
 
-        <section class="cycles-section">
+        <section class="cycles-section section-collapsible" id="cycles-section">
             <header class="section-header">
                 <h3 class="section-title">
                     <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -464,6 +487,12 @@
                     Logging History
                 </h3>
                 <div class="cycles-filters-inline">
+                    <button class="section-toggle" type="button" data-section-id="cycles-section" aria-expanded="true" title="Collapse Logging History table">
+                        <svg class="section-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="m9 6 6 6-6 6"/>
+                        </svg>
+                        <span class="section-toggle-text">Collapse</span>
+                    </button>
                     <div class="filter-group">
                         <span class="filter-label">Range</span>
                         <div class="filter-pills" id="cycle-range-pills" role="group" aria-label="Time range">

@@ -105,7 +105,7 @@ func TestParseCodexUsageResponse_CreditsBalanceString(t *testing.T) {
 }
 
 func TestCodexDisplayName(t *testing.T) {
-	if got := CodexDisplayName("five_hour"); got != "LLMs" {
+	if got := CodexDisplayName("five_hour"); got != "5-Hour Limit" {
 		t.Fatalf("CodexDisplayName(five_hour) = %q", got)
 	}
 	if got := CodexDisplayName("seven_day"); got != "Weekly All-Model" {

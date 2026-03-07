@@ -1517,7 +1517,7 @@ func TestHandler_Dashboard_CodexSessionHeaders(t *testing.T) {
 	}
 
 	body := rr.Body.String()
-	if !strings.Contains(body, "LLMs") {
+	if !strings.Contains(body, "5-Hour Limit") {
 		t.Error("expected codex-specific 5-Hour Limit session column")
 	}
 	if !strings.Contains(body, "Weekly All-Model") {
@@ -2272,7 +2272,7 @@ func TestHandler_Current_WithCodexProvider(t *testing.T) {
 	if !ok {
 		t.Fatal("expected first quota to be a map")
 	}
-	if q0["displayName"] != "LLMs" {
+	if q0["displayName"] != "5-Hour Limit" {
 		t.Errorf("expected 5-Hour Limit displayName, got %v", q0["displayName"])
 	}
 
@@ -2547,7 +2547,7 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 		if st.Label == "Plan" {
 			hasPlan = true
 		}
-		if st.Label == "Average LLMs Usage/Cycle" || st.Label == "LLMs Delta (Current)" {
+		if st.Label == "Average 5-Hour Limit Usage/Cycle" || st.Label == "5-Hour Limit Delta (Current)" {
 			hasFiveHourBehaviorStat = true
 		}
 	}
@@ -2555,7 +2555,7 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 		t.Error("expected Plan stat in codex insights response")
 	}
 	if !hasFiveHourBehaviorStat {
-		t.Error("expected LLMs behavior stat in codex insights response")
+		t.Error("expected 5-Hour Limit behavior stat in codex insights response")
 	}
 	for _, in := range response.Insights {
 		if in.Title == "Tracking Quality" {
@@ -2591,7 +2591,7 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 		if in.Title == "Weekly All-Model Burn Rate" {
 			weeklyForecastFound = strings.Contains(in.Sublabel, "by reset")
 		}
-		if in.Title == "LLMs Burn Rate" {
+		if in.Title == "5-Hour Limit Burn Rate" {
 			shortForecastFound = strings.Contains(in.Sublabel, "by reset")
 		}
 		if in.Title == "Weekly Pace" {
@@ -2605,7 +2605,7 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 		}
 	}
 	if !shortForecastFound {
-		t.Error("expected LLMs Burn Rate to show reset estimate sublabel")
+		t.Error("expected 5-Hour Limit Burn Rate to show reset estimate sublabel")
 	}
 	if !weeklyForecastFound {
 		t.Error("expected Weekly All-Model Burn Rate to show reset estimate sublabel")
@@ -3754,6 +3754,88 @@ func TestHandler_Sessions_BothIncludesCodexAndAntigravity(t *testing.T) {
 	}
 	if antigravitySessions[0]["id"] != "antigravity-session" {
 		t.Fatalf("expected antigravity session id antigravity-session, got %v", antigravitySessions[0]["id"])
+	}
+}
+
+func TestHandler_Sessions_CodexAccountFiltering(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithCodex()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	now := time.Now().UTC()
+	if err := s.CreateSession("codex-legacy", now.Add(-40*time.Minute), 60, "codex", 11, 7, 0); err != nil {
+		t.Fatalf("failed to create legacy codex session: %v", err)
+	}
+	if err := s.CreateSession("codex-account-1", now.Add(-30*time.Minute), 60, "codex:1", 12, 8, 0); err != nil {
+		t.Fatalf("failed to create codex account 1 session: %v", err)
+	}
+	if err := s.CreateSession("codex-account-2", now.Add(-20*time.Minute), 60, "codex:2", 13, 9, 0); err != nil {
+		t.Fatalf("failed to create codex account 2 session: %v", err)
+	}
+
+	reqAccount2 := httptest.NewRequest(http.MethodGet, "/api/sessions?provider=codex&account=2", nil)
+	rrAccount2 := httptest.NewRecorder()
+	h.Sessions(rrAccount2, reqAccount2)
+	if rrAccount2.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for account 2, got %d", rrAccount2.Code)
+	}
+
+	var account2Sessions []map[string]interface{}
+	if err := json.Unmarshal(rrAccount2.Body.Bytes(), &account2Sessions); err != nil {
+		t.Fatalf("failed to parse account 2 sessions: %v", err)
+	}
+	if len(account2Sessions) != 1 || account2Sessions[0]["id"] != "codex-account-2" {
+		t.Fatalf("expected only codex-account-2, got %#v", account2Sessions)
+	}
+
+	reqAccount1 := httptest.NewRequest(http.MethodGet, "/api/sessions?provider=codex&account=1", nil)
+	rrAccount1 := httptest.NewRecorder()
+	h.Sessions(rrAccount1, reqAccount1)
+	if rrAccount1.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for account 1, got %d", rrAccount1.Code)
+	}
+
+	var account1Sessions []map[string]interface{}
+	if err := json.Unmarshal(rrAccount1.Body.Bytes(), &account1Sessions); err != nil {
+		t.Fatalf("failed to parse account 1 sessions: %v", err)
+	}
+	if len(account1Sessions) != 2 {
+		t.Fatalf("expected 2 sessions for account 1 (legacy + codex:1), got %d", len(account1Sessions))
+	}
+}
+
+func TestHandler_Sessions_BothCodexAccountFiltering(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithAll()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	now := time.Now().UTC()
+	if err := s.CreateSession("codex-account-1", now.Add(-35*time.Minute), 60, "codex:1", 12, 8, 0); err != nil {
+		t.Fatalf("failed to create codex account 1 session: %v", err)
+	}
+	if err := s.CreateSession("codex-account-2", now.Add(-25*time.Minute), 60, "codex:2", 13, 9, 0); err != nil {
+		t.Fatalf("failed to create codex account 2 session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions?provider=both&account=2", nil)
+	rr := httptest.NewRecorder()
+	h.Sessions(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var response map[string][]map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse both sessions response: %v", err)
+	}
+
+	codexSessions := response["codex"]
+	if len(codexSessions) != 1 || codexSessions[0]["id"] != "codex-account-2" {
+		t.Fatalf("expected only codex-account-2 in both response, got %#v", codexSessions)
 	}
 }
 
@@ -5389,13 +5471,13 @@ func TestParseCycleOverviewLimit(t *testing.T) {
 		query    string
 		expected int
 	}{
-		{"", 50},                  // default
-		{"?limit=10", 10},         // valid
-		{"?limit=500", 500},       // max
-		{"?limit=1000", 500},      // capped
-		{"?limit=-1", 50},         // invalid negative
-		{"?limit=abc", 50},        // invalid string
-		{"?limit=0", 50},          // zero treated as invalid
+		{"", 50},             // default
+		{"?limit=10", 10},    // valid
+		{"?limit=500", 500},  // max
+		{"?limit=1000", 500}, // capped
+		{"?limit=-1", 50},    // invalid negative
+		{"?limit=abc", 50},   // invalid string
+		{"?limit=0", 50},     // zero treated as invalid
 	}
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
@@ -5454,9 +5536,9 @@ func TestGroupBillingPeriods_WithReset(t *testing.T) {
 	now := time.Now().UTC()
 	// DESC order (newest first) - peak drops >50% indicating reset
 	cycles := []*store.ResetCycle{
-		{CycleStart: now, PeakRequests: 50},                       // new period
-		{CycleStart: now.Add(-1 * time.Hour), PeakRequests: 200},  // old period peak
-		{CycleStart: now.Add(-2 * time.Hour), PeakRequests: 180},  // old period
+		{CycleStart: now, PeakRequests: 50},                      // new period
+		{CycleStart: now.Add(-1 * time.Hour), PeakRequests: 200}, // old period peak
+		{CycleStart: now.Add(-2 * time.Hour), PeakRequests: 180}, // old period
 	}
 	result := groupBillingPeriods(cycles)
 	if len(result) != 2 {
@@ -5486,9 +5568,9 @@ func TestBillingPeriodPeak(t *testing.T) {
 	now := time.Now().UTC()
 	// Two billing periods with different peaks
 	cycles := []*store.ResetCycle{
-		{CycleStart: now, PeakRequests: 30},                       // new period (after reset)
-		{CycleStart: now.Add(-1 * time.Hour), PeakRequests: 200},  // old period
-		{CycleStart: now.Add(-2 * time.Hour), PeakRequests: 150},  // old period
+		{CycleStart: now, PeakRequests: 30},                      // new period (after reset)
+		{CycleStart: now.Add(-1 * time.Hour), PeakRequests: 200}, // old period
+		{CycleStart: now.Add(-2 * time.Hour), PeakRequests: 150}, // old period
 	}
 	result := billingPeriodPeak(cycles)
 	if result != 200 {
@@ -5550,9 +5632,9 @@ func TestGroupAnthropicBillingPeriods_WithReset(t *testing.T) {
 	now := time.Now().UTC()
 	// DESC order: peak drops >50% indicating reset. Need peak > 5 for detection.
 	cycles := []*store.AnthropicResetCycle{
-		{CycleStart: now, PeakUtilization: 10.0},                        // new period
-		{CycleStart: now.Add(-1 * time.Hour), PeakUtilization: 80.0},    // old period peak
-		{CycleStart: now.Add(-2 * time.Hour), PeakUtilization: 60.0},    // old period
+		{CycleStart: now, PeakUtilization: 10.0},                     // new period
+		{CycleStart: now.Add(-1 * time.Hour), PeakUtilization: 80.0}, // old period peak
+		{CycleStart: now.Add(-2 * time.Hour), PeakUtilization: 60.0}, // old period
 	}
 	result := groupAnthropicBillingPeriods(cycles)
 	if len(result) != 2 {
@@ -6228,9 +6310,9 @@ func TestHandler_Current_Copilot_WithData(t *testing.T) {
 
 	resetDate := time.Now().UTC().Add(24 * time.Hour)
 	snapshot := &api.CopilotSnapshot{
-		CapturedAt: time.Now().UTC(),
+		CapturedAt:  time.Now().UTC(),
 		CopilotPlan: "copilot_for_business",
-		ResetDate:  &resetDate,
+		ResetDate:   &resetDate,
 		Quotas: []api.CopilotQuota{
 			{
 				Name:             "premium_interactions",
@@ -6597,8 +6679,8 @@ func TestHandler_Current_Antigravity_WithData(t *testing.T) {
 			{
 				ModelID:           "claude-sonnet",
 				RemainingFraction: 0.75,
-				IsExhausted:      false,
-				ResetTime:        &resetTime,
+				IsExhausted:       false,
+				ResetTime:         &resetTime,
 			},
 		},
 	}
@@ -6740,8 +6822,8 @@ func TestHandler_Insights_Antigravity_WithData(t *testing.T) {
 				{
 					ModelID:           "claude-sonnet",
 					RemainingFraction: 0.75 - float64(i)*0.05,
-					IsExhausted:      false,
-					ResetTime:        &resetTime,
+					IsExhausted:       false,
+					ResetTime:         &resetTime,
 				},
 			},
 		}
@@ -7467,8 +7549,8 @@ func TestHandler_History_Antigravity_WithData(t *testing.T) {
 				{
 					ModelID:           "claude-sonnet",
 					RemainingFraction: 0.8 - float64(i)*0.1,
-					IsExhausted:      false,
-					ResetTime:        &resetTime,
+					IsExhausted:       false,
+					ResetTime:         &resetTime,
 				},
 			},
 		}
@@ -7607,18 +7689,18 @@ func TestHandler_BuildZaiInsights_WithRichData(t *testing.T) {
 	// Insert enough snapshots over 7 days with tool call details
 	for i := 0; i < 20; i++ {
 		snapshot := &api.ZaiSnapshot{
-			CapturedAt:       now.Add(-time.Duration(20-i) * time.Hour),
-			TokensUsage:      200000000,
-			TokensLimit:      200000000,
-			TokensCurrentValue: float64(i * 10000000),
-			TokensRemaining:  float64(200000000 - i*10000000),
-			TokensPercentage: i * 5,
+			CapturedAt:          now.Add(-time.Duration(20-i) * time.Hour),
+			TokensUsage:         200000000,
+			TokensLimit:         200000000,
+			TokensCurrentValue:  float64(i * 10000000),
+			TokensRemaining:     float64(200000000 - i*10000000),
+			TokensPercentage:    i * 5,
 			TokensNextResetTime: &resetTime,
-			TimeUsage:        1000,
-			TimeCurrentValue: float64(i * 50),
-			TimeRemaining:    float64(1000 - i*50),
-			TimePercentage:   i * 5,
-			TimeUsageDetails: `[{"modelCode":"search-prime","usage":50},{"modelCode":"code-prime","usage":30}]`,
+			TimeUsage:           1000,
+			TimeCurrentValue:    float64(i * 50),
+			TimeRemaining:       float64(1000 - i*50),
+			TimePercentage:      i * 5,
+			TimeUsageDetails:    `[{"modelCode":"search-prime","usage":50},{"modelCode":"code-prime","usage":30}]`,
 		}
 		s.InsertZaiSnapshot(snapshot)
 	}
@@ -8719,13 +8801,13 @@ func TestHandler_BuildZaiSummaryMap_StoreFallback(t *testing.T) {
 
 	now := time.Now().UTC()
 	snapshot := &api.ZaiSnapshot{
-		CapturedAt:       now,
-		TokensUsage:      10000,
+		CapturedAt:         now,
+		TokensUsage:        10000,
 		TokensCurrentValue: 3000,
-		TokensPercentage: 30,
-		TimeUsage:        3600,
-		TimeCurrentValue: 1200,
-		TimePercentage:   33,
+		TokensPercentage:   30,
+		TimeUsage:          3600,
+		TimeCurrentValue:   1200,
+		TimePercentage:     33,
 	}
 	s.InsertZaiSnapshot(snapshot)
 
@@ -8757,14 +8839,14 @@ func TestHandler_BuildZaiCurrent_WithStoreData(t *testing.T) {
 
 	now := time.Now().UTC()
 	snapshot := &api.ZaiSnapshot{
-		CapturedAt:       now,
-		TokensUsage:      10000,
+		CapturedAt:         now,
+		TokensUsage:        10000,
 		TokensCurrentValue: 3000,
-		TokensPercentage: 30,
-		TimeUsage:        3600,
-		TimeCurrentValue: 1200,
-		TimePercentage:   33,
-		TimeUsageDetails: `[{"type":"code_completion","usage":500},{"type":"chat","usage":300}]`,
+		TokensPercentage:   30,
+		TimeUsage:          3600,
+		TimeCurrentValue:   1200,
+		TimePercentage:     33,
+		TimeUsageDetails:   `[{"type":"code_completion","usage":500},{"type":"chat","usage":300}]`,
 	}
 	s.InsertZaiSnapshot(snapshot)
 
@@ -9631,13 +9713,13 @@ func TestHandler_HistoryZai_WithData(t *testing.T) {
 	now := time.Now().UTC()
 	for i := 0; i < 5; i++ {
 		snapshot := &api.ZaiSnapshot{
-			CapturedAt:       now.Add(-time.Duration(5-i) * time.Hour),
-			TokensUsage:      10000,
+			CapturedAt:         now.Add(-time.Duration(5-i) * time.Hour),
+			TokensUsage:        10000,
 			TokensCurrentValue: float64(i * 1000),
-			TokensPercentage: i * 10,
-			TimeUsage:        3600,
-			TimeCurrentValue: float64(i * 300),
-			TimePercentage:   i * 8,
+			TokensPercentage:   i * 10,
+			TimeUsage:          3600,
+			TimeCurrentValue:   float64(i * 300),
+			TimePercentage:     i * 8,
 		}
 		s.InsertZaiSnapshot(snapshot)
 	}
@@ -9963,9 +10045,9 @@ func TestAnthropicBillingPeriodPeak_Coverage(t *testing.T) {
 
 func TestNormalizeAntigravityGroupBy(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		expect  string
+		name   string
+		input  string
+		expect string
 	}{
 		{
 			name:   "passes through canonical group",
