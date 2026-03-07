@@ -2150,11 +2150,13 @@ function initTheme() {
 }
 
 function setLayoutDensity(mode) {
+  const aliases = { default: 'normal' };
+  const normalized = aliases[mode] || mode;
   const valid = new Set(['compact', 'normal', 'wide']);
-  const next = valid.has(mode) ? mode : 'normal';
+  const next = valid.has(normalized) ? normalized : 'normal';
 
   if (document.body) {
-    document.body.classList.remove('layout-compact', 'layout-normal', 'layout-wide');
+    document.body.classList.remove('layout-compact', 'layout-normal', 'layout-default', 'layout-wide');
     document.body.classList.add(`layout-${next}`);
   }
 
@@ -3664,15 +3666,21 @@ function renderAllProvidersView() {
     const canvas = container.querySelector(`#provider-chart-${entry.cardKey}`);
     const rows = Array.isArray(entry.historyRows) ? entry.historyRows : [];
     if (!chartHost || !canvas || rows.length === 0) {
-      if (chartHost) chartHost.innerHTML = '<p class="insight-text">No chart data available.</p>';
+      if (chartHost) {
+        chartHost.classList.add('provider-chart-empty');
+        chartHost.innerHTML = '<p class="insight-text">Collecting data...</p>';
+      }
       return;
     }
 
     const datasets = buildProviderCardDatasets(entry.provider, rows, chartRange);
     if (!datasets.length) {
-      chartHost.innerHTML = '<p class="insight-text">No chart data available.</p>';
+      chartHost.classList.add('provider-chart-empty');
+      chartHost.innerHTML = '<p class="insight-text">Collecting data...</p>';
       return;
     }
+
+    chartHost.classList.remove('provider-chart-empty');
 
     const chart = new Chart(canvas, {
       type: 'line',
