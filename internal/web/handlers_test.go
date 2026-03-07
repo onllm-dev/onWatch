@@ -1504,7 +1504,7 @@ func TestHandler_Dashboard_PreservesProviderQueryParam(t *testing.T) {
 	}
 }
 
-func TestHandler_Dashboard_CodexSessionHeaders(t *testing.T) {
+func TestHandler_Dashboard_CodexView_RestoresProfileTabsAndTables(t *testing.T) {
 	cfg := createTestConfigWithCodex()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -1517,11 +1517,50 @@ func TestHandler_Dashboard_CodexSessionHeaders(t *testing.T) {
 	}
 
 	body := rr.Body.String()
-	if !strings.Contains(body, "5-Hour Limit") {
-		t.Error("expected codex-specific 5-Hour Limit session column")
+	if !strings.Contains(body, `id="codex-profile-tabs"`) {
+		t.Error("expected codex profile tabs container")
 	}
-	if !strings.Contains(body, "Weekly All-Model") {
-		t.Error("expected codex-specific Weekly All-Model session column")
+	if !strings.Contains(body, `id="quota-grid-codex"`) {
+		t.Error("expected single-account codex quota grid")
+	}
+	if strings.Contains(body, `id="codex-accounts-container-both"`) {
+		t.Error("did not expect all-view codex multi-account container in codex view")
+	}
+	if !strings.Contains(body, `id="sessions-section"`) {
+		t.Error("expected Session History section for codex view")
+	}
+	if !strings.Contains(body, `id="cycles-section"`) {
+		t.Error("expected Logging History section for codex view")
+	}
+	if !strings.Contains(body, `id="overview-table"`) {
+		t.Error("expected Cycle Overview table for codex view")
+	}
+}
+
+func TestHandler_Dashboard_AllView_UsesCodexMultiAccountLayout(t *testing.T) {
+	cfg := createTestConfigWithAll()
+	h := NewHandler(nil, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/?provider=both", nil)
+	rr := httptest.NewRecorder()
+	h.Dashboard(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	body := rr.Body.String()
+	if !strings.Contains(body, `id="codex-accounts-container-both"`) {
+		t.Error("expected all-view codex multi-account container")
+	}
+	if strings.Contains(body, `id="sessions-section"`) {
+		t.Error("did not expect Session History section on all view")
+	}
+	if strings.Contains(body, `id="cycles-section"`) {
+		t.Error("did not expect Logging History section on all view")
+	}
+	if strings.Contains(body, `id="overview-table"`) {
+		t.Error("did not expect Cycle Overview table on all view")
 	}
 }
 

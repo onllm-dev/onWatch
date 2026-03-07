@@ -51,7 +51,9 @@ function getCurrentProvider() {
   if (anthropicGrid) return 'anthropic';
   const copilotGrid = document.getElementById('quota-grid-copilot');
   if (copilotGrid) return 'copilot';
-  const codexGrid = document.getElementById('quota-grid-codex');
+  const codexGrid = document.getElementById('quota-grid-codex')
+    || document.getElementById('codex-accounts-container-both')
+    || document.getElementById('codex-accounts-container');
   if (codexGrid) return 'codex';
   const antigravityGrid = document.getElementById('quota-grid-antigravity');
   if (antigravityGrid) return 'antigravity';
@@ -63,10 +65,22 @@ function providerParam() {
   const provider = getCurrentProvider();
   let param = `provider=${provider}`;
   // Append account parameter for Codex provider
-  if (provider === 'codex' || provider === 'both') {
+  if (provider === 'codex') {
     param += codexAccountParam();
   }
   return param;
+}
+
+function shouldShowHistoryTables(provider = getCurrentProvider()) {
+  return provider !== 'both';
+}
+
+function getBothViewProviders() {
+  const bothView = document.getElementById('both-view');
+  if (!bothView) return [];
+  return [...bothView.querySelectorAll('.provider-column[data-provider]')]
+    .map(el => el.dataset.provider)
+    .filter(Boolean);
 }
 
 // ── Global State ──
@@ -76,6 +90,7 @@ const State = {
   chartZai: null,
   chartAnth: null,
   chartCodex: null,
+  chartCodexByAccount: {},
   modalChart: null,
   countdownInterval: null,
   refreshInterval: null,
@@ -117,6 +132,7 @@ const State = {
   codexAccount: 1,
   codexProfiles: [],
   codexPlanType: '',
+  codexQuotaNames: [],
 };
 
 // ── Persistence ──
@@ -240,7 +256,7 @@ function updateCodexProfileTabsVisibility() {
   if (!container) return;
 
   const provider = getCurrentProvider();
-  const showTabs = (provider === 'codex' || provider === 'both') && State.codexProfiles.length > 1;
+  const showTabs = provider === 'codex' && State.codexProfiles.length > 1;
   container.style.display = showTabs ? 'flex' : 'none';
 }
 
@@ -248,13 +264,11 @@ function updateCodexProfileTabsVisibility() {
 function refreshAll() {
   const refreshBtn = document.getElementById('refresh-btn');
   if (refreshBtn) refreshBtn.classList.add('spinning');
-  Promise.all([
-    fetchCurrent(),
-    fetchDeepInsights(),
-    fetchHistory(),
-    fetchCycles(),
-    fetchSessions()
-  ]).finally(() => {
+  const tasks = [fetchCurrent(), fetchDeepInsights(), fetchHistory()];
+  if (shouldShowHistoryTables()) {
+    tasks.push(fetchCycles(), fetchSessions(), fetchCycleOverview());
+  }
+  Promise.all(tasks).finally(() => {
     if (refreshBtn) setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
   });
 }
@@ -459,6 +473,24 @@ const codexSessionLabels = {
   search: 'Weekly All-Model'
 };
 
+function getCodexSessionLabel(index) {
+  const names = State.codexQuotaNames || [];
+  const key = names[index];
+  if (key) {
+    return codexDisplayNames[key] || key;
+  }
+  return index === 0 ? codexSessionLabels.sub : codexSessionLabels.search;
+}
+
+function updateCodexSessionHeaders() {
+  for (let i = 0; i < 2; i++) {
+    const el = document.getElementById(`codex-session-col-${i}`);
+    if (!el) continue;
+    const label = getCodexSessionLabel(i).replace(/ Limit$/, '');
+    el.innerHTML = `${label} <span class="sort-arrow"></span>`;
+  }
+}
+
 function normalizeCodexPlanType(planType) {
   return typeof planType === 'string' ? planType.trim().toLowerCase() : '';
 }
@@ -468,7 +500,9 @@ function isCodexFreePlan(planType) {
 }
 
 function codexVisibleQuotaNames(planType) {
-  return isCodexFreePlan(planType) ? ['seven_day'] : ['five_hour', 'seven_day'];
+  return isCodexFreePlan(planType)
+    ? ['seven_day', 'code_review']
+    : ['five_hour', 'seven_day', 'code_review'];
 }
 
 function setCodexPlanType(planType) {
@@ -481,11 +515,29 @@ function setCodexPlanType(planType) {
 
 function filterCodexQuotasForPlan(quotas, planType) {
   if (!Array.isArray(quotas)) return [];
-  const allowed = new Set(codexVisibleQuotaNames(planType));
-  const order = ['five_hour', 'seven_day'];
-  return quotas
-    .filter(q => q && allowed.has(q.name))
-    .sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+  const preferred = new Set(codexVisibleQuotaNames(planType));
+  const order = ['five_hour', 'seven_day', 'code_review'];
+  let filtered = quotas
+    .filter(q => q && q.name && preferred.has(q.name));
+
+  if (filtered.length === 0) {
+    if (isCodexFreePlan(planType)) {
+      // Free plans should never render five_hour even if backend reports it.
+      filtered = quotas.filter(q => q && q.name && q.name !== 'five_hour');
+    } else {
+      filtered = quotas.filter(q => q && q.name);
+    }
+  }
+
+  return filtered
+    .sort((a, b) => {
+      const left = order.indexOf(a.name);
+      const right = order.indexOf(b.name);
+      if (left === -1 && right === -1) return String(a.name).localeCompare(String(b.name));
+      if (left === -1) return 1;
+      if (right === -1) return -1;
+      return left - right;
+    });
 }
 
 // Codex chart colors keyed by quota name
@@ -517,6 +569,16 @@ const copilotChartColorFallback = [
   { border: '#a371f7', bg: 'rgba(163, 113, 247, 0.08)' }
 ];
 
+const antigravityChartColorMap = {
+  antigravity_claude_gpt: { border: '#D97757', bg: 'rgba(217, 119, 87, 0.08)' },
+  antigravity_gemini_pro: { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },
+  antigravity_gemini_flash: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.08)' },
+};
+const antigravityChartColorFallback = [
+  { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
+  { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.08)' },
+];
+
 // ── Renewal Categories for Cycle Overview ──
 
 const renewalCategories = {
@@ -541,7 +603,8 @@ const renewalCategories = {
   ],
   codex: [
     { label: '5-Hour', groupBy: 'five_hour' },
-    { label: 'Weekly', groupBy: 'seven_day' }
+    { label: 'Weekly', groupBy: 'seven_day' },
+    { label: 'Review', groupBy: 'code_review' }
   ],
   antigravity: [
     { label: 'Claude+GPT', groupBy: 'antigravity_claude_gpt' },
@@ -1399,6 +1462,10 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
+  if (visibleQuotas.length === 0) {
+    container.innerHTML = '<p class="empty-state">No Codex quota data available yet.</p>';
+    return;
+  }
 
   container.innerHTML = visibleQuotas.map((q, i) => {
     const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
@@ -1473,6 +1540,14 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
   `;
   container.appendChild(header);
 
+  if (visibleQuotas.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'No Codex quota data available for this account yet.';
+    container.appendChild(empty);
+    return;
+  }
+
   const cardsDiv = document.createElement('div');
   cardsDiv.className = 'codex-account-cards';
   cardsDiv.innerHTML = visibleQuotas.map((q, i) => {
@@ -1516,7 +1591,7 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
 }
 
 function renderCodexAccountSections(accounts) {
-  const container = document.getElementById('codex-accounts-container');
+  const container = document.getElementById('codex-accounts-container-both');
   if (!container) return;
 
   container.innerHTML = '';
@@ -2218,7 +2293,7 @@ async function fetchCurrent() {
             data.copilot.quotas.forEach(q => updateCopilotCard(q));
           }
         }
-        if (document.getElementById('codex-accounts-container')) {
+        if (document.getElementById('codex-accounts-container-both')) {
           if (data.codexAccounts && data.codexAccounts.length > 0) {
             fetchCodexUsage({ mode: 'both', data: data.codexAccounts });
           } else if (data.codex && data.codex.quotas) {
@@ -2261,7 +2336,7 @@ async function fetchCurrent() {
           }
         }
       } else if (provider === 'codex') {
-        fetchCodexUsage({ mode: 'single', data });
+        fetchCodexUsage({ mode: 'codex', data });
       } else if (provider === 'antigravity') {
         // Antigravity response: { capturedAt: ..., quotas: [...] }
         if (data.quotas) {
@@ -2327,11 +2402,22 @@ async function fetchCodexUsage(options = {}) {
     }
 
     const planChanged = setCodexPlanType(payload.planType);
-    if (planChanged) {
-      syncCodexOverviewControls();
-    }
 
     const visibleQuotas = filterCodexQuotasForPlan(payload.quotas, State.codexPlanType);
+    const nextQuotaNames = visibleQuotas.map(q => q.name);
+    const prevQuotaNames = Array.isArray(State.codexQuotaNames) ? State.codexQuotaNames : [];
+    const quotaNamesChanged = nextQuotaNames.length !== prevQuotaNames.length ||
+      nextQuotaNames.some((name, idx) => name !== prevQuotaNames[idx]);
+    if (quotaNamesChanged) {
+      State.codexQuotaNames = nextQuotaNames;
+    }
+    if (planChanged || quotaNamesChanged) {
+      syncCodexOverviewControls();
+    }
+    if (quotaNamesChanged) {
+      updateCodexSessionHeaders();
+    }
+
     const container = document.getElementById('quota-grid-codex');
     if (!container) return;
 
@@ -2515,92 +2601,56 @@ function renderBothInsights(data, statsEl, cardsEl) {
   if (statsEl) statsEl.innerHTML = '';
 
   const expandedHidden = expandCorrelatedKeys(State.hiddenInsights);
+  const activeProviders = new Set(getBothViewProviders());
+
+  const renderProviderBox = (providerKey, label, payload) => {
+    if (!payload) return '';
+    const providerStats = payload.stats || [];
+    const providerInsights = (payload.insights || []).filter(i => !i.key || !expandedHidden.has(i.key));
+    return `<div class="provider-insights-box" data-provider="${providerKey}">
+      <h4 class="provider-insights-label">${label}</h4>
+      <div class="insights-stats">${providerStats.map(s =>
+        `<div class="insight-stat">
+          <div class="insight-stat-value">${s.value}</div>
+          <div class="insight-stat-label">${s.label}</div>
+          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
+        </div>`
+      ).join('')}</div>
+      <div class="insights-cards">${buildInsightCardsHTML(providerInsights)}</div>
+    </div>`;
+  };
 
   let html = '';
 
-  // Synthetic box
-  if (data.synthetic) {
-    const synStats = data.synthetic.stats || [];
-    let synInsights = (data.synthetic.insights || []).filter(i => !i.key || !expandedHidden.has(i.key));
-    html += `<div class="provider-insights-box" data-provider="synthetic">
-      <h4 class="provider-insights-label">Synthetic</h4>
-      <div class="insights-stats">${synStats.map(s =>
-        `<div class="insight-stat">
-          <div class="insight-stat-value">${s.value}</div>
-          <div class="insight-stat-label">${s.label}</div>
-          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
-        </div>`
-      ).join('')}</div>
-      <div class="insights-cards">${buildInsightCardsHTML(synInsights)}</div>
-    </div>`;
+  if (activeProviders.has('synthetic') && data.synthetic) {
+    html += renderProviderBox('synthetic', 'Synthetic', data.synthetic);
   }
 
-  // Z.ai box
-  if (data.zai) {
-    const zaiStats = data.zai.stats || [];
-    let zaiInsights = (data.zai.insights || []).filter(i => !i.key || !expandedHidden.has(i.key));
-    html += `<div class="provider-insights-box" data-provider="zai">
-      <h4 class="provider-insights-label">Z.ai</h4>
-      <div class="insights-stats">${zaiStats.map(s =>
-        `<div class="insight-stat">
-          <div class="insight-stat-value">${s.value}</div>
-          <div class="insight-stat-label">${s.label}</div>
-          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
-        </div>`
-      ).join('')}</div>
-      <div class="insights-cards">${buildInsightCardsHTML(zaiInsights)}</div>
-    </div>`;
+  if (activeProviders.has('zai') && data.zai) {
+    html += renderProviderBox('zai', 'Z.ai', data.zai);
   }
 
-  // Anthropic box
-  if (data.anthropic) {
-    const anthStats = data.anthropic.stats || [];
-    let anthInsights = (data.anthropic.insights || []).filter(i => !i.key || !expandedHidden.has(i.key));
-    html += `<div class="provider-insights-box" data-provider="anthropic">
-      <h4 class="provider-insights-label">Anthropic</h4>
-      <div class="insights-stats">${anthStats.map(s =>
-        `<div class="insight-stat">
-          <div class="insight-stat-value">${s.value}</div>
-          <div class="insight-stat-label">${s.label}</div>
-          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
-        </div>`
-      ).join('')}</div>
-      <div class="insights-cards">${buildInsightCardsHTML(anthInsights)}</div>
-    </div>`;
+  if (activeProviders.has('anthropic') && data.anthropic) {
+    html += renderProviderBox('anthropic', 'Anthropic', data.anthropic);
   }
 
-  // Copilot box
-  if (data.copilot) {
-    const copilotStats = data.copilot.stats || [];
-    let copilotInsights = (data.copilot.insights || []).filter(i => !i.key || !expandedHidden.has(i.key));
-    html += `<div class="provider-insights-box" data-provider="copilot">
-      <h4 class="provider-insights-label">Copilot <span class="beta-badge">Beta</span></h4>
-      <div class="insights-stats">${copilotStats.map(s =>
-        `<div class="insight-stat">
-          <div class="insight-stat-value">${s.value}</div>
-          <div class="insight-stat-label">${s.label}</div>
-          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
-        </div>`
-      ).join('')}</div>
-      <div class="insights-cards">${buildInsightCardsHTML(copilotInsights)}</div>
-    </div>`;
+  if (activeProviders.has('copilot') && data.copilot) {
+    html += renderProviderBox('copilot', 'Copilot <span class="beta-badge">Beta</span>', data.copilot);
   }
 
-  // Codex box
-  if (data.codex) {
-    const codexStats = data.codex.stats || [];
-    let codexInsights = (data.codex.insights || []).filter(i => !i.key || !expandedHidden.has(i.key));
-    html += `<div class="provider-insights-box" data-provider="codex">
-      <h4 class="provider-insights-label">Codex</h4>
-      <div class="insights-stats">${codexStats.map(s =>
-        `<div class="insight-stat">
-          <div class="insight-stat-value">${s.value}</div>
-          <div class="insight-stat-label">${s.label}</div>
-          ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
-        </div>`
-      ).join('')}</div>
-      <div class="insights-cards">${buildInsightCardsHTML(codexInsights)}</div>
-    </div>`;
+  if (activeProviders.has('antigravity') && data.antigravity) {
+    html += renderProviderBox('antigravity', 'Antigravity', data.antigravity);
+  }
+
+  if (activeProviders.has('codex')) {
+    if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
+      data.codexAccounts.forEach(acc => {
+        const label = `Codex · ${acc.accountName || `Account ${acc.accountId || ''}`.trim()}`;
+        html += renderProviderBox('codex', label, acc);
+      });
+    } else if (data.codex) {
+      html += renderProviderBox('codex', 'Codex', data.codex);
+    }
   }
 
   cardsEl.innerHTML = html || '<p class="insight-text">No insights available.</p>';
@@ -3096,136 +3146,163 @@ function updateBothCharts(data, range = '6h') {
   const container = document.querySelector('.chart-container');
   if (!container) return;
 
-  const hasAnthData = data.anthropic && Array.isArray(data.anthropic) && data.anthropic.length > 0;
-  const hasCodexData = data.codex && Array.isArray(data.codex) && data.codex.length > 0;
+  const destroyChart = (chart) => {
+    if (chart && typeof chart.destroy === 'function') chart.destroy();
+  };
+  destroyChart(State.chartSyn); State.chartSyn = null;
+  destroyChart(State.chartZai); State.chartZai = null;
+  destroyChart(State.chartAnth); State.chartAnth = null;
+  destroyChart(State.chartCodex); State.chartCodex = null;
+  Object.values(State.chartCodexByAccount || {}).forEach(destroyChart);
+  State.chartCodexByAccount = {};
 
-  // Create multi-chart layout if not exists
-  if (!container.classList.contains('both-charts')) {
-    container.classList.add('both-charts');
-    let html = `
-      <div class="chart-half"><h4 class="chart-half-label">Synthetic</h4><canvas id="usage-chart-syn"></canvas></div>
-      <div class="chart-half"><h4 class="chart-half-label">Z.ai</h4><canvas id="usage-chart-zai"></canvas></div>
-    `;
-    if (hasAnthData) {
-      html += `<div class="chart-half"><h4 class="chart-half-label">Anthropic</h4><canvas id="usage-chart-anth"></canvas></div>`;
-    }
-    if (hasCodexData) {
-      html += `<div class="chart-half"><h4 class="chart-half-label">Codex</h4><canvas id="usage-chart-codex"></canvas></div>`;
-    }
-    container.innerHTML = html;
-    // Hide the original single chart canvas
-    const origCanvas = document.getElementById('usage-chart');
-    if (origCanvas) origCanvas.style.display = 'none';
-  } else {
-    if (hasAnthData && !document.getElementById('usage-chart-anth')) {
-      container.insertAdjacentHTML('beforeend', '<div class="chart-half"><h4 class="chart-half-label">Anthropic</h4><canvas id="usage-chart-anth"></canvas></div>');
-    }
-    if (hasCodexData && !document.getElementById('usage-chart-codex')) {
-      container.insertAdjacentHTML('beforeend', '<div class="chart-half"><h4 class="chart-half-label">Codex</h4><canvas id="usage-chart-codex"></canvas></div>');
+  const activeProviders = new Set(getBothViewProviders());
+  const slots = [];
+
+  if (activeProviders.has('synthetic') && Array.isArray(data.synthetic) && data.synthetic.length > 0) {
+    slots.push({ id: 'syn', label: 'Synthetic', provider: 'synthetic', rows: data.synthetic });
+  }
+  if (activeProviders.has('zai') && Array.isArray(data.zai) && data.zai.length > 0) {
+    slots.push({ id: 'zai', label: 'Z.ai', provider: 'zai', rows: data.zai });
+  }
+  if (activeProviders.has('anthropic') && Array.isArray(data.anthropic) && data.anthropic.length > 0) {
+    slots.push({ id: 'anth', label: 'Anthropic', provider: 'anthropic', rows: data.anthropic });
+  }
+  if (activeProviders.has('copilot') && Array.isArray(data.copilot) && data.copilot.length > 0) {
+    slots.push({ id: 'copilot', label: 'Copilot', provider: 'copilot', rows: data.copilot });
+  }
+  if (activeProviders.has('antigravity') && Array.isArray(data.antigravity) && data.antigravity.length > 0) {
+    slots.push({ id: 'antigravity', label: 'Antigravity', provider: 'antigravity', rows: data.antigravity });
+  }
+  if (activeProviders.has('codex')) {
+    if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
+      data.codexAccounts.forEach((account, idx) => {
+        const accountID = String(account.accountId || idx + 1).replace(/[^a-zA-Z0-9_-]/g, '-');
+        const history = Array.isArray(account.history) ? account.history : [];
+        if (history.length === 0) return;
+        slots.push({
+          id: `codex-${accountID}`,
+          label: `Codex · ${account.accountName || `Account ${idx + 1}`}`,
+          provider: 'codex',
+          rows: history,
+          accountKey: accountID,
+        });
+      });
+    } else if (Array.isArray(data.codex) && data.codex.length > 0) {
+      slots.push({ id: 'codex', label: 'Codex', provider: 'codex', rows: data.codex });
     }
   }
+
+  container.classList.add('both-charts');
+  if (slots.length === 0) {
+    container.innerHTML = '<p class="insight-text">No chart data available.</p>';
+    return;
+  }
+
+  container.innerHTML = slots.map(slot =>
+    `<div class="chart-half"><h4 class="chart-half-label">${slot.label}</h4><canvas id="usage-chart-${slot.id}"></canvas></div>`
+  ).join('');
+
+  const origCanvas = document.getElementById('usage-chart');
+  if (origCanvas) origCanvas.style.display = 'none';
 
   const style = getComputedStyle(document.documentElement);
   const colors = getThemeColors();
 
-  // Synthetic chart (3 datasets)
-  const synCanvas = document.getElementById('usage-chart-syn');
-  if (synCanvas && data.synthetic) {
-    if (State.chartSyn) State.chartSyn.destroy();
-    const synData = data.synthetic;
-    const synDatasets = [];
-    [
-      { label: 'Subscription', key: 'subscriptionPercent', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13,148,136,0.06)' },
-      { label: 'Search', key: 'searchPercent', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245,158,11,0.06)' },
-      { label: 'Tool Calls', key: 'toolCallsPercent', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59,130,246,0.06)' }
-    ].forEach(cfg => {
-      const rawData = synData.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
-      const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
-      const main = { label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
-      synDatasets.push(main);
+  const createFixedDatasets = (rows, configs) => {
+    const datasets = [];
+    configs.forEach(cfg => {
+      const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
+      const processed = processDataWithGaps(rawData, range);
+      datasets.push({
+        label: cfg.label,
+        data: processed.data,
+        borderColor: cfg.color,
+        backgroundColor: cfg.bg,
+        fill: true,
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: processed.pointRadii,
+        pointHoverRadius: 4,
+        spanGaps: true,
+        segment: getSegmentStyle(processed.gapSegments, cfg.color),
+      });
     });
-    State.chartSyn = new Chart(synCanvas, {
-      type: 'line',
-      data: { datasets: synDatasets },
-      options: buildChartOptions(colors, computeYMax(synDatasets), range)
-    });
-  }
+    return datasets;
+  };
 
-  // Z.ai chart (3 datasets)
-  const zaiCanvas = document.getElementById('usage-chart-zai');
-  if (zaiCanvas && data.zai) {
-    if (State.chartZai) State.chartZai.destroy();
-    const zaiData = data.zai;
-    const zaiDatasets = [];
-    [
-      { label: 'Tokens', key: 'tokensPercent', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13,148,136,0.06)' },
-      { label: 'Time', key: 'timePercent', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245,158,11,0.06)' },
-      { label: 'Tool Calls', key: 'toolCallsPercent', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59,130,246,0.06)' }
-    ].forEach(cfg => {
-      const rawData = zaiData.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
-      const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
-      const main = { label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
-      zaiDatasets.push(main);
+  const createDynamicDatasets = (rows, labelMap, colorMap, colorFallback, providerKey) => {
+    const keys = new Set();
+    rows.forEach(d => {
+      Object.keys(d).forEach(k => { if (k !== 'capturedAt') keys.add(k); });
     });
-    State.chartZai = new Chart(zaiCanvas, {
-      type: 'line',
-      data: { datasets: zaiDatasets },
-      options: buildChartOptions(colors, computeYMax(zaiDatasets), range)
+    const sorted = [...keys].sort();
+    const datasets = [];
+    let idx = 0;
+    sorted.forEach((key) => {
+      const color = colorMap[key] || colorFallback[idx++ % colorFallback.length];
+      const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+      const processed = processDataWithGaps(rawData, range);
+      datasets.push({
+        label: (labelMap[key] || getQuotaDisplayName(key, providerKey) || key),
+        data: processed.data,
+        borderColor: color.border,
+        backgroundColor: color.bg,
+        fill: true,
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: processed.pointRadii,
+        pointHoverRadius: 4,
+        spanGaps: true,
+        segment: getSegmentStyle(processed.gapSegments, color.border),
+      });
     });
-  }
+    return datasets;
+  };
 
-  // Anthropic chart (dynamic dataset count)
-  const anthCanvas = document.getElementById('usage-chart-anth');
-  if (anthCanvas && hasAnthData) {
-    if (State.chartAnth) State.chartAnth.destroy();
-    const anthData = data.anthropic;
-    const quotaKeys = new Set();
-    anthData.forEach(d => {
-      Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
-    });
-    const sortedKeys = [...quotaKeys].sort();
-    const anthDatasets = [];
-    let fi = 0;
-    sortedKeys.forEach((key) => {
-      const color = anthropicChartColorMap[key] || anthropicChartColorFallback[fi++ % anthropicChartColorFallback.length];
-      const rawData = anthData.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
-      const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
-      const main = { label: anthropicDisplayNames[key] || key, data: data, borderColor: color.border, backgroundColor: color.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, spanGaps: true, segment: getSegmentStyle(gapSegments, color.border) };
-      anthDatasets.push(main);
-    });
-    State.chartAnth = new Chart(anthCanvas, {
-      type: 'line',
-      data: { datasets: anthDatasets },
-      options: buildChartOptions(colors, computeYMax(anthDatasets), range)
-    });
-  }
+  slots.forEach(slot => {
+    const canvas = document.getElementById(`usage-chart-${slot.id}`);
+    if (!canvas || !Array.isArray(slot.rows) || slot.rows.length === 0) return;
 
-  // Codex chart (dynamic dataset count)
-  const codexCanvas = document.getElementById('usage-chart-codex');
-  if (codexCanvas && hasCodexData) {
-    if (State.chartCodex) State.chartCodex.destroy();
-    const codexData = data.codex;
-    const quotaKeys = new Set();
-    codexData.forEach(d => {
-      Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
-    });
-    const sortedKeys = [...quotaKeys].sort();
-    const codexDatasets = [];
-    let fi = 0;
-    sortedKeys.forEach((key) => {
-      const color = codexChartColorMap[key] || codexChartColorFallback[fi++ % codexChartColorFallback.length];
-      const rawData = codexData.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
-      const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
-      const main = { label: codexDisplayNames[key] || key, data: data, borderColor: color.border, backgroundColor: color.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, spanGaps: true, segment: getSegmentStyle(gapSegments, color.border) };
-      codexDatasets.push(main);
+    let datasets = [];
+    if (slot.provider === 'synthetic') {
+      datasets = createFixedDatasets(slot.rows, [
+        { label: 'Subscription', key: 'subscriptionPercent', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13,148,136,0.06)' },
+        { label: 'Search', key: 'searchPercent', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245,158,11,0.06)' },
+        { label: 'Tool Calls', key: 'toolCallsPercent', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59,130,246,0.06)' },
+      ]);
+    } else if (slot.provider === 'zai') {
+      datasets = createFixedDatasets(slot.rows, [
+        { label: 'Tokens', key: 'tokensPercent', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13,148,136,0.06)' },
+        { label: 'Time', key: 'timePercent', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245,158,11,0.06)' },
+        { label: 'Tool Calls', key: 'toolCallsPercent', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59,130,246,0.06)' },
+      ]);
+    } else if (slot.provider === 'anthropic') {
+      datasets = createDynamicDatasets(slot.rows, anthropicDisplayNames, anthropicChartColorMap, anthropicChartColorFallback, 'anthropic');
+    } else if (slot.provider === 'codex') {
+      datasets = createDynamicDatasets(slot.rows, codexDisplayNames, codexChartColorMap, codexChartColorFallback, 'codex');
+    } else if (slot.provider === 'copilot') {
+      datasets = createDynamicDatasets(slot.rows, copilotDisplayNames, copilotChartColorMap, copilotChartColorFallback, 'copilot');
+    } else if (slot.provider === 'antigravity') {
+      datasets = createDynamicDatasets(slot.rows, {}, antigravityChartColorMap, antigravityChartColorFallback, 'antigravity');
+    }
+
+    if (datasets.length === 0) return;
+
+    const chart = new Chart(canvas, {
+      type: 'line',
+      data: { datasets },
+      options: buildChartOptions(colors, computeYMax(datasets), range)
     });
 
-    State.chartCodex = new Chart(codexCanvas, {
-      type: 'line',
-      data: { datasets: codexDatasets },
-      options: buildChartOptions(colors, computeYMax(codexDatasets), range)
-    });
-  }
+    if (slot.provider === 'synthetic') State.chartSyn = chart;
+    if (slot.provider === 'zai') State.chartZai = chart;
+    if (slot.provider === 'anthropic') State.chartAnth = chart;
+    if (slot.provider === 'codex') {
+      if (slot.accountKey) State.chartCodexByAccount[slot.accountKey] = chart;
+      else State.chartCodex = chart;
+    }
+  });
 }
 
 function buildChartOptions(colors, yMax, range) {
@@ -3346,6 +3423,7 @@ function updateTimeScale(chart, range) {
 // ── Cycles Table (client-side search/sort/paginate) ──
 
 async function fetchCycles() {
+  if (!shouldShowHistoryTables()) return;
   const provider = getCurrentProvider();
   const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity']);
 
@@ -3698,6 +3776,7 @@ function renderCyclesTable() {
 // ── Sessions Table (client-side search/sort/paginate + expandable rows) ──
 
 async function fetchSessions() {
+  if (!shouldShowHistoryTables()) return;
   try {
     const res = await authFetch(`${API_BASE}/api/sessions?${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch sessions');
@@ -3721,6 +3800,8 @@ async function fetchSessions() {
     // Update Anthropic session headers with actual quota names after render
     if (getCurrentProvider() === 'anthropic') {
       updateAnthropicSessionHeaders();
+    } else if (getCurrentProvider() === 'codex') {
+      updateCodexSessionHeaders();
     }
   } catch (err) {
     // sessions fetch error — table shows empty state
@@ -3915,7 +3996,9 @@ function renderSessionsTable() {
       return mainRow + detailRow;
     }).join('');
   } else if (isCodex) {
-    // Codex: show Session, Start, End, Duration, 5-Hour Limit, Weekly
+    // Codex: show Session, Start, End, Duration, 2 dynamic quota columns
+    const codexLabel0 = getCodexSessionLabel(0);
+    const codexLabel1 = getCodexSessionLabel(1);
     tbody.innerHTML = pageData.map(session => {
       const c = session._computed;
       const isExpanded = State.expandedSessionId === session.id;
@@ -3944,11 +4027,11 @@ function renderSessionsTable() {
           <div class="session-detail-content">
             <div class="session-detail-grid">
               <div class="detail-item">
-                <span class="detail-label">${codexSessionLabels.sub}</span>
+                <span class="detail-label">${codexLabel0}</span>
                 <span class="detail-value">${fmtPct(session.startSubRequests)} &rarr; ${fmtPct(session.maxSubRequests)} (${fmtDelta(session.startSubRequests, session.maxSubRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">${codexSessionLabels.search}</span>
+                <span class="detail-label">${codexLabel1}</span>
                 <span class="detail-value">${fmtPct(session.startSearchRequests)} &rarr; ${fmtPct(session.maxSearchRequests)} (${fmtDelta(session.startSearchRequests, session.maxSearchRequests)})</span>
               </div>
               <div class="detail-item">
@@ -4462,8 +4545,16 @@ function getOverviewCategories() {
       ...(renewalCategories.antigravity || [])
     ];
   }
-  if (provider === 'codex' && isCodexFreePlan(State.codexPlanType)) {
-    return (renewalCategories.codex || []).filter(cat => cat.groupBy === 'seven_day');
+  if (provider === 'codex') {
+    const codexCategories = renewalCategories.codex || [];
+    const visible = new Set((State.codexQuotaNames || []).filter(Boolean));
+    if (visible.size > 0) {
+      return codexCategories.filter(cat => visible.has(cat.groupBy));
+    }
+    if (isCodexFreePlan(State.codexPlanType)) {
+      return codexCategories.filter(cat => cat.groupBy !== 'five_hour');
+    }
+    return codexCategories;
   }
   return renewalCategories[provider] || [];
 }
@@ -4527,10 +4618,12 @@ function truncateLabel(str, maxLen) {
 }
 
 async function fetchCycleOverview() {
+  if (!shouldShowHistoryTables()) return;
   const provider = getCurrentProvider();
-
-  if (provider === 'codex' && isCodexFreePlan(State.codexPlanType)) {
-    State.overviewGroupBy = 'seven_day';
+  const categories = getOverviewCategories();
+  if (categories.length === 0) return;
+  if (!categories.some(cat => cat.groupBy === State.overviewGroupBy)) {
+    State.overviewGroupBy = categories[0].groupBy;
   }
   if (!State.overviewGroupBy) return;
 
@@ -4839,13 +4932,11 @@ function setupHeaderActions() {
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
       refreshBtn.classList.add('spinning');
-      Promise.all([
-        fetchCurrent(),
-        fetchDeepInsights(),
-        fetchHistory(),
-        fetchCycles(),
-        fetchSessions()
-      ]).finally(() => {
+      const tasks = [fetchCurrent(), fetchDeepInsights(), fetchHistory()];
+      if (shouldShowHistoryTables()) {
+        tasks.push(fetchCycles(), fetchSessions(), fetchCycleOverview());
+      }
+      Promise.all(tasks).finally(() => {
         setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
       });
     });
@@ -4889,9 +4980,11 @@ function startAutoRefresh() {
     // Always refresh above-fold data
     fetchCurrent(); fetchDeepInsights(); fetchHistory();
     // Only refresh below-fold sections that have been loaded
-    if (_lazyLoaded.has('.cycles-section')) fetchCycles();
-    if (_lazyLoaded.has('.cycle-overview-section')) fetchCycleOverview();
-    if (_lazyLoaded.has('.sessions-section')) fetchSessions();
+    if (shouldShowHistoryTables()) {
+      if (_lazyLoaded.has('.cycles-section')) fetchCycles();
+      if (_lazyLoaded.has('.cycle-overview-section')) fetchCycleOverview();
+      if (_lazyLoaded.has('.sessions-section')) fetchSessions();
+    }
   }, REFRESH_INTERVAL);
 }
 
@@ -5599,6 +5692,7 @@ const _overrideQuotasByProvider = {
   codex: [
     { key: 'five_hour', label: '5-Hour Limit' },
     { key: 'seven_day', label: 'Weekly All-Model' },
+    { key: 'code_review', label: 'Review Requests' },
   ],
   synthetic: [
     { key: 'subscription', label: 'Subscription' },
@@ -5740,6 +5834,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load persisted state (localStorage only — no API calls before auth check)
   loadHiddenQuotas();
   loadCodexAccount();
+  if (getCurrentProvider() === 'codex') {
+    await loadCodexProfiles();
+  } else {
+    updateCodexProfileTabsVisibility();
+  }
 
   initTheme();
   initLayoutToggle();
@@ -5757,12 +5856,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (document.getElementById('usage-chart') || document.getElementById('both-view')) {
     initChart();
 
-    // Initialize Codex profile selector (multi-account beta)
-    initCodexProfileTabs();
-    if (getCurrentProvider() === 'codex' || getCurrentProvider() === 'both') {
-      loadCodexProfiles();
-    }
-
     // Critical path: fetch above-fold data in parallel
     Promise.all([
       loadHiddenInsights(),
@@ -5773,7 +5866,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Antigravity first: preload overview + polling history immediately.
     const activeProvider = getCurrentProvider();
-    if (activeProvider === 'antigravity') {
+    if (activeProvider === 'antigravity' && shouldShowHistoryTables(activeProvider)) {
       _lazyLoaded.add('.cycle-overview-section');
       _lazyLoaded.add('.cycles-section');
       fetchCycleOverview();
@@ -5781,9 +5874,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Below-fold: lazy-load when sections scroll into view
-    lazyLoadOnVisible('.cycles-section', () => fetchCycles());
-    lazyLoadOnVisible('.cycle-overview-section', () => fetchCycleOverview());
-    lazyLoadOnVisible('.sessions-section', () => fetchSessions());
+    if (shouldShowHistoryTables(activeProvider)) {
+      lazyLoadOnVisible('.cycles-section', () => fetchCycles());
+      lazyLoadOnVisible('.cycle-overview-section', () => fetchCycleOverview());
+      lazyLoadOnVisible('.sessions-section', () => fetchSessions());
+    }
 
     startCountdowns();
     startAutoRefresh();

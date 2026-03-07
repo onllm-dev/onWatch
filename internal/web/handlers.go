@@ -144,6 +144,68 @@ func (h *Handler) codexUsageAccounts() []map[string]interface{} {
 	return usages
 }
 
+func codexUsageAccountID(usage map[string]interface{}) int64 {
+	if usage == nil {
+		return DefaultCodexAccountID
+	}
+	switch v := usage["accountId"].(type) {
+	case int64:
+		if v > 0 {
+			return v
+		}
+	case int:
+		if v > 0 {
+			return int64(v)
+		}
+	case float64:
+		if v > 0 {
+			return int64(v)
+		}
+	}
+	return DefaultCodexAccountID
+}
+
+func codexUsageAccountName(usage map[string]interface{}) string {
+	if usage == nil {
+		return ""
+	}
+	name, _ := usage["accountName"].(string)
+	return name
+}
+
+func codexIsFreePlan(planType string) bool {
+	return strings.EqualFold(strings.TrimSpace(planType), "free")
+}
+
+func codexNormalizedQuotaName(planType, quotaName string) string {
+	if codexIsFreePlan(planType) && quotaName == "five_hour" {
+		return "seven_day"
+	}
+	return quotaName
+}
+
+func codexNormalizeQuotasForPlan(planType string, quotas []api.CodexQuota) []api.CodexQuota {
+	if len(quotas) == 0 {
+		return quotas
+	}
+	out := make([]api.CodexQuota, 0, len(quotas))
+	indexByName := make(map[string]int, len(quotas))
+	for _, q := range quotas {
+		normalized := q
+		normalized.Name = codexNormalizedQuotaName(planType, q.Name)
+		if idx, exists := indexByName[normalized.Name]; exists {
+			// Keep the stronger sample if a legacy + normalized key collide.
+			if normalized.Utilization >= out[idx].Utilization {
+				out[idx] = normalized
+			}
+			continue
+		}
+		indexByName[normalized.Name] = len(out)
+		out = append(out, normalized)
+	}
+	return out
+}
+
 // CodexUsage returns Codex usage for a single account by default, or all accounts with ?all=true.
 func (h *Handler) CodexUsage(w http.ResponseWriter, r *http.Request) {
 	all := strings.EqualFold(r.URL.Query().Get("all"), "true")
@@ -1085,8 +1147,14 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("codex") && h.store != nil {
-		snapshots, err := h.store.QueryCodexRange(DefaultCodexAccountID, start, now)
-		if err == nil {
+		codexAccounts := h.codexUsageAccounts()
+		codexHistories := make([]map[string]interface{}, 0, len(codexAccounts))
+		for _, acc := range codexAccounts {
+			accountID := codexUsageAccountID(acc)
+			snapshots, err := h.store.QueryCodexRange(accountID, start, now)
+			if err != nil {
+				continue
+			}
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			codexData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -1098,11 +1166,25 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
 				}
 				for _, q := range snap.Quotas {
-					entry[q.Name] = q.Utilization
+					name := codexNormalizedQuotaName(snap.PlanType, q.Name)
+					entry[name] = q.Utilization
 				}
 				codexData = append(codexData, entry)
 			}
-			response["codex"] = codexData
+			codexHistories = append(codexHistories, map[string]interface{}{
+				"accountId":   accountID,
+				"accountName": codexUsageAccountName(acc),
+				"history":     codexData,
+			})
+		}
+
+		if len(codexHistories) == 1 {
+			if single, ok := codexHistories[0]["history"]; ok {
+				response["codex"] = single
+			}
+		}
+		if len(codexHistories) > 0 {
+			response["codexAccounts"] = codexHistories
 		}
 	}
 
@@ -2034,7 +2116,24 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 		response["copilot"] = h.buildCopilotInsights(hidden, rangeDur)
 	}
 	if h.config.HasProvider("codex") {
-		response["codex"] = h.buildCodexInsights(DefaultCodexAccountID, hidden, rangeDur)
+		codexAccounts := h.codexUsageAccounts()
+		codexInsights := make([]map[string]interface{}, 0, len(codexAccounts))
+		for _, acc := range codexAccounts {
+			accountID := codexUsageAccountID(acc)
+			ins := h.buildCodexInsights(accountID, hidden, rangeDur)
+			codexInsights = append(codexInsights, map[string]interface{}{
+				"accountId":   accountID,
+				"accountName": codexUsageAccountName(acc),
+				"stats":       ins.Stats,
+				"insights":    ins.Insights,
+			})
+		}
+		if len(codexInsights) == 1 {
+			response["codex"] = codexInsights[0]
+		}
+		if len(codexInsights) > 0 {
+			response["codexAccounts"] = codexInsights
+		}
 	}
 	if h.config.HasProvider("antigravity") {
 		response["antigravity"] = h.buildAntigravityInsights(hidden, rangeDur)
@@ -4735,20 +4834,22 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 	})
 
 	quotas := make([]map[string]interface{}, 0, len(orderedQuotas))
+	quotaIndexByName := make(map[string]int, len(orderedQuotas))
 	for _, q := range orderedQuotas {
+		normalizedName := codexNormalizedQuotaName(latest.PlanType, q.Name)
 		headroom := 100 - q.Utilization
 		if headroom < 0 {
 			headroom = 0
 		}
 		status := codexUtilStatus(q.Utilization)
 		qMap := map[string]interface{}{
-			"name":        q.Name,
-			"displayName": api.CodexDisplayName(q.Name),
+			"name":        normalizedName,
+			"displayName": api.CodexDisplayName(normalizedName),
 			"utilization": q.Utilization,
 			"headroom":    headroom,
 			"status":      status,
 		}
-		if q.Name == "code_review" {
+		if normalizedName == "code_review" {
 			remaining := 100 - q.Utilization
 			if remaining < 0 {
 				remaining = 0
@@ -4770,7 +4871,12 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 				qMap["projectedUtil"] = summary.ProjectedUtil
 			}
 		}
-		quotas = append(quotas, qMap)
+		if idx, exists := quotaIndexByName[normalizedName]; exists {
+			quotas[idx] = qMap
+		} else {
+			quotaIndexByName[normalizedName] = len(quotas)
+			quotas = append(quotas, qMap)
+		}
 	}
 	response["quotas"] = quotas
 	return response
@@ -5230,7 +5336,8 @@ func (h *Handler) historyCodex(w http.ResponseWriter, r *http.Request) {
 		}
 		entry := map[string]interface{}{"capturedAt": snap.CapturedAt.Format(time.RFC3339)}
 		for _, q := range snap.Quotas {
-			entry[q.Name] = q.Utilization
+			name := codexNormalizedQuotaName(snap.PlanType, q.Name)
+			entry[name] = q.Utilization
 		}
 		response = append(response, entry)
 	}
@@ -5419,12 +5526,18 @@ func (h *Handler) buildCodexInsights(accountID int64, hidden map[string]bool, ra
 		resp.Insights = append(resp.Insights, insightItem{Type: "info", Severity: "info", Title: "Getting Started", Desc: "Keep onWatch running to collect Codex usage data. Insights will appear after a few snapshots."})
 		return resp
 	}
+	normalizedLatest := *latest
+	normalizedLatest.Quotas = codexNormalizeQuotasForPlan(latest.PlanType, latest.Quotas)
+
 	quotaNames, _ := h.store.QueryAllCodexQuotaNames()
 	summaries := map[string]*tracker.CodexSummary{}
 	if h.codexTracker != nil {
 		for _, name := range quotaNames {
 			if s, err := h.codexTracker.UsageSummary(accountID, name); err == nil && s != nil {
-				summaries[name] = s
+				normalizedName := codexNormalizedQuotaName(latest.PlanType, name)
+				if existing, exists := summaries[normalizedName]; !exists || existing == nil {
+					summaries[normalizedName] = s
+				}
 			}
 		}
 	}
@@ -5439,44 +5552,69 @@ func (h *Handler) buildCodexInsights(accountID int64, hidden map[string]bool, ra
 
 	// Replace "Last Sample" with historical behavior metrics.
 	windowStart := time.Now().UTC().Add(-30 * 24 * time.Hour)
-	fiveHourCycles, err := h.store.QueryCodexCyclesSince(accountID, "five_hour", windowStart)
-	if err == nil && len(fiveHourCycles) > 0 {
+	primaryQuotaName := "five_hour"
+	primaryQuotaLabel := api.CodexDisplayName(primaryQuotaName)
+	if codexIsFreePlan(latest.PlanType) {
+		primaryQuotaName = "seven_day"
+		primaryQuotaLabel = api.CodexDisplayName(primaryQuotaName)
+	}
+
+	primaryCycles, err := h.store.QueryCodexCyclesSince(accountID, primaryQuotaName, windowStart)
+	if codexIsFreePlan(latest.PlanType) && (err != nil || len(primaryCycles) == 0) {
+		if legacyCycles, legacyErr := h.store.QueryCodexCyclesSince(accountID, "five_hour", windowStart); legacyErr == nil {
+			primaryCycles = legacyCycles
+			err = nil
+		}
+	}
+	if err == nil && len(primaryCycles) > 0 {
 		var totalDelta float64
 		var peak float64
-		for _, c := range fiveHourCycles {
+		for _, c := range primaryCycles {
 			totalDelta += c.TotalDelta
 			if c.PeakUtilization > peak {
 				peak = c.PeakUtilization
 			}
 		}
 		resp.Stats = append(resp.Stats, insightStat{
-			Value:    fmt.Sprintf("%.1f%%", totalDelta/float64(len(fiveHourCycles))),
-			Label:    "Average 5-Hour Limit Usage/Cycle",
-			Sublabel: fmt.Sprintf("%d cycles (30d)", len(fiveHourCycles)),
+			Value:    fmt.Sprintf("%.1f%%", totalDelta/float64(len(primaryCycles))),
+			Label:    fmt.Sprintf("Average %s Usage/Cycle", primaryQuotaLabel),
+			Sublabel: fmt.Sprintf("%d cycles (30d)", len(primaryCycles)),
 		})
 		resp.Stats = append(resp.Stats, insightStat{
 			Value: fmt.Sprintf("%.1f%%", peak),
-			Label: "5-Hour Limit Peak (30d)",
+			Label: fmt.Sprintf("%s Peak (30d)", primaryQuotaLabel),
 		})
-	} else if active, err := h.store.QueryActiveCodexCycle(accountID, "five_hour"); err == nil && active != nil {
+	} else if active, err := h.store.QueryActiveCodexCycle(accountID, primaryQuotaName); err == nil && active != nil {
 		resp.Stats = append(resp.Stats, insightStat{
 			Value:    fmt.Sprintf("%.1f%%", active.TotalDelta),
-			Label:    "5-Hour Limit Delta (Current)",
+			Label:    fmt.Sprintf("%s Delta (Current)", primaryQuotaLabel),
 			Sublabel: fmt.Sprintf("peak %.1f%%", active.PeakUtilization),
 		})
 		resp.Stats = append(resp.Stats, insightStat{
 			Value: fmt.Sprintf("%.1f%%", active.PeakUtilization),
-			Label: "5-Hour Limit Peak (Current)",
+			Label: fmt.Sprintf("%s Peak (Current)", primaryQuotaLabel),
 		})
+	} else if codexIsFreePlan(latest.PlanType) {
+		if legacyActive, legacyErr := h.store.QueryActiveCodexCycle(accountID, "five_hour"); legacyErr == nil && legacyActive != nil {
+			resp.Stats = append(resp.Stats, insightStat{
+				Value:    fmt.Sprintf("%.1f%%", legacyActive.TotalDelta),
+				Label:    fmt.Sprintf("%s Delta (Current)", primaryQuotaLabel),
+				Sublabel: fmt.Sprintf("peak %.1f%%", legacyActive.PeakUtilization),
+			})
+			resp.Stats = append(resp.Stats, insightStat{
+				Value: fmt.Sprintf("%.1f%%", legacyActive.PeakUtilization),
+				Label: fmt.Sprintf("%s Peak (Current)", primaryQuotaLabel),
+			})
+		}
 	}
 
 	quotaByName := map[string]*api.CodexQuota{}
-	for i := range latest.Quotas {
-		quotaByName[latest.Quotas[i].Name] = &latest.Quotas[i]
+	for i := range normalizedLatest.Quotas {
+		quotaByName[normalizedLatest.Quotas[i].Name] = &normalizedLatest.Quotas[i]
 	}
 
 	// Keep explicit burn-rate insights using proper display names.
-	if !hidden["forecast_five_hour"] {
+	if !hidden["forecast_five_hour"] && !codexIsFreePlan(latest.PlanType) {
 		if q := quotaByName["five_hour"]; q != nil {
 			displayName := api.CodexDisplayName("five_hour")
 			resp.Insights = append(resp.Insights, buildCodexQuotaBurnRateInsight("forecast_five_hour", displayName+" Burn Rate", q, summaries["five_hour"]))
@@ -5490,14 +5628,14 @@ func (h *Handler) buildCodexInsights(accountID int64, hidden map[string]bool, ra
 	}
 
 	if !hidden["forecast_code_review"] {
-		if reviewInsight, ok := h.buildCodexReviewPaceInsight(latest, summaries); ok {
+		if reviewInsight, ok := h.buildCodexReviewPaceInsight(&normalizedLatest, summaries); ok {
 			resp.Insights = append(resp.Insights, reviewInsight)
 		}
 	}
 
 	// Weekly pace insight (inspired by CodexBar's "on pace/deficit/reserve" model).
 	if !hidden["weekly_pace"] {
-		if paceInsight, ok := h.buildCodexWeeklyPaceInsight(latest, summaries); ok {
+		if paceInsight, ok := h.buildCodexWeeklyPaceInsight(&normalizedLatest, summaries); ok {
 			resp.Insights = append(resp.Insights, paceInsight)
 		}
 	}

@@ -104,6 +104,35 @@ func TestParseCodexUsageResponse_CreditsBalanceString(t *testing.T) {
 	}
 }
 
+func TestParseCodexUsageResponse_ToSnapshot_FreePrimaryMapsToWeekly(t *testing.T) {
+	payload := []byte(`{
+	  "plan_type": "free",
+	  "rate_limit": {
+	    "primary_window": {"used_percent": 14.0, "reset_at": 1766400000, "limit_window_seconds": 604800},
+	    "secondary_window": null
+	  },
+	  "code_review_rate_limit": {
+	    "primary_window": {"used_percent": 0.0, "reset_at": 1766400000, "limit_window_seconds": 604800}
+	  }
+	}`)
+
+	resp, err := ParseCodexUsageResponse(payload)
+	if err != nil {
+		t.Fatalf("ParseCodexUsageResponse: %v", err)
+	}
+
+	snap := resp.ToSnapshot(time.Unix(1765900000, 0).UTC())
+	if len(snap.Quotas) != 2 {
+		t.Fatalf("quota len = %d, want 2", len(snap.Quotas))
+	}
+	if snap.Quotas[0].Name != "seven_day" {
+		t.Fatalf("first quota name = %q, want seven_day", snap.Quotas[0].Name)
+	}
+	if snap.Quotas[1].Name != "code_review" {
+		t.Fatalf("second quota name = %q, want code_review", snap.Quotas[1].Name)
+	}
+}
+
 func TestCodexDisplayName(t *testing.T) {
 	if got := CodexDisplayName("five_hour"); got != "5-Hour Limit" {
 		t.Fatalf("CodexDisplayName(five_hour) = %q", got)
