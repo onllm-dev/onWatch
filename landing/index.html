@@ -2678,11 +2678,11 @@ a:hover { text-decoration: underline; }
                     <div class="provider-card-name">Codex</div>
                 </div>
                 <ul class="provider-card-quotas">
-                    <li><strong>LLMs</strong> - rolling limit utilization + reset</li>
+                    <li><strong>5-Hour Limit</strong> - rolling limit utilization + reset</li>
                     <li><strong>Review Requests</strong> - code review quota</li>
                     <li><strong>Multi-Account (Beta)</strong> - track multiple accounts</li>
                 </ul>
-                <div class="provider-card-note">OAuth token from ~/.codex/auth.json. Multi-account support: save profiles with <code>onwatch codex profile save</code>.</div>
+                <div class="provider-card-note">OAuth token from ~/.codex/auth.json. <strong>Multi-account:</strong> save profiles with <code>onwatch codex profile save &lt;name&gt;</code>, refresh with <code>onwatch codex profile refresh &lt;name&gt;</code>.</div>
             </div>
             <!-- Anthropic -->
             <div class="provider-card provider-card--anthropic">
@@ -2890,6 +2890,13 @@ a:hover { text-decoration: underline; }
                 </div>
                 <h3 class="feature-title">Enterprise-grade security</h3>
                 <p class="feature-desc">AES-256-GCM encrypted SMTP passwords, auto-generated VAPID keys (ECDSA P-256), Web Push RFC 8291 encryption, constant-time auth, parameterized SQL. Zero telemetry - all data stays local.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="feature-icon teal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </div>
+                <h3 class="feature-title">Multi-Account Codex <span style="font-size:11px;font-weight:600;color:var(--accent-blue);background:var(--accent-blue-muted);padding:2px 8px;border-radius:var(--radius-full);margin-left:6px;">Beta</span></h3>
+                <p class="feature-desc">Track multiple Codex accounts simultaneously. Save profiles with <code>onwatch codex profile save</code>, switch between accounts in the dashboard, and see per-account usage charts, sessions, and cycle history. Perfect for teams or personal/work account separation.</p>
             </div>
             <div class="feature-card fade-in">
                 <div class="feature-icon peach">
