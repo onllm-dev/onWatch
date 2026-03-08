@@ -47,6 +47,9 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc("/login", handler.Login)
 	mux.HandleFunc("/logout", handler.Logout)
 	mux.HandleFunc("/api/providers", handler.Providers)
+	mux.HandleFunc("/api/providers/status", handler.ProvidersStatus)
+	mux.HandleFunc("/api/providers/toggle", handler.ToggleProvider)
+	mux.HandleFunc("/api/providers/reload", handler.ReloadProviders)
 	mux.HandleFunc("/api/current", handler.Current)
 	mux.HandleFunc("/api/history", handler.History)
 	mux.HandleFunc("/api/cycles", handler.Cycles)
@@ -72,6 +75,12 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc("/api/codex/profiles", handler.CodexProfiles)
 	mux.HandleFunc("/api/codex/usage", handler.CodexUsage)
 	mux.HandleFunc("/api/codex/accounts/usage", handler.CodexAccountsUsage)
+	mux.HandleFunc("/api/minimax/current", handler.currentMiniMax)
+	mux.HandleFunc("/api/minimax/history", handler.historyMiniMax)
+	mux.HandleFunc("/api/minimax/cycles", handler.cyclesMiniMax)
+	mux.HandleFunc("/api/minimax/insights", func(w http.ResponseWriter, r *http.Request) {
+		handler.insightsMiniMax(w, r, parseInsightsRange(r.URL.Query().Get("range")))
+	})
 
 	// Service worker (must be served from root scope, no-cache)
 	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {

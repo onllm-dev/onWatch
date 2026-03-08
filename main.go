@@ -655,6 +655,12 @@ func run() error {
 		}
 	}
 
+	var minimaxClient *api.MiniMaxClient
+	if cfg.HasProvider("minimax") {
+		minimaxClient = api.NewMiniMaxClient(cfg.MiniMaxAPIKey, logger)
+		logger.Info("MiniMax API client configured")
+	}
+
 	// Create components
 	tr := tracker.New(db, logger)
 
@@ -731,10 +737,21 @@ func run() error {
 		antigravityTr = tracker.NewAntigravityTracker(db, logger)
 	}
 
+	var minimaxTr *tracker.MiniMaxTracker
+	if cfg.HasProvider("minimax") {
+		minimaxTr = tracker.NewMiniMaxTracker(db, logger)
+	}
+
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
 		antigravitySm := agent.NewSessionManager(db, "antigravity", idleTimeout, logger)
 		antigravityAg = agent.NewAntigravityAgent(antigravityClient, db, antigravityTr, cfg.PollInterval, logger, antigravitySm)
+	}
+
+	var minimaxAg *agent.MiniMaxAgent
+	if minimaxClient != nil {
+		minimaxSm := agent.NewSessionManager(db, "minimax", idleTimeout, logger)
+		minimaxAg = agent.NewMiniMaxAgent(minimaxClient, db, minimaxTr, cfg.PollInterval, logger, minimaxSm)
 	}
 
 	// Create notification engine
@@ -762,6 +779,9 @@ func run() error {
 	}
 	if antigravityAg != nil {
 		antigravityAg.SetNotifier(notifier)
+	}
+	if minimaxAg != nil {
+		minimaxAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -829,6 +849,9 @@ func run() error {
 	if antigravityAg != nil {
 		antigravityAg.SetPollingCheck(func() bool { return isPollingEnabled("antigravity") })
 	}
+	if minimaxAg != nil {
+		minimaxAg.SetPollingCheck(func() bool { return isPollingEnabled("minimax") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -859,6 +882,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "antigravity", QuotaKey: modelID, ResetOccurred: true})
 		})
 	}
+	if minimaxTr != nil {
+		minimaxTr.SetOnReset(func(modelName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "minimax", QuotaKey: modelName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -875,6 +903,32 @@ func run() error {
 	if antigravityTr != nil {
 		handler.SetAntigravityTracker(antigravityTr)
 	}
+	if minimaxTr != nil {
+		handler.SetMiniMaxTracker(minimaxTr)
+	}
+	agentMgr := agent.NewAgentManager(logger)
+	if ag != nil {
+		agentMgr.RegisterFactory("synthetic", func() (agent.AgentRunner, error) { return ag, nil })
+	}
+	if zaiAg != nil {
+		agentMgr.RegisterFactory("zai", func() (agent.AgentRunner, error) { return zaiAg, nil })
+	}
+	if anthropicAg != nil {
+		agentMgr.RegisterFactory("anthropic", func() (agent.AgentRunner, error) { return anthropicAg, nil })
+	}
+	if copilotAg != nil {
+		agentMgr.RegisterFactory("copilot", func() (agent.AgentRunner, error) { return copilotAg, nil })
+	}
+	if codexMgr != nil {
+		agentMgr.RegisterFactory("codex", func() (agent.AgentRunner, error) { return codexMgr, nil })
+	}
+	if antigravityAg != nil {
+		agentMgr.RegisterFactory("antigravity", func() (agent.AgentRunner, error) { return antigravityAg, nil })
+	}
+	if minimaxAg != nil {
+		agentMgr.RegisterFactory("minimax", func() (agent.AgentRunner, error) { return minimaxAg, nil })
+	}
+	handler.SetAgentManager(agentMgr)
 	updater := update.NewUpdater(version, logger)
 	handler.SetUpdater(updater)
 
@@ -891,104 +945,18 @@ func run() error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start agents in goroutines (staggered to avoid SQLite contention on session creation)
-	agentErr := make(chan error, 5)
-	if ag != nil {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error("Synthetic agent panicked", "panic", r)
-					agentErr <- fmt.Errorf("synthetic agent panic: %v", r)
-				}
-			}()
-			logger.Info("Starting Synthetic agent", "interval", cfg.PollInterval)
-			if err := ag.Run(ctx); err != nil {
-				agentErr <- fmt.Errorf("synthetic agent error: %w", err)
-			}
-		}()
+	// Start configured agents through the manager.
+	startedAny := false
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax"} {
+		if !isPollingEnabled(providerKey) {
+			continue
+		}
+		if err := agentMgr.Start(providerKey); err == nil {
+			startedAny = true
+			continue
+		}
 	}
-
-	if zaiAg != nil {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error("Z.ai agent panicked", "panic", r)
-					agentErr <- fmt.Errorf("zai agent panic: %v", r)
-				}
-			}()
-			time.Sleep(200 * time.Millisecond) // stagger to avoid SQLite BUSY
-			logger.Info("Starting Z.ai agent", "interval", cfg.PollInterval)
-			if err := zaiAg.Run(ctx); err != nil {
-				agentErr <- fmt.Errorf("zai agent error: %w", err)
-			}
-		}()
-	}
-
-	if anthropicAg != nil {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error("Anthropic agent panicked", "panic", r)
-					agentErr <- fmt.Errorf("anthropic agent panic: %v", r)
-				}
-			}()
-			time.Sleep(400 * time.Millisecond) // stagger to avoid SQLite BUSY
-			logger.Info("Starting Anthropic agent", "interval", cfg.PollInterval)
-			if err := anthropicAg.Run(ctx); err != nil {
-				agentErr <- fmt.Errorf("anthropic agent error: %w", err)
-			}
-		}()
-	}
-
-	if copilotAg != nil {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error("Copilot agent panicked", "panic", r)
-					agentErr <- fmt.Errorf("copilot agent panic: %v", r)
-				}
-			}()
-			time.Sleep(600 * time.Millisecond) // stagger to avoid SQLite BUSY
-			logger.Info("Starting Copilot agent", "interval", cfg.PollInterval)
-			if err := copilotAg.Run(ctx); err != nil {
-				agentErr <- fmt.Errorf("copilot agent error: %w", err)
-			}
-		}()
-	}
-
-	if codexMgr != nil {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error("Codex agent manager panicked", "panic", r)
-					agentErr <- fmt.Errorf("codex agent manager panic: %v", r)
-				}
-			}()
-			time.Sleep(800 * time.Millisecond) // stagger to avoid SQLite BUSY
-			logger.Info("Starting Codex agent manager", "interval", cfg.PollInterval)
-			if err := codexMgr.Run(ctx); err != nil {
-				agentErr <- fmt.Errorf("codex agent manager error: %w", err)
-			}
-		}()
-	}
-
-	if antigravityAg != nil {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error("Antigravity agent panicked", "panic", r)
-					agentErr <- fmt.Errorf("antigravity agent panic: %v", r)
-				}
-			}()
-			time.Sleep(1000 * time.Millisecond) // stagger to avoid SQLite BUSY
-			logger.Info("Starting Antigravity agent", "interval", cfg.PollInterval)
-			if err := antigravityAg.Run(ctx); err != nil {
-				agentErr <- fmt.Errorf("antigravity agent error: %w", err)
-			}
-		}()
-	}
-
-	if ag == nil && zaiAg == nil && anthropicAg == nil && copilotAg == nil && codexMgr == nil && antigravityAg == nil {
+	if !startedAny {
 		logger.Info("No agents configured")
 	}
 
@@ -1026,11 +994,6 @@ func run() error {
 	select {
 	case sig := <-sigChan:
 		logger.Info("Received signal, shutting down gracefully", "signal", sig)
-	case err := <-agentErr:
-		if err != nil {
-			logger.Error("Agent failed", "error", err)
-			cancel()
-		}
 	case err := <-serverErr:
 		logger.Error("Server failed", "error", err)
 		cancel()
@@ -1041,6 +1004,7 @@ func run() error {
 
 	// Cancel context to stop agent
 	cancel()
+	agentMgr.StopAll()
 
 	// Give agent a moment to clean up
 	time.Sleep(100 * time.Millisecond)
@@ -1375,6 +1339,9 @@ func printBanner(cfg *config.Config, version string) {
 			fmt.Println("║  API:       chatgpt.com/wham         ║")
 		}
 	}
+	if cfg.HasProvider("minimax") {
+		fmt.Println("║  API:       minimax.io/coding_plan   ║")
+	}
 
 	fmt.Printf("║  Polling:   every %s              ║\n", cfg.PollInterval)
 	fmt.Printf("║  Dashboard: http://localhost:%d    ║\n", cfg.Port)
@@ -1413,6 +1380,9 @@ func printBanner(cfg *config.Config, version string) {
 	if cfg.HasProvider("antigravity") {
 		fmt.Printf("Antigravity:       %s\n", "auto-detect")
 	}
+	if cfg.HasProvider("minimax") {
+		fmt.Printf("MiniMax API Key:   %s\n", redactAPIKey(cfg.MiniMaxAPIKey))
+	}
 	fmt.Println()
 }
 
@@ -1444,12 +1414,13 @@ func printHelp() {
 	fmt.Println("  --test             Test mode: isolated PID/log files, won't affect production")
 	fmt.Println()
 	fmt.Println("Environment Variables:")
-	fmt.Println("  SYNTHETIC_API_KEY       Synthetic API key (configure at least one provider)")
+	fmt.Println("  SYNTHETIC_API_KEY       Synthetic API key")
 	fmt.Println("  ZAI_API_KEY            Z.ai API key")
 	fmt.Println("  ZAI_BASE_URL           Z.ai base URL (default: https://api.z.ai/api)")
 	fmt.Println("  ANTHROPIC_TOKEN         Anthropic token (auto-detected if not set)")
 	fmt.Println("  COPILOT_TOKEN           GitHub Copilot token (PAT with copilot scope)")
 	fmt.Println("  CODEX_TOKEN             Codex OAuth token (recommended; required for Codex-only)")
+	fmt.Println("  MINIMAX_API_KEY         MiniMax API key")
 	fmt.Println("  CODEX_HOME              Optional Codex auth directory (uses CODEX_HOME/auth.json)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
 	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")
@@ -1478,8 +1449,7 @@ func printHelp() {
 	fmt.Println("  Use --db and --port to further isolate test from production.")
 	fmt.Println()
 	fmt.Println("Anthropic and Codex tokens can be auto-detected from local auth when another provider is already configured.")
-	fmt.Println("Configure providers in .env file or environment variables.")
-	fmt.Println("At least one provider (Synthetic, Z.ai, Anthropic, Copilot, or Codex) must be configured.")
+	fmt.Println("Configure providers in .env file or environment variables (or enable via Settings).")
 }
 
 func redactAPIKey(key string) string {
