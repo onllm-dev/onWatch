@@ -105,9 +105,11 @@ notepad "$env:USERPROFILE\.onwatch\.env"
 
 Then paste the configuration above and save.
 
-### Step 3: Configure at Least One Provider
+### Step 3: Configure Providers (Optional at Startup)
 
-Edit the `.env` file and uncomment/configure at least one provider:
+onWatch can start with no providers configured. You can enable providers later in **Settings -> Providers**.
+
+If you want to pre-configure providers in `.env`, set any of the following:
 
 #### Synthetic
 ```env
@@ -314,13 +316,14 @@ Windows Defender may flag `onwatch.exe` as `Program:Win32/Wacapew.A!ml`. **This 
 
 The source code is fully auditable at [github.com/onllm-dev/onwatch](https://github.com/onllm-dev/onwatch) (GPL-3.0).
 
-### "At least one provider must be configured"
+### "No provider data appears in dashboard"
 
-This error means your `.env` file is missing or has no API keys configured.
+If the app starts but no quota cards update:
 
 1. Ensure `.env` exists at `%USERPROFILE%\.onwatch\.env`
-2. Uncomment and configure at least one provider
-3. Restart onWatch
+2. Configure a provider key (or use auto-detect providers)
+3. Open **Settings -> Providers** and enable telemetry for that provider
+4. Restart or click provider reload in Settings
 
 ### Binary Flashes and Closes Immediately
 
@@ -401,3 +404,8 @@ $newPath = ($path -split ';' | Where-Object { $_ -notlike "*\.onwatch*" }) -join
 - [GitHub Issues](https://github.com/onllm-dev/onwatch/issues)
 - [README](../README.md)
 - [Development Guide](DEVELOPMENT.md)
+#### MiniMax
+```env
+MINIMAX_API_KEY=sk-cp_your_key_here
+```
+Get your key at: https://platform.minimax.io

@@ -213,8 +213,9 @@ func TestMain_ErrorPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from run() with no config")
 	}
-	if !strings.Contains(err.Error(), "failed to load config") && !strings.Contains(err.Error(), "provider must be configured") {
-		t.Fatalf("expected config error, got: %v", err)
+	if !strings.Contains(err.Error(), "failed to load config") &&
+		!strings.Contains(err.Error(), "failed to setup logging") &&
+		!strings.Contains(err.Error(), "server error") {
+		t.Fatalf("expected startup error, got: %v", err)
 	}
 }
-

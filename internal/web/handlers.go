@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -49,6 +50,25 @@ type Notifier interface {
 	GetVAPIDPublicKey() string
 }
 
+// ProviderAgentController controls provider agent runtime lifecycle.
+type ProviderAgentController interface {
+	Start(key string) error
+	Stop(key string)
+	IsRunning(key string) bool
+}
+
+// ProviderStatus represents one provider's runtime/config status.
+type ProviderStatus struct {
+	Key              string `json:"key"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	Configured       bool   `json:"configured"`
+	AutoDetectable   bool   `json:"autoDetectable"`
+	PollingEnabled   bool   `json:"pollingEnabled"`
+	DashboardVisible bool   `json:"dashboardVisible"`
+	IsPolling        bool   `json:"isPolling"`
+}
+
 // Handler handles HTTP requests for the web dashboard
 type Handler struct {
 	store              *store.Store
@@ -58,8 +78,10 @@ type Handler struct {
 	copilotTracker     *tracker.CopilotTracker
 	codexTracker       *tracker.CodexTracker
 	antigravityTracker *tracker.AntigravityTracker
+	minimaxTracker     *tracker.MiniMaxTracker
 	updater            *update.Updater
 	notifier           Notifier
+	agentManager       ProviderAgentController
 	logger             *slog.Logger
 	dashboardTmpl      *template.Template
 	loginTmpl          *template.Template
@@ -295,6 +317,16 @@ func (h *Handler) SetCodexTracker(t *tracker.CodexTracker) {
 // SetAntigravityTracker sets the Antigravity tracker for usage summary enrichment.
 func (h *Handler) SetAntigravityTracker(t *tracker.AntigravityTracker) {
 	h.antigravityTracker = t
+}
+
+// SetMiniMaxTracker sets the MiniMax tracker for usage summary enrichment.
+func (h *Handler) SetMiniMaxTracker(t *tracker.MiniMaxTracker) {
+	h.minimaxTracker = t
+}
+
+// SetAgentManager sets provider agent lifecycle controller.
+func (h *Handler) SetAgentManager(m ProviderAgentController) {
+	h.agentManager = m
 }
 
 // SetUpdater sets the updater for self-update functionality.
@@ -544,6 +576,318 @@ func codexAccountTelemetryEnabled(visibility map[string]interface{}, accountID i
 	return providerTelemetryEnabled(visibility, "codex")
 }
 
+type providerCatalogItem struct {
+	Key            string
+	Name           string
+	Description    string
+	AutoDetectable bool
+}
+
+func providerCatalog() []providerCatalogItem {
+	return []providerCatalogItem{
+		{Key: "anthropic", Name: "Anthropic", Description: "Claude Code usage tracking", AutoDetectable: true},
+		{Key: "synthetic", Name: "Synthetic", Description: "Synthetic API quota monitoring"},
+		{Key: "zai", Name: "Z.ai", Description: "Z.ai API usage tracking"},
+		{Key: "copilot", Name: "Copilot", Description: "GitHub Copilot premium request tracking"},
+		{Key: "codex", Name: "Codex", Description: "OpenAI Codex usage tracking", AutoDetectable: true},
+		{Key: "antigravity", Name: "Antigravity", Description: "Antigravity model usage tracking", AutoDetectable: true},
+		{Key: "minimax", Name: "MiniMax", Description: "MiniMax Coding Plan usage tracking"},
+	}
+}
+
+func (h *Handler) providerVisibilityMap() map[string]map[string]bool {
+	if h.store == nil {
+		return map[string]map[string]bool{}
+	}
+	raw, err := h.store.GetSetting("provider_visibility")
+	if err != nil || raw == "" {
+		return map[string]map[string]bool{}
+	}
+	var vis map[string]map[string]bool
+	if err := json.Unmarshal([]byte(raw), &vis); err != nil {
+		return map[string]map[string]bool{}
+	}
+	return vis
+}
+
+func (h *Handler) isProviderConfigured(provider string) bool {
+	if h.config == nil {
+		return false
+	}
+	switch provider {
+	case "anthropic":
+		return strings.TrimSpace(h.config.AnthropicToken) != "" || strings.TrimSpace(api.DetectAnthropicToken(h.logger)) != ""
+	case "synthetic":
+		return strings.TrimSpace(h.config.SyntheticAPIKey) != ""
+	case "zai":
+		return strings.TrimSpace(h.config.ZaiAPIKey) != ""
+	case "copilot":
+		return strings.TrimSpace(h.config.CopilotToken) != ""
+	case "codex":
+		return strings.TrimSpace(h.config.CodexToken) != "" || strings.TrimSpace(api.DetectCodexToken(h.logger)) != ""
+	case "antigravity":
+		if h.config.AntigravityEnabled {
+			return true
+		}
+		return h.detectAntigravityConnection() != nil
+	case "minimax":
+		return strings.TrimSpace(h.config.MiniMaxAPIKey) != ""
+	default:
+		return false
+	}
+}
+
+func (h *Handler) providerPollingEnabled(provider string, vis map[string]map[string]bool) bool {
+	if pv, ok := vis[provider]; ok {
+		if polling, exists := pv["polling"]; exists {
+			return polling
+		}
+	}
+	return true
+}
+
+func (h *Handler) providerDashboardVisible(provider string, vis map[string]map[string]bool) bool {
+	if pv, ok := vis[provider]; ok {
+		if dashboard, exists := pv["dashboard"]; exists {
+			return dashboard
+		}
+	}
+	return true
+}
+
+func (h *Handler) saveProviderVisibility(vis map[string]map[string]bool) error {
+	if h.store == nil {
+		return fmt.Errorf("store not available")
+	}
+	data, err := json.Marshal(vis)
+	if err != nil {
+		return err
+	}
+	return h.store.SetSetting("provider_visibility", string(data))
+}
+
+func (h *Handler) setProviderVisibility(provider string, polling, dashboard *bool) error {
+	vis := h.providerVisibilityMap()
+	if _, ok := vis[provider]; !ok {
+		vis[provider] = map[string]bool{
+			"polling":   true,
+			"dashboard": true,
+		}
+	}
+	if polling != nil {
+		vis[provider]["polling"] = *polling
+	}
+	if dashboard != nil {
+		vis[provider]["dashboard"] = *dashboard
+	}
+	return h.saveProviderVisibility(vis)
+}
+
+func (h *Handler) tryAutoDetect(provider string) bool {
+	if h.config == nil {
+		return false
+	}
+	switch provider {
+	case "anthropic":
+		if token := strings.TrimSpace(api.DetectAnthropicToken(h.logger)); token != "" {
+			h.config.AnthropicToken = token
+			h.config.AnthropicAutoToken = true
+			return true
+		}
+	case "codex":
+		if token := strings.TrimSpace(api.DetectCodexToken(h.logger)); token != "" {
+			h.config.CodexToken = token
+			h.config.CodexAutoToken = true
+			return true
+		}
+	case "antigravity":
+		if conn := h.detectAntigravityConnection(); conn != nil {
+			h.config.AntigravityEnabled = true
+			if h.config.AntigravityBaseURL == "" {
+				h.config.AntigravityBaseURL = conn.BaseURL
+			}
+			if h.config.AntigravityCSRFToken == "" {
+				h.config.AntigravityCSRFToken = conn.CSRFToken
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) detectAntigravityConnection() *api.AntigravityConnection {
+	client := api.NewAntigravityClient(h.logger)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := client.Detect(ctx)
+	if err != nil {
+		return nil
+	}
+	return conn
+}
+
+func providerKeyBase(provider string) string {
+	if strings.HasPrefix(provider, "codex:") {
+		return "codex"
+	}
+	return provider
+}
+
+func applyProviderConfig(dst, src *config.Config) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.SyntheticAPIKey = src.SyntheticAPIKey
+	dst.ZaiAPIKey = src.ZaiAPIKey
+	dst.ZaiBaseURL = src.ZaiBaseURL
+	dst.AnthropicToken = src.AnthropicToken
+	dst.AnthropicAutoToken = src.AnthropicAutoToken
+	dst.CopilotToken = src.CopilotToken
+	dst.CodexToken = src.CodexToken
+	dst.CodexAutoToken = src.CodexAutoToken
+	dst.AntigravityBaseURL = src.AntigravityBaseURL
+	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
+	dst.AntigravityEnabled = src.AntigravityEnabled
+	dst.MiniMaxAPIKey = src.MiniMaxAPIKey
+}
+
+func (h *Handler) providerStatuses() []ProviderStatus {
+	vis := h.providerVisibilityMap()
+	catalog := providerCatalog()
+	statuses := make([]ProviderStatus, 0, len(catalog))
+	for _, p := range catalog {
+		status := ProviderStatus{
+			Key:              p.Key,
+			Name:             p.Name,
+			Description:      p.Description,
+			AutoDetectable:   p.AutoDetectable,
+			Configured:       h.isProviderConfigured(p.Key),
+			PollingEnabled:   h.providerPollingEnabled(p.Key, vis),
+			DashboardVisible: h.providerDashboardVisible(p.Key, vis),
+		}
+		if h.agentManager != nil {
+			status.IsPolling = h.agentManager.IsRunning(p.Key)
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses
+}
+
+// ProvidersStatus returns status for all providers.
+func (h *Handler) ProvidersStatus(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"providers": h.providerStatuses(),
+	})
+}
+
+// ToggleProvider updates provider polling/dashboard settings and reconciles agent state.
+func (h *Handler) ToggleProvider(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		Provider  string `json:"provider"`
+		Polling   *bool  `json:"polling,omitempty"`
+		Dashboard *bool  `json:"dashboard,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	baseProvider := strings.TrimSpace(strings.ToLower(providerKeyBase(req.Provider)))
+	if baseProvider == "" {
+		respondError(w, http.StatusBadRequest, "provider is required")
+		return
+	}
+
+	valid := false
+	for _, p := range providerCatalog() {
+		if p.Key == baseProvider {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		respondError(w, http.StatusBadRequest, "unknown provider")
+		return
+	}
+
+	if req.Polling != nil && *req.Polling {
+		if !h.isProviderConfigured(baseProvider) && !h.tryAutoDetect(baseProvider) {
+			respondJSON(w, http.StatusOK, map[string]interface{}{
+				"success":        false,
+				"error":          "credentials_required",
+				"message":        "Provider requires configuration. Add credentials to ~/.onwatch/.env",
+				"autoDetectable": baseProvider == "anthropic" || baseProvider == "codex" || baseProvider == "antigravity",
+			})
+			return
+		}
+	}
+
+	if err := h.setProviderVisibility(req.Provider, req.Polling, req.Dashboard); err != nil {
+		h.logger.Error("failed to save provider visibility", "provider", req.Provider, "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to save provider settings")
+		return
+	}
+
+	if h.agentManager != nil && req.Polling != nil {
+		if *req.Polling {
+			if err := h.agentManager.Start(baseProvider); err != nil {
+				h.logger.Warn("failed to start provider agent", "provider", baseProvider, "error", err)
+			}
+		} else {
+			h.agentManager.Stop(baseProvider)
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"success":    true,
+		"provider":   req.Provider,
+		"isPolling":  h.agentManager != nil && h.agentManager.IsRunning(baseProvider),
+		"configured": h.isProviderConfigured(baseProvider),
+	})
+}
+
+// ReloadProviders reloads provider configuration from env and reconciles runtime polling.
+func (h *Handler) ReloadProviders(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.config == nil {
+		respondError(w, http.StatusInternalServerError, "configuration not available")
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to reload config")
+		return
+	}
+	applyProviderConfig(h.config, cfg)
+
+	if h.agentManager != nil {
+		vis := h.providerVisibilityMap()
+		for _, p := range providerCatalog() {
+			enabled := h.providerPollingEnabled(p.Key, vis)
+			if enabled && h.isProviderConfigured(p.Key) {
+				if err := h.agentManager.Start(p.Key); err != nil {
+					h.logger.Warn("provider start skipped after reload", "provider", p.Key, "error", err)
+				}
+			} else {
+				h.agentManager.Stop(p.Key)
+			}
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"success":   true,
+		"providers": h.providerStatuses(),
+	})
+}
+
 // Providers returns available providers configuration
 func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 	if h.config == nil {
@@ -658,6 +1002,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	hasCopilot := hasVisibleProvider("copilot")
 	hasCodex := hasVisibleProvider("codex")
 	hasAntigravity := hasVisibleProvider("antigravity")
+	hasMiniMax := hasVisibleProvider("minimax")
 	data := map[string]interface{}{
 		"Title":           "Dashboard",
 		"Providers":       providers,
@@ -669,6 +1014,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		"HasCopilot":      hasCopilot,
 		"HasCodex":        hasCodex,
 		"HasAntigravity":  hasAntigravity,
+		"HasMiniMax":      hasMiniMax,
 		"PollIntervalSec": h.getPollIntervalSec(),
 	}
 
@@ -703,6 +1049,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentCodex(w, r)
 	case "antigravity":
 		h.currentAntigravity(w, r)
+	case "minimax":
+		h.currentMiniMax(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -746,6 +1094,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("antigravity") && providerTelemetryEnabled(visibility, "antigravity") {
 		response["antigravity"] = h.buildAntigravityCurrent()
+	}
+	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") {
+		response["minimax"] = h.buildMiniMaxCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -1079,6 +1430,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyCodex(w, r)
 	case "antigravity":
 		h.historyAntigravity(w, r)
+	case "minimax":
+		h.historyMiniMax(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1252,6 +1605,56 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.config.HasProvider("antigravity") && providerTelemetryEnabled(visibility, "antigravity") && h.store != nil {
+		snapshots, err := h.store.QueryAntigravityRange(start, now)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			antData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+				}
+				for _, model := range snap.Models {
+					entry[model.ModelID] = 100 - model.RemainingPercent
+				}
+				antData = append(antData, entry)
+			}
+			response["antigravity"] = antData
+		}
+	}
+
+	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") && h.store != nil {
+		snapshots, err := h.store.QueryMiniMaxRange(start, now)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			mmData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+				}
+				if snap.IsSharedQuota() {
+					if merged := snap.MergedQuota(); merged != nil {
+						entry[merged.ModelName] = merged.UsedPercent
+					}
+				} else {
+					for _, model := range snap.Models {
+						entry[model.ModelName] = model.UsedPercent
+					}
+				}
+				mmData = append(mmData, entry)
+			}
+			response["minimax"] = mmData
+		}
+	}
+
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -1391,6 +1794,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesCodex(w, r)
 	case "antigravity":
 		h.cyclesAntigravity(w, r)
+	case "minimax":
+		h.cyclesMiniMax(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1490,6 +1895,23 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			response["antigravity"] = antigravityCycles
+		}
+	}
+	if h.config.HasProvider("minimax") {
+		modelNames, err := h.store.QueryAllMiniMaxModelNames()
+		if err == nil {
+			var minimaxCycles []map[string]interface{}
+			for _, modelName := range modelNames {
+				if active, err := h.store.QueryActiveMiniMaxCycle(modelName); err == nil && active != nil {
+					minimaxCycles = append(minimaxCycles, minimaxCycleToMap(active))
+				}
+				if history, err := h.store.QueryMiniMaxCycleHistory(modelName, 50); err == nil {
+					for _, c := range history {
+						minimaxCycles = append(minimaxCycles, minimaxCycleToMap(c))
+					}
+				}
+			}
+			response["minimax"] = minimaxCycles
 		}
 	}
 
@@ -1657,6 +2079,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryCopilot(w, r)
 	case "codex":
 		h.summaryCodex(w, r)
+	case "minimax":
+		h.summaryMiniMax(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1696,6 +2120,9 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("codex") {
 		response["codex"] = h.buildCodexSummaryMap(DefaultCodexAccountID)
 	}
+	if h.config.HasProvider("minimax") {
+		response["minimax"] = h.buildMiniMaxSummaryMap()
+	}
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -1716,6 +2143,52 @@ func (h *Handler) summarySynthetic(w http.ResponseWriter, r *http.Request) {
 					key = "toolCalls"
 				}
 				response[key] = buildSummaryResponse(summary)
+			}
+		}
+	}
+	if h.config.HasProvider("antigravity") {
+		limit := parseCycleOverviewLimit(r)
+		groupBy := r.URL.Query().Get("antigravityGroupBy")
+		if groupBy == "" {
+			groupBy = api.AntigravityQuotaGroupClaudeGPT
+		}
+		if rows, err := h.store.QueryAntigravityCycleOverview(groupBy, limit); err == nil {
+			quotaNames := []string{}
+			for _, row := range rows {
+				if len(row.CrossQuotas) > 0 {
+					for _, cq := range row.CrossQuotas {
+						quotaNames = append(quotaNames, cq.Name)
+					}
+					break
+				}
+			}
+			if len(quotaNames) == 0 {
+				quotaNames = []string{
+					api.AntigravityQuotaGroupClaudeGPT,
+					api.AntigravityQuotaGroupGeminiPro,
+					api.AntigravityQuotaGroupGeminiFlash,
+				}
+			}
+			response["antigravity"] = map[string]interface{}{
+				"groupBy":    groupBy,
+				"provider":   "antigravity",
+				"quotaNames": quotaNames,
+				"cycles":     cycleOverviewRowsToJSON(rows),
+			}
+		}
+	}
+	if h.config.HasProvider("minimax") {
+		limit := parseCycleOverviewLimit(r)
+		groupBy := r.URL.Query().Get("minimaxGroupBy")
+		if groupBy == "" {
+			groupBy = r.URL.Query().Get("groupBy")
+		}
+		if rows, quotaNames, resolvedGroupBy, err := h.buildMiniMaxCycleOverviewRows(groupBy, limit); err == nil {
+			response["minimax"] = map[string]interface{}{
+				"groupBy":    resolvedGroupBy,
+				"provider":   "minimax",
+				"quotaNames": quotaNames,
+				"cycles":     cycleOverviewRowsToJSON(rows),
 			}
 		}
 	}
@@ -1929,6 +2402,8 @@ func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
 	if provider == "codex" {
 		accountID := parseCodexAccountID(r)
 		sessions, queryErr = h.queryCodexSessionsByAccount(accountID)
+	} else if provider == "minimax" {
+		sessions, queryErr = h.queryMiniMaxSessions()
 	} else {
 		sessions, queryErr = h.store.QuerySessionHistory(provider)
 	}
@@ -1964,6 +2439,124 @@ func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, response)
 }
 
+func minimaxSessionTimeChanged(a, b *time.Time) bool {
+	switch {
+	case a == nil && b == nil:
+		return false
+	case a == nil || b == nil:
+		return true
+	default:
+		return a.Sub(*b).Abs() > time.Second
+	}
+}
+
+func (h *Handler) queryMiniMaxSessions() ([]*store.Session, error) {
+	if h.store == nil {
+		return []*store.Session{}, nil
+	}
+
+	now := time.Now().UTC()
+	snapshots, err := h.store.QueryMiniMaxRange(now.Add(-30*24*time.Hour), now, minimaxInsightSampleLimit)
+	if err != nil {
+		return nil, err
+	}
+	if len(snapshots) == 0 {
+		return []*store.Session{}, nil
+	}
+
+	latest := snapshots[len(snapshots)-1]
+	if latest == nil || !latest.IsSharedQuota() {
+		return h.store.QuerySessionHistory("minimax")
+	}
+
+	samples := minimaxMergedSamplesFromSnapshots(snapshots)
+	if len(samples) == 0 {
+		return []*store.Session{}, nil
+	}
+
+	pollInterval := 5 * time.Minute
+	if h.config != nil && h.config.PollInterval > 0 {
+		pollInterval = h.config.PollInterval
+	}
+	idleGap := 2 * pollInterval
+	if idleGap < 10*time.Minute {
+		idleGap = 10 * time.Minute
+	}
+
+	buildSession := func(group []minimaxMergedSample, active bool) *store.Session {
+		first := group[0]
+		last := group[len(group)-1]
+		peakUsed := first.Used
+		for _, sample := range group[1:] {
+			if sample.Used > peakUsed {
+				peakUsed = sample.Used
+			}
+		}
+
+		session := &store.Session{
+			ID:               fmt.Sprintf("minimax-%d", first.CapturedAt.UnixNano()),
+			StartedAt:        first.CapturedAt,
+			PollInterval:     int(pollInterval / time.Millisecond),
+			MaxSubRequests:   float64(peakUsed),
+			StartSubRequests: float64(first.Used),
+			SnapshotCount:    len(group),
+		}
+		if !active {
+			endedAt := last.CapturedAt
+			session.EndedAt = &endedAt
+		}
+		return session
+	}
+
+	shouldSplit := func(prev, curr minimaxMergedSample) bool {
+		if curr.CapturedAt.Sub(prev.CapturedAt) > idleGap {
+			return true
+		}
+		if curr.Used < prev.Used {
+			return true
+		}
+		if minimaxSessionTimeChanged(prev.ResetAt, curr.ResetAt) {
+			return true
+		}
+		if minimaxSessionTimeChanged(prev.WindowStart, curr.WindowStart) {
+			return true
+		}
+		if minimaxSessionTimeChanged(prev.WindowEnd, curr.WindowEnd) {
+			return true
+		}
+		return false
+	}
+
+	groups := make([][]minimaxMergedSample, 0, 4)
+	currentGroup := []minimaxMergedSample{samples[0]}
+	for i := 1; i < len(samples); i++ {
+		prev := samples[i-1]
+		curr := samples[i]
+		if shouldSplit(prev, curr) {
+			groups = append(groups, currentGroup)
+			currentGroup = []minimaxMergedSample{curr}
+			continue
+		}
+		currentGroup = append(currentGroup, curr)
+	}
+	groups = append(groups, currentGroup)
+
+	sessions := make([]*store.Session, 0, len(groups))
+	for _, group := range groups {
+		if len(group) == 0 {
+			continue
+		}
+		active := now.Sub(group[len(group)-1].CapturedAt) <= idleGap
+		sessions = append(sessions, buildSession(group, active))
+	}
+
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].StartedAt.After(sessions[j].StartedAt)
+	})
+
+	return sessions, nil
+}
+
 // sessionsBoth returns sessions from both providers.
 func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{}
@@ -1976,6 +2569,8 @@ func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 		)
 		if provider == "codex" {
 			sessions, err = h.queryCodexSessionsByAccount(codexAccountID)
+		} else if provider == "minimax" {
+			sessions, err = h.queryMiniMaxSessions()
 		} else {
 			sessions, err = h.store.QuerySessionHistory(provider)
 		}
@@ -2022,6 +2617,9 @@ func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("antigravity") {
 		response["antigravity"] = buildSessionList("antigravity")
+	}
+	if h.config.HasProvider("minimax") {
+		response["minimax"] = buildSessionList("minimax")
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -2158,7 +2756,10 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsCodex(w, r, rangeDur)
 	case "antigravity":
 		h.insightsAntigravity(w, r, rangeDur)
+	case "minimax":
+		h.insightsMiniMax(w, r, rangeDur)
 	default:
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
 }
 
@@ -2205,6 +2806,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("antigravity") && providerTelemetryEnabled(visibility, "antigravity") {
 		response["antigravity"] = h.buildAntigravityInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") {
+		response["minimax"] = h.buildMiniMaxInsights(hidden, rangeDur)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -3768,6 +4372,18 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "failed to save provider visibility settings")
 			return
 		}
+		if h.agentManager != nil {
+			for _, p := range providerCatalog() {
+				enabled := h.providerPollingEnabled(p.Key, vis)
+				if enabled && h.isProviderConfigured(p.Key) {
+					if err := h.agentManager.Start(p.Key); err != nil {
+						h.logger.Warn("provider start skipped after settings update", "provider", p.Key, "error", err)
+					}
+				} else {
+					h.agentManager.Stop(p.Key)
+				}
+			}
+		}
 		result["provider_visibility"] = vis
 	}
 
@@ -4185,6 +4801,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewCodex(w, r)
 	case "antigravity":
 		h.cycleOverviewAntigravity(w, r)
+	case "minimax":
+		h.cycleOverviewMiniMax(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -5533,6 +6151,936 @@ func antigravityCycleToMap(cycle *store.AntigravityResetCycle) map[string]interf
 	return result
 }
 
+const (
+	minimaxSharedQuotaKey         = "coding_plan"
+	minimaxSharedQuotaDisplayName = "MiniMax Coding Plan"
+	minimaxInsightSampleLimit     = 20000
+)
+
+type minimaxMergedSample struct {
+	CapturedAt     time.Time
+	Used           int
+	Remaining      int
+	Total          int
+	UsedPercent    float64
+	ResetAt        *time.Time
+	TimeUntilReset time.Duration
+	WindowStart    *time.Time
+	WindowEnd      *time.Time
+}
+
+// currentMiniMax returns current MiniMax model usage.
+func (h *Handler) currentMiniMax(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildMiniMaxCurrent())
+}
+
+// buildMiniMaxCurrent builds current MiniMax response.
+func (h *Handler) buildMiniMaxCurrent() map[string]interface{} {
+	now := time.Now().UTC()
+	response := map[string]interface{}{
+		"capturedAt":  now.Format(time.RFC3339),
+		"quotas":      []interface{}{},
+		"sharedQuota": false,
+	}
+	if h.store == nil {
+		return response
+	}
+
+	latest, err := h.store.QueryLatestMiniMax()
+	if err != nil {
+		h.logger.Error("failed to query latest MiniMax snapshot", "error", err)
+		return response
+	}
+	if latest == nil {
+		return response
+	}
+
+	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
+
+	buildQuota := func(quota api.MiniMaxModelQuota, summaryModelName string) map[string]interface{} {
+		q := map[string]interface{}{
+			"name":         quota.ModelName,
+			"displayName":  api.MiniMaxDisplayName(quota.ModelName),
+			"total":        quota.Total,
+			"used":         quota.Used,
+			"remaining":    quota.Remain,
+			"usagePercent": quota.UsedPercent,
+			"status":       minimaxUsageStatus(quota.UsedPercent),
+		}
+		if quota.ResetAt != nil {
+			timeUntilReset := time.Until(*quota.ResetAt)
+			q["resetAt"] = quota.ResetAt.Format(time.RFC3339)
+			q["timeUntilReset"] = formatDuration(timeUntilReset)
+			q["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+		}
+		if h.minimaxTracker != nil && summaryModelName != "" {
+			if summary, err := h.minimaxTracker.UsageSummary(summaryModelName); err == nil && summary != nil {
+				q["currentRate"] = summary.CurrentRate
+				q["projectedUsage"] = summary.ProjectedUsage
+			}
+		}
+		return q
+	}
+
+	if latest.IsSharedQuota() {
+		merged := latest.MergedQuota()
+		if merged != nil {
+			q := buildQuota(*merged, minimaxRepresentativeModel(latest))
+			q["displayName"] = minimaxSharedQuotaDisplayName
+			q["sharedModels"] = latest.ActiveModels()
+			response["quotas"] = []map[string]interface{}{q}
+			response["sharedQuota"] = true
+			return response
+		}
+	}
+
+	quotas := make([]map[string]interface{}, 0, len(latest.Models))
+	for _, m := range latest.Models {
+		quotas = append(quotas, buildQuota(m, m.ModelName))
+	}
+
+	sort.Slice(quotas, func(i, j int) bool {
+		li, _ := quotas[i]["name"].(string)
+		lj, _ := quotas[j]["name"].(string)
+		return li < lj
+	})
+	response["quotas"] = quotas
+	return response
+}
+
+func minimaxSharedModelSummary(models []string) string {
+	if len(models) == 0 {
+		return ""
+	}
+	short := make([]string, 0, len(models))
+	for _, model := range models {
+		short = append(short, strings.TrimPrefix(model, "MiniMax-"))
+	}
+	return strings.Join(short, ", ")
+}
+
+func minimaxUsageStatus(usagePercent float64) string {
+	switch {
+	case usagePercent >= 95:
+		return "critical"
+	case usagePercent >= 80:
+		return "danger"
+	case usagePercent >= 50:
+		return "warning"
+	default:
+		return "healthy"
+	}
+}
+
+func minimaxInsightSeverity(usagePercent float64) string {
+	switch minimaxUsageStatus(usagePercent) {
+	case "critical":
+		return "critical"
+	case "danger", "warning":
+		return "warning"
+	default:
+		return "positive"
+	}
+}
+
+func minimaxStatusLabel(usagePercent float64) string {
+	switch minimaxUsageStatus(usagePercent) {
+	case "critical":
+		return "Critical"
+	case "danger":
+		return "High"
+	case "warning":
+		return "Warning"
+	default:
+		return "Healthy"
+	}
+}
+
+func minimaxRepresentativeModel(snapshot *api.MiniMaxSnapshot) string {
+	if snapshot == nil || len(snapshot.Models) == 0 {
+		return ""
+	}
+	return snapshot.Models[0].ModelName
+}
+
+func minimaxIsSharedGroup(groupBy string) bool {
+	groupBy = strings.TrimSpace(groupBy)
+	if groupBy == "" {
+		return false
+	}
+	return strings.EqualFold(groupBy, minimaxSharedQuotaKey) || strings.EqualFold(groupBy, minimaxSharedQuotaDisplayName)
+}
+
+func minimaxSharedCrossQuota(quota *api.MiniMaxModelQuota) store.CrossQuotaEntry {
+	if quota == nil {
+		return store.CrossQuotaEntry{Name: minimaxSharedQuotaKey}
+	}
+	return store.CrossQuotaEntry{
+		Name:         minimaxSharedQuotaKey,
+		Value:        float64(quota.Used),
+		Limit:        float64(quota.Total),
+		Percent:      quota.UsedPercent,
+		StartPercent: 0,
+		Delta:        quota.UsedPercent,
+	}
+}
+
+func minimaxMergedSamplesFromSnapshots(snapshots []*api.MiniMaxSnapshot) []minimaxMergedSample {
+	samples := make([]minimaxMergedSample, 0, len(snapshots))
+	for _, snap := range snapshots {
+		if snap == nil || len(snap.Models) == 0 {
+			continue
+		}
+		var quota *api.MiniMaxModelQuota
+		if snap.IsSharedQuota() {
+			quota = snap.MergedQuota()
+		} else {
+			quota = &snap.Models[0]
+		}
+		if quota == nil {
+			continue
+		}
+		samples = append(samples, minimaxMergedSample{
+			CapturedAt:     snap.CapturedAt,
+			Used:           quota.Used,
+			Remaining:      quota.Remain,
+			Total:          quota.Total,
+			UsedPercent:    quota.UsedPercent,
+			ResetAt:        quota.ResetAt,
+			TimeUntilReset: quota.TimeUntilReset,
+			WindowStart:    quota.WindowStart,
+			WindowEnd:      quota.WindowEnd,
+		})
+	}
+	sort.Slice(samples, func(i, j int) bool {
+		return samples[i].CapturedAt.Before(samples[j].CapturedAt)
+	})
+	return samples
+}
+
+func minimaxCurrentWindowSamples(samples []minimaxMergedSample, latest minimaxMergedSample) []minimaxMergedSample {
+	if len(samples) == 0 {
+		return nil
+	}
+	filtered := make([]minimaxMergedSample, 0, len(samples))
+	for _, sample := range samples {
+		if latest.WindowStart != nil && sample.CapturedAt.Before(*latest.WindowStart) {
+			continue
+		}
+		if latest.ResetAt != nil {
+			if sample.ResetAt == nil {
+				continue
+			}
+			diff := latest.ResetAt.Sub(*sample.ResetAt)
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff > time.Second {
+				continue
+			}
+		}
+		filtered = append(filtered, sample)
+	}
+	if len(filtered) == 0 {
+		return samples
+	}
+	return filtered
+}
+
+func minimaxDailyUsage(samples []minimaxMergedSample) []struct {
+	day   time.Time
+	value float64
+} {
+	if len(samples) < 2 {
+		return nil
+	}
+	usageByDay := map[time.Time]float64{}
+	prev := samples[0]
+	for _, sample := range samples[1:] {
+		delta := sample.Used - prev.Used
+		if delta < 0 {
+			prev = sample
+			continue
+		}
+		day := time.Date(sample.CapturedAt.Year(), sample.CapturedAt.Month(), sample.CapturedAt.Day(), 0, 0, 0, 0, time.UTC)
+		usageByDay[day] += float64(delta)
+		prev = sample
+	}
+	if len(usageByDay) == 0 {
+		return nil
+	}
+	days := make([]struct {
+		day   time.Time
+		value float64
+	}, 0, len(usageByDay))
+	for day, value := range usageByDay {
+		days = append(days, struct {
+			day   time.Time
+			value float64
+		}{day: day, value: value})
+	}
+	sort.Slice(days, func(i, j int) bool { return days[i].day.Before(days[j].day) })
+	return days
+}
+
+func minimaxTrendDirection(days []struct {
+	day   time.Time
+	value float64
+}) string {
+	if len(days) < 2 {
+		return "Stable"
+	}
+	mid := len(days) / 2
+	if mid == 0 {
+		return "Stable"
+	}
+	var firstTotal float64
+	for _, day := range days[:mid] {
+		firstTotal += day.value
+	}
+	var secondTotal float64
+	for _, day := range days[mid:] {
+		secondTotal += day.value
+	}
+	firstAvg := firstTotal / float64(mid)
+	secondAvg := secondTotal / float64(len(days)-mid)
+	diff := secondAvg - firstAvg
+	threshold := 5.0
+	if firstAvg > 0 {
+		relative := firstAvg * 0.15
+		if relative > threshold {
+			threshold = relative
+		}
+	}
+	switch {
+	case diff > threshold:
+		return "Increasing"
+	case diff < -threshold:
+		return "Decreasing"
+	default:
+		return "Stable"
+	}
+}
+
+func minimaxProjectionSummary(projectedUsage, total int) string {
+	if total <= 0 {
+		return fmt.Sprintf("%d requests", projectedUsage)
+	}
+	projectedPercent := float64(projectedUsage) / float64(total) * 100
+	return fmt.Sprintf("%d/%d (%.1f%%)", projectedUsage, total, projectedPercent)
+}
+
+func minimaxUsageRecommendation(projectedUsage, total int, timeToExhaustion, timeUntilReset time.Duration) string {
+	if total <= 0 {
+		return "Keep collecting data to validate the plan."
+	}
+	projectedPercent := float64(projectedUsage) / float64(total) * 100
+	if timeToExhaustion > 0 && timeUntilReset > 0 && timeToExhaustion < timeUntilReset {
+		return "Current rate would exhaust the pool before reset; reduce usage or increase capacity."
+	}
+	switch {
+	case projectedPercent >= 90:
+		return "Projected usage is high for this window; monitor closely."
+	case projectedPercent >= 60:
+		return "Usage is rising but remains within the current plan."
+	default:
+		return "Current plan remains adequate at the present burn rate."
+	}
+}
+
+func minimaxBurnStatus(projectedUsage, total int, timeToExhaustion, timeUntilReset time.Duration) string {
+	if total <= 0 {
+		return "Waiting for enough data to model burn rate."
+	}
+	projectedPercent := float64(projectedUsage) / float64(total) * 100
+	if timeToExhaustion > 0 && timeUntilReset > 0 && timeToExhaustion < timeUntilReset {
+		return "Quota exhaustion is projected before the reset window."
+	}
+	if projectedPercent >= 80 {
+		return "Current rate would consume most of the pool before reset."
+	}
+	if projectedPercent <= 10 {
+		return "Current rate is well within the available quota."
+	}
+	return "Current burn rate remains within the available quota."
+}
+
+func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int) ([]store.CycleOverviewRow, []string, string, error) {
+	if h.store == nil {
+		return nil, nil, groupBy, nil
+	}
+	latest, err := h.store.QueryLatestMiniMax()
+	if err != nil {
+		return nil, nil, groupBy, err
+	}
+	if latest != nil && latest.IsSharedQuota() {
+		sourceModel := minimaxRepresentativeModel(latest)
+		if sourceModel == "" {
+			return nil, []string{minimaxSharedQuotaKey}, minimaxSharedQuotaKey, nil
+		}
+		rows, err := h.store.QueryMiniMaxCycleOverview(sourceModel, limit)
+		if err != nil {
+			return nil, nil, groupBy, err
+		}
+		mergedRows := make([]store.CycleOverviewRow, 0, len(rows))
+		for _, row := range rows {
+			var mergedQuota *store.CrossQuotaEntry
+			for _, cq := range row.CrossQuotas {
+				entry := cq
+				if mergedQuota == nil || entry.Percent > mergedQuota.Percent || (entry.Percent == mergedQuota.Percent && entry.Limit > mergedQuota.Limit) {
+					mergedQuota = &entry
+				}
+			}
+			crossQuotas := []store.CrossQuotaEntry{}
+			if mergedQuota != nil {
+				mergedQuota.Name = minimaxSharedQuotaKey
+				crossQuotas = append(crossQuotas, *mergedQuota)
+			}
+			peakValue := row.PeakValue
+			if mergedQuota != nil {
+				peakValue = mergedQuota.Value
+			}
+			mergedRows = append(mergedRows, store.CycleOverviewRow{
+				CycleID:     row.CycleID,
+				QuotaType:   minimaxSharedQuotaKey,
+				CycleStart:  row.CycleStart,
+				CycleEnd:    row.CycleEnd,
+				PeakValue:   peakValue,
+				TotalDelta:  row.TotalDelta,
+				PeakTime:    row.PeakTime,
+				CrossQuotas: crossQuotas,
+			})
+		}
+		return mergedRows, []string{minimaxSharedQuotaKey}, minimaxSharedQuotaKey, nil
+	}
+
+	rows, err := h.store.QueryMiniMaxCycleOverview(groupBy, limit)
+	if err != nil {
+		return nil, nil, groupBy, err
+	}
+	quotaNames := []string{}
+	for _, row := range rows {
+		if len(row.CrossQuotas) == 0 {
+			continue
+		}
+		for _, cq := range row.CrossQuotas {
+			quotaNames = append(quotaNames, cq.Name)
+		}
+		break
+	}
+	if len(quotaNames) == 0 {
+		quotaNames, _ = h.store.QueryAllMiniMaxModelNames()
+	}
+	return rows, quotaNames, groupBy, nil
+}
+
+// historyMiniMax returns MiniMax usage history.
+func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+	rangeStr := r.URL.Query().Get("range")
+	duration, err := parseTimeRange(rangeStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	start := now.Add(-duration)
+	snapshots, err := h.store.QueryMiniMaxRange(start, now)
+	if err != nil {
+		h.logger.Error("failed to query MiniMax history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query history")
+		return
+	}
+
+	step := downsampleStep(len(snapshots), maxChartPoints)
+	last := len(snapshots) - 1
+	response := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+	for i, snap := range snapshots {
+		if step > 1 && i != 0 && i != last && i%step != 0 {
+			continue
+		}
+		entry := map[string]interface{}{
+			"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+		}
+		if snap.IsSharedQuota() {
+			if merged := snap.MergedQuota(); merged != nil {
+				entry[merged.ModelName] = merged.UsedPercent
+			}
+		} else {
+			for _, model := range snap.Models {
+				entry[model.ModelName] = model.UsedPercent
+			}
+		}
+		response = append(response, entry)
+	}
+	respondJSON(w, http.StatusOK, response)
+}
+
+// cyclesMiniMax returns cycle-like series data for one MiniMax model.
+func (h *Handler) cyclesMiniMax(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	modelName := r.URL.Query().Get("type")
+	latest, err := h.store.QueryLatestMiniMax()
+	if err != nil {
+		h.logger.Error("failed to query latest MiniMax snapshot", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycles")
+		return
+	}
+
+	sharedQuota := latest != nil && latest.IsSharedQuota()
+	if sharedQuota && (modelName == "" || minimaxIsSharedGroup(modelName)) {
+		rangeDur := parseInsightsRange(r.URL.Query().Get("range"))
+		since := time.Now().UTC().Add(-rangeDur)
+		snapshots, queryErr := h.store.QueryMiniMaxRange(since, time.Now().UTC(), minimaxInsightSampleLimit)
+		if queryErr != nil {
+			h.logger.Error("failed to query MiniMax shared usage series", "error", queryErr)
+			respondError(w, http.StatusInternalServerError, "failed to query cycles")
+			return
+		}
+		samples := minimaxMergedSamplesFromSnapshots(snapshots)
+		response := make([]map[string]interface{}, 0, len(samples))
+		for i, sample := range samples {
+			var delta float64
+			if i > 0 {
+				prev := samples[i-1]
+				if d := sample.UsedPercent - prev.UsedPercent; d > 0 {
+					delta = d
+				}
+			}
+			var cycleEnd interface{}
+			if i < len(samples)-1 {
+				cycleEnd = samples[i+1].CapturedAt.Format(time.RFC3339)
+			}
+			response = append(response, map[string]interface{}{
+				"id":              i + 1,
+				"modelName":       minimaxSharedQuotaDisplayName,
+				"cycleStart":      sample.CapturedAt.Format(time.RFC3339),
+				"cycleEnd":        cycleEnd,
+				"peakUtilization": sample.UsedPercent,
+				"totalDelta":      delta,
+			})
+		}
+		for i, j := 0, len(response)-1; i < j; i, j = i+1, j-1 {
+			response[i], response[j] = response[j], response[i]
+		}
+		respondJSON(w, http.StatusOK, response)
+		return
+	}
+
+	if modelName == "" {
+		models, err := h.store.QueryAllMiniMaxModelNames()
+		if err != nil || len(models) == 0 {
+			respondJSON(w, http.StatusOK, []interface{}{})
+			return
+		}
+		modelName = models[0]
+	}
+
+	rangeDur := parseInsightsRange(r.URL.Query().Get("range"))
+	since := time.Now().UTC().Add(-rangeDur)
+
+	points, err := h.store.QueryMiniMaxUsageSeries(modelName, since)
+	if err != nil {
+		h.logger.Error("failed to query MiniMax usage series", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycles")
+		return
+	}
+
+	response := make([]map[string]interface{}, 0, len(points))
+	for i, pt := range points {
+		usagePercent := 0.0
+		if pt.Total > 0 {
+			usagePercent = float64(pt.Used) / float64(pt.Total) * 100
+		}
+		var delta float64
+		if i > 0 {
+			prev := points[i-1]
+			prevPercent := 0.0
+			if prev.Total > 0 {
+				prevPercent = float64(prev.Used) / float64(prev.Total) * 100
+			}
+			if d := usagePercent - prevPercent; d > 0 {
+				delta = d
+			}
+		}
+		var cycleEnd interface{}
+		if i < len(points)-1 {
+			cycleEnd = points[i+1].CapturedAt.Format(time.RFC3339)
+		}
+		response = append(response, map[string]interface{}{
+			"id":              i + 1,
+			"modelName":       modelName,
+			"cycleStart":      pt.CapturedAt.Format(time.RFC3339),
+			"cycleEnd":        cycleEnd,
+			"peakUtilization": usagePercent,
+			"totalDelta":      delta,
+		})
+	}
+	for i, j := 0, len(response)-1; i < j; i, j = i+1, j-1 {
+		response[i], response[j] = response[j], response[i]
+	}
+	respondJSON(w, http.StatusOK, response)
+}
+
+func minimaxCycleToMap(cycle *store.MiniMaxResetCycle) map[string]interface{} {
+	result := map[string]interface{}{
+		"id":         cycle.ID,
+		"modelName":  cycle.ModelName,
+		"cycleStart": cycle.CycleStart.Format(time.RFC3339),
+		"cycleEnd":   nil,
+		"peakUsed":   cycle.PeakUsed,
+		"totalDelta": cycle.TotalDelta,
+	}
+	if cycle.CycleEnd != nil {
+		result["cycleEnd"] = cycle.CycleEnd.Format(time.RFC3339)
+	}
+	if cycle.ResetAt != nil {
+		result["resetAt"] = cycle.ResetAt.Format(time.RFC3339)
+	}
+	return result
+}
+
+// summaryMiniMax returns MiniMax usage summary.
+func (h *Handler) summaryMiniMax(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildMiniMaxSummaryMap())
+}
+
+func (h *Handler) buildMiniMaxSummaryMap() map[string]interface{} {
+	response := map[string]interface{}{}
+	if h.minimaxTracker == nil || h.store == nil {
+		return response
+	}
+	latest, err := h.store.QueryLatestMiniMax()
+	if err != nil || latest == nil {
+		return response
+	}
+	if latest.IsSharedQuota() {
+		summary, err := h.minimaxTracker.UsageSummary(latest.Models[0].ModelName)
+		if err != nil || summary == nil {
+			return response
+		}
+		item := buildMiniMaxSummaryResponse(summary)
+		item["modelName"] = minimaxSharedQuotaDisplayName
+		item["displayName"] = minimaxSharedQuotaDisplayName
+		item["sharedModels"] = latest.ActiveModels()
+		response["coding_plan"] = item
+		return response
+	}
+	for _, model := range latest.Models {
+		if summary, err := h.minimaxTracker.UsageSummary(model.ModelName); err == nil && summary != nil {
+			response[model.ModelName] = buildMiniMaxSummaryResponse(summary)
+		}
+	}
+	return response
+}
+
+func buildMiniMaxSummaryResponse(summary *tracker.MiniMaxSummary) map[string]interface{} {
+	result := map[string]interface{}{
+		"modelName":       summary.ModelName,
+		"total":           summary.Total,
+		"currentUsed":     summary.CurrentUsed,
+		"currentRemain":   summary.CurrentRemain,
+		"usagePercent":    summary.UsagePercent,
+		"currentRate":     summary.CurrentRate,
+		"projectedUsage":  summary.ProjectedUsage,
+		"completedCycles": summary.CompletedCycles,
+		"avgPerCycle":     summary.AvgPerCycle,
+		"peakCycle":       summary.PeakCycle,
+		"totalTracked":    summary.TotalTracked,
+		"trackingSince":   nil,
+	}
+	if summary.ResetAt != nil {
+		result["resetAt"] = summary.ResetAt.Format(time.RFC3339)
+		result["timeUntilReset"] = formatDuration(summary.TimeUntilReset)
+	}
+	if !summary.TrackingSince.IsZero() {
+		result["trackingSince"] = summary.TrackingSince.Format(time.RFC3339)
+	}
+	return result
+}
+
+// insightsMiniMax returns MiniMax insights.
+func (h *Handler) insightsMiniMax(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
+	hidden := h.getHiddenInsightKeys()
+	respondJSON(w, http.StatusOK, h.buildMiniMaxInsights(hidden, rangeDur))
+}
+
+func (h *Handler) buildMiniMaxInsights(hidden map[string]bool, rangeDur time.Duration) insightsResponse {
+	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
+	if h.store == nil {
+		return resp
+	}
+	latest, err := h.store.QueryLatestMiniMax()
+	if err != nil || latest == nil || len(latest.Models) == 0 {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "info", Title: "Getting Started",
+			Desc: "Keep onWatch running to collect MiniMax usage data. Insights will appear after a few snapshots.",
+		})
+		return resp
+	}
+
+	if latest.IsSharedQuota() {
+		merged := latest.MergedQuota()
+		models := latest.ActiveModels()
+		if merged == nil {
+			return resp
+		}
+		rangeWindow := rangeDur
+		if rangeWindow < 7*24*time.Hour {
+			rangeWindow = 7 * 24 * time.Hour
+		}
+		now := time.Now().UTC()
+		snapshots, err := h.store.QueryMiniMaxRange(now.Add(-rangeWindow), now, minimaxInsightSampleLimit)
+		if err != nil {
+			h.logger.Error("failed to query MiniMax snapshots for insights", "error", err)
+		}
+		samples := minimaxMergedSamplesFromSnapshots(snapshots)
+		currentSample := minimaxMergedSample{
+			CapturedAt:     latest.CapturedAt,
+			Used:           merged.Used,
+			Remaining:      merged.Remain,
+			Total:          merged.Total,
+			UsedPercent:    merged.UsedPercent,
+			ResetAt:        merged.ResetAt,
+			TimeUntilReset: merged.TimeUntilReset,
+			WindowStart:    merged.WindowStart,
+			WindowEnd:      merged.WindowEnd,
+		}
+		if len(samples) == 0 {
+			samples = append(samples, currentSample)
+		}
+
+		windowSamples := minimaxCurrentWindowSamples(samples, currentSample)
+		currentRate := 0.0
+		if len(windowSamples) >= 2 {
+			first := windowSamples[0]
+			last := windowSamples[len(windowSamples)-1]
+			if deltaUsed := last.Used - first.Used; deltaUsed > 0 {
+				if elapsed := last.CapturedAt.Sub(first.CapturedAt); elapsed > 0 {
+					currentRate = float64(deltaUsed) / elapsed.Hours()
+				}
+			}
+		}
+
+		projectedUsage := merged.Used
+		projectedPercent := merged.UsedPercent
+		if merged.Total > 0 && merged.TimeUntilReset > 0 && currentRate > 0 {
+			projected := float64(merged.Used) + (currentRate * merged.TimeUntilReset.Hours())
+			if projected > float64(merged.Total) {
+				projected = float64(merged.Total)
+			}
+			if projected < 0 {
+				projected = 0
+			}
+			projectedUsage = int(projected + 0.5)
+			projectedPercent = (float64(projectedUsage) / float64(merged.Total)) * 100
+		}
+
+		timeToExhaustion := time.Duration(0)
+		if merged.Remain > 0 && currentRate > 0 {
+			hoursToExhaustion := float64(merged.Remain) / currentRate
+			if hoursToExhaustion > 0 {
+				timeToExhaustion = time.Duration(hoursToExhaustion * float64(time.Hour))
+			}
+		}
+
+		dailyUsage := minimaxDailyUsage(samples)
+		avgDailyUsage := 0.0
+		peakUsage := 0
+		var peakDate time.Time
+		if len(dailyUsage) > 0 {
+			totalUsage := 0.0
+			for _, day := range dailyUsage {
+				totalUsage += day.value
+				if int(day.value+0.5) > peakUsage {
+					peakUsage = int(day.value + 0.5)
+					peakDate = day.day
+				}
+			}
+			avgDailyUsage = totalUsage / float64(len(dailyUsage))
+		}
+		trendDirection := minimaxTrendDirection(dailyUsage)
+
+		lastCyclePercent := 0.0
+		if sourceModel := minimaxRepresentativeModel(latest); sourceModel != "" {
+			if history, err := h.store.QueryMiniMaxCycleHistory(sourceModel, 1); err == nil && len(history) > 0 && merged.Total > 0 {
+				lastCyclePercent = (float64(history[0].TotalDelta) / float64(merged.Total)) * 100
+			}
+		}
+
+		resetText := "--"
+		if merged.TimeUntilReset > 0 {
+			resetText = formatDuration(merged.TimeUntilReset)
+		}
+		burnRateText := fmt.Sprintf("%.1f/hr", currentRate)
+		recommendation := minimaxUsageRecommendation(projectedUsage, merged.Total, timeToExhaustion, merged.TimeUntilReset)
+
+		resp.Stats = append(resp.Stats,
+			insightStat{Value: fmt.Sprintf("%d / %d", merged.Used, merged.Total), Label: "Current Usage", Sublabel: fmt.Sprintf("%d remaining", merged.Remain)},
+			insightStat{Value: burnRateText, Label: "Burn Rate", Sublabel: "Projected " + minimaxProjectionSummary(projectedUsage, merged.Total)},
+			insightStat{Value: resetText, Label: "Resets In", Sublabel: minimaxSharedModelSummary(models)},
+			insightStat{Value: fmt.Sprintf("%.1f%%", merged.UsedPercent), Label: "Current Status", Sublabel: minimaxStatusLabel(merged.UsedPercent)},
+		)
+
+		if !hidden["shared_status"] {
+			resp.Insights = append(resp.Insights, insightItem{
+				Key:      "shared_status",
+				Type:     "factual",
+				Severity: minimaxInsightSeverity(merged.UsedPercent),
+				Title:    fmt.Sprintf("%s: %s", minimaxSharedQuotaDisplayName, minimaxStatusLabel(merged.UsedPercent)),
+				Metric:   fmt.Sprintf("%.1f%% used", merged.UsedPercent),
+				Sublabel: "Shared quota pool",
+				Desc: fmt.Sprintf(
+					"%d of %d requests used, %d remaining, and the pool resets in %s across shared models: %s.",
+					merged.Used,
+					merged.Total,
+					merged.Remain,
+					resetText,
+					minimaxSharedModelSummary(models),
+				),
+			})
+		}
+		if !hidden["burn_rate"] {
+			exhaustionText := "No exhaustion projected at the current rate."
+			if timeToExhaustion > 0 {
+				exhaustionText = "Estimated exhaustion in " + formatDuration(timeToExhaustion) + "."
+			}
+			resp.Insights = append(resp.Insights, insightItem{
+				Key:      "burn_rate",
+				Type:     "trend",
+				Severity: minimaxInsightSeverity(projectedPercent),
+				Title:    "Burn Rate Analysis",
+				Metric:   burnRateText,
+				Sublabel: "Projected " + minimaxProjectionSummary(projectedUsage, merged.Total),
+				Desc:     fmt.Sprintf("%s %s", minimaxBurnStatus(projectedUsage, merged.Total, timeToExhaustion, merged.TimeUntilReset), exhaustionText),
+			})
+		}
+		if !hidden["trend"] {
+			trendDesc := "Need more historical samples to measure the usage trend."
+			if len(dailyUsage) > 0 {
+				peakText := "no peak day recorded yet"
+				if !peakDate.IsZero() {
+					peakText = fmt.Sprintf("peak day %s with %d requests", peakDate.Format("Jan 2"), peakUsage)
+				}
+				trendDesc = fmt.Sprintf("Average daily usage is %.0f requests, with %s.", avgDailyUsage, peakText)
+			}
+			resp.Insights = append(resp.Insights, insightItem{
+				Key:      "trend",
+				Type:     "trend",
+				Severity: "info",
+				Title:    "Usage Trend (7d)",
+				Metric:   trendDirection,
+				Sublabel: fmt.Sprintf("%.0f/day average", avgDailyUsage),
+				Desc:     trendDesc,
+			})
+		}
+		if !hidden["efficiency"] {
+			comparisonText := "No completed prior cycle recorded yet."
+			if lastCyclePercent > 0 {
+				comparisonText = fmt.Sprintf("Last completed cycle used %.1f%% of the pool.", lastCyclePercent)
+			}
+			resp.Insights = append(resp.Insights, insightItem{
+				Key:      "efficiency",
+				Type:     "recommendation",
+				Severity: "info",
+				Title:    "Quota Efficiency",
+				Metric:   fmt.Sprintf("%.1f%% this cycle", merged.UsedPercent),
+				Sublabel: recommendation,
+				Desc:     comparisonText,
+			})
+		}
+		return resp
+	}
+
+	var totalCap, totalUsed int
+	var maxPct float64
+	for _, m := range latest.Models {
+		totalCap += m.Total
+		totalUsed += m.Used
+		if m.UsedPercent > maxPct {
+			maxPct = m.UsedPercent
+		}
+	}
+	avgPct := 0.0
+	if len(latest.Models) > 0 {
+		for _, m := range latest.Models {
+			avgPct += m.UsedPercent
+		}
+		avgPct /= float64(len(latest.Models))
+	}
+
+	resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%d", len(latest.Models)), Label: "Active Models"})
+	resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%.1f%%", avgPct), Label: "Average Utilization"})
+	resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%.1f%%", maxPct), Label: "Peak Utilization"})
+	if totalCap > 0 {
+		resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%d/%d", totalUsed, totalCap), Label: "Total Usage"})
+	} else {
+		resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%d", totalUsed), Label: "Total Usage"})
+	}
+
+	if !hidden["trend"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Key: "trend", Type: "trend", Severity: "info",
+			Title:  "Range",
+			Metric: fmt.Sprintf("%dd", int(rangeDur.Hours()/24)),
+			Desc:   "Trend analytics are based on recent MiniMax snapshot history.",
+		})
+	}
+	if !hidden["coverage"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Key: "coverage", Type: "info", Severity: "info",
+			Title:  "Data Coverage",
+			Metric: latest.CapturedAt.Format("2006-01-02 15:04"),
+			Desc:   "Current insight sample is generated from the latest MiniMax capture.",
+		})
+	}
+
+	for _, m := range latest.Models {
+		if m.UsedPercent < 80 {
+			continue
+		}
+		resp.Insights = append(resp.Insights, insightItem{
+			Key:      "model_" + m.ModelName,
+			Type:     "recommendation",
+			Severity: map[bool]string{true: "critical", false: "warning"}[m.UsedPercent >= 95],
+			Title:    "High Utilization: " + api.MiniMaxDisplayName(m.ModelName),
+			Metric:   fmt.Sprintf("%.1f%%", m.UsedPercent),
+			Desc:     fmt.Sprintf("%s has used %d of %d requests in the current window.", api.MiniMaxDisplayName(m.ModelName), m.Used, m.Total),
+		})
+	}
+
+	return resp
+}
+
+// cycleOverviewMiniMax returns MiniMax cycle overview.
+func (h *Handler) cycleOverviewMiniMax(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
+		return
+	}
+	groupBy := r.URL.Query().Get("groupBy")
+	limit := parseCycleOverviewLimit(r)
+	rows, quotaNames, resolvedGroupBy, err := h.buildMiniMaxCycleOverviewRows(groupBy, limit)
+	if err != nil {
+		h.logger.Error("failed to query MiniMax cycle overview", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycle overview")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"groupBy":    resolvedGroupBy,
+		"provider":   "minimax",
+		"quotaNames": quotaNames,
+		"cycles":     cycleOverviewRowsToJSON(rows),
+	})
+}
+
 func (h *Handler) summaryCodex(w http.ResponseWriter, r *http.Request) {
 	accountID := parseCodexAccountID(r)
 	respondJSON(w, http.StatusOK, h.buildCodexSummaryMap(accountID))
@@ -6002,6 +7550,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryCodex(w, r)
 	case "antigravity":
 		h.loggingHistoryAntigravity(w, r)
+	case "minimax":
+		h.loggingHistoryMiniMax(w, r)
 	default:
 		respondJSON(w, http.StatusOK, map[string]interface{}{"logs": []interface{}{}})
 	}
@@ -6427,6 +7977,94 @@ func (h *Handler) loggingHistoryAntigravity(w http.ResponseWriter, r *http.Reque
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"provider":   "antigravity",
+		"quotaNames": quotaNames,
+		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
+	})
+}
+
+func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"logs": []interface{}{}})
+		return
+	}
+
+	start, end, limit := h.loggingHistoryRangeAndLimit(r)
+	snapshots, err := h.store.QueryMiniMaxRange(start, end, limit)
+	if err != nil {
+		h.logger.Error("failed to query MiniMax snapshots", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query logging history")
+		return
+	}
+
+	latest := (*api.MiniMaxSnapshot)(nil)
+	if len(snapshots) > 0 {
+		latest = snapshots[len(snapshots)-1]
+	} else {
+		latest, _ = h.store.QueryLatestMiniMax()
+	}
+
+	if latest != nil && latest.IsSharedQuota() {
+		capturedAt := make([]time.Time, 0, len(snapshots))
+		ids := make([]int64, 0, len(snapshots))
+		series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
+		for _, snap := range snapshots {
+			capturedAt = append(capturedAt, snap.CapturedAt)
+			ids = append(ids, snap.ID)
+			row := map[string]loggingHistoryCrossQuota{}
+			if merged := snap.MergedQuota(); merged != nil {
+				row[minimaxSharedQuotaKey] = loggingHistoryCrossQuota{
+					Name:     minimaxSharedQuotaKey,
+					Value:    float64(merged.Used),
+					Limit:    float64(merged.Total),
+					Percent:  merged.UsedPercent,
+					HasValue: true,
+					HasLimit: true,
+				}
+			}
+			series = append(series, row)
+		}
+
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"provider":   "minimax",
+			"quotaNames": []string{minimaxSharedQuotaKey},
+			"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, []string{minimaxSharedQuotaKey}, series),
+		})
+		return
+	}
+
+	quotaNames := []string{}
+	for _, snap := range snapshots {
+		for _, model := range snap.Models {
+			quotaNames = append(quotaNames, model.ModelName)
+		}
+		break
+	}
+	if len(quotaNames) == 0 {
+		quotaNames, _ = h.store.QueryAllMiniMaxModelNames()
+	}
+
+	capturedAt := make([]time.Time, 0, len(snapshots))
+	ids := make([]int64, 0, len(snapshots))
+	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
+	for _, snap := range snapshots {
+		capturedAt = append(capturedAt, snap.CapturedAt)
+		ids = append(ids, snap.ID)
+		row := make(map[string]loggingHistoryCrossQuota, len(snap.Models))
+		for _, model := range snap.Models {
+			row[model.ModelName] = loggingHistoryCrossQuota{
+				Name:     model.ModelName,
+				Value:    float64(model.Used),
+				Limit:    float64(model.Total),
+				Percent:  model.UsedPercent,
+				HasValue: true,
+				HasLimit: true,
+			}
+		}
+		series = append(series, row)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"provider":   "minimax",
 		"quotaNames": quotaNames,
 		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
 	})

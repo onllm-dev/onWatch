@@ -39,6 +39,9 @@ type Config struct {
 	AntigravityCSRFToken string // ANTIGRAVITY_CSRF_TOKEN (for Docker)
 	AntigravityEnabled   bool   // true if auto-detection should be attempted
 
+	// MiniMax provider configuration
+	MiniMaxAPIKey string // MINIMAX_API_KEY
+
 	// Shared configuration
 	PollInterval       time.Duration // ONWATCH_POLL_INTERVAL (seconds → Duration)
 	Port               int           // ONWATCH_PORT
@@ -149,6 +152,7 @@ var onwatchEnvKeys = []string{
 	"COPILOT_TOKEN",
 	"CODEX_TOKEN",
 	"ANTIGRAVITY_ENABLED",
+	"MINIMAX_API_KEY",
 	"ONWATCH_",
 }
 
@@ -227,6 +231,9 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	if cfg.AntigravityBaseURL != "" || os.Getenv("ANTIGRAVITY_ENABLED") == "true" {
 		cfg.AntigravityEnabled = true
 	}
+
+	// MiniMax provider
+	cfg.MiniMaxAPIKey = strings.TrimSpace(os.Getenv("MINIMAX_API_KEY"))
 
 	// Poll Interval (seconds) - ONWATCH_* first, SYNTRACK_* fallback
 	if flags.interval > 0 {
@@ -334,11 +341,6 @@ func (c *Config) applyDefaults() {
 
 // Validate checks the configuration for errors.
 func (c *Config) Validate() error {
-	// At least one provider must be configured
-	if c.SyntheticAPIKey == "" && c.ZaiAPIKey == "" && c.AnthropicToken == "" && c.CopilotToken == "" && c.CodexToken == "" && !c.AntigravityEnabled {
-		return fmt.Errorf("at least one provider must be configured: set SYNTHETIC_API_KEY, ZAI_API_KEY, ANTHROPIC_TOKEN, COPILOT_TOKEN, CODEX_TOKEN, or ANTIGRAVITY_ENABLED=true")
-	}
-
 	// Validate Synthetic API key if provided
 	if c.SyntheticAPIKey != "" && !strings.HasPrefix(c.SyntheticAPIKey, "syn_") {
 		return fmt.Errorf("SYNTHETIC_API_KEY must start with 'syn_'")
@@ -383,6 +385,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.AntigravityEnabled {
 		providers = append(providers, "antigravity")
 	}
+	if c.MiniMaxAPIKey != "" {
+		providers = append(providers, "minimax")
+	}
 	return providers
 }
 
@@ -401,6 +406,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.CodexToken != ""
 	case "antigravity":
 		return c.AntigravityEnabled
+	case "minimax":
+		return c.MiniMaxAPIKey != ""
 	}
 	return false
 }
@@ -424,6 +431,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.AntigravityEnabled {
+		count++
+	}
+	if c.MiniMaxAPIKey != "" {
 		count++
 	}
 	return count > 1
@@ -461,6 +471,10 @@ func (c *Config) String() string {
 	// Redact Copilot token
 	copilotDisplay := redactAPIKey(c.CopilotToken, "ghp_")
 	fmt.Fprintf(&sb, "  CopilotToken: %s,\n", copilotDisplay)
+
+	// Redact MiniMax token
+	minimaxDisplay := redactAPIKey(c.MiniMaxAPIKey, "")
+	fmt.Fprintf(&sb, "  MiniMaxAPIKey: %s,\n", minimaxDisplay)
 
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)
 	fmt.Fprintf(&sb, "  SessionIdleTimeout: %v,\n", c.SessionIdleTimeout)

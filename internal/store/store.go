@@ -409,6 +409,44 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_antigravity_model_values_model_snapshot ON antigravity_model_values(model_id, snapshot_id);
 		CREATE INDEX IF NOT EXISTS idx_antigravity_cycles_model_start ON antigravity_reset_cycles(model_id, cycle_start);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_antigravity_cycles_model_active_unique ON antigravity_reset_cycles(model_id) WHERE cycle_end IS NULL;
+
+		-- MiniMax-specific tables
+		CREATE TABLE IF NOT EXISTS minimax_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			raw_json TEXT,
+			model_count INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS minimax_model_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			model_name TEXT NOT NULL,
+			total INTEGER NOT NULL DEFAULT 0,
+			remain INTEGER NOT NULL DEFAULT 0,
+			used INTEGER NOT NULL DEFAULT 0,
+			used_percent REAL NOT NULL DEFAULT 0,
+			reset_at TEXT,
+			window_start TEXT,
+			window_end TEXT,
+			FOREIGN KEY (snapshot_id) REFERENCES minimax_snapshots(id) ON DELETE CASCADE
+		);
+
+		CREATE TABLE IF NOT EXISTS minimax_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			model_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			reset_at TEXT,
+			peak_used INTEGER NOT NULL DEFAULT 0,
+			total_delta INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_minimax_snapshots_captured ON minimax_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_minimax_model_values_snapshot ON minimax_model_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_minimax_model_values_name ON minimax_model_values(model_name);
+		CREATE INDEX IF NOT EXISTS idx_minimax_cycles_name_start ON minimax_reset_cycles(model_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_minimax_cycles_name_active ON minimax_reset_cycles(model_name) WHERE cycle_end IS NULL;
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {

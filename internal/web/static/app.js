@@ -57,6 +57,8 @@ function getCurrentProvider() {
   if (codexGrid) return 'codex';
   const antigravityGrid = document.getElementById('quota-grid-antigravity');
   if (antigravityGrid) return 'antigravity';
+  const minimaxGrid = document.getElementById('quota-grid-minimax');
+  if (minimaxGrid) return 'minimax';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -443,7 +445,8 @@ const statusConfig = {
 const quotaNames = {
   subscription: 'Subscription Quota',
   search: 'Search (Hourly)',
-  toolCalls: 'Tool Call Discounts'
+  toolCalls: 'Tool Call Discounts',
+  coding_plan: 'MiniMax Coding Plan'
 };
 
 // Anthropic display names (mirrors backend anthropicDisplayNames)
@@ -601,6 +604,26 @@ const antigravityChartColorFallback = [
   { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.08)' },
 ];
 
+const minimaxDisplayNames = {
+  'MiniMax Coding Plan': 'MiniMax Coding Plan',
+  'MiniMax-M2': 'MiniMax M2',
+  'MiniMax-M2.1': 'MiniMax M2.1',
+  'MiniMax-M2.5': 'MiniMax M2.5',
+  'MiniMax-M2.5-highspeed': 'MiniMax M2.5 Highspeed',
+};
+
+const minimaxChartColorMap = {
+  'MiniMax Coding Plan': { border: '#F97316', bg: 'rgba(249, 115, 22, 0.08)' },
+  'MiniMax-M2': { border: '#FF6B6B', bg: 'rgba(255, 107, 107, 0.08)' },
+  'MiniMax-M2.1': { border: '#4ECDC4', bg: 'rgba(78, 205, 196, 0.08)' },
+  'MiniMax-M2.5': { border: '#4ECDC4', bg: 'rgba(78, 205, 196, 0.08)' },
+  'MiniMax-M2.5-highspeed': { border: '#45B7D1', bg: 'rgba(69, 183, 209, 0.08)' },
+};
+const minimaxChartColorFallback = [
+  { border: '#F7DC6F', bg: 'rgba(247, 220, 111, 0.08)' },
+  { border: '#BB8FCE', bg: 'rgba(187, 143, 206, 0.08)' },
+];
+
 // ── Renewal Categories for Cycle Overview ──
 
 const renewalCategories = {
@@ -632,6 +655,9 @@ const renewalCategories = {
     { label: 'Claude+GPT', groupBy: 'antigravity_claude_gpt' },
     { label: 'Gemini Pro', groupBy: 'antigravity_gemini_pro' },
     { label: 'Gemini Flash', groupBy: 'antigravity_gemini_flash' }
+  ],
+  minimax: [
+    { label: 'Coding Plan', groupBy: 'coding_plan' }
   ]
 };
 
@@ -649,6 +675,7 @@ const overviewQuotaDisplayNames = {
   premium_interactions: 'Premium',
   chat: 'Chat',
   completions: 'Completions',
+  coding_plan: 'MiniMax Coding Plan',
   antigravity_claude_gpt: 'Claude + GPT Quota',
   antigravity_gemini_pro: 'Gemini Pro Quota',
   antigravity_gemini_flash: 'Gemini Flash Quota'
@@ -658,6 +685,9 @@ const overviewQuotaDisplayNames = {
 const providerQuotaDisplayOverrides = {
   codex: {
     five_hour: '5-Hour Limit'
+  },
+  minimax: {
+    coding_plan: 'MiniMax Coding Plan'
   }
 };
 
@@ -1045,6 +1075,121 @@ function updateCopilotCard(quota) {
   }
   if (resetEl) {
     resetEl.textContent = quota.resetDate ? `Resets: ${formatDateTime(quota.resetDate)}` : '';
+  }
+  if (countdownEl) {
+    if (quota.timeUntilResetSeconds > 0) {
+      countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
+      countdownEl.classList.toggle('imminent', quota.timeUntilResetSeconds < 1800);
+      countdownEl.style.display = '';
+    } else {
+      countdownEl.style.display = 'none';
+    }
+  }
+}
+
+function minimaxCardKey(name) {
+  return String(name || '').replace(/[^a-zA-Z0-9_-]/g, '-');
+}
+
+function minimaxSharedSubtitle(sharedModels) {
+  if (!Array.isArray(sharedModels) || sharedModels.length === 0) return '';
+  const labels = sharedModels
+    .map(name => String(name || '').replace(/^MiniMax-/, ''))
+    .filter(Boolean);
+  return labels.length > 0 ? `Shared: ${labels.join(', ')}` : '';
+}
+
+function renderMiniMaxQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  container.innerHTML = quotas.map((q, i) => {
+    const cardKey = minimaxCardKey(q.name);
+    const displayName = q.displayName || minimaxDisplayNames[q.name] || q.name;
+    const subtitle = minimaxSharedSubtitle(q.sharedModels);
+    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const status = q.status || 'healthy';
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const countdownId = `countdown-minimax-${cardKey}`;
+    const progressId = `progress-minimax-${cardKey}`;
+    const percentId = `percent-minimax-${cardKey}`;
+    const fractionId = `fraction-minimax-${cardKey}`;
+    const statusId = `status-minimax-${cardKey}`;
+    const resetId = `reset-minimax-${cardKey}`;
+    const subtitleId = `subtitle-minimax-${cardKey}`;
+
+    return `<article class="quota-card minimax-card" data-quota="${q.name}" data-provider="minimax" style="animation-delay: ${i * 60}ms">
+      <header class="card-header">
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            ${escapeHTML(displayName)}
+          </h2>
+          <div class="quota-subtitle" id="${subtitleId}"${subtitle ? '' : ' hidden'}>${escapeHTML(subtitle)}</div>
+        </div>
+        <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="${percentId}">${usagePct}%</span>
+        <span class="usage-fraction" id="${fractionId}">${formatNumber(q.used || 0)} / ${formatNumber(q.total || 0)}</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="${progressId}" style="width: ${usagePct}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="${statusId}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="${resetId}">${q.resetAt ? 'Resets: ' + formatDateTime(q.resetAt) : ''}</span>
+      </footer>
+    </article>`;
+  }).join('');
+}
+
+function updateMiniMaxCard(quota) {
+  const cardKey = minimaxCardKey(quota.name);
+  const key = `minimax-${quota.name}`;
+  State.currentQuotas[key] = {
+    percent: quota.usagePercent || 0,
+    usage: quota.used || 0,
+    limit: quota.total || 0,
+    status: quota.status || 'healthy',
+    renewsAt: quota.resetAt,
+    timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
+    name: quota.name,
+    displayName: quota.displayName,
+    sharedModels: quota.sharedModels || []
+  };
+
+  const usagePct = (quota.usagePercent || 0).toFixed(1);
+  const status = quota.status || 'healthy';
+  const progressEl = document.getElementById(`progress-minimax-${cardKey}`);
+  const percentEl = document.getElementById(`percent-minimax-${cardKey}`);
+  const fractionEl = document.getElementById(`fraction-minimax-${cardKey}`);
+  const statusEl = document.getElementById(`status-minimax-${cardKey}`);
+  const resetEl = document.getElementById(`reset-minimax-${cardKey}`);
+  const countdownEl = document.getElementById(`countdown-minimax-${cardKey}`);
+  const subtitleEl = document.getElementById(`subtitle-minimax-${cardKey}`);
+  const subtitle = minimaxSharedSubtitle(quota.sharedModels);
+
+  if (progressEl) {
+    progressEl.style.width = `${usagePct}%`;
+    progressEl.setAttribute('data-status', status);
+  }
+  if (percentEl) percentEl.textContent = `${usagePct}%`;
+  if (fractionEl) fractionEl.textContent = `${formatNumber(quota.used || 0)} / ${formatNumber(quota.total || 0)}`;
+  if (statusEl) {
+    const config = statusConfig[status] || statusConfig.healthy;
+    statusEl.setAttribute('data-status', status);
+    statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
+  }
+  if (resetEl) resetEl.textContent = quota.resetAt ? `Resets: ${formatDateTime(quota.resetAt)}` : '';
+  if (subtitleEl) {
+    subtitleEl.textContent = subtitle;
+    subtitleEl.hidden = !subtitle;
   }
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
@@ -2376,6 +2521,17 @@ async function fetchCurrent() {
             data.quotas.forEach(q => updateAntigravityCard(q));
           }
         }
+      } else if (provider === 'minimax') {
+        if (data.quotas) {
+          const container = document.getElementById('quota-grid-minimax');
+          if (container && container.children.length !== data.quotas.length) {
+            renderMiniMaxQuotaCards(data.quotas, 'quota-grid-minimax');
+          } else if (container && container.children.length === 0) {
+            renderMiniMaxQuotaCards(data.quotas, 'quota-grid-minimax');
+          } else {
+            data.quotas.forEach(q => updateMiniMaxCard(q));
+          }
+        }
       } else if (provider === 'zai') {
         updateCard('tokensLimit', data.tokensLimit);
         updateCard('timeLimit', data.timeLimit);
@@ -2576,8 +2732,11 @@ async function fetchDeepInsights() {
       return;
     } else {
       // Single provider mode
-      const allStats = data.stats || [];
+      let allStats = data.stats || [];
       let allInsights = data.insights || [];
+
+      allStats = getSingleViewInsightStats(requestProvider, allStats);
+      allInsights = getSingleViewInsightCards(requestProvider, allInsights);
 
       // Filter out hidden insights
       const expandedHidden = expandCorrelatedKeys(State.hiddenInsights);
@@ -2683,11 +2842,15 @@ function renderBothInsights(data, statsEl, cardsEl) {
     html += renderProviderBox('copilot', 'Copilot <span class="beta-badge">Beta</span>', data.copilot);
   }
 
-  if (activeProviders.has('antigravity') && data.antigravity) {
-    html += renderProviderBox('antigravity', 'Antigravity', data.antigravity);
-  }
+	if (activeProviders.has('antigravity') && data.antigravity) {
+		html += renderProviderBox('antigravity', 'Antigravity', data.antigravity);
+	}
 
-  if (activeProviders.has('codex')) {
+	if (activeProviders.has('minimax') && data.minimax) {
+		html += renderProviderBox('minimax', 'MiniMax', data.minimax);
+	}
+
+	if (activeProviders.has('codex')) {
     if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
       data.codexAccounts.forEach(acc => {
         const label = `Codex · ${acc.accountName || `Account ${acc.accountId || ''}`.trim()}`;
@@ -2874,6 +3037,8 @@ function initChart() {
   let defaultDatasets;
   if (provider === 'antigravity') {
     defaultDatasets = []; // Antigravity datasets are dynamic - populated when history data arrives
+  } else if (provider === 'minimax') {
+    defaultDatasets = []; // MiniMax datasets are dynamic - populated when history data arrives
   } else if (provider === 'zai') {
     defaultDatasets = [
       { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
@@ -2889,6 +3054,8 @@ function initChart() {
   }
   const quotaMap = provider === 'zai'
     ? ['tokensLimit', 'timeLimit', 'toolCalls']
+    : provider === 'minimax'
+      ? []
     : ['subscription', 'search', 'toolCalls'];
 
   State.chart = new Chart(ctx, {
@@ -3128,6 +3295,42 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'minimax') {
+      const quotaKeys = new Set();
+      historyRows.forEach(d => {
+        Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
+      });
+      const sortedKeys = [...quotaKeys].sort();
+      let fallbackIdx = 0;
+      const datasets = [];
+      sortedKeys.forEach((key) => {
+        const color = minimaxChartColorMap[key] || minimaxChartColorFallback[fallbackIdx++ % minimaxChartColorFallback.length];
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        const mainDataset = {
+          label: minimaxDisplayNames[key] || key,
+          data: data,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: pointRadii,
+          pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key),
+          spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
+        };
+        datasets.push(mainDataset);
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
     if (provider === 'codex') {
       // Codex history: array of { capturedAt, five_hour, seven_day, ... }
       const quotaKeys = new Set();
@@ -3210,6 +3413,7 @@ const bothProviderNames = {
   copilot: 'Copilot',
   codex: 'Codex',
   antigravity: 'Antigravity',
+  minimax: 'MiniMax',
 };
 
 function escapeHTML(value) {
@@ -3331,7 +3535,9 @@ function normalizeBothQuotas(provider, payload) {
   return rawQuotas.map((quota) => {
     const percent = quota.cardPercent != null
       ? quota.cardPercent
-      : (quota.utilization != null ? quota.utilization : (quota.percent ?? 0));
+      : (quota.usagePercent != null
+        ? quota.usagePercent
+        : (quota.utilization != null ? quota.utilization : (quota.percent ?? 0)));
     return {
       ...quota,
       cardPercent: percent,
@@ -3339,6 +3545,7 @@ function normalizeBothQuotas(provider, payload) {
         || codexDisplayNames[quota.name]
         || anthropicDisplayNames[quota.name]
         || copilotDisplayNames[quota.name]
+        || minimaxDisplayNames[quota.name]
         || getQuotaDisplayName(quota.name, provider),
       cardLabel: quota.cardLabel || 'Utilization',
       status: quota.status || 'healthy',
@@ -3450,6 +3657,10 @@ function renderProviderKPIHTML(quotas) {
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const displayName = quota.displayName || quota.name || 'Quota';
     const label = quota.cardLabel || 'Utilization';
+    const subtitle = quota.subtitle || minimaxSharedSubtitle(quota.sharedModels);
+    const usageFraction = Number.isFinite(Number(quota.used)) && Number.isFinite(Number(quota.total)) && Number(quota.total) > 0
+      ? `${formatNumber(quota.used)} / ${formatNumber(quota.total)}`
+      : label;
     const icon = anthropicQuotaIcons[quota.name]
       || quotaIcons[quota.name]
       || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
@@ -3458,15 +3669,18 @@ function renderProviderKPIHTML(quotas) {
 
     return `<article class="quota-card provider-kpi-card" data-quota="${escapeHTML(quota.name || '')}">
       <header class="card-header">
-        <h2 class="quota-title">
-          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
-          ${escapeHTML(displayName)}
-        </h2>
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+            ${escapeHTML(displayName)}
+          </h2>
+          ${subtitle ? `<div class="quota-subtitle">${escapeHTML(subtitle)}</div>` : ''}
+        </div>
         <span class="countdown">${escapeHTML(countdown)}</span>
       </header>
       <div class="progress-stats">
         <span class="usage-percent">${percent.toFixed(1)}%</span>
-        <span class="usage-fraction">${escapeHTML(label)}</span>
+        <span class="usage-fraction">${escapeHTML(usageFraction)}</span>
       </div>
       <div class="progress-wrapper">
         <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(percent)}" aria-valuemin="0" aria-valuemax="100">
@@ -3484,32 +3698,92 @@ function renderProviderKPIHTML(quotas) {
   }).join('');
 }
 
-function renderProviderInsightsHTML(payload) {
-  const stats = Array.isArray(payload?.stats) ? payload.stats : [];
-  const insights = Array.isArray(payload?.insights) ? payload.insights : [];
+function sortItemsByPreference(items, preferredKeys, valueSelector) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const order = new Map(preferredKeys.map((value, index) => [value, index]));
+  return [...items].sort((a, b) => {
+    const aValue = valueSelector(a);
+    const bValue = valueSelector(b);
+    const aRank = order.has(aValue) ? order.get(aValue) : Number.MAX_SAFE_INTEGER;
+    const bRank = order.has(bValue) ? order.get(bValue) : Number.MAX_SAFE_INTEGER;
+    if (aRank !== bRank) return aRank - bRank;
+    return 0;
+  });
+}
+
+function compactInsightText(text, maxLength = 84) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  const sentenceMatch = normalized.match(/^(.+?[.!?])(?:\s|$)/);
+  const candidate = sentenceMatch && sentenceMatch[1] ? sentenceMatch[1].trim() : normalized;
+  if (candidate.length <= maxLength) return candidate;
+  return `${candidate.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function getSingleViewInsightStats(provider, stats) {
+  if (provider !== 'minimax') return stats;
+  return sortItemsByPreference(
+    stats.filter((stat) => stat && stat.label !== 'Current Status'),
+    ['Current Usage', 'Burn Rate', 'Resets In'],
+    (stat) => stat.label
+  );
+}
+
+function getSingleViewInsightCards(provider, insights) {
+  if (provider !== 'minimax') return insights;
+  const filtered = insights.filter((insight) => !['shared_status', 'burn_rate'].includes(insight.key));
+  return sortItemsByPreference(
+    filtered.length > 0 ? filtered : insights,
+    ['trend', 'efficiency', 'burn_rate', 'shared_status'],
+    (insight) => insight.key
+  );
+}
+
+function getCompactProviderStats(provider, stats) {
+  const preferred = provider === 'minimax'
+    ? ['Burn Rate', 'Current Usage', 'Resets In', 'Current Status']
+    : [];
+  const ordered = preferred.length > 0
+    ? sortItemsByPreference(stats, preferred, (stat) => stat.label)
+    : stats;
+  return ordered.slice(0, 2);
+}
+
+function getCompactProviderInsights(provider, insights) {
+  const ordered = provider === 'minimax'
+    ? sortItemsByPreference(insights, ['efficiency', 'trend', 'burn_rate', 'shared_status'], (insight) => insight.key)
+    : insights;
+  const urgent = ordered.filter((insight) => ['warning', 'negative'].includes(insight.severity));
+  return urgent.slice(0, 1);
+}
+
+function renderProviderInsightsHTML(provider, payload) {
+  const stats = getCompactProviderStats(provider, Array.isArray(payload?.stats) ? payload.stats : []);
+  const insights = getCompactProviderInsights(provider, Array.isArray(payload?.insights) ? payload.insights : []);
   const items = [];
 
-  stats.slice(0, 3).forEach((stat) => {
+  stats.forEach((stat) => {
     items.push(`<article class="insight-card provider-mini-insight severity-info">
       <div class="insight-card-header">
         <span class="insight-card-title">${escapeHTML(stat.label || 'Metric')}</span>
         <span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(stat.value || '--')}</span></span>
       </div>
+      ${stat.sublabel ? `<div class="provider-mini-insight-note">${escapeHTML(compactInsightText(stat.sublabel, 48))}</div>` : ''}
     </article>`);
   });
 
-  insights.slice(0, 2).forEach((insight) => {
+  insights.forEach((insight) => {
+    const note = compactInsightText(insight.sublabel || insight.description || '', 72);
     items.push(`<article class="insight-card provider-mini-insight severity-${escapeHTML(insight.severity || 'info')}">
       <div class="insight-card-header">
         <span class="insight-card-title">${escapeHTML(insight.title || 'Insight')}</span>
         ${insight.metric ? `<span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(insight.metric)}</span></span>` : ''}
       </div>
+      ${note ? `<div class="provider-mini-insight-note">${escapeHTML(note)}</div>` : ''}
     </article>`);
   });
 
-  if (items.length === 0) {
-    return '<p class="insight-text">No insights available yet.</p>';
-  }
+  if (items.length === 0) return '';
   return items.join('');
 }
 
@@ -3594,6 +3868,9 @@ function buildProviderCardDatasets(provider, rows, range) {
   if (provider === 'antigravity') {
     return buildDynamicDatasetsForRows(rows, range, {}, antigravityChartColorMap, antigravityChartColorFallback, 'antigravity');
   }
+  if (provider === 'minimax') {
+    return buildDynamicDatasetsForRows(rows, range, minimaxDisplayNames, minimaxChartColorMap, minimaxChartColorFallback, 'minimax');
+  }
   return [];
 }
 
@@ -3644,7 +3921,10 @@ function renderAllProvidersView() {
       </header>
       <div class="provider-card-body">
         <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas)}</div>
-        <div class="provider-insights">${renderProviderInsightsHTML(entry.insights)}</div>
+        ${(() => {
+          const insightsHTML = renderProviderInsightsHTML(entry.provider, entry.insights);
+          return insightsHTML ? `<div class="provider-insights">${insightsHTML}</div>` : '';
+        })()}
         ${chartSection}
       </div>
     </section>`;
@@ -3724,6 +4004,9 @@ function updateBothCharts(data, range = '6h') {
   }
   if (activeProviders.has('antigravity') && Array.isArray(data.antigravity) && data.antigravity.length > 0) {
     slots.push({ id: 'antigravity', label: 'Antigravity', provider: 'antigravity', rows: data.antigravity });
+  }
+  if (activeProviders.has('minimax') && Array.isArray(data.minimax) && data.minimax.length > 0) {
+    slots.push({ id: 'minimax', label: 'MiniMax', provider: 'minimax', rows: data.minimax });
   }
   if (activeProviders.has('codex')) {
     if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
@@ -3836,6 +4119,8 @@ function updateBothCharts(data, range = '6h') {
       datasets = createDynamicDatasets(slot.rows, copilotDisplayNames, copilotChartColorMap, copilotChartColorFallback, 'copilot');
     } else if (slot.provider === 'antigravity') {
       datasets = createDynamicDatasets(slot.rows, {}, antigravityChartColorMap, antigravityChartColorFallback, 'antigravity');
+    } else if (slot.provider === 'minimax') {
+      datasets = createDynamicDatasets(slot.rows, minimaxDisplayNames, minimaxChartColorMap, minimaxChartColorFallback, 'minimax');
     }
 
     if (datasets.length === 0) return;
@@ -3981,7 +4266,7 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax']);
 
   if (loggingHistoryProviders.has(provider)) {
     // Convert range from ms to days (min 1, max 30)
@@ -4129,7 +4414,8 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax';
+  const deltaUsesPercent = usePercent && provider !== 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
 
   // Build dynamic header
@@ -4148,7 +4434,7 @@ function renderCyclesTable() {
         <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
         <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
         <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-        <th data-sort-key="totalDelta" role="button" tabindex="0">Total Δ${usePercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
+        <th data-sort-key="totalDelta" role="button" tabindex="0">Total Δ${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
   }
 
   quotaNames.forEach(qn => {
@@ -4265,7 +4551,7 @@ function renderCyclesTable() {
       const end = row.cycleEnd || null;
       const startDate = start ? new Date(start) : null;
       const endDate = end ? new Date(end) : null;
-      const suffix = usePercent ? '%' : '';
+      const suffix = deltaUsesPercent ? '%' : '';
 
       let html;
       if (isLoggingHistory) {
@@ -4311,7 +4597,16 @@ function renderCyclesTable() {
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
-          if (usePercent) {
+          if (provider === 'minimax') {
+            const cq = getCrossQuotaValue(row, qn);
+            const used = Number(cq?.value || 0);
+            const limit = Number(cq?.limit || 0);
+            const percentText = `${pct.toFixed(1)}%`;
+            const deltaText = delta == null ? '' : ` <span class="delta">(${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%)</span>`;
+            cellVal = limit > 0
+              ? `${formatNumber(used)} / ${formatNumber(limit)} <span class="delta">(${percentText})</span>${deltaText}`
+              : `${formatNumber(used)} <span class="delta">(${percentText})</span>${deltaText}`;
+          } else if (usePercent) {
             cellVal = fmtPctWithDelta(pct, delta);
           } else {
             const cq = getCrossQuotaValue(row, qn);
@@ -4364,6 +4659,7 @@ async function fetchSessions() {
       if (data.synthetic) merged = merged.concat(data.synthetic.map(s => ({ ...s, _provider: 'Syn' })));
       if (data.zai) merged = merged.concat(data.zai.map(s => ({ ...s, _provider: 'Z.ai' })));
       if (data.anthropic) merged = merged.concat(data.anthropic.map(s => ({ ...s, _provider: 'Anth' })));
+      if (data.minimax) merged = merged.concat(data.minimax.map(s => ({ ...s, _provider: 'MiniMax' })));
       if (data.codex) merged = merged.concat(data.codex.map(s => ({ ...s, _provider: 'Codex' })));
       merged.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
       State.allSessionsData = merged;
@@ -4410,6 +4706,7 @@ function renderSessionsTable() {
   const isZai = provider === 'zai';
   const isAnthropic = provider === 'anthropic';
   const isCodex = provider === 'codex';
+  const isMiniMax = provider === 'minimax';
   const isAntigravity = provider === 'antigravity';
   const colSpan = isBoth ? 6 : isZai ? 5 : isCodex ? 6 : isAntigravity ? 7 : 7;
 
@@ -4625,6 +4922,60 @@ function renderSessionsTable() {
           </div>
         </td>
       </tr>`;
+      return mainRow + detailRow;
+    }).join('');
+  } else if (isMiniMax) {
+    tbody.innerHTML = pageData.map(session => {
+      const c = session._computed;
+      const isExpanded = State.expandedSessionId === session.id;
+      const startUsed = Number(session.startSubRequests || 0);
+      const peakUsed = Number(session.maxSubRequests || 0);
+      const sessionDelta = Math.max(0, peakUsed - startUsed);
+      const hourlyRate = c.durationHours > 0 ? sessionDelta / c.durationHours : 0;
+
+      const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
+        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.durationStr}</td>
+        <td>${formatNumber(peakUsed)}</td>
+        <td>${formatNumber(sessionDelta)}</td>
+        <td>${session.snapshotCount || 0}</td>
+      </tr>`;
+
+      const detailRow = `<tr class="session-detail-row ${isExpanded ? 'expanded' : ''}" data-detail-for="${session.id}">
+        <td colspan="${colSpan}">
+          <div class="session-detail-content">
+            <div class="session-detail-grid">
+              <div class="detail-item">
+                <span class="detail-label">Quota Pool</span>
+                <span class="detail-value">MiniMax Coding Plan</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Start Used</span>
+                <span class="detail-value">${formatNumber(startUsed)}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Peak Used</span>
+                <span class="detail-value">${formatNumber(peakUsed)}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Session Delta</span>
+                <span class="detail-value">${formatNumber(sessionDelta)}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Burn Rate</span>
+                <span class="detail-value">${hourlyRate > 0 ? `${formatNumber(hourlyRate)}/hr` : '0/hr'}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+
       return mainRow + detailRow;
     }).join('');
   } else if (provider === 'antigravity') {
@@ -5119,7 +5470,8 @@ function getOverviewCategories() {
       ...(renewalCategories.zai || []),
       ...(renewalCategories.copilot || []),
       ...renewalCategories.codex || [],
-      ...(renewalCategories.antigravity || [])
+      ...(renewalCategories.antigravity || []),
+      ...(renewalCategories.minimax || [])
     ];
   }
   if (provider === 'codex') {
@@ -5251,7 +5603,8 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax';
+  const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
 
   // Build dynamic header
   let headerHtml = `
@@ -5260,7 +5613,7 @@ function renderOverviewTable() {
       <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
       <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
       <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-      <th data-sort-key="totalDelta" role="button" tabindex="0">Total Delta${usePercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
+      <th data-sort-key="totalDelta" role="button" tabindex="0">Total Delta${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
 
   quotaNames.forEach(qn => {
     const isPrimary = qn === State.overviewGroupBy;
@@ -5341,7 +5694,7 @@ function renderOverviewTable() {
       const durationMs = (startDate && endDate) ? endDate - startDate : 0;
       const durationHrs = durationMs / 3600000;
       const duration = durationMs > 0 ? formatDuration(Math.floor(durationMs / 1000)) : '--';
-      const suffix = usePercent ? '%' : '';
+      const suffix = deltaUsesPercent ? '%' : '';
 
       // For active cycles (no end, or cycleId is -1 or 'active'), show "Active" badge
       const isActive = !end || row.cycleId === -1 || row.cycleId === 'active';
@@ -5361,7 +5714,16 @@ function renderOverviewTable() {
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
-          if (usePercent) {
+          if (overviewProv === 'minimax') {
+            const cq = getCrossQuotaValue(row, qn);
+            const used = Number(cq?.value || 0);
+            const limit = Number(cq?.limit || 0);
+            const percentText = `${pct.toFixed(1)}%`;
+            const deltaText = delta == null ? '' : ` <span class="delta">(${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%)</span>`;
+            cellVal = limit > 0
+              ? `${formatNumber(used)} / ${formatNumber(limit)} <span class="delta">(${percentText})</span>${deltaText}`
+              : `${formatNumber(used)} <span class="delta">(${percentText})</span>${deltaText}`;
+          } else if (usePercent) {
             cellVal = fmtPctWithDelta(pct, delta);
           } else {
             const cq = getCrossQuotaValue(row, qn);
@@ -5696,6 +6058,7 @@ function initSettingsPage() {
   setupSettingsTabs();
   loadSettings();
   setupSettingsSave();
+  setupProviderReload();
   setupSMTPTest();
   setupPushNotifications();
   setupSettingsPassword();
@@ -5790,12 +6153,8 @@ async function loadSettings() {
       }
     }
 
-    // Provider visibility
-    if (data.provider_visibility) {
-      populateProviderToggles(data.provider_visibility);
-    } else {
-      populateProviderToggles({});
-    }
+    // Provider visibility + dynamic provider status
+    populateProviderToggles(data.provider_visibility || {});
   } catch (e) {
     // Settings load failed silently
   }
@@ -5826,64 +6185,145 @@ function populateTimezoneSelect() {
 async function populateProviderToggles(visibility) {
   const container = document.getElementById('provider-toggles');
   if (!container) return;
-
-  // Base providers (non-Codex)
-  const providers = [
-    { key: 'anthropic', name: 'Anthropic', desc: 'Claude Code usage tracking' },
-    { key: 'synthetic', name: 'Synthetic', desc: 'Synthetic API quota monitoring' },
-    { key: 'zai', name: 'Z.ai', desc: 'Z.ai API usage tracking' },
-  ];
+  const baseVisibility = visibility && typeof visibility === 'object' ? visibility : {};
+  if (!State.providerVisibility || typeof State.providerVisibility !== 'object') {
+    State.providerVisibility = {};
+  }
+  Object.assign(State.providerVisibility, baseVisibility);
 
   container.innerHTML = '';
 
-  // Render base providers
-  providers.forEach(p => {
-    const vis = visibility[p.key] || { dashboard: true, polling: true };
-    container.appendChild(createProviderToggleRow(p.key, p.name, p.desc, vis));
-  });
+  let providers = [];
+  try {
+    const res = await authFetch(`${API_BASE}/api/providers/status`);
+    if (res.ok) {
+      const data = await res.json();
+      providers = Array.isArray(data.providers) ? data.providers : [];
+    }
+  } catch (e) {
+    // Keep fallback list below.
+  }
 
-  // Fetch Codex accounts and render per-account toggles
+  if (providers.length === 0) {
+    providers = [
+      { key: 'anthropic', name: 'Anthropic', description: 'Claude Code usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'synthetic', name: 'Synthetic', description: 'Synthetic API quota monitoring', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'zai', name: 'Z.ai', description: 'Z.ai API usage tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'copilot', name: 'Copilot', description: 'GitHub Copilot premium request tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'codex', name: 'Codex', description: 'OpenAI Codex usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'antigravity', name: 'Antigravity', description: 'Antigravity model usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'minimax', name: 'MiniMax', description: 'MiniMax Coding Plan usage tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+    ];
+  }
+
+  const providerByKey = new Map(providers.map(p => [p.key, p]));
+  const codexStatus = providerByKey.get('codex') || null;
+
+  providers
+    .filter(p => p.key !== 'codex')
+    .forEach((p) => {
+      const vis = baseVisibility[p.key] || {
+        polling: p.pollingEnabled !== false,
+        dashboard: p.dashboardVisible !== false
+      };
+      container.appendChild(createProviderToggleRow({
+        key: p.key,
+        name: p.name,
+        desc: p.description,
+        vis,
+        configured: p.configured !== false,
+        autoDetectable: !!p.autoDetectable,
+        isPolling: !!p.isPolling
+      }));
+    });
+
+  // Codex rows: per-account when multiple accounts exist, otherwise single row.
+  let renderedCodex = false;
   try {
     const res = await authFetch(`${API_BASE}/api/codex/profiles`);
     if (res.ok) {
       const data = await res.json();
-      const profiles = data.profiles || [];
-
+      const profiles = Array.isArray(data.profiles) ? data.profiles : [];
       if (profiles.length > 1) {
-        // Multiple accounts: show per-account toggles
-        profiles.forEach(profile => {
+        profiles.forEach((profile) => {
           const key = `codex:${profile.id}`;
-          const vis = visibility[key] || { dashboard: true, polling: true };
-          container.appendChild(createProviderToggleRow(
+          const vis = baseVisibility[key] || baseVisibility.codex || {
+            polling: codexStatus ? codexStatus.pollingEnabled !== false : true,
+            dashboard: codexStatus ? codexStatus.dashboardVisible !== false : true
+          };
+          container.appendChild(createProviderToggleRow({
             key,
-            `Codex - ${profile.name}`,
-            `ChatGPT account: ${profile.name}`,
-            vis
-          ));
+            name: `Codex - ${profile.name}`,
+            desc: `ChatGPT account: ${profile.name}`,
+            vis,
+            configured: codexStatus ? codexStatus.configured !== false : true,
+            autoDetectable: codexStatus ? !!codexStatus.autoDetectable : true,
+            isPolling: codexStatus ? !!codexStatus.isPolling : false
+          }));
         });
-      } else {
-        // Single or no accounts: show single Codex toggle
-        const vis = visibility['codex'] || { dashboard: true, polling: true };
-        container.appendChild(createProviderToggleRow('codex', 'Codex', 'Codex API usage tracking', vis));
+        renderedCodex = true;
       }
-    } else {
-      // Fallback: show single Codex toggle
-      const vis = visibility['codex'] || { dashboard: true, polling: true };
-      container.appendChild(createProviderToggleRow('codex', 'Codex', 'Codex API usage tracking', vis));
     }
   } catch (e) {
-    // Fallback: show single Codex toggle
-    const vis = visibility['codex'] || { dashboard: true, polling: true };
-    container.appendChild(createProviderToggleRow('codex', 'Codex', 'Codex API usage tracking', vis));
+    // fallback below
+  }
+
+  if (!renderedCodex) {
+    const fallbackCodex = codexStatus || {
+      key: 'codex',
+      name: 'Codex',
+      description: 'OpenAI Codex usage tracking',
+      configured: false,
+      autoDetectable: true,
+      pollingEnabled: true,
+      dashboardVisible: true,
+      isPolling: false
+    };
+    const vis = baseVisibility.codex || {
+      polling: fallbackCodex.pollingEnabled !== false,
+      dashboard: fallbackCodex.dashboardVisible !== false
+    };
+    container.appendChild(createProviderToggleRow({
+      key: 'codex',
+      name: fallbackCodex.name || 'Codex',
+      desc: fallbackCodex.description || 'OpenAI Codex usage tracking',
+      vis,
+      configured: fallbackCodex.configured !== false,
+      autoDetectable: !!fallbackCodex.autoDetectable,
+      isPolling: !!fallbackCodex.isPolling
+    }));
   }
 }
 
-function createProviderToggleRow(key, name, desc, vis) {
+function providerStatusBadge(configured, autoDetectable, isPolling) {
+  if (!configured) {
+    return autoDetectable
+      ? '<span class="badge">Auto-detect</span>'
+      : '<span class="badge">Not configured</span>';
+  }
+  if (isPolling) {
+    return '<span class="badge">Polling</span>';
+  }
+  return '<span class="badge">Idle</span>';
+}
+
+function updateProviderVisibilityState(provider, role, enabled) {
+  if (!State.providerVisibility || typeof State.providerVisibility !== 'object') {
+    State.providerVisibility = {};
+  }
+  if (!State.providerVisibility[provider] || typeof State.providerVisibility[provider] !== 'object') {
+    State.providerVisibility[provider] = {};
+  }
+  State.providerVisibility[provider][role] = enabled;
+}
+
+function createProviderToggleRow({ key, name, desc, vis, configured, autoDetectable, isPolling }) {
   const row = document.createElement('div');
   row.className = 'settings-toggle-row settings-toggle-row-dual';
+  const badge = providerStatusBadge(configured, autoDetectable, isPolling);
   row.innerHTML = `
     <div class="settings-toggle-info">
-      <div class="settings-toggle-label">${name}</div>
+      <div class="settings-toggle-label">${name} ${badge}</div>
       <div class="settings-toggle-sublabel">${desc}</div>
     </div>
     <div class="settings-toggle-group">
@@ -5905,7 +6345,107 @@ function createProviderToggleRow(key, name, desc, vis) {
       </div>
     </div>
   `;
+
+  row.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener('change', async (event) => {
+      const input = event.target;
+      const provider = input.dataset.provider;
+      const role = input.dataset.role;
+      const enabled = input.checked;
+      const feedback = document.getElementById('settings-feedback');
+
+      input.disabled = true;
+      try {
+        const payload = { provider };
+        payload[role] = enabled;
+        const res = await authFetch(`${API_BASE}/api/providers/toggle`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || data.success === false) {
+          input.checked = !enabled;
+          const msg = data && data.message ? data.message : 'Failed to update provider.';
+          showSettingsFeedback(feedback, `${name}: ${msg}`, 'error');
+          return;
+        }
+
+        updateProviderVisibilityState(provider, role, enabled);
+        if (provider.startsWith('codex:')) {
+          // Keep global codex visibility in sync when account toggles are used.
+          updateProviderVisibilityState('codex', role, enabled);
+        }
+        showSettingsFeedback(feedback, `${name} ${role} ${enabled ? 'enabled' : 'disabled'}.`, 'success');
+
+        if (getCurrentProvider() === 'both' && role === 'polling') {
+          renderAllProvidersView();
+        }
+      } catch (e) {
+        input.checked = !enabled;
+        showSettingsFeedback(document.getElementById('settings-feedback'), `${name}: Network error.`, 'error');
+      } finally {
+        input.disabled = false;
+      }
+    });
+  });
+
   return row;
+}
+
+function setupProviderReload() {
+  const section = document.getElementById('panel-providers');
+  const fields = document.getElementById('provider-toggles');
+  if (!section || !fields) return;
+  if (document.getElementById('providers-reload-btn')) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'settings-actions';
+  wrap.innerHTML = `
+    <button class="settings-test-btn" id="providers-reload-btn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg>
+      Reload Providers From .env
+    </button>
+    <span class="settings-test-result" id="providers-reload-result"></span>
+  `;
+  section.querySelector('.settings-section')?.appendChild(wrap);
+
+  const btn = document.getElementById('providers-reload-btn');
+  const result = document.getElementById('providers-reload-result');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Reloading...';
+    if (result) {
+      result.textContent = '';
+      result.className = 'settings-test-result';
+    }
+    try {
+      const res = await authFetch(`${API_BASE}/api/providers/reload`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        if (result) {
+          result.textContent = (data && data.error) || 'Reload failed.';
+          result.className = 'settings-test-result error';
+        }
+      } else {
+        await populateProviderToggles(State.providerVisibility || {});
+        if (result) {
+          result.textContent = 'Provider configuration reloaded.';
+          result.className = 'settings-test-result success';
+        }
+      }
+    } catch (e) {
+      if (result) {
+        result.textContent = 'Network error.';
+        result.className = 'settings-test-result error';
+      }
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg> Reload Providers From .env';
+    }
+  });
 }
 
 function gatherSettings() {
@@ -6451,13 +6991,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       fetchHistory('6h'),
     ]);
 
-    // Antigravity first: preload overview + polling history immediately.
+    // Preload providers whose history tables should appear immediately.
     const activeProvider = getCurrentProvider();
-    if (activeProvider === 'antigravity' && shouldShowHistoryTables(activeProvider)) {
+    const eagerHistoryProviders = new Set(['antigravity', 'minimax']);
+    if (eagerHistoryProviders.has(activeProvider) && shouldShowHistoryTables(activeProvider)) {
       _lazyLoaded.add('.cycle-overview-section');
       _lazyLoaded.add('.cycles-section');
+      _lazyLoaded.add('.sessions-section');
       fetchCycleOverview();
       fetchCycles();
+      fetchSessions();
     }
 
     // Below-fold: lazy-load when sections scroll into view
