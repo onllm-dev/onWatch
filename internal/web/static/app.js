@@ -445,7 +445,8 @@ const statusConfig = {
 const quotaNames = {
   subscription: 'Subscription Quota',
   search: 'Search (Hourly)',
-  toolCalls: 'Tool Call Discounts'
+  toolCalls: 'Tool Call Discounts',
+  coding_plan: 'MiniMax Coding Plan'
 };
 
 // Anthropic display names (mirrors backend anthropicDisplayNames)
@@ -656,7 +657,7 @@ const renewalCategories = {
     { label: 'Gemini Flash', groupBy: 'antigravity_gemini_flash' }
   ],
   minimax: [
-    { label: 'Models', groupBy: '' }
+    { label: 'Coding Plan', groupBy: 'coding_plan' }
   ]
 };
 
@@ -674,6 +675,7 @@ const overviewQuotaDisplayNames = {
   premium_interactions: 'Premium',
   chat: 'Chat',
   completions: 'Completions',
+  coding_plan: 'MiniMax Coding Plan',
   antigravity_claude_gpt: 'Claude + GPT Quota',
   antigravity_gemini_pro: 'Gemini Pro Quota',
   antigravity_gemini_flash: 'Gemini Flash Quota'
@@ -683,6 +685,9 @@ const overviewQuotaDisplayNames = {
 const providerQuotaDisplayOverrides = {
   codex: {
     five_hour: '5-Hour Limit'
+  },
+  minimax: {
+    coding_plan: 'MiniMax Coding Plan'
   }
 };
 
@@ -2727,8 +2732,11 @@ async function fetchDeepInsights() {
       return;
     } else {
       // Single provider mode
-      const allStats = data.stats || [];
+      let allStats = data.stats || [];
       let allInsights = data.insights || [];
+
+      allStats = getSingleViewInsightStats(requestProvider, allStats);
+      allInsights = getSingleViewInsightCards(requestProvider, allInsights);
 
       // Filter out hidden insights
       const expandedHidden = expandCorrelatedKeys(State.hiddenInsights);
@@ -3527,7 +3535,9 @@ function normalizeBothQuotas(provider, payload) {
   return rawQuotas.map((quota) => {
     const percent = quota.cardPercent != null
       ? quota.cardPercent
-      : (quota.utilization != null ? quota.utilization : (quota.percent ?? 0));
+      : (quota.usagePercent != null
+        ? quota.usagePercent
+        : (quota.utilization != null ? quota.utilization : (quota.percent ?? 0)));
     return {
       ...quota,
       cardPercent: percent,
@@ -3648,6 +3658,9 @@ function renderProviderKPIHTML(quotas) {
     const displayName = quota.displayName || quota.name || 'Quota';
     const label = quota.cardLabel || 'Utilization';
     const subtitle = quota.subtitle || minimaxSharedSubtitle(quota.sharedModels);
+    const usageFraction = Number.isFinite(Number(quota.used)) && Number.isFinite(Number(quota.total)) && Number(quota.total) > 0
+      ? `${formatNumber(quota.used)} / ${formatNumber(quota.total)}`
+      : label;
     const icon = anthropicQuotaIcons[quota.name]
       || quotaIcons[quota.name]
       || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
@@ -3667,7 +3680,7 @@ function renderProviderKPIHTML(quotas) {
       </header>
       <div class="progress-stats">
         <span class="usage-percent">${percent.toFixed(1)}%</span>
-        <span class="usage-fraction">${escapeHTML(label)}</span>
+        <span class="usage-fraction">${escapeHTML(usageFraction)}</span>
       </div>
       <div class="progress-wrapper">
         <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(percent)}" aria-valuemin="0" aria-valuemax="100">
@@ -3685,32 +3698,92 @@ function renderProviderKPIHTML(quotas) {
   }).join('');
 }
 
-function renderProviderInsightsHTML(payload) {
-  const stats = Array.isArray(payload?.stats) ? payload.stats : [];
-  const insights = Array.isArray(payload?.insights) ? payload.insights : [];
+function sortItemsByPreference(items, preferredKeys, valueSelector) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const order = new Map(preferredKeys.map((value, index) => [value, index]));
+  return [...items].sort((a, b) => {
+    const aValue = valueSelector(a);
+    const bValue = valueSelector(b);
+    const aRank = order.has(aValue) ? order.get(aValue) : Number.MAX_SAFE_INTEGER;
+    const bRank = order.has(bValue) ? order.get(bValue) : Number.MAX_SAFE_INTEGER;
+    if (aRank !== bRank) return aRank - bRank;
+    return 0;
+  });
+}
+
+function compactInsightText(text, maxLength = 84) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  const sentenceMatch = normalized.match(/^(.+?[.!?])(?:\s|$)/);
+  const candidate = sentenceMatch && sentenceMatch[1] ? sentenceMatch[1].trim() : normalized;
+  if (candidate.length <= maxLength) return candidate;
+  return `${candidate.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function getSingleViewInsightStats(provider, stats) {
+  if (provider !== 'minimax') return stats;
+  return sortItemsByPreference(
+    stats.filter((stat) => stat && stat.label !== 'Current Status'),
+    ['Current Usage', 'Burn Rate', 'Resets In'],
+    (stat) => stat.label
+  );
+}
+
+function getSingleViewInsightCards(provider, insights) {
+  if (provider !== 'minimax') return insights;
+  const filtered = insights.filter((insight) => !['shared_status', 'burn_rate'].includes(insight.key));
+  return sortItemsByPreference(
+    filtered.length > 0 ? filtered : insights,
+    ['trend', 'efficiency', 'burn_rate', 'shared_status'],
+    (insight) => insight.key
+  );
+}
+
+function getCompactProviderStats(provider, stats) {
+  const preferred = provider === 'minimax'
+    ? ['Burn Rate', 'Current Usage', 'Resets In', 'Current Status']
+    : [];
+  const ordered = preferred.length > 0
+    ? sortItemsByPreference(stats, preferred, (stat) => stat.label)
+    : stats;
+  return ordered.slice(0, 2);
+}
+
+function getCompactProviderInsights(provider, insights) {
+  const ordered = provider === 'minimax'
+    ? sortItemsByPreference(insights, ['efficiency', 'trend', 'burn_rate', 'shared_status'], (insight) => insight.key)
+    : insights;
+  const urgent = ordered.filter((insight) => ['warning', 'negative'].includes(insight.severity));
+  return urgent.slice(0, 1);
+}
+
+function renderProviderInsightsHTML(provider, payload) {
+  const stats = getCompactProviderStats(provider, Array.isArray(payload?.stats) ? payload.stats : []);
+  const insights = getCompactProviderInsights(provider, Array.isArray(payload?.insights) ? payload.insights : []);
   const items = [];
 
-  stats.slice(0, 3).forEach((stat) => {
+  stats.forEach((stat) => {
     items.push(`<article class="insight-card provider-mini-insight severity-info">
       <div class="insight-card-header">
         <span class="insight-card-title">${escapeHTML(stat.label || 'Metric')}</span>
         <span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(stat.value || '--')}</span></span>
       </div>
+      ${stat.sublabel ? `<div class="provider-mini-insight-note">${escapeHTML(compactInsightText(stat.sublabel, 48))}</div>` : ''}
     </article>`);
   });
 
-  insights.slice(0, 2).forEach((insight) => {
+  insights.forEach((insight) => {
+    const note = compactInsightText(insight.sublabel || insight.description || '', 72);
     items.push(`<article class="insight-card provider-mini-insight severity-${escapeHTML(insight.severity || 'info')}">
       <div class="insight-card-header">
         <span class="insight-card-title">${escapeHTML(insight.title || 'Insight')}</span>
         ${insight.metric ? `<span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(insight.metric)}</span></span>` : ''}
       </div>
+      ${note ? `<div class="provider-mini-insight-note">${escapeHTML(note)}</div>` : ''}
     </article>`);
   });
 
-  if (items.length === 0) {
-    return '<p class="insight-text">No insights available yet.</p>';
-  }
+  if (items.length === 0) return '';
   return items.join('');
 }
 
@@ -3848,7 +3921,10 @@ function renderAllProvidersView() {
       </header>
       <div class="provider-card-body">
         <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas)}</div>
-        <div class="provider-insights">${renderProviderInsightsHTML(entry.insights)}</div>
+        ${(() => {
+          const insightsHTML = renderProviderInsightsHTML(entry.provider, entry.insights);
+          return insightsHTML ? `<div class="provider-insights">${insightsHTML}</div>` : '';
+        })()}
         ${chartSection}
       </div>
     </section>`;
@@ -4190,7 +4266,7 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax']);
 
   if (loggingHistoryProviders.has(provider)) {
     // Convert range from ms to days (min 1, max 30)
@@ -4339,6 +4415,7 @@ function renderCyclesTable() {
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
   const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax';
+  const deltaUsesPercent = usePercent && provider !== 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
 
   // Build dynamic header
@@ -4357,7 +4434,7 @@ function renderCyclesTable() {
         <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
         <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
         <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-        <th data-sort-key="totalDelta" role="button" tabindex="0">Total Δ${usePercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
+        <th data-sort-key="totalDelta" role="button" tabindex="0">Total Δ${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
   }
 
   quotaNames.forEach(qn => {
@@ -4474,7 +4551,7 @@ function renderCyclesTable() {
       const end = row.cycleEnd || null;
       const startDate = start ? new Date(start) : null;
       const endDate = end ? new Date(end) : null;
-      const suffix = usePercent ? '%' : '';
+      const suffix = deltaUsesPercent ? '%' : '';
 
       let html;
       if (isLoggingHistory) {
@@ -4520,7 +4597,16 @@ function renderCyclesTable() {
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
-          if (usePercent) {
+          if (provider === 'minimax') {
+            const cq = getCrossQuotaValue(row, qn);
+            const used = Number(cq?.value || 0);
+            const limit = Number(cq?.limit || 0);
+            const percentText = `${pct.toFixed(1)}%`;
+            const deltaText = delta == null ? '' : ` <span class="delta">(${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%)</span>`;
+            cellVal = limit > 0
+              ? `${formatNumber(used)} / ${formatNumber(limit)} <span class="delta">(${percentText})</span>${deltaText}`
+              : `${formatNumber(used)} <span class="delta">(${percentText})</span>${deltaText}`;
+          } else if (usePercent) {
             cellVal = fmtPctWithDelta(pct, delta);
           } else {
             const cq = getCrossQuotaValue(row, qn);
@@ -4573,6 +4659,7 @@ async function fetchSessions() {
       if (data.synthetic) merged = merged.concat(data.synthetic.map(s => ({ ...s, _provider: 'Syn' })));
       if (data.zai) merged = merged.concat(data.zai.map(s => ({ ...s, _provider: 'Z.ai' })));
       if (data.anthropic) merged = merged.concat(data.anthropic.map(s => ({ ...s, _provider: 'Anth' })));
+      if (data.minimax) merged = merged.concat(data.minimax.map(s => ({ ...s, _provider: 'MiniMax' })));
       if (data.codex) merged = merged.concat(data.codex.map(s => ({ ...s, _provider: 'Codex' })));
       merged.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
       State.allSessionsData = merged;
@@ -4619,6 +4706,7 @@ function renderSessionsTable() {
   const isZai = provider === 'zai';
   const isAnthropic = provider === 'anthropic';
   const isCodex = provider === 'codex';
+  const isMiniMax = provider === 'minimax';
   const isAntigravity = provider === 'antigravity';
   const colSpan = isBoth ? 6 : isZai ? 5 : isCodex ? 6 : isAntigravity ? 7 : 7;
 
@@ -4834,6 +4922,60 @@ function renderSessionsTable() {
           </div>
         </td>
       </tr>`;
+      return mainRow + detailRow;
+    }).join('');
+  } else if (isMiniMax) {
+    tbody.innerHTML = pageData.map(session => {
+      const c = session._computed;
+      const isExpanded = State.expandedSessionId === session.id;
+      const startUsed = Number(session.startSubRequests || 0);
+      const peakUsed = Number(session.maxSubRequests || 0);
+      const sessionDelta = Math.max(0, peakUsed - startUsed);
+      const hourlyRate = c.durationHours > 0 ? sessionDelta / c.durationHours : 0;
+
+      const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
+        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.durationStr}</td>
+        <td>${formatNumber(peakUsed)}</td>
+        <td>${formatNumber(sessionDelta)}</td>
+        <td>${session.snapshotCount || 0}</td>
+      </tr>`;
+
+      const detailRow = `<tr class="session-detail-row ${isExpanded ? 'expanded' : ''}" data-detail-for="${session.id}">
+        <td colspan="${colSpan}">
+          <div class="session-detail-content">
+            <div class="session-detail-grid">
+              <div class="detail-item">
+                <span class="detail-label">Quota Pool</span>
+                <span class="detail-value">MiniMax Coding Plan</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Start Used</span>
+                <span class="detail-value">${formatNumber(startUsed)}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Peak Used</span>
+                <span class="detail-value">${formatNumber(peakUsed)}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Session Delta</span>
+                <span class="detail-value">${formatNumber(sessionDelta)}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Burn Rate</span>
+                <span class="detail-value">${hourlyRate > 0 ? `${formatNumber(hourlyRate)}/hr` : '0/hr'}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+
       return mainRow + detailRow;
     }).join('');
   } else if (provider === 'antigravity') {
@@ -5462,6 +5604,7 @@ function renderOverviewTable() {
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
   const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax';
+  const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
 
   // Build dynamic header
   let headerHtml = `
@@ -5470,7 +5613,7 @@ function renderOverviewTable() {
       <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
       <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
       <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-      <th data-sort-key="totalDelta" role="button" tabindex="0">Total Delta${usePercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
+      <th data-sort-key="totalDelta" role="button" tabindex="0">Total Delta${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
 
   quotaNames.forEach(qn => {
     const isPrimary = qn === State.overviewGroupBy;
@@ -5551,7 +5694,7 @@ function renderOverviewTable() {
       const durationMs = (startDate && endDate) ? endDate - startDate : 0;
       const durationHrs = durationMs / 3600000;
       const duration = durationMs > 0 ? formatDuration(Math.floor(durationMs / 1000)) : '--';
-      const suffix = usePercent ? '%' : '';
+      const suffix = deltaUsesPercent ? '%' : '';
 
       // For active cycles (no end, or cycleId is -1 or 'active'), show "Active" badge
       const isActive = !end || row.cycleId === -1 || row.cycleId === 'active';
@@ -5571,7 +5714,16 @@ function renderOverviewTable() {
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
-          if (usePercent) {
+          if (overviewProv === 'minimax') {
+            const cq = getCrossQuotaValue(row, qn);
+            const used = Number(cq?.value || 0);
+            const limit = Number(cq?.limit || 0);
+            const percentText = `${pct.toFixed(1)}%`;
+            const deltaText = delta == null ? '' : ` <span class="delta">(${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%)</span>`;
+            cellVal = limit > 0
+              ? `${formatNumber(used)} / ${formatNumber(limit)} <span class="delta">(${percentText})</span>${deltaText}`
+              : `${formatNumber(used)} <span class="delta">(${percentText})</span>${deltaText}`;
+          } else if (usePercent) {
             cellVal = fmtPctWithDelta(pct, delta);
           } else {
             const cq = getCrossQuotaValue(row, qn);
@@ -6839,13 +6991,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       fetchHistory('6h'),
     ]);
 
-    // Antigravity first: preload overview + polling history immediately.
+    // Preload providers whose history tables should appear immediately.
     const activeProvider = getCurrentProvider();
-    if (activeProvider === 'antigravity' && shouldShowHistoryTables(activeProvider)) {
+    const eagerHistoryProviders = new Set(['antigravity', 'minimax']);
+    if (eagerHistoryProviders.has(activeProvider) && shouldShowHistoryTables(activeProvider)) {
       _lazyLoaded.add('.cycle-overview-section');
       _lazyLoaded.add('.cycles-section');
+      _lazyLoaded.add('.sessions-section');
       fetchCycleOverview();
       fetchCycles();
+      fetchSessions();
     }
 
     // Below-fold: lazy-load when sections scroll into view
