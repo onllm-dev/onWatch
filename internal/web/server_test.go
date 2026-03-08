@@ -238,7 +238,7 @@ func TestServer_EmbeddedAssets(t *testing.T) {
 		{"/static/app.js", "const codexChartColorMap ="},
 		{"/static/app.js", "if (data.codex) merged = merged.concat"},
 		{"/static/app.js", "...renewalCategories.codex || []"},
-		{"/static/app.js", "createProviderToggleRow('codex', 'Codex'"},
+			{"/static/app.js", "/api/providers/status"},
 		{"/static/app.js", "<option value=\"codex\""},
 	}
 
