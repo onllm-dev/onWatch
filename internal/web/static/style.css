@@ -843,6 +843,10 @@ button, input, select { font-family: inherit; }
   margin-bottom: 16px;
 }
 
+.quota-title-block {
+  min-width: 0;
+}
+
 .quota-title {
   display: flex;
   align-items: center;
@@ -852,6 +856,13 @@ button, input, select { font-family: inherit; }
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.quota-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .quota-icon {

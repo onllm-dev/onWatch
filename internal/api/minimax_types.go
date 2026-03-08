@@ -21,7 +21,7 @@ type MiniMaxModelRemain struct {
 	RemainsTime               int64       `json:"remains_time"`
 	CurrentIntervalTotalCount int         `json:"current_interval_total_count"`
 	// Despite the field name, this endpoint returns remaining requests.
-	CurrentIntervalUsageCount int         `json:"current_interval_usage_count"`
+	CurrentIntervalUsageCount int `json:"current_interval_usage_count"`
 }
 
 // MiniMaxRemainsResponse is the full API response.
@@ -49,6 +49,64 @@ type MiniMaxSnapshot struct {
 	CapturedAt time.Time
 	Models     []MiniMaxModelQuota
 	RawJSON    string
+}
+
+// IsSharedQuota returns true when all active models report the same quota pool.
+func (s *MiniMaxSnapshot) IsSharedQuota() bool {
+	if s == nil || len(s.Models) <= 1 {
+		return false
+	}
+	first := s.Models[0]
+	for _, m := range s.Models[1:] {
+		if m.Total != first.Total || m.Used != first.Used || m.Remain != first.Remain {
+			return false
+		}
+		switch {
+		case first.ResetAt == nil && m.ResetAt == nil:
+		case first.ResetAt == nil || m.ResetAt == nil:
+			return false
+		default:
+			if first.ResetAt.Sub(*m.ResetAt).Abs() > time.Second {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// ActiveModels returns sorted model names from the snapshot.
+func (s *MiniMaxSnapshot) ActiveModels() []string {
+	if s == nil || len(s.Models) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(s.Models))
+	for _, m := range s.Models {
+		if m.ModelName == "" {
+			continue
+		}
+		names = append(names, m.ModelName)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// MergedQuota returns a single logical quota for a shared MiniMax pool.
+func (s *MiniMaxSnapshot) MergedQuota() *MiniMaxModelQuota {
+	if s == nil || len(s.Models) == 0 {
+		return nil
+	}
+	first := s.Models[0]
+	return &MiniMaxModelQuota{
+		ModelName:      "MiniMax Coding Plan",
+		Total:          first.Total,
+		Remain:         first.Remain,
+		Used:           first.Used,
+		UsedPercent:    first.UsedPercent,
+		ResetAt:        first.ResetAt,
+		WindowStart:    first.WindowStart,
+		WindowEnd:      first.WindowEnd,
+		TimeUntilReset: first.TimeUntilReset,
+	}
 }
 
 // ActiveModelNames returns sorted model names present in the response.

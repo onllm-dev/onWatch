@@ -6044,8 +6044,9 @@ func (h *Handler) currentMiniMax(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) buildMiniMaxCurrent() map[string]interface{} {
 	now := time.Now().UTC()
 	response := map[string]interface{}{
-		"capturedAt": now.Format(time.RFC3339),
-		"quotas":     []interface{}{},
+		"capturedAt":  now.Format(time.RFC3339),
+		"quotas":      []interface{}{},
+		"sharedQuota": false,
 	}
 	if h.store == nil {
 		return response
@@ -6062,30 +6063,50 @@ func (h *Handler) buildMiniMaxCurrent() map[string]interface{} {
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 
-	quotas := make([]map[string]interface{}, 0, len(latest.Models))
-	for _, m := range latest.Models {
+	buildQuota := func(quota api.MiniMaxModelQuota, summaryModelName string) map[string]interface{} {
 		q := map[string]interface{}{
-			"name":         m.ModelName,
-			"displayName":  api.MiniMaxDisplayName(m.ModelName),
-			"total":        m.Total,
-			"used":         m.Used,
-			"remaining":    m.Remain,
-			"usagePercent": m.UsedPercent,
-			"status":       minimaxUsageStatus(m.UsedPercent),
+			"name":         quota.ModelName,
+			"displayName":  api.MiniMaxDisplayName(quota.ModelName),
+			"total":        quota.Total,
+			"used":         quota.Used,
+			"remaining":    quota.Remain,
+			"usagePercent": quota.UsedPercent,
+			"status":       minimaxUsageStatus(quota.UsedPercent),
 		}
-		if m.ResetAt != nil {
-			timeUntilReset := time.Until(*m.ResetAt)
-			q["resetAt"] = m.ResetAt.Format(time.RFC3339)
+		if quota.ResetAt != nil {
+			timeUntilReset := time.Until(*quota.ResetAt)
+			q["resetAt"] = quota.ResetAt.Format(time.RFC3339)
 			q["timeUntilReset"] = formatDuration(timeUntilReset)
 			q["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
-		if h.minimaxTracker != nil {
-			if summary, err := h.minimaxTracker.UsageSummary(m.ModelName); err == nil && summary != nil {
+		if h.minimaxTracker != nil && summaryModelName != "" {
+			if summary, err := h.minimaxTracker.UsageSummary(summaryModelName); err == nil && summary != nil {
 				q["currentRate"] = summary.CurrentRate
 				q["projectedUsage"] = summary.ProjectedUsage
 			}
 		}
-		quotas = append(quotas, q)
+		return q
+	}
+
+	if latest.IsSharedQuota() {
+		merged := latest.MergedQuota()
+		if merged != nil {
+			sourceModel := ""
+			if len(latest.Models) > 0 {
+				sourceModel = latest.Models[0].ModelName
+			}
+			q := buildQuota(*merged, sourceModel)
+			q["displayName"] = "MiniMax Coding Plan"
+			q["sharedModels"] = latest.ActiveModels()
+			response["quotas"] = []map[string]interface{}{q}
+			response["sharedQuota"] = true
+			return response
+		}
+	}
+
+	quotas := make([]map[string]interface{}, 0, len(latest.Models))
+	for _, m := range latest.Models {
+		quotas = append(quotas, buildQuota(m, m.ModelName))
 	}
 
 	sort.Slice(quotas, func(i, j int) bool {
@@ -6095,6 +6116,17 @@ func (h *Handler) buildMiniMaxCurrent() map[string]interface{} {
 	})
 	response["quotas"] = quotas
 	return response
+}
+
+func minimaxSharedModelSummary(models []string) string {
+	if len(models) == 0 {
+		return ""
+	}
+	short := make([]string, 0, len(models))
+	for _, model := range models {
+		short = append(short, strings.TrimPrefix(model, "MiniMax-"))
+	}
+	return strings.Join(short, ", ")
 }
 
 func minimaxUsageStatus(usagePercent float64) string {
@@ -6107,6 +6139,30 @@ func minimaxUsageStatus(usagePercent float64) string {
 		return "warning"
 	default:
 		return "healthy"
+	}
+}
+
+func minimaxInsightSeverity(usagePercent float64) string {
+	switch minimaxUsageStatus(usagePercent) {
+	case "critical":
+		return "critical"
+	case "danger", "warning":
+		return "warning"
+	default:
+		return "positive"
+	}
+}
+
+func minimaxStatusLabel(usagePercent float64) string {
+	switch minimaxUsageStatus(usagePercent) {
+	case "critical":
+		return "Critical"
+	case "danger":
+		return "High"
+	case "warning":
+		return "Warning"
+	default:
+		return "Healthy"
 	}
 }
 
@@ -6141,8 +6197,14 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 		entry := map[string]interface{}{
 			"capturedAt": snap.CapturedAt.Format(time.RFC3339),
 		}
-		for _, model := range snap.Models {
-			entry[model.ModelName] = model.UsedPercent
+		if snap.IsSharedQuota() {
+			if merged := snap.MergedQuota(); merged != nil {
+				entry[merged.ModelName] = merged.UsedPercent
+			}
+		} else {
+			for _, model := range snap.Models {
+				entry[model.ModelName] = model.UsedPercent
+			}
 		}
 		response = append(response, entry)
 	}
@@ -6244,6 +6306,18 @@ func (h *Handler) buildMiniMaxSummaryMap() map[string]interface{} {
 	if err != nil || latest == nil {
 		return response
 	}
+	if latest.IsSharedQuota() {
+		summary, err := h.minimaxTracker.UsageSummary(latest.Models[0].ModelName)
+		if err != nil || summary == nil {
+			return response
+		}
+		item := buildMiniMaxSummaryResponse(summary)
+		item["modelName"] = "MiniMax Coding Plan"
+		item["displayName"] = "MiniMax Coding Plan"
+		item["sharedModels"] = latest.ActiveModels()
+		response["coding_plan"] = item
+		return response
+	}
 	for _, model := range latest.Models {
 		if summary, err := h.minimaxTracker.UsageSummary(model.ModelName); err == nil && summary != nil {
 			response[model.ModelName] = buildMiniMaxSummaryResponse(summary)
@@ -6294,6 +6368,53 @@ func (h *Handler) buildMiniMaxInsights(hidden map[string]bool, rangeDur time.Dur
 			Type: "info", Severity: "info", Title: "Getting Started",
 			Desc: "Keep onWatch running to collect MiniMax usage data. Insights will appear after a few snapshots.",
 		})
+		return resp
+	}
+
+	if latest.IsSharedQuota() {
+		merged := latest.MergedQuota()
+		models := latest.ActiveModels()
+		if merged == nil {
+			return resp
+		}
+		resp.Stats = append(resp.Stats,
+			insightStat{Value: "Shared", Label: "Pool Type", Sublabel: minimaxSharedModelSummary(models)},
+			insightStat{Value: fmt.Sprintf("%d", len(models)), Label: "Active Models"},
+			insightStat{Value: fmt.Sprintf("%.1f%%", merged.UsedPercent), Label: "Plan Utilization"},
+		)
+		if merged.Total > 0 {
+			resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%d/%d", merged.Used, merged.Total), Label: "Total Usage"})
+		} else {
+			resp.Stats = append(resp.Stats, insightStat{Value: fmt.Sprintf("%d", merged.Used), Label: "Total Usage"})
+		}
+
+		if !hidden["trend"] {
+			resp.Insights = append(resp.Insights, insightItem{
+				Key: "trend", Type: "trend", Severity: "info",
+				Title:  "Range",
+				Metric: fmt.Sprintf("%dd", int(rangeDur.Hours()/24)),
+				Desc:   "Trend analytics are based on recent MiniMax snapshot history.",
+			})
+		}
+		if !hidden["coverage"] {
+			resp.Insights = append(resp.Insights, insightItem{
+				Key: "coverage", Type: "info", Severity: "info",
+				Title:  "Data Coverage",
+				Metric: latest.CapturedAt.Format("2006-01-02 15:04"),
+				Desc:   "Current insight sample is generated from the latest MiniMax capture.",
+			})
+		}
+		if !hidden["shared_quota"] {
+			resp.Insights = append(resp.Insights, insightItem{
+				Key:      "shared_quota",
+				Type:     "factual",
+				Severity: minimaxInsightSeverity(merged.UsedPercent),
+				Title:    fmt.Sprintf("MiniMax Coding Plan: %s", minimaxStatusLabel(merged.UsedPercent)),
+				Metric:   fmt.Sprintf("%.1f%%", merged.UsedPercent),
+				Sublabel: "Shared quota pool",
+				Desc:     fmt.Sprintf("%d of %d requests used (%.1f%%) across shared models: %s.", merged.Used, merged.Total, merged.UsedPercent, minimaxSharedModelSummary(models)),
+			})
+		}
 		return resp
 	}
 

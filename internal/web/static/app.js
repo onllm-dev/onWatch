@@ -604,13 +604,17 @@ const antigravityChartColorFallback = [
 ];
 
 const minimaxDisplayNames = {
+  'MiniMax Coding Plan': 'MiniMax Coding Plan',
   'MiniMax-M2': 'MiniMax M2',
+  'MiniMax-M2.1': 'MiniMax M2.1',
   'MiniMax-M2.5': 'MiniMax M2.5',
   'MiniMax-M2.5-highspeed': 'MiniMax M2.5 Highspeed',
 };
 
 const minimaxChartColorMap = {
+  'MiniMax Coding Plan': { border: '#F97316', bg: 'rgba(249, 115, 22, 0.08)' },
   'MiniMax-M2': { border: '#FF6B6B', bg: 'rgba(255, 107, 107, 0.08)' },
+  'MiniMax-M2.1': { border: '#4ECDC4', bg: 'rgba(78, 205, 196, 0.08)' },
   'MiniMax-M2.5': { border: '#4ECDC4', bg: 'rgba(78, 205, 196, 0.08)' },
   'MiniMax-M2.5-highspeed': { border: '#45B7D1', bg: 'rgba(69, 183, 209, 0.08)' },
 };
@@ -1082,6 +1086,14 @@ function minimaxCardKey(name) {
   return String(name || '').replace(/[^a-zA-Z0-9_-]/g, '-');
 }
 
+function minimaxSharedSubtitle(sharedModels) {
+  if (!Array.isArray(sharedModels) || sharedModels.length === 0) return '';
+  const labels = sharedModels
+    .map(name => String(name || '').replace(/^MiniMax-/, ''))
+    .filter(Boolean);
+  return labels.length > 0 ? `Shared: ${labels.join(', ')}` : '';
+}
+
 function renderMiniMaxQuotaCards(quotas, containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -1089,6 +1101,7 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
   container.innerHTML = quotas.map((q, i) => {
     const cardKey = minimaxCardKey(q.name);
     const displayName = q.displayName || minimaxDisplayNames[q.name] || q.name;
+    const subtitle = minimaxSharedSubtitle(q.sharedModels);
     const usagePct = (q.usagePercent || 0).toFixed(1);
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
@@ -1098,13 +1111,17 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
     const fractionId = `fraction-minimax-${cardKey}`;
     const statusId = `status-minimax-${cardKey}`;
     const resetId = `reset-minimax-${cardKey}`;
+    const subtitleId = `subtitle-minimax-${cardKey}`;
 
     return `<article class="quota-card minimax-card" data-quota="${q.name}" data-provider="minimax" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
-        <h2 class="quota-title">
-          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-          ${displayName}
-        </h2>
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            ${escapeHTML(displayName)}
+          </h2>
+          <div class="quota-subtitle" id="${subtitleId}"${subtitle ? '' : ' hidden'}>${escapeHTML(subtitle)}</div>
+        </div>
         <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
       <div class="progress-stats">
@@ -1138,7 +1155,8 @@ function updateMiniMaxCard(quota) {
     renewsAt: quota.resetAt,
     timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
     name: quota.name,
-    displayName: quota.displayName
+    displayName: quota.displayName,
+    sharedModels: quota.sharedModels || []
   };
 
   const usagePct = (quota.usagePercent || 0).toFixed(1);
@@ -1149,6 +1167,8 @@ function updateMiniMaxCard(quota) {
   const statusEl = document.getElementById(`status-minimax-${cardKey}`);
   const resetEl = document.getElementById(`reset-minimax-${cardKey}`);
   const countdownEl = document.getElementById(`countdown-minimax-${cardKey}`);
+  const subtitleEl = document.getElementById(`subtitle-minimax-${cardKey}`);
+  const subtitle = minimaxSharedSubtitle(quota.sharedModels);
 
   if (progressEl) {
     progressEl.style.width = `${usagePct}%`;
@@ -1162,6 +1182,10 @@ function updateMiniMaxCard(quota) {
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
   if (resetEl) resetEl.textContent = quota.resetAt ? `Resets: ${formatDateTime(quota.resetAt)}` : '';
+  if (subtitleEl) {
+    subtitleEl.textContent = subtitle;
+    subtitleEl.hidden = !subtitle;
+  }
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -2495,7 +2519,9 @@ async function fetchCurrent() {
       } else if (provider === 'minimax') {
         if (data.quotas) {
           const container = document.getElementById('quota-grid-minimax');
-          if (container && container.children.length === 0) {
+          if (container && container.children.length !== data.quotas.length) {
+            renderMiniMaxQuotaCards(data.quotas, 'quota-grid-minimax');
+          } else if (container && container.children.length === 0) {
             renderMiniMaxQuotaCards(data.quotas, 'quota-grid-minimax');
           } else {
             data.quotas.forEach(q => updateMiniMaxCard(q));
@@ -3621,6 +3647,7 @@ function renderProviderKPIHTML(quotas) {
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const displayName = quota.displayName || quota.name || 'Quota';
     const label = quota.cardLabel || 'Utilization';
+    const subtitle = quota.subtitle || minimaxSharedSubtitle(quota.sharedModels);
     const icon = anthropicQuotaIcons[quota.name]
       || quotaIcons[quota.name]
       || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
@@ -3629,10 +3656,13 @@ function renderProviderKPIHTML(quotas) {
 
     return `<article class="quota-card provider-kpi-card" data-quota="${escapeHTML(quota.name || '')}">
       <header class="card-header">
-        <h2 class="quota-title">
-          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
-          ${escapeHTML(displayName)}
-        </h2>
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+            ${escapeHTML(displayName)}
+          </h2>
+          ${subtitle ? `<div class="quota-subtitle">${escapeHTML(subtitle)}</div>` : ''}
+        </div>
         <span class="countdown">${escapeHTML(countdown)}</span>
       </header>
       <div class="progress-stats">

@@ -170,3 +170,100 @@ func TestMiniMaxPartialUsage(t *testing.T) {
 		t.Errorf("UsedPercent = %.1f%%, want ~66.7%%", m.UsedPercent)
 	}
 }
+
+func TestMiniMaxSnapshotIsSharedQuota(t *testing.T) {
+	resetAt := time.Date(2026, 3, 8, 15, 0, 0, 0, time.UTC)
+	snapshot := &MiniMaxSnapshot{
+		Models: []MiniMaxModelQuota{
+			{ModelName: "MiniMax-M2", Total: 1500, Used: 1, Remain: 1499, ResetAt: &resetAt},
+			{ModelName: "MiniMax-M2.1", Total: 1500, Used: 1, Remain: 1499, ResetAt: &resetAt},
+			{ModelName: "MiniMax-M2.5", Total: 1500, Used: 1, Remain: 1499, ResetAt: &resetAt},
+		},
+	}
+
+	if !snapshot.IsSharedQuota() {
+		t.Fatal("expected shared quota to be detected")
+	}
+}
+
+func TestMiniMaxSnapshotIsSharedQuotaFalseWhenUsageDiffers(t *testing.T) {
+	resetAt := time.Date(2026, 3, 8, 15, 0, 0, 0, time.UTC)
+	snapshot := &MiniMaxSnapshot{
+		Models: []MiniMaxModelQuota{
+			{ModelName: "MiniMax-M2", Total: 1500, Used: 1, Remain: 1499, ResetAt: &resetAt},
+			{ModelName: "MiniMax-M2.1", Total: 1500, Used: 2, Remain: 1498, ResetAt: &resetAt},
+		},
+	}
+
+	if snapshot.IsSharedQuota() {
+		t.Fatal("expected non-shared quota when usage differs")
+	}
+}
+
+func TestMiniMaxSnapshotIsSharedQuotaFalseForSingleModel(t *testing.T) {
+	snapshot := &MiniMaxSnapshot{
+		Models: []MiniMaxModelQuota{
+			{ModelName: "MiniMax-M2", Total: 1500, Used: 1, Remain: 1499},
+		},
+	}
+
+	if snapshot.IsSharedQuota() {
+		t.Fatal("expected single model snapshot to remain unmerged")
+	}
+}
+
+func TestMiniMaxSnapshotMergedQuota(t *testing.T) {
+	resetAt := time.Date(2026, 3, 8, 15, 0, 0, 0, time.UTC)
+	startAt := time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC)
+	endAt := time.Date(2026, 3, 8, 15, 0, 0, 0, time.UTC)
+	snapshot := &MiniMaxSnapshot{
+		Models: []MiniMaxModelQuota{
+			{
+				ModelName:      "MiniMax-M2",
+				Total:          1500,
+				Used:           1,
+				Remain:         1499,
+				UsedPercent:    0.0666,
+				ResetAt:        &resetAt,
+				WindowStart:    &startAt,
+				WindowEnd:      &endAt,
+				TimeUntilReset: 2 * time.Hour,
+			},
+		},
+	}
+
+	merged := snapshot.MergedQuota()
+	if merged == nil {
+		t.Fatal("expected merged quota")
+	}
+	if merged.ModelName != "MiniMax Coding Plan" {
+		t.Fatalf("merged.ModelName=%q", merged.ModelName)
+	}
+	if merged.Total != 1500 || merged.Used != 1 || merged.Remain != 1499 {
+		t.Fatalf("unexpected merged counts total=%d used=%d remain=%d", merged.Total, merged.Used, merged.Remain)
+	}
+	if merged.ResetAt == nil || !merged.ResetAt.Equal(resetAt) {
+		t.Fatal("expected merged reset time to match first model")
+	}
+	if merged.WindowStart == nil || !merged.WindowStart.Equal(startAt) {
+		t.Fatal("expected merged window start to match first model")
+	}
+}
+
+func TestMiniMaxSnapshotActiveModels(t *testing.T) {
+	snapshot := &MiniMaxSnapshot{
+		Models: []MiniMaxModelQuota{
+			{ModelName: "MiniMax-M2.5"},
+			{ModelName: "MiniMax-M2"},
+			{ModelName: "MiniMax-M2.1"},
+		},
+	}
+
+	models := snapshot.ActiveModels()
+	if len(models) != 3 {
+		t.Fatalf("models=%v", models)
+	}
+	if models[0] != "MiniMax-M2" || models[1] != "MiniMax-M2.1" || models[2] != "MiniMax-M2.5" {
+		t.Fatalf("unexpected models=%v", models)
+	}
+}
