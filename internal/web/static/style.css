@@ -725,6 +725,13 @@ button, input, select { font-family: inherit; }
   text-align: center;
 }
 
+.provider-mini-insight-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
 .provider-chart {
   position: relative;
   min-height: 0;

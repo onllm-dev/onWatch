@@ -369,6 +369,10 @@
                             {{else if eq .CurrentProvider "codex"}}
                             <th data-sort-key="sub" role="button" tabindex="0" id="codex-session-col-0">5-Hour Limit <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0" id="codex-session-col-1">Weekly All-Model <span class="sort-arrow"></span></th>
+                            {{else if eq .CurrentProvider "minimax"}}
+                            <th data-sort-key="sub" role="button" tabindex="0">Peak Used <span class="sort-arrow"></span></th>
+                            <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
+                            <th data-sort-key="tool" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "antigravity"}}
                             <th data-sort-key="sub" role="button" tabindex="0">Claude + GPT Quota <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Gemini Pro Quota <span class="sort-arrow"></span></th>
@@ -386,6 +390,8 @@
                             <td colspan="5" class="empty-state">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "codex"}}
                             <td colspan="6" class="empty-state">No sessions recorded yet.</td>
+                            {{else if eq .CurrentProvider "minimax"}}
+                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "antigravity"}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{else}}
