@@ -20,6 +20,7 @@ type MiniMaxModelRemain struct {
 	EndTime                   interface{} `json:"end_time"`
 	RemainsTime               int64       `json:"remains_time"`
 	CurrentIntervalTotalCount int         `json:"current_interval_total_count"`
+	// Despite the field name, this endpoint returns remaining requests.
 	CurrentIntervalUsageCount int         `json:"current_interval_usage_count"`
 }
 
@@ -135,8 +136,14 @@ func (r MiniMaxRemainsResponse) ToSnapshot(capturedAt time.Time) *MiniMaxSnapsho
 		}
 
 		total := model.CurrentIntervalTotalCount
-		used := model.CurrentIntervalUsageCount
-		remain := total - used
+		// NOTE: The /coding_plan/remains endpoint reports what remains.
+		// MiniMax names the field current_interval_usage_count, but it is
+		// actually the remaining request count for the current window.
+		remain := model.CurrentIntervalUsageCount
+		used := total - remain
+		if used < 0 {
+			used = 0
+		}
 		if remain < 0 {
 			remain = 0
 		}

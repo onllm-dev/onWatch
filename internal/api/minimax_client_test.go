@@ -16,7 +16,7 @@ func TestNewMiniMaxClient(t *testing.T) {
 	if client == nil {
 		t.Fatal("NewMiniMaxClient returned nil")
 	}
-	if client.baseURL != "https://www.minimax.io/v1/api/openplatform/coding_plan/remains" {
+	if client.baseURL != "https://api.minimax.io/v1/api/openplatform/coding_plan/remains" {
 		t.Fatalf("baseURL=%q", client.baseURL)
 	}
 }
@@ -85,6 +85,22 @@ func TestMiniMaxClient_FetchRemains_Unauthorized(t *testing.T) {
 	_, err := client.FetchRemains(context.Background())
 	if !errors.Is(err, ErrMiniMaxUnauthorized) {
 		t.Fatalf("expected ErrMiniMaxUnauthorized, got %v", err)
+	}
+}
+
+func TestMiniMaxClient_FetchRemains_AccessBlocked(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		w.Header().Set("Server", "cloudflare")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `<!DOCTYPE html><html><title>Attention Required!</title><body>Please enable cookies. Sorry, you have been blocked</body></html>`)
+	}))
+	defer server.Close()
+
+	client := NewMiniMaxClient("blocked", slog.Default(), WithMiniMaxBaseURL(server.URL))
+	_, err := client.FetchRemains(context.Background())
+	if !errors.Is(err, ErrMiniMaxAccessBlocked) {
+		t.Fatalf("expected ErrMiniMaxAccessBlocked, got %v", err)
 	}
 }
 

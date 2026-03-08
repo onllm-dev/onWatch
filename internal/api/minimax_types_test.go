@@ -62,10 +62,10 @@ func TestMiniMaxRemainsResponse_ToSnapshot(t *testing.T) {
 	if m.ModelName != "MiniMax-M2" {
 		t.Fatalf("model=%q", m.ModelName)
 	}
-	if m.Total != 15000 || m.Used != 14000 || m.Remain != 1000 {
+	if m.Total != 15000 || m.Used != 1000 || m.Remain != 14000 {
 		t.Fatalf("unexpected totals total=%d used=%d remain=%d", m.Total, m.Used, m.Remain)
 	}
-	if m.UsedPercent <= 93 || m.UsedPercent >= 94 {
+	if m.UsedPercent <= 6 || m.UsedPercent >= 7 {
 		t.Fatalf("unexpected percent=%f", m.UsedPercent)
 	}
 	if m.ResetAt == nil {
@@ -114,5 +114,59 @@ func TestParseMiniMaxTimestamp(t *testing.T) {
 	}
 	if parseMiniMaxTimestamp(nil) != nil {
 		t.Fatal("expected nil for nil input")
+	}
+}
+
+func TestMiniMaxUsageCountIsRemaining(t *testing.T) {
+	resp := MiniMaxRemainsResponse{
+		BaseResp: MiniMaxBaseResp{StatusCode: 0, StatusMsg: "success"},
+		ModelRemains: []MiniMaxModelRemain{{
+			ModelName:                 "MiniMax-M2",
+			CurrentIntervalTotalCount: 1500,
+			CurrentIntervalUsageCount: 1500,
+		}},
+	}
+
+	snap := resp.ToSnapshot(time.Now())
+	if len(snap.Models) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(snap.Models))
+	}
+
+	m := snap.Models[0]
+	if m.Used != 0 {
+		t.Errorf("Used = %d, want 0 (usage_count is remaining, not used)", m.Used)
+	}
+	if m.Remain != 1500 {
+		t.Errorf("Remain = %d, want 1500", m.Remain)
+	}
+	if m.UsedPercent != 0 {
+		t.Errorf("UsedPercent = %.1f%%, want 0%%", m.UsedPercent)
+	}
+}
+
+func TestMiniMaxPartialUsage(t *testing.T) {
+	resp := MiniMaxRemainsResponse{
+		BaseResp: MiniMaxBaseResp{StatusCode: 0, StatusMsg: "success"},
+		ModelRemains: []MiniMaxModelRemain{{
+			ModelName:                 "MiniMax-M2.5",
+			CurrentIntervalTotalCount: 1500,
+			CurrentIntervalUsageCount: 500,
+		}},
+	}
+
+	snap := resp.ToSnapshot(time.Now())
+	if len(snap.Models) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(snap.Models))
+	}
+
+	m := snap.Models[0]
+	if m.Used != 1000 {
+		t.Errorf("Used = %d, want 1000", m.Used)
+	}
+	if m.Remain != 500 {
+		t.Errorf("Remain = %d, want 500", m.Remain)
+	}
+	if m.UsedPercent < 66 || m.UsedPercent > 67 {
+		t.Errorf("UsedPercent = %.1f%%, want ~66.7%%", m.UsedPercent)
 	}
 }
