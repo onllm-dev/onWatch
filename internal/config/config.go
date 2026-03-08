@@ -141,10 +141,66 @@ func loadWithArgs(args []string) (*Config, error) {
 	return loadFromEnvAndFlags(flags)
 }
 
+// onwatchEnvKeys are the keys that identify an onwatch-specific .env file.
+var onwatchEnvKeys = []string{
+	"SYNTHETIC_API_KEY",
+	"ZAI_API_KEY",
+	"ANTHROPIC_TOKEN",
+	"COPILOT_TOKEN",
+	"CODEX_TOKEN",
+	"ANTIGRAVITY_ENABLED",
+	"ONWATCH_",
+}
+
+// isOnwatchEnvFile checks if a file contains onwatch-specific configuration.
+func isOnwatchEnvFile(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	content := string(data)
+	for _, key := range onwatchEnvKeys {
+		if strings.Contains(content, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// loadEnvFile loads the .env file from the appropriate location.
+// Priority:
+//  1. ~/.onwatch/.env (standard install location)
+//  2. ./.env (current directory) - only if it contains onwatch-specific keys
+func loadEnvFile() {
+	// Try standard install location first: ~/.onwatch/.env
+	if home, err := os.UserHomeDir(); err == nil {
+		standardPath := filepath.Join(home, ".onwatch", ".env")
+		if _, err := os.Stat(standardPath); err == nil {
+			if err := godotenv.Load(standardPath); err == nil {
+				fmt.Fprintf(os.Stderr, "  config: loaded %s\n", standardPath)
+				return
+			}
+		}
+	}
+
+	// Fallback to current directory .env - only if it's onwatch-specific
+	localPath := ".env"
+	if _, err := os.Stat(localPath); err == nil {
+		if isOnwatchEnvFile(localPath) {
+			if err := godotenv.Load(localPath); err == nil {
+				fmt.Fprintf(os.Stderr, "  config: loaded %s\n", localPath)
+				return
+			}
+		}
+	}
+
+	// No .env file found - will rely on environment variables
+}
+
 // loadFromEnvAndFlags combines environment variables with CLI flags.
 func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
-	// Try to load .env file (ignore errors - file is optional)
-	_ = godotenv.Load(".env")
+	// Load .env file from the appropriate location
+	loadEnvFile()
 
 	cfg := &Config{}
 

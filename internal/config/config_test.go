@@ -874,3 +874,189 @@ func TestConfig_IsDefaultPassword(t *testing.T) {
 		})
 	}
 }
+
+func TestIsOnwatchEnvFile_WithOnwatchKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "contains SYNTHETIC_API_KEY",
+			content: "SYNTHETIC_API_KEY=syn_test123\n",
+			want:    true,
+		},
+		{
+			name:    "contains ANTHROPIC_TOKEN",
+			content: "ANTHROPIC_TOKEN=sk-ant-test\n",
+			want:    true,
+		},
+		{
+			name:    "contains CODEX_TOKEN",
+			content: "CODEX_TOKEN=oauth_token\n",
+			want:    true,
+		},
+		{
+			name:    "contains ONWATCH_ prefix",
+			content: "ONWATCH_PORT=9211\nONWATCH_ADMIN_USER=admin\n",
+			want:    true,
+		},
+		{
+			name:    "contains ANTIGRAVITY_ENABLED",
+			content: "ANTIGRAVITY_ENABLED=true\n",
+			want:    true,
+		},
+		{
+			name:    "generic env file without onwatch keys",
+			content: "DATABASE_URL=postgres://localhost\nREDIS_URL=redis://localhost\n",
+			want:    false,
+		},
+		{
+			name:    "empty file",
+			content: "",
+			want:    false,
+		},
+		{
+			name:    "comments only",
+			content: "# This is a comment\n# Another comment\n",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			envPath := filepath.Join(tmpDir, tt.name+".env")
+			if err := os.WriteFile(envPath, []byte(tt.content), 0644); err != nil {
+				t.Fatalf("Failed to write test file: %v", err)
+			}
+			got := isOnwatchEnvFile(envPath)
+			if got != tt.want {
+				t.Errorf("isOnwatchEnvFile() = %v, want %v for content: %q", got, tt.want, tt.content)
+			}
+		})
+	}
+}
+
+func TestIsOnwatchEnvFile_NonexistentFile(t *testing.T) {
+	got := isOnwatchEnvFile("/nonexistent/path/.env")
+	if got {
+		t.Error("isOnwatchEnvFile() should return false for nonexistent file")
+	}
+}
+
+func TestLoadEnvFile_PrefersStandardLocation(t *testing.T) {
+	// Save original HOME and restore after test
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+
+	// Create temp directory structure
+	tmpDir := t.TempDir()
+	os.Setenv("HOME", tmpDir)
+
+	// Create ~/.onwatch/.env
+	onwatchDir := filepath.Join(tmpDir, ".onwatch")
+	if err := os.MkdirAll(onwatchDir, 0755); err != nil {
+		t.Fatalf("Failed to create .onwatch dir: %v", err)
+	}
+	standardEnv := filepath.Join(onwatchDir, ".env")
+	envContent := "SYNTHETIC_API_KEY=syn_from_standard_location\nONWATCH_PORT=9999\n"
+	if err := os.WriteFile(standardEnv, []byte(envContent), 0644); err != nil {
+		t.Fatalf("Failed to write standard .env: %v", err)
+	}
+
+	// Clear env and load
+	os.Clearenv()
+	os.Setenv("HOME", tmpDir)
+	loadEnvFile()
+
+	// Verify the standard location was loaded
+	if got := os.Getenv("SYNTHETIC_API_KEY"); got != "syn_from_standard_location" {
+		t.Errorf("SYNTHETIC_API_KEY = %q, want %q", got, "syn_from_standard_location")
+	}
+	if got := os.Getenv("ONWATCH_PORT"); got != "9999" {
+		t.Errorf("ONWATCH_PORT = %q, want %q", got, "9999")
+	}
+}
+
+func TestLoadEnvFile_FallsBackToLocalOnwatchEnv(t *testing.T) {
+	// Save original HOME and cwd
+	origHome := os.Getenv("HOME")
+	origDir, _ := os.Getwd()
+	defer func() {
+		os.Setenv("HOME", origHome)
+		os.Chdir(origDir)
+	}()
+
+	// Create temp directory with NO ~/.onwatch/.env
+	tmpDir := t.TempDir()
+	os.Setenv("HOME", tmpDir)
+
+	// Create local .env with onwatch-specific keys
+	localDir := filepath.Join(tmpDir, "project")
+	if err := os.MkdirAll(localDir, 0755); err != nil {
+		t.Fatalf("Failed to create project dir: %v", err)
+	}
+	localEnv := filepath.Join(localDir, ".env")
+	envContent := "ZAI_API_KEY=zai_from_local\nONWATCH_PORT=8888\n"
+	if err := os.WriteFile(localEnv, []byte(envContent), 0644); err != nil {
+		t.Fatalf("Failed to write local .env: %v", err)
+	}
+
+	// Change to local directory
+	if err := os.Chdir(localDir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	// Clear env and load
+	os.Clearenv()
+	os.Setenv("HOME", tmpDir)
+	loadEnvFile()
+
+	// Verify the local .env was loaded (because standard location doesn't exist)
+	if got := os.Getenv("ZAI_API_KEY"); got != "zai_from_local" {
+		t.Errorf("ZAI_API_KEY = %q, want %q", got, "zai_from_local")
+	}
+}
+
+func TestLoadEnvFile_IgnoresNonOnwatchLocalEnv(t *testing.T) {
+	// Save original HOME and cwd
+	origHome := os.Getenv("HOME")
+	origDir, _ := os.Getwd()
+	defer func() {
+		os.Setenv("HOME", origHome)
+		os.Chdir(origDir)
+	}()
+
+	// Create temp directory with NO ~/.onwatch/.env
+	tmpDir := t.TempDir()
+	os.Setenv("HOME", tmpDir)
+
+	// Create local .env WITHOUT onwatch-specific keys (generic env file)
+	localDir := filepath.Join(tmpDir, "project")
+	if err := os.MkdirAll(localDir, 0755); err != nil {
+		t.Fatalf("Failed to create project dir: %v", err)
+	}
+	localEnv := filepath.Join(localDir, ".env")
+	// This is a generic .env file, not onwatch-specific
+	envContent := "DATABASE_URL=postgres://localhost\nREDIS_URL=redis://localhost\n"
+	if err := os.WriteFile(localEnv, []byte(envContent), 0644); err != nil {
+		t.Fatalf("Failed to write local .env: %v", err)
+	}
+
+	// Change to local directory
+	if err := os.Chdir(localDir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	// Clear env and load
+	os.Clearenv()
+	os.Setenv("HOME", tmpDir)
+	loadEnvFile()
+
+	// Verify the local .env was NOT loaded (because it's not onwatch-specific)
+	if got := os.Getenv("DATABASE_URL"); got != "" {
+		t.Errorf("DATABASE_URL should be empty (generic .env should not be loaded), got %q", got)
+	}
+}
