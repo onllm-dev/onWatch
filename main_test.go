@@ -12,9 +12,10 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 )
 
-func TestConfigLoad_WithOnlyCodexAuthFile_ReturnsValidationError(t *testing.T) {
+func TestConfigLoad_WithOnlyCodexAuthFile_AllowsEmptyProviderConfig(t *testing.T) {
 	homeDir := t.TempDir()
 	codexHome := t.TempDir()
+	t.Chdir(t.TempDir())
 	t.Setenv("HOME", homeDir)
 	t.Setenv("CODEX_HOME", codexHome)
 	t.Setenv("SYNTHETIC_API_KEY", "")
@@ -31,12 +32,12 @@ func TestConfigLoad_WithOnlyCodexAuthFile_ReturnsValidationError(t *testing.T) {
 		t.Fatalf("write auth.json: %v", err)
 	}
 
-	_, err := config.Load()
-	if err == nil {
-		t.Fatal("config.Load() should fail without explicit provider env vars")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load() returned unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "at least one provider must be configured") {
-		t.Fatalf("unexpected error: %v", err)
+	if len(cfg.AvailableProviders()) != 0 {
+		t.Fatalf("expected no configured providers, got %v", cfg.AvailableProviders())
 	}
 }
 

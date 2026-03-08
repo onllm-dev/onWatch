@@ -120,10 +120,10 @@ func TestRun_StatusTestModeNoPIDFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// run() - _ONWATCH_DAEMON=1 error path (config load fails)
+// run() - _ONWATCH_DAEMON=1 startup error path
 // ---------------------------------------------------------------------------
 
-func TestRun_DaemonChildConfigError(t *testing.T) {
+func TestRun_DaemonChildStartupError(t *testing.T) {
 	t.Setenv("_ONWATCH_DAEMON", "1")
 	t.Setenv("SYNTHETIC_API_KEY", "")
 	t.Setenv("ZAI_API_KEY", "")
@@ -139,9 +139,9 @@ func TestRun_DaemonChildConfigError(t *testing.T) {
 
 	err := run()
 	if err == nil {
-		t.Fatal("expected error when config load fails as daemon child")
+		t.Fatal("expected error when daemon child startup fails")
 	}
-	if !strings.Contains(err.Error(), "failed to load config") {
+	if !strings.Contains(err.Error(), "failed to setup logging") && !strings.Contains(err.Error(), "server error") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -292,12 +292,12 @@ func TestFreshSetup_AnthropicOnly(t *testing.T) {
 
 	// No credentials file -> fallback to manual entry
 	input := strings.Join([]string{
-		"3",         // Anthropic only
-		"anth-tok",  // manual anthropic token
-		"",          // admin user (default)
-		"testpass",  // password
-		"9211",      // port
-		"60",        // interval
+		"3",        // Anthropic only
+		"anth-tok", // manual anthropic token
+		"",         // admin user (default)
+		"testpass", // password
+		"9211",     // port
+		"60",       // interval
 	}, "\n") + "\n"
 
 	reader := bufio.NewReader(strings.NewReader(input))
@@ -399,11 +399,11 @@ func TestAddMissingProviders_ZaiSkippedAnthropicAdded(t *testing.T) {
 
 	// Zai=n, Anthropic=y (manual), Codex=n, Antigravity=n
 	input := strings.Join([]string{
-		"n",         // skip zai
-		"y",         // add anthropic (no auto-detect found -> promptYesNo shown)
-		"anth-tok",  // manual anthropic token
-		"n",         // skip codex
-		"n",         // skip antigravity
+		"n",        // skip zai
+		"y",        // add anthropic (no auto-detect found -> promptYesNo shown)
+		"anth-tok", // manual anthropic token
+		"n",        // skip codex
+		"n",        // skip antigravity
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -519,8 +519,8 @@ func TestCollectCodexToken_AutoDetect_Decline(t *testing.T) {
 
 	// User declines auto-detected token, enters manual
 	input := strings.Join([]string{
-		"n",                 // decline auto-detected
-		"codex-manual-tok",  // manual codex token
+		"n",                // decline auto-detected
+		"codex-manual-tok", // manual codex token
 	}, "\n") + "\n"
 	reader := bufio.NewReader(strings.NewReader(input))
 	token := collectCodexToken(reader, testLogger())
@@ -922,11 +922,11 @@ func TestAddMissingProviders_CodexManualPath(t *testing.T) {
 
 	// No codex auto-detect -> user says "y" -> manual entry
 	input := strings.Join([]string{
-		"n",           // skip zai
-		"n",           // skip anthropic
-		"y",           // add codex (no auto-detect, manual)
-		"codex-man",   // codex manual token
-		"n",           // skip antigravity
+		"n",         // skip zai
+		"n",         // skip anthropic
+		"y",         // add codex (no auto-detect, manual)
+		"codex-man", // codex manual token
+		"n",         // skip antigravity
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -1768,13 +1768,13 @@ func TestCollectMultipleProviders_AnthropicAndCodexAdded(t *testing.T) {
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 
 	input := strings.Join([]string{
-		"n",           // skip synthetic
-		"n",           // skip zai
-		"y",           // add anthropic
-		"anth-tok",    // anthropic manual token
-		"y",           // add codex
-		"codex-tok",   // codex manual token
-		"n",           // skip antigravity
+		"n",         // skip synthetic
+		"n",         // skip zai
+		"y",         // add anthropic
+		"anth-tok",  // anthropic manual token
+		"y",         // add codex
+		"codex-tok", // codex manual token
+		"n",         // skip antigravity
 	}, "\n") + "\n"
 
 	reader := bufio.NewReader(strings.NewReader(input))
@@ -3147,7 +3147,6 @@ func TestRun_UpdateCommandDashDash(t *testing.T) {
 		t.Fatalf("expected 'Already at the latest version', got: %s", out)
 	}
 }
-
 
 // ---------------------------------------------------------------------------
 // runStop() - test mode with running parent PID (exercises SIGTERM path)

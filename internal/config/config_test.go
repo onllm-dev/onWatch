@@ -186,16 +186,33 @@ func TestConfig_BothProviders(t *testing.T) {
 	}
 }
 
-func TestConfig_ValidatesNoProvidersConfigured(t *testing.T) {
+func TestConfig_MiniMaxProvider(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("MINIMAX_API_KEY", "sk-cp-test-key")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if !cfg.HasProvider("minimax") {
+		t.Fatal("HasProvider('minimax') should be true")
+	}
+	providers := cfg.AvailableProviders()
+	if len(providers) != 1 || providers[0] != "minimax" {
+		t.Fatalf("AvailableProviders() = %v, want [minimax]", providers)
+	}
+}
+
+func TestConfig_AllowsNoProvidersConfigured(t *testing.T) {
 	os.Clearenv()
 
-	_, err := Load()
-	if err == nil {
-		t.Fatal("Load() should fail when no providers are configured")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() should succeed when no providers are configured: %v", err)
 	}
-
-	if !strings.Contains(err.Error(), "at least one provider") {
-		t.Errorf("Error message should mention 'at least one provider', got: %v", err)
+	if len(cfg.AvailableProviders()) != 0 {
+		t.Fatalf("expected no configured providers, got %v", cfg.AvailableProviders())
 	}
 }
 
