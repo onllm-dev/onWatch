@@ -38,6 +38,10 @@ RUN \
 # Verify the binary works (only if native build)
 RUN ./onwatch --version || echo "Cross-compiled binary, skipping version check"
 
+# Create data directory owned by nonroot user (UID 65532)
+# Docker named volumes inherit these permissions on first use
+RUN mkdir -p /data && chown 65532:65532 /data
+
 # Runtime stage: Use distroless for minimal, secure image
 FROM gcr.io/distroless/static-debian12:nonroot
 
@@ -54,6 +58,9 @@ WORKDIR /app
 
 # Copy the binary from builder
 COPY --from=builder /build/onwatch /app/onwatch
+
+# Copy pre-created data directory with correct ownership for nonroot user
+COPY --from=builder --chown=65532:65532 /data /data
 
 # Expose the web UI port
 EXPOSE 9211
