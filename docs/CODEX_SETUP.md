@@ -191,9 +191,14 @@ You should see:
 
 ## Troubleshooting
 
-### "failed to load config: at least one provider must be configured"
+### "No provider data appears in dashboard"
 
-Set at least one provider token in `.env` (for Codex-only, set `CODEX_TOKEN`).
+onWatch now starts even when no providers are configured.
+
+To enable Codex tracking:
+- Set `CODEX_TOKEN` in your `.env`, or use Codex auto-detection
+- Open **Settings -> Providers**
+- Enable Codex telemetry and dashboard visibility
 
 ### "Codex polling paused due to repeated auth failures"
 

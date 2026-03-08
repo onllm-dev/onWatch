@@ -410,7 +410,7 @@ docker run -d --name onwatch -p 9211:9211 \
 
 ### Configuration
 
-Copy `.env.docker.example` to `.env` and set at least one provider key. See `.env.docker.example` for all available options. Key variables:
+Copy `.env.docker.example` to `.env` and set provider keys as needed. onWatch can start with no providers and you can enable them later from Settings. Key variables:
 
 | Variable                | Description                                | Default    |
 | ----------------------- | ------------------------------------------ | ---------- |
@@ -418,6 +418,7 @@ Copy `.env.docker.example` to `.env` and set at least one provider key. See `.en
 | `ZAI_API_KEY`           | Z.ai API key                               | --         |
 | `ANTHROPIC_TOKEN`       | Anthropic token (auto-detected if not set) | --         |
 | `CODEX_TOKEN`           | Codex OAuth access token (recommended; required for Codex-only) | -- |
+| `MINIMAX_API_KEY`       | MiniMax Coding Plan API key                | --         |
 | `ONWATCH_ADMIN_USER`    | Dashboard username                         | `admin`    |
 | `ONWATCH_ADMIN_PASS`    | Dashboard password                         | `changeme` |
 | `ONWATCH_POLL_INTERVAL` | Polling interval (seconds)                 | `120`      |
