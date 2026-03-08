@@ -8,11 +8,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
 var (
 	ErrMiniMaxUnauthorized    = errors.New("minimax: unauthorized - invalid api key")
+	ErrMiniMaxAccessBlocked   = errors.New("minimax: upstream access blocked")
 	ErrMiniMaxServerError     = errors.New("minimax: server error")
 	ErrMiniMaxNetworkError    = errors.New("minimax: network error")
 	ErrMiniMaxInvalidResponse = errors.New("minimax: invalid response")
@@ -62,7 +64,7 @@ func NewMiniMaxClient(apiKey string, logger *slog.Logger, opts ...MiniMaxOption)
 			},
 		},
 		apiKey:  apiKey,
-		baseURL: "https://www.minimax.io/v1/api/openplatform/coding_plan/remains",
+		baseURL: "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
 		logger:  logger,
 	}
 
@@ -98,27 +100,59 @@ func (c *MiniMaxClient) FetchRemains(ctx context.Context) (*MiniMaxRemainsRespon
 	}
 	defer resp.Body.Close()
 
-	switch {
-	case resp.StatusCode == http.StatusOK:
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return nil, ErrMiniMaxUnauthorized
-	case resp.StatusCode >= 500:
-		return nil, ErrMiniMaxServerError
-	default:
-		return nil, fmt.Errorf("minimax: unexpected status code %d", resp.StatusCode)
-	}
-
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if err != nil {
 		return nil, fmt.Errorf("%w: reading body: %v", ErrMiniMaxInvalidResponse, err)
 	}
+
+	var remainsResp MiniMaxRemainsResponse
+	parseErr := json.Unmarshal(body, &remainsResp)
+	bodySnippet := minimaxBodySnippet(body)
+
+	if resp.StatusCode != http.StatusOK {
+		c.logger.Warn("MiniMax non-OK response",
+			"status", resp.StatusCode,
+			"contentType", resp.Header.Get("Content-Type"),
+			"server", resp.Header.Get("Server"),
+			"bodySnippet", bodySnippet,
+		)
+	}
+
+	switch {
+	case resp.StatusCode == http.StatusOK:
+	case resp.StatusCode == http.StatusUnauthorized:
+		return nil, ErrMiniMaxUnauthorized
+	case resp.StatusCode == http.StatusForbidden:
+		if parseErr == nil && remainsResp.BaseResp.StatusCode == 1004 {
+			return nil, ErrMiniMaxUnauthorized
+		}
+		if minimaxAccessBlocked(resp, body) {
+			if bodySnippet == "" {
+				return nil, ErrMiniMaxAccessBlocked
+			}
+			return nil, fmt.Errorf("%w: %s", ErrMiniMaxAccessBlocked, bodySnippet)
+		}
+		if bodySnippet == "" {
+			return nil, fmt.Errorf("minimax: forbidden response")
+		}
+		return nil, fmt.Errorf("minimax: forbidden response: %s", bodySnippet)
+	case resp.StatusCode >= 500:
+		if bodySnippet == "" {
+			return nil, fmt.Errorf("%w: status %d", ErrMiniMaxServerError, resp.StatusCode)
+		}
+		return nil, fmt.Errorf("%w: status %d: %s", ErrMiniMaxServerError, resp.StatusCode, bodySnippet)
+	default:
+		if bodySnippet == "" {
+			return nil, fmt.Errorf("minimax: unexpected status code %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("minimax: unexpected status code %d: %s", resp.StatusCode, bodySnippet)
+	}
+
 	if len(body) == 0 {
 		return nil, fmt.Errorf("%w: empty response body", ErrMiniMaxInvalidResponse)
 	}
-
-	var remainsResp MiniMaxRemainsResponse
-	if err := json.Unmarshal(body, &remainsResp); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMiniMaxInvalidResponse, err)
+	if parseErr != nil {
+		return nil, fmt.Errorf("%w: %v", ErrMiniMaxInvalidResponse, parseErr)
 	}
 
 	if remainsResp.BaseResp.StatusCode != 0 {
@@ -130,4 +164,27 @@ func (c *MiniMaxClient) FetchRemains(ctx context.Context) (*MiniMaxRemainsRespon
 
 	c.logger.Debug("MiniMax remains fetched", "models", remainsResp.ActiveModelNames())
 	return &remainsResp, nil
+}
+
+func minimaxAccessBlocked(resp *http.Response, body []byte) bool {
+	server := strings.ToLower(resp.Header.Get("Server"))
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	snippet := strings.ToLower(minimaxBodySnippet(body))
+	return strings.Contains(server, "cloudflare") ||
+		strings.Contains(contentType, "text/html") ||
+		strings.Contains(snippet, "attention required") ||
+		strings.Contains(snippet, "please enable cookies") ||
+		strings.Contains(snippet, "you have been blocked")
+}
+
+func minimaxBodySnippet(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if text == "" {
+		return ""
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) > 240 {
+		return text[:240] + "..."
+	}
+	return text
 }
