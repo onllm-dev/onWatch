@@ -57,6 +57,8 @@ function getCurrentProvider() {
   if (codexGrid) return 'codex';
   const antigravityGrid = document.getElementById('quota-grid-antigravity');
   if (antigravityGrid) return 'antigravity';
+  const minimaxGrid = document.getElementById('quota-grid-minimax');
+  if (minimaxGrid) return 'minimax';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -601,6 +603,22 @@ const antigravityChartColorFallback = [
   { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.08)' },
 ];
 
+const minimaxDisplayNames = {
+  'MiniMax-M2': 'MiniMax M2',
+  'MiniMax-M2.5': 'MiniMax M2.5',
+  'MiniMax-M2.5-highspeed': 'MiniMax M2.5 Highspeed',
+};
+
+const minimaxChartColorMap = {
+  'MiniMax-M2': { border: '#FF6B6B', bg: 'rgba(255, 107, 107, 0.08)' },
+  'MiniMax-M2.5': { border: '#4ECDC4', bg: 'rgba(78, 205, 196, 0.08)' },
+  'MiniMax-M2.5-highspeed': { border: '#45B7D1', bg: 'rgba(69, 183, 209, 0.08)' },
+};
+const minimaxChartColorFallback = [
+  { border: '#F7DC6F', bg: 'rgba(247, 220, 111, 0.08)' },
+  { border: '#BB8FCE', bg: 'rgba(187, 143, 206, 0.08)' },
+];
+
 // ── Renewal Categories for Cycle Overview ──
 
 const renewalCategories = {
@@ -632,6 +650,9 @@ const renewalCategories = {
     { label: 'Claude+GPT', groupBy: 'antigravity_claude_gpt' },
     { label: 'Gemini Pro', groupBy: 'antigravity_gemini_pro' },
     { label: 'Gemini Flash', groupBy: 'antigravity_gemini_flash' }
+  ],
+  minimax: [
+    { label: 'Models', groupBy: '' }
   ]
 };
 
@@ -1046,6 +1067,101 @@ function updateCopilotCard(quota) {
   if (resetEl) {
     resetEl.textContent = quota.resetDate ? `Resets: ${formatDateTime(quota.resetDate)}` : '';
   }
+  if (countdownEl) {
+    if (quota.timeUntilResetSeconds > 0) {
+      countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
+      countdownEl.classList.toggle('imminent', quota.timeUntilResetSeconds < 1800);
+      countdownEl.style.display = '';
+    } else {
+      countdownEl.style.display = 'none';
+    }
+  }
+}
+
+function minimaxCardKey(name) {
+  return String(name || '').replace(/[^a-zA-Z0-9_-]/g, '-');
+}
+
+function renderMiniMaxQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  container.innerHTML = quotas.map((q, i) => {
+    const cardKey = minimaxCardKey(q.name);
+    const displayName = q.displayName || minimaxDisplayNames[q.name] || q.name;
+    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const status = q.status || 'healthy';
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const countdownId = `countdown-minimax-${cardKey}`;
+    const progressId = `progress-minimax-${cardKey}`;
+    const percentId = `percent-minimax-${cardKey}`;
+    const fractionId = `fraction-minimax-${cardKey}`;
+    const statusId = `status-minimax-${cardKey}`;
+    const resetId = `reset-minimax-${cardKey}`;
+
+    return `<article class="quota-card minimax-card" data-quota="${q.name}" data-provider="minimax" style="animation-delay: ${i * 60}ms">
+      <header class="card-header">
+        <h2 class="quota-title">
+          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          ${displayName}
+        </h2>
+        <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="${percentId}">${usagePct}%</span>
+        <span class="usage-fraction" id="${fractionId}">${formatNumber(q.used || 0)} / ${formatNumber(q.total || 0)}</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="${progressId}" style="width: ${usagePct}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="${statusId}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="${resetId}">${q.resetAt ? 'Resets: ' + formatDateTime(q.resetAt) : ''}</span>
+      </footer>
+    </article>`;
+  }).join('');
+}
+
+function updateMiniMaxCard(quota) {
+  const cardKey = minimaxCardKey(quota.name);
+  const key = `minimax-${quota.name}`;
+  State.currentQuotas[key] = {
+    percent: quota.usagePercent || 0,
+    usage: quota.used || 0,
+    limit: quota.total || 0,
+    status: quota.status || 'healthy',
+    renewsAt: quota.resetAt,
+    timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
+    name: quota.name,
+    displayName: quota.displayName
+  };
+
+  const usagePct = (quota.usagePercent || 0).toFixed(1);
+  const status = quota.status || 'healthy';
+  const progressEl = document.getElementById(`progress-minimax-${cardKey}`);
+  const percentEl = document.getElementById(`percent-minimax-${cardKey}`);
+  const fractionEl = document.getElementById(`fraction-minimax-${cardKey}`);
+  const statusEl = document.getElementById(`status-minimax-${cardKey}`);
+  const resetEl = document.getElementById(`reset-minimax-${cardKey}`);
+  const countdownEl = document.getElementById(`countdown-minimax-${cardKey}`);
+
+  if (progressEl) {
+    progressEl.style.width = `${usagePct}%`;
+    progressEl.setAttribute('data-status', status);
+  }
+  if (percentEl) percentEl.textContent = `${usagePct}%`;
+  if (fractionEl) fractionEl.textContent = `${formatNumber(quota.used || 0)} / ${formatNumber(quota.total || 0)}`;
+  if (statusEl) {
+    const config = statusConfig[status] || statusConfig.healthy;
+    statusEl.setAttribute('data-status', status);
+    statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
+  }
+  if (resetEl) resetEl.textContent = quota.resetAt ? `Resets: ${formatDateTime(quota.resetAt)}` : '';
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -2376,6 +2492,15 @@ async function fetchCurrent() {
             data.quotas.forEach(q => updateAntigravityCard(q));
           }
         }
+      } else if (provider === 'minimax') {
+        if (data.quotas) {
+          const container = document.getElementById('quota-grid-minimax');
+          if (container && container.children.length === 0) {
+            renderMiniMaxQuotaCards(data.quotas, 'quota-grid-minimax');
+          } else {
+            data.quotas.forEach(q => updateMiniMaxCard(q));
+          }
+        }
       } else if (provider === 'zai') {
         updateCard('tokensLimit', data.tokensLimit);
         updateCard('timeLimit', data.timeLimit);
@@ -2683,11 +2808,15 @@ function renderBothInsights(data, statsEl, cardsEl) {
     html += renderProviderBox('copilot', 'Copilot <span class="beta-badge">Beta</span>', data.copilot);
   }
 
-  if (activeProviders.has('antigravity') && data.antigravity) {
-    html += renderProviderBox('antigravity', 'Antigravity', data.antigravity);
-  }
+	if (activeProviders.has('antigravity') && data.antigravity) {
+		html += renderProviderBox('antigravity', 'Antigravity', data.antigravity);
+	}
 
-  if (activeProviders.has('codex')) {
+	if (activeProviders.has('minimax') && data.minimax) {
+		html += renderProviderBox('minimax', 'MiniMax', data.minimax);
+	}
+
+	if (activeProviders.has('codex')) {
     if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
       data.codexAccounts.forEach(acc => {
         const label = `Codex · ${acc.accountName || `Account ${acc.accountId || ''}`.trim()}`;
@@ -2874,6 +3003,8 @@ function initChart() {
   let defaultDatasets;
   if (provider === 'antigravity') {
     defaultDatasets = []; // Antigravity datasets are dynamic - populated when history data arrives
+  } else if (provider === 'minimax') {
+    defaultDatasets = []; // MiniMax datasets are dynamic - populated when history data arrives
   } else if (provider === 'zai') {
     defaultDatasets = [
       { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
@@ -2889,6 +3020,8 @@ function initChart() {
   }
   const quotaMap = provider === 'zai'
     ? ['tokensLimit', 'timeLimit', 'toolCalls']
+    : provider === 'minimax'
+      ? []
     : ['subscription', 'search', 'toolCalls'];
 
   State.chart = new Chart(ctx, {
@@ -3128,6 +3261,42 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'minimax') {
+      const quotaKeys = new Set();
+      historyRows.forEach(d => {
+        Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
+      });
+      const sortedKeys = [...quotaKeys].sort();
+      let fallbackIdx = 0;
+      const datasets = [];
+      sortedKeys.forEach((key) => {
+        const color = minimaxChartColorMap[key] || minimaxChartColorFallback[fallbackIdx++ % minimaxChartColorFallback.length];
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        const mainDataset = {
+          label: minimaxDisplayNames[key] || key,
+          data: data,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: pointRadii,
+          pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key),
+          spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
+        };
+        datasets.push(mainDataset);
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
     if (provider === 'codex') {
       // Codex history: array of { capturedAt, five_hour, seven_day, ... }
       const quotaKeys = new Set();
@@ -3210,6 +3379,7 @@ const bothProviderNames = {
   copilot: 'Copilot',
   codex: 'Codex',
   antigravity: 'Antigravity',
+  minimax: 'MiniMax',
 };
 
 function escapeHTML(value) {
@@ -3339,6 +3509,7 @@ function normalizeBothQuotas(provider, payload) {
         || codexDisplayNames[quota.name]
         || anthropicDisplayNames[quota.name]
         || copilotDisplayNames[quota.name]
+        || minimaxDisplayNames[quota.name]
         || getQuotaDisplayName(quota.name, provider),
       cardLabel: quota.cardLabel || 'Utilization',
       status: quota.status || 'healthy',
@@ -3594,6 +3765,9 @@ function buildProviderCardDatasets(provider, rows, range) {
   if (provider === 'antigravity') {
     return buildDynamicDatasetsForRows(rows, range, {}, antigravityChartColorMap, antigravityChartColorFallback, 'antigravity');
   }
+  if (provider === 'minimax') {
+    return buildDynamicDatasetsForRows(rows, range, minimaxDisplayNames, minimaxChartColorMap, minimaxChartColorFallback, 'minimax');
+  }
   return [];
 }
 
@@ -3725,6 +3899,9 @@ function updateBothCharts(data, range = '6h') {
   if (activeProviders.has('antigravity') && Array.isArray(data.antigravity) && data.antigravity.length > 0) {
     slots.push({ id: 'antigravity', label: 'Antigravity', provider: 'antigravity', rows: data.antigravity });
   }
+  if (activeProviders.has('minimax') && Array.isArray(data.minimax) && data.minimax.length > 0) {
+    slots.push({ id: 'minimax', label: 'MiniMax', provider: 'minimax', rows: data.minimax });
+  }
   if (activeProviders.has('codex')) {
     if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
       data.codexAccounts.forEach((account, idx) => {
@@ -3836,6 +4013,8 @@ function updateBothCharts(data, range = '6h') {
       datasets = createDynamicDatasets(slot.rows, copilotDisplayNames, copilotChartColorMap, copilotChartColorFallback, 'copilot');
     } else if (slot.provider === 'antigravity') {
       datasets = createDynamicDatasets(slot.rows, {}, antigravityChartColorMap, antigravityChartColorFallback, 'antigravity');
+    } else if (slot.provider === 'minimax') {
+      datasets = createDynamicDatasets(slot.rows, minimaxDisplayNames, minimaxChartColorMap, minimaxChartColorFallback, 'minimax');
     }
 
     if (datasets.length === 0) return;
@@ -4129,7 +4308,7 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
 
   // Build dynamic header
@@ -5119,7 +5298,8 @@ function getOverviewCategories() {
       ...(renewalCategories.zai || []),
       ...(renewalCategories.copilot || []),
       ...renewalCategories.codex || [],
-      ...(renewalCategories.antigravity || [])
+      ...(renewalCategories.antigravity || []),
+      ...(renewalCategories.minimax || [])
     ];
   }
   if (provider === 'codex') {
@@ -5251,7 +5431,7 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax';
 
   // Build dynamic header
   let headerHtml = `
@@ -5696,6 +5876,7 @@ function initSettingsPage() {
   setupSettingsTabs();
   loadSettings();
   setupSettingsSave();
+  setupProviderReload();
   setupSMTPTest();
   setupPushNotifications();
   setupSettingsPassword();
@@ -5790,12 +5971,8 @@ async function loadSettings() {
       }
     }
 
-    // Provider visibility
-    if (data.provider_visibility) {
-      populateProviderToggles(data.provider_visibility);
-    } else {
-      populateProviderToggles({});
-    }
+    // Provider visibility + dynamic provider status
+    populateProviderToggles(data.provider_visibility || {});
   } catch (e) {
     // Settings load failed silently
   }
@@ -5826,64 +6003,145 @@ function populateTimezoneSelect() {
 async function populateProviderToggles(visibility) {
   const container = document.getElementById('provider-toggles');
   if (!container) return;
-
-  // Base providers (non-Codex)
-  const providers = [
-    { key: 'anthropic', name: 'Anthropic', desc: 'Claude Code usage tracking' },
-    { key: 'synthetic', name: 'Synthetic', desc: 'Synthetic API quota monitoring' },
-    { key: 'zai', name: 'Z.ai', desc: 'Z.ai API usage tracking' },
-  ];
+  const baseVisibility = visibility && typeof visibility === 'object' ? visibility : {};
+  if (!State.providerVisibility || typeof State.providerVisibility !== 'object') {
+    State.providerVisibility = {};
+  }
+  Object.assign(State.providerVisibility, baseVisibility);
 
   container.innerHTML = '';
 
-  // Render base providers
-  providers.forEach(p => {
-    const vis = visibility[p.key] || { dashboard: true, polling: true };
-    container.appendChild(createProviderToggleRow(p.key, p.name, p.desc, vis));
-  });
+  let providers = [];
+  try {
+    const res = await authFetch(`${API_BASE}/api/providers/status`);
+    if (res.ok) {
+      const data = await res.json();
+      providers = Array.isArray(data.providers) ? data.providers : [];
+    }
+  } catch (e) {
+    // Keep fallback list below.
+  }
 
-  // Fetch Codex accounts and render per-account toggles
+  if (providers.length === 0) {
+    providers = [
+      { key: 'anthropic', name: 'Anthropic', description: 'Claude Code usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'synthetic', name: 'Synthetic', description: 'Synthetic API quota monitoring', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'zai', name: 'Z.ai', description: 'Z.ai API usage tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'copilot', name: 'Copilot', description: 'GitHub Copilot premium request tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'codex', name: 'Codex', description: 'OpenAI Codex usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'antigravity', name: 'Antigravity', description: 'Antigravity model usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'minimax', name: 'MiniMax', description: 'MiniMax Coding Plan usage tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+    ];
+  }
+
+  const providerByKey = new Map(providers.map(p => [p.key, p]));
+  const codexStatus = providerByKey.get('codex') || null;
+
+  providers
+    .filter(p => p.key !== 'codex')
+    .forEach((p) => {
+      const vis = baseVisibility[p.key] || {
+        polling: p.pollingEnabled !== false,
+        dashboard: p.dashboardVisible !== false
+      };
+      container.appendChild(createProviderToggleRow({
+        key: p.key,
+        name: p.name,
+        desc: p.description,
+        vis,
+        configured: p.configured !== false,
+        autoDetectable: !!p.autoDetectable,
+        isPolling: !!p.isPolling
+      }));
+    });
+
+  // Codex rows: per-account when multiple accounts exist, otherwise single row.
+  let renderedCodex = false;
   try {
     const res = await authFetch(`${API_BASE}/api/codex/profiles`);
     if (res.ok) {
       const data = await res.json();
-      const profiles = data.profiles || [];
-
+      const profiles = Array.isArray(data.profiles) ? data.profiles : [];
       if (profiles.length > 1) {
-        // Multiple accounts: show per-account toggles
-        profiles.forEach(profile => {
+        profiles.forEach((profile) => {
           const key = `codex:${profile.id}`;
-          const vis = visibility[key] || { dashboard: true, polling: true };
-          container.appendChild(createProviderToggleRow(
+          const vis = baseVisibility[key] || baseVisibility.codex || {
+            polling: codexStatus ? codexStatus.pollingEnabled !== false : true,
+            dashboard: codexStatus ? codexStatus.dashboardVisible !== false : true
+          };
+          container.appendChild(createProviderToggleRow({
             key,
-            `Codex - ${profile.name}`,
-            `ChatGPT account: ${profile.name}`,
-            vis
-          ));
+            name: `Codex - ${profile.name}`,
+            desc: `ChatGPT account: ${profile.name}`,
+            vis,
+            configured: codexStatus ? codexStatus.configured !== false : true,
+            autoDetectable: codexStatus ? !!codexStatus.autoDetectable : true,
+            isPolling: codexStatus ? !!codexStatus.isPolling : false
+          }));
         });
-      } else {
-        // Single or no accounts: show single Codex toggle
-        const vis = visibility['codex'] || { dashboard: true, polling: true };
-        container.appendChild(createProviderToggleRow('codex', 'Codex', 'Codex API usage tracking', vis));
+        renderedCodex = true;
       }
-    } else {
-      // Fallback: show single Codex toggle
-      const vis = visibility['codex'] || { dashboard: true, polling: true };
-      container.appendChild(createProviderToggleRow('codex', 'Codex', 'Codex API usage tracking', vis));
     }
   } catch (e) {
-    // Fallback: show single Codex toggle
-    const vis = visibility['codex'] || { dashboard: true, polling: true };
-    container.appendChild(createProviderToggleRow('codex', 'Codex', 'Codex API usage tracking', vis));
+    // fallback below
+  }
+
+  if (!renderedCodex) {
+    const fallbackCodex = codexStatus || {
+      key: 'codex',
+      name: 'Codex',
+      description: 'OpenAI Codex usage tracking',
+      configured: false,
+      autoDetectable: true,
+      pollingEnabled: true,
+      dashboardVisible: true,
+      isPolling: false
+    };
+    const vis = baseVisibility.codex || {
+      polling: fallbackCodex.pollingEnabled !== false,
+      dashboard: fallbackCodex.dashboardVisible !== false
+    };
+    container.appendChild(createProviderToggleRow({
+      key: 'codex',
+      name: fallbackCodex.name || 'Codex',
+      desc: fallbackCodex.description || 'OpenAI Codex usage tracking',
+      vis,
+      configured: fallbackCodex.configured !== false,
+      autoDetectable: !!fallbackCodex.autoDetectable,
+      isPolling: !!fallbackCodex.isPolling
+    }));
   }
 }
 
-function createProviderToggleRow(key, name, desc, vis) {
+function providerStatusBadge(configured, autoDetectable, isPolling) {
+  if (!configured) {
+    return autoDetectable
+      ? '<span class="badge">Auto-detect</span>'
+      : '<span class="badge">Not configured</span>';
+  }
+  if (isPolling) {
+    return '<span class="badge">Polling</span>';
+  }
+  return '<span class="badge">Idle</span>';
+}
+
+function updateProviderVisibilityState(provider, role, enabled) {
+  if (!State.providerVisibility || typeof State.providerVisibility !== 'object') {
+    State.providerVisibility = {};
+  }
+  if (!State.providerVisibility[provider] || typeof State.providerVisibility[provider] !== 'object') {
+    State.providerVisibility[provider] = {};
+  }
+  State.providerVisibility[provider][role] = enabled;
+}
+
+function createProviderToggleRow({ key, name, desc, vis, configured, autoDetectable, isPolling }) {
   const row = document.createElement('div');
   row.className = 'settings-toggle-row settings-toggle-row-dual';
+  const badge = providerStatusBadge(configured, autoDetectable, isPolling);
   row.innerHTML = `
     <div class="settings-toggle-info">
-      <div class="settings-toggle-label">${name}</div>
+      <div class="settings-toggle-label">${name} ${badge}</div>
       <div class="settings-toggle-sublabel">${desc}</div>
     </div>
     <div class="settings-toggle-group">
@@ -5905,7 +6163,107 @@ function createProviderToggleRow(key, name, desc, vis) {
       </div>
     </div>
   `;
+
+  row.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener('change', async (event) => {
+      const input = event.target;
+      const provider = input.dataset.provider;
+      const role = input.dataset.role;
+      const enabled = input.checked;
+      const feedback = document.getElementById('settings-feedback');
+
+      input.disabled = true;
+      try {
+        const payload = { provider };
+        payload[role] = enabled;
+        const res = await authFetch(`${API_BASE}/api/providers/toggle`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || data.success === false) {
+          input.checked = !enabled;
+          const msg = data && data.message ? data.message : 'Failed to update provider.';
+          showSettingsFeedback(feedback, `${name}: ${msg}`, 'error');
+          return;
+        }
+
+        updateProviderVisibilityState(provider, role, enabled);
+        if (provider.startsWith('codex:')) {
+          // Keep global codex visibility in sync when account toggles are used.
+          updateProviderVisibilityState('codex', role, enabled);
+        }
+        showSettingsFeedback(feedback, `${name} ${role} ${enabled ? 'enabled' : 'disabled'}.`, 'success');
+
+        if (getCurrentProvider() === 'both' && role === 'polling') {
+          renderAllProvidersView();
+        }
+      } catch (e) {
+        input.checked = !enabled;
+        showSettingsFeedback(document.getElementById('settings-feedback'), `${name}: Network error.`, 'error');
+      } finally {
+        input.disabled = false;
+      }
+    });
+  });
+
   return row;
+}
+
+function setupProviderReload() {
+  const section = document.getElementById('panel-providers');
+  const fields = document.getElementById('provider-toggles');
+  if (!section || !fields) return;
+  if (document.getElementById('providers-reload-btn')) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'settings-actions';
+  wrap.innerHTML = `
+    <button class="settings-test-btn" id="providers-reload-btn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg>
+      Reload Providers From .env
+    </button>
+    <span class="settings-test-result" id="providers-reload-result"></span>
+  `;
+  section.querySelector('.settings-section')?.appendChild(wrap);
+
+  const btn = document.getElementById('providers-reload-btn');
+  const result = document.getElementById('providers-reload-result');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Reloading...';
+    if (result) {
+      result.textContent = '';
+      result.className = 'settings-test-result';
+    }
+    try {
+      const res = await authFetch(`${API_BASE}/api/providers/reload`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        if (result) {
+          result.textContent = (data && data.error) || 'Reload failed.';
+          result.className = 'settings-test-result error';
+        }
+      } else {
+        await populateProviderToggles(State.providerVisibility || {});
+        if (result) {
+          result.textContent = 'Provider configuration reloaded.';
+          result.className = 'settings-test-result success';
+        }
+      }
+    } catch (e) {
+      if (result) {
+        result.textContent = 'Network error.';
+        result.className = 'settings-test-result error';
+      }
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg> Reload Providers From .env';
+    }
+  });
 }
 
 function gatherSettings() {
