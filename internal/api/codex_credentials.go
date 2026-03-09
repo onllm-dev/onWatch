@@ -28,43 +28,48 @@ type codexAuthFile struct {
 }
 
 // DetectCodexCredentials loads Codex credentials from CODEX_HOME/auth.json or ~/.codex/auth.json.
+// Falls back to CODEX_TOKEN for environments without a persistent Codex auth file.
 func DetectCodexCredentials(logger *slog.Logger) *CodexCredentials {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	authPath := codexAuthPath()
-	if authPath == "" {
+	if authPath != "" {
+		data, err := os.ReadFile(authPath)
+		if err != nil {
+			logger.Debug("Codex auth file not readable", "path", authPath, "error", err)
+		} else {
+			var auth codexAuthFile
+			if err := json.Unmarshal(data, &auth); err != nil {
+				logger.Debug("Codex auth file parse failed", "path", authPath, "error", err)
+			} else {
+				creds := &CodexCredentials{
+					AccessToken:  strings.TrimSpace(auth.Tokens.AccessToken),
+					RefreshToken: strings.TrimSpace(auth.Tokens.RefreshToken),
+					IDToken:      strings.TrimSpace(auth.Tokens.IDToken),
+					APIKey:       strings.TrimSpace(auth.OpenAIAPIKey),
+					AccountID:    strings.TrimSpace(auth.Tokens.AccountID),
+				}
+
+				if creds.AccessToken != "" || creds.APIKey != "" {
+					return creds
+				}
+
+				logger.Debug("Codex auth file has no usable token", "path", authPath)
+			}
+		}
+	} else {
 		logger.Debug("Codex auth path unavailable")
-		return nil
 	}
 
-	data, err := os.ReadFile(authPath)
-	if err != nil {
-		logger.Debug("Codex auth file not readable", "path", authPath, "error", err)
-		return nil
+	if token := strings.TrimSpace(os.Getenv("CODEX_TOKEN")); token != "" {
+		logger.Debug("Using CODEX_TOKEN environment variable")
+		return &CodexCredentials{AccessToken: token}
 	}
 
-	var auth codexAuthFile
-	if err := json.Unmarshal(data, &auth); err != nil {
-		logger.Debug("Codex auth file parse failed", "path", authPath, "error", err)
-		return nil
-	}
-
-	creds := &CodexCredentials{
-		AccessToken:  strings.TrimSpace(auth.Tokens.AccessToken),
-		RefreshToken: strings.TrimSpace(auth.Tokens.RefreshToken),
-		IDToken:      strings.TrimSpace(auth.Tokens.IDToken),
-		APIKey:       strings.TrimSpace(auth.OpenAIAPIKey),
-		AccountID:    strings.TrimSpace(auth.Tokens.AccountID),
-	}
-
-	if creds.AccessToken == "" && creds.APIKey == "" {
-		logger.Debug("Codex auth file has no usable token", "path", authPath)
-		return nil
-	}
-
-	return creds
+	logger.Debug("No Codex credentials found")
+	return nil
 }
 
 // DetectCodexToken returns OAuth access token when available.

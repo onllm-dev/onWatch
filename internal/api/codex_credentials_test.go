@@ -69,6 +69,32 @@ func TestDetectCodexCredentials_ParsesAPIKey(t *testing.T) {
 	}
 }
 
+// TestDetectCodexCredentials_EnvVarFallback is a regression test for Issue #26.
+// Docker/cloud users cannot access ~/.codex/auth.json and rely on CODEX_TOKEN env var.
+// This ensures the fallback path works when no auth file is available.
+func TestDetectCodexCredentials_EnvVarFallback(t *testing.T) {
+	t.Setenv("CODEX_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_TOKEN", "env_access_token")
+
+	creds := DetectCodexCredentials(discardLoggerCredentials())
+	if creds == nil {
+		t.Fatal("DetectCodexCredentials returned nil")
+	}
+	if creds.AccessToken != "env_access_token" {
+		t.Fatalf("AccessToken = %q, want env_access_token", creds.AccessToken)
+	}
+	if creds.RefreshToken != "" {
+		t.Fatalf("RefreshToken = %q, want empty", creds.RefreshToken)
+	}
+	if creds.APIKey != "" {
+		t.Fatalf("APIKey = %q, want empty", creds.APIKey)
+	}
+	if creds.AccountID != "" {
+		t.Fatalf("AccountID = %q, want empty", creds.AccountID)
+	}
+}
+
 func TestDetectCodexToken_PrefersAccessToken(t *testing.T) {
 	t.Setenv("CODEX_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
