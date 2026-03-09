@@ -175,6 +175,7 @@ func TestDetectCodexCredentials_NoFile_ReturnsNil(t *testing.T) {
 	// Set CODEX_HOME to a temp dir that has no auth.json
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
+	t.Setenv("CODEX_TOKEN", "")
 
 	creds := DetectCodexCredentials(nil)
 	if creds != nil {
