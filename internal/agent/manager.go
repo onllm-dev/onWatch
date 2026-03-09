@@ -19,10 +19,10 @@ type RunnerFactory func() (AgentRunner, error)
 
 // AgentManager manages dynamic provider agent start/stop lifecycle.
 type AgentManager struct {
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 	factories map[string]RunnerFactory
-	running  map[string]context.CancelFunc
-	logger   *slog.Logger
+	running   map[string]context.CancelFunc
+	logger    *slog.Logger
 }
 
 // NewAgentManager creates a new manager.

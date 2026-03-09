@@ -40,12 +40,12 @@ type CodexAgentInstance struct {
 
 // CodexAgentManager manages multiple CodexAgent instances for multi-account support.
 type CodexAgentManager struct {
-	store        *store.Store
-	tracker      *tracker.CodexTracker
-	interval     time.Duration
-	logger       *slog.Logger
-	notifier     *notify.NotificationEngine
-	pollingCheck func() bool // Global Codex polling check
+	store               *store.Store
+	tracker             *tracker.CodexTracker
+	interval            time.Duration
+	logger              *slog.Logger
+	notifier            *notify.NotificationEngine
+	pollingCheck        func() bool                // Global Codex polling check
 	accountPollingCheck func(accountID int64) bool // Per-account polling check
 
 	mu        sync.RWMutex
@@ -54,8 +54,8 @@ type CodexAgentManager struct {
 	cancel    context.CancelFunc
 
 	// For detecting new profiles
-	profilesDir   string
-	scanInterval  time.Duration
+	profilesDir      string
+	scanInterval     time.Duration
 	lastScanProfiles map[string]time.Time // profile name -> modified time
 }
 

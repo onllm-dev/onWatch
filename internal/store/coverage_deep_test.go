@@ -411,7 +411,7 @@ func TestCopilotStore_InsertWithQuotas_QueryRange_WithLimit(t *testing.T) {
 			ResetDate:   &resetDate,
 			RawJSON:     "{}",
 			Quotas: []api.CopilotQuota{
-				{Name: "premium_interactions", Entitlement: 1000, Remaining: 900 - i*100, PercentRemaining: float64(90-i*10), Unlimited: false, OverageCount: 0},
+				{Name: "premium_interactions", Entitlement: 1000, Remaining: 900 - i*100, PercentRemaining: float64(90 - i*10), Unlimited: false, OverageCount: 0},
 				{Name: "chat", Entitlement: 0, Remaining: 0, PercentRemaining: 0, Unlimited: true, OverageCount: 0},
 			},
 		}

@@ -22,20 +22,20 @@ type MiniMaxTracker struct {
 
 // MiniMaxSummary contains computed usage statistics for a MiniMax model.
 type MiniMaxSummary struct {
-	ModelName        string
-	Total            int
-	CurrentUsed      int
-	CurrentRemain    int
-	UsagePercent     float64
-	ResetAt          *time.Time
-	TimeUntilReset   time.Duration
-	CurrentRate      float64
-	ProjectedUsage   int
-	CompletedCycles  int
-	AvgPerCycle      float64
-	PeakCycle        int
-	TotalTracked     int
-	TrackingSince    time.Time
+	ModelName       string
+	Total           int
+	CurrentUsed     int
+	CurrentRemain   int
+	UsagePercent    float64
+	ResetAt         *time.Time
+	TimeUntilReset  time.Duration
+	CurrentRate     float64
+	ProjectedUsage  int
+	CompletedCycles int
+	AvgPerCycle     float64
+	PeakCycle       int
+	TotalTracked    int
+	TrackingSince   time.Time
 }
 
 // NewMiniMaxTracker creates a new MiniMax tracker.

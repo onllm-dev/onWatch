@@ -57,7 +57,7 @@ type NotificationTypes struct {
 type QuotaStatus struct {
 	Provider      string
 	QuotaKey      string
-	AccountID     string  // For multi-account providers (e.g., Codex)
+	AccountID     string // For multi-account providers (e.g., Codex)
 	Utilization   float64
 	Limit         float64
 	ResetOccurred bool

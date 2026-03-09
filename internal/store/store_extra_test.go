@@ -390,21 +390,21 @@ func TestStore_MigrateSessionsToUsageBased_WithZaiData(t *testing.T) {
 	// Insert Z.ai snapshots with changing values
 	for i := 0; i < 5; i++ {
 		snapshot := &api.ZaiSnapshot{
-			CapturedAt:       base.Add(time.Duration(i) * time.Minute),
-			TimeLimit:        100,
-			TimeUnit:         1,
-			TimeNumber:       100,
-			TimeUsage:        float64(i * 10),
-			TimeCurrentValue: float64(i * 10),
-			TimeRemaining:    float64(100 - i*10),
-			TimePercentage:   i * 10,
-			TokensLimit:      1000,
-			TokensUnit:       1,
-			TokensNumber:     1000,
-			TokensUsage:      float64(i * 100),
+			CapturedAt:         base.Add(time.Duration(i) * time.Minute),
+			TimeLimit:          100,
+			TimeUnit:           1,
+			TimeNumber:         100,
+			TimeUsage:          float64(i * 10),
+			TimeCurrentValue:   float64(i * 10),
+			TimeRemaining:      float64(100 - i*10),
+			TimePercentage:     i * 10,
+			TokensLimit:        1000,
+			TokensUnit:         1,
+			TokensNumber:       1000,
+			TokensUsage:        float64(i * 100),
 			TokensCurrentValue: float64(i * 100),
-			TokensRemaining:  float64(1000 - i*100),
-			TokensPercentage: i * 10,
+			TokensRemaining:    float64(1000 - i*100),
+			TokensPercentage:   i * 10,
 		}
 		_, err := s.InsertZaiSnapshot(snapshot)
 		if err != nil {

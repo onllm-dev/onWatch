@@ -13,9 +13,9 @@ import (
 type CodexTracker struct {
 	store      *store.Store
 	logger     *slog.Logger
-	lastValues map[int64]map[string]float64    // accountID -> quotaName -> value
-	lastResets map[int64]map[string]time.Time  // accountID -> quotaName -> resetTime
-	hasLast    map[int64]bool                  // accountID -> hasLast
+	lastValues map[int64]map[string]float64   // accountID -> quotaName -> value
+	lastResets map[int64]map[string]time.Time // accountID -> quotaName -> resetTime
+	hasLast    map[int64]bool                 // accountID -> hasLast
 
 	onReset func(quotaName string)
 }

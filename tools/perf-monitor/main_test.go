@@ -89,24 +89,24 @@ func TestGenerateRecommendation_CoversAllBranches(t *testing.T) {
 		want   string
 	}{
 		{
-			name: "high idle memory",
+			name:   "high idle memory",
 			report: Report{IdleStats: PhaseStats{AvgRSSMB: 55}, DeltaRSSMB: 2},
-			want: "High idle memory",
+			want:   "High idle memory",
 		},
 		{
-			name: "large increase under load",
+			name:   "large increase under load",
 			report: Report{IdleStats: PhaseStats{AvgRSSMB: 20}, DeltaRSSMB: 12},
-			want: "Large memory increase under load",
+			want:   "Large memory increase under load",
 		},
 		{
-			name: "minimal overhead",
+			name:   "minimal overhead",
 			report: Report{IdleStats: PhaseStats{AvgRSSMB: 20}, DeltaRSSMB: 0.5},
-			want: "Excellent! Minimal memory overhead",
+			want:   "Excellent! Minimal memory overhead",
 		},
 		{
-			name: "acceptable overhead",
+			name:   "acceptable overhead",
 			report: Report{IdleStats: PhaseStats{AvgRSSMB: 20}, DeltaRSSMB: 3},
-			want: "Good performance. Memory overhead is acceptable",
+			want:   "Good performance. Memory overhead is acceptable",
 		},
 	}
 
@@ -122,9 +122,9 @@ func TestGenerateRecommendation_CoversAllBranches(t *testing.T) {
 
 func TestDisplayResults_FormatsAndTruncatesOutput(t *testing.T) {
 	report := &Report{
-		IdleStats: PhaseStats{Samples: 2, MinRSSMB: 10, MaxRSSMB: 12, AvgRSSMB: 11, P95RSSMB: 12},
-		LoadStats: PhaseStats{Samples: 3, MinRSSMB: 11, MaxRSSMB: 15, AvgRSSMB: 13, P95RSSMB: 15},
-		DeltaRSSMB: 2,
+		IdleStats:    PhaseStats{Samples: 2, MinRSSMB: 10, MaxRSSMB: 12, AvgRSSMB: 11, P95RSSMB: 12},
+		LoadStats:    PhaseStats{Samples: 3, MinRSSMB: 11, MaxRSSMB: 15, AvgRSSMB: 13, P95RSSMB: 15},
+		DeltaRSSMB:   2,
 		DeltaPercent: 18.18,
 		RequestMetrics: []RequestMetric{{
 			Endpoint: "/api/history?range=6h&very-long-parameter=true",

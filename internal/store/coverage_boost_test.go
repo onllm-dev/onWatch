@@ -387,7 +387,7 @@ func TestStore_MigrateAnthropicSessions_IdleGap(t *testing.T) {
 			CapturedAt: base.Add(3*time.Hour + time.Duration(i)*time.Minute),
 			RawJSON:    "{}",
 			Quotas: []api.AnthropicQuota{
-				{Name: "five_hour", Utilization: float64(30+i*10), ResetsAt: &resetsAt},
+				{Name: "five_hour", Utilization: float64(30 + i*10), ResetsAt: &resetsAt},
 			},
 		}
 		_, err := s.InsertAnthropicSnapshot(snapshot)
