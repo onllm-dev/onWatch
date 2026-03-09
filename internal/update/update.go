@@ -22,6 +22,12 @@ const (
 	defaultCacheTTL   = 1 * time.Hour
 )
 
+var (
+	execCommand = exec.Command
+	sleepFn     = time.Sleep
+	exitFn      = os.Exit
+)
+
 // UpdateInfo holds the result of a version check.
 type UpdateInfo struct {
 	Available      bool   `json:"available"`
@@ -396,9 +402,9 @@ func MigrateSystemdUnit(logger *slog.Logger) {
 	// Restart=always policy when the parent PID dies.
 	var cmd *exec.Cmd
 	if strings.HasPrefix(unitPath, "/etc/systemd/system") {
-		cmd = exec.Command("systemctl", "daemon-reload")
+		cmd = execCommand("systemctl", "daemon-reload")
 	} else {
-		cmd = exec.Command("systemctl", "--user", "daemon-reload")
+		cmd = execCommand("systemctl", "--user", "daemon-reload")
 	}
 	if err := cmd.Run(); err != nil {
 		logger.Warn("systemctl daemon-reload failed", "error", err)
@@ -420,18 +426,18 @@ func (u *Updater) Restart() error {
 
 		// Run systemctl restart in a detached process.
 		// systemctl will SIGTERM us, then start the new binary.
-		cmd := exec.Command("systemctl", "restart", serviceName)
+		cmd := execCommand("systemctl", "restart", serviceName)
 		if err := cmd.Start(); err != nil {
 			u.logger.Warn("systemctl restart failed, falling back to exit", "error", err)
-			os.Exit(0)
+			exitFn(0)
 		}
 
 		// Wait for systemd to kill us (it sends SIGTERM which our signal handler catches)
 		u.logger.Info("Waiting for systemd to restart us...")
-		time.Sleep(30 * time.Second)
+		sleepFn(30 * time.Second)
 
 		// Fallback: if systemd didn't kill us within 30s, exit anyway
-		os.Exit(0)
+		exitFn(0)
 		return nil // unreachable
 	}
 
@@ -450,7 +456,7 @@ func (u *Updater) Restart() error {
 	}
 
 	args := filterArgs(os.Args[1:])
-	cmd := exec.Command(exePath, args...)
+	cmd := execCommand(exePath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -466,18 +472,18 @@ func (u *Updater) Restart() error {
 // restart method fails. Tries the detected service name first, then "onwatch.service".
 func (u *Updater) fallbackSystemctlRestart() error {
 	for _, name := range []string{DetectServiceName(), "onwatch.service"} {
-		cmd := exec.Command("systemctl", "restart", name)
+		cmd := execCommand("systemctl", "restart", name)
 		if err := cmd.Start(); err == nil {
 			u.logger.Info("Fallback: triggered systemctl restart", "service", name)
-			time.Sleep(30 * time.Second)
-			os.Exit(0)
+			sleepFn(30 * time.Second)
+			exitFn(0)
 		}
 		// Also try user-level
-		cmd = exec.Command("systemctl", "--user", "restart", name)
+		cmd = execCommand("systemctl", "--user", "restart", name)
 		if err := cmd.Start(); err == nil {
 			u.logger.Info("Fallback: triggered systemctl --user restart", "service", name)
-			time.Sleep(30 * time.Second)
-			os.Exit(0)
+			sleepFn(30 * time.Second)
+			exitFn(0)
 		}
 	}
 	return fmt.Errorf("update.Restart: all restart methods failed")

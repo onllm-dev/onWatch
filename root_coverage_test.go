@@ -4,16 +4,22 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/update"
 	"github.com/onllm-dev/onwatch/v2/internal/web"
 )
 
@@ -170,19 +176,19 @@ func TestFixExplicitDBPath_RedirectsToCanonicalWhenBetter(t *testing.T) {
 
 func TestPrintBannerAndHelp(t *testing.T) {
 	cfg := &config.Config{
-		SyntheticAPIKey:   "syn_abcdefghijkl",
-		ZaiAPIKey:         "zai-abcdef",
-		AnthropicToken:    "anthropic-token",
+		SyntheticAPIKey:    "syn_abcdefghijkl",
+		ZaiAPIKey:          "zai-abcdef",
+		AnthropicToken:     "anthropic-token",
 		AnthropicAutoToken: true,
-		CopilotToken:      "copilot-token",
-		CodexToken:        "codex-token",
-		CodexAutoToken:    true,
+		CopilotToken:       "copilot-token",
+		CodexToken:         "codex-token",
+		CodexAutoToken:     true,
 		AntigravityEnabled: true,
-		PollInterval:      60 * time.Second,
-		Port:              9211,
-		DBPath:            "/tmp/onwatch.db",
-		AdminUser:         "admin",
-		TestMode:          true,
+		PollInterval:       60 * time.Second,
+		Port:               9211,
+		DBPath:             "/tmp/onwatch.db",
+		AdminUser:          "admin",
+		TestMode:           true,
 	}
 
 	banner := captureStdout(t, func() {
@@ -347,13 +353,13 @@ func TestProviderCollectionHelpers(t *testing.T) {
 
 func TestFreshSetup_AntigravityOnlySafeBranch(t *testing.T) {
 	input := strings.Join([]string{
-		"5",      // antigravity only
-		"",       // default admin user
-		"",       // auto-generate password
-		"70000",  // invalid port
-		"9211",   // valid port
-		"9",      // invalid interval
-		"60",     // valid interval
+		"5",     // antigravity only
+		"",      // default admin user
+		"",      // auto-generate password
+		"70000", // invalid port
+		"9211",  // valid port
+		"9",     // invalid interval
+		"60",    // valid interval
 	}, "\n") + "\n"
 
 	reader := bufio.NewReader(strings.NewReader(input))
@@ -473,4 +479,400 @@ func TestRunSetupEarlyPathsAndSafeRunCommands(t *testing.T) {
 			t.Fatal("invalid PID should not be identified as onwatch")
 		}
 	})
+}
+
+func TestRunStopAndStatus_WithPIDFileProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sleep process helper not used on windows")
+	}
+
+	oldPIDFile := pidFile
+	pidFile = filepath.Join(t.TempDir(), "onwatch-test.pid")
+	t.Cleanup(func() { pidFile = oldPIDFile })
+
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start sleep process: %v", err)
+	}
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+		}
+	})
+
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d:9211", cmd.Process.Pid)), 0o600); err != nil {
+		t.Fatalf("write pid file: %v", err)
+	}
+
+	statusOut := captureStdout(t, func() {
+		if err := runStatus(true); err != nil {
+			t.Fatalf("runStatus error: %v", err)
+		}
+	})
+	if !strings.Contains(statusOut, "onwatch (test) is running") {
+		t.Fatalf("unexpected runStatus output: %s", statusOut)
+	}
+	if !strings.Contains(statusOut, "Dashboard: http://localhost:9211") {
+		t.Fatalf("expected dashboard URL in status output: %s", statusOut)
+	}
+
+	stopOut := captureStdout(t, func() {
+		if err := runStop(true); err != nil {
+			t.Fatalf("runStop error: %v", err)
+		}
+	})
+	if !strings.Contains(stopOut, "Stopped onwatch (test)") {
+		t.Fatalf("unexpected runStop output: %s", stopOut)
+	}
+
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- cmd.Wait()
+	}()
+	select {
+	case <-waitDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("process did not stop after runStop")
+	}
+}
+
+func TestRunStatus_StalePIDFile(t *testing.T) {
+	oldPIDFile := pidFile
+	pidFile = filepath.Join(t.TempDir(), "onwatch-test.pid")
+	t.Cleanup(func() { pidFile = oldPIDFile })
+
+	if err := os.WriteFile(pidFile, []byte("999999:9211"), 0o600); err != nil {
+		t.Fatalf("write stale pid file: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runStatus(true); err != nil {
+			t.Fatalf("runStatus error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "stale PID file") {
+		t.Fatalf("expected stale pid message, got: %s", out)
+	}
+}
+
+func startOnwatchNCListener(t *testing.T, port int) *exec.Cmd {
+	t.Helper()
+
+	ncPath, err := exec.LookPath("nc")
+	if err != nil {
+		t.Skip("nc not available")
+	}
+
+	onwatchNC := filepath.Join(t.TempDir(), "onwatch")
+	if err := os.Symlink(ncPath, onwatchNC); err != nil {
+		t.Skipf("cannot create onwatch symlink for nc: %v", err)
+	}
+
+	cmd := exec.Command(onwatchNC, "-lk", "127.0.0.1", strconv.Itoa(port))
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		t.Skipf("cannot start nc listener: %v", err)
+	}
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+		}
+	})
+
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return cmd
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Skip("nc listener did not open port in time")
+	return nil
+}
+
+func pickAvailableDefaultPort(t *testing.T) int {
+	t.Helper()
+	for _, port := range []int{9211, 8932} {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			_ = ln.Close()
+			return port
+		}
+	}
+	t.Skip("default ports 9211/8932 unavailable")
+	return 0
+}
+
+func TestRunStatus_PortFallbackDetectsOnwatchProcess(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("port process detection uses lsof on unix")
+	}
+
+	oldPIDFile := pidFile
+	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
+	t.Cleanup(func() { pidFile = oldPIDFile })
+
+	port := pickAvailableDefaultPort(t)
+	_ = startOnwatchNCListener(t, port)
+
+	out := captureStdout(t, func() {
+		if err := runStatus(false); err != nil {
+			t.Fatalf("runStatus error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "onwatch is running (PID") {
+		t.Fatalf("expected running output, got: %s", out)
+	}
+	if !strings.Contains(out, fmt.Sprintf("on port %d", port)) {
+		t.Fatalf("expected detected port in output, got: %s", out)
+	}
+}
+
+func TestRunStop_PortFromPIDFileFallbackStopsOnwatchProcess(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("port process detection uses lsof on unix")
+	}
+
+	oldPIDFile := pidFile
+	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
+	t.Cleanup(func() { pidFile = oldPIDFile })
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen random port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	cmd := startOnwatchNCListener(t, port)
+	if cmd == nil || cmd.Process == nil {
+		t.Skip("listener process unavailable")
+	}
+
+	// Stale PID with a valid port forces runStop(false) into port-based fallback.
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("999999:%d", port)), 0o644); err != nil {
+		t.Fatalf("write pid file: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runStop(false); err != nil {
+			t.Fatalf("runStop error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Stopped onwatch (PID") || !strings.Contains(out, fmt.Sprintf("on port %d", port)) {
+		t.Fatalf("expected port-fallback stop output, got: %s", out)
+	}
+}
+
+func TestDaemonize_SuccessAndLogOpenError(t *testing.T) {
+	oldPIDFile := pidFile
+	oldArgs := os.Args
+	pidFile = filepath.Join(t.TempDir(), "onwatch-daemon.pid")
+	t.Cleanup(func() {
+		pidFile = oldPIDFile
+		os.Args = oldArgs
+	})
+
+	t.Run("success", func(t *testing.T) {
+		tmp := t.TempDir()
+		dbPath := filepath.Join(tmp, "data", "onwatch.db")
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+			t.Fatalf("mkdir db dir: %v", err)
+		}
+
+		t.Setenv("GO_WANT_DAEMON_HELPER", "1")
+		os.Args = []string{oldArgs[0], "-test.run=TestDaemonizeHelperProcess"}
+
+		cfg := &config.Config{
+			DBPath:    dbPath,
+			Port:      9211,
+			TestMode:  true,
+			AdminUser: "admin",
+			AdminPass: "test",
+		}
+
+		out := captureStdout(t, func() {
+			if err := daemonize(cfg); err != nil {
+				t.Fatalf("daemonize error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "Daemon started (PID") {
+			t.Fatalf("unexpected daemonize output: %s", out)
+		}
+
+		if _, err := os.Stat(pidFile); err != nil {
+			t.Fatalf("pid file should exist: %v", err)
+		}
+		logPath := filepath.Join(filepath.Dir(dbPath), ".onwatch-test.log")
+		if _, err := os.Stat(logPath); err != nil {
+			t.Fatalf("daemon log file should exist: %v", err)
+		}
+	})
+
+	t.Run("open log file error", func(t *testing.T) {
+		t.Setenv("GO_WANT_DAEMON_HELPER", "1")
+		os.Args = []string{oldArgs[0], "-test.run=TestDaemonizeHelperProcess"}
+
+		cfg := &config.Config{
+			DBPath:   filepath.Join(t.TempDir(), "missing", "nested", "onwatch.db"),
+			Port:     9211,
+			TestMode: true,
+		}
+
+		err := daemonize(cfg)
+		if err == nil || !strings.Contains(err.Error(), "failed to open log file for daemon") {
+			t.Fatalf("expected log open error, got %v", err)
+		}
+	})
+}
+
+func TestRunUpdate_DevVersionNoNetwork(t *testing.T) {
+	oldVersion := version
+	version = "dev"
+	t.Cleanup(func() { version = oldVersion })
+
+	out := captureStdout(t, func() {
+		if err := runUpdate(); err != nil {
+			t.Fatalf("runUpdate error: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "checking for updates") {
+		t.Fatalf("expected update check output, got: %s", out)
+	}
+	if !strings.Contains(out, "Already at the latest version (vdev)") {
+		t.Fatalf("expected latest-version message, got: %s", out)
+	}
+}
+
+type stubCLIUpdater struct {
+	checkInfo  update.UpdateInfo
+	checkErr   error
+	applyErr   error
+	checkCalls int
+	applyCalls int
+}
+
+func (s *stubCLIUpdater) Check() (update.UpdateInfo, error) {
+	s.checkCalls++
+	return s.checkInfo, s.checkErr
+}
+
+func (s *stubCLIUpdater) Apply() error {
+	s.applyCalls++
+	return s.applyErr
+}
+
+func TestRunUpdate_WithMockedUpdater(t *testing.T) {
+	oldVersion := version
+	oldUpdaterFactory := newCLIUpdater
+	oldPIDFile := pidFile
+	t.Cleanup(func() {
+		version = oldVersion
+		newCLIUpdater = oldUpdaterFactory
+		pidFile = oldPIDFile
+	})
+
+	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
+	version = "1.2.3"
+
+	t.Run("check error", func(t *testing.T) {
+		stub := &stubCLIUpdater{checkErr: fmt.Errorf("boom")}
+		newCLIUpdater = func(v string, logger *slog.Logger) cliUpdater { return stub }
+
+		err := runUpdate()
+		if err == nil || !strings.Contains(err.Error(), "update check failed") {
+			t.Fatalf("expected check failure, got %v", err)
+		}
+		if stub.checkCalls != 1 || stub.applyCalls != 0 {
+			t.Fatalf("unexpected calls check=%d apply=%d", stub.checkCalls, stub.applyCalls)
+		}
+	})
+
+	t.Run("no update available", func(t *testing.T) {
+		stub := &stubCLIUpdater{
+			checkInfo: update.UpdateInfo{
+				Available:      false,
+				CurrentVersion: "1.2.3",
+				LatestVersion:  "1.2.3",
+			},
+		}
+		newCLIUpdater = func(v string, logger *slog.Logger) cliUpdater { return stub }
+
+		out := captureStdout(t, func() {
+			if err := runUpdate(); err != nil {
+				t.Fatalf("runUpdate error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "Already at the latest version (v1.2.3)") {
+			t.Fatalf("unexpected output: %s", out)
+		}
+		if stub.checkCalls != 1 || stub.applyCalls != 0 {
+			t.Fatalf("unexpected calls check=%d apply=%d", stub.checkCalls, stub.applyCalls)
+		}
+	})
+
+	t.Run("apply error", func(t *testing.T) {
+		stub := &stubCLIUpdater{
+			checkInfo: update.UpdateInfo{
+				Available:      true,
+				CurrentVersion: "1.2.3",
+				LatestVersion:  "1.2.4",
+				DownloadURL:    "https://example.com/onwatch",
+			},
+			applyErr: fmt.Errorf("cannot replace binary"),
+		}
+		newCLIUpdater = func(v string, logger *slog.Logger) cliUpdater { return stub }
+
+		err := runUpdate()
+		if err == nil || !strings.Contains(err.Error(), "update failed") {
+			t.Fatalf("expected apply failure, got %v", err)
+		}
+		if stub.checkCalls != 1 || stub.applyCalls != 1 {
+			t.Fatalf("unexpected calls check=%d apply=%d", stub.checkCalls, stub.applyCalls)
+		}
+	})
+
+	t.Run("apply success with self pid file", func(t *testing.T) {
+		selfPID := os.Getpid()
+		if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", selfPID)), 0o644); err != nil {
+			t.Fatalf("write pid file: %v", err)
+		}
+
+		stub := &stubCLIUpdater{
+			checkInfo: update.UpdateInfo{
+				Available:      true,
+				CurrentVersion: "1.2.3",
+				LatestVersion:  "1.2.4",
+				DownloadURL:    "https://example.com/onwatch",
+			},
+		}
+		newCLIUpdater = func(v string, logger *slog.Logger) cliUpdater { return stub }
+
+		out := captureStdout(t, func() {
+			if err := runUpdate(); err != nil {
+				t.Fatalf("runUpdate error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "Updated successfully to v1.2.4") {
+			t.Fatalf("unexpected output: %s", out)
+		}
+		if stub.checkCalls != 1 || stub.applyCalls != 1 {
+			t.Fatalf("unexpected calls check=%d apply=%d", stub.checkCalls, stub.applyCalls)
+		}
+	})
+}
+
+func TestDaemonizeHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_DAEMON_HELPER") != "1" {
+		return
+	}
+	os.Exit(0)
 }

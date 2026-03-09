@@ -1241,9 +1241,18 @@ func humanSize(bytes int64) string {
 	return fmt.Sprintf("%.1fMB", float64(bytes)/(1024*1024))
 }
 
+type cliUpdater interface {
+	Check() (update.UpdateInfo, error)
+	Apply() error
+}
+
+var newCLIUpdater = func(v string, logger *slog.Logger) cliUpdater {
+	return update.NewUpdater(v, logger)
+}
+
 func runUpdate() error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	u := update.NewUpdater(version, logger)
+	u := newCLIUpdater(version, logger)
 
 	fmt.Printf("onWatch v%s - checking for updates...\n", version)
 
