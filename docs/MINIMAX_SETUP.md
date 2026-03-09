@@ -45,6 +45,6 @@ onwatch
 ## Notes
 
 - MiniMax endpoint used by onWatch:
-  `https://www.minimax.io/v1/api/openplatform/coding_plan/remains`
+  `https://api.minimax.io/v1/api/openplatform/coding_plan/remains`
 - Auth is sent as a `Bearer` token.
 - onWatch stores usage snapshots locally in SQLite.
