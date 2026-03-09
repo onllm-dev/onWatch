@@ -2151,52 +2151,6 @@ func (h *Handler) summarySynthetic(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if h.config.HasProvider("antigravity") {
-		limit := parseCycleOverviewLimit(r)
-		groupBy := r.URL.Query().Get("antigravityGroupBy")
-		if groupBy == "" {
-			groupBy = api.AntigravityQuotaGroupClaudeGPT
-		}
-		if rows, err := h.store.QueryAntigravityCycleOverview(groupBy, limit); err == nil {
-			quotaNames := []string{}
-			for _, row := range rows {
-				if len(row.CrossQuotas) > 0 {
-					for _, cq := range row.CrossQuotas {
-						quotaNames = append(quotaNames, cq.Name)
-					}
-					break
-				}
-			}
-			if len(quotaNames) == 0 {
-				quotaNames = []string{
-					api.AntigravityQuotaGroupClaudeGPT,
-					api.AntigravityQuotaGroupGeminiPro,
-					api.AntigravityQuotaGroupGeminiFlash,
-				}
-			}
-			response["antigravity"] = map[string]interface{}{
-				"groupBy":    groupBy,
-				"provider":   "antigravity",
-				"quotaNames": quotaNames,
-				"cycles":     cycleOverviewRowsToJSON(rows),
-			}
-		}
-	}
-	if h.config.HasProvider("minimax") {
-		limit := parseCycleOverviewLimit(r)
-		groupBy := r.URL.Query().Get("minimaxGroupBy")
-		if groupBy == "" {
-			groupBy = r.URL.Query().Get("groupBy")
-		}
-		if rows, quotaNames, resolvedGroupBy, err := h.buildMiniMaxCycleOverviewRows(groupBy, limit); err == nil {
-			response["minimax"] = map[string]interface{}{
-				"groupBy":    resolvedGroupBy,
-				"provider":   "minimax",
-				"quotaNames": quotaNames,
-				"cycles":     cycleOverviewRowsToJSON(rows),
-			}
-		}
-	}
 
 	respondJSON(w, http.StatusOK, response)
 }

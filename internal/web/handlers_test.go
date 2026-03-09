@@ -929,6 +929,79 @@ func TestHandler_Summary_WithSyntheticProvider(t *testing.T) {
 	}
 }
 
+func TestHandler_Summary_WithSyntheticProvider_DoesNotLeakOtherProviders(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	syntheticSnapshot := &api.Snapshot{
+		CapturedAt: time.Now().UTC(),
+		Sub:        api.QuotaInfo{Limit: 1350, Requests: 100, RenewsAt: time.Now().Add(5 * time.Hour)},
+		Search:     api.QuotaInfo{Limit: 250, Requests: 10, RenewsAt: time.Now().Add(1 * time.Hour)},
+		ToolCall:   api.QuotaInfo{Limit: 16200, Requests: 500, RenewsAt: time.Now().Add(3 * time.Hour)},
+	}
+	if _, err := s.InsertSnapshot(syntheticSnapshot); err != nil {
+		t.Fatalf("InsertSnapshot failed: %v", err)
+	}
+
+	antigravityReset := time.Now().UTC().Add(3 * time.Hour)
+	antigravitySnapshot := &api.AntigravitySnapshot{
+		CapturedAt: time.Now().UTC(),
+		Models: []api.AntigravityModelQuota{
+			{
+				ModelID:           "claude-sonnet",
+				RemainingFraction: 0.75,
+				ResetTime:         &antigravityReset,
+			},
+		},
+	}
+	if _, err := s.InsertAntigravitySnapshot(antigravitySnapshot); err != nil {
+		t.Fatalf("InsertAntigravitySnapshot failed: %v", err)
+	}
+
+	minimaxSnapshot := sharedMiniMaxSnapshot(time.Now().UTC(), 12)
+	if _, err := s.InsertMiniMaxSnapshot(minimaxSnapshot); err != nil {
+		t.Fatalf("InsertMiniMaxSnapshot failed: %v", err)
+	}
+
+	tr := tracker.New(s, nil)
+	cfg := &config.Config{
+		SyntheticAPIKey:    "syn_test_key",
+		AntigravityEnabled: true,
+		MiniMaxAPIKey:      "minimax_test_key",
+		PollInterval:       60 * time.Second,
+		Port:               9211,
+		AdminUser:          "admin",
+		AdminPass:          "test",
+		DBPath:             "./test.db",
+	}
+	h := NewHandler(s, tr, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/summary?provider=synthetic&minimaxGroupBy=MiniMax-M2", nil)
+	rr := httptest.NewRecorder()
+	h.Summary(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	for _, field := range []string{"subscription", "search", "toolCalls"} {
+		if _, ok := response[field]; !ok {
+			t.Fatalf("expected %s field", field)
+		}
+	}
+	if _, ok := response["antigravity"]; ok {
+		t.Fatalf("did not expect antigravity key in synthetic summary: %v", response)
+	}
+	if _, ok := response["minimax"]; ok {
+		t.Fatalf("did not expect minimax key in synthetic summary: %v", response)
+	}
+}
+
 func TestHandler_Cycles_WithSyntheticProvider(t *testing.T) {
 	s, _ := store.New(":memory:")
 	defer s.Close()
