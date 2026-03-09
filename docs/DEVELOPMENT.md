@@ -219,7 +219,7 @@ Strip debug symbols for a smaller binary:
 make build    # Equivalent to: go build -ldflags="-s -w -X main.version=$(VERSION)" -o onwatch .
 ```
 
-Binary sizes: ~12-13 MB per platform.
+Binary sizes: ~15 MB per platform.
 
 ---
 
