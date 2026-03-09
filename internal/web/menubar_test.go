@@ -195,3 +195,92 @@ func TestMenubarSummaryUsesConfiguredThresholds(t *testing.T) {
 		t.Fatal("expected provider cards in snapshot")
 	}
 }
+
+func TestMenubarPageRequiresLoopback(t *testing.T) {
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/menubar", nil)
+	req.RemoteAddr = "192.168.1.50:12345"
+	rr := httptest.NewRecorder()
+
+	h.MenubarPage(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rr.Code)
+	}
+}
+
+func TestMenubarPageRendersLoopbackBootstrap(t *testing.T) {
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/menubar?view=detailed", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+
+	h.MenubarPage(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"default_view":"detailed"`) {
+		t.Fatalf("expected detailed bootstrap, got body: %s", body)
+	}
+	if !strings.Contains(body, "Local Menubar View") {
+		t.Fatalf("expected menubar heading, got body: %s", body)
+	}
+}
+
+func TestSessionAuthMiddleware_AllowsLoopbackMenubarPaths(t *testing.T) {
+	sessions := NewSessionStore("admin", legacyHashPassword("secret"), nil)
+
+	handler := SessionAuthMiddleware(sessions)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/menubar", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	apiReq := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	apiReq.RemoteAddr = "[::1]:12345"
+	apiRR := httptest.NewRecorder()
+	handler.ServeHTTP(apiRR, apiReq)
+
+	if apiRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for loopback api path, got %d", apiRR.Code)
+	}
+}
+
+func TestSessionAuthMiddleware_DoesNotBypassRemoteMenubarPaths(t *testing.T) {
+	sessions := NewSessionStore("admin", legacyHashPassword("secret"), nil)
+
+	handler := SessionAuthMiddleware(sessions)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/menubar", nil)
+	req.RemoteAddr = "192.168.1.50:12345"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("expected redirect to login for remote request, got %d", rr.Code)
+	}
+
+	apiReq := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	apiReq.RemoteAddr = "192.168.1.50:12345"
+	apiRR := httptest.NewRecorder()
+	handler.ServeHTTP(apiRR, apiReq)
+
+	if apiRR.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for remote api request, got %d", apiRR.Code)
+	}
+}
