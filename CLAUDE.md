@@ -1,10 +1,10 @@
 # onWatch
 
-Go CLI for AI quota tracking. Polls 6 providers → SQLite → Material Design 3 dashboard.
+Go CLI for AI quota tracking. Polls 7 providers → SQLite → Material Design 3 dashboard.
 
 ## Task
 
-Background daemon (<50MB RAM) tracking: Anthropic, Synthetic, Z.ai, Copilot, Codex, Antigravity.
+Background daemon (<50MB RAM) tracking: Anthropic, Synthetic, Z.ai, Copilot, Codex, MiniMax, Antigravity.
 
 ## Code Map
 
