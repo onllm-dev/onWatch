@@ -2079,6 +2079,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryCopilot(w, r)
 	case "codex":
 		h.summaryCodex(w, r)
+	case "antigravity":
+		h.summaryAntigravity(w, r)
 	case "minimax":
 		h.summaryMiniMax(w, r)
 	default:
@@ -2119,6 +2121,9 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("codex") {
 		response["codex"] = h.buildCodexSummaryMap(DefaultCodexAccountID)
+	}
+	if h.config.HasProvider("antigravity") {
+		response["antigravity"] = h.buildAntigravitySummaryMap()
 	}
 	if h.config.HasProvider("minimax") {
 		response["minimax"] = h.buildMiniMaxSummaryMap()
@@ -2194,6 +2199,101 @@ func (h *Handler) summarySynthetic(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, response)
+}
+
+// summaryAntigravity returns Antigravity usage summary.
+func (h *Handler) summaryAntigravity(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildAntigravitySummaryMap())
+}
+
+func (h *Handler) buildAntigravitySummaryMap() map[string]interface{} {
+	response := map[string]interface{}{}
+	if h.store == nil {
+		return response
+	}
+
+	latest, err := h.store.QueryLatestAntigravity()
+	if err != nil {
+		h.logger.Error("failed to query latest Antigravity snapshot", "error", err)
+		return response
+	}
+	if latest == nil {
+		return response
+	}
+
+	groups := api.GroupAntigravityModelsByLogicalQuota(latest.Models)
+	for _, group := range groups {
+		item := map[string]interface{}{
+			"quotaGroup":        group.GroupKey,
+			"displayName":       group.DisplayName,
+			"remainingFraction": group.RemainingFraction,
+			"remainingPercent":  group.RemainingPercent,
+			"usagePercent":      group.UsagePercent,
+			"isExhausted":       group.IsExhausted,
+			"models":            group.ModelIDs,
+			"modelLabels":       group.Labels,
+			"currentRate":       0.0,
+			"projectedUsage":    0.0,
+			"completedCycles":   0,
+			"avgPerCycle":       0.0,
+			"peakCycle":         0.0,
+			"totalTracked":      0.0,
+			"trackingSince":     nil,
+		}
+		if group.ResetTime != nil {
+			item["resetTime"] = group.ResetTime.Format(time.RFC3339)
+			item["timeUntilReset"] = formatDuration(group.TimeUntilReset)
+		}
+
+		if h.antigravityTracker != nil {
+			currentRate := 0.0
+			projectedUsage := 0.0
+			completedCycles := 0
+			avgPerCycleTotal := 0.0
+			avgPerCycleCount := 0
+			peakCycle := 0.0
+			totalTracked := 0.0
+			var trackingSince *time.Time
+
+			for _, modelID := range group.ModelIDs {
+				summary, err := h.antigravityTracker.UsageSummary(modelID)
+				if err != nil || summary == nil {
+					continue
+				}
+				currentRate += summary.CurrentRate
+				projectedUsage += summary.ProjectedUsage
+				completedCycles += summary.CompletedCycles
+				totalTracked += summary.TotalTracked
+				if summary.PeakCycle > peakCycle {
+					peakCycle = summary.PeakCycle
+				}
+				if summary.AvgPerCycle > 0 {
+					avgPerCycleTotal += summary.AvgPerCycle
+					avgPerCycleCount++
+				}
+				if !summary.TrackingSince.IsZero() && (trackingSince == nil || summary.TrackingSince.Before(*trackingSince)) {
+					ts := summary.TrackingSince
+					trackingSince = &ts
+				}
+			}
+
+			item["currentRate"] = currentRate
+			item["projectedUsage"] = projectedUsage
+			item["completedCycles"] = completedCycles
+			item["peakCycle"] = peakCycle
+			item["totalTracked"] = totalTracked
+			if avgPerCycleCount > 0 {
+				item["avgPerCycle"] = avgPerCycleTotal / float64(avgPerCycleCount)
+			}
+			if trackingSince != nil {
+				item["trackingSince"] = trackingSince.Format(time.RFC3339)
+			}
+		}
+
+		response[group.GroupKey] = item
+	}
+
+	return response
 }
 
 // summaryZai returns Z.ai usage summary

@@ -6258,7 +6258,7 @@ func TestHandler_SummaryBoth_WithAllProviders(t *testing.T) {
 	var response map[string]interface{}
 	json.Unmarshal(rr.Body.Bytes(), &response)
 
-	for _, provider := range []string{"synthetic", "zai", "anthropic", "copilot", "codex"} {
+	for _, provider := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity"} {
 		if _, ok := response[provider]; !ok {
 			t.Errorf("expected %s key in response", provider)
 		}
@@ -7501,15 +7501,20 @@ func TestHandler_Summary_Antigravity_EmptyStore(t *testing.T) {
 	cfg := createTestConfigWithAntigravity()
 	h := NewHandler(s, nil, nil, nil, cfg)
 
-	// Antigravity goes through summaryCodex-like pattern
-	// but it doesn't have a separate summary handler - it uses summaryBoth
-	// Let's test the cycle overview for antigravity instead
-	req := httptest.NewRequest(http.MethodGet, "/api/cycle-overview?provider=antigravity", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/summary?provider=antigravity", nil)
 	rr := httptest.NewRecorder()
-	h.CycleOverview(rr, req)
+	h.Summary(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", rr.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+	if len(response) != 0 {
+		t.Fatalf("expected empty response map for no snapshots, got %v", response)
 	}
 }
 

@@ -1338,9 +1338,9 @@ func TestParseCycleOverviewLimit_WithLimitParam(t *testing.T) {
 		expected int
 	}{
 		{"/api/cycle-overview?limit=10", 10},
-		{"/api/cycle-overview?limit=0", 50},   // invalid → default
-		{"/api/cycle-overview?limit=-1", 50},  // invalid → default
-		{"/api/cycle-overview?limit=abc", 50}, // invalid → default
+		{"/api/cycle-overview?limit=0", 50},    // invalid → default
+		{"/api/cycle-overview?limit=-1", 50},   // invalid → default
+		{"/api/cycle-overview?limit=abc", 50},  // invalid → default
 		{"/api/cycle-overview?limit=600", 500}, // exceeds max → capped
 		{"/api/cycle-overview", 50},            // no param → default
 	}
@@ -1610,7 +1610,7 @@ func TestParseInsightsRange(t *testing.T) {
 		{"1d", 24 * time.Hour},
 		{"7d", 7 * 24 * time.Hour},
 		{"30d", 30 * 24 * time.Hour},
-		{"", 7 * 24 * time.Hour},      // default
+		{"", 7 * 24 * time.Hour},        // default
 		{"invalid", 7 * 24 * time.Hour}, // falls back to default
 	}
 
@@ -2225,7 +2225,7 @@ func TestHandler_Summary_WithCodexProvider_Extra(t *testing.T) {
 	}
 }
 
-// TestHandler_Summary_WithAntigravityProvider returns 400 (antigravity not supported in summary).
+// TestHandler_Summary_WithAntigravityProvider returns summary for antigravity.
 func TestHandler_Summary_WithAntigravityProvider(t *testing.T) {
 	s, _ := store.New(":memory:")
 	defer s.Close()
@@ -2237,9 +2237,8 @@ func TestHandler_Summary_WithAntigravityProvider(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.Summary(rr, req)
 
-	// Antigravity falls to default case in Summary, returns 400
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400 for antigravity summary (not supported), got %d", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rr.Code)
 	}
 }
 
@@ -3937,7 +3936,7 @@ func TestHandler_Insights_Anthropic_WithData2(t *testing.T) {
 			Quotas: []api.AnthropicQuota{
 				{
 					Name:        "five_hour",
-					Utilization: float64(20+i*5),
+					Utilization: float64(20 + i*5),
 					ResetsAt:    &resetsAt,
 				},
 			},
@@ -4919,10 +4918,10 @@ func TestHandler_Current_Zai_WithTrackerAndData(t *testing.T) {
 		snap := &api.ZaiSnapshot{
 			CapturedAt:          time.Now().UTC().Add(time.Duration(-i) * 10 * time.Minute),
 			TokensUsage:         100000000,
-			TokensCurrentValue:  float64(1000000*(i+1)),
+			TokensCurrentValue:  float64(1000000 * (i + 1)),
 			TokensPercentage:    i + 1,
 			TimeUsage:           3600000,
-			TimeCurrentValue:    float64(100000*(i+1)),
+			TimeCurrentValue:    float64(100000 * (i + 1)),
 			TimePercentage:      i + 1,
 			TokensNextResetTime: &resetTime,
 		}
