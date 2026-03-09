@@ -203,7 +203,7 @@ build_darwin_full() {
     for arch in arm64 amd64; do
         local output="dist/onwatch-darwin-${arch}"
         info "Building ${output}..."
-        CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" go build \
+        CGO_ENABLED=1 CGO_LDFLAGS="-framework UniformTypeIdentifiers" GOOS=darwin GOARCH="$arch" go build \
             -tags "$tags" \
             -ldflags="-s -w -X main.version=$VERSION" \
             -o "$SCRIPT_DIR/$output" .

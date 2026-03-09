@@ -55,7 +55,7 @@ jobs:
       - name: Compile tagged menubar packages
         run: |
           go test -tags menubar ./internal/menubar ./internal/web
-          go build -tags menubar,desktop,production -o /tmp/onwatch-menubar .
+          CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags menubar,desktop,production -o /tmp/onwatch-menubar .
 
       - name: Setup Python
         uses: actions/setup-python@v5
