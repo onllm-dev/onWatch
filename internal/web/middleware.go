@@ -246,6 +246,12 @@ func SessionAuthMiddleware(sessions *SessionStore, logger ...*slog.Logger) func(
 				return
 			}
 
+			// Local tray surface is intentionally public for localhost requests.
+			if isLocalMenubarPublicPath(path) && isLoopbackRequest(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Check session cookie first
 			if cookie, err := r.Cookie(sessionCookieName); err == nil {
 				if sessions.ValidateToken(cookie.Value) {

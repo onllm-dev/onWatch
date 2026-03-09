@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>onWatch Menubar</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --panel: #16213e;
+            --panel-alt: #0f172a;
+            --border: rgba(148, 163, 184, 0.2);
+            --text: #f8fafc;
+            --muted: #a5b4cc;
+            --healthy: #22c55e;
+            --warning: #f59e0b;
+            --critical: #ef4444;
+            --accent: #38bdf8;
+            --shadow: 0 18px 50px rgba(2, 6, 23, 0.45);
+            --radius: 18px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at top right, rgba(56, 189, 248, 0.16), transparent 26%),
+                radial-gradient(circle at top left, rgba(34, 197, 94, 0.12), transparent 20%),
+                linear-gradient(180deg, #101427 0%, var(--bg) 100%);
+            color: var(--text);
+            font-family: "Fira Sans", "Ubuntu", system-ui, sans-serif;
+        }
+
+        a {
+            color: inherit;
+        }
+
+        button,
+        summary,
+        a {
+            transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+        }
+
+        button:focus-visible,
+        summary:focus-visible,
+        a:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
+
+        .shell {
+            width: min(960px, calc(100vw - 32px));
+            margin: 24px auto;
+            padding: 24px;
+            background: rgba(8, 15, 31, 0.86);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(18px);
+        }
+
+        .hero {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: 1.1fr 0.9fr;
+            align-items: end;
+        }
+
+        .eyebrow {
+            color: var(--accent);
+            font-size: 0.82rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            margin: 8px 0 10px;
+            font-size: clamp(1.8rem, 4vw, 2.8rem);
+            line-height: 1;
+        }
+
+        .hero-copy p,
+        .hero-meta,
+        .provider-subtitle,
+        .quota-meta,
+        .footer-copy {
+            color: var(--muted);
+        }
+
+        .hero-copy p {
+            margin: 0;
+            max-width: 40rem;
+            line-height: 1.6;
+        }
+
+        .summary-panel {
+            padding: 18px;
+            border-radius: var(--radius);
+            background: linear-gradient(180deg, rgba(22, 33, 62, 0.9), rgba(9, 14, 28, 0.95));
+            border: 1px solid var(--border);
+        }
+
+        .summary-grid {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .summary-metric {
+            padding: 14px;
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.14);
+        }
+
+        .summary-metric strong {
+            display: block;
+            font-size: 1.45rem;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+        }
+
+        .view-switcher {
+            display: inline-flex;
+            gap: 8px;
+            padding: 6px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.76);
+            border: 1px solid var(--border);
+        }
+
+        .view-switcher button {
+            min-width: 92px;
+            min-height: 44px;
+            padding: 10px 16px;
+            border: 0;
+            border-radius: 999px;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            font: inherit;
+        }
+
+        .view-switcher button[aria-pressed="true"] {
+            color: var(--text);
+            background: rgba(56, 189, 248, 0.16);
+            border: 1px solid rgba(56, 189, 248, 0.32);
+        }
+
+        .status-line {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            font-size: 0.92rem;
+            color: var(--muted);
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.76);
+            border: 1px solid var(--border);
+            font-weight: 600;
+        }
+
+        .status-pill::before {
+            content: "";
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: var(--accent);
+        }
+
+        .status-pill[data-status="healthy"]::before { background: var(--healthy); }
+        .status-pill[data-status="warning"]::before { background: var(--warning); }
+        .status-pill[data-status="critical"]::before,
+        .status-pill[data-status="danger"]::before { background: var(--critical); }
+
+        #content {
+            margin-top: 24px;
+            display: grid;
+            gap: 16px;
+        }
+
+        .aggregate-card,
+        .provider-card,
+        .error-card {
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(22, 33, 62, 0.92), rgba(8, 15, 31, 0.96));
+            box-shadow: var(--shadow);
+        }
+
+        .aggregate-card {
+            padding: 24px;
+            display: grid;
+            gap: 18px;
+            grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+            align-items: center;
+        }
+
+        .aggregate-ring {
+            width: 200px;
+            height: 200px;
+            border-radius: 999px;
+            margin: 0 auto;
+            display: grid;
+            place-items: center;
+            background:
+                radial-gradient(circle at center, rgba(15, 23, 42, 0.96) 58%, transparent 59%),
+                conic-gradient(var(--ring-color) calc(var(--percent) * 1%), rgba(148, 163, 184, 0.18) 0);
+        }
+
+        .aggregate-ring-inner {
+            width: 132px;
+            height: 132px;
+            border-radius: 999px;
+            display: grid;
+            place-items: center;
+            background: rgba(10, 16, 31, 0.96);
+            text-align: center;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+        }
+
+        .aggregate-ring-inner strong {
+            font-size: 2rem;
+            line-height: 1;
+        }
+
+        .aggregate-ring-inner span {
+            color: var(--muted);
+            font-size: 0.88rem;
+        }
+
+        .aggregate-details h2 {
+            margin: 0 0 10px;
+            font-size: 1.5rem;
+        }
+
+        .aggregate-details p {
+            margin: 0 0 14px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .aggregate-list {
+            display: grid;
+            gap: 10px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .aggregate-list div {
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.74);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .aggregate-list span {
+            display: block;
+            color: var(--muted);
+            font-size: 0.82rem;
+        }
+
+        .aggregate-list strong {
+            font-size: 1.15rem;
+        }
+
+        .provider-card summary {
+            list-style: none;
+            padding: 18px 20px;
+            cursor: pointer;
+        }
+
+        .provider-card summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .provider-card[open] summary {
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .provider-header {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .provider-title {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            min-width: 0;
+        }
+
+        .provider-index {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            font-family: "Fira Code", "JetBrains Mono", monospace;
+            font-size: 0.95rem;
+            background: rgba(56, 189, 248, 0.12);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            color: var(--accent);
+        }
+
+        .provider-title h3 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        .provider-subtitle {
+            display: block;
+            margin-top: 4px;
+            font-size: 0.88rem;
+        }
+
+        .provider-stats {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .provider-stats .status-pill {
+            min-width: 100px;
+            justify-content: center;
+        }
+
+        .provider-body {
+            padding: 18px 20px 20px;
+            display: grid;
+            gap: 14px;
+        }
+
+        .quota {
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.74);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .quota-header {
+            display: flex;
+            gap: 12px;
+            align-items: baseline;
+            justify-content: space-between;
+        }
+
+        .quota-header strong {
+            font-size: 1rem;
+        }
+
+        .quota-header span {
+            color: var(--muted);
+            font-family: "Fira Code", "JetBrains Mono", monospace;
+            font-size: 0.88rem;
+        }
+
+        .quota-bar {
+            margin-top: 10px;
+            height: 10px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(148, 163, 184, 0.18);
+        }
+
+        .quota-bar-fill {
+            height: 100%;
+            border-radius: inherit;
+            background: var(--quota-color);
+            width: min(100%, calc(var(--percent) * 1%));
+        }
+
+        .quota-meta {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            font-size: 0.86rem;
+        }
+
+        .error-card {
+            padding: 22px;
+        }
+
+        .footer {
+            margin-top: 24px;
+            padding-top: 18px;
+            border-top: 1px solid rgba(148, 163, 184, 0.14);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .footer-links a {
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.74);
+            border: 1px solid var(--border);
+            text-decoration: none;
+        }
+
+        .footer-links a:hover,
+        .footer-links a:focus-visible,
+        .view-switcher button:hover,
+        .provider-card summary:hover {
+            transform: translateY(-1px);
+            border-color: rgba(56, 189, 248, 0.28);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 760px) {
+            .shell {
+                width: calc(100vw - 20px);
+                margin: 10px auto;
+                padding: 18px;
+                border-radius: 20px;
+            }
+
+            .hero,
+            .aggregate-card {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-grid,
+            .aggregate-list {
+                grid-template-columns: 1fr;
+            }
+
+            .provider-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .provider-stats {
+                justify-content: flex-start;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation: none !important;
+                transition: none !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <section class="hero">
+            <div class="hero-copy">
+                <span class="eyebrow">Local Menubar View</span>
+                <h1>Quota status without the desktop crash</h1>
+                <p>onWatch now keeps the tray process lightweight and opens this localhost panel for the richer provider breakdown. The tray itself still updates the current aggregate status in the menu bar.</p>
+            </div>
+            <aside class="summary-panel">
+                <div class="summary-grid">
+                    <div class="summary-metric">
+                        <span class="hero-meta">Highest Usage</span>
+                        <strong id="hero-highest">--</strong>
+                    </div>
+                    <div class="summary-metric">
+                        <span class="hero-meta">Providers</span>
+                        <strong id="hero-count">--</strong>
+                    </div>
+                    <div class="summary-metric">
+                        <span class="hero-meta">Updated</span>
+                        <strong id="hero-updated">--</strong>
+                    </div>
+                </div>
+            </aside>
+        </section>
+
+        <section class="controls">
+            <div class="view-switcher" role="tablist" aria-label="Menubar views">
+                <button type="button" data-view="minimal">Minimal</button>
+                <button type="button" data-view="standard">Standard</button>
+                <button type="button" data-view="detailed">Detailed</button>
+            </div>
+            <div class="status-line">
+                <span class="status-pill" id="aggregate-status" data-status="healthy">Healthy</span>
+                <span id="refresh-hint">Auto-refresh every 60s</span>
+            </div>
+        </section>
+
+        <section id="content" aria-live="polite"></section>
+
+        <footer class="footer">
+            <div class="footer-copy">Localhost-only panel used by the tray companion.</div>
+            <div class="footer-links">
+                <a href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noreferrer">GitHub</a>
+                <a href="https://github.com/onllm-dev/onwatch/issues" target="_blank" rel="noreferrer">Support</a>
+                <a href="https://onllm.dev" target="_blank" rel="noreferrer">onllm.dev</a>
+            </div>
+        </footer>
+    </main>
+
+    <script>
+        window.__ONWATCH_MENUBAR__ = __ONWATCH_MENUBAR_BOOTSTRAP__;
+
+        (() => {
+            const bootstrap = window.__ONWATCH_MENUBAR__ || {};
+            const state = {
+                snapshot: null,
+                view: bootstrap.default_view || "standard",
+                refreshSeconds: Math.max(Number(bootstrap.refresh_seconds) || 60, 10)
+            };
+
+            const content = document.getElementById("content");
+            const aggregateStatus = document.getElementById("aggregate-status");
+            const refreshHint = document.getElementById("refresh-hint");
+            const heroHighest = document.getElementById("hero-highest");
+            const heroCount = document.getElementById("hero-count");
+            const heroUpdated = document.getElementById("hero-updated");
+            const buttons = Array.from(document.querySelectorAll("[data-view]"));
+
+            refreshHint.textContent = `Auto-refresh every ${state.refreshSeconds}s`;
+
+            buttons.forEach((button) => {
+                button.addEventListener("click", () => {
+                    state.view = button.dataset.view;
+                    updateViewButtons();
+                    render();
+                });
+            });
+
+            function escapeHTML(value) {
+                return String(value ?? "")
+                    .replaceAll("&", "&amp;")
+                    .replaceAll("<", "&lt;")
+                    .replaceAll(">", "&gt;")
+                    .replaceAll("\"", "&quot;")
+                    .replaceAll("'", "&#39;");
+            }
+
+            function statusColor(status) {
+                switch (status) {
+                case "critical":
+                case "danger":
+                    return "var(--critical)";
+                case "warning":
+                    return "var(--warning)";
+                default:
+                    return "var(--healthy)";
+                }
+            }
+
+            function updateHero(snapshot) {
+                const aggregate = snapshot?.aggregate || {};
+                heroHighest.textContent = aggregate.highest_percent != null ? `${Math.round(aggregate.highest_percent)}%` : "--";
+                heroCount.textContent = aggregate.provider_count != null ? String(aggregate.provider_count) : "--";
+                heroUpdated.textContent = snapshot?.updated_ago || "--";
+                aggregateStatus.textContent = aggregate.label || "Unknown";
+                aggregateStatus.dataset.status = aggregate.status || "healthy";
+            }
+
+            function updateViewButtons() {
+                buttons.forEach((button) => {
+                    button.setAttribute("aria-pressed", String(button.dataset.view === state.view));
+                });
+            }
+
+            function renderAggregate(snapshot) {
+                const aggregate = snapshot.aggregate || {};
+                const percent = Math.max(0, Math.min(100, Math.round(aggregate.highest_percent || 0)));
+                const color = statusColor(aggregate.status);
+                return `
+                    <article class="aggregate-card">
+                        <div class="aggregate-ring" style="--percent:${percent};--ring-color:${color}">
+                            <div class="aggregate-ring-inner">
+                                <div>
+                                    <strong>${percent}%</strong>
+                                    <span>${escapeHTML(aggregate.label || "Healthy")}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="aggregate-details">
+                            <h2>${escapeHTML(aggregate.label || "Healthy")} outlook</h2>
+                            <p>${escapeHTML(snapshot.updated_ago || "Fresh data unavailable")} across ${Number(aggregate.provider_count || 0)} visible providers.</p>
+                            <div class="aggregate-list">
+                                <div>
+                                    <span>Warnings</span>
+                                    <strong>${Number(aggregate.warning_count || 0)}</strong>
+                                </div>
+                                <div>
+                                    <span>Critical</span>
+                                    <strong>${Number(aggregate.critical_count || 0)}</strong>
+                                </div>
+                                <div>
+                                    <span>Providers</span>
+                                    <strong>${Number(aggregate.provider_count || 0)}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                `;
+            }
+
+            function renderQuota(quota, detailed) {
+                const percent = Math.max(0, Math.min(100, Math.round(quota.percent || 0)));
+                const resetText = quota.time_until_reset || quota.reset_at || "Reset unavailable";
+                return `
+                    <div class="quota">
+                        <div class="quota-header">
+                            <strong>${escapeHTML(quota.label || "Quota")}</strong>
+                            <span>${escapeHTML(quota.display_value || `${percent}%`)}</span>
+                        </div>
+                        <div class="quota-bar">
+                            <div class="quota-bar-fill" style="--percent:${percent};--quota-color:${statusColor(quota.status)}"></div>
+                        </div>
+                        <div class="quota-meta">
+                            <span>Status: ${escapeHTML(quota.status || "healthy")}</span>
+                            ${detailed ? `<span>Reset: ${escapeHTML(resetText)}</span>` : ""}
+                        </div>
+                    </div>
+                `;
+            }
+
+            function renderProviders(snapshot) {
+                const detailed = state.view === "detailed";
+                return (snapshot.providers || []).map((provider, index) => {
+                    const highest = Math.max(0, Math.min(100, Math.round(provider.highest_percent || 0)));
+                    const quotas = (provider.quotas || []).map((quota) => renderQuota(quota, detailed)).join("");
+                    const open = detailed ? " open" : "";
+                    return `
+                        <details class="provider-card"${open}>
+                            <summary>
+                                <div class="provider-header">
+                                    <div class="provider-title">
+                                        <div class="provider-index">${String(index + 1).padStart(2, "0")}</div>
+                                        <div>
+                                            <h3>${escapeHTML(provider.label || "Provider")}</h3>
+                                            <span class="provider-subtitle">${escapeHTML(provider.subtitle || provider.updated_at || "Snapshot available")}</span>
+                                        </div>
+                                    </div>
+                                    <div class="provider-stats">
+                                        <span class="status-pill" data-status="${escapeHTML(provider.status || "healthy")}">${escapeHTML(provider.status || "healthy")}</span>
+                                        <span>${highest}% peak</span>
+                                    </div>
+                                </div>
+                            </summary>
+                            <div class="provider-body">
+                                ${quotas}
+                            </div>
+                        </details>
+                    `;
+                }).join("");
+            }
+
+            function renderError(message) {
+                content.innerHTML = `
+                    <article class="error-card">
+                        <h2>Menubar data unavailable</h2>
+                        <p>${escapeHTML(message)}</p>
+                    </article>
+                `;
+            }
+
+            function render() {
+                updateViewButtons();
+                if (!state.snapshot) {
+                    renderError("Waiting for the local onWatch server.");
+                    return;
+                }
+
+                updateHero(state.snapshot);
+                const aggregate = renderAggregate(state.snapshot);
+                if (state.view === "minimal") {
+                    content.innerHTML = aggregate;
+                    return;
+                }
+
+                content.innerHTML = aggregate + renderProviders(state.snapshot);
+            }
+
+            async function refresh() {
+                try {
+                    const response = await fetch("/api/menubar/summary", {
+                        credentials: "same-origin",
+                        headers: { "Accept": "application/json" }
+                    });
+                    if (!response.ok) {
+                        throw new Error(`Request failed with status ${response.status}`);
+                    }
+                    state.snapshot = await response.json();
+                    render();
+                } catch (error) {
+                    renderError(error.message || "Unknown error");
+                }
+            }
+
+            updateViewButtons();
+            render();
+            refresh();
+            window.setInterval(refresh, state.refreshSeconds * 1000);
+        })();
+    </script>
+</body>
+</html>

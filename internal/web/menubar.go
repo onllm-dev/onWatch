@@ -1,7 +1,9 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
@@ -39,6 +41,43 @@ func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, snapshot)
 }
 
+// MenubarPage renders the localhost-only browser UI used by the tray companion.
+func (h *Handler) MenubarPage(w http.ResponseWriter, r *http.Request) {
+	if !isLoopbackRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+
+	settings, _ := h.menubarSettings()
+	view := normalizeMenubarView(r.URL.Query().Get("view"), settings.DefaultView)
+	bootstrap, err := json.Marshal(map[string]interface{}{
+		"default_view":    view,
+		"refresh_seconds": settings.RefreshSeconds,
+	})
+	if err != nil {
+		h.logger.Error("failed to render menubar page bootstrap", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to render menubar page")
+		return
+	}
+
+	page, err := staticFS.ReadFile("static/menubar.html")
+	if err != nil {
+		h.logger.Error("failed to read menubar page", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to render menubar page")
+		return
+	}
+
+	html := strings.Replace(string(page), "__ONWATCH_MENUBAR_BOOTSTRAP__", string(bootstrap), 1)
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; "+
+			"script-src 'self' 'unsafe-inline'; "+
+			"style-src 'self' 'unsafe-inline'; "+
+			"img-src 'self' data:; "+
+			"connect-src 'self'")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(html))
+}
+
 // MenubarTest renders the same menubar UI in a browser page for automated testing.
 func (h *Handler) MenubarTest(w http.ResponseWriter, r *http.Request) {
 	if os.Getenv("ONWATCH_TEST_MODE") != "1" {
@@ -61,6 +100,19 @@ func (h *Handler) MenubarTest(w http.ResponseWriter, r *http.Request) {
 			"connect-src 'self'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
+}
+
+func isLoopbackRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	clientIP := net.ParseIP(host)
+	return clientIP != nil && clientIP.IsLoopback()
+}
+
+func isLocalMenubarPublicPath(path string) bool {
+	return path == "/menubar" || path == "/api/menubar/summary"
 }
 
 // BuildMenubarSnapshot constructs the shared menubar UI contract.

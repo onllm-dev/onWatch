@@ -7,17 +7,14 @@ import "sync/atomic"
 var running atomic.Bool
 
 // Init starts the real menubar companion. The implementation lives in
-// companion_darwin.go to keep Wails-heavy code isolated.
+// companion_darwin.go to keep macOS-specific UI code isolated.
 func Init(cfg *Config) error {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
-	if err := runCompanion(cfg); err != nil {
-		running.Store(false)
-		return err
-	}
 	running.Store(true)
-	return nil
+	defer running.Store(false)
+	return runCompanion(cfg)
 }
 
 // Stop requests the menubar companion to exit.

@@ -3,193 +3,182 @@
 package menubar
 
 import (
-	"context"
-	"errors"
 	"fmt"
+	"log/slog"
+	"math"
 	"sync"
+	"time"
 
 	"fyne.io/systray"
 	"github.com/pkg/browser"
-	"github.com/wailsapp/wails/v2"
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	macoptions "github.com/wailsapp/wails/v2/pkg/options/mac"
 )
-
-type appBridge struct {
-	ctx context.Context
-	cfg *Config
-}
-
-func (a *appBridge) startup(ctx context.Context) {
-	a.ctx = ctx
-}
-
-func (a *appBridge) GetSnapshot() (*Snapshot, error) {
-	if a.cfg == nil || a.cfg.SnapshotProvider == nil {
-		return nil, errors.New("snapshot provider not configured")
-	}
-	return a.cfg.SnapshotProvider()
-}
-
-func (a *appBridge) GetSettings() (*Settings, error) {
-	if a.cfg == nil {
-		return DefaultSettings(), nil
-	}
-	settings := &Settings{
-		Enabled:         a.cfg.Enabled,
-		DefaultView:     a.cfg.DefaultView,
-		RefreshSeconds:  a.cfg.RefreshSeconds,
-		ProvidersOrder:  append([]string(nil), a.cfg.ProvidersOrder...),
-		WarningPercent:  a.cfg.WarningPercent,
-		CriticalPercent: a.cfg.CriticalPercent,
-	}
-	return settings.Normalize(), nil
-}
-
-func (a *appBridge) Refresh() (*Snapshot, error) {
-	return a.GetSnapshot()
-}
-
-func (a *appBridge) OpenExternal(rawURL string) error {
-	return browser.OpenURL(rawURL)
-}
 
 var (
 	quitOnce sync.Once
 	quitFn   func()
 )
 
+type trayController struct {
+	cfg *Config
+}
+
 func runCompanion(cfg *Config) error {
-	assets, err := FrontendSubFS()
-	if err != nil {
-		return err
+	if cfg == nil {
+		cfg = DefaultConfig()
 	}
 	quitOnce = sync.Once{}
 	quitFn = nil
-	app := &appBridge{cfg: cfg}
-	showWindowCh := make(chan struct{}, 1)
-	refreshCh := make(chan struct{}, 1)
 
-	go initTray(cfg.Port, showWindowCh, refreshCh)
-
-	return wails.Run(&options.App{
-		Title:             "onWatch Menubar",
-		Width:             widthForView(cfg.DefaultView),
-		Height:            heightForView(cfg.DefaultView),
-		MinWidth:          240,
-		MinHeight:         120,
-		MaxWidth:          420,
-		MaxHeight:         720,
-		Frameless:         true,
-		AlwaysOnTop:       true,
-		StartHidden:       true,
-		HideWindowOnClose: true,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		OnStartup: app.startup,
-		Bind: []interface{}{
-			app,
-		},
-		Mac: &macoptions.Options{
-			TitleBar: &macoptions.TitleBar{
-				HideTitleBar: true,
-				HideToolbarSeparator: true,
-				UseToolbar: false,
-			},
-			Appearance: macoptions.NSAppearanceNameDarkAqua,
-		},
-		OnDomReady: func(ctx context.Context) {
-			quitFn = func() {
-				wailsruntime.Quit(ctx)
-			}
-			go func() {
-				for {
-					select {
-					case <-showWindowCh:
-						wailsruntime.Show(ctx)
-					case <-refreshCh:
-						wailsruntime.WindowReload(ctx)
-					}
-				}
-			}()
-		},
-		OnShutdown: func(ctx context.Context) {
-			quitFn = nil
-			systray.Quit()
-		},
-	})
+	controller := &trayController{cfg: cfg}
+	slog.Default().Debug("Initializing systray")
+	systray.Run(controller.onReady, controller.onExit)
+	return nil
 }
 
 func stopCompanion() error {
 	quitOnce.Do(func() {
 		if quitFn != nil {
 			quitFn()
+			return
 		}
 		systray.Quit()
 	})
 	return nil
 }
 
-func initTray(port int, showWindowCh chan<- struct{}, refreshCh chan<- struct{}) {
-	systray.Run(func() {
-		templateIcon, regularIcon := trayIcons()
-		if len(templateIcon) > 0 && len(regularIcon) > 0 {
-			systray.SetTemplateIcon(templateIcon, regularIcon)
+func (c *trayController) onReady() {
+	logger := slog.Default()
+	logger.Info("Systray initialized, setting icon")
+
+	templateIcon, regularIcon := trayIcons()
+	if len(templateIcon) > 0 && len(regularIcon) > 0 {
+		systray.SetTemplateIcon(templateIcon, regularIcon)
+		logger.Debug("Tray icon set successfully")
+	}
+
+	systray.SetTooltip("onWatch menubar companion")
+	systray.SetOnTapped(func() {
+		_ = browser.OpenURL(c.menubarURL())
+	})
+
+	openItem := systray.AddMenuItem("Open Menubar", "Open the local menubar page")
+	refreshItem := systray.AddMenuItem("Refresh Status", "Refresh the current menubar status")
+	dashboardItem := systray.AddMenuItem("Open Dashboard", "Open the local onWatch dashboard")
+	systray.AddSeparator()
+	quitItem := systray.AddMenuItem("Quit Menubar", "Quit the menubar companion")
+
+	quitFn = func() {
+		systray.Quit()
+	}
+
+	c.refreshStatus()
+	logger.Info("Menubar ready and visible")
+
+	go c.watchMenu(openItem, refreshItem, dashboardItem, quitItem)
+	go c.refreshLoop()
+}
+
+func (c *trayController) onExit() {
+	quitFn = nil
+	slog.Default().Info("Menubar shutting down")
+}
+
+func (c *trayController) watchMenu(openItem, refreshItem, dashboardItem, quitItem *systray.MenuItem) {
+	for {
+		select {
+		case <-openItem.ClickedCh:
+			_ = browser.OpenURL(c.menubarURL())
+		case <-refreshItem.ClickedCh:
+			c.refreshStatus()
+		case <-dashboardItem.ClickedCh:
+			_ = browser.OpenURL(c.dashboardURL())
+		case <-quitItem.ClickedCh:
+			_ = stopCompanion()
+			return
 		}
+	}
+}
+
+func (c *trayController) refreshLoop() {
+	interval := time.Duration(normalizeRefreshSeconds(c.cfg.RefreshSeconds)) * time.Second
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		c.refreshStatus()
+	}
+}
+
+func (c *trayController) refreshStatus() {
+	logger := slog.Default()
+	if c == nil || c.cfg == nil || c.cfg.SnapshotProvider == nil {
 		systray.SetTitle("onWatch")
 		systray.SetTooltip("onWatch menubar companion")
+		return
+	}
 
-		openItem := systray.AddMenuItem("Show Snapshot", "Show the menubar snapshot window")
-		refreshItem := systray.AddMenuItem("Refresh Snapshot", "Refresh the menubar snapshot")
-		dashboardItem := systray.AddMenuItem("Open Dashboard", "Open the local onWatch dashboard")
-		systray.AddSeparator()
-		quitItem := systray.AddMenuItem("Quit Menubar", "Quit the menubar companion")
+	snapshot, err := c.cfg.SnapshotProvider()
+	if err != nil {
+		logger.Error("failed to refresh menubar snapshot", "error", err)
+		systray.SetTitle("--")
+		systray.SetTooltip("onWatch menubar companion unavailable")
+		return
+	}
+	if snapshot == nil {
+		systray.SetTitle("--")
+		systray.SetTooltip("onWatch menubar companion unavailable")
+		return
+	}
 
-		go func() {
-			for {
-				select {
-				case <-openItem.ClickedCh:
-					select {
-					case showWindowCh <- struct{}{}:
-					default:
-					}
-				case <-refreshItem.ClickedCh:
-					select {
-					case refreshCh <- struct{}{}:
-					default:
-					}
-				case <-dashboardItem.ClickedCh:
-					_ = browser.OpenURL(fmt.Sprintf("http://localhost:%d", port))
-				case <-quitItem.ClickedCh:
-					_ = stopCompanion()
-					return
-				}
-			}
-		}()
-	}, func() {})
+	title := trayTitle(snapshot)
+	tooltip := trayTooltip(snapshot)
+	systray.SetTitle(title)
+	systray.SetTooltip(tooltip)
+	logger.Debug("Tray icon set successfully", "title", title)
 }
 
-func widthForView(view ViewType) int {
-	switch view {
-	case ViewMinimal:
-		return 240
-	case ViewDetailed:
-		return 400
-	default:
-		return 320
+func (c *trayController) menubarURL() string {
+	port := 9211
+	if c != nil && c.cfg != nil && c.cfg.Port > 0 {
+		port = c.cfg.Port
 	}
+	return fmt.Sprintf("http://localhost:%d/menubar", port)
 }
 
-func heightForView(view ViewType) int {
-	switch view {
-	case ViewMinimal:
-		return 160
-	case ViewDetailed:
-		return 620
-	default:
-		return 420
+func (c *trayController) dashboardURL() string {
+	port := 9211
+	if c != nil && c.cfg != nil && c.cfg.Port > 0 {
+		port = c.cfg.Port
 	}
+	return fmt.Sprintf("http://localhost:%d", port)
+}
+
+func trayTitle(snapshot *Snapshot) string {
+	if snapshot == nil || snapshot.Aggregate.ProviderCount == 0 {
+		return "onWatch"
+	}
+	return fmt.Sprintf("%d%%", int(math.Round(snapshot.Aggregate.HighestPercent)))
+}
+
+func trayTooltip(snapshot *Snapshot) string {
+	if snapshot == nil {
+		return "onWatch menubar companion"
+	}
+	aggregate := snapshot.Aggregate
+	if aggregate.ProviderCount == 0 {
+		return "onWatch menubar companion: no provider data available"
+	}
+	return fmt.Sprintf(
+		"onWatch menubar companion: %s across %d providers, updated %s",
+		aggregate.Label,
+		aggregate.ProviderCount,
+		snapshot.UpdatedAgo,
+	)
+}
+
+func normalizeRefreshSeconds(value int) int {
+	if value < 10 {
+		return 60
+	}
+	return value
 }
