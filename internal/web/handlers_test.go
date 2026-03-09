@@ -4661,7 +4661,7 @@ func TestHandler_LoggingHistory_CodexReturnsSnapshots(t *testing.T) {
 	}
 }
 
-func TestHandler_LoggingHistory_UnknownProviderReturnsEmpty(t *testing.T) {
+func TestHandler_LoggingHistory_UnknownProviderReturnsError(t *testing.T) {
 	cfg := createTestConfigWithAll()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -4669,21 +4669,16 @@ func TestHandler_LoggingHistory_UnknownProviderReturnsEmpty(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.LoggingHistory(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rr.Code)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]string
 	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
-
-	logs, ok := response["logs"].([]interface{})
-	if !ok {
-		t.Fatalf("expected logs array, got %T", response["logs"])
-	}
-	if len(logs) != 0 {
-		t.Fatalf("expected empty logs array for unknown provider, got %d", len(logs))
+	if response["error"] != "unknown provider: unknown" {
+		t.Fatalf("unexpected error message: %q", response["error"])
 	}
 }
 

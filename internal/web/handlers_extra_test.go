@@ -2382,7 +2382,7 @@ func TestHandler_LoggingHistory_Antigravity_Extra(t *testing.T) {
 	}
 }
 
-// TestHandler_LoggingHistory_DefaultUnknown returns empty logs for unknown provider.
+// TestHandler_LoggingHistory_DefaultUnknown returns an error for unknown provider.
 func TestHandler_LoggingHistory_DefaultUnknown(t *testing.T) {
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
@@ -2391,17 +2391,16 @@ func TestHandler_LoggingHistory_DefaultUnknown(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.LoggingHistory(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rr.Code)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", rr.Code)
 	}
 
-	var response map[string]interface{}
+	var response map[string]string
 	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
-
-	if _, ok := response["logs"]; !ok {
-		t.Error("expected logs key in response")
+	if response["error"] != "unknown provider: unknown" {
+		t.Errorf("unexpected error message: %q", response["error"])
 	}
 }
 
@@ -8333,8 +8332,16 @@ func TestHandler_LoggingHistory_DefaultProvider(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.LoggingHistory(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+
+	var response map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+	if response["error"] != "unknown provider: unknown" {
+		t.Fatalf("unexpected error message: %q", response["error"])
 	}
 }
 

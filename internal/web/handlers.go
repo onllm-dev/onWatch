@@ -7607,7 +7607,7 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 	case "minimax":
 		h.loggingHistoryMiniMax(w, r)
 	default:
-		respondJSON(w, http.StatusOK, map[string]interface{}{"logs": []interface{}{}})
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
 }
 
