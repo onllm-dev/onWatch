@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/getlantern/systray"
+	"fyne.io/systray"
 	"github.com/pkg/browser"
 	"github.com/wailsapp/wails/v2"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
