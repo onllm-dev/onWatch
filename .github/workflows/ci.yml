@@ -70,6 +70,7 @@ jobs:
 
       - name: Run menubar browser tests
         env:
+          CGO_LDFLAGS: -framework UniformTypeIdentifiers
           ONWATCH_E2E_GO_BUILD_TAGS: menubar,desktop,production
         run: |
           cd tests/e2e
