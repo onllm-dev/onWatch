@@ -2490,9 +2490,8 @@ async function fetchCurrent() {
           const container = document.getElementById('quota-grid-copilot');
           if (container && container.children.length === 0) {
             renderCopilotQuotaCards(data.quotas, 'quota-grid-copilot');
-          } else {
-            data.quotas.forEach(q => updateCopilotCard(q));
           }
+          data.quotas.forEach(q => updateCopilotCard(q));
         }
       } else if (provider === 'anthropic') {
         // Anthropic response: { capturedAt: ..., quotas: [...] }
@@ -2500,9 +2499,8 @@ async function fetchCurrent() {
           const container = document.getElementById('quota-grid-anthropic');
           if (container && container.children.length === 0) {
             renderAnthropicQuotaCards(data.quotas, 'quota-grid-anthropic');
-          } else {
-            data.quotas.forEach(q => updateAnthropicCard(q));
           }
+          data.quotas.forEach(q => updateAnthropicCard(q));
           // Store sorted quota names for session table headers (mirrors backend positional mapping)
           if (State.anthropicSessionQuotas.length === 0) {
             State.anthropicSessionQuotas = data.quotas.map(q => q.name).sort().slice(0, 3);
@@ -2517,9 +2515,8 @@ async function fetchCurrent() {
           const container = document.getElementById('quota-grid-antigravity');
           if (container && container.children.length === 0) {
             renderAntigravityQuotaCards(data.quotas, 'quota-grid-antigravity');
-          } else {
-            data.quotas.forEach(q => updateAntigravityCard(q));
           }
+          data.quotas.forEach(q => updateAntigravityCard(q));
         }
       } else if (provider === 'minimax') {
         if (data.quotas) {
@@ -2610,7 +2607,6 @@ async function fetchCodexUsage(options = {}) {
     const renderedCount = container.querySelectorAll('.quota-card.codex-card').length;
     if (container.children.length === 0 || renderedCount !== visibleQuotas.length || planChanged) {
       renderCodexQuotaCards(visibleQuotas, 'quota-grid-codex', State.codexPlanType);
-      return;
     }
 
     visibleQuotas.forEach(q => updateCodexCard(q));
