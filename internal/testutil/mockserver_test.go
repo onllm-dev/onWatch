@@ -142,6 +142,50 @@ func TestMockServer_DefaultAnthropicRoute(t *testing.T) {
 	}
 }
 
+func TestMockServer_WithZaiAndAnthropicResponsesOptions(t *testing.T) {
+	customZai := `{"code":200,"msg":"custom-zai","success":true,"data":{"limits":[]}}`
+	customAnthropic := `{"five_hour":{"utilization":12.3}}`
+
+	ms := NewMockServer(t,
+		WithZaiKey("zai_custom_key"),
+		WithZaiResponses([]string{customZai}),
+		WithAnthropicToken("anth_custom_token"),
+		WithAnthropicResponses([]string{customAnthropic}),
+	)
+	defer ms.Close()
+
+	zaiReq, _ := http.NewRequest("GET", ms.URL+"/monitor/usage/quota/limit", nil)
+	zaiReq.Header.Set("Authorization", "zai_custom_key")
+	zaiResp, err := http.DefaultClient.Do(zaiReq)
+	if err != nil {
+		t.Fatalf("zai request error: %v", err)
+	}
+	zaiBody, _ := io.ReadAll(zaiResp.Body)
+	_ = zaiResp.Body.Close()
+	if zaiResp.StatusCode != http.StatusOK {
+		t.Fatalf("zai status = %d, want 200", zaiResp.StatusCode)
+	}
+	if !strings.Contains(string(zaiBody), "custom-zai") {
+		t.Fatalf("expected custom zai response, got: %s", string(zaiBody))
+	}
+
+	anthReq, _ := http.NewRequest("GET", ms.URL+"/api/oauth/usage", nil)
+	anthReq.Header.Set("Authorization", "Bearer anth_custom_token")
+	anthReq.Header.Set("anthropic-beta", "oauth-2025-04-20")
+	anthResp, err := http.DefaultClient.Do(anthReq)
+	if err != nil {
+		t.Fatalf("anthropic request error: %v", err)
+	}
+	anthBody, _ := io.ReadAll(anthResp.Body)
+	_ = anthResp.Body.Close()
+	if anthResp.StatusCode != http.StatusOK {
+		t.Fatalf("anthropic status = %d, want 200", anthResp.StatusCode)
+	}
+	if !strings.Contains(string(anthBody), `"utilization":12.3`) {
+		t.Fatalf("expected custom anthropic response, got: %s", string(anthBody))
+	}
+}
+
 func TestMockServer_AnthropicAuthRejectsInvalidToken(t *testing.T) {
 	ms := NewMockServer(t, WithAnthropicToken("correct_token"))
 	defer ms.Close()
