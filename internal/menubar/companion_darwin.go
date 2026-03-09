@@ -19,7 +19,8 @@ var (
 )
 
 type trayController struct {
-	cfg *Config
+	cfg     *Config
+	popover menubarPopover
 }
 
 func runCompanion(cfg *Config) error {
@@ -58,8 +59,14 @@ func (c *trayController) onReady() {
 
 	systray.SetTooltip("onWatch menubar companion")
 	systray.SetOnTapped(func() {
-		_ = browser.OpenURL(c.menubarURL())
+		c.toggleMenubar()
 	})
+
+	if popover, err := newMenubarPopover(menubarPopoverWidth, menubarPopoverHeight); err != nil {
+		logger.Warn("native macOS popover unavailable, using browser fallback", "error", err)
+	} else {
+		c.popover = popover
+	}
 
 	openItem := systray.AddMenuItem("Open Menubar", "Open the local menubar page")
 	refreshItem := systray.AddMenuItem("Refresh Status", "Refresh the current menubar status")
@@ -79,6 +86,10 @@ func (c *trayController) onReady() {
 }
 
 func (c *trayController) onExit() {
+	if c.popover != nil {
+		c.popover.Destroy()
+		c.popover = nil
+	}
 	quitFn = nil
 	slog.Default().Info("Menubar shutting down")
 }
@@ -87,7 +98,7 @@ func (c *trayController) watchMenu(openItem, refreshItem, dashboardItem, quitIte
 	for {
 		select {
 		case <-openItem.ClickedCh:
-			_ = browser.OpenURL(c.menubarURL())
+			c.showMenubar()
 		case <-refreshItem.ClickedCh:
 			c.refreshStatus()
 		case <-dashboardItem.ClickedCh:
@@ -97,6 +108,30 @@ func (c *trayController) watchMenu(openItem, refreshItem, dashboardItem, quitIte
 			return
 		}
 	}
+}
+
+func (c *trayController) toggleMenubar() {
+	url := c.menubarURL()
+	if c.popover != nil {
+		if err := c.popover.ToggleURL(url); err == nil {
+			return
+		} else {
+			slog.Default().Warn("failed to toggle native menubar popover, opening browser fallback", "error", err)
+		}
+	}
+	_ = browser.OpenURL(url)
+}
+
+func (c *trayController) showMenubar() {
+	url := c.menubarURL()
+	if c.popover != nil {
+		if err := c.popover.ShowURL(url); err == nil {
+			return
+		} else {
+			slog.Default().Warn("failed to show native menubar popover, opening browser fallback", "error", err)
+		}
+	}
+	_ = browser.OpenURL(url)
 }
 
 func (c *trayController) refreshLoop() {
