@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -50,11 +52,36 @@ func processRunning(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
+	if processZombie(pid) {
+		return false
+	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return false
 	}
 	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+func processZombie(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	out, err := exec.Command("ps", "-p", fmt.Sprintf("%d", pid), "-o", "stat=").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.TrimSpace(string(out)), "Z")
+}
+
+func menubarLogPath(cfg *config.Config) string {
+	name := ".onwatch-menubar.log"
+	if cfg != nil && cfg.TestMode {
+		name = ".onwatch-menubar-test.log"
+	}
+	if cfg == nil || cfg.DBPath == "" {
+		return filepath.Join(pidDir, name)
+	}
+	return filepath.Join(filepath.Dir(cfg.DBPath), name)
 }
 
 func stopMenubarProcess(testMode bool) error {
@@ -88,6 +115,7 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 	if cfg == nil || cfg.TestMode || !menubar.IsSupported() || runtime.GOOS != "darwin" {
 		return nil
 	}
+	logger.Info("Starting menubar companion process")
 	settings, err := store.New(cfg.DBPath)
 	if err == nil {
 		defer settings.Close()
@@ -96,8 +124,11 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 		}
 	}
 	path := menubarPIDPath(cfg.TestMode)
-	if pid := readRuntimePID(path); processRunning(pid) {
-		return nil
+	if pid := readRuntimePID(path); pid > 0 {
+		if processRunning(pid) {
+			return nil
+		}
+		_ = os.Remove(path)
 	}
 
 	exe, err := os.Executable()
@@ -114,13 +145,77 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 		args = append(args, "--test")
 	}
 	cmd := exec.Command(exe, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
+
+	logFile, err := os.OpenFile(menubarLogPath(cfg), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open menubar log file: %w", err)
+	}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = logFile.Close()
+		return fmt.Errorf("failed to capture menubar stdout: %w", err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		_ = logFile.Close()
+		return fmt.Errorf("failed to capture menubar stderr: %w", err)
+	}
+
 	if err := cmd.Start(); err != nil {
+		_ = logFile.Close()
 		return err
 	}
-	logger.Info("started menubar companion", "pid", cmd.Process.Pid)
+	if err := writeRuntimePID(path); err != nil {
+		_ = cmd.Process.Kill()
+		_ = logFile.Close()
+		return fmt.Errorf("failed to write menubar pid file: %w", err)
+	}
+	logger.Info("Menubar companion started", "pid", cmd.Process.Pid, "log_path", menubarLogPath(cfg))
+
+	var stderrBuf bytes.Buffer
+	stdoutDone := make(chan struct{})
+	stderrDone := make(chan struct{})
+
+	go func() {
+		defer close(stdoutDone)
+		writer := io.Writer(logFile)
+		if cfg.DebugMode {
+			writer = io.MultiWriter(logFile, os.Stdout)
+		}
+		_, _ = io.Copy(writer, stdoutPipe)
+	}()
+
+	go func() {
+		defer close(stderrDone)
+		writer := io.Writer(logFile)
+		if cfg.DebugMode {
+			writer = io.MultiWriter(logFile, os.Stderr, &stderrBuf)
+		} else {
+			writer = io.MultiWriter(logFile, &stderrBuf)
+		}
+		_, _ = io.Copy(writer, stderrPipe)
+	}()
+
+	go func() {
+		err := cmd.Wait()
+		<-stdoutDone
+		<-stderrDone
+		_ = os.Remove(path)
+		_ = logFile.Close()
+
+		if err != nil {
+			exitCode := -1
+			if cmd.ProcessState != nil {
+				exitCode = cmd.ProcessState.ExitCode()
+			}
+			logger.Error("Menubar companion crashed", "exit_code", exitCode, "stderr", strings.TrimSpace(stderrBuf.String()))
+			return
+		}
+		logger.Info("Menubar companion exited normally")
+	}()
+
 	return nil
 }
 
