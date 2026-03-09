@@ -163,16 +163,34 @@ func TestAntigravityAgent_SetNotifier(t *testing.T) {
 	notifier := notify.New(st, logger)
 	ag.SetNotifier(notifier)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
-	defer cancel()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- ag.Run(ctx)
+	}()
 
-	go ag.Run(ctx)
-	time.Sleep(700 * time.Millisecond)
+	foundSnapshot := false
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		latest, _ := st.QueryLatestAntigravity()
+		if latest != nil {
+			foundSnapshot = true
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
 	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("expected nil error on shutdown, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("agent did not stop after cancellation")
+	}
 
-	// Verify poll completed (notifier didn't cause panic)
-	latest, _ := st.QueryLatestAntigravity()
-	if latest == nil {
+	if !foundSnapshot {
 		t.Fatal("expected snapshot after poll with notifier set")
 	}
 }

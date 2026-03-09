@@ -6,7 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"testing"
+	"time"
 )
 
 func performRequest(t *testing.T, handler http.Handler, method, path string, body io.Reader, headers map[string]string) *httptest.ResponseRecorder {
@@ -186,5 +189,29 @@ func TestStandaloneServer_AdminEndpointsValidateMethodBodyAndProvider(t *testing
 	unknownError := performRequest(t, srv.mux, http.MethodPost, "/admin/error", bytes.NewBufferString(`{"provider":"unknown","status_code":500}`), nil)
 	if unknownError.Code != http.StatusBadRequest {
 		t.Fatalf("expected unknown error provider 400, got %d", unknownError.Code)
+	}
+}
+
+func TestMain_StartsAndShutsDownOnSignal(t *testing.T) {
+	if os.Getenv("ONWATCH_MOCKSERVER_MAIN_HELPER") == "1" {
+		os.Args = []string{"mockserver", "-port=0", "-syn-key=helper-syn", "-zai-key=helper-zai", "-anth-token=helper-anth"}
+		main()
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestMain_StartsAndShutsDownOnSignal")
+	cmd.Env = append(os.Environ(), "ONWATCH_MOCKSERVER_MAIN_HELPER=1")
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start helper process: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatalf("signal helper process: %v", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("wait helper process: %v", err)
 	}
 }

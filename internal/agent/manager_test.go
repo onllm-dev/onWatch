@@ -122,3 +122,21 @@ func TestAgentManager_StopAll(t *testing.T) {
 		t.Fatal("expected all runners stopped")
 	}
 }
+
+func TestAgentManager_RegisteredProviders(t *testing.T) {
+	mgr := NewAgentManager(slog.Default())
+	mgr.RegisterFactory("zai", func() (AgentRunner, error) { return newManagerTestRunner(), nil })
+	mgr.RegisterFactory("anthropic", func() (AgentRunner, error) { return newManagerTestRunner(), nil })
+	mgr.RegisterFactory("codex", func() (AgentRunner, error) { return newManagerTestRunner(), nil })
+
+	got := mgr.RegisteredProviders()
+	want := []string{"anthropic", "codex", "zai"}
+	if len(got) != len(want) {
+		t.Fatalf("RegisteredProviders length = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("RegisteredProviders[%d] = %q, want %q (full=%v)", i, got[i], want[i], got)
+		}
+	}
+}

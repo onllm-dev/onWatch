@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
@@ -114,5 +115,16 @@ func TestMiniMaxAgent_ContextCancellation(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("agent did not stop on context cancellation")
+	}
+}
+
+func TestMiniMaxAgent_SetNotifier(t *testing.T) {
+	ag, s, _ := setupMiniMaxAgentTest(t)
+
+	notifier := notify.New(s, slog.Default())
+	ag.SetNotifier(notifier)
+
+	if ag.notifier != notifier {
+		t.Fatal("expected notifier to be stored on MiniMaxAgent")
 	}
 }
