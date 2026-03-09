@@ -142,6 +142,9 @@ const State = {
   allProvidersInsights: null,
   allProvidersHistory: null,
   providerVisibility: {},
+  menubarCapabilities: null,
+  menubarProviderOrder: [],
+  menubarProviders: [],
   currentRequestSeq: 0,
   insightsRequestSeq: 0,
   historyRequestSeq: 0,
@@ -6050,9 +6053,10 @@ function isSettingsPage() {
   return window.location.pathname === '/settings';
 }
 
-function initSettingsPage() {
+async function initSettingsPage() {
   setupSettingsTabs();
-  loadSettings();
+  await setupMenubarSettings();
+  await loadSettings();
   setupSettingsSave();
   setupProviderReload();
   setupSMTPTest();
@@ -6061,6 +6065,12 @@ function initSettingsPage() {
   setupThresholdSliders();
   setupOverrides();
   populateTimezoneSelect();
+}
+
+function activateSettingsTab(tabName) {
+  const nextTab = document.querySelector(`.settings-tab[data-tab="${tabName}"]`);
+  if (!nextTab || nextTab.hidden) return;
+  nextTab.click();
 }
 
 function setupSettingsTabs() {
@@ -6094,6 +6104,46 @@ function setupThresholdSliders() {
     cSlider.addEventListener('input', () => { cInput.value = cSlider.value; });
     cInput.addEventListener('input', () => { cSlider.value = cInput.value; });
   }
+}
+
+async function loadCapabilities() {
+  try {
+    const resp = await authFetch('/api/capabilities');
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function setupMenubarSettings() {
+  const tab = document.querySelector('.settings-tab[data-tab="menubar"]');
+  const panel = document.getElementById('panel-menubar');
+  const settingsShell = document.getElementById('menubar-settings-shell');
+  const orderShell = document.getElementById('menubar-order-shell');
+  const divider = document.getElementById('menubar-order-divider');
+  const upgradeBanner = document.getElementById('menubar-upgrade-banner');
+  const badge = document.getElementById('menubar-build-badge');
+  if (!tab || !panel) return;
+
+  const caps = await loadCapabilities();
+  State.menubarCapabilities = caps;
+
+  const isMac = caps && caps.platform === 'darwin';
+  if (!isMac) {
+    tab.hidden = true;
+    panel.hidden = true;
+    if (tab.classList.contains('active')) activateSettingsTab('general');
+    return;
+  }
+
+  tab.hidden = false;
+  const supported = !!caps.menubar_supported;
+  if (badge) badge.textContent = supported ? 'Full Build' : 'Lite Build';
+  if (settingsShell) settingsShell.hidden = !supported;
+  if (orderShell) orderShell.hidden = !supported;
+  if (divider) divider.hidden = !supported;
+  if (upgradeBanner) upgradeBanner.hidden = supported;
 }
 
 async function loadSettings() {
@@ -6152,10 +6202,36 @@ async function loadSettings() {
     }
 
     // Provider visibility + dynamic provider status
-    populateProviderToggles(data.provider_visibility || {});
+    await populateProviderToggles(data.provider_visibility || {});
+    await populateMenubarSettings(data.menubar || {});
   } catch (e) {
     // Settings load failed silently
   }
+}
+
+async function populateMenubarSettings(data) {
+  const caps = State.menubarCapabilities || await loadCapabilities();
+  State.menubarCapabilities = caps;
+  if (!caps || caps.platform !== 'darwin') return;
+
+  const settings = data || {};
+  const shell = document.getElementById('menubar-settings-shell');
+  if (shell && shell.hidden) return;
+
+  const enabled = document.getElementById('menubar-enabled');
+  const defaultView = document.getElementById('menubar-default-view');
+  const refresh = document.getElementById('menubar-refresh');
+  const warning = document.getElementById('menubar-warning');
+  const critical = document.getElementById('menubar-critical');
+
+  if (enabled) enabled.checked = settings.enabled !== false;
+  if (defaultView && settings.default_view) defaultView.value = settings.default_view;
+  if (refresh && settings.refresh_seconds) refresh.value = String(settings.refresh_seconds);
+  if (warning && settings.warning_percent != null) warning.value = settings.warning_percent;
+  if (critical && settings.critical_percent != null) critical.value = settings.critical_percent;
+
+  State.menubarProviderOrder = Array.isArray(settings.providers_order) ? settings.providers_order.slice() : [];
+  await populateMenubarProviderOrder();
 }
 
 function setVal(id, val) {
@@ -6291,6 +6367,145 @@ async function populateProviderToggles(visibility) {
       isPolling: !!fallbackCodex.isPolling
     }));
   }
+}
+
+async function fetchMenubarProviders() {
+  let providers = [];
+  try {
+    const res = await authFetch(`${API_BASE}/api/providers/status`);
+    if (res.ok) {
+      const data = await res.json();
+      providers = Array.isArray(data.providers) ? data.providers : [];
+    }
+  } catch (e) {
+    providers = [];
+  }
+
+  if (providers.length === 0) {
+    return [];
+  }
+
+  const providerByKey = new Map(providers.map(p => [p.key, p]));
+  const codexStatus = providerByKey.get('codex') || null;
+  const items = providers
+    .filter(p => p.key !== 'codex')
+    .map(p => ({
+      key: p.key,
+      name: p.name,
+      meta: `${p.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${p.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+      dashboardVisible: p.dashboardVisible !== false,
+    }));
+
+  try {
+    const res = await authFetch(`${API_BASE}/api/codex/profiles`);
+    if (res.ok) {
+      const data = await res.json();
+      const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+      if (profiles.length > 1) {
+        profiles.forEach(profile => {
+          const key = `codex:${profile.id}`;
+          items.push({
+            key,
+            name: `Codex - ${profile.name}`,
+            meta: 'Per-account Codex usage',
+            dashboardVisible: true,
+          });
+        });
+        return items;
+      }
+    }
+  } catch (e) {
+    // fall back to single Codex item below
+  }
+
+  if (codexStatus) {
+    items.push({
+      key: 'codex',
+      name: codexStatus.name || 'Codex',
+      meta: `${codexStatus.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${codexStatus.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+      dashboardVisible: codexStatus.dashboardVisible !== false,
+    });
+  }
+
+  return items;
+}
+
+async function populateMenubarProviderOrder() {
+  const list = document.getElementById('menubar-provider-order');
+  if (!list) return;
+
+  const providers = await fetchMenubarProviders();
+  State.menubarProviders = providers.slice();
+  if (providers.length === 0) {
+    list.innerHTML = '<li class="menubar-order-item"><div class="menubar-order-copy"><span class="menubar-order-name">No providers available</span><span class="menubar-order-meta">Configure providers first to control menubar ordering.</span></div></li>';
+    return;
+  }
+
+  const order = Array.isArray(State.menubarProviderOrder) ? State.menubarProviderOrder : [];
+  const indexByKey = new Map(order.map((key, index) => [key, index]));
+  providers.sort((a, b) => {
+    const left = indexByKey.has(a.key) ? indexByKey.get(a.key) : Number.MAX_SAFE_INTEGER;
+    const right = indexByKey.has(b.key) ? indexByKey.get(b.key) : Number.MAX_SAFE_INTEGER;
+    if (left !== right) return left - right;
+    return a.name.localeCompare(b.name);
+  });
+  State.menubarProviderOrder = providers.map(provider => provider.key);
+
+  list.innerHTML = providers.map(provider => `
+    <li class="menubar-order-item ${provider.dashboardVisible ? '' : 'is-disabled'}" draggable="true" tabindex="0" data-provider="${provider.key}">
+      <div class="menubar-order-handle" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="menubar-order-copy">
+        <span class="menubar-order-name">${provider.name}</span>
+        <span class="menubar-order-meta">${provider.meta}</span>
+      </div>
+    </li>
+  `).join('');
+
+  let dragged = null;
+  list.querySelectorAll('.menubar-order-item').forEach(item => {
+    item.addEventListener('dragstart', () => {
+      dragged = item;
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      syncMenubarProviderOrder();
+    });
+  });
+
+  list.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    const dragging = list.querySelector('.menubar-order-item.dragging');
+    if (!dragging) return;
+    const afterElement = getMenubarDragAfterElement(list, event.clientY);
+    if (!afterElement) {
+      list.appendChild(dragging);
+    } else if (afterElement !== dragging) {
+      list.insertBefore(dragging, afterElement);
+    }
+  }, { passive: false });
+
+  syncMenubarProviderOrder();
+}
+
+function getMenubarDragAfterElement(container, y) {
+  const items = [...container.querySelectorAll('.menubar-order-item:not(.dragging)')];
+  return items.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child };
+    }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+
+function syncMenubarProviderOrder() {
+  const list = document.getElementById('menubar-provider-order');
+  if (!list) return;
+  State.menubarProviderOrder = [...list.querySelectorAll('.menubar-order-item[data-provider]')]
+    .map(item => item.dataset.provider)
+    .filter(Boolean);
 }
 
 function providerStatusBadge(configured, autoDetectable, isPolling) {
@@ -6513,6 +6728,18 @@ function gatherSettings() {
     settings.timezone = tzSelect.value;
   }
 
+  const menubarShell = document.getElementById('menubar-settings-shell');
+  if (menubarShell && !menubarShell.hidden) {
+    settings.menubar = {
+      enabled: document.getElementById('menubar-enabled')?.checked ?? true,
+      default_view: document.getElementById('menubar-default-view')?.value || 'standard',
+      refresh_seconds: parseInt(document.getElementById('menubar-refresh')?.value, 10) || 60,
+      warning_percent: parseInt(document.getElementById('menubar-warning')?.value, 10) || 70,
+      critical_percent: parseInt(document.getElementById('menubar-critical')?.value, 10) || 90,
+      providers_order: [...State.menubarProviderOrder],
+    };
+  }
+
   return settings;
 }
 
@@ -6532,6 +6759,14 @@ function setupSettingsSave() {
     if (settings.notifications) {
       if (settings.notifications.warning_threshold >= settings.notifications.critical_threshold) {
         showSettingsFeedback(feedback, 'Warning threshold must be less than critical threshold.', 'error');
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
+        return;
+      }
+    }
+    if (settings.menubar) {
+      if (settings.menubar.warning_percent >= settings.menubar.critical_percent) {
+        showSettingsFeedback(feedback, 'Menubar warning threshold must be less than critical threshold.', 'error');
         saveBtn.disabled = false;
         saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
         return;
@@ -6936,7 +7171,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (isSettingsPage()) {
     initTheme();
     initLayoutToggle();
-    initSettingsPage();
+    await initSettingsPage();
     return;
   }
 

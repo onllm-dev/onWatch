@@ -1,7 +1,9 @@
 """E2E tests for the settings page.
 
-8 tests covering tabs, SMTP form, thresholds, provider toggles, and save.
+9 tests covering tabs, macOS menubar behavior, SMTP form, thresholds, provider toggles, and save.
 """
+import platform
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -14,14 +16,25 @@ class TestSettings:
     """Settings page interaction tests."""
 
     def test_four_tabs_present(self, settings_page: Page) -> None:
-        """Settings page should have 4 tabs: Email, Notifications, Providers, General."""
+        """Settings page should expose platform-appropriate visible tabs."""
         sp = SettingsPage(settings_page)
         tabs = sp.get_tab_names()
-        assert len(tabs) == 4
-        assert "Email (SMTP)" in tabs
-        assert "Notifications" in tabs
-        assert "Providers" in tabs
-        assert "General" in tabs
+        expected = {"Email (SMTP)", "Notifications", "Providers", "General"}
+        if platform.system() == "Darwin":
+            expected.add("Menubar")
+        assert set(tabs) == expected
+
+    def test_menubar_tab_behavior_matches_build(self, settings_page: Page) -> None:
+        """macOS builds should expose the Menubar tab with either controls or an upgrade banner."""
+        if platform.system() != "Darwin":
+            pytest.skip("Menubar settings are only exposed on macOS")
+
+        sp = SettingsPage(settings_page)
+        sp.select_tab("menubar")
+
+        settings_hidden = settings_page.locator("#menubar-settings-shell").evaluate("el => el.hidden")
+        upgrade_hidden = settings_page.locator("#menubar-upgrade-banner").evaluate("el => el.hidden")
+        assert settings_hidden != upgrade_hidden
 
     def test_smtp_form_fields(self, settings_page: Page) -> None:
         """The Email (SMTP) tab should display all SMTP configuration fields."""
