@@ -944,7 +944,7 @@ interactive_setup() {
 
     local poll_interval
     while true; do
-        poll_interval=$(prompt_with_default "Polling interval in seconds" "120")
+        poll_interval=$(prompt_with_default "Polling interval in seconds" "300")
         if validate_interval "$poll_interval" 2>/dev/null; then
             break
         fi
