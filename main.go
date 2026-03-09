@@ -26,6 +26,7 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/notify"
+	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 	"github.com/onllm-dev/onwatch/v2/internal/update"
@@ -403,6 +404,9 @@ func run() error {
 	if hasCommand("codex") {
 		return runCodexCommand()
 	}
+	if hasCommand("menubar") {
+		return runMenubarCommand()
+	}
 	if hasCommand("stop", "--stop") {
 		return runStop(testMode)
 	}
@@ -472,6 +476,7 @@ func run() error {
 	// Stop any previous instance (parent does this, daemon child skips it)
 	if !isDaemonChild {
 		stopPreviousInstance(cfg.Port, testMode)
+		_ = stopMenubarProcess(testMode)
 	}
 
 	// Daemonize: if not in debug mode, not already the daemon child, and NOT in Docker, fork
@@ -976,6 +981,16 @@ func run() error {
 		}
 	}()
 
+	if runtime.GOOS == "darwin" && menubar.IsSupported() {
+		go func() {
+			if waitForServerReady(cfg.Port, 10*time.Second) {
+				if err := startMenubarCompanion(cfg, logger); err != nil {
+					logger.Warn("failed to start menubar companion", "error", err)
+				}
+			}
+		}()
+	}
+
 	// Periodically return freed memory to the OS. On macOS, MADV_FREE pages
 	// are reclaimable but still counted in RSS. FreeOSMemory forces MADV_DONTNEED.
 	// Also evict stale rate limiter entries and expired session tokens to prevent memory growth.
@@ -1012,6 +1027,7 @@ func run() error {
 	// Cancel context to stop agent
 	cancel()
 	agentMgr.StopAll()
+	_ = stopMenubarProcess(cfg.TestMode)
 
 	// Give agent a moment to clean up
 	time.Sleep(100 * time.Millisecond)
@@ -1127,6 +1143,10 @@ func runStop(testMode bool) error {
 	if !stopped {
 		fmt.Printf("No running %s instance found\n", label)
 	}
+	if menubarPID := readRuntimePID(menubarPIDPath(testMode)); menubarPID > 0 {
+		_ = stopMenubarProcess(testMode)
+		fmt.Printf("Stopped %s menubar companion (PID %d)\n", label, menubarPID)
+	}
 	return nil
 }
 
@@ -1180,6 +1200,9 @@ func runStatus(testMode bool) error {
 
 					// Show PID file location
 					fmt.Printf("  PID file:  %s\n", pidFile)
+					if menubarPID := readRuntimePID(menubarPIDPath(testMode)); processRunning(menubarPID) {
+						fmt.Printf("  Menubar:   running (PID %d)\n", menubarPID)
+					}
 
 					// Show log file if it exists
 					logPath := ".onwatch.log"

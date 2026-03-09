@@ -16,6 +16,7 @@ import (
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
+	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
@@ -4135,6 +4136,7 @@ func compactNum(v float64) string {
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	tz := ""
 	var hiddenInsights []string
+	menubarSettings := menubar.DefaultSettings()
 	if h.store != nil {
 		val, err := h.store.GetSetting("timezone")
 		if err != nil {
@@ -4148,6 +4150,11 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		} else if hiVal != "" {
 			_ = json.Unmarshal([]byte(hiVal), &hiddenInsights)
 		}
+		if settings, err := h.store.GetMenubarSettings(); err != nil {
+			h.logger.Error("failed to get menubar settings", "error", err)
+		} else if settings != nil {
+			menubarSettings = settings
+		}
 	}
 	if hiddenInsights == nil {
 		hiddenInsights = []string{}
@@ -4156,6 +4163,7 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	result := map[string]interface{}{
 		"timezone":        tz,
 		"hidden_insights": hiddenInsights,
+		"menubar":         menubarSettings,
 	}
 
 	// SMTP settings (never return the actual password)
@@ -4442,6 +4450,23 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result["provider_visibility"] = vis
+	}
+
+	// Handle menubar settings
+	if raw, ok := body["menubar"]; ok {
+		var settings menubar.Settings
+		if err := json.Unmarshal(raw, &settings); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid menubar value")
+			return
+		}
+		normalized := settings.Normalize()
+		normalized.DefaultView = normalizeMenubarView(string(normalized.DefaultView), menubar.ViewStandard)
+		if err := h.store.SetMenubarSettings(normalized); err != nil {
+			h.logger.Error("failed to save menubar settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save menubar settings")
+			return
+		}
+		result["menubar"] = normalized
 	}
 
 	respondJSON(w, http.StatusOK, result)
