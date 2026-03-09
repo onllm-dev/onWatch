@@ -10,6 +10,8 @@ BIN_DIR="${INSTALL_DIR}/bin"
 REPO="onllm-dev/onwatch"
 SERVICE_NAME="onwatch"
 SYSTEMD_MODE="user"  # "user" or "system" — auto-detected at runtime
+INSTALL_VERSION="latest"
+INSTALL_VARIANT=""
 
 # Collected during interactive setup, used by start_service
 SETUP_USERNAME=""
@@ -177,6 +179,45 @@ validate_interval() {
     return 1
 }
 
+print_usage() {
+    cat <<EOF
+Usage: install.sh [--full|--lite] [--version <tag>]
+
+Options:
+  --full              Install the macOS full build with menubar support
+  --lite              Install the macOS lite build without menubar support
+  --version <tag>     Download a specific release tag instead of latest
+  --help              Show this help text
+EOF
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --full)
+                INSTALL_VARIANT="full"
+                shift
+                ;;
+            --lite)
+                INSTALL_VARIANT="lite"
+                shift
+                ;;
+            --version)
+                [[ $# -ge 2 ]] || fail "--version requires a release tag"
+                INSTALL_VERSION="$2"
+                shift 2
+                ;;
+            --help|-h)
+                print_usage
+                exit 0
+                ;;
+            *)
+                fail "Unknown option: $1"
+                ;;
+        esac
+    done
+}
+
 # ─── Detect Platform ─────────────────────────────────────────────────
 detect_platform() {
     local os arch
@@ -198,6 +239,27 @@ detect_platform() {
     esac
 
     PLATFORM="${OS}-${ARCH}"
+    resolve_asset_name
+}
+
+resolve_asset_name() {
+    if [[ "$OS" == "darwin" ]]; then
+        if [[ -z "$INSTALL_VARIANT" ]]; then
+            INSTALL_VARIANT="full"
+        fi
+        if [[ "$INSTALL_VARIANT" == "lite" ]]; then
+            ASSET_NAME="onwatch-lite-${PLATFORM}"
+        else
+            ASSET_NAME="onwatch-${PLATFORM}"
+            INSTALL_VARIANT="full"
+        fi
+        return
+    fi
+
+    if [[ -n "$INSTALL_VARIANT" ]]; then
+        warn "Variant flags only affect macOS installs; using the standard ${OS} binary"
+    fi
+    INSTALL_VARIANT="standard"
     ASSET_NAME="onwatch-${PLATFORM}"
 }
 
@@ -304,10 +366,13 @@ stop_existing() {
 # then moves into place.
 download() {
     local url="https://github.com/${REPO}/releases/latest/download/${ASSET_NAME}"
+    if [[ "$INSTALL_VERSION" != "latest" ]]; then
+        url="https://github.com/${REPO}/releases/download/${INSTALL_VERSION}/${ASSET_NAME}"
+    fi
     local dest="${BIN_DIR}/onwatch"
     local tmp_dest="/tmp/onwatch-download-$$"
 
-    info "Downloading onwatch for ${BOLD}${PLATFORM}${NC}..."
+    info "Downloading onwatch for ${BOLD}${PLATFORM}${NC} (${INSTALL_VARIANT})..."
     info "  URL:  $url"
     info "  Dest: $dest"
 
@@ -1272,6 +1337,8 @@ print_errors() {
 
 # ─── Main ─────────────────────────────────────────────────────────────
 main() {
+    parse_args "$@"
+
     printf "\n"
     printf "  ${BOLD}onWatch Installer${NC}\n"
     printf "  ${DIM}https://github.com/${REPO}${NC}\n"
@@ -1280,6 +1347,7 @@ main() {
     # Detect platform
     detect_platform
     info "Platform: ${BOLD}${PLATFORM}${NC}"
+    info "Variant:  ${BOLD}${INSTALL_VARIANT}${NC}"
 
     # Migrate from SynTrack if old installation exists
     migrate_from_syntrack

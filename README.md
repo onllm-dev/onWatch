@@ -53,6 +53,13 @@ curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh |
 
 This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a systemd service (Linux) or self-daemonizes (macOS), and adds `onwatch` to your PATH.
 
+On macOS, the installer defaults to the full build with menubar support. Use `--lite` if you want the smaller dashboard-only build:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash -s -- --full
+curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash -s -- --lite
+```
+
 ### Homebrew (macOS & Linux)
 
 ```bash
@@ -176,6 +183,14 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 **Sessions** -- Every agent run creates a session that tracks peak consumption, letting you compare usage across work periods.
 
 **Settings** -- Dedicated settings page (`/settings`) with tabs for general preferences, provider controls, notification thresholds, and SMTP email configuration.
+
+**Menubar (macOS full build)** -- The full macOS build adds a menubar companion with three preset views:
+
+- **Minimal** -- Aggregate health, highest pressure quota, and compact status chips
+- **Standard** -- Provider cards with circular quota meters and reset metadata
+- **Detailed** -- Expanded provider cards with sparkline trends and full quota breakdowns
+
+Configure it in **Settings > Menubar**. You can enable or disable the companion, pick the default view, change refresh and threshold settings, and drag providers into the order you want. The lite macOS build keeps the dashboard only and shows an upgrade banner in the same settings tab.
 
 **Email notifications (Beta)** -- Configure SMTP to receive alerts when quotas cross warning or critical thresholds, or when quotas reset. Per-quota threshold overrides for fine-grained control. SMTP passwords are encrypted at rest with AES-GCM.
 
@@ -319,10 +334,13 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
 | `/api/cycles?type=subscription` | GET         | Reset cycle history                            |
 | `/api/cycle-overview`           | GET         | Cross-quota correlation at peak usage          |
 | `/api/summary`                  | GET         | Usage summaries                                |
+| `/api/capabilities`             | GET         | Build/runtime capabilities (variant, menubar)  |
+| `/api/menubar/summary`          | GET         | Normalized menubar snapshot payload            |
+| `/api/menubar/test`             | GET         | Browser-testable menubar page in test mode     |
 | `/api/sessions`                 | GET         | Session history                                |
 | `/api/insights`                 | GET         | Usage insights                                 |
 | `/api/providers`                | GET         | Available providers                            |
-| `/api/settings`                 | GET/PUT     | User settings (notifications, SMTP, providers) |
+| `/api/settings`                 | GET/PUT     | User settings (notifications, SMTP, providers, menubar) |
 | `/api/settings/smtp/test`       | POST        | Send test email via configured SMTP            |
 | `/api/password`                 | PUT         | Change password                                |
 | `/api/push/vapid`               | GET         | Get VAPID public key for push subscription     |

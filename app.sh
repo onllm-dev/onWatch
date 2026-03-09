@@ -29,10 +29,12 @@ ${CYAN}USAGE:${NC}
 
 ${CYAN}FLAGS:${NC}
     --build,   -b                  Build production binary with version ldflags
+    --build-darwin-full            Build macOS full binaries with menubar support
+    --build-darwin-lite            Build macOS lite binaries without menubar support
     --test,    -t                  Run all tests with race detection and coverage
     --smoke,   -s                  Quick validation: vet + build check + short tests
     --run,     -r                  Build and run in debug mode (foreground)
-    --release                      Run tests, then cross-compile for 5 platforms
+    --release                      Run tests, then build release binaries
     --clean,   -c                  Remove binary, coverage files, dist/, test cache
     --stop                         Stop a running instance (native or Docker)
     --docker                       Docker mode: --build/--run/--clean/--stop use Docker
@@ -43,6 +45,8 @@ ${CYAN}FLAGS:${NC}
 
 ${CYAN}EXAMPLES:${NC}
     ./app.sh --build               # Build production binary
+    ./app.sh --build-darwin-full   # Build macOS full binaries
+    ./app.sh --build-darwin-lite   # Build macOS lite binaries
     ./app.sh --test                 # Run full test suite
     ./app.sh --smoke               # Quick pre-commit check
     ./app.sh --clean --build --run  # Clean, rebuild, and run
@@ -55,7 +59,7 @@ ${CYAN}EXAMPLES:${NC}
 
 ${CYAN}NOTES:${NC}
     Flags can be combined. Execution order is always:
-    deps -> clean -> build -> test -> smoke -> release -> run
+    deps -> clean -> build -> darwin-full -> darwin-lite -> test -> smoke -> release -> run
     With --docker, build/run/clean/stop operate on Docker instead of native Go.
 EOF
 }
@@ -64,6 +68,8 @@ EOF
 DO_DEPS=false
 DO_CLEAN=false
 DO_BUILD=false
+DO_BUILD_DARWIN_FULL=false
+DO_BUILD_DARWIN_LITE=false
 DO_TEST=false
 DO_SMOKE=false
 DO_RELEASE=false
@@ -80,6 +86,10 @@ for arg in "$@"; do
     case "$arg" in
         --build|-b)
             DO_BUILD=true ;;
+        --build-darwin-full)
+            DO_BUILD_DARWIN_FULL=true ;;
+        --build-darwin-lite)
+            DO_BUILD_DARWIN_LITE=true ;;
         --test|-t)
             DO_TEST=true ;;
         --smoke|-s)
@@ -181,6 +191,41 @@ do_build() {
     success "Built ./$BINARY ($(du -h "$BINARY" | cut -f1 | xargs))"
 }
 
+build_darwin_full() {
+    cd "$SCRIPT_DIR"
+    if [[ "$(uname)" != "Darwin" ]]; then
+        error "macOS full menubar builds require a macOS host"
+        return 1
+    fi
+
+    mkdir -p "$SCRIPT_DIR/dist"
+    local tags="menubar,desktop,production"
+    for arch in arm64 amd64; do
+        local output="dist/onwatch-darwin-${arch}"
+        info "Building ${output}..."
+        CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" go build \
+            -tags "$tags" \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o "$SCRIPT_DIR/$output" .
+    done
+
+    success "Built macOS full binaries in dist/"
+}
+
+build_darwin_lite() {
+    cd "$SCRIPT_DIR"
+    mkdir -p "$SCRIPT_DIR/dist"
+    for arch in arm64 amd64; do
+        local output="dist/onwatch-lite-darwin-${arch}"
+        info "Building ${output}..."
+        CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o "$SCRIPT_DIR/$output" .
+    done
+
+    success "Built macOS lite binaries in dist/"
+}
+
 do_test() {
     info "Running tests with race detection and coverage..."
     cd "$SCRIPT_DIR"
@@ -210,12 +255,17 @@ do_release() {
     go test -race -cover -count=1 ./...
     success "Tests passed."
 
-    info "Cross-compiling onWatch v${VERSION} for 5 platforms..."
+    info "Building release artifacts for onWatch v${VERSION}..."
     mkdir -p "$SCRIPT_DIR/dist"
 
+    build_darwin_lite
+    if [[ "$(uname)" == "Darwin" ]]; then
+        build_darwin_full
+    else
+        warn "Skipping macOS full binaries on non-macOS host. Use macOS CI or a local macOS build host for menubar artifacts."
+    fi
+
     local targets=(
-        "darwin:arm64:"
-        "darwin:amd64:"
         "linux:amd64:"
         "linux:arm64:"
         "windows:amd64:.exe"
@@ -329,7 +379,7 @@ do_docker_clean() {
     success "Docker clean complete."
 }
 
-# --- Execute in order: deps -> clean -> build -> test -> smoke -> release -> run/stop ---
+# --- Execute in order: deps -> clean -> build -> darwin-full -> darwin-lite -> test -> smoke -> release -> run/stop ---
 
 if $DO_DOCKER; then
     $DO_DEPS    && do_deps
@@ -344,6 +394,8 @@ else
     $DO_DEPS    && do_deps
     $DO_CLEAN   && do_clean
     $DO_BUILD   && do_build
+    $DO_BUILD_DARWIN_FULL && build_darwin_full
+    $DO_BUILD_DARWIN_LITE && build_darwin_lite
     $DO_TEST    && do_test
     $DO_SMOKE   && do_smoke
     $DO_RELEASE && do_release
