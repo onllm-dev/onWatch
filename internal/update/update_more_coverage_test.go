@@ -95,11 +95,19 @@ func TestRestart_SpawnsAppliedBinary(t *testing.T) {
 	markerPath := filepath.Join(t.TempDir(), "spawned.txt")
 	oldArgs := os.Args
 	oldExecCommand := execCommand
+	oldInvocationID := os.Getenv("INVOCATION_ID")
+	oldReadCgroup := readCgroupFile
 	t.Cleanup(func() {
 		os.Args = oldArgs
 		execCommand = oldExecCommand
+		_ = os.Setenv("INVOCATION_ID", oldInvocationID)
+		readCgroupFile = oldReadCgroup
 	})
 	os.Args = []string{oldArgs[0], "--debug", "update", "--update", "--port", "9211"}
+	_ = os.Unsetenv("INVOCATION_ID")
+	readCgroupFile = func() ([]byte, error) {
+		return nil, os.ErrNotExist
+	}
 	execCommand = func(name string, args ...string) *exec.Cmd {
 		if name != exePath {
 			t.Fatalf("spawn name = %q, want %q", name, exePath)
@@ -363,12 +371,20 @@ func TestReplaceBinary_RemoveThenRenameFailure(t *testing.T) {
 func TestRestart_UsesExecutableWhenLastAppliedPathEmpty(t *testing.T) {
 	oldExecCommand := execCommand
 	oldArgs := os.Args
+	oldInvocationID := os.Getenv("INVOCATION_ID")
+	oldReadCgroup := readCgroupFile
 	t.Cleanup(func() {
 		execCommand = oldExecCommand
 		os.Args = oldArgs
+		_ = os.Setenv("INVOCATION_ID", oldInvocationID)
+		readCgroupFile = oldReadCgroup
 	})
 
 	os.Args = []string{oldArgs[0], "--debug", "update", "--update", "--port", "9811"}
+	_ = os.Unsetenv("INVOCATION_ID")
+	readCgroupFile = func() ([]byte, error) {
+		return nil, os.ErrNotExist
+	}
 	var gotName string
 	var gotArgs []string
 	execCommand = func(name string, arg ...string) *exec.Cmd {
