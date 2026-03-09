@@ -25,8 +25,8 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/agent"
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
-	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
+	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 	"github.com/onllm-dev/onwatch/v2/internal/update"
@@ -94,6 +94,20 @@ func hasCommand(cmds ...string) bool {
 		}
 	}
 	return false
+}
+
+func printMenubarHelp() {
+	fmt.Print(menubarHelpText())
+}
+
+func menubarHelpText() string {
+	return "" +
+		"onWatch Menubar Companion\n\n" +
+		"Usage: onwatch menubar [OPTIONS]\n\n" +
+		"Options:\n" +
+		"  --port PORT    Dashboard port to connect to (default: 9211)\n" +
+		"  --debug        Run in foreground with verbose logging\n" +
+		"  --help         Show this help message\n"
 }
 
 // stopPreviousInstance stops any running onwatch instance using PID file + port check.
@@ -405,6 +419,10 @@ func run() error {
 		return runCodexCommand()
 	}
 	if hasCommand("menubar") {
+		if hasFlag("--help") || hasFlag("-h") {
+			printMenubarHelp()
+			return nil
+		}
 		return runMenubarCommand()
 	}
 	if hasCommand("stop", "--stop") {
