@@ -9,10 +9,11 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 
 **Trust & Quality**
 
-[![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)
+[![Stars](https://img.shields.io/github/stars/onllm-dev/onwatch?style=for-the-badge&logo=github&logoColor=white&label=Stars&color=181717)](https://github.com/onllm-dev/onwatch/stargazers)
 [![Awesome Go](https://img.shields.io/badge/Awesome_Go-Mentioned-22C55E?style=for-the-badge)](https://github.com/avelino/awesome-go)
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-brightgreen?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)  
 [![Coverage](https://img.shields.io/codecov/c/github/onllm-dev/onwatch?style=for-the-badge&logo=codecov&logoColor=white&label=Coverage)](https://codecov.io/gh/onllm-dev/onwatch)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-brightgreen?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/onllm-dev/onwatch/v2?style=for-the-badge)](https://goreportcard.com/report/github.com/onllm-dev/onwatch/v2)
 
 **Compatibility & Docs**
