@@ -1,32 +1,40 @@
 # onWatch
 
-### **[onwatch.onllm.dev](https://onwatch.onllm.dev)**
+**Free, open-source AI API quota monitoring for developers.**
 
-**onWatch** is a free, open-source CLI tool that tracks [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com) (Claude Code), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io) (Coding Plan), and Antigravity API quota usage in real time. It runs as a lightweight background agent (<50 MB RAM with all seven providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
+Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), and Antigravity in one place.
+See history, get alerts, and open a local web dashboard before you hit throttling or run over budget.
 
-onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session intelligence that developers actually need. It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Antigravity**, and others.
+**Links:** [Website](https://onwatch.onllm.dev) | [Buy Me a Coffee](https://buymeacoffee.com/prakersh)
+
+**Trust & Quality**
+
+[![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)
+[![Awesome Go](https://img.shields.io/badge/Awesome_Go-Mentioned-22C55E?style=for-the-badge)](https://github.com/avelino/awesome-go)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-brightgreen?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
+[![Coverage](https://img.shields.io/codecov/c/github/onllm-dev/onwatch?style=for-the-badge&logo=codecov&logoColor=white&label=Coverage)](https://codecov.io/gh/onllm-dev/onwatch)
+[![Go Report Card](https://goreportcard.com/badge/github.com/onllm-dev/onwatch/v2?style=for-the-badge)](https://goreportcard.com/report/github.com/onllm-dev/onwatch/v2)
+
+**Compatibility & Docs**
+
+[![Version](https://img.shields.io/badge/Version-v2.11.17-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.17)
+[![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
+[![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
+[![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
+
+onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session view that developers actually need. It runs as a lightweight background agent (<50 MB RAM with all seven providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
+
+It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Antigravity**, and others.
 
 **Zero telemetry. Single binary. All data stays on your machine.**
 
-> If onWatch helps you track your AI spending, consider giving it a star — it helps others discover the project.
-
-> **Beta**: onWatch is currently in active development. Features and APIs may change as we refine the product.
-
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-brightgreen?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
-[![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
-[![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
-[![Go Report Card](https://goreportcard.com/badge/github.com/onllm-dev/onwatch/v2?style=for-the-badge)](https://goreportcard.com/report/github.com/onllm-dev/onwatch/v2)
-[![Version](https://img.shields.io/badge/Version-v2.11.17-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.17)
-[![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
-[![Website](https://img.shields.io/badge/onwatch.onllm.dev-7C3AED?style=for-the-badge&logo=globe&logoColor=white)](https://onwatch.onllm.dev)
-[![Coverage](https://img.shields.io/codecov/c/github/onllm-dev/onwatch?style=for-the-badge&logo=codecov&logoColor=white&label=Coverage)](https://codecov.io/gh/onllm-dev/onwatch)
-[![Awesome Go](https://img.shields.io/badge/Awesome_Go-Mentioned-22C55E?style=for-the-badge)](https://github.com/avelino/awesome-go)
-[![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/prakersh)
+**Beta:** onWatch is currently in active development. Features and APIs may change as we refine the product.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline)](https://star-history.com/#onllm-dev/onwatch&Timeline)
 
 ![Anthropic Dashboard - Light Mode](./docs/screenshots/anthropic-light.png)
+
+If onWatch helps you track your AI spending, consider giving it a star. It helps others discover the project.
 
 > Powered by [onllm.dev](https://onllm.dev) | [Landing Page](https://onwatch.onllm.dev)
 
