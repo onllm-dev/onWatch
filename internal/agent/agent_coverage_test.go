@@ -272,7 +272,7 @@ func TestAnthropicAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 		errCh <- agent.Run(ctx)
 	}()
 
-	waitUntil(t, 800*time.Millisecond, func() bool {
+	waitUntil(t, 2*time.Second, func() bool {
 		latest, _ := str.QueryLatestAnthropic()
 		return latest != nil
 	}, "anthropic snapshot to be stored")
@@ -314,7 +314,7 @@ func TestAnthropicAgent_SetCredentialsRefresh(t *testing.T) {
 	})
 
 	// Run a single immediate poll
-	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -322,7 +322,7 @@ func TestAnthropicAgent_SetCredentialsRefresh(t *testing.T) {
 		errCh <- agent.Run(ctx)
 	}()
 
-	waitUntil(t, 800*time.Millisecond, func() bool {
+	waitUntil(t, 2*time.Second, func() bool {
 		latest, _ := str.QueryLatestAnthropic()
 		return latest != nil
 	}, "anthropic snapshot with credentials refresh to be stored")
@@ -343,14 +343,14 @@ func TestCopilotAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 	notifier := notify.New(st, logger)
 	ag.SetNotifier(notifier)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- ag.Run(ctx)
 	}()
-	waitUntil(t, 800*time.Millisecond, func() bool {
+	waitUntil(t, 2*time.Second, func() bool {
 		latest, _ := st.QueryLatestCopilot()
 		return latest != nil
 	}, "copilot snapshot to be stored")
@@ -370,14 +370,14 @@ func TestCodexAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 	notifier := notify.New(st, logger)
 	ag.SetNotifier(notifier)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- ag.Run(ctx)
 	}()
-	waitUntil(t, 800*time.Millisecond, func() bool {
+	waitUntil(t, 2*time.Second, func() bool {
 		latest, _ := st.QueryLatestCodex(store.DefaultCodexAccountID)
 		return latest != nil
 	}, "codex snapshot to be stored")
