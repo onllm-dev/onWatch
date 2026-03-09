@@ -2,7 +2,7 @@
 
 ### **[onwatch.onllm.dev](https://onwatch.onllm.dev)**
 
-**onWatch** is a free, open-source CLI tool that tracks [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com) (Claude Code), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://minimax.io) (Coding Plan), and Antigravity API quota usage in real time. It runs as a lightweight background agent (<50 MB RAM with all seven providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
+**onWatch** is a free, open-source CLI tool that tracks [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com) (Claude Code), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io) (Coding Plan), and Antigravity API quota usage in real time. It runs as a lightweight background agent (<50 MB RAM with all seven providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
 
 onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session intelligence that developers actually need. It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Antigravity**, and others.
 
