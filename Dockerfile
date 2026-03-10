@@ -39,7 +39,7 @@ RUN \
 RUN ./onwatch --version || echo "Cross-compiled binary, skipping version check"
 
 # Create data directory owned by nonroot user (UID 65532)
-# Docker named volumes inherit these permissions on first use
+# Fixes permission errors with both bind mounts and named volumes
 RUN mkdir -p /data && chown 65532:65532 /data
 
 # Runtime stage: Use distroless for minimal, secure image

@@ -1,6 +1,3 @@
-volumes:
-  onwatch-data:
-
 services:
   onwatch:
     build:
@@ -17,9 +14,9 @@ services:
       - "${ONWATCH_PORT:-9211}:9211"
 
     # Volume mount for persistent SQLite database
-    # Named volume - Docker handles permissions automatically with nonroot (UID 65532)
+    # Bind mount — pre-create with: mkdir -p ./onwatch-data
     volumes:
-      - onwatch-data:/data
+      - ./onwatch-data:/data
 
     # Environment variables from .env file
     env_file:
