@@ -171,7 +171,12 @@ func (s *Settings) Normalize() *Settings {
 		return defaults
 	}
 	out := *s
-	if out.DefaultView == "" {
+	switch out.DefaultView {
+	case ViewDetailed:
+		out.DefaultView = ViewDetailed
+	case ViewStandard, ViewMinimal:
+		out.DefaultView = ViewStandard
+	default:
 		out.DefaultView = defaults.DefaultView
 	}
 	if out.RefreshSeconds < 10 {

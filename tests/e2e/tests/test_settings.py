@@ -24,8 +24,8 @@ class TestSettings:
             expected.add("Menubar")
         assert set(tabs) == expected
 
-    def test_menubar_tab_behavior_matches_build(self, settings_page: Page) -> None:
-        """macOS builds should expose the Menubar tab with either controls or an upgrade banner."""
+    def test_menubar_tab_behavior_matches_capabilities(self, settings_page: Page) -> None:
+        """macOS builds should expose Menubar tab controls when menubar support is available."""
         if platform.system() != "Darwin":
             pytest.skip("Menubar settings are only exposed on macOS")
 
@@ -33,8 +33,9 @@ class TestSettings:
         sp.select_tab("menubar")
 
         settings_hidden = settings_page.locator("#menubar-settings-shell").evaluate("el => el.hidden")
-        upgrade_hidden = settings_page.locator("#menubar-upgrade-banner").evaluate("el => el.hidden")
-        assert settings_hidden != upgrade_hidden
+        order_hidden = settings_page.locator("#menubar-order-shell").evaluate("el => el.hidden")
+        divider_hidden = settings_page.locator("#menubar-order-divider").evaluate("el => el.hidden")
+        assert settings_hidden == order_hidden == divider_hidden
 
     def test_smtp_form_fields(self, settings_page: Page) -> None:
         """The Email (SMTP) tab should display all SMTP configuration fields."""

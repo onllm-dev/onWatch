@@ -61,13 +61,20 @@ func TestSettingsNormalizeRepairsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestSettingsNormalizeCoercesMinimalViewToStandard(t *testing.T) {
+	settings := (&Settings{DefaultView: ViewMinimal}).Normalize()
+	if settings.DefaultView != ViewStandard {
+		t.Fatalf("expected minimal to normalize to standard, got %s", settings.DefaultView)
+	}
+}
+
 func TestInlineHTMLUsesRequestedView(t *testing.T) {
-	html, err := InlineHTML(ViewMinimal, DefaultSettings())
+	html, err := InlineHTML(ViewDetailed, DefaultSettings())
 	if err != nil {
 		t.Fatalf("InlineHTML returned error: %v", err)
 	}
-	if !strings.Contains(html, `"default_view":"minimal"`) {
-		t.Fatalf("expected minimal default view in inline html, got: %s", html)
+	if !strings.Contains(html, `"default_view":"detailed"`) {
+		t.Fatalf("expected detailed default view in inline html, got: %s", html)
 	}
 }
 

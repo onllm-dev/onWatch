@@ -100,27 +100,18 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Build full and lite macOS artifacts
+      - name: Build macOS artifact
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build \
             -tags menubar,desktop,production \
             -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
             -o onwatch-darwin-amd64 .
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
-            -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
-            -o onwatch-lite-darwin-amd64 .
 
-      - name: Upload full artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: onwatch-darwin-amd64
           path: onwatch-darwin-amd64
-
-      - name: Upload lite artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: onwatch-lite-darwin-amd64
-          path: onwatch-lite-darwin-amd64
 
   build-macos-arm64:
     needs: test
@@ -141,27 +132,18 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Build full and lite macOS artifacts
+      - name: Build macOS artifact
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build \
             -tags menubar,desktop,production \
             -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
             -o onwatch-darwin-arm64 .
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build \
-            -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
-            -o onwatch-lite-darwin-arm64 .
 
-      - name: Upload full artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: onwatch-darwin-arm64
           path: onwatch-darwin-arm64
-
-      - name: Upload lite artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: onwatch-lite-darwin-arm64
-          path: onwatch-lite-darwin-arm64
 
   # Create GitHub release with all binaries
   release:

@@ -708,6 +708,13 @@
             color: var(--text-muted);
         }
 
+        .footer-version {
+            color: var(--text-muted);
+            font-size: 11px;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+        }
+
         .footer-link {
             color: var(--text-muted);
             text-decoration: none;
@@ -1221,6 +1228,8 @@
                 <span id="refresh-label">Refresh</span>
             </button>
             <div class="footer-links">
+                <span class="footer-version" id="footer-version">OnWatch v-</span>
+                <span class="footer-divider" aria-hidden="true">|</span>
                 <a class="footer-link" id="footer-github" href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noopener noreferrer">✦ GitHub</a>
                 <span class="footer-divider" aria-hidden="true">|</span>
                 <a class="footer-link" id="footer-support" href="https://github.com/onllm-dev/onwatch/issues" target="_blank" rel="noopener noreferrer">Support</a>
@@ -1247,11 +1256,12 @@
         window.__ONWATCH_MENUBAR__ = __ONWATCH_MENUBAR_BOOTSTRAP__;
 
         (() => {
+            const MENUBAR_VERSION = "__ONWATCH_MENUBAR_VERSION__";
             const STATUS_STORAGE_KEY = "menubar_status_display";
             const VIEW_STORAGE_KEY = "menubar_view_mode";
             const ORDER_STORAGE_KEY = "menubar_provider_order";
             const THEME_STORAGE_KEY = "menubar_theme_mode";
-            const VIEW_ORDER = ["minimal", "standard", "detailed"];
+            const VIEW_ORDER = ["standard", "detailed"];
             const THEME_MODES = ["system", "light", "dark"];
 
             const icons = {
@@ -1316,9 +1326,14 @@
             const headerUpdated = document.getElementById("header-updated");
             const viewPill = document.getElementById("view-pill");
             const settingsNote = document.getElementById("settings-note");
+            const footerVersion = document.getElementById("footer-version");
             let refreshTimer = null;
             let resizeFrame = 0;
             let resizeTimer = 0;
+
+            if (footerVersion) {
+                footerVersion.textContent = `OnWatch v${MENUBAR_VERSION || "-"}`;
+            }
 
             document.getElementById("brand-mark").innerHTML = icons.star;
             document.getElementById("settings-toggle").innerHTML = icons.settings;
@@ -1681,10 +1696,6 @@
                     body.innerHTML = renderStateCard("No Data", "Choose at least one provider.");
                     return;
                 }
-                if (state.view === "minimal") {
-                    body.innerHTML = renderMinimalView(providers);
-                    return;
-                }
                 if (state.view === "detailed") {
                     body.innerHTML = renderDetailedView(providers);
                     return;
@@ -1811,28 +1822,6 @@
                         moveDraftProvider(providerID, direction);
                     });
                 });
-            }
-
-            function renderMinimalView(providers) {
-                return `
-                    <section class="minimal-view">
-                        ${providers.map((provider) => `
-                            <article class="minimal-provider-row status-${escapeHTML(provider.status || "healthy")}">
-                                ${providerHeaderMarkup(provider)}
-                                <div class="minimal-quota-list">
-                                    ${providerQuotas(provider).map((quota, index) => `
-                                        ${index > 0 ? '<span class="inline-divider" aria-hidden="true">|</span>' : ""}
-                                        <span class="minimal-quota-inline">
-                                            <span class="minimal-quota-label">${escapeHTML(compactQuotaLabel(quota.label, quota.key))}</span>
-                                            <span class="minimal-quota-percent">${Math.round(clampPercent(quota.percent))}%</span>
-                                            <span class="minimal-quota-reset">${escapeHTML(compactResetLabel(quota))}</span>
-                                        </span>
-                                    `).join("")}
-                                </div>
-                            </article>
-                        `).join("")}
-                    </section>
-                `;
             }
 
             function renderStandardView(providers) {
@@ -2212,14 +2201,10 @@
                 if (state.settingsOpen) {
                     return 320;
                 }
-                switch (state.view) {
-                case "detailed":
+                if (state.view === "detailed") {
                     return 420;
-                case "standard":
-                    return 320;
-                default:
-                    return 260;
                 }
+                return 320;
             }
 
             function measuredContentHeight() {
@@ -2535,14 +2520,10 @@
             }
 
             function viewCode(view) {
-                switch (view) {
-                case "minimal":
-                    return "MIN";
-                case "detailed":
+                if (view === "detailed") {
                     return "DTL";
-                default:
-                    return "STD";
                 }
+                return "STD";
             }
 
             function clampPercent(value) {

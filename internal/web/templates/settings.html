@@ -212,7 +212,6 @@
                         <h3 class="settings-section-title">Menubar Companion</h3>
                         <p class="settings-section-desc">Control the macOS menubar companion, its default view, thresholds, and provider ordering.</p>
                     </div>
-                    <span class="badge" id="menubar-build-badge">Full Build</span>
                 </div>
 
                 <div class="settings-fields">
@@ -229,7 +228,6 @@
                     <div class="settings-field settings-field-half">
                         <label for="menubar-default-view">Default View</label>
                         <select id="menubar-default-view" class="settings-input">
-                            <option value="minimal">Minimal</option>
                             <option value="standard">Standard</option>
                             <option value="detailed">Detailed</option>
                         </select>
@@ -262,11 +260,6 @@
                 <ul class="menubar-order-list" id="menubar-provider-order" aria-label="Menubar provider order"></ul>
             </div>
 
-            <div class="settings-section menubar-upgrade-banner" id="menubar-upgrade-banner" hidden>
-                <h3 class="settings-section-title">Menubar Requires the Full macOS Build</h3>
-                <p class="settings-section-desc">This install is running the lite build. Switch to the full macOS binary to enable the tray companion and popover UI.</p>
-                <pre class="menubar-upgrade-command"><code>curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash -s -- --full</code></pre>
-            </div>
         </div>
 
         <!-- General Panel -->

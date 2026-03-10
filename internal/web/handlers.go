@@ -3431,8 +3431,18 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 	}
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
+	orderedQuotas := make([]api.AnthropicQuota, len(latest.Quotas))
+	copy(orderedQuotas, latest.Quotas)
+	sort.SliceStable(orderedQuotas, func(i, j int) bool {
+		left := anthropicQuotaDisplayOrder(orderedQuotas[i].Name)
+		right := anthropicQuotaDisplayOrder(orderedQuotas[j].Name)
+		if left != right {
+			return left < right
+		}
+		return orderedQuotas[i].Name < orderedQuotas[j].Name
+	})
 	var quotas []map[string]interface{}
-	for _, q := range latest.Quotas {
+	for _, q := range orderedQuotas {
 		qMap := map[string]interface{}{
 			"name":        q.Name,
 			"displayName": api.AnthropicDisplayName(q.Name),
@@ -3469,6 +3479,23 @@ func anthropicUtilStatus(util float64) string {
 		return "warning"
 	default:
 		return "healthy"
+	}
+}
+
+func anthropicQuotaDisplayOrder(name string) int {
+	switch name {
+	case "five_hour":
+		return 0
+	case "seven_day":
+		return 1
+	case "seven_day_sonnet":
+		return 2
+	case "monthly_limit":
+		return 3
+	case "extra_usage":
+		return 4
+	default:
+		return 100
 	}
 }
 

@@ -2828,24 +2828,6 @@ select.settings-input {
   gap: 16px;
 }
 
-.menubar-upgrade-banner {
-  border: 1px solid rgba(96, 165, 250, 0.24);
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 32%),
-    var(--surface-card);
-}
-
-.menubar-upgrade-command {
-  margin: 0;
-  padding: 14px 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  background: var(--surface-inset);
-  color: var(--text-primary);
-  font-size: 12px;
-  overflow-x: auto;
-}
-
 .menubar-order-list {
   display: flex;
   flex-direction: column;

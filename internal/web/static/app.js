@@ -535,6 +535,37 @@ function codexVisibleQuotaNames(planType) {
     : ['five_hour', 'seven_day', 'code_review'];
 }
 
+const anthropicQuotaOrder = ['five_hour', 'seven_day', 'seven_day_sonnet', 'monthly_limit', 'extra_usage'];
+const codexQuotaOrder = ['five_hour', 'seven_day', 'code_review'];
+
+function quotaOrderForProvider(provider) {
+  if (provider === 'anthropic') return anthropicQuotaOrder;
+  if (provider === 'codex') return codexQuotaOrder;
+  return [];
+}
+
+function sortQuotaKeysForProvider(keys, provider) {
+  const sorted = Array.isArray(keys) ? [...keys] : Array.from(keys || []);
+  const preferred = quotaOrderForProvider(provider);
+  if (preferred.length === 0) {
+    return sorted.sort();
+  }
+  const rank = new Map(preferred.map((name, index) => [name, index]));
+  return sorted.sort((left, right) => {
+    const leftRank = rank.has(left) ? rank.get(left) : Number.MAX_SAFE_INTEGER;
+    const rightRank = rank.has(right) ? rank.get(right) : Number.MAX_SAFE_INTEGER;
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return String(left).localeCompare(String(right));
+  });
+}
+
+function sortQuotaEntriesForProvider(quotas, provider) {
+  if (!Array.isArray(quotas)) return [];
+  const preferred = quotaOrderForProvider(provider);
+  if (preferred.length === 0) return [...quotas];
+  return sortItemsByPreference(quotas, preferred, (quota) => quota && quota.name);
+}
+
 function setCodexPlanType(planType) {
   const normalized = normalizeCodexPlanType(planType);
   if (!normalized) return false;
@@ -546,7 +577,6 @@ function setCodexPlanType(planType) {
 function filterCodexQuotasForPlan(quotas, planType) {
   if (!Array.isArray(quotas)) return [];
   const preferred = new Set(codexVisibleQuotaNames(planType));
-  const order = ['five_hour', 'seven_day', 'code_review'];
   let filtered = quotas
     .filter(q => q && q.name && preferred.has(q.name));
 
@@ -559,15 +589,7 @@ function filterCodexQuotasForPlan(quotas, planType) {
     }
   }
 
-  return filtered
-    .sort((a, b) => {
-      const left = order.indexOf(a.name);
-      const right = order.indexOf(b.name);
-      if (left === -1 && right === -1) return String(a.name).localeCompare(String(b.name));
-      if (left === -1) return 1;
-      if (right === -1) return -1;
-      return left - right;
-    });
+  return sortQuotaEntriesForProvider(filtered, 'codex');
 }
 
 // Codex chart colors keyed by quota name
@@ -634,8 +656,8 @@ const minimaxChartColorFallback = [
 const renewalCategories = {
   anthropic: [
     { label: '5-Hour', groupBy: 'five_hour' },
-    { label: 'Weekly', groupBy: 'seven_day' },
-    { label: 'Sonnet', groupBy: 'seven_day_sonnet' },
+    { label: 'Weekly All', groupBy: 'seven_day' },
+    { label: 'Weekly Sonnet', groupBy: 'seven_day_sonnet' },
     { label: 'Extra', groupBy: 'extra_usage' }
   ],
   synthetic: [
@@ -653,8 +675,8 @@ const renewalCategories = {
   ],
   codex: [
     { label: '5-Hour', groupBy: 'five_hour' },
-    { label: 'Weekly', groupBy: 'seven_day' },
-    { label: 'Review', groupBy: 'code_review' }
+    { label: 'Weekly All', groupBy: 'seven_day' },
+    { label: 'Review Requests', groupBy: 'code_review' }
   ],
   antigravity: [
     { label: 'Claude+GPT', groupBy: 'antigravity_claude_gpt' },
@@ -672,9 +694,9 @@ const overviewQuotaDisplayNames = {
   tokens: 'Tokens',
   time: 'Time',
   five_hour: '5-Hour', // Default for Anthropic
-  seven_day: 'Weekly',
-  code_review: 'Review',
-  seven_day_sonnet: 'Sonnet',
+  seven_day: 'Weekly All',
+  code_review: 'Review Requests',
+  seven_day_sonnet: 'Weekly Sonnet',
   monthly_limit: 'Monthly',
   extra_usage: 'Extra',
   premium_interactions: 'Premium',
@@ -2506,9 +2528,9 @@ async function fetchCurrent() {
             renderAnthropicQuotaCards(data.quotas, 'quota-grid-anthropic');
           }
           data.quotas.forEach(q => updateAnthropicCard(q));
-          // Store sorted quota names for session table headers (mirrors backend positional mapping)
+          // Store quota names for session table headers using Anthropic display order.
           if (State.anthropicSessionQuotas.length === 0) {
-            State.anthropicSessionQuotas = data.quotas.map(q => q.name).sort().slice(0, 3);
+            State.anthropicSessionQuotas = sortQuotaKeysForProvider(data.quotas.map(q => q.name), 'anthropic').slice(0, 3);
             updateAnthropicSessionHeaders();
           }
         }
@@ -3228,7 +3250,7 @@ async function fetchHistory(range) {
       historyRows.forEach(d => {
         Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
       });
-      const sortedKeys = [...quotaKeys].sort();
+      const sortedKeys = sortQuotaKeysForProvider(quotaKeys, 'anthropic');
       let fallbackIdx = 0;
       const datasets = [];
       sortedKeys.forEach((key) => {
@@ -3338,7 +3360,7 @@ async function fetchHistory(range) {
       historyRows.forEach(d => {
         Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
       });
-      const sortedKeys = [...quotaKeys].sort();
+      const sortedKeys = sortQuotaKeysForProvider(quotaKeys, 'codex');
       let fallbackIdx = 0;
       const datasets = [];
       sortedKeys.forEach((key) => {
@@ -3532,7 +3554,7 @@ function normalizeBothQuotas(provider, payload) {
   if (!Array.isArray(payload.quotas)) return [];
   const rawQuotas = provider === 'codex'
     ? filterCodexQuotasForPlan(payload.quotas, payload.planType || State.codexPlanType)
-    : payload.quotas;
+    : sortQuotaEntriesForProvider(payload.quotas, provider);
   return rawQuotas.map((quota) => {
     const percent = quota.cardPercent != null
       ? quota.cardPercent
@@ -3820,7 +3842,7 @@ function buildDynamicDatasetsForRows(rows, range, labelMap, colorMap, colorFallb
 
   const datasets = [];
   let idx = 0;
-  [...keys].sort().forEach((key) => {
+  sortQuotaKeysForProvider(keys, providerKey).forEach((key) => {
     const color = colorMap[key] || colorFallback[idx++ % colorFallback.length];
     const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
     const processed = processDataWithGaps(rawData, range);
@@ -4071,7 +4093,7 @@ function updateBothCharts(data, range = '6h') {
     rows.forEach(d => {
       Object.keys(d).forEach(k => { if (k !== 'capturedAt') keys.add(k); });
     });
-    const sorted = [...keys].sort();
+    const sorted = sortQuotaKeysForProvider(keys, providerKey);
     const datasets = [];
     let idx = 0;
     sorted.forEach((key) => {
@@ -6124,8 +6146,6 @@ async function setupMenubarSettings() {
   const settingsShell = document.getElementById('menubar-settings-shell');
   const orderShell = document.getElementById('menubar-order-shell');
   const divider = document.getElementById('menubar-order-divider');
-  const upgradeBanner = document.getElementById('menubar-upgrade-banner');
-  const badge = document.getElementById('menubar-build-badge');
   if (!tab || !panel) return;
 
   const caps = await loadCapabilities();
@@ -6141,11 +6161,9 @@ async function setupMenubarSettings() {
 
   tab.hidden = false;
   const supported = !!caps.menubar_supported;
-  if (badge) badge.textContent = supported ? 'Full Build' : 'Lite Build';
   if (settingsShell) settingsShell.hidden = !supported;
   if (orderShell) orderShell.hidden = !supported;
   if (divider) divider.hidden = !supported;
-  if (upgradeBanner) upgradeBanner.hidden = supported;
 }
 
 async function loadSettings() {
@@ -6227,7 +6245,9 @@ async function populateMenubarSettings(data) {
   const critical = document.getElementById('menubar-critical');
 
   if (enabled) enabled.checked = settings.enabled !== false;
-  if (defaultView && settings.default_view) defaultView.value = settings.default_view;
+  if (defaultView && settings.default_view) {
+    defaultView.value = settings.default_view === 'detailed' ? 'detailed' : 'standard';
+  }
   if (refresh && settings.refresh_seconds) refresh.value = String(settings.refresh_seconds);
   if (warning && settings.warning_percent != null) warning.value = settings.warning_percent;
   if (critical && settings.critical_percent != null) critical.value = settings.critical_percent;

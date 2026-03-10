@@ -58,7 +58,7 @@ func companionPIDEnvValue(testMode bool) string {
 	return fmt.Sprintf("%t:%s", testMode, companionPIDPath(testMode))
 }
 
-const refreshCompanionSignal = syscall.Signal(10)
+const refreshCompanionSignal = syscall.SIGUSR1
 
 func TriggerRefresh(testMode bool) error {
 	pidPath := companionPIDPath(testMode)

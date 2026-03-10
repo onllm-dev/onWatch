@@ -64,9 +64,6 @@ func TestCapabilitiesIncludesMenubarFields(t *testing.T) {
 	if _, ok := response["menubar_running"]; !ok {
 		t.Fatal("expected menubar_running in response")
 	}
-	if _, ok := response["variant"]; !ok {
-		t.Fatal("expected variant in response")
-	}
 }
 
 func TestGetSettingsIncludesMenubarDefaults(t *testing.T) {
@@ -127,7 +124,7 @@ func TestMenubarTestEndpointRequiresTestMode(t *testing.T) {
 	h, s := newMenubarTestHandler(t)
 	defer s.Close()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/menubar/test?view=minimal", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/test?view=standard", nil)
 	rr := httptest.NewRecorder()
 
 	h.MenubarTest(rr, req)
@@ -137,7 +134,7 @@ func TestMenubarTestEndpointRequiresTestMode(t *testing.T) {
 	}
 }
 
-func TestMenubarTestEndpointRendersRequestedView(t *testing.T) {
+func TestMenubarTestEndpointNormalizesMinimalViewToStandard(t *testing.T) {
 	t.Setenv("ONWATCH_TEST_MODE", "1")
 
 	h, s := newMenubarTestHandler(t)
@@ -151,8 +148,8 @@ func TestMenubarTestEndpointRendersRequestedView(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
-	if !strings.Contains(rr.Body.String(), `"default_view":"minimal"`) {
-		t.Fatalf("expected minimal view bootstrap, got body: %s", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), `"default_view":"standard"`) {
+		t.Fatalf("expected standard view bootstrap, got body: %s", rr.Body.String())
 	}
 }
 
@@ -360,6 +357,24 @@ func TestMenubarPageRendersLoopbackBootstrap(t *testing.T) {
 	}
 	if !strings.Contains(body, `id="settings-panel"`) {
 		t.Fatalf("expected compact menubar shell, got body: %s", body)
+	}
+}
+
+func TestMenubarPageNormalizesMinimalQueryView(t *testing.T) {
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/menubar?view=minimal", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+
+	h.MenubarPage(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"default_view":"standard"`) {
+		t.Fatalf("expected standard bootstrap when minimal is requested, got body: %s", rr.Body.String())
 	}
 }
 

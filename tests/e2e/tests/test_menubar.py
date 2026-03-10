@@ -5,28 +5,25 @@ from playwright.sync_api import Page, expect
 BASE_URL = "http://localhost:19211"
 
 
-def open_menubar(page: Page, view: str | None = None) -> None:
+def open_menubar(page: Page, view: str | None = None, expected_view: str | None = None) -> None:
     url = f"{BASE_URL}/api/menubar/test"
     if view:
         url = f"{url}?view={view}"
     page.goto(url)
-    if view:
-        page.wait_for_selector(f"#menubar-shell.menubar-view-{view}", timeout=10000)
+    resolved_view = expected_view or view
+    if resolved_view:
+        page.wait_for_selector(f"#menubar-shell.menubar-view-{resolved_view}", timeout=10000)
     else:
         page.wait_for_selector("#menubar-shell", timeout=10000)
 
 
-class TestMenubarMinimalView:
-    def test_renders_compact_provider_rows_with_footer(self, authenticated_page: Page) -> None:
-        open_menubar(authenticated_page, "minimal")
-        expect(authenticated_page.locator(".minimal-view")).to_be_visible()
-        expect(authenticated_page.locator(".minimal-provider-row").first).to_be_visible()
-        expect(authenticated_page.locator(".minimal-quota-inline").first).to_be_visible()
-        expect(authenticated_page.locator(".minimal-quota-reset").first).to_be_visible()
+class TestMenubarStandardView:
+    def test_minimal_query_normalizes_to_standard(self, authenticated_page: Page) -> None:
+        open_menubar(authenticated_page, "minimal", expected_view="standard")
+        expect(authenticated_page.locator("#menubar-shell.menubar-view-standard")).to_be_visible()
+        expect(authenticated_page.locator(".minimal-view")).to_have_count(0)
         expect(authenticated_page.locator(".menubar-footer")).to_be_visible()
 
-
-class TestMenubarStandardView:
     def test_renders_provider_cards_and_per_quota_resets(self, authenticated_page: Page) -> None:
         open_menubar(authenticated_page, "standard")
         expect(authenticated_page.locator("#menubar-shell.menubar-view-standard")).to_be_visible()

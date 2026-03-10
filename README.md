@@ -53,12 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh |
 
 This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a systemd service (Linux) or self-daemonizes (macOS), and adds `onwatch` to your PATH.
 
-On macOS, the installer defaults to the full build with menubar support. Use `--lite` if you want the smaller dashboard-only build:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash -s -- --full
-curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash -s -- --lite
-```
+On macOS, the installer downloads the standard binary with menubar support.
 
 ### Homebrew (macOS & Linux)
 
@@ -184,13 +179,12 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 
 **Settings** -- Dedicated settings page (`/settings`) with tabs for general preferences, provider controls, notification thresholds, and SMTP email configuration.
 
-**Menubar (macOS full build)** -- The full macOS build adds a menubar companion with three preset views:
+**Menubar (macOS, Beta)** -- The macOS build includes a menubar companion with two preset views:
 
-- **Minimal** -- Aggregate health, highest pressure quota, and compact status chips
 - **Standard** -- Provider cards with circular quota meters and reset metadata
 - **Detailed** -- Expanded provider cards with sparkline trends and full quota breakdowns
 
-Configure it in **Settings > Menubar**. You can enable or disable the companion, pick the default view, change refresh and threshold settings, and drag providers into the order you want. The lite macOS build keeps the dashboard only and shows an upgrade banner in the same settings tab.
+Configure it in **Settings > Menubar**. You can enable or disable the companion, pick the default view, change refresh and threshold settings, and drag providers into the order you want.
 
 **Email notifications (Beta)** -- Configure SMTP to receive alerts when quotas cross warning or critical thresholds, or when quotas reset. Per-quota threshold overrides for fine-grained control. SMTP passwords are encrypted at rest with AES-GCM.
 
@@ -334,7 +328,7 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
 | `/api/cycles?type=subscription` | GET         | Reset cycle history                            |
 | `/api/cycle-overview`           | GET         | Cross-quota correlation at peak usage          |
 | `/api/summary`                  | GET         | Usage summaries                                |
-| `/api/capabilities`             | GET         | Build/runtime capabilities (variant, menubar)  |
+| `/api/capabilities`             | GET         | Build/runtime capabilities (platform, menubar) |
 | `/api/menubar/summary`          | GET         | Normalized menubar snapshot payload            |
 | `/api/menubar/test`             | GET         | Browser-testable menubar page in test mode     |
 | `/api/sessions`                 | GET         | Session history                                |
@@ -512,7 +506,7 @@ The `docker-compose.yml` includes memory limits (64M limit, 32M reservation), lo
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilation, and testing.
 
 ```bash
-./app.sh --build       # Production binary (macOS: full menubar build) (or: make build)
+./app.sh --build       # Production binary (macOS includes menubar) (or: make build)
 ./app.sh --test        # Tests with race detection (or: make test)
 ./app.sh --build --run # Build + run debug mode    (or: make run)
 ./app.sh --release     # Cross-compile all platforms (or: make release-local)

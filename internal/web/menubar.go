@@ -34,7 +34,6 @@ func (h *Handler) Capabilities(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"version":           h.version,
 		"platform":          runtime.GOOS,
-		"variant":           menubarVariant(),
 		"menubar_supported": menubar.IsSupported(),
 		"menubar_running":   menubar.IsRunning(),
 	})
@@ -312,7 +311,12 @@ func (h *Handler) renderMenubarHTML(view menubar.ViewType, settings *menubar.Set
 	if err != nil {
 		return "", err
 	}
-	return strings.Replace(string(page), "__ONWATCH_MENUBAR_BOOTSTRAP__", string(bootstrap), 1), nil
+	html := strings.Replace(string(page), "__ONWATCH_MENUBAR_BOOTSTRAP__", string(bootstrap), 1)
+	version := strings.TrimSpace(h.version)
+	if version == "" {
+		version = "dev"
+	}
+	return strings.Replace(html, "__ONWATCH_MENUBAR_VERSION__", version, 1), nil
 }
 
 func (h *Handler) buildMenubarProviderOptions(settings *menubar.Settings) ([]menubarProviderOption, error) {
@@ -675,27 +679,19 @@ func parseCapturedAt(payload map[string]interface{}) time.Time {
 	return parsed
 }
 
-func menubarVariant() string {
-	if runtime.GOOS == "darwin" {
-		if menubar.IsSupported() {
-			return "full"
-		}
-		return "lite"
-	}
-	return "lite"
-}
-
 func normalizeMenubarView(raw string, fallback menubar.ViewType) menubar.ViewType {
-	switch menubar.ViewType(strings.ToLower(strings.TrimSpace(raw))) {
-	case menubar.ViewMinimal:
-		return menubar.ViewMinimal
+	value := menubar.ViewType(strings.ToLower(strings.TrimSpace(raw)))
+	switch value {
 	case menubar.ViewDetailed:
 		return menubar.ViewDetailed
-	case menubar.ViewStandard:
+	case menubar.ViewStandard, menubar.ViewMinimal:
 		return menubar.ViewStandard
 	}
 	if fallback != "" {
-		return fallback
+		if fallback == menubar.ViewDetailed {
+			return menubar.ViewDetailed
+		}
+		return menubar.ViewStandard
 	}
 	return menubar.ViewStandard
 }
