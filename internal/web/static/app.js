@@ -6111,7 +6111,9 @@ async function loadSettings() {
       const s = data.smtp;
       setVal('smtp-host', s.host);
       setVal('smtp-port', s.port);
-      setVal('smtp-protocol', s.protocol);
+      if (s.protocol) {
+        setVal('smtp-protocol', s.protocol);
+      }
       setVal('smtp-username', s.username);
       setVal('smtp-from-address', s.from_address);
       setVal('smtp-from-name', s.from_name);
@@ -6453,7 +6455,7 @@ function gatherSettings() {
     settings.smtp = {
       host: smtpHost.value.trim(),
       port: parseInt(document.getElementById('smtp-port')?.value) || 587,
-      protocol: document.getElementById('smtp-protocol')?.value || 'tls',
+      protocol: document.getElementById('smtp-protocol')?.value || 'auto',
       username: document.getElementById('smtp-username')?.value.trim() || '',
       password: document.getElementById('smtp-password')?.value || '',
       from_address: document.getElementById('smtp-from-address')?.value.trim() || '',

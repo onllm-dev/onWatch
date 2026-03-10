@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/onllm-dev/onwatch/v2/internal/config"
+	"github.com/onllm-dev/onwatch/v2/internal/web"
 )
 
 func TestConfigLoad_WithOnlyCodexAuthFile_AllowsEmptyProviderConfig(t *testing.T) {
@@ -67,6 +68,11 @@ func TestSha256hexAndDeriveEncryptionKey(t *testing.T) {
 	input := "onwatch"
 	want := sha256.Sum256([]byte(input))
 	wantHex := hex.EncodeToString(want[:])
+	originalSalt := append([]byte(nil), web.GetEncryptionSalt()...)
+	web.SetEncryptionSalt(nil)
+	t.Cleanup(func() {
+		web.SetEncryptionSalt(originalSalt)
+	})
 
 	if got := sha256hex(input); got != wantHex {
 		t.Fatalf("sha256hex mismatch: got %q want %q", got, wantHex)
@@ -79,6 +85,32 @@ func TestSha256hexAndDeriveEncryptionKey(t *testing.T) {
 	nonHash := "plain-password"
 	if got := deriveEncryptionKey(nonHash); got != sha256hex(nonHash) {
 		t.Fatalf("deriveEncryptionKey should hash non-hex input, got %q", got)
+	}
+
+	if got := deriveLegacyEncryptionKey(wantHex); got != wantHex {
+		t.Fatalf("deriveLegacyEncryptionKey should return pre-hashed value, got %q", got)
+	}
+	if got := deriveLegacyEncryptionKey(nonHash); got != sha256hex(nonHash) {
+		t.Fatalf("deriveLegacyEncryptionKey should hash non-hex input, got %q", got)
+	}
+}
+
+func TestDeriveEncryptionKey_UsesEncryptionSalt(t *testing.T) {
+	passwordHash := sha256hex("onwatch-admin")
+	salt := []byte("0123456789abcdef")
+	originalSalt := append([]byte(nil), web.GetEncryptionSalt()...)
+	web.SetEncryptionSalt(salt)
+	t.Cleanup(func() {
+		web.SetEncryptionSalt(originalSalt)
+	})
+
+	got := deriveEncryptionKey(passwordHash)
+	want := web.DeriveEncryptionKey(passwordHash, nil)
+	if got != want {
+		t.Fatalf("deriveEncryptionKey() = %q, want %q", got, want)
+	}
+	if got == passwordHash {
+		t.Fatalf("deriveEncryptionKey() unexpectedly used legacy unsalted key %q", got)
 	}
 }
 

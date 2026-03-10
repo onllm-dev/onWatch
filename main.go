@@ -222,13 +222,19 @@ func sha256hex(s string) string {
 	return fmt.Sprintf("%x", h)
 }
 
-// deriveEncryptionKey derives a 32-byte encryption key from the admin password hash.
-// The password hash is expected to be a SHA-256 hex string (64 characters).
+// deriveEncryptionKey derives the runtime encryption key for sensitive settings.
+// It must stay aligned with the web layer, which encrypts SMTP passwords using
+// HKDF with the stored encryption salt when available.
 func deriveEncryptionKey(passwordHash string) string {
+	return web.DeriveEncryptionKey(passwordHash, nil)
+}
+
+// deriveLegacyEncryptionKey returns the pre-salt legacy key derivation used by
+// older releases, for migration of previously encrypted SMTP passwords.
+func deriveLegacyEncryptionKey(passwordHash string) string {
 	if len(passwordHash) == 64 {
 		return passwordHash
 	}
-	// Fallback: hash again if not already hex
 	h := sha256.Sum256([]byte(passwordHash))
 	return fmt.Sprintf("%x", h)
 }
@@ -757,6 +763,7 @@ func run() error {
 	// Create notification engine
 	notifier := notify.New(db, logger)
 	notifier.SetEncryptionKey(deriveEncryptionKey(cfg.AdminPassHash))
+	notifier.SetLegacyEncryptionKey(deriveLegacyEncryptionKey(cfg.AdminPassHash))
 	notifier.Reload()
 	notifier.ConfigureSMTP()
 	notifier.ConfigurePush()
