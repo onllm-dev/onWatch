@@ -189,12 +189,12 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 
 	go func() {
 		defer close(stderrDone)
-		writer := io.Writer(logFile)
 		if cfg.DebugMode {
-			writer = io.MultiWriter(logFile, os.Stderr, &stderrBuf)
-		} else {
-			writer = io.MultiWriter(logFile, &stderrBuf)
+			writer := io.MultiWriter(logFile, os.Stderr, &stderrBuf)
+			_, _ = io.Copy(writer, stderrPipe)
+			return
 		}
+		writer := io.MultiWriter(logFile, &stderrBuf)
 		_, _ = io.Copy(writer, stderrPipe)
 	}()
 
