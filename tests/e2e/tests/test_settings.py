@@ -38,6 +38,13 @@ class TestSettings:
         expect(settings_page.locator("#smtp-from-name")).to_be_visible()
         expect(settings_page.locator("#smtp-to")).to_be_visible()
 
+    def test_smtp_protocol_defaults_to_auto(self, settings_page: Page) -> None:
+        """SMTP protocol should default to auto mode while keeping explicit options available."""
+        expect(settings_page.locator("#smtp-protocol")).to_have_value("auto")
+        options = settings_page.locator("#smtp-protocol option")
+        assert options.count() == 4
+        assert settings_page.locator("#smtp-protocol option[value='none']").inner_text() == "None (Plaintext)"
+
     def test_send_test_email_button(self, settings_page: Page) -> None:
         """The test email button should be present and clickable."""
         sp = SettingsPage(settings_page)

@@ -50,10 +50,12 @@
                     <div class="settings-field settings-field-half">
                         <label for="smtp-protocol">Protocol</label>
                         <select id="smtp-protocol" class="settings-input">
-                            <option value="tls">TLS</option>
+                            <option value="auto" selected>Auto (Recommended)</option>
                             <option value="starttls">STARTTLS</option>
-                            <option value="none">None</option>
+                            <option value="tls">SSL/TLS</option>
+                            <option value="none">None (Plaintext)</option>
                         </select>
+                        <span class="settings-field-hint">Auto prefers STARTTLS when available and falls back to implicit TLS when the server expects encryption from the start. Use None only for plaintext SMTP.</span>
                     </div>
                     <div class="settings-field">
                         <label for="smtp-username">Username</label>

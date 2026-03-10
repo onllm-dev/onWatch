@@ -3218,6 +3218,13 @@ func TestHandler_SettingsPage_RendersHTML(t *testing.T) {
 	if !strings.Contains(ct, "text/html") {
 		t.Errorf("expected text/html, got %s", ct)
 	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "<option value=\"auto\" selected>Auto (Recommended)</option>") {
+		t.Error("expected settings page to default SMTP protocol to auto mode")
+	}
+	if !strings.Contains(body, "Use None only for plaintext SMTP.") {
+		t.Error("expected SMTP protocol hint in settings page")
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -5484,11 +5491,12 @@ func TestSanitizeSMTPError(t *testing.T) {
 		{"nil error", nil, "SMTP test failed"},
 		{"auth error", fmt.Errorf("535 Authentication failed"), "Authentication failed: check username/password"},
 		{"password error", fmt.Errorf("invalid password provided"), "Authentication failed: check username/password"},
+		{"auto mode plain auth warning", fmt.Errorf("server does not offer TLS; select None to allow unencrypted SMTP authentication"), "Server requires plaintext SMTP auth. Choose None only if you trust the server and network."},
 		{"connection refused", fmt.Errorf("dial tcp: connection refused"), "Connection failed: unable to reach SMTP server"},
 		{"timeout error", fmt.Errorf("i/o timeout"), "Connection failed: unable to reach SMTP server"},
 		{"no such host", fmt.Errorf("no such host"), "Connection failed: unable to reach SMTP server"},
-		{"tls error", fmt.Errorf("TLS handshake failure"), "TLS error: check encryption settings"},
-		{"certificate error", fmt.Errorf("x509: certificate has expired"), "TLS error: check encryption settings"},
+		{"tls error", fmt.Errorf("TLS handshake failure"), "TLS error: try STARTTLS on port 587 or SSL/TLS on port 465"},
+		{"certificate error", fmt.Errorf("x509: certificate has expired"), "TLS error: try STARTTLS on port 587 or SSL/TLS on port 465"},
 		{"unknown error", fmt.Errorf("something unexpected happened"), "SMTP test failed"},
 	}
 	for _, tt := range tests {
@@ -7009,6 +7017,29 @@ func TestHandler_UpdateSettings_SMTP_InvalidProtocol(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected status 400 for invalid protocol, got %d", rr.Code)
+	}
+}
+
+func TestHandler_UpdateSettings_SMTP_AutoProtocol(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	hash, _ := HashPassword("testpass")
+	sessions := NewSessionStore("admin", hash, s)
+	cfg := createTestConfigWithSynthetic()
+	h := NewHandler(s, nil, nil, sessions, cfg)
+	h.SetNotifier(&mockNotifier{})
+
+	body := `{"smtp":{"host":"smtp.example.com","port":587,"protocol":"auto","username":"user","password":"pass","from_address":"from@example.com","to":"to@example.com"}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	rr := httptest.NewRecorder()
+
+	h.UpdateSettings(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for auto protocol, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

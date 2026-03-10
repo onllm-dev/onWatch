@@ -403,6 +403,9 @@ func sanitizeSMTPError(err error) string {
 
 	// Classify errors by type
 	switch {
+	case strings.Contains(errStr, "select none to allow unencrypted smtp authentication") ||
+		strings.Contains(errStr, "server does not offer tls"):
+		return "Server requires plaintext SMTP auth. Choose None only if you trust the server and network."
 	case strings.Contains(errStr, "authentication") || strings.Contains(errStr, "auth") ||
 		strings.Contains(errStr, "username") || strings.Contains(errStr, "password") ||
 		strings.Contains(errStr, "535") || strings.Contains(errStr, "530"):
@@ -413,7 +416,7 @@ func sanitizeSMTPError(err error) string {
 		return "Connection failed: unable to reach SMTP server"
 	case strings.Contains(errStr, "tls") || strings.Contains(errStr, "ssl") ||
 		strings.Contains(errStr, "certificate") || strings.Contains(errStr, "x509"):
-		return "TLS error: check encryption settings"
+		return "TLS error: try STARTTLS on port 587 or SSL/TLS on port 465"
 	default:
 		return "SMTP test failed"
 	}
@@ -4285,9 +4288,9 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusBadRequest, "SMTP port must be between 1 and 65535")
 			return
 		}
-		validProtocols := map[string]bool{"tls": true, "starttls": true, "none": true, "": true}
+		validProtocols := map[string]bool{"auto": true, "tls": true, "starttls": true, "none": true, "": true}
 		if !validProtocols[smtp.Protocol] {
-			respondError(w, http.StatusBadRequest, "SMTP protocol must be tls, starttls, or none")
+			respondError(w, http.StatusBadRequest, "SMTP protocol must be auto, tls, starttls, or none")
 			return
 		}
 		if smtp.FromAddress != "" && !emailRegex.MatchString(smtp.FromAddress) {

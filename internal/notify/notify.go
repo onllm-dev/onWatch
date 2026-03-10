@@ -13,14 +13,15 @@ import (
 
 // NotificationEngine evaluates quota statuses and sends alerts via email and push.
 type NotificationEngine struct {
-	store          *store.Store
-	logger         *slog.Logger
-	mailer         *SMTPMailer
-	pushSender     *PushSender
-	vapidPublicKey string
-	mu             sync.RWMutex
-	cfg            NotificationConfig
-	encryptionKey  string // hex-encoded key for decrypting SMTP passwords
+	store               *store.Store
+	logger              *slog.Logger
+	mailer              *SMTPMailer
+	pushSender          *PushSender
+	vapidPublicKey      string
+	mu                  sync.RWMutex
+	cfg                 NotificationConfig
+	encryptionKey       string // current hex-encoded key for decrypting SMTP passwords
+	legacyEncryptionKey string // fallback hex-encoded key for legacy SMTP password migration
 }
 
 // NotificationConfig holds threshold and delivery settings.
@@ -85,6 +86,14 @@ func (e *NotificationEngine) SetEncryptionKey(key string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.encryptionKey = key
+}
+
+// SetLegacyEncryptionKey sets an optional fallback key used only for
+// one-time migration of legacy encrypted SMTP passwords.
+func (e *NotificationEngine) SetLegacyEncryptionKey(key string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.legacyEncryptionKey = key
 }
 
 // Config returns a copy of the current notification config.
@@ -225,19 +234,45 @@ func (e *NotificationEngine) ConfigureSMTP() error {
 		}
 	}
 
-	// Decrypt SMTP password if encrypted
+	// Decrypt SMTP password if encrypted.
+	// Migration path: if current key fails, try legacy key and re-encrypt with current key.
 	password := s.Password
 	e.mu.RLock()
 	key := e.encryptionKey
+	legacyKey := e.legacyEncryptionKey
 	e.mu.RUnlock()
 
 	if key != "" && password != "" && len(password) > 24 {
-		// Try to decrypt - assume encrypted if base64-like and long enough
+		// Try current key first.
 		if decrypted, err := Decrypt(password, key); err == nil {
 			password = decrypted
 		} else {
-			// Failed to decrypt - might be plaintext or wrong key
-			e.logger.Debug("SMTP password decryption failed (may be plaintext)", "error", err)
+			migrated := false
+			if legacyKey != "" && legacyKey != key {
+				if legacyPlaintext, legacyErr := Decrypt(password, legacyKey); legacyErr == nil {
+					if reEncrypted, reEncErr := Encrypt(legacyPlaintext, key); reEncErr == nil {
+						s.Password = reEncrypted
+						smtpJSONUpdated, marshalErr := json.Marshal(s)
+						if marshalErr == nil {
+							if saveErr := e.store.SetSetting("smtp", string(smtpJSONUpdated)); saveErr != nil {
+								e.logger.Warn("failed to persist migrated SMTP password", "error", saveErr)
+							} else {
+								e.logger.Info("migrated legacy SMTP password encryption to current key")
+								migrated = true
+							}
+						} else {
+							e.logger.Warn("failed to marshal SMTP settings during migration", "error", marshalErr)
+						}
+					} else {
+						e.logger.Warn("failed to re-encrypt SMTP password during migration", "error", reEncErr)
+					}
+					password = legacyPlaintext
+				}
+			}
+			if !migrated {
+				// Decrypt failure can still mean plaintext or invalid ciphertext.
+				e.logger.Debug("SMTP password decryption failed (may be plaintext)", "error", err)
+			}
 		}
 	}
 

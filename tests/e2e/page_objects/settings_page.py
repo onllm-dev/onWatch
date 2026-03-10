@@ -90,7 +90,15 @@ class SettingsPage:
 
     def is_provider_toggles_visible(self) -> bool:
         """Check if the provider toggles section is visible."""
-        return self.page.is_visible("#provider-toggles")
+        try:
+            self.page.wait_for_selector(
+                "#provider-toggles .settings-toggle-row",
+                state="visible",
+                timeout=5000,
+            )
+            return True
+        except Exception:
+            return False
 
     def get_timezone_select(self) -> Optional[str]:
         """Return the current timezone select value."""

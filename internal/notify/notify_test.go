@@ -707,6 +707,145 @@ func TestNotificationEngine_SetEncryptionKey(t *testing.T) {
 	}
 }
 
+func TestNotificationEngine_ConfigureSMTP_LegacyEncryptedPasswordMigratesToCurrentKey(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	legacyKey, err := GenerateEncryptionKey()
+	if err != nil {
+		t.Fatalf("GenerateEncryptionKey (legacy) failed: %v", err)
+	}
+	currentKey, err := GenerateEncryptionKey()
+	if err != nil {
+		t.Fatalf("GenerateEncryptionKey (current) failed: %v", err)
+	}
+	if currentKey == legacyKey {
+		t.Fatal("expected different legacy and current keys")
+	}
+
+	plaintext := "my-legacy-smtp-password"
+	legacyCiphertext, err := Encrypt(plaintext, legacyKey)
+	if err != nil {
+		t.Fatalf("Encrypt with legacy key failed: %v", err)
+	}
+
+	smtpJSON, _ := json.Marshal(smtpSettingsJSON{
+		Host:        "smtp.example.com",
+		Port:        587,
+		Username:    "user@test.com",
+		Password:    legacyCiphertext,
+		Protocol:    "none",
+		FromAddress: "alerts@onwatch.dev",
+		FromName:    "onWatch",
+		To:          "admin@example.com",
+	})
+	if err := s.SetSetting("smtp", string(smtpJSON)); err != nil {
+		t.Fatalf("SetSetting smtp failed: %v", err)
+	}
+
+	engine := newTestEngine(t, s)
+	engine.SetEncryptionKey(currentKey)
+	engine.SetLegacyEncryptionKey(legacyKey)
+
+	if err := engine.ConfigureSMTP(); err != nil {
+		t.Fatalf("ConfigureSMTP failed: %v", err)
+	}
+
+	updatedJSON, err := s.GetSetting("smtp")
+	if err != nil {
+		t.Fatalf("GetSetting smtp failed: %v", err)
+	}
+	var updated smtpSettingsJSON
+	if err := json.Unmarshal([]byte(updatedJSON), &updated); err != nil {
+		t.Fatalf("Unmarshal updated smtp JSON failed: %v", err)
+	}
+	if updated.Password == legacyCiphertext {
+		t.Fatal("expected SMTP password to be re-encrypted with current key")
+	}
+
+	decrypted, err := Decrypt(updated.Password, currentKey)
+	if err != nil {
+		t.Fatalf("Decrypt with current key failed: %v", err)
+	}
+	if decrypted != plaintext {
+		t.Fatalf("migrated password = %q, want %q", decrypted, plaintext)
+	}
+
+	engine.mu.RLock()
+	mailer := engine.mailer
+	engine.mu.RUnlock()
+	if mailer == nil {
+		t.Fatal("expected configured mailer")
+	}
+	if mailer.config.Password != plaintext {
+		t.Fatalf("mailer password = %q, want %q", mailer.config.Password, plaintext)
+	}
+}
+
+func TestNotificationEngine_ConfigureSMTP_CurrentKeyEncryptedPasswordDoesNotRewrite(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	currentKey, err := GenerateEncryptionKey()
+	if err != nil {
+		t.Fatalf("GenerateEncryptionKey (current) failed: %v", err)
+	}
+	legacyKey, err := GenerateEncryptionKey()
+	if err != nil {
+		t.Fatalf("GenerateEncryptionKey (legacy) failed: %v", err)
+	}
+
+	plaintext := "already-current-password"
+	currentCiphertext, err := Encrypt(plaintext, currentKey)
+	if err != nil {
+		t.Fatalf("Encrypt with current key failed: %v", err)
+	}
+
+	smtpJSON, _ := json.Marshal(smtpSettingsJSON{
+		Host:        "smtp.example.com",
+		Port:        587,
+		Username:    "user@test.com",
+		Password:    currentCiphertext,
+		Protocol:    "none",
+		FromAddress: "alerts@onwatch.dev",
+		FromName:    "onWatch",
+		To:          "admin@example.com",
+	})
+	if err := s.SetSetting("smtp", string(smtpJSON)); err != nil {
+		t.Fatalf("SetSetting smtp failed: %v", err)
+	}
+
+	engine := newTestEngine(t, s)
+	engine.SetEncryptionKey(currentKey)
+	engine.SetLegacyEncryptionKey(legacyKey)
+
+	if err := engine.ConfigureSMTP(); err != nil {
+		t.Fatalf("ConfigureSMTP failed: %v", err)
+	}
+
+	updatedJSON, err := s.GetSetting("smtp")
+	if err != nil {
+		t.Fatalf("GetSetting smtp failed: %v", err)
+	}
+	var updated smtpSettingsJSON
+	if err := json.Unmarshal([]byte(updatedJSON), &updated); err != nil {
+		t.Fatalf("Unmarshal updated smtp JSON failed: %v", err)
+	}
+	if updated.Password != currentCiphertext {
+		t.Fatal("expected SMTP password ciphertext to remain unchanged when current key decrypts")
+	}
+
+	engine.mu.RLock()
+	mailer := engine.mailer
+	engine.mu.RUnlock()
+	if mailer == nil {
+		t.Fatal("expected configured mailer")
+	}
+	if mailer.config.Password != plaintext {
+		t.Fatalf("mailer password = %q, want %q", mailer.config.Password, plaintext)
+	}
+}
+
 func TestNotificationEngine_ConfigurePush(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
