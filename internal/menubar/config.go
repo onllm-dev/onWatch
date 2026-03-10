@@ -173,22 +173,26 @@ func (s *Settings) Normalize() *Settings {
 	out := *s
 	switch out.DefaultView {
 	case ViewDetailed:
-		out.DefaultView = ViewDetailed
 	case ViewStandard, ViewMinimal:
 		out.DefaultView = ViewStandard
 	default:
 		out.DefaultView = defaults.DefaultView
 	}
-	if out.RefreshSeconds < 10 {
+
+	switch {
+	case out.RefreshSeconds < 10:
 		out.RefreshSeconds = defaults.RefreshSeconds
 	}
-	if out.WarningPercent < 1 || out.WarningPercent > 99 {
+	switch {
+	case out.WarningPercent < 1 || out.WarningPercent > 99:
 		out.WarningPercent = defaults.WarningPercent
 	}
-	if out.CriticalPercent < 1 || out.CriticalPercent > 100 {
+	switch {
+	case out.CriticalPercent < 1 || out.CriticalPercent > 100:
 		out.CriticalPercent = defaults.CriticalPercent
 	}
-	if out.WarningPercent >= out.CriticalPercent {
+	switch {
+	case out.WarningPercent >= out.CriticalPercent:
 		out.WarningPercent = defaults.WarningPercent
 		out.CriticalPercent = defaults.CriticalPercent
 	}

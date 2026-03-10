@@ -32,33 +32,43 @@ func TestSettingsNormalizeRepairsInvalidValues(t *testing.T) {
 		},
 	}).Normalize()
 
-	if settings.DefaultView != ViewStandard {
-		t.Fatalf("expected standard view, got %s", settings.DefaultView)
+	assert := func(ok bool, format string, args ...any) {
+		if !ok {
+			t.Fatalf(format, args...)
+		}
 	}
-	if settings.RefreshSeconds != 60 {
-		t.Fatalf("expected refresh 60, got %d", settings.RefreshSeconds)
-	}
-	if settings.WarningPercent != 70 || settings.CriticalPercent != 90 {
-		t.Fatalf("expected fallback thresholds 70/90, got %d/%d", settings.WarningPercent, settings.CriticalPercent)
-	}
-	if settings.Theme != ThemeSystem {
-		t.Fatalf("expected system theme, got %s", settings.Theme)
-	}
-	if settings.ProvidersOrder == nil {
-		t.Fatal("expected providers order to be initialized")
-	}
-	if len(settings.VisibleProviders) != 1 || settings.VisibleProviders[0] != "synthetic" {
-		t.Fatalf("unexpected visible providers: %#v", settings.VisibleProviders)
-	}
-	if settings.StatusDisplay.Mode != StatusDisplayMultiProvider {
-		t.Fatalf("expected multi_provider status display, got %s", settings.StatusDisplay.Mode)
-	}
-	if len(settings.StatusDisplay.SelectedQuotas) != 1 {
-		t.Fatalf("expected one migrated tray selection, got %#v", settings.StatusDisplay.SelectedQuotas)
-	}
-	if settings.StatusDisplay.SelectedQuotas[0].ProviderID != "synthetic" || settings.StatusDisplay.SelectedQuotas[0].QuotaKey != "search" {
-		t.Fatalf("unexpected migrated tray selection: %#v", settings.StatusDisplay.SelectedQuotas[0])
-	}
+
+	assert(settings.DefaultView == ViewStandard, "expected standard view, got %s", settings.DefaultView)
+	assert(settings.RefreshSeconds == 60, "expected refresh 60, got %d", settings.RefreshSeconds)
+	assert(
+		settings.WarningPercent == 70 && settings.CriticalPercent == 90,
+		"expected fallback thresholds 70/90, got %d/%d",
+		settings.WarningPercent,
+		settings.CriticalPercent,
+	)
+	assert(settings.Theme == ThemeSystem, "expected system theme, got %s", settings.Theme)
+	assert(settings.ProvidersOrder != nil, "expected providers order to be initialized")
+	assert(
+		len(settings.VisibleProviders) == 1 && settings.VisibleProviders[0] == "synthetic",
+		"unexpected visible providers: %#v",
+		settings.VisibleProviders,
+	)
+	assert(
+		settings.StatusDisplay.Mode == StatusDisplayMultiProvider,
+		"expected multi_provider status display, got %s",
+		settings.StatusDisplay.Mode,
+	)
+	assert(
+		len(settings.StatusDisplay.SelectedQuotas) == 1,
+		"expected one migrated tray selection, got %#v",
+		settings.StatusDisplay.SelectedQuotas,
+	)
+	selection := settings.StatusDisplay.SelectedQuotas[0]
+	assert(
+		selection.ProviderID == "synthetic" && selection.QuotaKey == "search",
+		"unexpected migrated tray selection: %#v",
+		selection,
+	)
 }
 
 func TestSettingsNormalizeCoercesMinimalViewToStandard(t *testing.T) {
