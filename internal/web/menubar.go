@@ -15,6 +15,20 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 )
 
+type menubarQuotaOption struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+type menubarProviderOption struct {
+	ID           string               `json:"id"`
+	BaseProvider string               `json:"base_provider"`
+	Label        string               `json:"label"`
+	Subtitle     string               `json:"subtitle,omitempty"`
+	Visible      bool                 `json:"visible"`
+	Quotas       []menubarQuotaOption `json:"quotas"`
+}
+
 // Capabilities returns runtime capabilities for the current build.
 func (h *Handler) Capabilities(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -50,24 +64,12 @@ func (h *Handler) MenubarPage(w http.ResponseWriter, r *http.Request) {
 
 	settings, _ := h.menubarSettings()
 	view := normalizeMenubarView(r.URL.Query().Get("view"), settings.DefaultView)
-	bootstrap, err := json.Marshal(map[string]interface{}{
-		"default_view":    view,
-		"refresh_seconds": settings.RefreshSeconds,
-	})
+	html, err := h.renderMenubarHTML(view, settings)
 	if err != nil {
-		h.logger.Error("failed to render menubar page bootstrap", "error", err)
+		h.logger.Error("failed to render menubar page", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to render menubar page")
 		return
 	}
-
-	page, err := staticFS.ReadFile("static/menubar.html")
-	if err != nil {
-		h.logger.Error("failed to read menubar page", "error", err)
-		respondError(w, http.StatusInternalServerError, "failed to render menubar page")
-		return
-	}
-
-	html := strings.Replace(string(page), "__ONWATCH_MENUBAR_BOOTSTRAP__", string(bootstrap), 1)
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; "+
 			"script-src 'self' 'unsafe-inline'; "+
@@ -86,7 +88,7 @@ func (h *Handler) MenubarTest(w http.ResponseWriter, r *http.Request) {
 	}
 	settings, _ := h.menubarSettings()
 	view := normalizeMenubarView(r.URL.Query().Get("view"), settings.DefaultView)
-	html, err := menubar.InlineHTML(view, settings)
+	html, err := h.renderMenubarHTML(view, settings)
 	if err != nil {
 		h.logger.Error("failed to render menubar test page", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to render menubar test page")
@@ -102,6 +104,57 @@ func (h *Handler) MenubarTest(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(html))
 }
 
+// MenubarPreferences returns or updates tray-specific settings for the local menubar surface.
+func (h *Handler) MenubarPreferences(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		settings, err := h.menubarSettings()
+		if err != nil {
+			h.logger.Error("failed to load menubar preferences", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to load menubar preferences")
+			return
+		}
+		providers, err := h.buildMenubarProviderOptions(settings)
+		if err != nil {
+			h.logger.Error("failed to build menubar provider options", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to load menubar preferences")
+			return
+		}
+		respondJSON(w, http.StatusOK, menubarPreferencesResponse(settings, providers))
+	case http.MethodPut:
+		if h.store == nil {
+			respondError(w, http.StatusInternalServerError, "store not available")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+		var settings menubar.Settings
+		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+			if err.Error() == "http: request body too large" {
+				respondError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				return
+			}
+			respondError(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		normalized := settings.Normalize()
+		normalized.DefaultView = normalizeMenubarView(string(normalized.DefaultView), menubar.ViewStandard)
+		if err := h.store.SetMenubarSettings(normalized); err != nil {
+			h.logger.Error("failed to save menubar preferences", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save menubar preferences")
+			return
+		}
+		providers, err := h.buildMenubarProviderOptions(normalized)
+		if err != nil {
+			h.logger.Error("failed to rebuild menubar provider options", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save menubar preferences")
+			return
+		}
+		respondJSON(w, http.StatusOK, menubarPreferencesResponse(normalized, providers))
+	default:
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 func isLoopbackRequest(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -112,7 +165,7 @@ func isLoopbackRequest(r *http.Request) bool {
 }
 
 func isLocalMenubarPublicPath(path string) bool {
-	return path == "/menubar" || path == "/api/menubar/summary"
+	return path == "/menubar" || path == "/api/menubar/summary" || path == "/api/menubar/preferences"
 }
 
 // BuildMenubarSnapshot constructs the shared menubar UI contract.
@@ -122,13 +175,26 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 		return nil, err
 	}
 
+	providers, latest := h.buildMenubarProviders(settings, false)
+	aggregate := buildAggregate(providers)
+	return &menubar.Snapshot{
+		GeneratedAt: time.Now().UTC(),
+		UpdatedAgo:  timeAgo(latest),
+		Aggregate:   aggregate,
+		Providers:   providers,
+	}, nil
+}
+
+func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidden bool) ([]menubar.ProviderCard, time.Time) {
+	normalized := settings.Normalize()
+
 	visibility := h.providerVisibilityMap()
 	providers := make([]menubar.ProviderCard, 0, 8)
 	latest := time.Time{}
 
 	if h.config != nil && h.config.HasProvider("synthetic") && h.providerDashboardVisible("synthetic", visibility) {
 		payload := h.buildSyntheticCurrent()
-		if card := normalizeProviderCard("synthetic", "Synthetic", "", payload, settings.WarningPercent, settings.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("synthetic", "Synthetic", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -137,7 +203,7 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 	}
 	if h.config != nil && h.config.HasProvider("zai") && h.providerDashboardVisible("zai", visibility) {
 		payload := h.buildZaiCurrent()
-		if card := normalizeProviderCard("zai", "Z.ai", "", payload, settings.WarningPercent, settings.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("zai", "Z.ai", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -146,7 +212,7 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 	}
 	if h.config != nil && h.config.HasProvider("anthropic") && h.providerDashboardVisible("anthropic", visibility) {
 		payload := h.buildAnthropicCurrent()
-		if card := normalizeProviderCard("anthropic", "Anthropic", "", payload, settings.WarningPercent, settings.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("anthropic", "Anthropic", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -155,7 +221,7 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 	}
 	if h.config != nil && h.config.HasProvider("copilot") && h.providerDashboardVisible("copilot", visibility) {
 		payload := h.buildCopilotCurrent()
-		if card := normalizeProviderCard("copilot", "Copilot", "", payload, settings.WarningPercent, settings.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("copilot", "Copilot", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -174,7 +240,7 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 				name = "default"
 			}
 			subtitle := "ChatGPT account"
-			if card := normalizeProviderCard(providerKey, "Codex - "+name, subtitle, usage, settings.WarningPercent, settings.CriticalPercent); card != nil {
+			if card := normalizeProviderCard(providerKey, "Codex - "+name, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 				providers = append(providers, *card)
 				if captured := parseCapturedAt(usage); captured.After(latest) {
 					latest = captured
@@ -184,7 +250,7 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 	}
 	if h.config != nil && h.config.HasProvider("antigravity") && h.providerDashboardVisible("antigravity", visibility) {
 		payload := h.buildAntigravityCurrent()
-		if card := normalizeProviderCard("antigravity", "Antigravity", "", payload, settings.WarningPercent, settings.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("antigravity", "Antigravity", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -193,7 +259,7 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 	}
 	if h.config != nil && h.config.HasProvider("minimax") && h.providerDashboardVisible("minimax", visibility) {
 		payload := h.buildMiniMaxCurrent()
-		if card := normalizeProviderCard("minimax", "MiniMax", "", payload, settings.WarningPercent, settings.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("minimax", "MiniMax", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -201,14 +267,11 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 		}
 	}
 
-	sortProviderCards(providers, settings.ProvidersOrder)
-	aggregate := buildAggregate(providers)
-	return &menubar.Snapshot{
-		GeneratedAt: time.Now().UTC(),
-		UpdatedAgo:  timeAgo(latest),
-		Aggregate:   aggregate,
-		Providers:   providers,
-	}, nil
+	sortProviderCards(providers, normalized.ProvidersOrder)
+	if !includeHidden {
+		providers = filterMenubarProviders(providers, normalized.VisibleProviders)
+	}
+	return providers, latest
 }
 
 func (h *Handler) menubarSettings() (*menubar.Settings, error) {
@@ -220,6 +283,184 @@ func (h *Handler) menubarSettings() (*menubar.Settings, error) {
 		return nil, err
 	}
 	return settings.Normalize(), nil
+}
+
+func (h *Handler) renderMenubarHTML(view menubar.ViewType, settings *menubar.Settings) (string, error) {
+	normalized := settings.Normalize()
+	normalized.DefaultView = view
+	bootstrap, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	page, err := staticFS.ReadFile("static/menubar.html")
+	if err != nil {
+		return "", err
+	}
+	return strings.Replace(string(page), "__ONWATCH_MENUBAR_BOOTSTRAP__", string(bootstrap), 1), nil
+}
+
+func (h *Handler) buildMenubarProviderOptions(settings *menubar.Settings) ([]menubarProviderOption, error) {
+	normalized := settings.Normalize()
+	providers, _ := h.buildMenubarProviders(normalized, true)
+	visible := make(map[string]struct{}, len(normalized.VisibleProviders))
+	for _, id := range normalized.VisibleProviders {
+		visible[id] = struct{}{}
+	}
+	options := make([]menubarProviderOption, 0, len(providers))
+	for _, provider := range providers {
+		quotaOptions := make([]menubarQuotaOption, 0, len(provider.Quotas))
+		for _, quota := range provider.Quotas {
+			quotaOptions = append(quotaOptions, menubarQuotaOption{
+				Key:   quota.Key,
+				Label: quota.Label,
+			})
+		}
+		_, isVisible := visible[provider.ID]
+		if len(visible) == 0 {
+			isVisible = true
+		}
+		options = append(options, menubarProviderOption{
+			ID:           provider.ID,
+			BaseProvider: provider.BaseProvider,
+			Label:        provider.Label,
+			Subtitle:     provider.Subtitle,
+			Visible:      isVisible,
+			Quotas:       quotaOptions,
+		})
+	}
+	return options, nil
+}
+
+func menubarPreferencesResponse(settings *menubar.Settings, providers []menubarProviderOption) map[string]interface{} {
+	normalized := settings.Normalize()
+	return map[string]interface{}{
+		"enabled":           normalized.Enabled,
+		"default_view":      normalized.DefaultView,
+		"refresh_seconds":   normalized.RefreshSeconds,
+		"providers_order":   normalized.ProvidersOrder,
+		"visible_providers": normalized.VisibleProviders,
+		"warning_percent":   normalized.WarningPercent,
+		"critical_percent":  normalized.CriticalPercent,
+		"status_display":    resolvedStatusDisplay(normalized, providers),
+		"theme":             normalized.Theme,
+		"providers":         providers,
+	}
+}
+
+func resolvedStatusDisplay(settings *menubar.Settings, providers []menubarProviderOption) menubar.StatusDisplay {
+	normalized := settings.Normalize()
+	display := normalized.StatusDisplay
+	switch display.Mode {
+	case menubar.StatusDisplayCriticalCount, menubar.StatusDisplayIconOnly:
+		return display
+	case menubar.StatusDisplayMultiProvider:
+		selections := resolvedStatusSelections(display.SelectedQuotas, providers)
+		if len(selections) == 0 {
+			return menubar.StatusDisplay{Mode: menubar.StatusDisplayIconOnly}
+		}
+		return menubar.StatusDisplay{
+			Mode:           menubar.StatusDisplayMultiProvider,
+			SelectedQuotas: selections,
+		}
+	default:
+		return menubar.StatusDisplay{Mode: menubar.StatusDisplayIconOnly}
+	}
+}
+
+func resolvedStatusSelections(selections []menubar.StatusDisplaySelection, providers []menubarProviderOption) []menubar.StatusDisplaySelection {
+	pool := preferredStatusProviders(providers)
+	if len(pool) == 0 {
+		pool = providers
+	}
+	if len(pool) == 0 {
+		return []menubar.StatusDisplaySelection{}
+	}
+	allowed := make(map[string]menubarProviderOption, len(pool))
+	for _, provider := range pool {
+		allowed[provider.ID] = provider
+	}
+	out := make([]menubar.StatusDisplaySelection, 0, 3)
+	seen := make(map[string]struct{}, 3)
+	appendSelection := func(provider menubarProviderOption, quotaKey string) {
+		resolvedQuota := providerQuotaKey(provider, quotaKey)
+		if resolvedQuota == "" {
+			return
+		}
+		key := provider.ID + "\x00" + resolvedQuota
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, menubar.StatusDisplaySelection{
+			ProviderID: provider.ID,
+			QuotaKey:   resolvedQuota,
+		})
+	}
+	for _, selection := range selections {
+		provider, ok := allowed[selection.ProviderID]
+		if !ok {
+			continue
+		}
+		appendSelection(provider, selection.QuotaKey)
+		if len(out) == 3 {
+			return out
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, provider := range pool {
+		appendSelection(provider, "")
+		if len(out) == 3 {
+			break
+		}
+	}
+	return out
+}
+
+func preferredStatusProviders(providers []menubarProviderOption) []menubarProviderOption {
+	visible := make([]menubarProviderOption, 0, len(providers))
+	for _, provider := range providers {
+		if provider.Visible {
+			visible = append(visible, provider)
+		}
+	}
+	if len(visible) > 0 {
+		return visible
+	}
+	return providers
+}
+
+func providerOptionByID(providerID string, providers []menubarProviderOption) *menubarProviderOption {
+	for i := range providers {
+		if providers[i].ID == providerID {
+			return &providers[i]
+		}
+	}
+	return nil
+}
+
+func providerHasQuota(provider menubarProviderOption, quotaKey string) bool {
+	for _, quota := range provider.Quotas {
+		if quota.Key == quotaKey {
+			return true
+		}
+	}
+	return false
+}
+
+func firstProviderQuotaKey(provider menubarProviderOption) string {
+	if len(provider.Quotas) == 0 {
+		return ""
+	}
+	return provider.Quotas[0].Key
+}
+
+func providerQuotaKey(provider menubarProviderOption, quotaKey string) string {
+	if quotaKey != "" && providerHasQuota(provider, quotaKey) {
+		return quotaKey
+	}
+	return firstProviderQuotaKey(provider)
 }
 
 func normalizeProviderCard(id, label, subtitle string, payload map[string]interface{}, warningPercent, criticalPercent int) *menubar.ProviderCard {
@@ -387,6 +628,23 @@ func sortProviderCards(cards []menubar.ProviderCard, preferred []string) {
 			return cards[i].Label < cards[j].Label
 		}
 	})
+}
+
+func filterMenubarProviders(cards []menubar.ProviderCard, visible []string) []menubar.ProviderCard {
+	if len(cards) == 0 || len(visible) == 0 {
+		return cards
+	}
+	allowed := make(map[string]struct{}, len(visible))
+	for _, id := range visible {
+		allowed[id] = struct{}{}
+	}
+	filtered := make([]menubar.ProviderCard, 0, len(cards))
+	for _, card := range cards {
+		if _, ok := allowed[card.ID]; ok {
+			filtered = append(filtered, card)
+		}
+	}
+	return filtered
 }
 
 func parseCapturedAt(payload map[string]interface{}) time.Time {

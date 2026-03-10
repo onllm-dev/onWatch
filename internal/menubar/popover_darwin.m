@@ -3,6 +3,23 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
+@interface OnWatchBorderlessPanel : NSPanel
+@end
+
+@implementation OnWatchBorderlessPanel
+- (BOOL)canBecomeKeyWindow {
+  return YES;
+}
+
+- (BOOL)canBecomeMainWindow {
+  return NO;
+}
+
+- (BOOL)acceptsFirstMouse:(NSEvent *)event {
+  return YES;
+}
+@end
+
 static void onwatch_run_on_main_sync(dispatch_block_t block) {
   if ([NSThread isMainThread]) {
     block();
@@ -11,13 +28,17 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
   dispatch_sync(dispatch_get_main_queue(), block);
 }
 
-@interface OnWatchPopoverController : NSObject <WKNavigationDelegate, WKUIDelegate>
-@property(nonatomic, strong) NSPopover *popover;
-@property(nonatomic, strong) NSViewController *contentController;
+@interface OnWatchPopoverController : NSObject <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
+@property(nonatomic, strong) OnWatchBorderlessPanel *panel;
+@property(nonatomic, strong) NSView *containerView;
 @property(nonatomic, strong) WKWebView *webView;
+@property(nonatomic, strong) id globalMouseMonitor;
+@property(nonatomic, strong) id localMouseMonitor;
+@property(nonatomic, strong) id appDeactivationObserver;
 @property(nonatomic, assign) CGFloat width;
 @property(nonatomic, assign) CGFloat height;
 - (instancetype)initWithWidth:(CGFloat)width height:(CGFloat)height;
+- (void)applyHeight:(CGFloat)height;
 - (void)loadURLString:(NSString *)urlString;
 - (BOOL)show;
 - (BOOL)toggle;
@@ -37,29 +58,67 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
   self.height = height;
 
   WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+  WKUserContentController *userContentController = [[WKUserContentController alloc] init];
+  [userContentController addScriptMessageHandler:self name:@"onwatchResize"];
+  configuration.userContentController = userContentController;
+
   self.webView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, width, height)
                                     configuration:configuration];
   self.webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   self.webView.navigationDelegate = self;
   self.webView.UIDelegate = self;
 
-  NSView *containerView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
-  containerView.autoresizesSubviews = YES;
-  self.webView.frame = containerView.bounds;
-  [containerView addSubview:self.webView];
+  self.containerView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+  self.containerView.autoresizesSubviews = YES;
+  self.containerView.wantsLayer = YES;
+  self.containerView.layer.masksToBounds = YES;
+  self.containerView.layer.backgroundColor = [[NSColor colorWithRed:0.04 green:0.04 blue:0.04 alpha:1.0] CGColor];
 
-  self.contentController = [[NSViewController alloc] init];
-  self.contentController.view = containerView;
-  self.contentController.preferredContentSize = NSMakeSize(width, height);
+  self.webView.frame = self.containerView.bounds;
+  [self.webView setValue:@NO forKey:@"drawsBackground"];
+  self.webView.wantsLayer = YES;
+  self.webView.layer.backgroundColor = [[NSColor colorWithRed:0.04 green:0.04 blue:0.04 alpha:1.0] CGColor];
+  [self.containerView addSubview:self.webView];
 
-  self.popover = [[NSPopover alloc] init];
-  self.popover.animates = YES;
-  self.popover.behavior = NSPopoverBehaviorTransient;
-  self.popover.contentSize = NSMakeSize(width, height);
-  self.popover.contentViewController = self.contentController;
+  NSWindowStyleMask styleMask = NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel;
+  self.panel = [[OnWatchBorderlessPanel alloc] initWithContentRect:NSMakeRect(0, 0, width, height)
+                                                          styleMask:styleMask
+                                                            backing:NSBackingStoreBuffered
+                                                              defer:YES];
+  self.panel.floatingPanel = YES;
+  self.panel.becomesKeyOnlyIfNeeded = YES;
+  self.panel.hidesOnDeactivate = NO;
+  self.panel.releasedWhenClosed = NO;
+  self.panel.opaque = NO;
+  self.panel.backgroundColor = [NSColor clearColor];
+  self.panel.hasShadow = YES;
+  self.panel.level = NSStatusWindowLevel;
+  self.panel.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenAuxiliary;
+  self.panel.contentView = self.containerView;
 
   return self;
 }
+
+- (void)dealloc {
+  [self stopTransientCloseMonitoring];
+  [self.webView.configuration.userContentController removeScriptMessageHandlerForName:@"onwatchResize"];
+}
+
+- (void)stopTransientCloseMonitoring {
+  if (self.globalMouseMonitor != nil) {
+    [NSEvent removeMonitor:self.globalMouseMonitor];
+    self.globalMouseMonitor = nil;
+  }
+  if (self.localMouseMonitor != nil) {
+    [NSEvent removeMonitor:self.localMouseMonitor];
+    self.localMouseMonitor = nil;
+  }
+  if (self.appDeactivationObserver != nil) {
+    [[NSNotificationCenter defaultCenter] removeObserver:self.appDeactivationObserver];
+    self.appDeactivationObserver = nil;
+  }
+}
+
 - (NSStatusItem *)statusItem {
   id delegate = NSApp.delegate;
   if (!delegate) {
@@ -76,6 +135,161 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
   }
 
   return nil;
+}
+
+- (NSRect)statusButtonScreenRect {
+  NSStatusItem *statusItem = [self statusItem];
+  NSStatusBarButton *button = statusItem.button;
+  if (!button || !button.window) {
+    return NSZeroRect;
+  }
+  NSRect buttonFrameInWindow = [button convertRect:button.bounds toView:nil];
+  return [button.window convertRectToScreen:buttonFrameInWindow];
+}
+
+- (NSScreen *)screenForAnchorRect:(NSRect)anchorRect {
+  NSPoint anchorPoint = NSMakePoint(NSMidX(anchorRect), NSMidY(anchorRect));
+  for (NSScreen *screen in NSScreen.screens) {
+    if (NSPointInRect(anchorPoint, screen.frame)) {
+      return screen;
+    }
+  }
+  return [NSScreen mainScreen];
+}
+
+- (BOOL)positionPanelAnchoredToStatusItem {
+  NSRect buttonRect = [self statusButtonScreenRect];
+  if (NSIsEmptyRect(buttonRect)) {
+    return NO;
+  }
+
+  NSScreen *screen = [self screenForAnchorRect:buttonRect];
+  if (!screen) {
+    return NO;
+  }
+
+  NSRect visibleFrame = screen.visibleFrame;
+  CGFloat width = self.width;
+  CGFloat height = self.height;
+
+  CGFloat targetX = NSMidX(buttonRect) - (width * 0.5);
+  CGFloat minX = NSMinX(visibleFrame);
+  CGFloat maxX = NSMaxX(visibleFrame) - width;
+  if (maxX < minX) {
+    maxX = minX;
+  }
+  if (targetX < minX) {
+    targetX = minX;
+  } else if (targetX > maxX) {
+    targetX = maxX;
+  }
+
+  CGFloat targetY = NSMinY(buttonRect) - height - 6.0;
+  CGFloat minY = NSMinY(visibleFrame);
+  CGFloat maxY = NSMaxY(visibleFrame) - height;
+  if (maxY < minY) {
+    maxY = minY;
+  }
+  if (targetY < minY) {
+    targetY = minY;
+  } else if (targetY > maxY) {
+    targetY = maxY;
+  }
+
+  NSRect nextFrame = NSMakeRect(round(targetX), round(targetY), width, height);
+  [self.panel setFrame:nextFrame display:YES];
+  return YES;
+}
+
+- (NSPoint)screenPointForEvent:(NSEvent *)event {
+  NSPoint point = event.locationInWindow;
+  if (event.window) {
+    point = [event.window convertPointToScreen:point];
+  }
+  return point;
+}
+
+- (BOOL)containsScreenPoint:(NSPoint)screenPoint {
+  if ([self isShown] && NSPointInRect(screenPoint, self.panel.frame)) {
+    return YES;
+  }
+
+  NSRect buttonRect = [self statusButtonScreenRect];
+  if (!NSIsEmptyRect(buttonRect) && NSPointInRect(screenPoint, buttonRect)) {
+    return YES;
+  }
+
+  return NO;
+}
+
+- (void)closeIfInteractionIsOutside:(NSPoint)screenPoint {
+  if (![self isShown]) {
+    return;
+  }
+  if ([self containsScreenPoint:screenPoint]) {
+    return;
+  }
+  [self close];
+}
+
+- (void)startTransientCloseMonitoring {
+  [self stopTransientCloseMonitoring];
+
+  __weak typeof(self) weakSelf = self;
+  NSEventMask mask = NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskOtherMouseDown;
+
+  self.globalMouseMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:mask
+                                                                    handler:^(NSEvent *event) {
+                                                                      __strong typeof(weakSelf) strongSelf = weakSelf;
+                                                                      if (!strongSelf) {
+                                                                        return;
+                                                                      }
+                                                                      NSPoint screenPoint = event.locationInWindow;
+                                                                      dispatch_async(dispatch_get_main_queue(), ^{
+                                                                        [strongSelf closeIfInteractionIsOutside:screenPoint];
+                                                                      });
+                                                                    }];
+
+  self.localMouseMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:mask
+                                                                  handler:^NSEvent *_Nullable(NSEvent *event) {
+                                                                    __strong typeof(weakSelf) strongSelf = weakSelf;
+                                                                    if (!strongSelf) {
+                                                                      return event;
+                                                                    }
+                                                                    NSPoint screenPoint = [strongSelf screenPointForEvent:event];
+                                                                    [strongSelf closeIfInteractionIsOutside:screenPoint];
+                                                                    return event;
+                                                                  }];
+
+  self.appDeactivationObserver = [[NSNotificationCenter defaultCenter]
+      addObserverForName:NSApplicationDidResignActiveNotification
+                  object:NSApp
+                   queue:[NSOperationQueue mainQueue]
+              usingBlock:^(__unused NSNotification *note) {
+                __strong typeof(weakSelf) strongSelf = weakSelf;
+                if (!strongSelf) {
+                  return;
+                }
+                [strongSelf close];
+              }];
+}
+
+- (void)applyHeight:(CGFloat)height {
+  CGFloat clampedHeight = MAX(180.0, MIN(600.0, height));
+  CGFloat delta = clampedHeight - self.height;
+  if (delta < 0) {
+    delta = -delta;
+  }
+
+  self.height = clampedHeight;
+  NSSize size = NSMakeSize(self.width, clampedHeight);
+  self.containerView.frame = NSMakeRect(0, 0, self.width, clampedHeight);
+  self.webView.frame = self.containerView.bounds;
+  [self.panel setContentSize:size];
+
+  if ([self isShown] && delta >= 0.5) {
+    [self positionPanelAnchoredToStatusItem];
+  }
 }
 
 - (BOOL)isLocalURL:(NSURL *)url {
@@ -104,25 +318,24 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
 }
 
 - (BOOL)show {
-  NSStatusItem *statusItem = [self statusItem];
-  NSStatusBarButton *button = statusItem.button;
-  if (!button) {
+  if (!self.panel) {
     return NO;
   }
 
-  if (self.popover.shown) {
-    return YES;
+  [self applyHeight:self.height];
+  if (![self positionPanelAnchoredToStatusItem]) {
+    return NO;
   }
 
-  self.popover.contentSize = NSMakeSize(self.width, self.height);
-  [self.popover showRelativeToRect:button.bounds
-                            ofView:button
-                     preferredEdge:NSRectEdgeMinY];
+  if (![self isShown]) {
+    [self.panel makeKeyAndOrderFront:nil];
+  }
+  [self startTransientCloseMonitoring];
   return YES;
 }
 
 - (BOOL)toggle {
-  if (self.popover.shown) {
+  if ([self isShown]) {
     [self close];
     return YES;
   }
@@ -130,14 +343,15 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
 }
 
 - (void)close {
-  if (!self.popover.shown) {
+  [self stopTransientCloseMonitoring];
+  if (![self isShown]) {
     return;
   }
-  [self.popover performClose:nil];
+  [self.panel orderOut:nil];
 }
 
 - (BOOL)isShown {
-  return self.popover.shown;
+  return self.panel != nil && self.panel.visible;
 }
 
 - (void)webView:(WKWebView *)webView
@@ -164,6 +378,25 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
     [[NSWorkspace sharedWorkspace] openURL:url];
   }
   return nil;
+}
+
+- (void)userContentController:(WKUserContentController *)userContentController
+      didReceiveScriptMessage:(WKScriptMessage *)message {
+  if (![message.name isEqualToString:@"onwatchResize"]) {
+    return;
+  }
+
+  CGFloat nextHeight = self.height;
+  id body = message.body;
+  if ([body isKindOfClass:[NSNumber class]]) {
+    nextHeight = [body doubleValue];
+  } else if ([body isKindOfClass:[NSDictionary class]]) {
+    id value = [(NSDictionary *)body objectForKey:@"height"];
+    if ([value respondsToSelector:@selector(doubleValue)]) {
+      nextHeight = [value doubleValue];
+    }
+  }
+  [self applyHeight:nextHeight];
 }
 
 @end

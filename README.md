@@ -512,7 +512,7 @@ The `docker-compose.yml` includes memory limits (64M limit, 32M reservation), lo
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilation, and testing.
 
 ```bash
-./app.sh --build       # Production binary        (or: make build)
+./app.sh --build       # Production binary (macOS: full menubar build) (or: make build)
 ./app.sh --test        # Tests with race detection (or: make test)
 ./app.sh --build --run # Build + run debug mode    (or: make run)
 ./app.sh --release     # Cross-compile all platforms (or: make release-local)

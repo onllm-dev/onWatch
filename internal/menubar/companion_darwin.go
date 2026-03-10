@@ -3,9 +3,10 @@
 package menubar
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
+	"net/http"
 	"sync"
 	"time"
 
@@ -63,7 +64,7 @@ func (c *trayController) onReady() {
 	})
 
 	if popover, err := newMenubarPopover(menubarPopoverWidth, menubarPopoverHeight); err != nil {
-		logger.Warn("native macOS popover unavailable, using browser fallback", "error", err)
+		logger.Warn("native macOS menubar host unavailable, using browser fallback", "error", err)
 	} else {
 		c.popover = popover
 	}
@@ -116,7 +117,7 @@ func (c *trayController) toggleMenubar() {
 		if err := c.popover.ToggleURL(url); err == nil {
 			return
 		} else {
-			slog.Default().Warn("failed to toggle native menubar popover, opening browser fallback", "error", err)
+			slog.Default().Warn("failed to toggle native menubar host, opening browser fallback", "error", err)
 		}
 	}
 	_ = browser.OpenURL(url)
@@ -128,7 +129,7 @@ func (c *trayController) showMenubar() {
 		if err := c.popover.ShowURL(url); err == nil {
 			return
 		} else {
-			slog.Default().Warn("failed to show native menubar popover, opening browser fallback", "error", err)
+			slog.Default().Warn("failed to show native menubar host, opening browser fallback", "error", err)
 		}
 	}
 	_ = browser.OpenURL(url)
@@ -165,7 +166,11 @@ func (c *trayController) refreshStatus() {
 		return
 	}
 
-	title := trayTitle(snapshot)
+	settings, err := c.fetchPreferences()
+	if err != nil {
+		logger.Debug("failed to refresh menubar preferences, using defaults", "error", err)
+	}
+	title := TrayTitle(snapshot, settings)
 	tooltip := trayTooltip(snapshot)
 	systray.SetTitle(title)
 	systray.SetTooltip(tooltip)
@@ -188,11 +193,34 @@ func (c *trayController) dashboardURL() string {
 	return fmt.Sprintf("http://localhost:%d", port)
 }
 
-func trayTitle(snapshot *Snapshot) string {
-	if snapshot == nil || snapshot.Aggregate.ProviderCount == 0 {
-		return "onWatch"
+func (c *trayController) preferencesURL() string {
+	port := 9211
+	if c != nil && c.cfg != nil && c.cfg.Port > 0 {
+		port = c.cfg.Port
 	}
-	return fmt.Sprintf("%d%%", int(math.Round(snapshot.Aggregate.HighestPercent)))
+	return fmt.Sprintf("http://localhost:%d/api/menubar/preferences", port)
+}
+
+func (c *trayController) fetchPreferences() (*Settings, error) {
+	req, err := http.NewRequest(http.MethodGet, c.preferencesURL(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("preferences request failed: %s", resp.Status)
+	}
+	var settings Settings
+	if err := json.NewDecoder(resp.Body).Decode(&settings); err != nil {
+		return nil, err
+	}
+	return settings.Normalize(), nil
 }
 
 func trayTooltip(snapshot *Snapshot) string {

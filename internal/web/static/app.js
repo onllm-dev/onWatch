@@ -145,6 +145,8 @@ const State = {
   menubarCapabilities: null,
   menubarProviderOrder: [],
   menubarProviders: [],
+  menubarVisibleProviders: [],
+  menubarStatusDisplay: { mode: 'multi_provider', selected_quotas: [] },
   currentRequestSeq: 0,
   insightsRequestSeq: 0,
   historyRequestSeq: 0,
@@ -6231,6 +6233,10 @@ async function populateMenubarSettings(data) {
   if (critical && settings.critical_percent != null) critical.value = settings.critical_percent;
 
   State.menubarProviderOrder = Array.isArray(settings.providers_order) ? settings.providers_order.slice() : [];
+  State.menubarVisibleProviders = Array.isArray(settings.visible_providers) ? settings.visible_providers.slice() : [];
+  State.menubarStatusDisplay = settings.status_display && typeof settings.status_display === 'object'
+    ? JSON.parse(JSON.stringify(settings.status_display))
+    : { mode: 'multi_provider', selected_quotas: [] };
   await populateMenubarProviderOrder();
 }
 
@@ -6737,6 +6743,8 @@ function gatherSettings() {
       warning_percent: parseInt(document.getElementById('menubar-warning')?.value, 10) || 70,
       critical_percent: parseInt(document.getElementById('menubar-critical')?.value, 10) || 90,
       providers_order: [...State.menubarProviderOrder],
+      visible_providers: [...State.menubarVisibleProviders],
+      status_display: State.menubarStatusDisplay ? JSON.parse(JSON.stringify(State.menubarStatusDisplay)) : { mode: 'multi_provider', selected_quotas: [] },
     };
   }
 

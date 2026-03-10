@@ -4,7 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION=$(cat "$SCRIPT_DIR/VERSION")
 BINARY="onwatch"
-LDFLAGS="-ldflags=-s -w -X main.version=$VERSION"
+DARWIN_FULL_TAGS="menubar,desktop,production"
+DARWIN_CGO_LDFLAGS="-framework UniformTypeIdentifiers"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -28,7 +29,7 @@ ${CYAN}USAGE:${NC}
     ./app.sh [FLAGS...]
 
 ${CYAN}FLAGS:${NC}
-    --build,   -b                  Build production binary with version ldflags
+    --build,   -b                  Build production binary (macOS defaults to full menubar build)
     --build-darwin-full            Build macOS full binaries with menubar support
     --build-darwin-lite            Build macOS lite binaries without menubar support
     --test,    -t                  Run all tests with race detection and coverage
@@ -186,9 +187,25 @@ do_clean() {
 
 do_build() {
     info "Building onWatch v${VERSION}..."
-    cd "$SCRIPT_DIR"
-    go build -ldflags="-s -w -X main.version=$VERSION" -o "$BINARY" .
+    build_native_binary "$SCRIPT_DIR/$BINARY"
     success "Built ./$BINARY ($(du -h "$BINARY" | cut -f1 | xargs))"
+}
+
+build_native_binary() {
+    local output="$1"
+    cd "$SCRIPT_DIR"
+
+    if [[ "$(uname)" == "Darwin" ]]; then
+        CGO_ENABLED=1 CGO_LDFLAGS="$DARWIN_CGO_LDFLAGS" go build \
+            -tags "$DARWIN_FULL_TAGS" \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o "$output" .
+        return
+    fi
+
+    go build \
+        -ldflags="-s -w -X main.version=$VERSION" \
+        -o "$output" .
 }
 
 build_darwin_full() {
@@ -199,12 +216,11 @@ build_darwin_full() {
     fi
 
     mkdir -p "$SCRIPT_DIR/dist"
-    local tags="menubar,desktop,production"
     for arch in arm64 amd64; do
         local output="dist/onwatch-darwin-${arch}"
         info "Building ${output}..."
-        CGO_ENABLED=1 CGO_LDFLAGS="-framework UniformTypeIdentifiers" GOOS=darwin GOARCH="$arch" go build \
-            -tags "$tags" \
+        CGO_ENABLED=1 CGO_LDFLAGS="$DARWIN_CGO_LDFLAGS" GOOS=darwin GOARCH="$arch" go build \
+            -tags "$DARWIN_FULL_TAGS" \
             -ldflags="-s -w -X main.version=$VERSION" \
             -o "$SCRIPT_DIR/$output" .
     done
@@ -241,7 +257,7 @@ do_smoke() {
     go vet ./...
 
     info "  Build check..."
-    go build -ldflags="-s -w -X main.version=$VERSION" -o /dev/null .
+    build_native_binary /dev/null
 
     info "  Short tests..."
     go test -short -count=1 ./...

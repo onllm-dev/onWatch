@@ -41,6 +41,8 @@ Thumbs.db
 *.gif
 *.bmp
 !docs/screenshots/*.png
+!internal/menubar/icon_template.png
+!internal/menubar/icon_template@2x.png
 tmp/
 temp/
 test-screenshots/

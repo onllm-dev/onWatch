@@ -196,6 +196,82 @@ func TestMenubarSummaryUsesConfiguredThresholds(t *testing.T) {
 	}
 }
 
+func TestMenubarPreferencesRoundTrip(t *testing.T) {
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/menubar/preferences", nil)
+	getRR := httptest.NewRecorder()
+
+	h.MenubarPreferences(getRR, getReq)
+
+	if getRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", getRR.Code, getRR.Body.String())
+	}
+
+	var initial struct {
+		DefaultView      menubar.ViewType      `json:"default_view"`
+		RefreshSeconds   int                   `json:"refresh_seconds"`
+		VisibleProviders []string              `json:"visible_providers"`
+		StatusDisplay    menubar.StatusDisplay `json:"status_display"`
+		Theme            menubar.ThemeMode     `json:"theme"`
+		Providers        []map[string]any      `json:"providers"`
+	}
+	if err := json.Unmarshal(getRR.Body.Bytes(), &initial); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if initial.DefaultView != menubar.ViewStandard {
+		t.Fatalf("expected standard view, got %s", initial.DefaultView)
+	}
+	if initial.StatusDisplay.Mode != menubar.StatusDisplayMultiProvider {
+		t.Fatalf("expected multi_provider status display, got %s", initial.StatusDisplay.Mode)
+	}
+	if len(initial.StatusDisplay.SelectedQuotas) == 0 {
+		t.Fatal("expected multi-provider status display to resolve at least one quota")
+	}
+	if len(initial.Providers) == 0 {
+		t.Fatal("expected provider options in preferences response")
+	}
+	if initial.Theme != menubar.ThemeSystem {
+		t.Fatalf("expected system theme by default, got %s", initial.Theme)
+	}
+
+	body := strings.NewReader(`{"default_view":"detailed","refresh_seconds":120,"visible_providers":["synthetic"],"status_display":{"mode":"multi_provider","selected_quotas":[{"provider_id":"synthetic","quota_key":"search"}]},"theme":"light"}`)
+	putReq := httptest.NewRequest(http.MethodPut, "/api/menubar/preferences", body)
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.Header.Set("X-Requested-With", "XMLHttpRequest")
+	putRR := httptest.NewRecorder()
+
+	h.MenubarPreferences(putRR, putReq)
+
+	if putRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", putRR.Code, putRR.Body.String())
+	}
+
+	got, err := s.GetMenubarSettings()
+	if err != nil {
+		t.Fatalf("GetMenubarSettings returned error: %v", err)
+	}
+	if got.DefaultView != menubar.ViewDetailed {
+		t.Fatalf("expected detailed view, got %s", got.DefaultView)
+	}
+	if got.RefreshSeconds != 120 {
+		t.Fatalf("expected refresh 120, got %d", got.RefreshSeconds)
+	}
+	if len(got.VisibleProviders) != 1 || got.VisibleProviders[0] != "synthetic" {
+		t.Fatalf("unexpected visible providers: %#v", got.VisibleProviders)
+	}
+	if got.StatusDisplay.Mode != menubar.StatusDisplayMultiProvider {
+		t.Fatalf("expected multi_provider status display, got %s", got.StatusDisplay.Mode)
+	}
+	if len(got.StatusDisplay.SelectedQuotas) != 1 || got.StatusDisplay.SelectedQuotas[0].ProviderID != "synthetic" || got.StatusDisplay.SelectedQuotas[0].QuotaKey != "search" {
+		t.Fatalf("unexpected status display selections: %#v", got.StatusDisplay.SelectedQuotas)
+	}
+	if got.Theme != menubar.ThemeLight {
+		t.Fatalf("expected light theme, got %s", got.Theme)
+	}
+}
+
 func TestMenubarPageRequiresLoopback(t *testing.T) {
 	h, s := newMenubarTestHandler(t)
 	defer s.Close()
@@ -228,8 +304,8 @@ func TestMenubarPageRendersLoopbackBootstrap(t *testing.T) {
 	if !strings.Contains(body, `"default_view":"detailed"`) {
 		t.Fatalf("expected detailed bootstrap, got body: %s", body)
 	}
-	if !strings.Contains(body, "Local Menubar View") {
-		t.Fatalf("expected menubar heading, got body: %s", body)
+	if !strings.Contains(body, `id="settings-panel"`) {
+		t.Fatalf("expected compact menubar shell, got body: %s", body)
 	}
 }
 
@@ -257,6 +333,15 @@ func TestSessionAuthMiddleware_AllowsLoopbackMenubarPaths(t *testing.T) {
 	if apiRR.Code != http.StatusOK {
 		t.Fatalf("expected 200 for loopback api path, got %d", apiRR.Code)
 	}
+
+	prefsReq := httptest.NewRequest(http.MethodGet, "/api/menubar/preferences", nil)
+	prefsReq.RemoteAddr = "127.0.0.1:12345"
+	prefsRR := httptest.NewRecorder()
+	handler.ServeHTTP(prefsRR, prefsReq)
+
+	if prefsRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for loopback preferences path, got %d", prefsRR.Code)
+	}
 }
 
 func TestSessionAuthMiddleware_DoesNotBypassRemoteMenubarPaths(t *testing.T) {
@@ -282,5 +367,14 @@ func TestSessionAuthMiddleware_DoesNotBypassRemoteMenubarPaths(t *testing.T) {
 
 	if apiRR.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for remote api request, got %d", apiRR.Code)
+	}
+
+	prefsReq := httptest.NewRequest(http.MethodGet, "/api/menubar/preferences", nil)
+	prefsReq.RemoteAddr = "192.168.1.50:12345"
+	prefsRR := httptest.NewRecorder()
+	handler.ServeHTTP(prefsRR, prefsReq)
+
+	if prefsRR.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for remote preferences api request, got %d", prefsRR.Code)
 	}
 }

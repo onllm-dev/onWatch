@@ -1,6 +1,9 @@
 package menubar
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // SnapshotProvider returns the latest menubar snapshot.
 type SnapshotProvider func() (*Snapshot, error)
@@ -21,12 +24,39 @@ type Config struct {
 
 // Settings holds persisted menubar preferences.
 type Settings struct {
-	Enabled         bool     `json:"enabled"`
-	DefaultView     ViewType `json:"default_view"`
-	RefreshSeconds  int      `json:"refresh_seconds"`
-	ProvidersOrder  []string `json:"providers_order"`
-	WarningPercent  int      `json:"warning_percent"`
-	CriticalPercent int      `json:"critical_percent"`
+	Enabled          bool          `json:"enabled"`
+	DefaultView      ViewType      `json:"default_view"`
+	RefreshSeconds   int           `json:"refresh_seconds"`
+	ProvidersOrder   []string      `json:"providers_order"`
+	VisibleProviders []string      `json:"visible_providers"`
+	WarningPercent   int           `json:"warning_percent"`
+	CriticalPercent  int           `json:"critical_percent"`
+	StatusDisplay    StatusDisplay `json:"status_display"`
+	Theme            ThemeMode     `json:"theme"`
+}
+
+// StatusDisplayMode controls which compact metric is rendered beside the tray icon.
+type StatusDisplayMode string
+
+const (
+	StatusDisplayMultiProvider          StatusDisplayMode = "multi_provider"
+	StatusDisplayCriticalCount          StatusDisplayMode = "critical_count"
+	StatusDisplayIconOnly               StatusDisplayMode = "icon_only"
+	statusDisplayProviderSpecificLegacy StatusDisplayMode = "provider_specific"
+)
+
+// StatusDisplaySelection identifies one provider quota to surface in the tray title.
+type StatusDisplaySelection struct {
+	ProviderID string `json:"provider_id"`
+	QuotaKey   string `json:"quota_key,omitempty"`
+}
+
+// StatusDisplay stores tray-title preferences shared by the popover and native companion.
+type StatusDisplay struct {
+	Mode           StatusDisplayMode        `json:"mode"`
+	SelectedQuotas []StatusDisplaySelection `json:"selected_quotas,omitempty"`
+	ProviderID     string                   `json:"provider_id,omitempty"`
+	QuotaKey       string                   `json:"quota_key,omitempty"`
 }
 
 // ViewType controls which preset layout is rendered.
@@ -36,6 +66,15 @@ const (
 	ViewMinimal  ViewType = "minimal"
 	ViewStandard ViewType = "standard"
 	ViewDetailed ViewType = "detailed"
+)
+
+// ThemeMode controls visual theme behavior for menubar UI.
+type ThemeMode string
+
+const (
+	ThemeSystem ThemeMode = "system"
+	ThemeLight  ThemeMode = "light"
+	ThemeDark   ThemeMode = "dark"
 )
 
 // Snapshot is the normalized UI contract shared by the desktop app and the
@@ -111,12 +150,17 @@ func DefaultConfig() *Config {
 // DefaultSettings returns persisted defaults for a new install.
 func DefaultSettings() *Settings {
 	return &Settings{
-		Enabled:         true,
-		DefaultView:     ViewStandard,
-		RefreshSeconds:  60,
-		ProvidersOrder:  []string{},
-		WarningPercent:  70,
-		CriticalPercent: 90,
+		Enabled:          true,
+		DefaultView:      ViewStandard,
+		RefreshSeconds:   60,
+		ProvidersOrder:   []string{},
+		VisibleProviders: []string{},
+		WarningPercent:   70,
+		CriticalPercent:  90,
+		StatusDisplay: StatusDisplay{
+			Mode: StatusDisplayMultiProvider,
+		},
+		Theme: ThemeSystem,
 	}
 }
 
@@ -146,6 +190,17 @@ func (s *Settings) Normalize() *Settings {
 	if out.ProvidersOrder == nil {
 		out.ProvidersOrder = []string{}
 	}
+	out.ProvidersOrder = normalizedStringList(out.ProvidersOrder)
+	if out.VisibleProviders == nil {
+		out.VisibleProviders = []string{}
+	}
+	out.VisibleProviders = normalizedStringList(out.VisibleProviders)
+	out.StatusDisplay = out.StatusDisplay.normalize(defaults.StatusDisplay)
+	switch out.Theme {
+	case ThemeSystem, ThemeLight, ThemeDark:
+	default:
+		out.Theme = ThemeSystem
+	}
 	return &out
 }
 
@@ -162,4 +217,80 @@ func (s *Settings) ToConfig(port int, snapshotProvider SnapshotProvider) *Config
 	cfg.CriticalPercent = normalized.CriticalPercent
 	cfg.SnapshotProvider = snapshotProvider
 	return cfg
+}
+
+func (s StatusDisplay) normalize(fallback StatusDisplay) StatusDisplay {
+	out := StatusDisplay{
+		Mode:           fallback.Mode,
+		SelectedQuotas: normalizeStatusSelections(s.SelectedQuotas),
+	}
+	legacyProviderID := strings.TrimSpace(s.ProviderID)
+	legacyQuotaKey := strings.TrimSpace(s.QuotaKey)
+	switch s.Mode {
+	case StatusDisplayMultiProvider,
+		StatusDisplayCriticalCount,
+		StatusDisplayIconOnly:
+		out.Mode = s.Mode
+	case statusDisplayProviderSpecificLegacy:
+		out.Mode = StatusDisplayMultiProvider
+	}
+	if len(out.SelectedQuotas) == 0 && legacyProviderID != "" {
+		out.SelectedQuotas = []StatusDisplaySelection{{
+			ProviderID: legacyProviderID,
+			QuotaKey:   legacyQuotaKey,
+		}}
+	}
+	if out.Mode != StatusDisplayMultiProvider {
+		out.SelectedQuotas = []StatusDisplaySelection{}
+		return out
+	}
+	return out
+}
+
+func normalizeStatusSelections(values []StatusDisplaySelection) []StatusDisplaySelection {
+	if len(values) == 0 {
+		return []StatusDisplaySelection{}
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]StatusDisplaySelection, 0, len(values))
+	for _, value := range values {
+		providerID := strings.TrimSpace(value.ProviderID)
+		if providerID == "" {
+			continue
+		}
+		quotaKey := strings.TrimSpace(value.QuotaKey)
+		key := providerID + "\x00" + quotaKey
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, StatusDisplaySelection{
+			ProviderID: providerID,
+			QuotaKey:   quotaKey,
+		})
+		if len(out) == 3 {
+			break
+		}
+	}
+	return out
+}
+
+func normalizedStringList(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	return out
 }

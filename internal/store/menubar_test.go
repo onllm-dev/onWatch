@@ -16,12 +16,21 @@ func TestStoreMenubarSettingsRoundTrip(t *testing.T) {
 	}
 
 	settings := &menubar.Settings{
-		Enabled:         false,
-		DefaultView:     menubar.ViewDetailed,
-		RefreshSeconds:  120,
-		ProvidersOrder:  []string{"codex:1", "synthetic"},
-		WarningPercent:  60,
-		CriticalPercent: 85,
+		Enabled:          false,
+		DefaultView:      menubar.ViewDetailed,
+		RefreshSeconds:   120,
+		ProvidersOrder:   []string{"codex:1", "synthetic"},
+		VisibleProviders: []string{"synthetic"},
+		WarningPercent:   60,
+		CriticalPercent:  85,
+		StatusDisplay: menubar.StatusDisplay{
+			Mode: menubar.StatusDisplayMultiProvider,
+			SelectedQuotas: []menubar.StatusDisplaySelection{
+				{ProviderID: "synthetic", QuotaKey: "search"},
+				{ProviderID: "anthropic", QuotaKey: "five_hour"},
+			},
+		},
+		Theme: menubar.ThemeDark,
 	}
 	if err := s.SetMenubarSettings(settings); err != nil {
 		t.Fatalf("SetMenubarSettings returned error: %v", err)
@@ -54,6 +63,21 @@ func TestStoreMenubarSettingsRoundTrip(t *testing.T) {
 	}
 	if got.WarningPercent != 60 || got.CriticalPercent != 85 {
 		t.Fatalf("unexpected thresholds: %d/%d", got.WarningPercent, got.CriticalPercent)
+	}
+	if len(got.VisibleProviders) != 1 || got.VisibleProviders[0] != "synthetic" {
+		t.Fatalf("unexpected visible providers: %#v", got.VisibleProviders)
+	}
+	if got.StatusDisplay.Mode != menubar.StatusDisplayMultiProvider {
+		t.Fatalf("unexpected status display: %#v", got.StatusDisplay)
+	}
+	if len(got.StatusDisplay.SelectedQuotas) != 2 {
+		t.Fatalf("expected two tray selections, got %#v", got.StatusDisplay.SelectedQuotas)
+	}
+	if got.StatusDisplay.SelectedQuotas[0].ProviderID != "synthetic" || got.StatusDisplay.SelectedQuotas[0].QuotaKey != "search" {
+		t.Fatalf("unexpected first tray selection: %#v", got.StatusDisplay.SelectedQuotas[0])
+	}
+	if got.Theme != menubar.ThemeDark {
+		t.Fatalf("expected dark theme, got %s", got.Theme)
 	}
 }
 

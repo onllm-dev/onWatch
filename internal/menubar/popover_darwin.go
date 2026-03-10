@@ -5,11 +5,11 @@ package menubar
 import "errors"
 
 const (
-	menubarPopoverWidth  = 400
-	menubarPopoverHeight = 500
+	menubarPopoverWidth  = 420
+	menubarPopoverHeight = 600
 )
 
-var errNativePopoverUnavailable = errors.New("native macOS popover unavailable")
+var errNativePopoverUnavailable = errors.New("native macOS menubar host unavailable")
 
 type menubarPopover interface {
 	ShowURL(string) error
