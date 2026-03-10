@@ -358,6 +358,19 @@ func (h *Handler) SetRateLimiter(l *LoginRateLimiter) {
 	h.rateLimiter = l
 }
 
+func (h *Handler) triggerMenubarRefresh() {
+	if h == nil {
+		return
+	}
+	testMode := false
+	if h.config != nil {
+		testMode = h.config.TestMode
+	}
+	if err := menubar.TriggerRefresh(testMode); err != nil {
+		h.logger.Debug("menubar refresh trigger failed", "error", err)
+	}
+}
+
 // SettingsPage renders the settings page.
 func (h *Handler) SettingsPage(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
@@ -4466,6 +4479,7 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "failed to save menubar settings")
 			return
 		}
+		h.triggerMenubarRefresh()
 		result["menubar"] = normalized
 	}
 

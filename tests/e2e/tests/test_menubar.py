@@ -58,6 +58,42 @@ class TestMenubarStandardView:
         expect(authenticated_page.locator("#status-quota")).to_have_count(0)
         expect(authenticated_page.locator("text=Preview")).to_be_visible()
 
+    def test_provider_order_arrow_controls_reorder_rows(self, authenticated_page: Page) -> None:
+        open_menubar(authenticated_page, "standard")
+        authenticated_page.locator("#settings-toggle").click()
+
+        rows = authenticated_page.locator("#provider-order-list .provider-order-item")
+        assert rows.count() >= 2
+
+        first_before = rows.nth(0).get_attribute("data-provider-id")
+        second_before = rows.nth(1).get_attribute("data-provider-id")
+        assert first_before
+        assert second_before
+
+        move_down = rows.nth(0).locator('button[data-provider-move="down"]')
+        expect(move_down).to_be_visible()
+        move_down.click()
+
+        rows_after = authenticated_page.locator("#provider-order-list .provider-order-item")
+        first_after = rows_after.nth(0).get_attribute("data-provider-id")
+        second_after = rows_after.nth(1).get_attribute("data-provider-id")
+        assert first_after == second_before
+        assert second_after == first_before
+
+    def test_light_theme_switch_applies_root_theme_and_save(self, authenticated_page: Page) -> None:
+        open_menubar(authenticated_page, "standard")
+        authenticated_page.locator("#settings-toggle").click()
+
+        theme_select = authenticated_page.locator('select[name="theme-mode"]')
+        expect(theme_select).to_be_visible()
+        theme_select.select_option("light")
+
+        html_root = authenticated_page.locator("html")
+        expect(html_root).to_have_attribute("data-theme", "light")
+
+        authenticated_page.locator("#settings-save").click()
+        expect(authenticated_page.locator("#settings-panel")).to_be_hidden()
+
 
 class TestMenubarDetailedView:
     def test_shows_detailed_quota_rows(self, authenticated_page: Page) -> None:

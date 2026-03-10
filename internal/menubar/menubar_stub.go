@@ -13,3 +13,9 @@ func IsSupported() bool { return false }
 
 // IsRunning reports whether the menubar companion is currently running.
 func IsRunning() bool { return false }
+
+// TriggerRefresh is a no-op when the menubar companion is not compiled in.
+func TriggerRefresh(testMode bool) error {
+	_ = testMode
+	return nil
+}

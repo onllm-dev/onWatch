@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
 	"sync"
 	"time"
 
@@ -32,6 +34,15 @@ func runCompanion(cfg *Config) error {
 	quitFn = nil
 
 	controller := &trayController{cfg: cfg}
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, refreshCompanionSignal)
+	defer signal.Stop(signalChan)
+	go func() {
+		for range signalChan {
+			controller.refreshStatus()
+		}
+	}()
+
 	slog.Default().Debug("Initializing systray")
 	systray.Run(controller.onReady, controller.onExit)
 	return nil

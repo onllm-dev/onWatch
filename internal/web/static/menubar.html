@@ -28,6 +28,24 @@
             --bg-card-strong: rgba(28, 28, 28, 0.98);
             --bg-hover: rgba(255, 255, 255, 0.05);
             --border: rgba(255, 255, 255, 0.06);
+            --card-gradient-start: rgba(23, 23, 23, 0.98);
+            --card-gradient-end: rgba(17, 17, 17, 0.98);
+            --minimal-gradient-start: rgba(24, 24, 24, 0.98);
+            --minimal-gradient-end: rgba(18, 18, 18, 0.98);
+            --settings-accent: rgba(96, 165, 250, 0.08);
+            --settings-gradient-start: rgba(16, 16, 16, 0.99);
+            --settings-gradient-end: rgba(10, 10, 10, 0.99);
+            --icon-surface: rgba(255, 255, 255, 0.03);
+            --scrollbar-thumb-soft: rgba(255, 255, 255, 0.15);
+            --scrollbar-thumb-soft-hover: rgba(255, 255, 255, 0.25);
+            --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+            --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
+            --quota-center: rgba(0, 0, 0, 0.52);
+            --quota-percent-stroke: rgba(0, 0, 0, 0.82);
+            --quota-percent-shadow: rgba(0, 0, 0, 0.65);
+            --footer-divider: rgba(255, 255, 255, 0.18);
+            --footer-refresh-hover-bg: rgba(255, 255, 255, 0.08);
+            --footer-refresh-hover-border: rgba(255, 255, 255, 0.12);
 
             --text-primary: #ffffff;
             --text-soft: rgba(255, 255, 255, 0.78);
@@ -49,6 +67,24 @@
             --bg-card-strong: rgba(255, 255, 255, 0.98);
             --bg-hover: rgba(15, 23, 42, 0.06);
             --border: rgba(15, 23, 42, 0.12);
+            --card-gradient-start: rgba(255, 255, 255, 0.99);
+            --card-gradient-end: rgba(241, 245, 249, 0.98);
+            --minimal-gradient-start: rgba(255, 255, 255, 0.99);
+            --minimal-gradient-end: rgba(241, 245, 249, 0.97);
+            --settings-accent: rgba(37, 99, 235, 0.1);
+            --settings-gradient-start: rgba(255, 255, 255, 0.99);
+            --settings-gradient-end: rgba(241, 245, 249, 0.97);
+            --icon-surface: rgba(15, 23, 42, 0.05);
+            --scrollbar-thumb-soft: rgba(15, 23, 42, 0.22);
+            --scrollbar-thumb-soft-hover: rgba(15, 23, 42, 0.34);
+            --scrollbar-thumb: rgba(15, 23, 42, 0.3);
+            --scrollbar-thumb-hover: rgba(15, 23, 42, 0.42);
+            --quota-center: rgba(248, 250, 252, 0.92);
+            --quota-percent-stroke: rgba(255, 255, 255, 0.95);
+            --quota-percent-shadow: rgba(148, 163, 184, 0.45);
+            --footer-divider: rgba(15, 23, 42, 0.26);
+            --footer-refresh-hover-bg: rgba(15, 23, 42, 0.1);
+            --footer-refresh-hover-border: rgba(15, 23, 42, 0.2);
             --text-primary: #0f172a;
             --text-soft: rgba(15, 23, 42, 0.82);
             --text-muted: rgba(15, 23, 42, 0.62);
@@ -209,7 +245,7 @@
             padding: 0 var(--space-sm);
             border-radius: 999px;
             border: 1px solid transparent;
-            background: rgba(255, 255, 255, 0.03);
+            background: var(--icon-surface);
             color: var(--text-soft);
             transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
         }
@@ -239,7 +275,7 @@
             overflow-y: auto;
             padding: 0;
             scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.15) transparent;
+            scrollbar-color: var(--scrollbar-thumb-soft) transparent;
         }
 
         .menubar-body::-webkit-scrollbar {
@@ -251,12 +287,12 @@
         }
 
         .menubar-body::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.15);
+            background: var(--scrollbar-thumb-soft);
             border-radius: 3px;
         }
 
         .menubar-body::-webkit-scrollbar-thumb:hover {
-            background: rgba(255,255,255,0.25);
+            background: var(--scrollbar-thumb-soft-hover);
         }
 
         .provider-header {
@@ -372,7 +408,7 @@
             gap: 3px;
             padding: 7px 10px;
             border-radius: 14px;
-            background: linear-gradient(180deg, rgba(24, 24, 24, 0.98), rgba(18, 18, 18, 0.98));
+            background: linear-gradient(180deg, var(--minimal-gradient-start), var(--minimal-gradient-end));
         }
 
         .minimal-quota-list {
@@ -432,7 +468,7 @@
             gap: 6px;
             padding: 8px 10px;
             border-radius: 16px;
-            background: linear-gradient(180deg, rgba(23, 23, 23, 0.98), rgba(17, 17, 17, 0.98));
+            background: linear-gradient(180deg, var(--card-gradient-start), var(--card-gradient-end));
         }
 
         .provider-card-standard {
@@ -491,7 +527,7 @@
         }
 
         .quota-center {
-            fill: rgba(0, 0, 0, 0.52);
+            fill: var(--quota-center);
         }
 
         .quota-percent {
@@ -499,10 +535,10 @@
             font-size: 11px;
             font-weight: 700;
             paint-order: stroke;
-            stroke: rgba(0, 0, 0, 0.82);
+            stroke: var(--quota-percent-stroke);
             stroke-width: 2.2px;
             stroke-linejoin: round;
-            filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.65));
+            filter: drop-shadow(0 0 2px var(--quota-percent-shadow));
         }
 
         .quota-label {
@@ -652,8 +688,8 @@
         }
 
         .footer-refresh:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.12);
+            background: var(--footer-refresh-hover-bg);
+            border-color: var(--footer-refresh-hover-border);
             transform: translateY(-1px);
         }
 
@@ -683,7 +719,7 @@
         }
 
         .footer-divider {
-            color: rgba(255, 255, 255, 0.18);
+            color: var(--footer-divider);
         }
 
         .state-card {
@@ -711,8 +747,8 @@
             grid-template-rows: 40px minmax(0, 1fr) 48px;
             border-radius: 18px;
             background:
-                radial-gradient(circle at top right, rgba(96, 165, 250, 0.08), transparent 24%),
-                linear-gradient(180deg, rgba(16, 16, 16, 0.99), rgba(10, 10, 10, 0.99));
+                radial-gradient(circle at top right, var(--settings-accent), transparent 24%),
+                linear-gradient(180deg, var(--settings-gradient-start), var(--settings-gradient-end));
             overflow: hidden;
             z-index: 20;
         }
@@ -750,7 +786,7 @@
         .menubar-body,
         .settings-body {
             scrollbar-width: thin;
-            scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+            scrollbar-color: var(--scrollbar-thumb) transparent;
         }
 
         .menubar-body::-webkit-scrollbar,
@@ -766,13 +802,13 @@
 
         .menubar-body::-webkit-scrollbar-thumb,
         .settings-body::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.22);
+            background: var(--scrollbar-thumb);
             border-radius: 999px;
         }
 
         .menubar-body::-webkit-scrollbar-thumb:hover,
         .settings-body::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.32);
+            background: var(--scrollbar-thumb-hover);
         }
 
         .settings-section {
@@ -1044,6 +1080,41 @@
             text-transform: lowercase;
         }
 
+        .provider-order-controls {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-xs);
+            justify-self: end;
+        }
+
+        .provider-order-move {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-hover);
+            color: var(--text-soft);
+            transition: background-color 180ms ease, border-color 180ms ease;
+        }
+
+        .provider-order-move:hover:not(:disabled) {
+            background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
+            border-color: color-mix(in srgb, var(--text-primary) 24%, transparent);
+        }
+
+        .provider-order-move:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
+
+        .provider-order-move svg {
+            width: 12px;
+            height: 12px;
+        }
+
         .provider-order-toggle {
             display: inline-flex;
             align-items: center;
@@ -1179,6 +1250,7 @@
             const STATUS_STORAGE_KEY = "menubar_status_display";
             const VIEW_STORAGE_KEY = "menubar_view_mode";
             const ORDER_STORAGE_KEY = "menubar_provider_order";
+            const THEME_STORAGE_KEY = "menubar_theme_mode";
             const VIEW_ORDER = ["minimal", "standard", "detailed"];
             const THEME_MODES = ["system", "light", "dark"];
 
@@ -1189,7 +1261,9 @@
                 back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18 9 12l6-6"/></svg>',
                 refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0 2 5"/><path d="M20 4v7h-7"/></svg>',
                 clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
-                grip: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="7" r="1.5"/><circle cx="8" cy="12" r="1.5"/><circle cx="8" cy="17" r="1.5"/><circle cx="16" cy="7" r="1.5"/><circle cx="16" cy="12" r="1.5"/><circle cx="16" cy="17" r="1.5"/></svg>'
+                grip: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="7" r="1.5"/><circle cx="8" cy="12" r="1.5"/><circle cx="8" cy="17" r="1.5"/><circle cx="16" cy="7" r="1.5"/><circle cx="16" cy="12" r="1.5"/><circle cx="16" cy="17" r="1.5"/></svg>',
+                arrowUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 6-6 6 6"/></svg>',
+                arrowDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 10 6 6 6-6"/></svg>'
             };
 
             const statusDisplayOptions = [
@@ -1198,6 +1272,7 @@
                 { mode: "icon_only", label: "Icon only", detail: () => "Shows only the tray icon." }
             ];
 
+            const storedTheme = readStoredThemeMode();
             const bootstrap = normalizePreferences(window.__ONWATCH_MENUBAR__ || {});
             const requestedView = (() => {
                 const query = new URLSearchParams(window.location.search).get("view");
@@ -1262,11 +1337,13 @@
                 themeMedia.addEventListener("change", (event) => {
                     state.systemPrefersDark = !!event.matches;
                     applyTheme();
+                    queueResizeReport();
                 });
             } else if (themeMedia && typeof themeMedia.addListener === "function") {
                 themeMedia.addListener((event) => {
                     state.systemPrefersDark = !!event.matches;
                     applyTheme();
+                    queueResizeReport();
                 });
             }
             document.getElementById("settings-toggle").addEventListener("click", () => openSettings());
@@ -1391,6 +1468,7 @@
                     );
                     writeStoredStatusDisplay(state.preferences.status_display);
                     writeStoredProviderOrder(state.preferences.providers_order);
+                    writeStoredThemeMode(state.preferences.theme);
                     writeStoredViewMode(state.view);
                     state.draft = null;
                     applyTheme();
@@ -1465,6 +1543,7 @@
                     state.draft.theme = normalizeTheme(target.value);
                     settingsNote.textContent = "unsaved";
                     applyTheme();
+                    queueResizeReport();
                     return;
                 }
             }
@@ -1538,6 +1617,30 @@
                     .filter(Boolean);
                 settingsNote.textContent = "unsaved";
                 renderBody();
+                queueResizeReport();
+            }
+
+            function moveDraftProvider(providerID, direction) {
+                if (!state.settingsOpen || !state.draft || !providerID) {
+                    return;
+                }
+                const available = orderedProviderOptions().map((provider) => provider.id);
+                const order = mergeProviderOrder(state.draft.providers_order, available);
+                const from = order.indexOf(providerID);
+                if (from < 0) {
+                    return;
+                }
+                const delta = direction === "up" ? -1 : 1;
+                const to = from + delta;
+                if (to < 0 || to >= order.length) {
+                    return;
+                }
+                [order[from], order[to]] = [order[to], order[from]];
+                state.draft.providers_order = order;
+                settingsNote.textContent = "unsaved";
+                renderBody();
+                renderSettings();
+                queueResizeReport();
             }
 
             function render() {
@@ -1633,7 +1736,7 @@
                             ${draft.status_display.mode === "multi_provider" ? `
                                 <div class="settings-divider" aria-hidden="true"></div>
                                 <div class="settings-collapsible collapsed" id="quota-selection-collapsible">
-                                    <button type="button" class="settings-collapsible-toggle" onclick="document.getElementById('quota-selection-collapsible').classList.toggle('collapsed')">
+                                    <button type="button" class="settings-collapsible-toggle" onclick="document.getElementById('quota-selection-collapsible').classList.toggle('collapsed'); window.requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));">
                                         <span>Select quotas (${selectedCount}/3)</span>
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                                     </button>
@@ -1668,10 +1771,12 @@
                     <section class="settings-section">
                         <h2>Provider Order</h2>
                         <div class="settings-card">
-                            <div class="settings-hint">Drag to reorder. Toggle visibility on the right.</div>
+                            <div class="settings-hint">Drag or use arrows to reorder. Toggle visibility on the right.</div>
                             <div class="provider-order-list" id="provider-order-list">
-                                ${orderedOptions.map((provider) => {
+                                ${orderedOptions.map((provider, index) => {
                                     const visible = showAll || draft.visible_providers.includes(provider.id);
+                                    const canMoveUp = index > 0;
+                                    const canMoveDown = index < orderedOptions.length - 1;
                                     return `
                                         <div class="provider-order-item ${visible ? "" : "is-hidden"}" draggable="true" data-provider-id="${escapeHTML(provider.id)}">
                                             <span class="provider-order-handle" aria-hidden="true">${icons.grip}</span>
@@ -1680,10 +1785,14 @@
                                                 <span class="provider-order-name">${escapeHTML(provider.label)}</span>
                                                 <span class="provider-order-meta">${escapeHTML(provider.base_provider || "provider")}</span>
                                             </div>
-                                            <label class="provider-order-toggle">
-                                                <input type="checkbox" name="visible-provider" value="${escapeHTML(provider.id)}" ${visible ? "checked" : ""}>
-                                                <span>${visible ? "show" : "hide"}</span>
-                                            </label>
+                                            <div class="provider-order-controls">
+                                                <button type="button" class="provider-order-move" data-provider-move="up" data-provider-id="${escapeHTML(provider.id)}" ${canMoveUp ? "" : "disabled"} aria-label="Move ${escapeHTML(provider.label)} up" title="Move up">${icons.arrowUp}</button>
+                                                <button type="button" class="provider-order-move" data-provider-move="down" data-provider-id="${escapeHTML(provider.id)}" ${canMoveDown ? "" : "disabled"} aria-label="Move ${escapeHTML(provider.label)} down" title="Move down">${icons.arrowDown}</button>
+                                                <label class="provider-order-toggle">
+                                                    <input type="checkbox" name="visible-provider" value="${escapeHTML(provider.id)}" ${visible ? "checked" : ""}>
+                                                    <span>${visible ? "show" : "hide"}</span>
+                                                </label>
+                                            </div>
                                         </div>
                                     `;
                                 }).join("")}
@@ -1692,6 +1801,16 @@
                     </section>
                 `;
                 document.getElementById("settings-save").disabled = state.saving;
+                settingsBody.querySelectorAll("button[data-provider-move]").forEach((button) => {
+                    button.addEventListener("click", () => {
+                        const providerID = button.getAttribute("data-provider-id") || "";
+                        const direction = button.getAttribute("data-provider-move") || "";
+                        if (!providerID || !direction) {
+                            return;
+                        }
+                        moveDraftProvider(providerID, direction);
+                    });
+                });
             }
 
             function renderMinimalView(providers) {
@@ -2023,6 +2142,22 @@
                 }
             }
 
+            function readStoredThemeMode() {
+                try {
+                    return normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY));
+                } catch (error) {
+                    return "system";
+                }
+            }
+
+            function writeStoredThemeMode(mode) {
+                try {
+                    localStorage.setItem(THEME_STORAGE_KEY, normalizeTheme(mode));
+                } catch (error) {
+                    // Ignore local storage errors inside the popover.
+                }
+            }
+
             function resolveThemeMode() {
                 const draft = state.settingsOpen && state.draft ? state.draft : state.preferences;
                 return normalizeTheme(draft && draft.theme);
@@ -2075,15 +2210,15 @@
 
             function preferredResizeFloor() {
                 if (state.settingsOpen) {
-                    return 420;
+                    return 320;
                 }
                 switch (state.view) {
                 case "detailed":
-                    return 500;
+                    return 420;
                 case "standard":
-                    return 500;
+                    return 320;
                 default:
-                    return 400;
+                    return 260;
                 }
             }
 

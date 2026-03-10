@@ -72,6 +72,8 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
   self.containerView.autoresizesSubviews = YES;
   self.containerView.wantsLayer = YES;
   self.containerView.layer.masksToBounds = YES;
+  self.containerView.layer.cornerRadius = 14.0;
+  self.containerView.layer.cornerCurve = @"continuous";
   self.containerView.layer.backgroundColor = [[NSColor colorWithRed:0.04 green:0.04 blue:0.04 alpha:1.0] CGColor];
 
   self.webView.frame = self.containerView.bounds;
@@ -275,7 +277,7 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
 }
 
 - (void)applyHeight:(CGFloat)height {
-  CGFloat clampedHeight = MAX(180.0, MIN(600.0, height));
+  CGFloat clampedHeight = MAX(170.0, MIN(600.0, height));
   CGFloat delta = clampedHeight - self.height;
   if (delta < 0) {
     delta = -delta;

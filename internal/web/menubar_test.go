@@ -240,6 +240,7 @@ func TestMenubarPreferencesRoundTrip(t *testing.T) {
 	putReq := httptest.NewRequest(http.MethodPut, "/api/menubar/preferences", body)
 	putReq.Header.Set("Content-Type", "application/json")
 	putReq.Header.Set("X-Requested-With", "XMLHttpRequest")
+	putReq.RemoteAddr = "127.0.0.1:12345"
 	putRR := httptest.NewRecorder()
 
 	h.MenubarPreferences(putRR, putReq)
@@ -269,6 +270,59 @@ func TestMenubarPreferencesRoundTrip(t *testing.T) {
 	}
 	if got.Theme != menubar.ThemeLight {
 		t.Fatalf("expected light theme, got %s", got.Theme)
+	}
+}
+
+func TestMenubarRefreshRequiresPost(t *testing.T) {
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/refresh", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+
+	h.MenubarRefresh(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestMenubarRefreshRequiresLoopback(t *testing.T) {
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/menubar/refresh", nil)
+	req.RemoteAddr = "192.168.1.50:12345"
+	rr := httptest.NewRecorder()
+
+	h.MenubarRefresh(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rr.Code)
+	}
+}
+
+func TestMenubarRefreshLoopbackReturnsOK(t *testing.T) {
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/menubar/refresh", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+
+	h.MenubarRefresh(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var response map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if response["status"] != "ok" {
+		t.Fatalf("expected status ok, got %#v", response)
 	}
 }
 
@@ -342,6 +396,16 @@ func TestSessionAuthMiddleware_AllowsLoopbackMenubarPaths(t *testing.T) {
 	if prefsRR.Code != http.StatusOK {
 		t.Fatalf("expected 200 for loopback preferences path, got %d", prefsRR.Code)
 	}
+
+	refreshReq := httptest.NewRequest(http.MethodPost, "/api/menubar/refresh", nil)
+	refreshReq.RemoteAddr = "127.0.0.1:12345"
+	refreshReq.Header.Set("X-Requested-With", "XMLHttpRequest")
+	refreshRR := httptest.NewRecorder()
+	handler.ServeHTTP(refreshRR, refreshReq)
+
+	if refreshRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for loopback refresh path, got %d", refreshRR.Code)
+	}
 }
 
 func TestSessionAuthMiddleware_DoesNotBypassRemoteMenubarPaths(t *testing.T) {
@@ -376,5 +440,15 @@ func TestSessionAuthMiddleware_DoesNotBypassRemoteMenubarPaths(t *testing.T) {
 
 	if prefsRR.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for remote preferences api request, got %d", prefsRR.Code)
+	}
+
+	refreshReq := httptest.NewRequest(http.MethodPost, "/api/menubar/refresh", nil)
+	refreshReq.RemoteAddr = "192.168.1.50:12345"
+	refreshReq.Header.Set("X-Requested-With", "XMLHttpRequest")
+	refreshRR := httptest.NewRecorder()
+	handler.ServeHTTP(refreshRR, refreshReq)
+
+	if refreshRR.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for remote refresh api request, got %d", refreshRR.Code)
 	}
 }

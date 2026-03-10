@@ -143,6 +143,7 @@ func (h *Handler) MenubarPreferences(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "failed to save menubar preferences")
 			return
 		}
+		h.triggerMenubarRefresh()
 		providers, err := h.buildMenubarProviderOptions(normalized)
 		if err != nil {
 			h.logger.Error("failed to rebuild menubar provider options", "error", err)
@@ -155,6 +156,21 @@ func (h *Handler) MenubarPreferences(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) MenubarRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !isLoopbackRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := h.BuildMenubarSnapshot(); err != nil {
+		h.logger.Debug("menubar refresh snapshot rebuild failed", "error", err)
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func isLoopbackRequest(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -165,7 +181,7 @@ func isLoopbackRequest(r *http.Request) bool {
 }
 
 func isLocalMenubarPublicPath(path string) bool {
-	return path == "/menubar" || path == "/api/menubar/summary" || path == "/api/menubar/preferences"
+	return path == "/menubar" || path == "/api/menubar/summary" || path == "/api/menubar/preferences" || path == "/api/menubar/refresh"
 }
 
 // BuildMenubarSnapshot constructs the shared menubar UI contract.
