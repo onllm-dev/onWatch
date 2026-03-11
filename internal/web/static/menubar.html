@@ -28,10 +28,6 @@
             --bg-card-strong: rgba(28, 28, 28, 0.98);
             --bg-hover: rgba(255, 255, 255, 0.05);
             --border: rgba(255, 255, 255, 0.06);
-            --card-gradient-start: rgba(23, 23, 23, 0.98);
-            --card-gradient-end: rgba(17, 17, 17, 0.98);
-            --minimal-gradient-start: rgba(24, 24, 24, 0.98);
-            --minimal-gradient-end: rgba(18, 18, 18, 0.98);
             --settings-accent: rgba(96, 165, 250, 0.08);
             --settings-gradient-start: rgba(16, 16, 16, 0.99);
             --settings-gradient-end: rgba(10, 10, 10, 0.99);
@@ -42,7 +38,6 @@
             --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
             --quota-center: rgba(0, 0, 0, 0.52);
             --quota-percent-stroke: rgba(0, 0, 0, 0.82);
-            --quota-percent-shadow: rgba(0, 0, 0, 0.65);
             --footer-divider: rgba(255, 255, 255, 0.18);
             --footer-refresh-hover-bg: rgba(255, 255, 255, 0.08);
             --footer-refresh-hover-border: rgba(255, 255, 255, 0.12);
@@ -56,7 +51,6 @@
             --critical: #ef4444;
             --track: rgba(255, 255, 255, 0.08);
             --focus: rgba(96, 165, 250, 0.42);
-            --shadow: 0 18px 36px rgba(0, 0, 0, 0.32);
         }
 
         :root[data-theme="light"] {
@@ -67,10 +61,6 @@
             --bg-card-strong: rgba(255, 255, 255, 0.98);
             --bg-hover: rgba(15, 23, 42, 0.06);
             --border: rgba(15, 23, 42, 0.12);
-            --card-gradient-start: rgba(255, 255, 255, 0.99);
-            --card-gradient-end: rgba(241, 245, 249, 0.98);
-            --minimal-gradient-start: rgba(255, 255, 255, 0.99);
-            --minimal-gradient-end: rgba(241, 245, 249, 0.97);
             --settings-accent: rgba(37, 99, 235, 0.1);
             --settings-gradient-start: rgba(255, 255, 255, 0.99);
             --settings-gradient-end: rgba(241, 245, 249, 0.97);
@@ -81,7 +71,6 @@
             --scrollbar-thumb-hover: rgba(15, 23, 42, 0.42);
             --quota-center: rgba(248, 250, 252, 0.92);
             --quota-percent-stroke: rgba(255, 255, 255, 0.95);
-            --quota-percent-shadow: rgba(148, 163, 184, 0.45);
             --footer-divider: rgba(15, 23, 42, 0.26);
             --footer-refresh-hover-bg: rgba(15, 23, 42, 0.1);
             --footer-refresh-hover-border: rgba(15, 23, 42, 0.2);
@@ -90,7 +79,6 @@
             --text-muted: rgba(15, 23, 42, 0.62);
             --track: rgba(15, 23, 42, 0.12);
             --focus: rgba(37, 99, 235, 0.45);
-            --shadow: 0 16px 30px rgba(15, 23, 42, 0.14);
         }
 
         * {
@@ -145,12 +133,9 @@
             height: 100%;
             min-height: 0;
             max-height: 100%;
-            gap: var(--space-sm);
-            padding: var(--space-sm);
-            background:
-                radial-gradient(circle at top right, color-mix(in srgb, var(--healthy) 12%, transparent), transparent 22%),
-                radial-gradient(circle at bottom left, color-mix(in srgb, var(--critical) 12%, transparent), transparent 24%),
-                linear-gradient(180deg, color-mix(in srgb, var(--bg-body) 86%, #000 14%), color-mix(in srgb, var(--bg-body) 94%, #000 6%));
+            gap: 4px;
+            padding: 0 0 5px;
+            background: var(--bg-body);
             overflow: hidden;
         }
 
@@ -166,16 +151,19 @@
         .settings-panel {
             border: 1px solid var(--border);
             background: var(--bg-panel);
-            box-shadow: var(--shadow);
         }
 
         .menubar-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: var(--space-sm);
-            padding: 0 var(--space-md);
-            border-radius: 14px;
+            gap: 4px;
+            min-height: 30px;
+            padding: 0 6px;
+            border-radius: 0;
+            border-top: 0;
+            border-left: 0;
+            border-right: 0;
         }
 
         .header-cluster,
@@ -204,10 +192,11 @@
         }
 
         .header-value {
-            font-size: var(--font-xl);
+            font-size: 12px;
             font-weight: 700;
-            letter-spacing: -0.03em;
+            letter-spacing: -0.02em;
             line-height: 1;
+            white-space: nowrap;
         }
 
         .header-value.hidden {
@@ -218,8 +207,8 @@
             gap: var(--space-xs);
             color: var(--text-muted);
             font-size: var(--font-xs);
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            text-transform: none;
             white-space: nowrap;
         }
 
@@ -232,7 +221,7 @@
         }
 
         .header-actions {
-            gap: var(--space-xs);
+            gap: 2px;
             flex-shrink: 0;
         }
 
@@ -240,20 +229,19 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-width: 28px;
-            height: 24px;
-            padding: 0 var(--space-sm);
+            min-width: 24px;
+            height: 22px;
+            padding: 0 5px;
             border-radius: 999px;
             border: 1px solid transparent;
-            background: var(--icon-surface);
+            background: transparent;
             color: var(--text-soft);
-            transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
+            transition: background-color 180ms ease, border-color 180ms ease;
         }
 
         .icon-button:hover {
             background: var(--bg-hover);
             border-color: var(--border);
-            transform: translateY(-1px);
         }
 
         .icon-button svg {
@@ -261,11 +249,17 @@
             height: 13px;
         }
 
+        #view-toggle {
+            min-width: 64px;
+            padding: 0 6px;
+        }
+
         .view-pill {
-            font-size: var(--font-xs);
+            font-size: var(--font-sm);
             font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            text-transform: none;
+            white-space: nowrap;
         }
 
         .menubar-body {
@@ -301,6 +295,7 @@
             justify-content: space-between;
             gap: var(--space-sm);
             min-width: 0;
+            padding-bottom: 1px;
         }
 
         .provider-copy {
@@ -399,16 +394,15 @@
         .minimal-view {
             display: grid;
             gap: var(--space-xs);
-            padding: 2px;
+            padding: 1px;
             align-content: start;
         }
 
         .minimal-provider-row {
             display: grid;
-            gap: 3px;
-            padding: 7px 10px;
-            border-radius: 14px;
-            background: linear-gradient(180deg, var(--minimal-gradient-start), var(--minimal-gradient-end));
+            gap: 2px;
+            padding: 6px 8px;
+            border-radius: 13px;
         }
 
         .minimal-quota-list {
@@ -448,14 +442,15 @@
         }
 
         .provider-grid {
-            gap: var(--space-sm);
-            padding: 2px;
+            gap: 5px;
+            padding: 1px;
             align-content: start;
         }
 
         .provider-grid-standard {
             display: grid;
             grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 6px;
         }
 
         .provider-grid-detailed {
@@ -465,10 +460,9 @@
 
         .provider-card {
             display: grid;
-            gap: 6px;
-            padding: 8px 10px;
-            border-radius: 16px;
-            background: linear-gradient(180deg, var(--card-gradient-start), var(--card-gradient-end));
+            gap: 3px;
+            padding: 6px 8px;
+            border-radius: 14px;
         }
 
         .provider-card-standard {
@@ -478,12 +472,13 @@
 
         .provider-card-detailed {
             grid-column: 1 / -1;
+            gap: 2px;
         }
 
         .quota-grid {
             display: grid;
             grid-template-columns: repeat(var(--quota-count, 1), minmax(0, 1fr));
-            gap: 4px;
+            gap: 1px;
             min-width: 0;
         }
 
@@ -491,7 +486,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 2px;
+            gap: 1px;
             min-width: 0;
             color: var(--healthy);
         }
@@ -538,14 +533,14 @@
             stroke: var(--quota-percent-stroke);
             stroke-width: 2.2px;
             stroke-linejoin: round;
-            filter: drop-shadow(0 0 2px var(--quota-percent-shadow));
         }
 
         .quota-label {
-            max-width: 64px;
+            max-width: 60px;
             color: var(--text-primary);
             font-size: var(--font-sm);
             font-weight: 500;
+            line-height: 1.05;
             text-align: center;
             white-space: nowrap;
             overflow: hidden;
@@ -555,10 +550,15 @@
         .quota-reset-line {
             display: inline-flex;
             align-items: center;
-            gap: 3px;
+            gap: 2px;
             color: var(--text-muted);
-            font-size: 9px;
+            font-size: 8px;
+            line-height: 1;
             white-space: nowrap;
+        }
+
+        .menubar-view-standard .quota-reset-line {
+            font-size: 9px;
         }
 
         .quota-reset-line svg {
@@ -571,29 +571,32 @@
         .quota-detail-stack {
             display: grid;
             gap: 0;
+            padding: 1px 2px 3px;
         }
 
         .quota-detail-section {
             display: grid;
-            gap: var(--space-xs);
-            padding-top: var(--space-sm);
+            gap: 3px;
+            padding: 6px 2px;
             color: var(--text-soft);
+            border: 0;
+            background: transparent;
         }
 
         .quota-detail-section:first-child {
-            padding-top: 0;
+            padding-top: 6px;
         }
 
         .quota-detail-section + .quota-detail-section {
             border-top: 1px solid var(--border);
-            margin-top: var(--space-xs);
+            margin-top: 0;
         }
 
         .quota-detail-head {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: var(--space-sm);
+            gap: 4px;
             min-width: 0;
         }
 
@@ -605,18 +608,19 @@
             color: var(--text-primary);
             font-size: var(--font-lg);
             font-weight: 600;
+            line-height: 1.08;
         }
 
         .quota-bar-row {
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
             align-items: center;
-            gap: var(--space-sm);
+            gap: 5px;
         }
 
         .quota-bar-track {
             position: relative;
-            height: 10px;
+            height: 7px;
             border-radius: 999px;
             background: var(--track);
             overflow: hidden;
@@ -644,15 +648,17 @@
             font-size: var(--font-lg);
             font-weight: 700;
             white-space: nowrap;
+            line-height: 1;
         }
 
         .quota-detail-meta {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: var(--space-xs);
+            gap: 2px;
             color: var(--text-muted);
-            font-size: var(--font-sm);
+            font-size: var(--font-xs);
+            line-height: 1.12;
         }
 
         .detail-divider {
@@ -667,35 +673,41 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: var(--space-sm);
+            gap: var(--space-xs);
             margin-top: auto;
-            padding: var(--space-md) var(--space-lg);
-            border-radius: 14px;
+            padding: 5px 6px;
+            border-radius: 0;
+            border-left: 0;
+            border-right: 0;
+            border-bottom: 0;
             font-size: var(--font-sm);
         }
 
         .footer-refresh {
             display: inline-flex;
             align-items: center;
-            gap: var(--space-xs);
-            min-height: 28px;
-            padding: 0 10px;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            background: var(--bg-hover);
+            justify-content: center;
+            width: 24px;
+            min-width: 24px;
+            height: 24px;
+            padding: 0;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            background: transparent;
             color: var(--text-primary);
-            transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
+            line-height: 1;
+            transition: background-color 180ms ease, border-color 180ms ease;
         }
 
         .footer-refresh:hover {
             background: var(--footer-refresh-hover-bg);
             border-color: var(--footer-refresh-hover-border);
-            transform: translateY(-1px);
         }
 
         .footer-refresh svg {
-            width: 12px;
-            height: 12px;
+            display: block;
+            width: 13px;
+            height: 13px;
         }
 
         .footer-links {
@@ -703,26 +715,46 @@
             align-items: center;
             justify-content: flex-end;
             flex-wrap: wrap;
-            gap: var(--space-sm);
+            gap: 0;
             min-width: 0;
             color: var(--text-muted);
         }
 
         .footer-version {
             color: var(--text-muted);
-            font-size: 11px;
-            letter-spacing: 0.02em;
+            font-size: inherit;
+            letter-spacing: 0.01em;
             white-space: nowrap;
+            margin-right: 6px;
         }
 
         .footer-link {
+            display: inline;
+            min-height: 0;
+            padding: 0;
+            border-radius: 0;
+            border: 0;
+            background: transparent;
             color: var(--text-muted);
             text-decoration: none;
+            font-size: var(--font-md);
+            font-weight: 600;
+            line-height: 1.1;
+            letter-spacing: 0.01em;
+            white-space: nowrap;
             transition: color 180ms ease;
+        }
+
+        .footer-link + .footer-link {
+            margin-left: 8px;
+            padding-left: 8px;
+            border-left: 1px solid var(--footer-divider);
         }
 
         .footer-link:hover {
             color: var(--text-primary);
+            background: transparent;
+            border-color: transparent;
         }
 
         .footer-divider {
@@ -1162,7 +1194,7 @@
             transform: none;
         }
 
-        @media (max-width: 360px) {
+        @media (max-width: 359px) {
             .header-meta {
                 display: none;
             }
@@ -1179,6 +1211,9 @@
                 grid-column: 1 / -1 !important;
             }
 
+        }
+
+        @media (max-width: 320px) {
             .quota-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -1204,7 +1239,7 @@
         <header class="menubar-header">
             <div class="header-cluster">
                 <div class="brand-mark" aria-hidden="true" id="brand-mark"></div>
-                <div class="header-value" id="header-value">--</div>
+                <div class="header-value" id="header-value">onWatch</div>
                 <div class="header-meta">
                     <span id="header-count">0</span>
                     <span class="meta-divider"></span>
@@ -1213,7 +1248,7 @@
             </div>
             <div class="header-actions">
                 <button class="icon-button" id="view-toggle" aria-label="Change menubar density" title="Change density">
-                    <span class="view-pill" id="view-pill">STD</span>
+                    <span class="view-pill" id="view-pill">Default</span>
                 </button>
                 <button class="icon-button" id="settings-toggle" aria-label="Open menubar settings" title="Settings"></button>
                 <button class="icon-button" id="close-button" aria-label="Close menubar" title="Close"></button>
@@ -1225,16 +1260,12 @@
         <footer class="menubar-footer">
             <button class="footer-refresh" id="refresh-button" type="button" aria-label="Refresh menubar data" title="Refresh">
                 <span id="refresh-icon"></span>
-                <span id="refresh-label">Refresh</span>
             </button>
             <div class="footer-links">
-                <span class="footer-version" id="footer-version">OnWatch v-</span>
-                <span class="footer-divider" aria-hidden="true">|</span>
-                <a class="footer-link" id="footer-github" href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noopener noreferrer">✦ GitHub</a>
-                <span class="footer-divider" aria-hidden="true">|</span>
-                <a class="footer-link" id="footer-support" href="https://github.com/onllm-dev/onwatch/issues" target="_blank" rel="noopener noreferrer">Support</a>
-                <span class="footer-divider" aria-hidden="true">|</span>
-                <a class="footer-link" id="footer-onllm" href="https://onllm.dev" target="_blank" rel="noopener noreferrer">onllm.dev</a>
+                <span class="footer-version" id="footer-version">v-</span>
+                <a class="footer-link" id="footer-github" href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noopener noreferrer" aria-label="GitHub" title="GitHub">GitHub</a>
+                <a class="footer-link" id="footer-support" href="https://github.com/onllm-dev/onwatch/issues" target="_blank" rel="noopener noreferrer" aria-label="Support" title="Support">Support</a>
+                <a class="footer-link" id="footer-onllm" href="https://onllm.dev" target="_blank" rel="noopener noreferrer" aria-label="onllm.dev" title="onllm.dev">onllm.dev</a>
             </div>
         </footer>
 
@@ -1261,7 +1292,7 @@
             const VIEW_STORAGE_KEY = "menubar_view_mode";
             const ORDER_STORAGE_KEY = "menubar_provider_order";
             const THEME_STORAGE_KEY = "menubar_theme_mode";
-            const VIEW_ORDER = ["standard", "detailed"];
+            const VIEW_ORDER = ["minimal", "standard", "detailed"];
             const THEME_MODES = ["system", "light", "dark"];
 
             const icons = {
@@ -1269,11 +1300,11 @@
                 settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.82l.05.05a2 2 0 0 1-2.82 2.83l-.06-.06a1.6 1.6 0 0 0-1.81-.33 1.6 1.6 0 0 0-.99 1.48V21a2 2 0 0 1-4 0v-.08a1.6 1.6 0 0 0-.99-1.48 1.6 1.6 0 0 0-1.81.33l-.06.06A2 2 0 0 1 4.4 17l.06-.05A1.6 1.6 0 0 0 4.79 15a1.6 1.6 0 0 0-1.48-.99H3.2a2 2 0 1 1 0-4h.08A1.6 1.6 0 0 0 4.76 9a1.6 1.6 0 0 0-.33-1.82l-.06-.05A2 2 0 1 1 7.2 4.3l.06.05a1.6 1.6 0 0 0 1.81.33 1.6 1.6 0 0 0 .99-1.48V3.1a2 2 0 0 1 4 0v.08a1.6 1.6 0 0 0 .99 1.48 1.6 1.6 0 0 0 1.81-.33l.06-.05a2 2 0 1 1 2.82 2.82l-.05.06A1.6 1.6 0 0 0 19.4 9c0 .64.37 1.22.95 1.49.17.08.35.11.54.11h.08a2 2 0 0 1 0 4h-.08a1.6 1.6 0 0 0-1.49.95Z"/></svg>',
                 close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6 18 18"/><path d="M18 6 6 18"/></svg>',
                 back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18 9 12l6-6"/></svg>',
-                refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0 2 5"/><path d="M20 4v7h-7"/></svg>',
+                refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/></svg>',
                 clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
                 grip: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="7" r="1.5"/><circle cx="8" cy="12" r="1.5"/><circle cx="8" cy="17" r="1.5"/><circle cx="16" cy="7" r="1.5"/><circle cx="16" cy="12" r="1.5"/><circle cx="16" cy="17" r="1.5"/></svg>',
                 arrowUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 6-6 6 6"/></svg>',
-                arrowDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 10 6 6 6-6"/></svg>'
+                arrowDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 10 6 6 6-6"/></svg>',
             };
 
             const statusDisplayOptions = [
@@ -1282,14 +1313,12 @@
                 { mode: "icon_only", label: "Icon only", detail: () => "Shows only the tray icon." }
             ];
 
-            const storedTheme = readStoredThemeMode();
             const bootstrap = normalizePreferences(window.__ONWATCH_MENUBAR__ || {});
             const requestedView = (() => {
                 const query = new URLSearchParams(window.location.search).get("view");
                 return query ? normalizeView(query) : "";
             })();
             const storedStatus = readStoredStatusDisplay();
-            const storedView = requestedView ? "" : readStoredViewMode();
             const storedOrder = readStoredProviderOrder();
 
             if (storedStatus) {
@@ -1304,13 +1333,14 @@
                 providerOptions: [],
                 preferences: bootstrap,
                 draft: null,
-                view: requestedView || storedView || normalizeView(bootstrap.default_view || "standard"),
+                view: requestedView || normalizeView(bootstrap.default_view || "standard"),
                 loading: true,
                 saving: false,
                 settingsOpen: false,
                 error: "",
                 draggingProviderID: "",
-                systemPrefersDark: window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+                systemPrefersDark: window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches,
+                quotaSelectionExpanded: true
             };
 
             const shell = document.getElementById("menubar-shell");
@@ -1332,7 +1362,7 @@
             let resizeTimer = 0;
 
             if (footerVersion) {
-                footerVersion.textContent = `OnWatch v${MENUBAR_VERSION || "-"}`;
+                footerVersion.textContent = `v${MENUBAR_VERSION || "-"}`;
             }
 
             document.getElementById("brand-mark").innerHTML = icons.star;
@@ -1345,6 +1375,10 @@
             document.getElementById("view-toggle").addEventListener("click", () => {
                 state.view = nextView(state.view);
                 writeStoredViewMode(state.view);
+                if (state.settingsOpen && state.draft) {
+                    state.draft.default_view = state.view;
+                    settingsNote.textContent = "unsaved";
+                }
                 render();
             });
             const themeMedia = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
@@ -1374,6 +1408,7 @@
             document.getElementById("refresh-button").addEventListener("click", () => void refreshData());
             document.getElementById("settings-save").addEventListener("click", () => void savePreferences());
             settingsBody.addEventListener("change", handleSettingsChange);
+            settingsBody.addEventListener("click", handleSettingsClick);
             settingsBody.addEventListener("dragstart", handleSettingsDragStart);
             settingsBody.addEventListener("dragover", handleSettingsDragOver);
             settingsBody.addEventListener("drop", handleSettingsDrop);
@@ -1413,9 +1448,10 @@
                     if (!state.settingsOpen) {
                         state.draft = null;
                     }
+                    writeStoredThemeMode(preferences.theme);
                     applyTheme();
                     if (!requestedView) {
-                        state.view = normalizeView(readStoredViewMode() || state.view || preferences.default_view);
+                        state.view = normalizeView(preferences.default_view || state.view);
                     }
                     writeStoredStatusDisplay(preferences.status_display);
                     writeStoredProviderOrder(preferences.providers_order);
@@ -1502,6 +1538,7 @@
 
             function openSettings() {
                 const draft = normalizePreferences(state.preferences);
+                draft.default_view = normalizeView(state.view || draft.default_view);
                 draft.providers_order = mergeProviderOrder(draft.providers_order, state.providerOptions.map((provider) => provider.id));
                 state.draft = draft;
                 state.settingsOpen = true;
@@ -1528,6 +1565,7 @@
                     state.draft.status_display.mode = target.value;
                     if (target.value === "multi_provider") {
                         ensureMultiProviderSelection();
+                        state.quotaSelectionExpanded = true;
                     }
                     settingsNote.textContent = "unsaved";
                     renderSettings();
@@ -1538,6 +1576,7 @@
                         [...settingsBody.querySelectorAll('input[name="status-selection"]:checked')]
                             .map((input) => parseStatusSelectionValue(input.value))
                     );
+                    state.quotaSelectionExpanded = true;
                     settingsNote.textContent = "unsaved";
                     renderSettings();
                     return;
@@ -1550,8 +1589,17 @@
                         state.draft.visible_providers = visible;
                     }
                     ensureMultiProviderSelection();
+                    state.quotaSelectionExpanded = true;
                     settingsNote.textContent = "unsaved";
                     renderSettings();
+                    return;
+                }
+                if (target.matches('select[name="view-mode"]')) {
+                    state.draft.default_view = normalizeView(target.value);
+                    state.view = state.draft.default_view;
+                    writeStoredViewMode(state.view);
+                    settingsNote.textContent = "unsaved";
+                    render();
                     return;
                 }
                 if (target.matches('select[name="theme-mode"]')) {
@@ -1561,6 +1609,17 @@
                     queueResizeReport();
                     return;
                 }
+            }
+
+            function handleSettingsClick(event) {
+                const target = event.target instanceof Element ? event.target.closest('[data-action="toggle-quota-selection"]') : null;
+                if (!(target instanceof HTMLElement)) {
+                    return;
+                }
+                event.preventDefault();
+                state.quotaSelectionExpanded = !state.quotaSelectionExpanded;
+                renderSettings();
+                queueResizeReport();
             }
 
             function handleSettingsDragStart(event) {
@@ -1671,10 +1730,10 @@
 
             function updateHeader() {
                 const providers = visibleProviders();
-                headerValue.textContent = "";
-                headerValue.classList.add("hidden");
-                headerValue.setAttribute("aria-hidden", "true");
-                headerCount.textContent = String(providers.length);
+                headerValue.textContent = "onWatch";
+                headerValue.classList.remove("hidden");
+                headerValue.setAttribute("aria-hidden", "false");
+                headerCount.textContent = `${providers.length} ${providers.length === 1 ? "provider" : "providers"}`;
                 headerUpdated.textContent = compactUpdatedLabel(state.snapshot && state.snapshot.updated_ago);
             }
 
@@ -1694,6 +1753,10 @@
                 const providers = visibleProviders();
                 if (providers.length === 0) {
                     body.innerHTML = renderStateCard("No Data", "Choose at least one provider.");
+                    return;
+                }
+                if (state.view === "minimal") {
+                    body.innerHTML = renderMinimalView(providers);
                     return;
                 }
                 if (state.view === "detailed") {
@@ -1721,6 +1784,16 @@
                         <h2>Appearance</h2>
                         <div class="settings-card">
                             <label class="settings-row">
+                                <span>Density</span>
+                                <select name="view-mode" aria-label="Menubar density">
+                                    <option value="minimal" ${draft.default_view === "minimal" ? "selected" : ""}>Minimal</option>
+                                    <option value="standard" ${draft.default_view === "standard" ? "selected" : ""}>Default</option>
+                                    <option value="detailed" ${draft.default_view === "detailed" ? "selected" : ""}>Detail</option>
+                                </select>
+                            </label>
+                            <div class="settings-hint">Minimal keeps a compact dashboard-style summary. Default shows quota cards. Detail expands bars and metadata.</div>
+                            <div class="settings-divider" aria-hidden="true"></div>
+                            <label class="settings-row">
                                 <span>Theme</span>
                                 <select name="theme-mode" aria-label="Theme mode">
                                     <option value="system" ${draft.theme === "system" ? "selected" : ""}>System</option>
@@ -1746,8 +1819,8 @@
                             `).join("")}
                             ${draft.status_display.mode === "multi_provider" ? `
                                 <div class="settings-divider" aria-hidden="true"></div>
-                                <div class="settings-collapsible collapsed" id="quota-selection-collapsible">
-                                    <button type="button" class="settings-collapsible-toggle" onclick="document.getElementById('quota-selection-collapsible').classList.toggle('collapsed'); window.requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));">
+                                <div class="settings-collapsible ${state.quotaSelectionExpanded ? "" : "collapsed"}" id="quota-selection-collapsible">
+                                    <button type="button" class="settings-collapsible-toggle" data-action="toggle-quota-selection">
                                         <span>Select quotas (${selectedCount}/3)</span>
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                                     </button>
@@ -1832,6 +1905,28 @@
                 `;
             }
 
+            function renderMinimalView(providers) {
+                return `
+                    <section class="minimal-view">
+                        ${providers.map((provider) => `
+                            <article class="minimal-provider-row status-${escapeHTML(provider.status || "healthy")}">
+                                ${providerHeaderMarkup(provider)}
+                                <div class="minimal-quota-list">
+                                    ${providerQuotas(provider).map((quota, index) => `
+                                        ${index > 0 ? '<span class="inline-divider" aria-hidden="true">|</span>' : ""}
+                                        <span class="minimal-quota-inline">
+                                            <span class="minimal-quota-label">${escapeHTML(compactQuotaLabel(quota.label, quota.key))}</span>
+                                            <span class="minimal-quota-percent">${Math.round(clampPercent(quota.percent))}%</span>
+                                            <span class="minimal-quota-reset">${escapeHTML(compactResetLabel(quota))}</span>
+                                        </span>
+                                    `).join("")}
+                                </div>
+                            </article>
+                        `).join("")}
+                    </section>
+                `;
+            }
+
             function renderDetailedView(providers) {
                 return `
                     <section class="provider-grid provider-grid-detailed">
@@ -1872,6 +1967,7 @@
                     </div>
                 `;
             }
+
 
             function renderDetailedQuota(quota) {
                 const percent = clampPercent(quota.percent);
@@ -1982,6 +2078,8 @@
 
             function normalizePreferences(raw) {
                 const storedStatus = normalizeStatusDisplay(raw && raw.status_display);
+                const storedTheme = readStoredThemeMode();
+                const rawTheme = raw && typeof raw.theme === "string" ? normalizeTheme(raw.theme) : "";
                 return {
                     enabled: raw && raw.enabled !== false,
                     default_view: normalizeView(raw && raw.default_view),
@@ -1991,7 +2089,7 @@
                     warning_percent: parseInt(raw && raw.warning_percent, 10) || 70,
                     critical_percent: parseInt(raw && raw.critical_percent, 10) || 90,
                     status_display: storedStatus.mode ? storedStatus : { mode: "multi_provider", selected_quotas: [] },
-                    theme: normalizeTheme(storedTheme || (raw && raw.theme))
+                    theme: normalizeTheme(rawTheme || storedTheme || "system")
                 };
             }
 
@@ -2133,9 +2231,10 @@
 
             function readStoredThemeMode() {
                 try {
-                    return normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY));
+                    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+                    return raw ? normalizeTheme(raw) : "";
                 } catch (error) {
-                    return "system";
+                    return "";
                 }
             }
 
@@ -2197,12 +2296,35 @@
                 return (Number.isFinite(top) ? top : 0) + (Number.isFinite(bottom) ? bottom : 0);
             }
 
+            function measuredScrollableHeight(element) {
+                if (!(element instanceof HTMLElement)) {
+                    return 0;
+                }
+                const clientHeight = Math.ceil(element.clientHeight || 0);
+                const scrollHeight = Math.ceil(element.scrollHeight || 0);
+                const offsetHeight = Math.ceil(element.offsetHeight || 0);
+                let contentHeight = 0;
+                for (const child of element.children) {
+                    if (child instanceof HTMLElement) {
+                        contentHeight = Math.max(contentHeight, Math.ceil(child.offsetTop + child.offsetHeight));
+                    }
+                }
+                contentHeight += measuredPaddingY(element);
+                if (scrollHeight > clientHeight + 1) {
+                    return Math.max(scrollHeight, contentHeight);
+                }
+                return Math.max(contentHeight, offsetHeight && scrollHeight === 0 ? offsetHeight : 0);
+            }
+
             function preferredResizeFloor() {
                 if (state.settingsOpen) {
                     return 320;
                 }
                 if (state.view === "detailed") {
-                    return 420;
+                    return 500;
+                }
+                if (state.view === "minimal") {
+                    return 140;
                 }
                 return 320;
             }
@@ -2210,11 +2332,11 @@
             function measuredContentHeight() {
                 if (state.settingsOpen) {
                     return (settingsHeader instanceof HTMLElement ? settingsHeader.offsetHeight : 0)
-                        + Math.max(settingsBody.scrollHeight, settingsBody.offsetHeight)
+                        + measuredScrollableHeight(settingsBody)
                         + (settingsFooter instanceof HTMLElement ? settingsFooter.offsetHeight : 0);
                 }
                 return (header instanceof HTMLElement ? header.offsetHeight : 0)
-                    + Math.max(body.scrollHeight, body.offsetHeight)
+                    + measuredScrollableHeight(body)
                     + (footer instanceof HTMLElement ? footer.offsetHeight : 0)
                     + measuredPaddingY(shell)
                     + (measuredGapY(shell) * 2);
@@ -2222,7 +2344,7 @@
 
             function reportPreferredHeight() {
                 const measured = Math.ceil(measuredContentHeight());
-                const height = Math.max(preferredResizeFloor(), Math.min(600, measured));
+                const height = Math.max(preferredResizeFloor(), Math.min(720, measured));
                 const payload = { type: "resize", height };
                 window.postMessage(payload, "*");
                 if (window.parent && window.parent !== window) {
@@ -2520,10 +2642,13 @@
             }
 
             function viewCode(view) {
-                if (view === "detailed") {
-                    return "DTL";
+                if (view === "minimal") {
+                    return "Minimal";
                 }
-                return "STD";
+                if (view === "detailed") {
+                    return "Detail";
+                }
+                return "Default";
             }
 
             function clampPercent(value) {

@@ -574,12 +574,6 @@ func normalizeQuotas(payload map[string]interface{}, warningPercent, criticalPer
 			CurrentRate:    firstFloat(item, "currentRate"),
 		})
 	}
-	sort.SliceStable(quotas, func(i, j int) bool {
-		if quotas[i].Percent != quotas[j].Percent {
-			return quotas[i].Percent > quotas[j].Percent
-		}
-		return quotas[i].Label < quotas[j].Label
-	})
 	return quotas
 }
 
@@ -682,13 +676,18 @@ func parseCapturedAt(payload map[string]interface{}) time.Time {
 func normalizeMenubarView(raw string, fallback menubar.ViewType) menubar.ViewType {
 	value := menubar.ViewType(strings.ToLower(strings.TrimSpace(raw)))
 	switch value {
+	case menubar.ViewMinimal:
+		return menubar.ViewMinimal
 	case menubar.ViewDetailed:
 		return menubar.ViewDetailed
-	case menubar.ViewStandard, menubar.ViewMinimal:
+	case menubar.ViewStandard:
 		return menubar.ViewStandard
 	}
 	if fallback != "" {
-		if fallback == menubar.ViewDetailed {
+		switch fallback {
+		case menubar.ViewMinimal:
+			return menubar.ViewMinimal
+		case menubar.ViewDetailed:
 			return menubar.ViewDetailed
 		}
 		return menubar.ViewStandard

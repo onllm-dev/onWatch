@@ -2343,7 +2343,7 @@ a:hover { text-decoration: underline; }
                 </a>
                 <span class="hero-badge hero-badge-beta">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                    In active development
+                    In active development (Beta)
                 </span>
             </div>
             <h1>The <span class="accent">intelligence</span> layer for your AI API stack</h1>
@@ -3427,6 +3427,7 @@ a:hover { text-decoration: underline; }
                 <button class="filter-btn" data-filter="provider" data-value="copilot">Copilot</button>
                 <button class="filter-btn" data-filter="provider" data-value="antigravity">Antigravity</button>
                 <button class="filter-btn" data-filter="provider" data-value="both">All Providers</button>
+                <button class="filter-btn" data-filter="provider" data-value="menubar">Menubar (Beta)</button>
                 <button class="filter-btn" data-filter="provider" data-value="all">All</button>
             </div>
             <div class="filter-group" id="theme-filter" style="display:none;">
@@ -3535,6 +3536,48 @@ a:hover { text-decoration: underline; }
                     <span class="gallery-caption-badge">All</span>
                 </div>
             </div>
+            <div class="gallery-item fade-in visible hidden" data-theme="light" data-provider="menubar" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
+                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/menubar-minimal-light.png" alt="onWatch menubar companion minimal mode in light theme" loading="lazy">
+                <div class="gallery-caption">
+                    <span class="gallery-caption-text">Menubar Minimal - Light</span>
+                    <span class="gallery-caption-badge">Menubar</span>
+                </div>
+            </div>
+            <div class="gallery-item fade-in visible hidden" data-theme="dark" data-provider="menubar" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
+                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/menubar-minimal-dark.png" alt="onWatch menubar companion minimal mode in dark theme" loading="lazy">
+                <div class="gallery-caption">
+                    <span class="gallery-caption-text">Menubar Minimal - Dark</span>
+                    <span class="gallery-caption-badge">Menubar</span>
+                </div>
+            </div>
+            <div class="gallery-item fade-in visible hidden" data-theme="light" data-provider="menubar" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
+                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/menubar-standard-light.png" alt="onWatch menubar companion standard mode in light theme" loading="lazy">
+                <div class="gallery-caption">
+                    <span class="gallery-caption-text">Menubar Standard - Light</span>
+                    <span class="gallery-caption-badge">Menubar</span>
+                </div>
+            </div>
+            <div class="gallery-item fade-in visible hidden" data-theme="dark" data-provider="menubar" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
+                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/menubar-standard-dark.png" alt="onWatch menubar companion standard mode in dark theme" loading="lazy">
+                <div class="gallery-caption">
+                    <span class="gallery-caption-text">Menubar Standard - Dark</span>
+                    <span class="gallery-caption-badge">Menubar</span>
+                </div>
+            </div>
+            <div class="gallery-item fade-in visible hidden" data-theme="light" data-provider="menubar" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
+                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/menubar-detailed-light.png" alt="onWatch menubar companion detailed mode in light theme" loading="lazy">
+                <div class="gallery-caption">
+                    <span class="gallery-caption-text">Menubar Detailed - Light</span>
+                    <span class="gallery-caption-badge">Menubar</span>
+                </div>
+            </div>
+            <div class="gallery-item fade-in visible hidden" data-theme="dark" data-provider="menubar" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
+                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/menubar-detailed-dark.png" alt="onWatch menubar companion detailed mode in dark theme" loading="lazy">
+                <div class="gallery-caption">
+                    <span class="gallery-caption-text">Menubar Detailed - Dark</span>
+                    <span class="gallery-caption-badge">Menubar</span>
+                </div>
+            </div>
             <p class="gallery-empty" id="gallery-empty" style="display:none;">No screenshots match the selected filters.</p>
         </div>
     </div>
@@ -3618,7 +3661,7 @@ a:hover { text-decoration: underline; }
                     Support onWatch
                 </a>
             </div>
-            <div class="footer-copy">Powered by <a href="https://onllm.dev" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">onllm.dev</a> &middot; Built with <a href="https://www.chartjs.org/" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">Chart.js</a> &middot; <a href="https://pkg.go.dev/modernc.org/sqlite" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">modernc.org/sqlite</a></div>
+            <div class="footer-copy">Powered by <a href="https://onllm.dev" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">onllm.dev</a> &middot; Built with <a href="https://www.chartjs.org/" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">Chart.js</a> &middot; <a href="https://pkg.go.dev/modernc.org/sqlite" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">modernc.org/sqlite</a> &middot; Menubar is beta - feedback highly appreciated at <a href="https://github.com/onllm-dev/onwatch/issues" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">GitHub Issues</a></div>
         </div>
     </div>
 </footer>

@@ -172,9 +172,7 @@ func (s *Settings) Normalize() *Settings {
 	}
 	out := *s
 	switch out.DefaultView {
-	case ViewDetailed:
-	case ViewStandard, ViewMinimal:
-		out.DefaultView = ViewStandard
+	case ViewMinimal, ViewStandard, ViewDetailed:
 	default:
 		out.DefaultView = defaults.DefaultView
 	}

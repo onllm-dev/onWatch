@@ -6477,15 +6477,31 @@ async function populateMenubarProviderOrder() {
   });
   State.menubarProviderOrder = providers.map(provider => provider.key);
 
-  list.innerHTML = providers.map(provider => `
-    <li class="menubar-order-item ${provider.dashboardVisible ? '' : 'is-disabled'}" draggable="true" tabindex="0" data-provider="${provider.key}">
+  const knownKeys = new Set(providers.map(provider => provider.key));
+  const explicitVisible = Array.isArray(State.menubarVisibleProviders)
+    ? State.menubarVisibleProviders.filter((providerKey) => knownKeys.has(providerKey))
+    : [];
+  const visibleSet = new Set(explicitVisible);
+  const showAll = visibleSet.size === 0;
+
+  list.innerHTML = providers.map(provider => {
+    const visible = showAll || visibleSet.has(provider.key);
+    return `
+    <li class="menubar-order-item ${provider.dashboardVisible ? '' : 'is-disabled'} ${visible ? '' : 'is-hidden'}" draggable="true" tabindex="0" data-provider="${provider.key}">
       <div class="menubar-order-handle" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="menubar-order-copy">
         <span class="menubar-order-name">${provider.name}</span>
         <span class="menubar-order-meta">${provider.meta}</span>
       </div>
+      <div class="menubar-order-controls">
+        <label class="menubar-order-toggle">
+          <input type="checkbox" data-role="menubar-visible" data-provider="${provider.key}" ${visible ? 'checked' : ''}>
+          <span>${visible ? 'Show' : 'Hide'}</span>
+        </label>
+      </div>
     </li>
-  `).join('');
+  `;
+  }).join('');
 
   let dragged = null;
   list.querySelectorAll('.menubar-order-item').forEach(item => {
@@ -6496,6 +6512,43 @@ async function populateMenubarProviderOrder() {
     item.addEventListener('dragend', () => {
       item.classList.remove('dragging');
       syncMenubarProviderOrder();
+    });
+  });
+
+  list.querySelectorAll('input[data-role="menubar-visible"]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const toggles = [...list.querySelectorAll('input[data-role="menubar-visible"]')]
+        .filter((toggle) => toggle instanceof HTMLInputElement);
+
+      let visibleProviders = toggles
+        .filter((toggle) => toggle.checked)
+        .map((toggle) => toggle.dataset.provider)
+        .filter(Boolean);
+
+      if (visibleProviders.length === 0 && input instanceof HTMLInputElement) {
+        input.checked = true;
+        visibleProviders = [input.dataset.provider].filter(Boolean);
+      }
+
+      const visibleSet = new Set(visibleProviders);
+      list.querySelectorAll('.menubar-order-item[data-provider]').forEach((row) => {
+        const rowProvider = row.dataset.provider;
+        const rowToggle = row.querySelector('input[data-role="menubar-visible"]');
+        if (!rowProvider || !(rowToggle instanceof HTMLInputElement)) return;
+        const isVisible = visibleSet.has(rowProvider);
+        row.classList.toggle('is-hidden', !isVisible);
+        rowToggle.checked = isVisible;
+        const label = rowToggle.nextElementSibling;
+        if (label) {
+          label.textContent = isVisible ? 'Show' : 'Hide';
+        }
+      });
+
+      if (visibleSet.size === State.menubarProviderOrder.length) {
+        State.menubarVisibleProviders = [];
+      } else {
+        State.menubarVisibleProviders = State.menubarProviderOrder.filter((provider) => visibleSet.has(provider));
+      }
     });
   });
 
@@ -6532,6 +6585,19 @@ function syncMenubarProviderOrder() {
   State.menubarProviderOrder = [...list.querySelectorAll('.menubar-order-item[data-provider]')]
     .map(item => item.dataset.provider)
     .filter(Boolean);
+
+  const visibleSet = new Set(
+    [...list.querySelectorAll('input[data-role="menubar-visible"]')]
+      .filter((input) => input instanceof HTMLInputElement && input.checked)
+      .map((input) => input.dataset.provider)
+      .filter(Boolean)
+  );
+
+  if (visibleSet.size === State.menubarProviderOrder.length) {
+    State.menubarVisibleProviders = [];
+  } else {
+    State.menubarVisibleProviders = State.menubarProviderOrder.filter((provider) => visibleSet.has(provider));
+  }
 }
 
 function providerStatusBadge(configured, autoDetectable, isPolling) {

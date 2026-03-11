@@ -1170,6 +1170,59 @@ func runStop(testMode bool) error {
 
 // runStatus reports the status of any running onwatch instance.
 // In test mode, only the test PID file is checked (no port scanning).
+func statusLogCandidates(dbPath string, names ...string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(names)*3)
+	paths := make([]string, 0, len(names)*3)
+	appendPath := func(path string) {
+		if path == "" {
+			return
+		}
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+
+	if dbPath != "" {
+		dir := filepath.Dir(dbPath)
+		for _, name := range names {
+			appendPath(filepath.Join(dir, name))
+		}
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		for _, name := range names {
+			appendPath(filepath.Join(home, ".onwatch", name))
+		}
+	}
+
+	if dbPath == "" {
+		for _, name := range names {
+			appendPath(filepath.Join(pidDir, name))
+		}
+	}
+
+	for _, name := range names {
+		appendPath(filepath.Join(".", name))
+	}
+
+	return paths
+}
+
+func firstExistingFile(paths []string) (string, int64, bool) {
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil {
+			return path, info.Size(), true
+		}
+	}
+	return "", 0, false
+}
+
 func runStatus(testMode bool) error {
 	myPID := os.Getpid()
 	label := "onwatch"
@@ -1216,32 +1269,42 @@ func runStatus(testMode bool) error {
 						}
 					}
 
-					// Show PID file location
 					fmt.Printf("  PID file:  %s\n", pidFile)
-					if menubarPID := readRuntimePID(menubarPIDPath(testMode)); processRunning(menubarPID) {
+					menubarPID := readRuntimePID(menubarPIDPath(testMode))
+					if processRunning(menubarPID) {
 						fmt.Printf("  Menubar:   running (PID %d)\n", menubarPID)
 					}
 
-					// Show log file if it exists
-					logPath := ".onwatch.log"
-					if testMode {
-						logPath = ".onwatch-test.log"
-					}
-					if info, err := os.Stat(logPath); err == nil {
-						fmt.Printf("  Log file:  %s (%s)\n", logPath, humanSize(info.Size()))
-					}
-
-					// Show DB file if it exists (check new default path first, then old)
 					home, _ := os.UserHomeDir()
-					dbPaths := []string{
-						filepath.Join(home, ".onwatch", "data", "onwatch.db"),
-						"./onwatch.db",
+					dbCandidates := []string{}
+					if home != "" {
+						dbCandidates = append(dbCandidates, filepath.Join(home, ".onwatch", "data", "onwatch.db"))
 					}
-					for _, dbPath := range dbPaths {
-						if info, err := os.Stat(dbPath); err == nil {
-							fmt.Printf("  Database:  %s (%s)\n", dbPath, humanSize(info.Size()))
+					dbCandidates = append(dbCandidates, "./onwatch.db")
+					dbPath := ""
+					var dbSize int64
+					for _, candidate := range dbCandidates {
+						if info, err := os.Stat(candidate); err == nil {
+							dbPath = candidate
+							dbSize = info.Size()
 							break
 						}
+					}
+
+					mainLogName := ".onwatch.log"
+					menubarNames := menubarLogNames(false)
+					if testMode {
+						mainLogName = ".onwatch-test.log"
+						menubarNames = menubarLogNames(true)
+					}
+					if logPath, logSize, ok := firstExistingFile(statusLogCandidates(dbPath, mainLogName)); ok {
+						fmt.Printf("  Log file:  %s (%s)\n", logPath, humanSize(logSize))
+					}
+					if logPath, logSize, ok := firstExistingFile(statusLogCandidates(dbPath, menubarNames...)); ok {
+						fmt.Printf("  Menubar log: %s (%s)\n", logPath, humanSize(logSize))
+					}
+					if dbPath != "" {
+						fmt.Printf("  Database:  %s (%s)\n", dbPath, humanSize(dbSize))
 					}
 
 					return nil

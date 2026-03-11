@@ -51,6 +51,17 @@ Dashboard screenshots captured from a live onWatch v2.11.0 instance with real An
 | `all-light.png` | All Providers view in light mode. Anthropic, Synthetic, Z.ai, Codex, GitHub Copilot (Beta), and Antigravity quotas side-by-side with combined insights. |
 | `all-dark.png` | All Providers view in dark mode. |
 
+## Menubar Companion (macOS, Beta)
+
+| File | Description |
+|------|-------------|
+| `menubar-minimal-light.png` | Menubar companion minimal mode in light theme. Compact single-row quota display for quick glance checks. |
+| `menubar-minimal-dark.png` | Menubar companion minimal mode in dark theme. |
+| `menubar-standard-light.png` | Menubar companion standard mode in light theme. Provider cards with circular quota meters and reset metadata. |
+| `menubar-standard-dark.png` | Menubar companion standard mode in dark theme. |
+| `menubar-detailed-light.png` | Menubar companion detailed mode in light theme. Expanded quota details with bar rows and richer metadata. |
+| `menubar-detailed-dark.png` | Menubar companion detailed mode in dark theme. |
+
 ## Legacy (pre-v2.1.0)
 
 | File | Description |

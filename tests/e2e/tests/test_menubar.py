@@ -18,16 +18,16 @@ def open_menubar(page: Page, view: str | None = None, expected_view: str | None 
 
 
 class TestMenubarStandardView:
-    def test_minimal_query_normalizes_to_standard(self, authenticated_page: Page) -> None:
-        open_menubar(authenticated_page, "minimal", expected_view="standard")
-        expect(authenticated_page.locator("#menubar-shell.menubar-view-standard")).to_be_visible()
-        expect(authenticated_page.locator(".minimal-view")).to_have_count(0)
+    def test_minimal_query_preserves_minimal_view(self, authenticated_page: Page) -> None:
+        open_menubar(authenticated_page, "minimal")
+        expect(authenticated_page.locator("#menubar-shell.menubar-view-minimal")).to_be_visible()
+        expect(authenticated_page.locator(".minimal-view")).to_have_count(1)
         expect(authenticated_page.locator(".menubar-footer")).to_be_visible()
 
     def test_renders_provider_cards_and_per_quota_resets(self, authenticated_page: Page) -> None:
         open_menubar(authenticated_page, "standard")
         expect(authenticated_page.locator("#menubar-shell.menubar-view-standard")).to_be_visible()
-        expect(authenticated_page.locator("#header-value")).to_be_hidden()
+        expect(authenticated_page.locator("#header-value")).to_be_visible()
         first_card = authenticated_page.locator(".provider-card").first
         expect(first_card).to_be_visible()
         expect(first_card.locator(".provider-icon")).to_be_visible()
@@ -101,10 +101,10 @@ class TestMenubarDetailedView:
         expect(authenticated_page.locator(".quota-bar-track").first).to_be_visible()
         expect(authenticated_page.locator(".quota-detail-meta").first).to_be_visible()
 
-    def test_last_view_persists_without_query_override(self, authenticated_page: Page) -> None:
+    def test_unsaved_view_toggle_does_not_override_default_view(self, authenticated_page: Page) -> None:
         open_menubar(authenticated_page)
         expect(authenticated_page.locator("#menubar-shell.menubar-view-standard")).to_be_visible()
         authenticated_page.locator("#view-toggle").click()
         expect(authenticated_page.locator("#menubar-shell.menubar-view-detailed")).to_be_visible()
         authenticated_page.reload()
-        expect(authenticated_page.locator("#menubar-shell.menubar-view-detailed")).to_be_visible()
+        expect(authenticated_page.locator("#menubar-shell.menubar-view-standard")).to_be_visible()

@@ -2897,6 +2897,31 @@ select.settings-input {
   opacity: 0.65;
 }
 
+.menubar-order-item.is-hidden {
+  border-color: var(--border-default);
+}
+
+.menubar-order-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.menubar-order-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.menubar-order-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-teal);
+  cursor: pointer;
+}
+
 /* Settings page responsive */
 @media (max-width: 768px) {
   .settings-main { padding: 16px; }

@@ -114,6 +114,101 @@ func TestDeriveEncryptionKey_UsesEncryptionSalt(t *testing.T) {
 	}
 }
 
+func TestStatusLogCandidates(t *testing.T) {
+	t.Run("prefers db directory then home then cwd", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		dbPath := filepath.Join(t.TempDir(), "data", "onwatch.db")
+		got := statusLogCandidates(dbPath, "main.log", "menubar.log")
+
+		want := []string{
+			filepath.Join(filepath.Dir(dbPath), "main.log"),
+			filepath.Join(filepath.Dir(dbPath), "menubar.log"),
+			filepath.Join(homeDir, ".onwatch", "main.log"),
+			filepath.Join(homeDir, ".onwatch", "menubar.log"),
+			filepath.Join(".", "main.log"),
+			filepath.Join(".", "menubar.log"),
+		}
+		if len(got) != len(want) {
+			t.Fatalf("candidate count = %d, want %d (%v)", len(got), len(want), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("candidate[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("adds pid dir when db path missing", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		oldPIDDir := pidDir
+		pidDir = t.TempDir()
+		t.Cleanup(func() { pidDir = oldPIDDir })
+
+		got := statusLogCandidates("", "main.log")
+		want := []string{
+			filepath.Join(homeDir, ".onwatch", "main.log"),
+			filepath.Join(pidDir, "main.log"),
+			filepath.Join(".", "main.log"),
+		}
+		if len(got) != len(want) {
+			t.Fatalf("candidate count = %d, want %d (%v)", len(got), len(want), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("candidate[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("deduplicates repeated names", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		dbPath := filepath.Join(t.TempDir(), "data", "onwatch.db")
+		got := statusLogCandidates(dbPath, "main.log", "main.log")
+
+		for i := range got {
+			for j := i + 1; j < len(got); j++ {
+				if got[i] == got[j] {
+					t.Fatalf("duplicate candidate %q in %v", got[i], got)
+				}
+			}
+		}
+	})
+}
+
+func TestFirstExistingFile(t *testing.T) {
+	tmp := t.TempDir()
+	first := filepath.Join(tmp, "first.log")
+	second := filepath.Join(tmp, "second.log")
+
+	if err := os.WriteFile(second, []byte("second"), 0o600); err != nil {
+		t.Fatalf("write second file: %v", err)
+	}
+	if err := os.WriteFile(first, []byte("first"), 0o600); err != nil {
+		t.Fatalf("write first file: %v", err)
+	}
+
+	path, size, ok := firstExistingFile([]string{filepath.Join(tmp, "missing.log"), first, second})
+	if !ok {
+		t.Fatal("expected to find existing file")
+	}
+	if path != first {
+		t.Fatalf("path = %q, want %q", path, first)
+	}
+	if size != int64(len("first")) {
+		t.Fatalf("size = %d, want %d", size, len("first"))
+	}
+
+	if _, _, ok := firstExistingFile([]string{filepath.Join(tmp, "none-1"), filepath.Join(tmp, "none-2")}); ok {
+		t.Fatal("expected no file match")
+	}
+}
+
 func TestHumanSize(t *testing.T) {
 	tests := []struct {
 		name  string

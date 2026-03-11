@@ -71,10 +71,10 @@ func TestSettingsNormalizeRepairsInvalidValues(t *testing.T) {
 	)
 }
 
-func TestSettingsNormalizeCoercesMinimalViewToStandard(t *testing.T) {
+func TestSettingsNormalizePreservesMinimalView(t *testing.T) {
 	settings := (&Settings{DefaultView: ViewMinimal}).Normalize()
-	if settings.DefaultView != ViewStandard {
-		t.Fatalf("expected minimal to normalize to standard, got %s", settings.DefaultView)
+	if settings.DefaultView != ViewMinimal {
+		t.Fatalf("expected minimal view to be preserved, got %s", settings.DefaultView)
 	}
 }
 

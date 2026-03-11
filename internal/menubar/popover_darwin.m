@@ -277,7 +277,7 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
 }
 
 - (void)applyHeight:(CGFloat)height {
-  CGFloat clampedHeight = MAX(170.0, MIN(600.0, height));
+  CGFloat clampedHeight = MAX(140.0, MIN(600.0, height));
   CGFloat delta = clampedHeight - self.height;
   if (delta < 0) {
     delta = -delta;

@@ -73,11 +73,17 @@ func processZombie(pid int) bool {
 	return strings.Contains(strings.TrimSpace(string(out)), "Z")
 }
 
-func menubarLogPath(cfg *config.Config) string {
-	name := ".onwatch-menubar.log"
-	if cfg != nil && cfg.TestMode {
-		name = ".onwatch-menubar-test.log"
+func menubarLogNames(testMode bool) []string {
+	if testMode {
+		return []string{"menubar-test.log", ".onwatch-menubar-test.log"}
 	}
+	return []string{"menubar.log", ".onwatch-menubar.log"}
+}
+
+func menubarLogPath(cfg *config.Config) string {
+	testMode := cfg != nil && cfg.TestMode
+	name := menubarLogNames(testMode)[0]
+
 	if cfg == nil || cfg.DBPath == "" {
 		return filepath.Join(pidDir, name)
 	}

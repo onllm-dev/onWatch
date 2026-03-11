@@ -186,6 +186,8 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 
 Configure it in **Settings > Menubar**. You can enable or disable the companion, pick the default view, change refresh and threshold settings, and drag providers into the order you want.
 
+Menubar is currently in beta. Feedback is highly appreciated at [github.com/onllm-dev/onwatch/issues](https://github.com/onllm-dev/onwatch/issues).
+
 **Email notifications (Beta)** -- Configure SMTP to receive alerts when quotas cross warning or critical thresholds, or when quotas reset. Per-quota threshold overrides for fine-grained control. SMTP passwords are encrypted at rest with AES-GCM.
 
 **Push notifications (Beta)** -- Receive browser push notifications when quotas cross thresholds. onWatch is a PWA (Progressive Web App) - install it from your browser for a native app experience. Uses Web Push protocol (VAPID) with zero external dependencies. Configure delivery channels (email, push, or both) per your preference.
@@ -378,7 +380,8 @@ onwatch stop && onwatch
 ```shell
 ~/.onwatch/
 ├── onwatch.pid          # PID file
-├── .onwatch.log         # Log file (background mode)
+├── .onwatch.log         # Main daemon log file (background mode)
+├── menubar.log          # Menubar companion log file (macOS menubar builds)
 └── data/
     └── onwatch.db       # SQLite database (WAL mode)
 ```
