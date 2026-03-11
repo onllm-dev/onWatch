@@ -33,6 +33,12 @@ It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copil
 
 [![Star History Chart](https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline)](https://star-history.com/#onllm-dev/onwatch&Timeline)
 
+### Menubar screenshots
+
+| Minimal - Light | Default - Dark | Detailed - Light |
+| --- | --- | --- |
+| ![Menubar Minimal - Light](./docs/screenshots/menubar-minimal-light.png) | ![Menubar Standard - Dark](./docs/screenshots/menubar-standard-dark.png) | ![Menubar Detailed - Light](./docs/screenshots/menubar-detailed-light.png) |
+
 ![Anthropic Dashboard - Light Mode](./docs/screenshots/anthropic-light.png)
 
 If onWatch helps you track your AI spending, consider giving it a star. It helps others discover the project.
