@@ -80,8 +80,6 @@ func (c *trayController) onReady() {
 		c.popover = popover
 	}
 
-	openItem := systray.AddMenuItem("Open Menubar", "Open the local menubar page")
-	refreshItem := systray.AddMenuItem("Refresh Status", "Refresh the current menubar status")
 	dashboardItem := systray.AddMenuItem("Open Dashboard", "Open the local onWatch dashboard")
 	systray.AddSeparator()
 	quitItem := systray.AddMenuItem("Quit Menubar", "Quit the menubar companion")
@@ -93,7 +91,7 @@ func (c *trayController) onReady() {
 	c.refreshStatus()
 	logger.Info("Menubar ready and visible")
 
-	go c.watchMenu(openItem, refreshItem, dashboardItem, quitItem)
+	go c.watchMenu(dashboardItem, quitItem)
 	go c.refreshLoop()
 }
 
@@ -106,13 +104,9 @@ func (c *trayController) onExit() {
 	slog.Default().Info("Menubar shutting down")
 }
 
-func (c *trayController) watchMenu(openItem, refreshItem, dashboardItem, quitItem *systray.MenuItem) {
+func (c *trayController) watchMenu(dashboardItem, quitItem *systray.MenuItem) {
 	for {
 		select {
-		case <-openItem.ClickedCh:
-			c.showMenubar()
-		case <-refreshItem.ClickedCh:
-			c.refreshStatus()
 		case <-dashboardItem.ClickedCh:
 			_ = browser.OpenURL(c.dashboardURL())
 		case <-quitItem.ClickedCh:

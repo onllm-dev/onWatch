@@ -176,6 +176,7 @@
         .header-cluster {
             gap: var(--space-sm);
             min-width: 0;
+            cursor: pointer;
         }
 
         .brand-mark {
@@ -1348,6 +1349,7 @@
             const settingsPanel = document.getElementById("settings-panel");
             const settingsBody = document.getElementById("settings-body");
             const header = document.querySelector(".menubar-header");
+            const headerCluster = document.querySelector(".header-cluster");
             const footer = document.querySelector(".menubar-footer");
             const settingsHeader = settingsPanel.querySelector(".settings-header");
             const settingsFooter = settingsPanel.querySelector(".settings-footer");
@@ -1398,13 +1400,8 @@
             document.getElementById("settings-toggle").addEventListener("click", () => openSettings());
             document.getElementById("settings-back").addEventListener("click", () => closeSettings());
             document.getElementById("settings-close").addEventListener("click", () => closeSettings());
-            document.getElementById("close-button").addEventListener("click", () => {
-                if (state.settingsOpen) {
-                    closeSettings();
-                    return;
-                }
-                window.close();
-            });
+            headerCluster.addEventListener("click", () => openDashboard());
+            document.getElementById("close-button").addEventListener("click", () => closeMenubar());
             document.getElementById("refresh-button").addEventListener("click", () => void refreshData());
             document.getElementById("settings-save").addEventListener("click", () => void savePreferences());
             settingsBody.addEventListener("change", handleSettingsChange);
@@ -1486,6 +1483,40 @@
 
             async function refreshData() {
                 await Promise.all([loadPreferences(), loadSnapshot()]);
+            }
+
+            function sendNativeAction(action) {
+                try {
+                    const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.onwatchAction;
+                    if (handler && typeof handler.postMessage === "function") {
+                        handler.postMessage(action);
+                        return true;
+                    }
+                } catch (error) {
+                    return false;
+                }
+                return false;
+            }
+
+            function openDashboard() {
+                if (sendNativeAction("open_dashboard")) {
+                    return;
+                }
+                window.location.href = "/";
+            }
+
+            function closeMenubar() {
+                if (sendNativeAction("close")) {
+                    return;
+                }
+                if (typeof window.close === "function") {
+                    window.close();
+                }
+                setTimeout(() => {
+                    if (window.location.pathname !== "/") {
+                        window.location.href = "/";
+                    }
+                }, 50);
             }
 
             async function savePreferences() {

@@ -60,6 +60,7 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
   WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
   WKUserContentController *userContentController = [[WKUserContentController alloc] init];
   [userContentController addScriptMessageHandler:self name:@"onwatchResize"];
+  [userContentController addScriptMessageHandler:self name:@"onwatchAction"];
   configuration.userContentController = userContentController;
 
   self.webView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, width, height)
@@ -104,6 +105,7 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
 - (void)dealloc {
   [self stopTransientCloseMonitoring];
   [self.webView.configuration.userContentController removeScriptMessageHandlerForName:@"onwatchResize"];
+  [self.webView.configuration.userContentController removeScriptMessageHandlerForName:@"onwatchAction"];
 }
 
 - (void)stopTransientCloseMonitoring {
@@ -384,21 +386,52 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
 
 - (void)userContentController:(WKUserContentController *)userContentController
       didReceiveScriptMessage:(WKScriptMessage *)message {
-  if (![message.name isEqualToString:@"onwatchResize"]) {
+  if ([message.name isEqualToString:@"onwatchResize"]) {
+    CGFloat nextHeight = self.height;
+    id body = message.body;
+    if ([body isKindOfClass:[NSNumber class]]) {
+      nextHeight = [body doubleValue];
+    } else if ([body isKindOfClass:[NSDictionary class]]) {
+      id value = [(NSDictionary *)body objectForKey:@"height"];
+      if ([value respondsToSelector:@selector(doubleValue)]) {
+        nextHeight = [value doubleValue];
+      }
+    }
+    [self applyHeight:nextHeight];
     return;
   }
 
-  CGFloat nextHeight = self.height;
+  if (![message.name isEqualToString:@"onwatchAction"]) {
+    return;
+  }
+
+  NSString *action = nil;
   id body = message.body;
-  if ([body isKindOfClass:[NSNumber class]]) {
-    nextHeight = [body doubleValue];
+  if ([body isKindOfClass:[NSString class]]) {
+    action = (NSString *)body;
   } else if ([body isKindOfClass:[NSDictionary class]]) {
-    id value = [(NSDictionary *)body objectForKey:@"height"];
-    if ([value respondsToSelector:@selector(doubleValue)]) {
-      nextHeight = [value doubleValue];
+    id value = [(NSDictionary *)body objectForKey:@"action"];
+    if ([value isKindOfClass:[NSString class]]) {
+      action = (NSString *)value;
     }
   }
-  [self applyHeight:nextHeight];
+
+  if (![action isKindOfClass:[NSString class]]) {
+    return;
+  }
+
+  if ([action isEqualToString:@"close"]) {
+    [self close];
+    return;
+  }
+
+  if ([action isEqualToString:@"open_dashboard"]) {
+    NSURL *url = [NSURL URLWithString:@"http://localhost:9211"];
+    if (url) {
+      [[NSWorkspace sharedWorkspace] openURL:url];
+      [self close];
+    }
+  }
 }
 
 @end

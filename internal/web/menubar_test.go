@@ -364,6 +364,15 @@ func TestMenubarPageRendersLoopbackBootstrap(t *testing.T) {
 	if !strings.Contains(body, `id="settings-panel"`) {
 		t.Fatalf("expected compact menubar shell, got body: %s", body)
 	}
+	if !strings.Contains(body, `function sendNativeAction(action)`) {
+		t.Fatalf("expected native action bridge helper, got body: %s", body)
+	}
+	if !strings.Contains(body, `if (sendNativeAction("close"))`) {
+		t.Fatalf("expected native close action bridge usage, got body: %s", body)
+	}
+	if !strings.Contains(body, `if (sendNativeAction("open_dashboard"))`) {
+		t.Fatalf("expected native dashboard action bridge usage, got body: %s", body)
+	}
 }
 
 func TestMenubarPageUsesPersistedDefaultViewWithoutQuery(t *testing.T) {
