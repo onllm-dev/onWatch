@@ -83,7 +83,7 @@ jobs:
 
   build-macos-amd64:
     needs: test
-    runs-on: macos-13
+    runs-on: macos-14
     name: Build macOS amd64
 
     steps:
