@@ -14,7 +14,7 @@ services:
       - "${ONWATCH_PORT:-9211}:9211"
 
     # Volume mount for persistent SQLite database
-    # Bind mount — pre-create with: mkdir -p ./onwatch-data && chown 65532:65532 ./onwatch-data
+    # Bind mount — pre-create with: mkdir -p ./onwatch-data
     volumes:
       - ./onwatch-data:/data
 
