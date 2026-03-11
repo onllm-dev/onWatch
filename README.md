@@ -469,7 +469,7 @@ The `docker-compose.yml` includes memory limits (64M limit, 32M reservation), lo
 
 ### Troubleshooting
 
-**Database errors:** Pre-create bind mount directories with `sudo chown 65532:65532` or use named volumes.
+**Database path is not writable:** If startup shows `database path is not writable`, fix bind mount ownership recursively with `sudo chown -R 65532:65532 ./onwatch-data` or use named volumes.
 **Container won't start:** Check `docker-compose logs -f`; verify API keys in `.env` and port 9211 availability.
 **Debugging:** The distroless image has no shell - use a sidecar: `docker run -it --rm --pid=container:onwatch --net=container:onwatch nicolaka/netshoot bash`
 
