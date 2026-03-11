@@ -2,6 +2,11 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,6 +107,107 @@ func TestStore_AntigravityActiveCycleUniqueIndexExists(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected idx_antigravity_cycles_model_active_unique index to exist")
+	}
+}
+
+func TestPreflightDatabasePath_MemoryPaths(t *testing.T) {
+	paths := []string{
+		":memory:",
+		"file::memory:?cache=shared",
+		"file:test.db?mode=memory&cache=shared",
+	}
+
+	for _, path := range paths {
+		path := path
+		t.Run(path, func(t *testing.T) {
+			if err := preflightDatabasePath(path); err != nil {
+				t.Fatalf("preflightDatabasePath(%q) error = %v, want nil", path, err)
+			}
+		})
+	}
+}
+
+func TestPreflightDatabasePath_EmptyPath(t *testing.T) {
+	err := preflightDatabasePath("   ")
+	if err == nil {
+		t.Fatal("preflightDatabasePath should fail for empty path")
+	}
+	if !strings.Contains(err.Error(), "empty database path") {
+		t.Fatalf("error = %q, want empty database path", err.Error())
+	}
+}
+
+func TestPreflightDatabasePath_SQLiteFileURI(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbURI := fmt.Sprintf("file:%s?cache=shared", filepath.Join(tmpDir, "uri.db"))
+
+	if err := preflightDatabasePath(dbURI); err != nil {
+		t.Fatalf("preflightDatabasePath(%q) error = %v, want nil", dbURI, err)
+	}
+}
+
+func TestStoreNew_SQLiteFileURI(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "uri-open.db")
+	dbURI := fmt.Sprintf("file:%s?cache=shared", dbPath)
+
+	s, err := New(dbURI)
+	if err != nil {
+		t.Fatalf("New(%q) error = %v, want nil", dbURI, err)
+	}
+	defer s.Close()
+
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("expected sqlite file at %s: %v", dbPath, err)
+	}
+}
+
+func TestPreflightDatabasePath_UnwritableExistingFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission test is not reliable on Windows")
+	}
+
+	base := t.TempDir()
+	dbPath := filepath.Join(base, "onwatch.db")
+	if err := os.WriteFile(dbPath, []byte("seed"), 0o444); err != nil {
+		t.Fatalf("write dbPath: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dbPath, 0o644)
+	})
+
+	err := preflightDatabasePath(dbPath)
+	if err == nil {
+		t.Fatal("preflightDatabasePath should fail for unwritable existing DB file")
+	}
+	if !strings.Contains(err.Error(), "database file is not writable") {
+		t.Fatalf("error = %q, want database file is not writable", err.Error())
+	}
+}
+
+func TestPreflightDatabasePath_UnwritableDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission test is not reliable on Windows")
+	}
+
+	base := t.TempDir()
+	readOnlyDir := filepath.Join(base, "readonly")
+	if err := os.MkdirAll(readOnlyDir, 0o755); err != nil {
+		t.Fatalf("mkdir readOnlyDir: %v", err)
+	}
+	if err := os.Chmod(readOnlyDir, 0o555); err != nil {
+		t.Fatalf("chmod readOnlyDir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(readOnlyDir, 0o755)
+	})
+
+	err := preflightDatabasePath(filepath.Join(readOnlyDir, "onwatch.db"))
+	if err == nil {
+		t.Fatal("preflightDatabasePath should fail for unwritable directory")
+	}
+	if !strings.Contains(err.Error(), "database path is not writable") {
+		t.Fatalf("error = %q, want database path is not writable", err.Error())
 	}
 }
 

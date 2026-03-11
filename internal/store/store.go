@@ -5,6 +5,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,8 +68,93 @@ type CrossQuotaEntry struct {
 	Delta        float64 // Percent - StartPercent
 }
 
+func preflightDatabasePath(dbPath string) error {
+	trimmed := strings.TrimSpace(dbPath)
+	if trimmed == "" {
+		return fmt.Errorf("failed to open database: empty database path")
+	}
+
+	lower := strings.ToLower(trimmed)
+	if trimmed == ":memory:" || strings.HasPrefix(lower, "file::memory:") {
+		return nil
+	}
+
+	resolvedPath := trimmed
+	if strings.HasPrefix(lower, "file:") {
+		parsed, parseErr := url.Parse(trimmed)
+		if parseErr == nil {
+			if strings.EqualFold(parsed.Query().Get("mode"), "memory") {
+				return nil
+			}
+			switch {
+			case parsed.Path != "":
+				resolvedPath = parsed.Path
+			case parsed.Opaque != "":
+				resolvedPath = parsed.Opaque
+			default:
+				resolvedPath = strings.TrimPrefix(trimmed, "file:")
+				if idx := strings.Index(resolvedPath, "?"); idx >= 0 {
+					resolvedPath = resolvedPath[:idx]
+				}
+			}
+		}
+	}
+
+	if strings.Contains(strings.ToLower(trimmed), "mode=memory") {
+		return nil
+	}
+
+	if unescaped, unescapeErr := url.PathUnescape(resolvedPath); unescapeErr == nil {
+		resolvedPath = unescaped
+	}
+
+	dir := filepath.Dir(resolvedPath)
+	if dir == "." || dir == "" {
+		dir = "."
+	}
+
+	hint := fmt.Sprintf("check write permissions for %s", dir)
+	if dir == "/data" || strings.HasPrefix(resolvedPath, "/data/") {
+		hint = "check ownership/permissions on ./onwatch-data (try: chown -R 65532:65532 ./onwatch-data) or use a named volume"
+	}
+
+	if info, statErr := os.Stat(resolvedPath); statErr == nil {
+		if info.IsDir() {
+			return fmt.Errorf("database path points to a directory (db=%s): %s", trimmed, hint)
+		}
+		file, openErr := os.OpenFile(resolvedPath, os.O_WRONLY|os.O_APPEND, 0)
+		if openErr != nil {
+			return fmt.Errorf("database file is not writable (db=%s): %w - %s", trimmed, openErr, hint)
+		}
+		if closeErr := file.Close(); closeErr != nil {
+			return fmt.Errorf("database file preflight close failed (db=%s): %w", trimmed, closeErr)
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("database path preflight failed (db=%s): %w", trimmed, statErr)
+	}
+
+	probe, err := os.CreateTemp(dir, ".onwatch-db-writecheck-*")
+	if err != nil {
+		return fmt.Errorf("database path is not writable (db=%s, dir=%s): %w - %s", trimmed, dir, err, hint)
+	}
+	probePath := probe.Name()
+	if closeErr := probe.Close(); closeErr != nil {
+		_ = os.Remove(probePath)
+		return fmt.Errorf("database path preflight failed (db=%s, dir=%s): %w", trimmed, dir, closeErr)
+	}
+	if removeErr := os.Remove(probePath); removeErr != nil {
+		return fmt.Errorf("database path preflight cleanup failed (db=%s, dir=%s): %w", trimmed, dir, removeErr)
+	}
+
+	return nil
+}
+
 // New creates a new Store with the given database path
 func New(dbPath string) (*Store, error) {
+	if err := preflightDatabasePath(dbPath); err != nil {
+		return nil, err
+	}
+
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
