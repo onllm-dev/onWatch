@@ -129,7 +129,7 @@ Provider setup guides:
 ### Run
 
 ```bash
-onwatch              # start in background (daemonizes, logs to ~/.onwatch/.onwatch.log)
+onwatch              # start in background (daemonizes, logs to ~/.onwatch/data/.onwatch.log)
 onwatch --debug      # foreground mode, logs to stdout
 onwatch stop         # stop the running instance
 onwatch status       # check if running
@@ -380,11 +380,14 @@ onwatch stop && onwatch
 ```shell
 ~/.onwatch/
 ├── onwatch.pid          # PID file
-├── .onwatch.log         # Main daemon log file (background mode)
-├── menubar.log          # Menubar companion log file (macOS menubar builds)
 └── data/
-    └── onwatch.db       # SQLite database (WAL mode)
+    ├── onwatch.db       # SQLite database (WAL mode)
+    ├── .onwatch.log     # Main daemon log file (background mode)
+    └── menubar.log      # Menubar companion log file (macOS menubar builds)
 ```
+
+Log files are stored next to the database (default `~/.onwatch/data/`).
+Each log rotates at 50 MB with 3 backups (`.1`, `.2`, `.3`) for both main and menubar logs.
 
 On first run, if a database exists at `./onwatch.db`, onWatch auto-migrates it to `~/.onwatch/data/`.
 

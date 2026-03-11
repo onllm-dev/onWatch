@@ -153,7 +153,7 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 	cmd := exec.Command(exe, args...)
 	cmd.Env = os.Environ()
 
-	logFile, err := os.OpenFile(menubarLogPath(cfg), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := config.OpenRotatingLogFile(menubarLogPath(cfg))
 	if err != nil {
 		return fmt.Errorf("failed to open menubar log file: %w", err)
 	}
@@ -236,6 +236,7 @@ func runMenubarCommand() error {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
+	logger.Info("Menubar runtime starting", "pid", os.Getpid(), "port", cfg.Port, "db_path", cfg.DBPath, "test_mode", cfg.TestMode)
 
 	db, err := store.New(cfg.DBPath)
 	if err != nil {
@@ -274,5 +275,11 @@ func runMenubarCommand() error {
 		_ = menubar.Stop()
 	}()
 
-	return menubar.Init(mbCfg)
+	err = menubar.Init(mbCfg)
+	if err != nil {
+		logger.Error("Menubar runtime stopped with error", "error", err)
+		return err
+	}
+	logger.Info("Menubar runtime stopped")
+	return nil
 }

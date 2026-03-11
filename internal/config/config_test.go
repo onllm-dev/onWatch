@@ -404,9 +404,10 @@ func TestConfig_LogWriter(t *testing.T) {
 		t.Error("Debug mode should return os.Stdout")
 	}
 
+	tmpDir := t.TempDir()
 	cfg = &Config{
 		DebugMode: false,
-		DBPath:    "/tmp/test_onwatch.db",
+		DBPath:    filepath.Join(tmpDir, "onwatch.db"),
 	}
 	writer, err = cfg.LogWriter()
 	if err != nil {
@@ -414,6 +415,151 @@ func TestConfig_LogWriter(t *testing.T) {
 	}
 	if writer == os.Stdout {
 		t.Error("Background mode should not return os.Stdout")
+	}
+	if file, ok := writer.(*os.File); ok {
+		_ = file.Close()
+	}
+}
+
+func TestOpenRotatingLogFile_RotatesAtSizeLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "rotate.log")
+
+	if err := os.WriteFile(logPath+".1", []byte("backup-one"), 0o644); err != nil {
+		t.Fatalf("write backup .1: %v", err)
+	}
+	if err := os.WriteFile(logPath+".2", []byte("backup-two"), 0o644); err != nil {
+		t.Fatalf("write backup .2: %v", err)
+	}
+	if err := os.WriteFile(logPath+".3", []byte("backup-three"), 0o644); err != nil {
+		t.Fatalf("write backup .3: %v", err)
+	}
+
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatalf("create active log: %v", err)
+	}
+	if _, err := f.WriteString("active-log"); err != nil {
+		t.Fatalf("write active log: %v", err)
+	}
+	if err := f.Truncate(maxLogFileBytes); err != nil {
+		t.Fatalf("truncate active log: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close active log: %v", err)
+	}
+
+	rotated, err := OpenRotatingLogFile(logPath)
+	if err != nil {
+		t.Fatalf("OpenRotatingLogFile() error: %v", err)
+	}
+	if err := rotated.Close(); err != nil {
+		t.Fatalf("close rotated log: %v", err)
+	}
+
+	currentInfo, err := os.Stat(logPath)
+	if err != nil {
+		t.Fatalf("stat current log: %v", err)
+	}
+	if currentInfo.Size() != 0 {
+		t.Fatalf("current log size = %d, want 0", currentInfo.Size())
+	}
+
+	rotatedInfo, err := os.Stat(logPath + ".1")
+	if err != nil {
+		t.Fatalf("stat rotated .1 log: %v", err)
+	}
+	if rotatedInfo.Size() != maxLogFileBytes {
+		t.Fatalf("rotated .1 size = %d, want %d", rotatedInfo.Size(), maxLogFileBytes)
+	}
+
+	backup2, err := os.ReadFile(logPath + ".2")
+	if err != nil {
+		t.Fatalf("read backup .2: %v", err)
+	}
+	if string(backup2) != "backup-one" {
+		t.Fatalf("backup .2 = %q, want %q", string(backup2), "backup-one")
+	}
+
+	backup3, err := os.ReadFile(logPath + ".3")
+	if err != nil {
+		t.Fatalf("read backup .3: %v", err)
+	}
+	if string(backup3) != "backup-two" {
+		t.Fatalf("backup .3 = %q, want %q", string(backup3), "backup-two")
+	}
+}
+
+func TestOpenRotatingLogFile_DoesNotRotateBelowSizeLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "rotate.log")
+
+	if err := os.WriteFile(logPath, []byte("active"), 0o644); err != nil {
+		t.Fatalf("write active log: %v", err)
+	}
+	if err := os.WriteFile(logPath+".1", []byte("backup-one"), 0o644); err != nil {
+		t.Fatalf("write backup .1: %v", err)
+	}
+
+	file, err := OpenRotatingLogFile(logPath)
+	if err != nil {
+		t.Fatalf("OpenRotatingLogFile() error: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close log file: %v", err)
+	}
+
+	active, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read active log: %v", err)
+	}
+	if string(active) != "active" {
+		t.Fatalf("active log = %q, want %q", string(active), "active")
+	}
+
+	backup1, err := os.ReadFile(logPath + ".1")
+	if err != nil {
+		t.Fatalf("read backup .1: %v", err)
+	}
+	if string(backup1) != "backup-one" {
+		t.Fatalf("backup .1 = %q, want %q", string(backup1), "backup-one")
+	}
+}
+
+func TestConfig_LogWriter_RotatesFileWhenAtLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "onwatch.db")
+	logPath := filepath.Join(tmpDir, ".onwatch.log")
+
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatalf("create log file: %v", err)
+	}
+	if err := f.Truncate(maxLogFileBytes); err != nil {
+		t.Fatalf("truncate log file: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close log file: %v", err)
+	}
+
+	cfg := &Config{DebugMode: false, DBPath: dbPath}
+	writer, err := cfg.LogWriter()
+	if err != nil {
+		t.Fatalf("LogWriter() failed: %v", err)
+	}
+	if file, ok := writer.(*os.File); ok {
+		_ = file.Close()
+	}
+
+	if _, err := os.Stat(logPath + ".1"); err != nil {
+		t.Fatalf("expected rotated backup file: %v", err)
+	}
+	info, err := os.Stat(logPath)
+	if err != nil {
+		t.Fatalf("stat active log: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("active log size = %d, want 0", info.Size())
 	}
 }
 

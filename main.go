@@ -45,7 +45,7 @@ func init() {
 }
 
 func main() {
-	if err := run(); err != nil {
+	if err := runWithCrashCapture(); err != nil {
 		if !errors.Is(err, errCodexProfileRefreshAborted) {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		}
@@ -373,7 +373,7 @@ func daemonize(cfg *config.Config) error {
 		logName = ".onwatch-test.log"
 	}
 	logPath := filepath.Join(filepath.Dir(cfg.DBPath), logName)
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := config.OpenRotatingLogFile(logPath)
 	if err != nil {
 		return fmt.Errorf("failed to open log file for daemon: %w", err)
 	}
@@ -404,6 +404,18 @@ func daemonize(cfg *config.Config) error {
 
 	fmt.Printf("Daemon started (PID %d), logs: %s\n", childPID, logPath)
 	return nil
+}
+
+func runWithCrashCapture() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := string(debug.Stack())
+			slog.Error("Fatal panic", "panic", r, "stack", stack)
+			fmt.Fprintf(os.Stderr, "Fatal panic: %v\n%s\n", r, stack)
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return run()
 }
 
 func run() error {
@@ -543,6 +555,14 @@ func run() error {
 		Level: logLevel,
 	}))
 	slog.SetDefault(logger)
+
+	logger.Info("Runtime startup",
+		"pid", os.Getpid(),
+		"port", cfg.Port,
+		"db_path", cfg.DBPath,
+		"debug", cfg.DebugMode,
+		"test_mode", cfg.TestMode,
+	)
 
 	// Warn if using default password
 	if cfg.IsDefaultPassword() {
