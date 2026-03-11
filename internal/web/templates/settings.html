@@ -30,6 +30,7 @@
             <button class="settings-tab active" data-tab="email" role="tab" aria-selected="true" aria-controls="panel-email">Email (SMTP)</button>
             <button class="settings-tab" data-tab="notifications" role="tab" aria-selected="false" aria-controls="panel-notifications">Notifications</button>
             <button class="settings-tab" data-tab="providers" role="tab" aria-selected="false" aria-controls="panel-providers">Providers</button>
+            <button class="settings-tab" data-tab="menubar" role="tab" aria-selected="false" aria-controls="panel-menubar" hidden>Menubar</button>
             <button class="settings-tab" data-tab="general" role="tab" aria-selected="false" aria-controls="panel-general">General</button>
         </div>
 
@@ -201,6 +202,64 @@
                     <!-- Populated dynamically by JS -->
                 </div>
             </div>
+        </div>
+
+        <!-- Menubar Panel -->
+        <div class="settings-panel" id="panel-menubar" role="tabpanel" hidden>
+            <div class="settings-section menubar-section" id="menubar-settings-shell" hidden>
+                <div class="menubar-section-heading">
+                    <div>
+                        <h3 class="settings-section-title">Menubar Companion</h3>
+                        <p class="settings-section-desc">Control the macOS menubar companion, its default view, thresholds, and provider ordering.</p>
+                    </div>
+                </div>
+
+                <div class="settings-fields">
+                    <div class="settings-toggle-row">
+                        <div class="settings-toggle-info">
+                            <div class="settings-toggle-label">Enable Menubar</div>
+                            <div class="settings-toggle-sublabel">Starts the macOS menubar companion after the local dashboard server is ready.</div>
+                        </div>
+                        <label class="settings-toggle">
+                            <input type="checkbox" id="menubar-enabled" checked>
+                            <span class="settings-toggle-track"></span>
+                        </label>
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="menubar-default-view">Default View</label>
+                        <select id="menubar-default-view" class="settings-input">
+                            <option value="standard">Standard</option>
+                            <option value="detailed">Detailed</option>
+                        </select>
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="menubar-refresh">Refresh Interval</label>
+                        <select id="menubar-refresh" class="settings-input">
+                            <option value="30">30 seconds</option>
+                            <option value="60">1 minute</option>
+                            <option value="120">2 minutes</option>
+                            <option value="300">5 minutes</option>
+                        </select>
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="menubar-warning">Warning Threshold (%)</label>
+                        <input type="number" id="menubar-warning" class="settings-input" min="0" max="100" value="70">
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="menubar-critical">Critical Threshold (%)</label>
+                        <input type="number" id="menubar-critical" class="settings-input" min="0" max="100" value="90">
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-divider" id="menubar-order-divider" hidden></div>
+
+            <div class="settings-section menubar-section" id="menubar-order-shell" hidden>
+                <h3 class="settings-section-title">Provider Order</h3>
+                <p class="settings-section-desc">Drag providers to choose their order inside the menubar companion. Use Show/Hide to control menubar-only visibility, which is saved in preferences and persists after restart. Codex accounts appear as separate providers when multiple accounts exist.</p>
+                <ul class="menubar-order-list" id="menubar-provider-order" aria-label="Menubar provider order"></ul>
+            </div>
+
         </div>
 
         <!-- General Panel -->

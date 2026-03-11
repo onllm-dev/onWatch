@@ -4,7 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION=$(cat "$SCRIPT_DIR/VERSION")
 BINARY="onwatch"
-LDFLAGS="-ldflags=-s -w -X main.version=$VERSION"
+DARWIN_FULL_TAGS="menubar,desktop,production"
+DARWIN_CGO_LDFLAGS="-framework UniformTypeIdentifiers"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -28,11 +29,11 @@ ${CYAN}USAGE:${NC}
     ./app.sh [FLAGS...]
 
 ${CYAN}FLAGS:${NC}
-    --build,   -b                  Build production binary with version ldflags
+    --build,   -b                  Build production binary (macOS includes menubar support)
     --test,    -t                  Run all tests with race detection and coverage
     --smoke,   -s                  Quick validation: vet + build check + short tests
     --run,     -r                  Build and run in debug mode (foreground)
-    --release                      Run tests, then cross-compile for 5 platforms
+    --release                      Run tests, then build release binaries
     --clean,   -c                  Remove binary, coverage files, dist/, test cache
     --stop                         Stop a running instance (native or Docker)
     --docker                       Docker mode: --build/--run/--clean/--stop use Docker
@@ -43,7 +44,7 @@ ${CYAN}FLAGS:${NC}
 
 ${CYAN}EXAMPLES:${NC}
     ./app.sh --build               # Build production binary
-    ./app.sh --test                 # Run full test suite
+    ./app.sh --test                # Run full test suite
     ./app.sh --smoke               # Quick pre-commit check
     ./app.sh --clean --build --run  # Clean, rebuild, and run
     ./app.sh --deps --build --test  # Install deps, build, test
@@ -176,9 +177,45 @@ do_clean() {
 
 do_build() {
     info "Building onWatch v${VERSION}..."
-    cd "$SCRIPT_DIR"
-    go build -ldflags="-s -w -X main.version=$VERSION" -o "$BINARY" .
+    build_native_binary "$SCRIPT_DIR/$BINARY"
     success "Built ./$BINARY ($(du -h "$BINARY" | cut -f1 | xargs))"
+}
+
+build_native_binary() {
+    local output="$1"
+    cd "$SCRIPT_DIR"
+
+    if [[ "$(uname)" == "Darwin" ]]; then
+        CGO_ENABLED=1 CGO_LDFLAGS="$DARWIN_CGO_LDFLAGS" go build \
+            -tags "$DARWIN_FULL_TAGS" \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o "$output" .
+        return
+    fi
+
+    go build \
+        -ldflags="-s -w -X main.version=$VERSION" \
+        -o "$output" .
+}
+
+build_darwin() {
+    cd "$SCRIPT_DIR"
+    if [[ "$(uname)" != "Darwin" ]]; then
+        error "macOS menubar builds require a macOS host"
+        return 1
+    fi
+
+    mkdir -p "$SCRIPT_DIR/dist"
+    for arch in arm64 amd64; do
+        local output="dist/onwatch-darwin-${arch}"
+        info "Building ${output}..."
+        CGO_ENABLED=1 CGO_LDFLAGS="$DARWIN_CGO_LDFLAGS" GOOS=darwin GOARCH="$arch" go build \
+            -tags "$DARWIN_FULL_TAGS" \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o "$SCRIPT_DIR/$output" .
+    done
+
+    success "Built macOS binaries in dist/"
 }
 
 do_test() {
@@ -196,7 +233,7 @@ do_smoke() {
     go vet ./...
 
     info "  Build check..."
-    go build -ldflags="-s -w -X main.version=$VERSION" -o /dev/null .
+    build_native_binary /dev/null
 
     info "  Short tests..."
     go test -short -count=1 ./...
@@ -210,12 +247,16 @@ do_release() {
     go test -race -cover -count=1 ./...
     success "Tests passed."
 
-    info "Cross-compiling onWatch v${VERSION} for 5 platforms..."
+    info "Building release artifacts for onWatch v${VERSION}..."
     mkdir -p "$SCRIPT_DIR/dist"
 
+    if [[ "$(uname)" == "Darwin" ]]; then
+        build_darwin
+    else
+        warn "Skipping macOS binaries on non-macOS host. Use macOS CI or a local macOS build host for menubar artifacts."
+    fi
+
     local targets=(
-        "darwin:arm64:"
-        "darwin:amd64:"
         "linux:amd64:"
         "linux:arm64:"
         "windows:amd64:.exe"

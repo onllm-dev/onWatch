@@ -2815,6 +2815,113 @@ select.settings-input {
   border: 1px solid var(--status-danger);
 }
 
+.menubar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.menubar-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.menubar-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.menubar-order-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-inset);
+  cursor: grab;
+  transition: border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.menubar-order-item:focus-visible,
+.menubar-order-item:hover {
+  outline: none;
+  border-color: var(--accent-teal);
+  box-shadow: var(--shadow-sm);
+}
+
+.menubar-order-item.dragging {
+  opacity: 0.72;
+  transform: scale(0.99);
+}
+
+.menubar-order-handle {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--text-muted);
+}
+
+.menubar-order-handle span {
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.menubar-order-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.menubar-order-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.menubar-order-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.menubar-order-item.is-disabled {
+  opacity: 0.65;
+}
+
+.menubar-order-item.is-hidden {
+  border-color: var(--border-default);
+}
+
+.menubar-order-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.menubar-order-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.menubar-order-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-teal);
+  cursor: pointer;
+}
+
 /* Settings page responsive */
 @media (max-width: 768px) {
   .settings-main { padding: 16px; }
@@ -2825,6 +2932,7 @@ select.settings-input {
   .settings-header { padding: 12px 16px; }
   .settings-title { font-size: 18px; }
   .settings-actions { flex-direction: column; align-items: flex-start; }
+  .menubar-section-heading { flex-direction: column; align-items: stretch; }
 }
 
 @media (max-width: 480px) {

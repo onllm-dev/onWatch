@@ -116,8 +116,14 @@ def onwatch_server(mock_server: subprocess.Popen) -> Generator[subprocess.Popen,
     os.makedirs(E2E_HOME, exist_ok=True)
 
     # Build onwatch
+    build_cmd = ["go", "build"]
+    build_tags = os.environ.get("ONWATCH_E2E_GO_BUILD_TAGS", "").strip()
+    if build_tags:
+        build_cmd.extend(["-tags", build_tags])
+    build_cmd.extend(["-o", ONWATCH_BINARY, "."])
+
     result = subprocess.run(
-        ["go", "build", "-o", ONWATCH_BINARY, "."],
+        build_cmd,
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -129,6 +135,7 @@ def onwatch_server(mock_server: subprocess.Popen) -> Generator[subprocess.Popen,
     env.update({
         "HOME": E2E_HOME,
         "ONWATCH_ADMIN_PASS": PASSWORD,
+        "ONWATCH_TEST_MODE": "1",
         "SYNTHETIC_API_KEY": "syn_test_e2e_key",
         "ZAI_API_KEY": "zai_test_e2e_key",
         "ZAI_BASE_URL": f"http://localhost:{MOCK_PORT}",

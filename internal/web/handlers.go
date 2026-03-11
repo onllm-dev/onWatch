@@ -16,6 +16,7 @@ import (
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
+	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
@@ -355,6 +356,19 @@ func (h *Handler) GetSessionStore() *SessionStore {
 // SetRateLimiter sets the login rate limiter for brute force protection.
 func (h *Handler) SetRateLimiter(l *LoginRateLimiter) {
 	h.rateLimiter = l
+}
+
+func (h *Handler) triggerMenubarRefresh() {
+	if h == nil {
+		return
+	}
+	testMode := false
+	if h.config != nil {
+		testMode = h.config.TestMode
+	}
+	if err := menubar.TriggerRefresh(testMode); err != nil {
+		h.logger.Debug("menubar refresh trigger failed", "error", err)
+	}
 }
 
 // SettingsPage renders the settings page.
@@ -3417,8 +3431,18 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 	}
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
+	orderedQuotas := make([]api.AnthropicQuota, len(latest.Quotas))
+	copy(orderedQuotas, latest.Quotas)
+	sort.SliceStable(orderedQuotas, func(i, j int) bool {
+		left := anthropicQuotaDisplayOrder(orderedQuotas[i].Name)
+		right := anthropicQuotaDisplayOrder(orderedQuotas[j].Name)
+		if left != right {
+			return left < right
+		}
+		return orderedQuotas[i].Name < orderedQuotas[j].Name
+	})
 	var quotas []map[string]interface{}
-	for _, q := range latest.Quotas {
+	for _, q := range orderedQuotas {
 		qMap := map[string]interface{}{
 			"name":        q.Name,
 			"displayName": api.AnthropicDisplayName(q.Name),
@@ -3455,6 +3479,23 @@ func anthropicUtilStatus(util float64) string {
 		return "warning"
 	default:
 		return "healthy"
+	}
+}
+
+func anthropicQuotaDisplayOrder(name string) int {
+	switch name {
+	case "five_hour":
+		return 0
+	case "seven_day":
+		return 1
+	case "seven_day_sonnet":
+		return 2
+	case "monthly_limit":
+		return 3
+	case "extra_usage":
+		return 4
+	default:
+		return 100
 	}
 }
 
@@ -4135,6 +4176,7 @@ func compactNum(v float64) string {
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	tz := ""
 	var hiddenInsights []string
+	menubarSettings := menubar.DefaultSettings()
 	if h.store != nil {
 		val, err := h.store.GetSetting("timezone")
 		if err != nil {
@@ -4148,6 +4190,11 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		} else if hiVal != "" {
 			_ = json.Unmarshal([]byte(hiVal), &hiddenInsights)
 		}
+		if settings, err := h.store.GetMenubarSettings(); err != nil {
+			h.logger.Error("failed to get menubar settings", "error", err)
+		} else if settings != nil {
+			menubarSettings = settings
+		}
 	}
 	if hiddenInsights == nil {
 		hiddenInsights = []string{}
@@ -4156,6 +4203,7 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	result := map[string]interface{}{
 		"timezone":        tz,
 		"hidden_insights": hiddenInsights,
+		"menubar":         menubarSettings,
 	}
 
 	// SMTP settings (never return the actual password)
@@ -4442,6 +4490,24 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result["provider_visibility"] = vis
+	}
+
+	// Handle menubar settings
+	if raw, ok := body["menubar"]; ok {
+		var settings menubar.Settings
+		if err := json.Unmarshal(raw, &settings); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid menubar value")
+			return
+		}
+		normalized := settings.Normalize()
+		normalized.DefaultView = normalizeMenubarView(string(normalized.DefaultView), menubar.ViewStandard)
+		if err := h.store.SetMenubarSettings(normalized); err != nil {
+			h.logger.Error("failed to save menubar settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save menubar settings")
+			return
+		}
+		h.triggerMenubarRefresh()
+		result["menubar"] = normalized
 	}
 
 	respondJSON(w, http.StatusOK, result)

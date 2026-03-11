@@ -39,3 +39,39 @@ jobs:
 
       - name: Build
         run: go build -o onwatch .
+
+  menubar-macos:
+    runs-on: macos-latest
+    name: Menubar macOS
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Compile tagged menubar packages
+        run: |
+          go test -tags menubar ./internal/menubar ./internal/web
+          CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags menubar,desktop,production -o /tmp/onwatch-menubar .
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install E2E dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r tests/e2e/requirements.txt
+          python -m playwright install chromium
+
+      - name: Run menubar browser tests
+        env:
+          CGO_LDFLAGS: -framework UniformTypeIdentifiers
+          ONWATCH_E2E_GO_BUILD_TAGS: menubar,desktop,production
+        run: |
+          cd tests/e2e
+          pytest tests/test_menubar.py -v

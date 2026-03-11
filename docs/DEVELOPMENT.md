@@ -72,7 +72,7 @@ go build -ldflags="-s -w" -o onwatch.exe .
 `app.sh` is the primary entry point. `make` targets are thin wrappers.
 
 ```bash
-./app.sh --build          # Build production binary (or: make build)
+./app.sh --build          # Build production binary (macOS includes menubar support) (or: make build)
 ./app.sh --test           # Tests with race detection and coverage (or: make test)
 ./app.sh --build --run    # Build + run in debug mode (or: make run)
 ./app.sh --clean          # Remove binary, coverage, dist/ (or: make clean)

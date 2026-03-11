@@ -1,0 +1,2713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>onWatch Menubar</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <style>
+        :root {
+            color-scheme: dark;
+            --space-xs: 4px;
+            --space-sm: 6px;
+            --space-md: 8px;
+            --space-lg: 12px;
+
+            --font-xs: 9px;
+            --font-sm: 10px;
+            --font-md: 11px;
+            --font-lg: 12px;
+            --font-xl: 13px;
+
+            --chart-size: 40px;
+            --chart-stroke: 4px;
+
+            --bg-body: #0d0d0d;
+            --bg-panel: rgba(16, 16, 16, 0.96);
+            --bg-card: rgba(22, 22, 22, 0.96);
+            --bg-card-strong: rgba(28, 28, 28, 0.98);
+            --bg-hover: rgba(255, 255, 255, 0.05);
+            --border: rgba(255, 255, 255, 0.06);
+            --settings-accent: rgba(96, 165, 250, 0.08);
+            --settings-gradient-start: rgba(16, 16, 16, 0.99);
+            --settings-gradient-end: rgba(10, 10, 10, 0.99);
+            --icon-surface: rgba(255, 255, 255, 0.03);
+            --scrollbar-thumb-soft: rgba(255, 255, 255, 0.15);
+            --scrollbar-thumb-soft-hover: rgba(255, 255, 255, 0.25);
+            --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+            --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
+            --quota-center: rgba(0, 0, 0, 0.52);
+            --quota-percent-stroke: rgba(0, 0, 0, 0.82);
+            --footer-divider: rgba(255, 255, 255, 0.18);
+            --footer-refresh-hover-bg: rgba(255, 255, 255, 0.08);
+            --footer-refresh-hover-border: rgba(255, 255, 255, 0.12);
+
+            --text-primary: #ffffff;
+            --text-soft: rgba(255, 255, 255, 0.78);
+            --text-muted: rgba(255, 255, 255, 0.5);
+
+            --healthy: #22c55e;
+            --warning: #f59e0b;
+            --critical: #ef4444;
+            --track: rgba(255, 255, 255, 0.08);
+            --focus: rgba(96, 165, 250, 0.42);
+        }
+
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --bg-body: #f3f5f8;
+            --bg-panel: rgba(255, 255, 255, 0.94);
+            --bg-card: rgba(248, 250, 252, 0.95);
+            --bg-card-strong: rgba(255, 255, 255, 0.98);
+            --bg-hover: rgba(15, 23, 42, 0.06);
+            --border: rgba(15, 23, 42, 0.12);
+            --settings-accent: rgba(37, 99, 235, 0.1);
+            --settings-gradient-start: rgba(255, 255, 255, 0.99);
+            --settings-gradient-end: rgba(241, 245, 249, 0.97);
+            --icon-surface: rgba(15, 23, 42, 0.05);
+            --scrollbar-thumb-soft: rgba(15, 23, 42, 0.22);
+            --scrollbar-thumb-soft-hover: rgba(15, 23, 42, 0.34);
+            --scrollbar-thumb: rgba(15, 23, 42, 0.3);
+            --scrollbar-thumb-hover: rgba(15, 23, 42, 0.42);
+            --quota-center: rgba(248, 250, 252, 0.92);
+            --quota-percent-stroke: rgba(255, 255, 255, 0.95);
+            --footer-divider: rgba(15, 23, 42, 0.26);
+            --footer-refresh-hover-bg: rgba(15, 23, 42, 0.1);
+            --footer-refresh-hover-border: rgba(15, 23, 42, 0.2);
+            --text-primary: #0f172a;
+            --text-soft: rgba(15, 23, 42, 0.82);
+            --text-muted: rgba(15, 23, 42, 0.62);
+            --track: rgba(15, 23, 42, 0.12);
+            --focus: rgba(37, 99, 235, 0.45);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-body);
+            color: var(--text-primary);
+            font-family: "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+            font-size: var(--font-md);
+            line-height: 1.25;
+            overflow: hidden;
+        }
+
+        a,
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        button {
+            border: 0;
+            background: none;
+            color: inherit;
+            cursor: pointer;
+        }
+
+        a:focus-visible,
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible {
+            outline: 2px solid var(--focus);
+            outline-offset: 2px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .menubar-shell {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            max-height: 100%;
+            gap: 4px;
+            padding: 0 0 5px;
+            background: var(--bg-body);
+            overflow: hidden;
+        }
+
+        .menubar-shell.settings-open {
+            min-height: 0;
+        }
+
+        .menubar-header,
+        .menubar-footer,
+        .provider-card,
+        .minimal-provider-row,
+        .state-card,
+        .settings-panel {
+            border: 1px solid var(--border);
+            background: var(--bg-panel);
+        }
+
+        .menubar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+            min-height: 30px;
+            padding: 0 6px;
+            border-radius: 0;
+            border-top: 0;
+            border-left: 0;
+            border-right: 0;
+        }
+
+        .header-cluster,
+        .header-meta,
+        .header-actions {
+            display: flex;
+            align-items: center;
+        }
+
+        .header-cluster {
+            gap: var(--space-sm);
+            min-width: 0;
+            cursor: pointer;
+        }
+
+        .brand-mark {
+            display: grid;
+            place-items: center;
+            width: 18px;
+            height: 18px;
+            color: var(--text-primary);
+        }
+
+        .brand-mark svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .header-value {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .header-value.hidden {
+            display: none;
+        }
+
+        .header-meta {
+            gap: var(--space-xs);
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+            letter-spacing: 0.04em;
+            text-transform: none;
+            white-space: nowrap;
+        }
+
+        .meta-divider {
+            width: 2px;
+            height: 2px;
+            border-radius: 999px;
+            background: currentColor;
+            opacity: 0.8;
+        }
+
+        .header-actions {
+            gap: 2px;
+            flex-shrink: 0;
+        }
+
+        .icon-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            height: 22px;
+            padding: 0 5px;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-soft);
+            transition: background-color 180ms ease, border-color 180ms ease;
+        }
+
+        .icon-button:hover {
+            background: var(--bg-hover);
+            border-color: var(--border);
+        }
+
+        .icon-button svg {
+            width: 13px;
+            height: 13px;
+        }
+
+        #view-toggle {
+            min-width: 64px;
+            padding: 0 6px;
+        }
+
+        .view-pill {
+            font-size: var(--font-sm);
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-transform: none;
+            white-space: nowrap;
+        }
+
+        .menubar-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            padding: 0;
+            scrollbar-width: thin;
+            scrollbar-color: var(--scrollbar-thumb-soft) transparent;
+        }
+
+        .menubar-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .menubar-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .menubar-body::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb-soft);
+            border-radius: 3px;
+        }
+
+        .menubar-body::-webkit-scrollbar-thumb:hover {
+            background: var(--scrollbar-thumb-soft-hover);
+        }
+
+        .provider-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-sm);
+            min-width: 0;
+            padding-bottom: 1px;
+        }
+
+        .provider-copy {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .provider-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+            color: var(--healthy);
+            background-color: currentColor;
+            -webkit-mask-position: center;
+            -webkit-mask-repeat: no-repeat;
+            -webkit-mask-size: 16px 16px;
+            mask-position: center;
+            mask-repeat: no-repeat;
+            mask-size: 16px 16px;
+        }
+
+        .provider-icon img,
+        .provider-icon svg {
+            width: 16px;
+            height: 16px;
+            object-fit: contain;
+        }
+
+        .provider-icon-anthropic {
+            -webkit-mask-image: url("/static/icons/anthropic.svg");
+            mask-image: url("/static/icons/anthropic.svg");
+        }
+
+        .provider-icon-codex,
+        .provider-icon-openai {
+            -webkit-mask-image: url("/static/icons/openai.svg");
+            mask-image: url("/static/icons/openai.svg");
+        }
+
+        .provider-icon-minimax {
+            -webkit-mask-image: url("/static/icons/minimax.svg");
+            mask-image: url("/static/icons/minimax.svg");
+        }
+
+        .provider-icon-copilot {
+            -webkit-mask-image: url("/static/icons/copilot.svg");
+            mask-image: url("/static/icons/copilot.svg");
+        }
+
+        .provider-icon-antigravity {
+            -webkit-mask-image: url("/static/icons/antigravity.svg");
+            mask-image: url("/static/icons/antigravity.svg");
+        }
+
+        .provider-icon-zai {
+            -webkit-mask-image: url("/static/icons/zai.svg");
+            mask-image: url("/static/icons/zai.svg");
+        }
+
+        .provider-icon-synthetic {
+            -webkit-mask-image: url("/static/icons/synthetic.svg");
+            mask-image: url("/static/icons/synthetic.svg");
+        }
+
+        .status-warning .provider-icon {
+            color: var(--warning);
+        }
+
+        .status-critical .provider-icon,
+        .status-danger .provider-icon {
+            color: var(--critical);
+        }
+
+        .provider-name {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: var(--font-xl);
+            font-weight: 650;
+            letter-spacing: -0.01em;
+        }
+
+        .provider-updated {
+            flex-shrink: 0;
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+            white-space: nowrap;
+        }
+
+        .minimal-view {
+            display: grid;
+            gap: var(--space-xs);
+            padding: 1px;
+            align-content: start;
+        }
+
+        .minimal-provider-row {
+            display: grid;
+            gap: 2px;
+            padding: 6px 8px;
+            border-radius: 13px;
+        }
+
+        .minimal-quota-list {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0;
+            color: var(--text-soft);
+            font-size: var(--font-sm);
+        }
+
+        .minimal-quota-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-sm);
+            min-width: 0;
+            white-space: nowrap;
+        }
+
+        .minimal-quota-label {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .minimal-quota-percent {
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        .minimal-quota-reset {
+            color: var(--text-muted);
+        }
+
+        .inline-divider {
+            color: var(--text-muted);
+            padding: 0 var(--space-sm);
+        }
+
+        .provider-grid {
+            gap: 5px;
+            padding: 1px;
+            align-content: start;
+        }
+
+        .provider-grid-standard {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .provider-grid-detailed {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .provider-card {
+            display: grid;
+            gap: 3px;
+            padding: 6px 8px;
+            border-radius: 14px;
+        }
+
+        .provider-card-standard {
+            grid-column: span var(--card-span, 6);
+            min-width: 0;
+        }
+
+        .provider-card-detailed {
+            grid-column: 1 / -1;
+            gap: 2px;
+        }
+
+        .quota-grid {
+            display: grid;
+            grid-template-columns: repeat(var(--quota-count, 1), minmax(0, 1fr));
+            gap: 1px;
+            min-width: 0;
+        }
+
+        .quota-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1px;
+            min-width: 0;
+            color: var(--healthy);
+        }
+
+        .quota-item.status-warning {
+            color: var(--warning);
+        }
+
+        .quota-item.status-critical,
+        .quota-item.status-danger {
+            color: var(--critical);
+        }
+
+        .quota-meter {
+            width: var(--chart-size);
+            height: var(--chart-size);
+            overflow: visible;
+        }
+
+        .quota-track {
+            fill: none;
+            stroke: var(--track);
+            stroke-width: var(--chart-stroke);
+        }
+
+        .quota-fill {
+            fill: none;
+            stroke: currentColor;
+            stroke-width: var(--chart-stroke);
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: 20px 20px;
+        }
+
+        .quota-center {
+            fill: var(--quota-center);
+        }
+
+        .quota-percent {
+            fill: var(--text-primary);
+            font-size: 11px;
+            font-weight: 700;
+            paint-order: stroke;
+            stroke: var(--quota-percent-stroke);
+            stroke-width: 2.2px;
+            stroke-linejoin: round;
+        }
+
+        .quota-label {
+            max-width: 60px;
+            color: var(--text-primary);
+            font-size: var(--font-sm);
+            font-weight: 500;
+            line-height: 1.05;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .quota-reset-line {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            color: var(--text-muted);
+            font-size: 8px;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .menubar-view-standard .quota-reset-line {
+            font-size: 9px;
+        }
+
+        .quota-reset-line svg {
+            width: 9px;
+            height: 9px;
+            flex-shrink: 0;
+            opacity: 0.8;
+        }
+
+        .quota-detail-stack {
+            display: grid;
+            gap: 0;
+            padding: 1px 2px 3px;
+        }
+
+        .quota-detail-section {
+            display: grid;
+            gap: 3px;
+            padding: 6px 2px;
+            color: var(--text-soft);
+            border: 0;
+            background: transparent;
+        }
+
+        .quota-detail-section:first-child {
+            padding-top: 6px;
+        }
+
+        .quota-detail-section + .quota-detail-section {
+            border-top: 1px solid var(--border);
+            margin-top: 0;
+        }
+
+        .quota-detail-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .quota-detail-label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-primary);
+            font-size: var(--font-lg);
+            font-weight: 600;
+            line-height: 1.08;
+        }
+
+        .quota-bar-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .quota-bar-track {
+            position: relative;
+            height: 7px;
+            border-radius: 999px;
+            background: var(--track);
+            overflow: hidden;
+        }
+
+        .quota-bar-fill {
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 0;
+            border-radius: inherit;
+            background: var(--healthy);
+        }
+
+        .quota-bar-fill.status-warning {
+            background: var(--warning);
+        }
+
+        .quota-bar-fill.status-critical,
+        .quota-bar-fill.status-danger {
+            background: var(--critical);
+        }
+
+        .quota-bar-value {
+            color: var(--text-primary);
+            font-size: var(--font-lg);
+            font-weight: 700;
+            white-space: nowrap;
+            line-height: 1;
+        }
+
+        .quota-detail-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 2px;
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+            line-height: 1.12;
+        }
+
+        .detail-divider {
+            width: 2px;
+            height: 2px;
+            border-radius: 999px;
+            background: currentColor;
+            opacity: 0.7;
+        }
+
+        .menubar-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-xs);
+            margin-top: auto;
+            padding: 5px 6px;
+            border-radius: 0;
+            border-left: 0;
+            border-right: 0;
+            border-bottom: 0;
+            font-size: var(--font-sm);
+        }
+
+        .footer-refresh {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            min-width: 24px;
+            height: 24px;
+            padding: 0;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--text-primary);
+            line-height: 1;
+            transition: background-color 180ms ease, border-color 180ms ease;
+        }
+
+        .footer-refresh:hover {
+            background: var(--footer-refresh-hover-bg);
+            border-color: var(--footer-refresh-hover-border);
+        }
+
+        .footer-refresh svg {
+            display: block;
+            width: 13px;
+            height: 13px;
+        }
+
+        .footer-links {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 0;
+            min-width: 0;
+            color: var(--text-muted);
+        }
+
+        .footer-version {
+            color: var(--text-muted);
+            font-size: inherit;
+            letter-spacing: 0.01em;
+            white-space: nowrap;
+            margin-right: 6px;
+        }
+
+        .footer-link {
+            display: inline;
+            min-height: 0;
+            padding: 0;
+            border-radius: 0;
+            border: 0;
+            background: transparent;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: var(--font-md);
+            font-weight: 600;
+            line-height: 1.1;
+            letter-spacing: 0.01em;
+            white-space: nowrap;
+            transition: color 180ms ease;
+        }
+
+        .footer-link + .footer-link {
+            margin-left: 8px;
+            padding-left: 8px;
+            border-left: 1px solid var(--footer-divider);
+        }
+
+        .footer-link:hover {
+            color: var(--text-primary);
+            background: transparent;
+            border-color: transparent;
+        }
+
+        .footer-divider {
+            color: var(--footer-divider);
+        }
+
+        .state-card {
+            display: grid;
+            place-items: center;
+            gap: var(--space-sm);
+            min-height: 144px;
+            padding: 20px var(--space-lg);
+            border-radius: 18px;
+            text-align: center;
+        }
+
+        .state-card strong {
+            font-size: var(--font-xl);
+        }
+
+        .state-card span {
+            color: var(--text-muted);
+        }
+
+        .settings-panel {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            grid-template-rows: 40px minmax(0, 1fr) 48px;
+            border-radius: 18px;
+            background:
+                radial-gradient(circle at top right, var(--settings-accent), transparent 24%),
+                linear-gradient(180deg, var(--settings-gradient-start), var(--settings-gradient-end));
+            overflow: hidden;
+            z-index: 20;
+        }
+
+        .settings-header,
+        .settings-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-sm);
+            padding: 0 var(--space-md);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .settings-footer {
+            border-bottom: 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .settings-title {
+            font-size: var(--font-lg);
+            font-weight: 700;
+        }
+
+        .settings-body {
+            display: grid;
+            gap: var(--space-lg);
+            align-content: start;
+            overflow-x: hidden;
+            overflow-y: auto;
+            padding: var(--space-lg);
+            scrollbar-gutter: stable both-edges;
+        }
+
+        .menubar-body,
+        .settings-body {
+            scrollbar-width: thin;
+            scrollbar-color: var(--scrollbar-thumb) transparent;
+        }
+
+        .menubar-body::-webkit-scrollbar,
+        .settings-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .menubar-body::-webkit-scrollbar-track,
+        .settings-body::-webkit-scrollbar-track {
+            background: transparent;
+            margin: 4px 0;
+        }
+
+        .menubar-body::-webkit-scrollbar-thumb,
+        .settings-body::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 999px;
+        }
+
+        .menubar-body::-webkit-scrollbar-thumb:hover,
+        .settings-body::-webkit-scrollbar-thumb:hover {
+            background: var(--scrollbar-thumb-hover);
+        }
+
+        .settings-section {
+            display: grid;
+            gap: var(--space-sm);
+        }
+
+        .settings-section h2 {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        .settings-card {
+            display: grid;
+            gap: var(--space-xs);
+            padding: var(--space-md);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: var(--bg-card);
+        }
+
+        .settings-card-group {
+            display: grid;
+            gap: var(--space-sm);
+        }
+
+        .settings-collapsible {
+            display: grid;
+            gap: var(--space-sm);
+        }
+
+        .settings-collapsible-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: var(--space-xs) 0;
+            color: var(--text-soft);
+            font-size: var(--font-sm);
+            cursor: pointer;
+        }
+
+        .settings-collapsible-toggle:hover {
+            color: var(--text-primary);
+        }
+
+        .settings-collapsible-toggle svg {
+            width: 12px;
+            height: 12px;
+            transition: transform 180ms ease;
+        }
+
+        .settings-collapsible.collapsed .settings-collapsible-toggle svg {
+            transform: rotate(-90deg);
+        }
+
+        .settings-collapsible-content {
+            display: grid;
+            gap: var(--space-sm);
+        }
+
+        .settings-collapsible.collapsed .settings-collapsible-content {
+            display: none;
+        }
+
+        .settings-hint {
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+        }
+
+        .settings-option {
+            display: grid;
+            grid-template-columns: 18px minmax(0, 1fr);
+            align-items: start;
+            gap: var(--space-sm);
+            min-height: 30px;
+            padding: 3px 0;
+        }
+
+        .settings-option input[type="radio"] {
+            margin: 0;
+            margin-top: 2px;
+        }
+
+        .settings-option-copy {
+            display: grid;
+            gap: 2px;
+        }
+
+        .settings-option strong {
+            font-size: var(--font-lg);
+            font-weight: 600;
+        }
+
+        .settings-option em {
+            color: var(--text-soft);
+            font-style: normal;
+            font-size: var(--font-sm);
+        }
+
+        .settings-divider {
+            height: 1px;
+            margin: var(--space-xs) 0;
+            background: var(--border);
+        }
+
+        .settings-preview {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-sm);
+            padding-top: var(--space-sm);
+        }
+
+        .settings-preview-label {
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .settings-preview strong {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: var(--font-lg);
+            font-weight: 700;
+        }
+
+        .settings-option-count {
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .settings-checklist {
+            display: grid;
+            gap: 6px;
+            max-height: 200px;
+            overflow: auto;
+            padding-right: 2px;
+        }
+
+        .settings-check-item {
+            display: grid;
+            grid-template-columns: 16px minmax(0, 1fr);
+            align-items: start;
+            gap: var(--space-sm);
+            padding: 4px 0;
+        }
+
+        .settings-check-item.is-disabled {
+            opacity: 0.5;
+        }
+
+        .settings-check-item input[type="checkbox"] {
+            margin: 0;
+            margin-top: 2px;
+        }
+
+        .settings-check-copy {
+            display: grid;
+            gap: 1px;
+            min-width: 0;
+        }
+
+        .settings-check-copy strong {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: var(--font-lg);
+            font-weight: 600;
+        }
+
+        .settings-check-copy em {
+            color: var(--text-muted);
+            font-style: normal;
+            font-size: var(--font-sm);
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: var(--space-sm);
+        }
+
+        .settings-row {
+            display: grid;
+            gap: var(--space-xs);
+        }
+
+        .settings-row label {
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .settings-row select {
+            width: 100%;
+            height: 34px;
+            padding: 0 var(--space-md);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--bg-card-strong);
+            color: var(--text-primary);
+            appearance: none;
+        }
+
+        .provider-order-list {
+            display: grid;
+            gap: var(--space-xs);
+        }
+
+        .provider-order-item {
+            display: grid;
+            grid-template-columns: 18px 16px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: var(--space-sm);
+            min-height: 34px;
+            padding: 5px var(--space-sm);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--bg-card-strong);
+            cursor: grab;
+        }
+
+        .provider-order-item.dragging {
+            opacity: 0.45;
+        }
+
+        .provider-order-handle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+        }
+
+        .provider-order-handle svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        .provider-order-copy {
+            display: grid;
+            gap: 1px;
+            min-width: 0;
+        }
+
+        .provider-order-name {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: var(--font-lg);
+            font-weight: 600;
+        }
+
+        .provider-order-meta {
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+            text-transform: lowercase;
+        }
+
+        .provider-order-controls {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-xs);
+            justify-self: end;
+        }
+
+        .provider-order-move {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-hover);
+            color: var(--text-soft);
+            transition: background-color 180ms ease, border-color 180ms ease;
+        }
+
+        .provider-order-move:hover:not(:disabled) {
+            background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
+            border-color: color-mix(in srgb, var(--text-primary) 24%, transparent);
+        }
+
+        .provider-order-move:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
+
+        .provider-order-move svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        .provider-order-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-xs);
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+        }
+
+        .provider-order-toggle input[type="checkbox"] {
+            margin: 0;
+        }
+
+        .provider-order-item .provider-icon {
+            color: var(--text-soft);
+            justify-self: center;
+        }
+
+        .save-button {
+            min-width: 88px;
+            min-height: 44px;
+            padding: 0 var(--space-lg);
+            border-radius: 999px;
+            background: linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 18%, transparent), color-mix(in srgb, var(--text-primary) 8%, transparent));
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            font-weight: 700;
+            transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+        }
+
+        .save-button:hover {
+            transform: translateY(-1px);
+            border-color: color-mix(in srgb, var(--text-primary) 28%, transparent);
+        }
+
+        .save-button:disabled {
+            opacity: 0.6;
+            cursor: default;
+            transform: none;
+        }
+
+        @media (max-width: 359px) {
+            .header-meta {
+                display: none;
+            }
+
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .provider-grid-standard {
+                grid-template-columns: 1fr;
+            }
+
+            .provider-card-standard {
+                grid-column: 1 / -1 !important;
+            }
+
+        }
+
+        @media (max-width: 320px) {
+            .quota-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .quota-item:last-child:nth-child(odd) {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation: none !important;
+                transition: none !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="menubar-shell menubar-view-standard" id="menubar-shell">
+        <header class="menubar-header">
+            <div class="header-cluster">
+                <div class="brand-mark" aria-hidden="true" id="brand-mark"></div>
+                <div class="header-value" id="header-value">onWatch</div>
+                <div class="header-meta">
+                    <span id="header-count">0</span>
+                    <span class="meta-divider"></span>
+                    <span id="header-updated">--</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="icon-button" id="view-toggle" aria-label="Change menubar density" title="Change density">
+                    <span class="view-pill" id="view-pill">Default</span>
+                </button>
+                <button class="icon-button" id="settings-toggle" aria-label="Open menubar settings" title="Settings"></button>
+                <button class="icon-button" id="close-button" aria-label="Close menubar" title="Close"></button>
+            </div>
+        </header>
+
+        <section class="menubar-body" id="menubar-body" aria-live="polite"></section>
+
+        <footer class="menubar-footer">
+            <button class="footer-refresh" id="refresh-button" type="button" aria-label="Refresh menubar data" title="Refresh">
+                <span id="refresh-icon"></span>
+            </button>
+            <div class="footer-links">
+                <span class="footer-version" id="footer-version">v-</span>
+                <a class="footer-link" id="footer-github" href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noopener noreferrer" aria-label="GitHub" title="GitHub">GitHub</a>
+                <a class="footer-link" id="footer-support" href="https://github.com/onllm-dev/onwatch/issues" target="_blank" rel="noopener noreferrer" aria-label="Support" title="Support">Support</a>
+                <a class="footer-link" id="footer-onllm" href="https://onllm.dev" target="_blank" rel="noopener noreferrer" aria-label="onllm.dev" title="onllm.dev">onllm.dev</a>
+            </div>
+        </footer>
+
+        <section class="settings-panel hidden" id="settings-panel" aria-hidden="true">
+            <div class="settings-header">
+                <button class="icon-button" id="settings-back" aria-label="Close settings" title="Back"></button>
+                <div class="settings-title">Settings</div>
+                <button class="icon-button" id="settings-close" aria-label="Close settings" title="Close"></button>
+            </div>
+            <div class="settings-body" id="settings-body"></div>
+            <div class="settings-footer">
+                <div class="settings-hint" id="settings-note">tray + local</div>
+                <button class="save-button" id="settings-save" type="button">Save</button>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        window.__ONWATCH_MENUBAR__ = __ONWATCH_MENUBAR_BOOTSTRAP__;
+
+        (() => {
+            const MENUBAR_VERSION = "__ONWATCH_MENUBAR_VERSION__";
+            const STATUS_STORAGE_KEY = "menubar_status_display";
+            const VIEW_STORAGE_KEY = "menubar_view_mode";
+            const ORDER_STORAGE_KEY = "menubar_provider_order";
+            const THEME_STORAGE_KEY = "menubar_theme_mode";
+            const VIEW_ORDER = ["minimal", "standard", "detailed"];
+            const THEME_MODES = ["system", "light", "dark"];
+
+            const icons = {
+                star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20"/><path d="M2 12h20"/><path d="M4.93 4.93 19.07 19.07"/><path d="M19.07 4.93 4.93 19.07"/></svg>',
+                settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.82l.05.05a2 2 0 0 1-2.82 2.83l-.06-.06a1.6 1.6 0 0 0-1.81-.33 1.6 1.6 0 0 0-.99 1.48V21a2 2 0 0 1-4 0v-.08a1.6 1.6 0 0 0-.99-1.48 1.6 1.6 0 0 0-1.81.33l-.06.06A2 2 0 0 1 4.4 17l.06-.05A1.6 1.6 0 0 0 4.79 15a1.6 1.6 0 0 0-1.48-.99H3.2a2 2 0 1 1 0-4h.08A1.6 1.6 0 0 0 4.76 9a1.6 1.6 0 0 0-.33-1.82l-.06-.05A2 2 0 1 1 7.2 4.3l.06.05a1.6 1.6 0 0 0 1.81.33 1.6 1.6 0 0 0 .99-1.48V3.1a2 2 0 0 1 4 0v.08a1.6 1.6 0 0 0 .99 1.48 1.6 1.6 0 0 0 1.81-.33l.06-.05a2 2 0 1 1 2.82 2.82l-.05.06A1.6 1.6 0 0 0 19.4 9c0 .64.37 1.22.95 1.49.17.08.35.11.54.11h.08a2 2 0 0 1 0 4h-.08a1.6 1.6 0 0 0-1.49.95Z"/></svg>',
+                close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6 18 18"/><path d="M18 6 6 18"/></svg>',
+                back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18 9 12l6-6"/></svg>',
+                refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/></svg>',
+                clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
+                grip: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="7" r="1.5"/><circle cx="8" cy="12" r="1.5"/><circle cx="8" cy="17" r="1.5"/><circle cx="16" cy="7" r="1.5"/><circle cx="16" cy="12" r="1.5"/><circle cx="16" cy="17" r="1.5"/></svg>',
+                arrowUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 6-6 6 6"/></svg>',
+                arrowDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 10 6 6 6-6"/></svg>',
+            };
+
+            const statusDisplayOptions = [
+                { mode: "multi_provider", label: "Multi-provider", detail: () => "Select up to three quotas." },
+                { mode: "critical_count", label: "Critical count", detail: (snapshot) => `Shows ${aggregateAlertCount(snapshot)} alerts.` },
+                { mode: "icon_only", label: "Icon only", detail: () => "Shows only the tray icon." }
+            ];
+
+            const bootstrap = normalizePreferences(window.__ONWATCH_MENUBAR__ || {});
+            const requestedView = (() => {
+                const query = new URLSearchParams(window.location.search).get("view");
+                return query ? normalizeView(query) : "";
+            })();
+            const storedStatus = readStoredStatusDisplay();
+            const storedOrder = readStoredProviderOrder();
+
+            if (storedStatus) {
+                bootstrap.status_display = storedStatus;
+            }
+            if (storedOrder.length > 0) {
+                bootstrap.providers_order = storedOrder;
+            }
+
+            const state = {
+                snapshot: null,
+                providerOptions: [],
+                preferences: bootstrap,
+                draft: null,
+                view: requestedView || normalizeView(bootstrap.default_view || "standard"),
+                loading: true,
+                saving: false,
+                settingsOpen: false,
+                error: "",
+                draggingProviderID: "",
+                systemPrefersDark: window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches,
+                quotaSelectionExpanded: true
+            };
+
+            const shell = document.getElementById("menubar-shell");
+            const body = document.getElementById("menubar-body");
+            const settingsPanel = document.getElementById("settings-panel");
+            const settingsBody = document.getElementById("settings-body");
+            const header = document.querySelector(".menubar-header");
+            const headerCluster = document.querySelector(".header-cluster");
+            const footer = document.querySelector(".menubar-footer");
+            const settingsHeader = settingsPanel.querySelector(".settings-header");
+            const settingsFooter = settingsPanel.querySelector(".settings-footer");
+            const headerValue = document.getElementById("header-value");
+            const headerCount = document.getElementById("header-count");
+            const headerUpdated = document.getElementById("header-updated");
+            const viewPill = document.getElementById("view-pill");
+            const settingsNote = document.getElementById("settings-note");
+            const footerVersion = document.getElementById("footer-version");
+            let refreshTimer = null;
+            let resizeFrame = 0;
+            let resizeTimer = 0;
+
+            if (footerVersion) {
+                footerVersion.textContent = `v${MENUBAR_VERSION || "-"}`;
+            }
+
+            document.getElementById("brand-mark").innerHTML = icons.star;
+            document.getElementById("settings-toggle").innerHTML = icons.settings;
+            document.getElementById("close-button").innerHTML = icons.close;
+            document.getElementById("settings-back").innerHTML = icons.back;
+            document.getElementById("settings-close").innerHTML = icons.close;
+            document.getElementById("refresh-icon").innerHTML = icons.refresh;
+
+            document.getElementById("view-toggle").addEventListener("click", () => {
+                state.view = nextView(state.view);
+                writeStoredViewMode(state.view);
+                if (state.settingsOpen && state.draft) {
+                    state.draft.default_view = state.view;
+                    settingsNote.textContent = "unsaved";
+                }
+                render();
+            });
+            const themeMedia = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+            if (themeMedia && typeof themeMedia.addEventListener === "function") {
+                themeMedia.addEventListener("change", (event) => {
+                    state.systemPrefersDark = !!event.matches;
+                    applyTheme();
+                    queueResizeReport();
+                });
+            } else if (themeMedia && typeof themeMedia.addListener === "function") {
+                themeMedia.addListener((event) => {
+                    state.systemPrefersDark = !!event.matches;
+                    applyTheme();
+                    queueResizeReport();
+                });
+            }
+            document.getElementById("settings-toggle").addEventListener("click", () => openSettings());
+            document.getElementById("settings-back").addEventListener("click", () => closeSettings());
+            document.getElementById("settings-close").addEventListener("click", () => closeSettings());
+            headerCluster.addEventListener("click", () => openDashboard());
+            document.getElementById("close-button").addEventListener("click", () => closeMenubar());
+            document.getElementById("refresh-button").addEventListener("click", () => void refreshData());
+            document.getElementById("settings-save").addEventListener("click", () => void savePreferences());
+            settingsBody.addEventListener("change", handleSettingsChange);
+            settingsBody.addEventListener("click", handleSettingsClick);
+            settingsBody.addEventListener("dragstart", handleSettingsDragStart);
+            settingsBody.addEventListener("dragover", handleSettingsDragOver);
+            settingsBody.addEventListener("drop", handleSettingsDrop);
+            settingsBody.addEventListener("dragend", handleSettingsDragEnd);
+            window.addEventListener("resize", queueResizeReport);
+
+            init();
+
+            async function init() {
+                applyTheme();
+                render();
+                await Promise.all([loadPreferences(), loadSnapshot()]);
+            }
+
+            async function loadPreferences() {
+                try {
+                    const response = await fetch("/api/menubar/preferences", {
+                        credentials: "same-origin",
+                        headers: { "Accept": "application/json" }
+                    });
+                    if (!response.ok) {
+                        throw new Error(`preferences ${response.status}`);
+                    }
+                    const data = await response.json();
+                    state.providerOptions = Array.isArray(data.providers) ? data.providers : [];
+                    const preferences = normalizePreferences(data);
+                    const localStatus = readStoredStatusDisplay();
+                    const localOrder = readStoredProviderOrder();
+                    if (localStatus) {
+                        preferences.status_display = localStatus;
+                    }
+                    preferences.providers_order = mergeProviderOrder(
+                        localOrder.length > 0 ? localOrder : preferences.providers_order,
+                        state.providerOptions.map((provider) => provider.id)
+                    );
+                    state.preferences = preferences;
+                    if (!state.settingsOpen) {
+                        state.draft = null;
+                    }
+                    writeStoredThemeMode(preferences.theme);
+                    applyTheme();
+                    if (!requestedView) {
+                        state.view = normalizeView(preferences.default_view || state.view);
+                    }
+                    writeStoredStatusDisplay(preferences.status_display);
+                    writeStoredProviderOrder(preferences.providers_order);
+                    resetRefreshTimer();
+                    render();
+                } catch (error) {
+                    resetRefreshTimer();
+                    render();
+                }
+            }
+
+            async function loadSnapshot() {
+                state.loading = state.snapshot == null;
+                render();
+                try {
+                    const response = await fetch("/api/menubar/summary", {
+                        credentials: "same-origin",
+                        headers: { "Accept": "application/json" }
+                    });
+                    if (!response.ok) {
+                        throw new Error(`summary ${response.status}`);
+                    }
+                    state.snapshot = await response.json();
+                    state.error = "";
+                } catch (error) {
+                    state.error = error && error.message ? error.message : "Unable to load menubar data.";
+                } finally {
+                    state.loading = false;
+                    render();
+                }
+            }
+
+            async function refreshData() {
+                await Promise.all([loadPreferences(), loadSnapshot()]);
+            }
+
+            function sendNativeAction(action) {
+                try {
+                    const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.onwatchAction;
+                    if (handler && typeof handler.postMessage === "function") {
+                        handler.postMessage(action);
+                        return true;
+                    }
+                } catch (error) {
+                    return false;
+                }
+                return false;
+            }
+
+            function openDashboard() {
+                if (sendNativeAction("open_dashboard")) {
+                    return;
+                }
+                window.location.href = "/";
+            }
+
+            function closeMenubar() {
+                if (sendNativeAction("close")) {
+                    return;
+                }
+                if (typeof window.close === "function") {
+                    window.close();
+                }
+                setTimeout(() => {
+                    if (window.location.pathname !== "/") {
+                        window.location.href = "/";
+                    }
+                }, 50);
+            }
+
+            async function savePreferences() {
+                if (state.saving) {
+                    return;
+                }
+                const draft = normalizePreferences(state.draft || state.preferences);
+                draft.providers_order = mergeProviderOrder(draft.providers_order, state.providerOptions.map((provider) => provider.id));
+                state.saving = true;
+                renderSettings();
+                try {
+                    const response = await fetch("/api/menubar/preferences", {
+                        method: "PUT",
+                        credentials: "same-origin",
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "X-Requested-With": "XMLHttpRequest"
+                        },
+                        body: JSON.stringify(draft)
+                    });
+                    if (!response.ok) {
+                        throw new Error(`save ${response.status}`);
+                    }
+                    const data = await response.json();
+                    state.providerOptions = Array.isArray(data.providers) ? data.providers : state.providerOptions;
+                    state.preferences = normalizePreferences(data);
+                    state.preferences.providers_order = mergeProviderOrder(
+                        draft.providers_order,
+                        state.providerOptions.map((provider) => provider.id)
+                    );
+                    writeStoredStatusDisplay(state.preferences.status_display);
+                    writeStoredProviderOrder(state.preferences.providers_order);
+                    writeStoredThemeMode(state.preferences.theme);
+                    writeStoredViewMode(state.view);
+                    state.draft = null;
+                    applyTheme();
+                    state.settingsOpen = false;
+                    state.error = "";
+                    settingsNote.textContent = "saved";
+                    resetRefreshTimer();
+                    await loadSnapshot();
+                } catch (error) {
+                    settingsNote.textContent = "save failed";
+                } finally {
+                    state.saving = false;
+                    render();
+                }
+            }
+
+            function openSettings() {
+                const draft = normalizePreferences(state.preferences);
+                draft.default_view = normalizeView(state.view || draft.default_view);
+                draft.providers_order = mergeProviderOrder(draft.providers_order, state.providerOptions.map((provider) => provider.id));
+                state.draft = draft;
+                state.settingsOpen = true;
+                settingsNote.textContent = "drag + save";
+                render();
+            }
+
+            function closeSettings() {
+                state.settingsOpen = false;
+                state.draft = null;
+                state.draggingProviderID = "";
+                render();
+            }
+
+            function handleSettingsChange(event) {
+                if (!state.draft) {
+                    return;
+                }
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) {
+                    return;
+                }
+                if (target.matches('input[name="status-display"]')) {
+                    state.draft.status_display.mode = target.value;
+                    if (target.value === "multi_provider") {
+                        ensureMultiProviderSelection();
+                        state.quotaSelectionExpanded = true;
+                    }
+                    settingsNote.textContent = "unsaved";
+                    renderSettings();
+                    return;
+                }
+                if (target.matches('input[name="status-selection"]')) {
+                    state.draft.status_display.selected_quotas = normalizeStatusSelections(
+                        [...settingsBody.querySelectorAll('input[name="status-selection"]:checked')]
+                            .map((input) => parseStatusSelectionValue(input.value))
+                    );
+                    state.quotaSelectionExpanded = true;
+                    settingsNote.textContent = "unsaved";
+                    renderSettings();
+                    return;
+                }
+                if (target.matches('input[name="visible-provider"]')) {
+                    const visible = [...settingsBody.querySelectorAll('input[name="visible-provider"]:checked')].map((input) => input.value);
+                    if (visible.length === state.providerOptions.length) {
+                        state.draft.visible_providers = [];
+                    } else {
+                        state.draft.visible_providers = visible;
+                    }
+                    ensureMultiProviderSelection();
+                    state.quotaSelectionExpanded = true;
+                    settingsNote.textContent = "unsaved";
+                    renderSettings();
+                    return;
+                }
+                if (target.matches('select[name="view-mode"]')) {
+                    state.draft.default_view = normalizeView(target.value);
+                    state.view = state.draft.default_view;
+                    writeStoredViewMode(state.view);
+                    settingsNote.textContent = "unsaved";
+                    render();
+                    return;
+                }
+                if (target.matches('select[name="theme-mode"]')) {
+                    state.draft.theme = normalizeTheme(target.value);
+                    settingsNote.textContent = "unsaved";
+                    applyTheme();
+                    queueResizeReport();
+                    return;
+                }
+            }
+
+            function handleSettingsClick(event) {
+                const target = event.target instanceof Element ? event.target.closest('[data-action="toggle-quota-selection"]') : null;
+                if (!(target instanceof HTMLElement)) {
+                    return;
+                }
+                event.preventDefault();
+                state.quotaSelectionExpanded = !state.quotaSelectionExpanded;
+                renderSettings();
+                queueResizeReport();
+            }
+
+            function handleSettingsDragStart(event) {
+                if (!state.settingsOpen || !state.draft) {
+                    return;
+                }
+                const item = event.target instanceof Element ? event.target.closest(".provider-order-item") : null;
+                if (!(item instanceof HTMLElement)) {
+                    return;
+                }
+                state.draggingProviderID = item.dataset.providerId || "";
+                item.classList.add("dragging");
+                if (event.dataTransfer) {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", state.draggingProviderID);
+                }
+            }
+
+            function handleSettingsDragOver(event) {
+                if (!state.settingsOpen || !state.draft) {
+                    return;
+                }
+                const list = settingsBody.querySelector("#provider-order-list");
+                const dragging = list ? list.querySelector(".provider-order-item.dragging") : null;
+                const item = event.target instanceof Element ? event.target.closest(".provider-order-item") : null;
+                if (!(list instanceof HTMLElement) || !(dragging instanceof HTMLElement) || !(item instanceof HTMLElement) || item === dragging) {
+                    return;
+                }
+                event.preventDefault();
+                const box = item.getBoundingClientRect();
+                const insertBefore = event.clientY < box.top + box.height / 2;
+                if (insertBefore) {
+                    list.insertBefore(dragging, item);
+                } else {
+                    list.insertBefore(dragging, item.nextSibling);
+                }
+            }
+
+            function handleSettingsDrop(event) {
+                if (!state.settingsOpen || !state.draft) {
+                    return;
+                }
+                const list = settingsBody.querySelector("#provider-order-list");
+                if (!(list instanceof HTMLElement)) {
+                    return;
+                }
+                event.preventDefault();
+                syncDraftProviderOrder(list);
+            }
+
+            function handleSettingsDragEnd(event) {
+                if (!state.settingsOpen || !state.draft) {
+                    return;
+                }
+                const item = event.target instanceof Element ? event.target.closest(".provider-order-item") : null;
+                if (item instanceof HTMLElement) {
+                    item.classList.remove("dragging");
+                }
+                const list = settingsBody.querySelector("#provider-order-list");
+                if (list instanceof HTMLElement) {
+                    syncDraftProviderOrder(list);
+                }
+                state.draggingProviderID = "";
+            }
+
+            function syncDraftProviderOrder(list) {
+                state.draft.providers_order = [...list.querySelectorAll(".provider-order-item[data-provider-id]")]
+                    .map((item) => item.getAttribute("data-provider-id") || "")
+                    .filter(Boolean);
+                settingsNote.textContent = "unsaved";
+                renderBody();
+                queueResizeReport();
+            }
+
+            function moveDraftProvider(providerID, direction) {
+                if (!state.settingsOpen || !state.draft || !providerID) {
+                    return;
+                }
+                const available = orderedProviderOptions().map((provider) => provider.id);
+                const order = mergeProviderOrder(state.draft.providers_order, available);
+                const from = order.indexOf(providerID);
+                if (from < 0) {
+                    return;
+                }
+                const delta = direction === "up" ? -1 : 1;
+                const to = from + delta;
+                if (to < 0 || to >= order.length) {
+                    return;
+                }
+                [order[from], order[to]] = [order[to], order[from]];
+                state.draft.providers_order = order;
+                settingsNote.textContent = "unsaved";
+                renderBody();
+                renderSettings();
+                queueResizeReport();
+            }
+
+            function render() {
+                shell.className = `menubar-shell menubar-view-${escapeHTML(state.view)}${state.settingsOpen ? " settings-open" : ""}`;
+                updateHeader();
+                renderBody();
+                renderSettings();
+                settingsPanel.classList.toggle("hidden", !state.settingsOpen);
+                settingsPanel.setAttribute("aria-hidden", String(!state.settingsOpen));
+                viewPill.textContent = viewCode(state.view);
+                queueResizeReport();
+            }
+
+            function updateHeader() {
+                const providers = visibleProviders();
+                headerValue.textContent = "onWatch";
+                headerValue.classList.remove("hidden");
+                headerValue.setAttribute("aria-hidden", "false");
+                headerCount.textContent = `${providers.length} ${providers.length === 1 ? "provider" : "providers"}`;
+                headerUpdated.textContent = compactUpdatedLabel(state.snapshot && state.snapshot.updated_ago);
+            }
+
+            function renderBody() {
+                if (state.loading && !state.snapshot) {
+                    body.innerHTML = renderStateCard("Loading", "Fetching quota snapshot");
+                    return;
+                }
+                if (state.error && !state.snapshot) {
+                    body.innerHTML = renderStateCard("Unavailable", state.error);
+                    return;
+                }
+                if (!state.snapshot || !Array.isArray(state.snapshot.providers) || state.snapshot.providers.length === 0) {
+                    body.innerHTML = renderStateCard("No Data", "Enable a provider to fill the tray.");
+                    return;
+                }
+                const providers = visibleProviders();
+                if (providers.length === 0) {
+                    body.innerHTML = renderStateCard("No Data", "Choose at least one provider.");
+                    return;
+                }
+                if (state.view === "minimal") {
+                    body.innerHTML = renderMinimalView(providers);
+                    return;
+                }
+                if (state.view === "detailed") {
+                    body.innerHTML = renderDetailedView(providers);
+                    return;
+                }
+                body.innerHTML = renderStandardView(providers);
+            }
+
+            function renderSettings() {
+                if (!state.settingsOpen || !state.draft) {
+                    settingsBody.innerHTML = "";
+                    document.getElementById("settings-save").disabled = false;
+                    return;
+                }
+                ensureMultiProviderSelection();
+                const draft = state.draft;
+                const orderedOptions = orderedProviderOptions();
+                const showAll = draft.visible_providers.length === 0;
+                const statusOptions = selectableStatusQuotaOptions();
+                const selectedKeys = new Set(draft.status_display.selected_quotas.map((selection) => statusSelectionKey(selection)));
+                const selectedCount = draft.status_display.selected_quotas.length;
+                settingsBody.innerHTML = `
+                    <section class="settings-section">
+                        <h2>Appearance</h2>
+                        <div class="settings-card">
+                            <label class="settings-row">
+                                <span>Density</span>
+                                <select name="view-mode" aria-label="Menubar density">
+                                    <option value="minimal" ${draft.default_view === "minimal" ? "selected" : ""}>Minimal</option>
+                                    <option value="standard" ${draft.default_view === "standard" ? "selected" : ""}>Default</option>
+                                    <option value="detailed" ${draft.default_view === "detailed" ? "selected" : ""}>Detail</option>
+                                </select>
+                            </label>
+                            <div class="settings-hint">Minimal keeps a compact dashboard-style summary. Default shows quota cards. Detail expands bars and metadata.</div>
+                            <div class="settings-divider" aria-hidden="true"></div>
+                            <label class="settings-row">
+                                <span>Theme</span>
+                                <select name="theme-mode" aria-label="Theme mode">
+                                    <option value="system" ${draft.theme === "system" ? "selected" : ""}>System</option>
+                                    <option value="light" ${draft.theme === "light" ? "selected" : ""}>Light</option>
+                                    <option value="dark" ${draft.theme === "dark" ? "selected" : ""}>Dark</option>
+                                </select>
+                            </label>
+                            <div class="settings-hint">System follows macOS appearance. Light and Dark override it.</div>
+                        </div>
+                    </section>
+
+                    <section class="settings-section">
+                        <h2>Status Bar Display</h2>
+                        <div class="settings-card">
+                            ${statusDisplayOptions.map((option) => `
+                                <label class="settings-option">
+                                    <input type="radio" name="status-display" value="${escapeHTML(option.mode)}" ${draft.status_display.mode === option.mode ? "checked" : ""}>
+                                    <span class="settings-option-copy">
+                                        <strong>${escapeHTML(option.label)}</strong>
+                                        ${option.detail(state.snapshot, draft) ? `<em>${escapeHTML(option.detail(state.snapshot, draft))}</em>` : ""}
+                                    </span>
+                                </label>
+                            `).join("")}
+                            ${draft.status_display.mode === "multi_provider" ? `
+                                <div class="settings-divider" aria-hidden="true"></div>
+                                <div class="settings-collapsible ${state.quotaSelectionExpanded ? "" : "collapsed"}" id="quota-selection-collapsible">
+                                    <button type="button" class="settings-collapsible-toggle" data-action="toggle-quota-selection">
+                                        <span>Select quotas (${selectedCount}/3)</span>
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                                    </button>
+                                    <div class="settings-collapsible-content">
+                                        <div class="settings-hint">Select quotas to display. Hidden providers do not appear here.</div>
+                                        <div class="settings-checklist">
+                                            ${statusOptions.map((option) => {
+                                                const key = statusSelectionKey(option);
+                                                const checked = selectedKeys.has(key);
+                                                const disabled = !checked && selectedCount >= 3;
+                                                return `
+                                                    <label class="settings-check-item ${disabled ? "is-disabled" : ""}">
+                                                        <input type="checkbox" name="status-selection" value="${escapeHTML(key)}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}>
+                                                        <span class="settings-check-copy">
+                                                            <strong>${escapeHTML(option.provider_label)} - ${escapeHTML(option.quota_label)}</strong>
+                                                            <em>${escapeHTML(compactQuotaLabel(option.quota_label, option.quota_key))} · ${escapeHTML(option.base_provider || "provider")}</em>
+                                                        </span>
+                                                    </label>
+                                                `;
+                                            }).join("") || '<div class="settings-hint">No visible provider quotas are available yet.</div>'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="settings-preview">
+                                    <span class="settings-preview-label">Preview</span>
+                                    <strong>${escapeHTML(statusDisplayPreview(state.snapshot, draft))}</strong>
+                                </div>
+                            ` : ""}
+                        </div>
+                    </section>
+
+                    <section class="settings-section">
+                        <h2>Provider Order</h2>
+                        <div class="settings-card">
+                            <div class="settings-hint">Drag or use arrows to reorder. Toggle visibility on the right.</div>
+                            <div class="provider-order-list" id="provider-order-list">
+                                ${orderedOptions.map((provider, index) => {
+                                    const visible = showAll || draft.visible_providers.includes(provider.id);
+                                    const canMoveUp = index > 0;
+                                    const canMoveDown = index < orderedOptions.length - 1;
+                                    return `
+                                        <div class="provider-order-item ${visible ? "" : "is-hidden"}" draggable="true" data-provider-id="${escapeHTML(provider.id)}">
+                                            <span class="provider-order-handle" aria-hidden="true">${icons.grip}</span>
+                                            <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
+                                            <div class="provider-order-copy">
+                                                <span class="provider-order-name">${escapeHTML(provider.label)}</span>
+                                                <span class="provider-order-meta">${escapeHTML(provider.base_provider || "provider")}</span>
+                                            </div>
+                                            <div class="provider-order-controls">
+                                                <button type="button" class="provider-order-move" data-provider-move="up" data-provider-id="${escapeHTML(provider.id)}" ${canMoveUp ? "" : "disabled"} aria-label="Move ${escapeHTML(provider.label)} up" title="Move up">${icons.arrowUp}</button>
+                                                <button type="button" class="provider-order-move" data-provider-move="down" data-provider-id="${escapeHTML(provider.id)}" ${canMoveDown ? "" : "disabled"} aria-label="Move ${escapeHTML(provider.label)} down" title="Move down">${icons.arrowDown}</button>
+                                                <label class="provider-order-toggle">
+                                                    <input type="checkbox" name="visible-provider" value="${escapeHTML(provider.id)}" ${visible ? "checked" : ""}>
+                                                    <span>${visible ? "show" : "hide"}</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join("")}
+                            </div>
+                        </div>
+                    </section>
+                `;
+                document.getElementById("settings-save").disabled = state.saving;
+                settingsBody.querySelectorAll("button[data-provider-move]").forEach((button) => {
+                    button.addEventListener("click", () => {
+                        const providerID = button.getAttribute("data-provider-id") || "";
+                        const direction = button.getAttribute("data-provider-move") || "";
+                        if (!providerID || !direction) {
+                            return;
+                        }
+                        moveDraftProvider(providerID, direction);
+                    });
+                });
+            }
+
+            function renderStandardView(providers) {
+                return `
+                    <section class="provider-grid provider-grid-standard">
+                        ${providers.map((provider) => renderStandardCard(provider)).join("")}
+                    </section>
+                `;
+            }
+
+            function renderMinimalView(providers) {
+                return `
+                    <section class="minimal-view">
+                        ${providers.map((provider) => `
+                            <article class="minimal-provider-row status-${escapeHTML(provider.status || "healthy")}">
+                                ${providerHeaderMarkup(provider)}
+                                <div class="minimal-quota-list">
+                                    ${providerQuotas(provider).map((quota, index) => `
+                                        ${index > 0 ? '<span class="inline-divider" aria-hidden="true">|</span>' : ""}
+                                        <span class="minimal-quota-inline">
+                                            <span class="minimal-quota-label">${escapeHTML(compactQuotaLabel(quota.label, quota.key))}</span>
+                                            <span class="minimal-quota-percent">${Math.round(clampPercent(quota.percent))}%</span>
+                                            <span class="minimal-quota-reset">${escapeHTML(compactResetLabel(quota))}</span>
+                                        </span>
+                                    `).join("")}
+                                </div>
+                            </article>
+                        `).join("")}
+                    </section>
+                `;
+            }
+
+            function renderDetailedView(providers) {
+                return `
+                    <section class="provider-grid provider-grid-detailed">
+                        ${providers.map((provider) => renderDetailedCard(provider)).join("")}
+                    </section>
+                `;
+            }
+
+            function renderStandardCard(provider) {
+                const quotas = providerQuotas(provider);
+                return `
+                    <article class="provider-card provider-card-standard status-${escapeHTML(provider.status || "healthy")}" style="--card-span:${cardSpan(provider)};">
+                        ${providerHeaderMarkup(provider)}
+                        <div class="quota-grid" style="--quota-count:${Math.max(quotas.length, 1)};">
+                            ${quotas.map((quota) => renderStandardQuota(quota)).join("")}
+                        </div>
+                    </article>
+                `;
+            }
+
+            function renderDetailedCard(provider) {
+                return `
+                    <article class="provider-card provider-card-detailed status-${escapeHTML(provider.status || "healthy")}">
+                        ${providerHeaderMarkup(provider)}
+                        <div class="quota-detail-stack">
+                            ${providerQuotas(provider).map((quota) => renderDetailedQuota(quota)).join("")}
+                        </div>
+                    </article>
+                `;
+            }
+
+            function renderStandardQuota(quota) {
+                return `
+                    <div class="quota-item status-${escapeHTML(quota.status || "healthy")}">
+                        ${pieChartMarkup(quota)}
+                        <span class="quota-label">${escapeHTML(compactQuotaLabel(quota.label, quota.key))}</span>
+                        <span class="quota-reset-line">${icons.clock}<span>${escapeHTML(compactResetLabel(quota))}</span></span>
+                    </div>
+                `;
+            }
+
+
+            function renderDetailedQuota(quota) {
+                const percent = clampPercent(quota.percent);
+                const meta = detailedMeta(quota);
+                return `
+                    <section class="quota-detail-section status-${escapeHTML(quota.status || "healthy")}">
+                        <div class="quota-detail-head">
+                            <span class="quota-detail-label">${escapeHTML(quota.label || compactQuotaLabel(quota.label, quota.key))}</span>
+                            <span class="quota-reset-line">${icons.clock}<span>${escapeHTML(compactResetLabel(quota))}</span></span>
+                        </div>
+                        <div class="quota-bar-row">
+                            <div class="quota-bar-track">
+                                <span class="quota-bar-fill status-${escapeHTML(quota.status || "healthy")}" style="width:${percent.toFixed(2)}%;"></span>
+                            </div>
+                            <span class="quota-bar-value">${Math.round(percent)}%</span>
+                        </div>
+                        <div class="quota-detail-meta">
+                            ${meta.map((item, index) => `
+                                ${index > 0 ? '<span class="detail-divider" aria-hidden="true"></span>' : ""}
+                                <span>${escapeHTML(item)}</span>
+                            `).join("")}
+                        </div>
+                    </section>
+                `;
+            }
+
+            function providerHeaderMarkup(provider) {
+                return `
+                    <div class="provider-header">
+                        <div class="provider-copy">
+                            <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
+                            <span class="provider-name">${escapeHTML(provider.label)}</span>
+                        </div>
+                        <span class="provider-updated">${escapeHTML(compactUpdatedLabel(provider.updated_at))}</span>
+                    </div>
+                `;
+            }
+
+            function pieChartMarkup(quota) {
+                const percent = clampPercent(quota.percent);
+                const circumference = 97.389;
+                const dash = (percent / 100) * circumference;
+                return `
+                    <svg class="quota-meter" viewBox="0 0 40 40" width="40" height="40" aria-hidden="true">
+                        <circle class="quota-track" cx="20" cy="20" r="15.5"></circle>
+                        <circle class="quota-fill" cx="20" cy="20" r="15.5" stroke-dasharray="${dash.toFixed(2)} ${circumference.toFixed(2)}"></circle>
+                        <circle class="quota-center" cx="20" cy="20" r="10.5"></circle>
+                        <text class="quota-percent" x="20" y="23" text-anchor="middle">${Math.round(percent)}%</text>
+                    </svg>
+                `;
+            }
+
+            function renderStateCard(title, bodyCopy) {
+                return `
+                    <article class="state-card">
+                        <strong>${escapeHTML(title)}</strong>
+                        <span>${escapeHTML(bodyCopy)}</span>
+                    </article>
+                `;
+            }
+
+            function activePreferences() {
+                return state.settingsOpen && state.draft ? state.draft : state.preferences;
+            }
+
+            function visibleProviders() {
+                const snapshotProviders = Array.isArray(state.snapshot && state.snapshot.providers) ? state.snapshot.providers.slice() : [];
+                const ordered = sortByProviderOrder(snapshotProviders, activePreferences().providers_order);
+                const visible = activePreferences().visible_providers || [];
+                if (visible.length === 0) {
+                    return ordered;
+                }
+                const allowed = new Set(visible);
+                return ordered.filter((provider) => allowed.has(provider.id));
+            }
+
+            function orderedProviderOptions() {
+                return sortByProviderOrder(state.providerOptions.slice(), activePreferences().providers_order);
+            }
+
+            function providerQuotas(provider) {
+                return Array.isArray(provider && provider.quotas) ? provider.quotas.slice(0, 3) : [];
+            }
+
+            function cardSpan(provider) {
+                const count = providerQuotas(provider).length;
+                if (count >= 3) {
+                    return 6;
+                }
+                if (count === 2) {
+                    return 4;
+                }
+                return 2;
+            }
+
+            function buildAggregate(providers) {
+                return providers.reduce((aggregate, provider) => {
+                    const highest = clampPercent(provider.highest_percent);
+                    aggregate.highest_percent = Math.max(aggregate.highest_percent, highest);
+                    if (provider.status === "critical") {
+                        aggregate.critical_count += 1;
+                    } else if (provider.status === "warning" || provider.status === "danger") {
+                        aggregate.warning_count += 1;
+                    }
+                    return aggregate;
+                }, { highest_percent: 0, warning_count: 0, critical_count: 0 });
+            }
+
+            function normalizePreferences(raw) {
+                const storedStatus = normalizeStatusDisplay(raw && raw.status_display);
+                const storedTheme = readStoredThemeMode();
+                const rawTheme = raw && typeof raw.theme === "string" ? normalizeTheme(raw.theme) : "";
+                return {
+                    enabled: raw && raw.enabled !== false,
+                    default_view: normalizeView(raw && raw.default_view),
+                    refresh_seconds: Math.max(parseInt(raw && raw.refresh_seconds, 10) || 60, 10),
+                    providers_order: normalizeStringList(raw && raw.providers_order),
+                    visible_providers: normalizeStringList(raw && raw.visible_providers),
+                    warning_percent: parseInt(raw && raw.warning_percent, 10) || 70,
+                    critical_percent: parseInt(raw && raw.critical_percent, 10) || 90,
+                    status_display: storedStatus.mode ? storedStatus : { mode: "multi_provider", selected_quotas: [] },
+                    theme: normalizeTheme(rawTheme || storedTheme || "system")
+                };
+            }
+
+            function normalizeStatusDisplay(raw) {
+                const mode = raw && typeof raw.mode === "string" ? raw.mode : "";
+                const providerID = raw && typeof raw.provider_id === "string" ? raw.provider_id : "";
+                const quotaKey = raw && typeof raw.quota_key === "string" ? raw.quota_key : "";
+                const selectedQuotas = normalizeStatusSelections(raw && raw.selected_quotas, providerID, quotaKey);
+                const normalizedMode = mode === "provider_specific" ? "multi_provider" : mode;
+                if (!statusDisplayOptions.some((option) => option.mode === normalizedMode)) {
+                    return { mode: "multi_provider", selected_quotas: selectedQuotas };
+                }
+                return { mode: normalizedMode, selected_quotas: normalizedMode === "multi_provider" ? selectedQuotas : [] };
+            }
+
+            function normalizeStatusSelections(values, legacyProviderID = "", legacyQuotaKey = "") {
+                const rawValues = Array.isArray(values) ? values : [];
+                const seen = new Set();
+                const selections = [];
+                for (const value of rawValues) {
+                    const providerID = String(value && value.provider_id ? value.provider_id : "").trim();
+                    const quotaKey = String(value && value.quota_key ? value.quota_key : "").trim();
+                    if (!providerID) {
+                        continue;
+                    }
+                    const key = `${providerID}::${quotaKey}`;
+                    if (seen.has(key)) {
+                        continue;
+                    }
+                    seen.add(key);
+                    selections.push({ provider_id: providerID, quota_key: quotaKey });
+                    if (selections.length === 3) {
+                        return selections;
+                    }
+                }
+                if (selections.length === 0 && legacyProviderID) {
+                    return [{ provider_id: String(legacyProviderID).trim(), quota_key: String(legacyQuotaKey || "").trim() }];
+                }
+                return selections;
+            }
+
+            function normalizeStringList(values) {
+                if (!Array.isArray(values)) {
+                    return [];
+                }
+                const seen = new Set();
+                return values
+                    .map((value) => String(value || "").trim())
+                    .filter((value) => value && !seen.has(value) && seen.add(value));
+            }
+
+            function mergeProviderOrder(order, availableIDs) {
+                const wanted = normalizeStringList(order);
+                const available = normalizeStringList(availableIDs);
+                const seen = new Set();
+                const merged = [];
+                for (const id of wanted) {
+                    if (available.includes(id) && !seen.has(id)) {
+                        seen.add(id);
+                        merged.push(id);
+                    }
+                }
+                for (const id of available) {
+                    if (!seen.has(id)) {
+                        seen.add(id);
+                        merged.push(id);
+                    }
+                }
+                return merged;
+            }
+
+            function sortByProviderOrder(items, order) {
+                const available = items.map((item) => item.id);
+                const mergedOrder = mergeProviderOrder(order, available);
+                const indexByID = new Map(mergedOrder.map((id, index) => [id, index]));
+                return items.sort((left, right) => {
+                    const leftOrder = indexByID.has(left.id) ? indexByID.get(left.id) : Number.MAX_SAFE_INTEGER;
+                    const rightOrder = indexByID.has(right.id) ? indexByID.get(right.id) : Number.MAX_SAFE_INTEGER;
+                    if (leftOrder !== rightOrder) {
+                        return leftOrder - rightOrder;
+                    }
+                    return String(left.label || "").localeCompare(String(right.label || ""));
+                });
+            }
+
+            function readStoredStatusDisplay() {
+                try {
+                    const raw = localStorage.getItem(STATUS_STORAGE_KEY);
+                    return raw ? normalizeStatusDisplay(JSON.parse(raw)) : null;
+                } catch (error) {
+                    return null;
+                }
+            }
+
+            function writeStoredStatusDisplay(statusDisplay) {
+                try {
+                    localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(normalizeStatusDisplay(statusDisplay)));
+                } catch (error) {
+                    // Ignore local storage errors inside the popover.
+                }
+            }
+
+            function readStoredViewMode() {
+                try {
+                    const raw = localStorage.getItem(VIEW_STORAGE_KEY);
+                    return raw ? normalizeView(raw) : "";
+                } catch (error) {
+                    return "";
+                }
+            }
+
+            function writeStoredViewMode(view) {
+                try {
+                    localStorage.setItem(VIEW_STORAGE_KEY, normalizeView(view));
+                } catch (error) {
+                    // Ignore local storage errors inside the popover.
+                }
+            }
+
+            function readStoredProviderOrder() {
+                try {
+                    const raw = localStorage.getItem(ORDER_STORAGE_KEY);
+                    if (!raw) {
+                        return [];
+                    }
+                    return normalizeStringList(JSON.parse(raw));
+                } catch (error) {
+                    return [];
+                }
+            }
+
+            function writeStoredProviderOrder(order) {
+                try {
+                    localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(normalizeStringList(order)));
+                } catch (error) {
+                    // Ignore local storage errors inside the popover.
+                }
+            }
+
+            function readStoredThemeMode() {
+                try {
+                    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+                    return raw ? normalizeTheme(raw) : "";
+                } catch (error) {
+                    return "";
+                }
+            }
+
+            function writeStoredThemeMode(mode) {
+                try {
+                    localStorage.setItem(THEME_STORAGE_KEY, normalizeTheme(mode));
+                } catch (error) {
+                    // Ignore local storage errors inside the popover.
+                }
+            }
+
+            function resolveThemeMode() {
+                const draft = state.settingsOpen && state.draft ? state.draft : state.preferences;
+                return normalizeTheme(draft && draft.theme);
+            }
+
+            function applyTheme() {
+                const mode = resolveThemeMode();
+                const root = document.documentElement;
+                const effective = mode === "system" ? (state.systemPrefersDark ? "dark" : "light") : mode;
+                root.setAttribute("data-theme", effective);
+                root.style.colorScheme = effective;
+            }
+
+            function queueResizeReport() {
+                if (resizeFrame) {
+                    window.cancelAnimationFrame(resizeFrame);
+                }
+                if (resizeTimer) {
+                    window.clearTimeout(resizeTimer);
+                    resizeTimer = 0;
+                }
+                resizeFrame = window.requestAnimationFrame(() => {
+                    resizeFrame = 0;
+                    reportPreferredHeight();
+                    resizeTimer = window.setTimeout(() => {
+                        resizeTimer = 0;
+                        reportPreferredHeight();
+                    }, 48);
+                });
+            }
+
+            function measuredGapY(element) {
+                if (!(element instanceof HTMLElement)) {
+                    return 0;
+                }
+                const styles = window.getComputedStyle(element);
+                const gap = parseFloat(styles.rowGap || styles.gap || "0");
+                return Number.isFinite(gap) ? gap : 0;
+            }
+
+            function measuredPaddingY(element) {
+                if (!(element instanceof HTMLElement)) {
+                    return 0;
+                }
+                const styles = window.getComputedStyle(element);
+                const top = parseFloat(styles.paddingTop || "0");
+                const bottom = parseFloat(styles.paddingBottom || "0");
+                return (Number.isFinite(top) ? top : 0) + (Number.isFinite(bottom) ? bottom : 0);
+            }
+
+            function measuredScrollableHeight(element) {
+                if (!(element instanceof HTMLElement)) {
+                    return 0;
+                }
+                const clientHeight = Math.ceil(element.clientHeight || 0);
+                const scrollHeight = Math.ceil(element.scrollHeight || 0);
+                const offsetHeight = Math.ceil(element.offsetHeight || 0);
+                let contentHeight = 0;
+                for (const child of element.children) {
+                    if (child instanceof HTMLElement) {
+                        contentHeight = Math.max(contentHeight, Math.ceil(child.offsetTop + child.offsetHeight));
+                    }
+                }
+                contentHeight += measuredPaddingY(element);
+                if (scrollHeight > clientHeight + 1) {
+                    return Math.max(scrollHeight, contentHeight);
+                }
+                return Math.max(contentHeight, offsetHeight && scrollHeight === 0 ? offsetHeight : 0);
+            }
+
+            function preferredResizeFloor() {
+                if (state.settingsOpen) {
+                    return 320;
+                }
+                if (state.view === "detailed") {
+                    return 500;
+                }
+                if (state.view === "minimal") {
+                    return 140;
+                }
+                return 320;
+            }
+
+            function measuredContentHeight() {
+                if (state.settingsOpen) {
+                    return (settingsHeader instanceof HTMLElement ? settingsHeader.offsetHeight : 0)
+                        + measuredScrollableHeight(settingsBody)
+                        + (settingsFooter instanceof HTMLElement ? settingsFooter.offsetHeight : 0);
+                }
+                return (header instanceof HTMLElement ? header.offsetHeight : 0)
+                    + measuredScrollableHeight(body)
+                    + (footer instanceof HTMLElement ? footer.offsetHeight : 0)
+                    + measuredPaddingY(shell)
+                    + (measuredGapY(shell) * 2);
+            }
+
+            function reportPreferredHeight() {
+                const measured = Math.ceil(measuredContentHeight());
+                const height = Math.max(preferredResizeFloor(), Math.min(720, measured));
+                const payload = { type: "resize", height };
+                window.postMessage(payload, "*");
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage(payload, "*");
+                }
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.onwatchResize) {
+                    window.webkit.messageHandlers.onwatchResize.postMessage({ height });
+                }
+            }
+
+            function ensureMultiProviderSelection() {
+                if (!state.draft || state.draft.status_display.mode !== "multi_provider") {
+                    return;
+                }
+                const options = selectableStatusQuotaOptions();
+                const validKeys = new Set(options.map((option) => statusSelectionKey(option)));
+                let selections = normalizeStatusSelections(state.draft.status_display.selected_quotas)
+                    .filter((selection) => validKeys.has(statusSelectionKey(selection)));
+                if (selections.length === 0) {
+                    selections = options.slice(0, 3).map((option) => ({
+                        provider_id: option.provider_id,
+                        quota_key: option.quota_key
+                    }));
+                }
+                state.draft.status_display.selected_quotas = selections.slice(0, 3);
+            }
+
+            function providerOptionByID(id) {
+                return state.providerOptions.find((provider) => provider.id === id) || null;
+            }
+
+            function selectableStatusQuotaOptions() {
+                const draft = state.draft || state.preferences;
+                const visible = normalizeStringList(draft.visible_providers);
+                const showAll = visible.length === 0;
+                return orderedProviderOptions()
+                    .filter((provider) => showAll || visible.includes(provider.id))
+                    .flatMap((provider) => (Array.isArray(provider.quotas) ? provider.quotas : []).map((quota) => ({
+                        provider_id: provider.id,
+                        provider_label: provider.label,
+                        quota_key: quota.key,
+                        quota_label: quota.label,
+                        base_provider: provider.base_provider
+                    })));
+            }
+
+            function statusSelectionKey(selection) {
+                const providerID = String(selection && selection.provider_id ? selection.provider_id : "").trim();
+                const quotaKey = String(selection && selection.quota_key ? selection.quota_key : "").trim();
+                return `${providerID}::${quotaKey}`;
+            }
+
+            function parseStatusSelectionValue(value) {
+                const parts = String(value || "").split("::");
+                return {
+                    provider_id: parts[0] || "",
+                    quota_key: parts[1] || ""
+                };
+            }
+
+            function statusDisplayPreview(snapshot, preferences) {
+                const display = preferences && preferences.status_display ? preferences.status_display : { mode: "multi_provider", selected_quotas: [] };
+                if (display.mode === "critical_count") {
+                    return `✦ ${aggregateAlertCount(snapshot)} ⚠`;
+                }
+                if (display.mode === "icon_only") {
+                    return "✦";
+                }
+                const parts = multiProviderPreviewParts(snapshot, display);
+                return parts.length > 0 ? `✦ ${parts.join(" │ ")}` : "✦ Select up to 3 quotas";
+            }
+
+            function multiProviderPreviewParts(snapshot, display) {
+                if (!snapshot || !Array.isArray(snapshot.providers)) {
+                    return [];
+                }
+                return normalizeStatusSelections(display && display.selected_quotas)
+                    .map((selection) => {
+                        const provider = snapshot.providers.find((item) => item.id === selection.provider_id) || null;
+                        if (!provider) {
+                            return "";
+                        }
+                        const quota = Array.isArray(provider.quotas)
+                            ? provider.quotas.find((item) => item.key === selection.quota_key)
+                            : null;
+                        const percent = quota ? quota.percent : provider.highest_percent;
+                        return `${Math.round(clampPercent(percent))}%`;
+                    })
+                    .filter(Boolean);
+            }
+
+            function providerIconClass(provider) {
+                const base = String(provider && (provider.base_provider || provider.baseProvider || provider.id) || "").split(":")[0];
+                switch (base) {
+                case "anthropic":
+                    return "provider-icon-anthropic";
+                case "codex":
+                    return "provider-icon-codex";
+                case "minimax":
+                    return "provider-icon-minimax";
+                case "copilot":
+                    return "provider-icon-copilot";
+                case "antigravity":
+                    return "provider-icon-antigravity";
+                case "zai":
+                    return "provider-icon-zai";
+                case "synthetic":
+                    return "provider-icon-synthetic";
+                default:
+                    return "provider-icon-openai";
+                }
+            }
+
+            function aggregateAlertCount(snapshot) {
+                if (!snapshot || !snapshot.aggregate) {
+                    return 0;
+                }
+                return Number(snapshot.aggregate.warning_count || 0) + Number(snapshot.aggregate.critical_count || 0);
+            }
+
+            function detailedMeta(quota) {
+                const meta = [];
+                if (Number.isFinite(Number(quota.current_rate)) && Number(quota.current_rate) > 0) {
+                    meta.push(`Rate: ${formatRate(quota.current_rate)}/hr`);
+                }
+                if (Number.isFinite(Number(quota.projected_value)) && Number(quota.projected_value) > 0) {
+                    meta.push(`Projected: ${Math.round(clampPercent(quota.projected_value))}%`);
+                }
+                const usage = usageSummary(quota);
+                if (usage) {
+                    meta.push(usage);
+                }
+                const absoluteReset = formatAbsoluteReset(quota.reset_at);
+                if (absoluteReset !== "--") {
+                    meta.push(absoluteReset);
+                }
+                if (meta.length === 0) {
+                    meta.push(`Reset: ${compactResetLabel(quota)}`);
+                }
+                return meta;
+            }
+
+            function usageSummary(quota) {
+                const limit = Number(quota.limit);
+                const used = Number(quota.used);
+                if (Number.isFinite(limit) && limit > 0 && Number.isFinite(used) && used >= 0) {
+                    return `${Math.round(used)}/${Math.round(limit)}`;
+                }
+                return "";
+            }
+
+            function formatRate(value) {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric) || numeric <= 0) {
+                    return "0";
+                }
+                const digits = numeric < 10 ? 2 : numeric < 100 ? 1 : 0;
+                return new Intl.NumberFormat("en-US", {
+                    minimumFractionDigits: digits,
+                    maximumFractionDigits: digits
+                }).format(numeric);
+            }
+
+            function formatAbsoluteReset(value) {
+                const text = String(value || "").trim();
+                if (!text) {
+                    return "--";
+                }
+                const date = new Date(text);
+                if (Number.isNaN(date.getTime())) {
+                    return text;
+                }
+                return new Intl.DateTimeFormat("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit"
+                }).format(date);
+            }
+
+            function compactUpdatedLabel(value) {
+                const label = compactTimeLabel(value);
+                return label === "0m" ? "now" : label;
+            }
+
+            function compactResetLabel(quota) {
+                return compactTimeLabel(quota.time_until_reset || quota.reset_at);
+            }
+
+            function compactTimeLabel(value) {
+                const text = String(value || "").trim();
+                if (!text) {
+                    return "--";
+                }
+                const normalized = text
+                    .replace(/\s+ago$/i, "")
+                    .replace(/\s+minutes?$/i, "m")
+                    .replace(/\s+hours?$/i, "h")
+                    .replace(/\s+days?$/i, "d")
+                    .replace(/\s+day$/i, "d")
+                    .replace(/\s+hour$/i, "h")
+                    .replace(/\s+minute$/i, "m");
+                if (normalized.toLowerCase() === "just now" || normalized === "0m") {
+                    return "now";
+                }
+                return normalized;
+            }
+
+            function compactQuotaLabel(label, key) {
+                const source = `${String(key || "").toLowerCase()} ${String(label || "").toLowerCase()}`;
+                if (source.includes("weekly sonnet") || source.includes("weekly_sonnet")) {
+                    return "Wkly Son";
+                }
+                if (source.includes("weekly all-model") || source.includes("weekly all") || source.includes("weekly_all-model") || source.includes("seven_day")) {
+                    return "Wkly All";
+                }
+                if (source.includes("5-hour") || source.includes("5-hour_limit") || source.includes("five_hour")) {
+                    return "5hr";
+                }
+                if (source.includes("review")) {
+                    return "Review";
+                }
+                if (source.includes("claude + gpt") || source.includes("claude_+_gpt")) {
+                    return "Cl+GPT";
+                }
+                if (source.includes("gemini flash")) {
+                    return "Gem Fl";
+                }
+                if (source.includes("gemini pro")) {
+                    return "Gem Pro";
+                }
+                if (source.includes("coding")) {
+                    return "Coding";
+                }
+                if (source.includes("subscription")) {
+                    return "Sub";
+                }
+                if (source.includes("search")) {
+                    return "Search";
+                }
+                if (source.includes("toolcall") || source.includes("tool call")) {
+                    return "Tools";
+                }
+                if (source.includes("completions")) {
+                    return "Comp";
+                }
+                if (source.includes("tokens")) {
+                    return "Tok";
+                }
+                if (source.includes("requests")) {
+                    return "Req";
+                }
+                const text = String(label || key || "Quota").trim();
+                return text.length > 10 ? text.slice(0, 10) : text;
+            }
+
+            function compactProviderName(label) {
+                const text = String(label || "").trim();
+                if (text.startsWith("Anthropic")) {
+                    return "Anth";
+                }
+                if (text.startsWith("Synthetic")) {
+                    return "Synth";
+                }
+                if (text.startsWith("Copilot")) {
+                    return "Cop";
+                }
+                if (text.startsWith("Antigravity")) {
+                    return "Anti";
+                }
+                if (text.startsWith("MiniMax")) {
+                    return "Mini";
+                }
+                if (text.startsWith("Z.ai")) {
+                    return "Zai";
+                }
+                if (text.startsWith("Codex -")) {
+                    return text.replace("Codex -", "").trim().slice(0, 5) || "Codex";
+                }
+                return text.slice(0, 5) || "Prov";
+            }
+
+            function normalizeView(value) {
+                return VIEW_ORDER.includes(value) ? value : "standard";
+            }
+
+            function normalizeTheme(value) {
+                const normalized = String(value || "").trim().toLowerCase();
+                return THEME_MODES.includes(normalized) ? normalized : "system";
+            }
+
+            function nextView(current) {
+                const index = VIEW_ORDER.indexOf(normalizeView(current));
+                return VIEW_ORDER[(index + 1) % VIEW_ORDER.length];
+            }
+
+            function viewCode(view) {
+                if (view === "minimal") {
+                    return "Minimal";
+                }
+                if (view === "detailed") {
+                    return "Detail";
+                }
+                return "Default";
+            }
+
+            function clampPercent(value) {
+                const numeric = Number(value || 0);
+                if (Number.isNaN(numeric)) {
+                    return 0;
+                }
+                return Math.max(0, Math.min(100, numeric));
+            }
+
+            function resetRefreshTimer() {
+                if (refreshTimer) {
+                    window.clearInterval(refreshTimer);
+                }
+                refreshTimer = window.setInterval(() => {
+                    void loadSnapshot();
+                }, Math.max(Number(state.preferences.refresh_seconds) || 60, 10) * 1000);
+            }
+
+            function escapeHTML(value) {
+                return String(value == null ? "" : value)
+                    .replaceAll("&", "&amp;")
+                    .replaceAll("<", "&lt;")
+                    .replaceAll(">", "&gt;")
+                    .replaceAll("\"", "&quot;")
+                    .replaceAll("'", "&#39;");
+            }
+        })();
+    </script>
+</body>
+</html>

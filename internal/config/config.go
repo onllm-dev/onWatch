@@ -14,6 +14,11 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const (
+	maxLogFileBytes = 50 * 1024 * 1024
+	maxLogBackups   = 3
+)
+
 // Config holds all application configuration.
 type Config struct {
 	// Synthetic provider configuration
@@ -508,6 +513,38 @@ func redactAPIKey(key string, expectedPrefix string) string {
 	return key[:prefixLen+4] + "***...***" + key[len(key)-3:]
 }
 
+// OpenRotatingLogFile opens a log file with size-based rotation.
+// If the active file reaches 50MB, the chain is rotated before opening:
+// path.2 -> path.3, path.1 -> path.2, path -> path.1.
+func OpenRotatingLogFile(path string) (*os.File, error) {
+	if info, err := os.Stat(path); err == nil {
+		if info.Size() >= maxLogFileBytes {
+			oldest := fmt.Sprintf("%s.%d", path, maxLogBackups)
+			if err := os.Remove(oldest); err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("failed to remove oldest log backup %s: %w", oldest, err)
+			}
+			for i := maxLogBackups - 1; i >= 1; i-- {
+				src := fmt.Sprintf("%s.%d", path, i)
+				dst := fmt.Sprintf("%s.%d", path, i+1)
+				if err := os.Rename(src, dst); err != nil && !os.IsNotExist(err) {
+					return nil, fmt.Errorf("failed to rotate log backup %s to %s: %w", src, dst, err)
+				}
+			}
+			if err := os.Rename(path, path+".1"); err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("failed to rotate active log file %s: %w", path, err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to stat log file %s: %w", path, err)
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
 // LogWriter returns the appropriate log destination based on debug mode.
 // In debug mode: returns os.Stdout
 // In Docker: returns os.Stdout (containers should log to stdout)
@@ -529,7 +566,7 @@ func (c *Config) LogWriter() (io.Writer, error) {
 	}
 	logPath := filepath.Join(filepath.Dir(c.DBPath), logName)
 
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := OpenRotatingLogFile(logPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}

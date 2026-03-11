@@ -142,6 +142,11 @@ const State = {
   allProvidersInsights: null,
   allProvidersHistory: null,
   providerVisibility: {},
+  menubarCapabilities: null,
+  menubarProviderOrder: [],
+  menubarProviders: [],
+  menubarVisibleProviders: [],
+  menubarStatusDisplay: { mode: 'multi_provider', selected_quotas: [] },
   currentRequestSeq: 0,
   insightsRequestSeq: 0,
   historyRequestSeq: 0,
@@ -530,6 +535,37 @@ function codexVisibleQuotaNames(planType) {
     : ['five_hour', 'seven_day', 'code_review'];
 }
 
+const anthropicQuotaOrder = ['five_hour', 'seven_day', 'seven_day_sonnet', 'monthly_limit', 'extra_usage'];
+const codexQuotaOrder = ['five_hour', 'seven_day', 'code_review'];
+
+function quotaOrderForProvider(provider) {
+  if (provider === 'anthropic') return anthropicQuotaOrder;
+  if (provider === 'codex') return codexQuotaOrder;
+  return [];
+}
+
+function sortQuotaKeysForProvider(keys, provider) {
+  const sorted = Array.isArray(keys) ? [...keys] : Array.from(keys || []);
+  const preferred = quotaOrderForProvider(provider);
+  if (preferred.length === 0) {
+    return sorted.sort();
+  }
+  const rank = new Map(preferred.map((name, index) => [name, index]));
+  return sorted.sort((left, right) => {
+    const leftRank = rank.has(left) ? rank.get(left) : Number.MAX_SAFE_INTEGER;
+    const rightRank = rank.has(right) ? rank.get(right) : Number.MAX_SAFE_INTEGER;
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return String(left).localeCompare(String(right));
+  });
+}
+
+function sortQuotaEntriesForProvider(quotas, provider) {
+  if (!Array.isArray(quotas)) return [];
+  const preferred = quotaOrderForProvider(provider);
+  if (preferred.length === 0) return [...quotas];
+  return sortItemsByPreference(quotas, preferred, (quota) => quota && quota.name);
+}
+
 function setCodexPlanType(planType) {
   const normalized = normalizeCodexPlanType(planType);
   if (!normalized) return false;
@@ -541,7 +577,6 @@ function setCodexPlanType(planType) {
 function filterCodexQuotasForPlan(quotas, planType) {
   if (!Array.isArray(quotas)) return [];
   const preferred = new Set(codexVisibleQuotaNames(planType));
-  const order = ['five_hour', 'seven_day', 'code_review'];
   let filtered = quotas
     .filter(q => q && q.name && preferred.has(q.name));
 
@@ -554,15 +589,7 @@ function filterCodexQuotasForPlan(quotas, planType) {
     }
   }
 
-  return filtered
-    .sort((a, b) => {
-      const left = order.indexOf(a.name);
-      const right = order.indexOf(b.name);
-      if (left === -1 && right === -1) return String(a.name).localeCompare(String(b.name));
-      if (left === -1) return 1;
-      if (right === -1) return -1;
-      return left - right;
-    });
+  return sortQuotaEntriesForProvider(filtered, 'codex');
 }
 
 // Codex chart colors keyed by quota name
@@ -629,8 +656,8 @@ const minimaxChartColorFallback = [
 const renewalCategories = {
   anthropic: [
     { label: '5-Hour', groupBy: 'five_hour' },
-    { label: 'Weekly', groupBy: 'seven_day' },
-    { label: 'Sonnet', groupBy: 'seven_day_sonnet' },
+    { label: 'Weekly All', groupBy: 'seven_day' },
+    { label: 'Weekly Sonnet', groupBy: 'seven_day_sonnet' },
     { label: 'Extra', groupBy: 'extra_usage' }
   ],
   synthetic: [
@@ -648,8 +675,8 @@ const renewalCategories = {
   ],
   codex: [
     { label: '5-Hour', groupBy: 'five_hour' },
-    { label: 'Weekly', groupBy: 'seven_day' },
-    { label: 'Review', groupBy: 'code_review' }
+    { label: 'Weekly All', groupBy: 'seven_day' },
+    { label: 'Review Requests', groupBy: 'code_review' }
   ],
   antigravity: [
     { label: 'Claude+GPT', groupBy: 'antigravity_claude_gpt' },
@@ -667,9 +694,9 @@ const overviewQuotaDisplayNames = {
   tokens: 'Tokens',
   time: 'Time',
   five_hour: '5-Hour', // Default for Anthropic
-  seven_day: 'Weekly',
-  code_review: 'Review',
-  seven_day_sonnet: 'Sonnet',
+  seven_day: 'Weekly All',
+  code_review: 'Review Requests',
+  seven_day_sonnet: 'Weekly Sonnet',
   monthly_limit: 'Monthly',
   extra_usage: 'Extra',
   premium_interactions: 'Premium',
@@ -2501,9 +2528,9 @@ async function fetchCurrent() {
             renderAnthropicQuotaCards(data.quotas, 'quota-grid-anthropic');
           }
           data.quotas.forEach(q => updateAnthropicCard(q));
-          // Store sorted quota names for session table headers (mirrors backend positional mapping)
+          // Store quota names for session table headers using Anthropic display order.
           if (State.anthropicSessionQuotas.length === 0) {
-            State.anthropicSessionQuotas = data.quotas.map(q => q.name).sort().slice(0, 3);
+            State.anthropicSessionQuotas = sortQuotaKeysForProvider(data.quotas.map(q => q.name), 'anthropic').slice(0, 3);
             updateAnthropicSessionHeaders();
           }
         }
@@ -3223,7 +3250,7 @@ async function fetchHistory(range) {
       historyRows.forEach(d => {
         Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
       });
-      const sortedKeys = [...quotaKeys].sort();
+      const sortedKeys = sortQuotaKeysForProvider(quotaKeys, 'anthropic');
       let fallbackIdx = 0;
       const datasets = [];
       sortedKeys.forEach((key) => {
@@ -3333,7 +3360,7 @@ async function fetchHistory(range) {
       historyRows.forEach(d => {
         Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
       });
-      const sortedKeys = [...quotaKeys].sort();
+      const sortedKeys = sortQuotaKeysForProvider(quotaKeys, 'codex');
       let fallbackIdx = 0;
       const datasets = [];
       sortedKeys.forEach((key) => {
@@ -3527,7 +3554,7 @@ function normalizeBothQuotas(provider, payload) {
   if (!Array.isArray(payload.quotas)) return [];
   const rawQuotas = provider === 'codex'
     ? filterCodexQuotasForPlan(payload.quotas, payload.planType || State.codexPlanType)
-    : payload.quotas;
+    : sortQuotaEntriesForProvider(payload.quotas, provider);
   return rawQuotas.map((quota) => {
     const percent = quota.cardPercent != null
       ? quota.cardPercent
@@ -3815,7 +3842,7 @@ function buildDynamicDatasetsForRows(rows, range, labelMap, colorMap, colorFallb
 
   const datasets = [];
   let idx = 0;
-  [...keys].sort().forEach((key) => {
+  sortQuotaKeysForProvider(keys, providerKey).forEach((key) => {
     const color = colorMap[key] || colorFallback[idx++ % colorFallback.length];
     const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
     const processed = processDataWithGaps(rawData, range);
@@ -4066,7 +4093,7 @@ function updateBothCharts(data, range = '6h') {
     rows.forEach(d => {
       Object.keys(d).forEach(k => { if (k !== 'capturedAt') keys.add(k); });
     });
-    const sorted = [...keys].sort();
+    const sorted = sortQuotaKeysForProvider(keys, providerKey);
     const datasets = [];
     let idx = 0;
     sorted.forEach((key) => {
@@ -6050,9 +6077,10 @@ function isSettingsPage() {
   return window.location.pathname === '/settings';
 }
 
-function initSettingsPage() {
+async function initSettingsPage() {
   setupSettingsTabs();
-  loadSettings();
+  await setupMenubarSettings();
+  await loadSettings();
   setupSettingsSave();
   setupProviderReload();
   setupSMTPTest();
@@ -6061,6 +6089,12 @@ function initSettingsPage() {
   setupThresholdSliders();
   setupOverrides();
   populateTimezoneSelect();
+}
+
+function activateSettingsTab(tabName) {
+  const nextTab = document.querySelector(`.settings-tab[data-tab="${tabName}"]`);
+  if (!nextTab || nextTab.hidden) return;
+  nextTab.click();
 }
 
 function setupSettingsTabs() {
@@ -6094,6 +6128,42 @@ function setupThresholdSliders() {
     cSlider.addEventListener('input', () => { cInput.value = cSlider.value; });
     cInput.addEventListener('input', () => { cSlider.value = cInput.value; });
   }
+}
+
+async function loadCapabilities() {
+  try {
+    const resp = await authFetch('/api/capabilities');
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function setupMenubarSettings() {
+  const tab = document.querySelector('.settings-tab[data-tab="menubar"]');
+  const panel = document.getElementById('panel-menubar');
+  const settingsShell = document.getElementById('menubar-settings-shell');
+  const orderShell = document.getElementById('menubar-order-shell');
+  const divider = document.getElementById('menubar-order-divider');
+  if (!tab || !panel) return;
+
+  const caps = await loadCapabilities();
+  State.menubarCapabilities = caps;
+
+  const isMac = caps && caps.platform === 'darwin';
+  if (!isMac) {
+    tab.hidden = true;
+    panel.hidden = true;
+    if (tab.classList.contains('active')) activateSettingsTab('general');
+    return;
+  }
+
+  tab.hidden = false;
+  const supported = !!caps.menubar_supported;
+  if (settingsShell) settingsShell.hidden = !supported;
+  if (orderShell) orderShell.hidden = !supported;
+  if (divider) divider.hidden = !supported;
 }
 
 async function loadSettings() {
@@ -6152,10 +6222,42 @@ async function loadSettings() {
     }
 
     // Provider visibility + dynamic provider status
-    populateProviderToggles(data.provider_visibility || {});
+    await populateProviderToggles(data.provider_visibility || {});
+    await populateMenubarSettings(data.menubar || {});
   } catch (e) {
     // Settings load failed silently
   }
+}
+
+async function populateMenubarSettings(data) {
+  const caps = State.menubarCapabilities || await loadCapabilities();
+  State.menubarCapabilities = caps;
+  if (!caps || caps.platform !== 'darwin') return;
+
+  const settings = data || {};
+  const shell = document.getElementById('menubar-settings-shell');
+  if (shell && shell.hidden) return;
+
+  const enabled = document.getElementById('menubar-enabled');
+  const defaultView = document.getElementById('menubar-default-view');
+  const refresh = document.getElementById('menubar-refresh');
+  const warning = document.getElementById('menubar-warning');
+  const critical = document.getElementById('menubar-critical');
+
+  if (enabled) enabled.checked = settings.enabled !== false;
+  if (defaultView && settings.default_view) {
+    defaultView.value = settings.default_view === 'detailed' ? 'detailed' : 'standard';
+  }
+  if (refresh && settings.refresh_seconds) refresh.value = String(settings.refresh_seconds);
+  if (warning && settings.warning_percent != null) warning.value = settings.warning_percent;
+  if (critical && settings.critical_percent != null) critical.value = settings.critical_percent;
+
+  State.menubarProviderOrder = Array.isArray(settings.providers_order) ? settings.providers_order.slice() : [];
+  State.menubarVisibleProviders = Array.isArray(settings.visible_providers) ? settings.visible_providers.slice() : [];
+  State.menubarStatusDisplay = settings.status_display && typeof settings.status_display === 'object'
+    ? JSON.parse(JSON.stringify(settings.status_display))
+    : { mode: 'multi_provider', selected_quotas: [] };
+  await populateMenubarProviderOrder();
 }
 
 function setVal(id, val) {
@@ -6290,6 +6392,211 @@ async function populateProviderToggles(visibility) {
       autoDetectable: !!fallbackCodex.autoDetectable,
       isPolling: !!fallbackCodex.isPolling
     }));
+  }
+}
+
+async function fetchMenubarProviders() {
+  let providers = [];
+  try {
+    const res = await authFetch(`${API_BASE}/api/providers/status`);
+    if (res.ok) {
+      const data = await res.json();
+      providers = Array.isArray(data.providers) ? data.providers : [];
+    }
+  } catch (e) {
+    providers = [];
+  }
+
+  if (providers.length === 0) {
+    return [];
+  }
+
+  const providerByKey = new Map(providers.map(p => [p.key, p]));
+  const codexStatus = providerByKey.get('codex') || null;
+  const items = providers
+    .filter(p => p.key !== 'codex')
+    .map(p => ({
+      key: p.key,
+      name: p.name,
+      meta: `${p.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${p.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+      dashboardVisible: p.dashboardVisible !== false,
+    }));
+
+  try {
+    const res = await authFetch(`${API_BASE}/api/codex/profiles`);
+    if (res.ok) {
+      const data = await res.json();
+      const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+      if (profiles.length > 1) {
+        profiles.forEach(profile => {
+          const key = `codex:${profile.id}`;
+          items.push({
+            key,
+            name: `Codex - ${profile.name}`,
+            meta: 'Per-account Codex usage',
+            dashboardVisible: true,
+          });
+        });
+        return items;
+      }
+    }
+  } catch (e) {
+    // fall back to single Codex item below
+  }
+
+  if (codexStatus) {
+    items.push({
+      key: 'codex',
+      name: codexStatus.name || 'Codex',
+      meta: `${codexStatus.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${codexStatus.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+      dashboardVisible: codexStatus.dashboardVisible !== false,
+    });
+  }
+
+  return items;
+}
+
+async function populateMenubarProviderOrder() {
+  const list = document.getElementById('menubar-provider-order');
+  if (!list) return;
+
+  const providers = await fetchMenubarProviders();
+  State.menubarProviders = providers.slice();
+  if (providers.length === 0) {
+    list.innerHTML = '<li class="menubar-order-item"><div class="menubar-order-copy"><span class="menubar-order-name">No providers available</span><span class="menubar-order-meta">Configure providers first to control menubar ordering.</span></div></li>';
+    return;
+  }
+
+  const order = Array.isArray(State.menubarProviderOrder) ? State.menubarProviderOrder : [];
+  const indexByKey = new Map(order.map((key, index) => [key, index]));
+  providers.sort((a, b) => {
+    const left = indexByKey.has(a.key) ? indexByKey.get(a.key) : Number.MAX_SAFE_INTEGER;
+    const right = indexByKey.has(b.key) ? indexByKey.get(b.key) : Number.MAX_SAFE_INTEGER;
+    if (left !== right) return left - right;
+    return a.name.localeCompare(b.name);
+  });
+  State.menubarProviderOrder = providers.map(provider => provider.key);
+
+  const knownKeys = new Set(providers.map(provider => provider.key));
+  const explicitVisible = Array.isArray(State.menubarVisibleProviders)
+    ? State.menubarVisibleProviders.filter((providerKey) => knownKeys.has(providerKey))
+    : [];
+  const visibleSet = new Set(explicitVisible);
+  const showAll = visibleSet.size === 0;
+
+  list.innerHTML = providers.map(provider => {
+    const visible = showAll || visibleSet.has(provider.key);
+    return `
+    <li class="menubar-order-item ${provider.dashboardVisible ? '' : 'is-disabled'} ${visible ? '' : 'is-hidden'}" draggable="true" tabindex="0" data-provider="${provider.key}">
+      <div class="menubar-order-handle" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="menubar-order-copy">
+        <span class="menubar-order-name">${provider.name}</span>
+        <span class="menubar-order-meta">${provider.meta}</span>
+      </div>
+      <div class="menubar-order-controls">
+        <label class="menubar-order-toggle">
+          <input type="checkbox" data-role="menubar-visible" data-provider="${provider.key}" ${visible ? 'checked' : ''}>
+          <span>${visible ? 'Show' : 'Hide'}</span>
+        </label>
+      </div>
+    </li>
+  `;
+  }).join('');
+
+  let dragged = null;
+  list.querySelectorAll('.menubar-order-item').forEach(item => {
+    item.addEventListener('dragstart', () => {
+      dragged = item;
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      syncMenubarProviderOrder();
+    });
+  });
+
+  list.querySelectorAll('input[data-role="menubar-visible"]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const toggles = [...list.querySelectorAll('input[data-role="menubar-visible"]')]
+        .filter((toggle) => toggle instanceof HTMLInputElement);
+
+      let visibleProviders = toggles
+        .filter((toggle) => toggle.checked)
+        .map((toggle) => toggle.dataset.provider)
+        .filter(Boolean);
+
+      if (visibleProviders.length === 0 && input instanceof HTMLInputElement) {
+        input.checked = true;
+        visibleProviders = [input.dataset.provider].filter(Boolean);
+      }
+
+      const visibleSet = new Set(visibleProviders);
+      list.querySelectorAll('.menubar-order-item[data-provider]').forEach((row) => {
+        const rowProvider = row.dataset.provider;
+        const rowToggle = row.querySelector('input[data-role="menubar-visible"]');
+        if (!rowProvider || !(rowToggle instanceof HTMLInputElement)) return;
+        const isVisible = visibleSet.has(rowProvider);
+        row.classList.toggle('is-hidden', !isVisible);
+        rowToggle.checked = isVisible;
+        const label = rowToggle.nextElementSibling;
+        if (label) {
+          label.textContent = isVisible ? 'Show' : 'Hide';
+        }
+      });
+
+      if (visibleSet.size === State.menubarProviderOrder.length) {
+        State.menubarVisibleProviders = [];
+      } else {
+        State.menubarVisibleProviders = State.menubarProviderOrder.filter((provider) => visibleSet.has(provider));
+      }
+    });
+  });
+
+  list.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    const dragging = list.querySelector('.menubar-order-item.dragging');
+    if (!dragging) return;
+    const afterElement = getMenubarDragAfterElement(list, event.clientY);
+    if (!afterElement) {
+      list.appendChild(dragging);
+    } else if (afterElement !== dragging) {
+      list.insertBefore(dragging, afterElement);
+    }
+  }, { passive: false });
+
+  syncMenubarProviderOrder();
+}
+
+function getMenubarDragAfterElement(container, y) {
+  const items = [...container.querySelectorAll('.menubar-order-item:not(.dragging)')];
+  return items.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child };
+    }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+
+function syncMenubarProviderOrder() {
+  const list = document.getElementById('menubar-provider-order');
+  if (!list) return;
+  State.menubarProviderOrder = [...list.querySelectorAll('.menubar-order-item[data-provider]')]
+    .map(item => item.dataset.provider)
+    .filter(Boolean);
+
+  const visibleSet = new Set(
+    [...list.querySelectorAll('input[data-role="menubar-visible"]')]
+      .filter((input) => input instanceof HTMLInputElement && input.checked)
+      .map((input) => input.dataset.provider)
+      .filter(Boolean)
+  );
+
+  if (visibleSet.size === State.menubarProviderOrder.length) {
+    State.menubarVisibleProviders = [];
+  } else {
+    State.menubarVisibleProviders = State.menubarProviderOrder.filter((provider) => visibleSet.has(provider));
   }
 }
 
@@ -6513,6 +6820,20 @@ function gatherSettings() {
     settings.timezone = tzSelect.value;
   }
 
+  const menubarShell = document.getElementById('menubar-settings-shell');
+  if (menubarShell && !menubarShell.hidden) {
+    settings.menubar = {
+      enabled: document.getElementById('menubar-enabled')?.checked ?? true,
+      default_view: document.getElementById('menubar-default-view')?.value || 'standard',
+      refresh_seconds: parseInt(document.getElementById('menubar-refresh')?.value, 10) || 60,
+      warning_percent: parseInt(document.getElementById('menubar-warning')?.value, 10) || 70,
+      critical_percent: parseInt(document.getElementById('menubar-critical')?.value, 10) || 90,
+      providers_order: [...State.menubarProviderOrder],
+      visible_providers: [...State.menubarVisibleProviders],
+      status_display: State.menubarStatusDisplay ? JSON.parse(JSON.stringify(State.menubarStatusDisplay)) : { mode: 'multi_provider', selected_quotas: [] },
+    };
+  }
+
   return settings;
 }
 
@@ -6532,6 +6853,14 @@ function setupSettingsSave() {
     if (settings.notifications) {
       if (settings.notifications.warning_threshold >= settings.notifications.critical_threshold) {
         showSettingsFeedback(feedback, 'Warning threshold must be less than critical threshold.', 'error');
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
+        return;
+      }
+    }
+    if (settings.menubar) {
+      if (settings.menubar.warning_percent >= settings.menubar.critical_percent) {
+        showSettingsFeedback(feedback, 'Menubar warning threshold must be less than critical threshold.', 'error');
         saveBtn.disabled = false;
         saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
         return;
@@ -6936,7 +7265,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (isSettingsPage()) {
     initTheme();
     initLayoutToggle();
-    initSettingsPage();
+    await initSettingsPage();
     return;
   }
 

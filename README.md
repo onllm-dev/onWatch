@@ -53,6 +53,8 @@ curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh |
 
 This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a systemd service (Linux) or self-daemonizes (macOS), and adds `onwatch` to your PATH.
 
+On macOS, the installer downloads the standard binary with menubar support.
+
 ### Homebrew (macOS & Linux)
 
 ```bash
@@ -127,7 +129,7 @@ Provider setup guides:
 ### Run
 
 ```bash
-onwatch              # start in background (daemonizes, logs to ~/.onwatch/.onwatch.log)
+onwatch              # start in background (daemonizes, logs to ~/.onwatch/data/.onwatch.log)
 onwatch --debug      # foreground mode, logs to stdout
 onwatch stop         # stop the running instance
 onwatch status       # check if running
@@ -176,6 +178,15 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 **Sessions** -- Every agent run creates a session that tracks peak consumption, letting you compare usage across work periods.
 
 **Settings** -- Dedicated settings page (`/settings`) with tabs for general preferences, provider controls, notification thresholds, and SMTP email configuration.
+
+**Menubar (macOS, Beta)** -- The macOS build includes a menubar companion with two preset views:
+
+- **Standard** -- Provider cards with circular quota meters and reset metadata
+- **Detailed** -- Expanded provider cards with sparkline trends and full quota breakdowns
+
+Configure it in **Settings > Menubar**. You can enable or disable the companion, pick the default view, change refresh and threshold settings, and drag providers into the order you want.
+
+Menubar is currently in beta. Feedback is highly appreciated at [github.com/onllm-dev/onwatch/issues](https://github.com/onllm-dev/onwatch/issues).
 
 **Email notifications (Beta)** -- Configure SMTP to receive alerts when quotas cross warning or critical thresholds, or when quotas reset. Per-quota threshold overrides for fine-grained control. SMTP passwords are encrypted at rest with AES-GCM.
 
@@ -319,10 +330,13 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
 | `/api/cycles?type=subscription` | GET         | Reset cycle history                            |
 | `/api/cycle-overview`           | GET         | Cross-quota correlation at peak usage          |
 | `/api/summary`                  | GET         | Usage summaries                                |
+| `/api/capabilities`             | GET         | Build/runtime capabilities (platform, menubar) |
+| `/api/menubar/summary`          | GET         | Normalized menubar snapshot payload            |
+| `/api/menubar/test`             | GET         | Browser-testable menubar page in test mode     |
 | `/api/sessions`                 | GET         | Session history                                |
 | `/api/insights`                 | GET         | Usage insights                                 |
 | `/api/providers`                | GET         | Available providers                            |
-| `/api/settings`                 | GET/PUT     | User settings (notifications, SMTP, providers) |
+| `/api/settings`                 | GET/PUT     | User settings (notifications, SMTP, providers, menubar) |
 | `/api/settings/smtp/test`       | POST        | Send test email via configured SMTP            |
 | `/api/password`                 | PUT         | Change password                                |
 | `/api/push/vapid`               | GET         | Get VAPID public key for push subscription     |
@@ -366,10 +380,14 @@ onwatch stop && onwatch
 ```shell
 ~/.onwatch/
 ├── onwatch.pid          # PID file
-├── .onwatch.log         # Log file (background mode)
 └── data/
-    └── onwatch.db       # SQLite database (WAL mode)
+    ├── onwatch.db       # SQLite database (WAL mode)
+    ├── .onwatch.log     # Main daemon log file (background mode)
+    └── menubar.log      # Menubar companion log file (macOS menubar builds)
 ```
+
+Log files are stored next to the database (default `~/.onwatch/data/`).
+Each log rotates at 50 MB with 3 backups (`.1`, `.2`, `.3`) for both main and menubar logs.
 
 On first run, if a database exists at `./onwatch.db`, onWatch auto-migrates it to `~/.onwatch/data/`.
 
@@ -494,7 +512,7 @@ The `docker-compose.yml` includes memory limits (64M limit, 32M reservation), lo
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilation, and testing.
 
 ```bash
-./app.sh --build       # Production binary        (or: make build)
+./app.sh --build       # Production binary (macOS includes menubar) (or: make build)
 ./app.sh --test        # Tests with race detection (or: make test)
 ./app.sh --build --run # Build + run debug mode    (or: make run)
 ./app.sh --release     # Cross-compile all platforms (or: make release-local)

@@ -25,6 +25,7 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/agent"
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
+	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
@@ -44,7 +45,7 @@ func init() {
 }
 
 func main() {
-	if err := run(); err != nil {
+	if err := runWithCrashCapture(); err != nil {
 		if !errors.Is(err, errCodexProfileRefreshAborted) {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		}
@@ -93,6 +94,20 @@ func hasCommand(cmds ...string) bool {
 		}
 	}
 	return false
+}
+
+func printMenubarHelp() {
+	fmt.Print(menubarHelpText())
+}
+
+func menubarHelpText() string {
+	return "" +
+		"onWatch Menubar Companion\n\n" +
+		"Usage: onwatch menubar [OPTIONS]\n\n" +
+		"Options:\n" +
+		"  --port PORT    Dashboard port to connect to (default: 9211)\n" +
+		"  --debug        Run in foreground with verbose logging\n" +
+		"  --help         Show this help message\n"
 }
 
 // stopPreviousInstance stops any running onwatch instance using PID file + port check.
@@ -358,7 +373,7 @@ func daemonize(cfg *config.Config) error {
 		logName = ".onwatch-test.log"
 	}
 	logPath := filepath.Join(filepath.Dir(cfg.DBPath), logName)
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := config.OpenRotatingLogFile(logPath)
 	if err != nil {
 		return fmt.Errorf("failed to open log file for daemon: %w", err)
 	}
@@ -391,6 +406,18 @@ func daemonize(cfg *config.Config) error {
 	return nil
 }
 
+func runWithCrashCapture() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := string(debug.Stack())
+			slog.Error("Fatal panic", "panic", r, "stack", stack)
+			fmt.Fprintf(os.Stderr, "Fatal panic: %v\n%s\n", r, stack)
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return run()
+}
+
 func run() error {
 	// Phase 1: Detect test mode early and configure PID file for isolation
 	testMode := hasFlag("--test")
@@ -402,6 +429,13 @@ func run() error {
 	// Note: "codex" must be checked before "status" because "codex profile status" contains "status"
 	if hasCommand("codex") {
 		return runCodexCommand()
+	}
+	if hasCommand("menubar") {
+		if hasFlag("--help") || hasFlag("-h") {
+			printMenubarHelp()
+			return nil
+		}
+		return runMenubarCommand()
 	}
 	if hasCommand("stop", "--stop") {
 		return runStop(testMode)
@@ -472,6 +506,7 @@ func run() error {
 	// Stop any previous instance (parent does this, daemon child skips it)
 	if !isDaemonChild {
 		stopPreviousInstance(cfg.Port, testMode)
+		_ = stopMenubarProcess(testMode)
 	}
 
 	// Daemonize: if not in debug mode, not already the daemon child, and NOT in Docker, fork
@@ -520,6 +555,14 @@ func run() error {
 		Level: logLevel,
 	}))
 	slog.SetDefault(logger)
+
+	logger.Info("Runtime startup",
+		"pid", os.Getpid(),
+		"port", cfg.Port,
+		"db_path", cfg.DBPath,
+		"debug", cfg.DebugMode,
+		"test_mode", cfg.TestMode,
+	)
 
 	// Warn if using default password
 	if cfg.IsDefaultPassword() {
@@ -976,6 +1019,16 @@ func run() error {
 		}
 	}()
 
+	if runtime.GOOS == "darwin" && menubar.IsSupported() {
+		go func() {
+			if waitForServerReady(cfg.Port, 10*time.Second) {
+				if err := startMenubarCompanion(cfg, logger); err != nil {
+					logger.Warn("failed to start menubar companion", "error", err)
+				}
+			}
+		}()
+	}
+
 	// Periodically return freed memory to the OS. On macOS, MADV_FREE pages
 	// are reclaimable but still counted in RSS. FreeOSMemory forces MADV_DONTNEED.
 	// Also evict stale rate limiter entries and expired session tokens to prevent memory growth.
@@ -1012,6 +1065,7 @@ func run() error {
 	// Cancel context to stop agent
 	cancel()
 	agentMgr.StopAll()
+	_ = stopMenubarProcess(cfg.TestMode)
 
 	// Give agent a moment to clean up
 	time.Sleep(100 * time.Millisecond)
@@ -1127,11 +1181,68 @@ func runStop(testMode bool) error {
 	if !stopped {
 		fmt.Printf("No running %s instance found\n", label)
 	}
+	if menubarPID := readRuntimePID(menubarPIDPath(testMode)); menubarPID > 0 {
+		_ = stopMenubarProcess(testMode)
+		fmt.Printf("Stopped %s menubar companion (PID %d)\n", label, menubarPID)
+	}
 	return nil
 }
 
 // runStatus reports the status of any running onwatch instance.
 // In test mode, only the test PID file is checked (no port scanning).
+func statusLogCandidates(dbPath string, names ...string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(names)*3)
+	paths := make([]string, 0, len(names)*3)
+	appendPath := func(path string) {
+		if path == "" {
+			return
+		}
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+
+	if dbPath != "" {
+		dir := filepath.Dir(dbPath)
+		for _, name := range names {
+			appendPath(filepath.Join(dir, name))
+		}
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		for _, name := range names {
+			appendPath(filepath.Join(home, ".onwatch", name))
+		}
+	}
+
+	if dbPath == "" {
+		for _, name := range names {
+			appendPath(filepath.Join(pidDir, name))
+		}
+	}
+
+	for _, name := range names {
+		appendPath(filepath.Join(".", name))
+	}
+
+	return paths
+}
+
+func firstExistingFile(paths []string) (string, int64, bool) {
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil {
+			return path, info.Size(), true
+		}
+	}
+	return "", 0, false
+}
+
 func runStatus(testMode bool) error {
 	myPID := os.Getpid()
 	label := "onwatch"
@@ -1178,29 +1289,42 @@ func runStatus(testMode bool) error {
 						}
 					}
 
-					// Show PID file location
 					fmt.Printf("  PID file:  %s\n", pidFile)
-
-					// Show log file if it exists
-					logPath := ".onwatch.log"
-					if testMode {
-						logPath = ".onwatch-test.log"
-					}
-					if info, err := os.Stat(logPath); err == nil {
-						fmt.Printf("  Log file:  %s (%s)\n", logPath, humanSize(info.Size()))
+					menubarPID := readRuntimePID(menubarPIDPath(testMode))
+					if processRunning(menubarPID) {
+						fmt.Printf("  Menubar:   running (PID %d)\n", menubarPID)
 					}
 
-					// Show DB file if it exists (check new default path first, then old)
 					home, _ := os.UserHomeDir()
-					dbPaths := []string{
-						filepath.Join(home, ".onwatch", "data", "onwatch.db"),
-						"./onwatch.db",
+					dbCandidates := []string{}
+					if home != "" {
+						dbCandidates = append(dbCandidates, filepath.Join(home, ".onwatch", "data", "onwatch.db"))
 					}
-					for _, dbPath := range dbPaths {
-						if info, err := os.Stat(dbPath); err == nil {
-							fmt.Printf("  Database:  %s (%s)\n", dbPath, humanSize(info.Size()))
+					dbCandidates = append(dbCandidates, "./onwatch.db")
+					dbPath := ""
+					var dbSize int64
+					for _, candidate := range dbCandidates {
+						if info, err := os.Stat(candidate); err == nil {
+							dbPath = candidate
+							dbSize = info.Size()
 							break
 						}
+					}
+
+					mainLogName := ".onwatch.log"
+					menubarNames := menubarLogNames(false)
+					if testMode {
+						mainLogName = ".onwatch-test.log"
+						menubarNames = menubarLogNames(true)
+					}
+					if logPath, logSize, ok := firstExistingFile(statusLogCandidates(dbPath, mainLogName)); ok {
+						fmt.Printf("  Log file:  %s (%s)\n", logPath, humanSize(logSize))
+					}
+					if logPath, logSize, ok := firstExistingFile(statusLogCandidates(dbPath, menubarNames...)); ok {
+						fmt.Printf("  Menubar log: %s (%s)\n", logPath, humanSize(logSize))
+					}
+					if dbPath != "" {
+						fmt.Printf("  Database:  %s (%s)\n", dbPath, humanSize(dbSize))
 					}
 
 					return nil

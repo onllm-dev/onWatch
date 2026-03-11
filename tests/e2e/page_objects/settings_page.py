@@ -32,7 +32,7 @@ class SettingsPage:
 
     def get_tab_names(self) -> list[str]:
         """Return a list of all settings tab texts."""
-        tabs = self.page.query_selector_all(".settings-tab")
+        tabs = self.page.query_selector_all(".settings-tab:not([hidden])")
         return [tab.inner_text().strip() for tab in tabs]
 
     def configure_smtp(self, config: dict) -> None:

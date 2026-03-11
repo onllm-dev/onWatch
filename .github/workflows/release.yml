@@ -34,18 +34,11 @@ jobs:
       - name: Test with race detection
         run: go test -race ./...
 
-  # Build binaries in parallel (after tests pass)
-  build:
+  build-standard:
     needs: test
     strategy:
       matrix:
         include:
-          - goos: darwin
-            goarch: arm64
-            binary: onwatch-darwin-arm64
-          - goos: darwin
-            goarch: amd64
-            binary: onwatch-darwin-amd64
           - goos: linux
             goarch: amd64
             binary: onwatch-linux-amd64
@@ -88,9 +81,73 @@ jobs:
           name: ${{ matrix.binary }}
           path: ${{ matrix.binary }}
 
+  build-macos-amd64:
+    needs: test
+    runs-on: macos-13
+    name: Build macOS amd64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Build macOS artifact
+        run: |
+          CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build \
+            -tags menubar,desktop,production \
+            -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
+            -o onwatch-darwin-amd64 .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onwatch-darwin-amd64
+          path: onwatch-darwin-amd64
+
+  build-macos-arm64:
+    needs: test
+    runs-on: macos-14
+    name: Build macOS arm64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Build macOS artifact
+        run: |
+          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build \
+            -tags menubar,desktop,production \
+            -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
+            -o onwatch-darwin-arm64 .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onwatch-darwin-arm64
+          path: onwatch-darwin-arm64
+
   # Create GitHub release with all binaries
   release:
-    needs: build
+    needs: [build-standard, build-macos-amd64, build-macos-arm64]
     runs-on: ubuntu-latest
     name: Release
 

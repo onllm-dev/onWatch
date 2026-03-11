@@ -43,6 +43,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 
 	// Register routes
 	mux.HandleFunc("/", handler.Dashboard)
+	mux.HandleFunc("/menubar", handler.MenubarPage)
 	mux.HandleFunc("/settings", handler.SettingsPage)
 	mux.HandleFunc("/login", handler.Login)
 	mux.HandleFunc("/logout", handler.Logout)
@@ -54,6 +55,11 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc("/api/history", handler.History)
 	mux.HandleFunc("/api/cycles", handler.Cycles)
 	mux.HandleFunc("/api/summary", handler.Summary)
+	mux.HandleFunc("/api/capabilities", handler.Capabilities)
+	mux.HandleFunc("/api/menubar/summary", handler.MenubarSummary)
+	mux.HandleFunc("/api/menubar/preferences", handler.MenubarPreferences)
+	mux.HandleFunc("/api/menubar/refresh", handler.MenubarRefresh)
+	mux.HandleFunc("/api/menubar/test", handler.MenubarTest)
 	mux.HandleFunc("/api/sessions", handler.Sessions)
 	mux.HandleFunc("/api/insights", handler.Insights)
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {

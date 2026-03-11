@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 	_ "modernc.org/sqlite"
 )
 
@@ -1316,6 +1318,38 @@ func (s *Store) SetSetting(key, value string) error {
 		return fmt.Errorf("store.SetSetting: %w", err)
 	}
 	return nil
+}
+
+// GetMenubarSettings returns persisted menubar settings, falling back to defaults.
+func (s *Store) GetMenubarSettings() (*menubar.Settings, error) {
+	defaults := menubar.DefaultSettings()
+	if s == nil {
+		return defaults, nil
+	}
+	value, err := s.GetSetting("menubar")
+	if err != nil {
+		return nil, err
+	}
+	if value == "" {
+		return defaults, nil
+	}
+	var settings menubar.Settings
+	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+		return nil, fmt.Errorf("store.GetMenubarSettings: %w", err)
+	}
+	return settings.Normalize(), nil
+}
+
+// SetMenubarSettings persists normalized menubar settings as a single JSON blob.
+func (s *Store) SetMenubarSettings(settings *menubar.Settings) error {
+	if s == nil {
+		return fmt.Errorf("store.SetMenubarSettings: store is nil")
+	}
+	payload, err := json.Marshal(settings.Normalize())
+	if err != nil {
+		return fmt.Errorf("store.SetMenubarSettings: %w", err)
+	}
+	return s.SetSetting("menubar", string(payload))
 }
 
 // SaveAuthToken persists a session token with its expiry.
