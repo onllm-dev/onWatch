@@ -1,0 +1,351 @@
+{
+  "as_of": "2026-03-12",
+  "stars_snapshot": 330,
+  "countries_count": 52,
+  "top_countries": [
+    {
+      "name": "United States",
+      "count": 21
+    },
+    {
+      "name": "Spain",
+      "count": 9
+    },
+    {
+      "name": "China",
+      "count": 8
+    },
+    {
+      "name": "Germany",
+      "count": 8
+    },
+    {
+      "name": "Brazil",
+      "count": 7
+    },
+    {
+      "name": "India",
+      "count": 7
+    },
+    {
+      "name": "Canada",
+      "count": 6
+    },
+    {
+      "name": "France",
+      "count": 6
+    },
+    {
+      "name": "Indonesia",
+      "count": 6
+    },
+    {
+      "name": "Italy",
+      "count": 5
+    },
+    {
+      "name": "Russia",
+      "count": 4
+    },
+    {
+      "name": "United Kingdom",
+      "count": 4
+    },
+    {
+      "name": "Colombia",
+      "count": 3
+    },
+    {
+      "name": "Thailand",
+      "count": 3
+    },
+    {
+      "name": "Austria",
+      "count": 2
+    },
+    {
+      "name": "Bangladesh",
+      "count": 2
+    },
+    {
+      "name": "Belgium",
+      "count": 2
+    },
+    {
+      "name": "Chile",
+      "count": 2
+    },
+    {
+      "name": "Denmark",
+      "count": 2
+    },
+    {
+      "name": "Morocco",
+      "count": 2
+    },
+    {
+      "name": "Poland",
+      "count": 2
+    },
+    {
+      "name": "Portugal",
+      "count": 2
+    },
+    {
+      "name": "South Korea",
+      "count": 2
+    },
+    {
+      "name": "Switzerland",
+      "count": 2
+    },
+    {
+      "name": "Taiwan",
+      "count": 2
+    },
+    {
+      "name": "Argentina",
+      "count": 1
+    },
+    {
+      "name": "Azerbaijan",
+      "count": 1
+    },
+    {
+      "name": "Cabo Verde",
+      "count": 1
+    },
+    {
+      "name": "Croatia",
+      "count": 1
+    },
+    {
+      "name": "Cyprus",
+      "count": 1
+    },
+    {
+      "name": "Czechia",
+      "count": 1
+    },
+    {
+      "name": "Hong Kong",
+      "count": 1
+    },
+    {
+      "name": "Israel",
+      "count": 1
+    },
+    {
+      "name": "Jersey",
+      "count": 1
+    },
+    {
+      "name": "Kazakhstan",
+      "count": 1
+    },
+    {
+      "name": "Latvia",
+      "count": 1
+    },
+    {
+      "name": "Malta",
+      "count": 1
+    },
+    {
+      "name": "Mexico",
+      "count": 1
+    },
+    {
+      "name": "Moldova",
+      "count": 1
+    },
+    {
+      "name": "Nepal",
+      "count": 1
+    },
+    {
+      "name": "Netherlands",
+      "count": 1
+    },
+    {
+      "name": "New Zealand",
+      "count": 1
+    },
+    {
+      "name": "Puerto Rico",
+      "count": 1
+    },
+    {
+      "name": "Romania",
+      "count": 1
+    },
+    {
+      "name": "Slovakia",
+      "count": 1
+    },
+    {
+      "name": "South Africa",
+      "count": 1
+    },
+    {
+      "name": "Sri Lanka",
+      "count": 1
+    },
+    {
+      "name": "Sweden",
+      "count": 1
+    },
+    {
+      "name": "Tanzania",
+      "count": 1
+    },
+    {
+      "name": "Turkey",
+      "count": 1
+    },
+    {
+      "name": "Vatican City",
+      "count": 1
+    },
+    {
+      "name": "Vietnam",
+      "count": 1
+    },
+    {
+      "name": "Unknown",
+      "count": 184
+    }
+  ],
+  "org_examples": [
+    {
+      "name": "__total_users_with_org_metadata",
+      "count": 89
+    },
+    {
+      "name": "Microsoft",
+      "count": 1
+    },
+    {
+      "name": "Coriolis Technologies",
+      "count": 1
+    },
+    {
+      "name": "Tailscale",
+      "count": 1
+    },
+    {
+      "name": "Red Hat",
+      "count": 1
+    },
+    {
+      "name": "Salesforce",
+      "count": 1
+    },
+    {
+      "name": "Rackspace Technology",
+      "count": 1
+    },
+    {
+      "name": "Khan Academy",
+      "count": 1
+    },
+    {
+      "name": "Universal Music Group",
+      "count": 1
+    },
+    {
+      "name": "Swisscom",
+      "count": 1
+    },
+    {
+      "name": "Petrobras",
+      "count": 1
+    },
+    {
+      "name": "Meituan",
+      "count": 1
+    },
+    {
+      "name": "ALL SEEING EYES",
+      "count": 1
+    },
+    {
+      "name": "Arriba SpA",
+      "count": 1
+    },
+    {
+      "name": "CU Anschutz",
+      "count": 1
+    },
+    {
+      "name": "Deep Bridge Maritime Consulting",
+      "count": 1
+    },
+    {
+      "name": "Gadjah Mada University",
+      "count": 1
+    },
+    {
+      "name": "Go Copia, PBC",
+      "count": 1
+    },
+    {
+      "name": "Hunan Unversity",
+      "count": 1
+    },
+    {
+      "name": "Keepler Data Tech",
+      "count": 1
+    },
+    {
+      "name": "Korea University",
+      "count": 1
+    },
+    {
+      "name": "Politechnika \u0141\u00f3dzka",
+      "count": 1
+    },
+    {
+      "name": "Project Mirage",
+      "count": 1
+    },
+    {
+      "name": "Revenue Roll",
+      "count": 1
+    },
+    {
+      "name": "Ruhr University Bochum",
+      "count": 1
+    },
+    {
+      "name": "SDU University",
+      "count": 1
+    },
+    {
+      "name": "UAB Integry Systems",
+      "count": 1
+    },
+    {
+      "name": "UChicago PME",
+      "count": 1
+    },
+    {
+      "name": "Universidade Federal Do Rec\u00f4ncavo Baiano",
+      "count": 1
+    },
+    {
+      "name": "University of Michigan",
+      "count": 1
+    },
+    {
+      "name": "XSI Labs",
+      "count": 1
+    },
+    {
+      "name": "YUCP Studio",
+      "count": 1
+    }
+  ],
+  "methodology": "Aggregated from public GitHub stargazer profile metadata. Country spread resolves location text to countries; Unknown equals total stars minus known-country matches.",
+  "disclaimer": "Public profile metadata only. Organization names are examples and do not imply endorsement."
+}
