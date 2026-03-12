@@ -11,14 +11,14 @@
       gtag('js', new Date());
       gtag('config', 'G-HLLYRRWW4R');
     </script>
-    <title>onWatch - Multi-Provider AI API Intelligence · Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity</title>
-    <meta name="description" content="onWatch is the intelligence layer for multi-provider AI API management. Track usage across Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity with cross-provider insights, pattern detection, rate projections, and reset cycle intelligence - a ~15 MB Go binary, <50 MB RAM, zero telemetry.">
+    <title>onWatch - Coding Plan Quota Intelligence for Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, Antigravity</title>
+    <meta name="description" content="onWatch helps coding-plan users track quota resets and usage across Anthropic, Codex, Synthetic, Z.ai, GitHub Copilot, MiniMax, and Antigravity. Install in one command, keep history local, and route work before limits hit - ~15 MB Go binary, <50 MB RAM, zero telemetry.">
     <meta name="keywords" content="onWatch, AI API intelligence, multi-provider API tracking, Synthetic API monitor, Z.ai API tracker, Anthropic API monitoring, Codex API monitoring, GitHub Copilot quota tracker, MiniMax quota tracker, Antigravity quota tracker, cross-provider insights, AI coding API usage, quota monitoring tool, open source API monitor, Cline quota tracker, Claude Code API usage, intelligent provider switching, API budget tracker, self-hosted API monitoring, reset cycle detection, rate projection, Go CLI tool, API quota dashboard">
     <link rel="canonical" href="https://onwatch.onllm.dev">
 
     <!-- Open Graph -->
-    <meta property="og:title" content="onWatch - Multi-Provider AI API Intelligence · Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity">
-    <meta property="og:description" content="The intelligence layer for multi-provider AI API management. Cross-provider insights, pattern detection, rate projections, and reset cycle intelligence. Free, open-source, single binary, zero telemetry.">
+    <meta property="og:title" content="onWatch - Coding Plan Quota Intelligence across 7 Providers">
+    <meta property="og:description" content="Track coding plan quotas across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. Install fast, keep local history, and avoid surprise resets with clear usage intelligence.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://onwatch.onllm.dev">
     <meta property="og:site_name" content="onWatch">
@@ -29,8 +29,8 @@
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="onWatch - Multi-Provider AI API Intelligence · Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity">
-    <meta name="twitter:description" content="The intelligence layer for multi-provider AI API management. Cross-provider insights, pattern detection, and rate projections. ~15 MB binary, <50 MB RAM, zero telemetry.">
+    <meta name="twitter:title" content="onWatch - Coding Plan Quota Intelligence across 7 Providers">
+    <meta name="twitter:description" content="Track coding plan usage and reset windows across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. One-command install, zero telemetry.">
     <meta name="twitter:image" content="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/anthropic-dark.png">
 
     <!-- Additional SEO -->
@@ -44,7 +44,7 @@
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "onWatch",
-      "description": "The intelligence layer for multi-provider AI API management. Tracks usage across Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity with cross-provider insights, pattern detection, consumption rate projections, reset cycle intelligence, and a Material Design 3 web dashboard. ~15 MB Go binary, <50 MB RAM, zero telemetry.",
+      "description": "Coding plan quota intelligence for Anthropic, Codex, Synthetic, Z.ai, GitHub Copilot, MiniMax, and Antigravity. onWatch tracks usage and reset windows, keeps local history, and surfaces actionable headroom so you can route coding work before limits hit. ~15 MB Go binary, <50 MB RAM, zero telemetry.",
       "url": "https://onwatch.onllm.dev",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux, Windows",
@@ -623,6 +623,16 @@ a:hover { text-decoration: underline; }
 }
 .btn-secondary svg { width: 18px; height: 18px; }
 
+.hero-secondary {
+  background: transparent;
+  border-color: var(--border-light);
+  color: var(--text-secondary);
+  opacity: 0.88;
+}
+.hero-secondary:hover {
+  opacity: 1;
+}
+
 .star-count {
   display: inline-flex;
   align-items: center;
@@ -975,6 +985,88 @@ a:hover { text-decoration: underline; }
 .mock-legend-dot { width: 6px; height: 6px; border-radius: 50%; }
 .mock-dual-label { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
 
+.hero-showcase {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(196px, 228px);
+  gap: 16px;
+  align-items: start;
+  max-width: 1180px;
+  margin: 40px auto 0;
+}
+
+.hero-showcase .mockup-wrapper {
+  max-width: none;
+  margin: 0;
+}
+
+.hero-menubar-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 0;
+  width: 100%;
+  justify-self: end;
+  overflow: hidden;
+}
+
+.hero-menubar-head,
+.hero-menubar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  background: var(--surface-card-alt);
+}
+
+.hero-menubar-head {
+  border-bottom: 1px solid var(--border-light);
+}
+
+.hero-menubar-foot {
+  border-top: 1px solid var(--border-light);
+}
+
+.hero-menubar-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.hero-menubar-badge svg {
+  width: 11px;
+  height: 11px;
+  color: var(--accent-teal);
+}
+
+.hero-menubar-media {
+  width: 100%;
+  aspect-ratio: 3 / 5;
+  border-radius: 0;
+  border: none;
+  overflow: hidden;
+  background: var(--surface-inset);
+}
+
+.hero-menubar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.hero-menubar-img.media-ready {
+  opacity: 1;
+}
+
 /* ═══════════════════════════════════════════
    PROVIDERS STRIP
    ═══════════════════════════════════════════ */
@@ -1207,6 +1299,324 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius-full);
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════
+   TRUST PROOF
+   ═══════════════════════════════════════════ */
+.trust-proof {
+  padding: 80px 0;
+  border-top: 1px solid var(--border-light);
+  background: var(--surface-card-alt);
+}
+
+[data-theme="dark"] .trust-proof {
+  background: var(--surface-inset);
+}
+
+.trust-proof-wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.trust-social-proof {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.trust-social-proof-lead {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.trust-social-proof-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trust-social-proof-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.trust-social-proof-item svg {
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+}
+
+.trust-social-proof-item--muted {
+  color: var(--text-muted);
+}
+
+.trust-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.trust-stat {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  padding: 16px 18px;
+}
+
+.trust-stat-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.trust-stat-value {
+  display: block;
+  font-size: clamp(24px, 2.6vw, 30px);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.trust-stat-meta {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.trust-list-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.trust-list-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+  padding: 20px;
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.trust-list-card:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--accent-teal);
+}
+
+.trust-list-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.trust-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.trust-filter-btn {
+  border: 1px solid var(--border-default);
+  background: var(--surface-card-alt);
+  color: var(--text-muted);
+  border-radius: var(--radius-full);
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.trust-filter-btn:hover {
+  border-color: var(--accent-teal);
+  color: var(--text-primary);
+}
+
+.trust-filter-btn.is-active {
+  color: #fff;
+  border-color: var(--accent-teal);
+  background: linear-gradient(120deg, var(--accent-blue), var(--accent-teal));
+  box-shadow: var(--shadow-xs);
+}
+
+.trust-filter-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.trust-list-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.trust-map-shell {
+  background: var(--surface-inset);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.trust-country-map {
+  width: 100%;
+  min-height: 300px;
+  height: 300px;
+}
+
+.trust-map-fallback {
+  margin: 0;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.trust-map-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.trust-map-meta-copy {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.trust-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+}
+
+.trust-chip-list--scroll {
+  max-height: 240px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 2px 4px 0 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+}
+
+.trust-chip-list--scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.trust-chip-list--scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.trust-chip-list--scroll::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+
+#trust-org-list {
+  max-height: none;
+}
+
+.trust-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-light);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.trust-chip:hover {
+  border-color: var(--accent-teal);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.trust-chip--muted {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.trust-disclaimer,
+.trust-stale-note,
+.trust-neutral-note {
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.trust-disclaimer {
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.trust-stale-note {
+  color: var(--accent-teal-text);
+  margin-bottom: 8px;
+}
+
+.trust-neutral-note {
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+/* Compact footer Star History link to avoid duplicated trust blocks */
+.star-history-footer {
+  padding: 28px 0;
+  border-top: 1px solid var(--border-light);
+}
+
+.star-history-footer .container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  text-align: center;
+}
+
+.star-history-footer-copy {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.star-history-footer-link {
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* ═══════════════════════════════════════════
@@ -2158,10 +2568,17 @@ a:hover { text-decoration: underline; }
    RESPONSIVE
    ═══════════════════════════════════════════ */
 @media (max-width: 1024px) {
+  .hero-showcase {
+    grid-template-columns: minmax(0, 1fr) minmax(172px, 194px);
+    gap: 12px;
+    max-width: 1040px;
+  }
   .arch-diagram { grid-template-columns: 1fr; gap: 12px; }
   .arch-arrow { transform: rotate(90deg); padding: 4px 0; }
   .arch-stats { grid-template-columns: repeat(2, 1fr); }
   .install-methods { grid-template-columns: 1fr 1fr; }
+  .trust-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .trust-country-map { height: 280px; min-height: 280px; }
   .gallery-grid { grid-template-columns: 1fr; }
   .gallery-img { height: 320px; }
   .lightbox-nav { width: 36px; height: 36px; }
@@ -2174,6 +2591,15 @@ a:hover { text-decoration: underline; }
   .hero { padding: 100px 0 48px; }
   .hero h1 { font-size: 32px; }
   .hero-desc { font-size: 16px; }
+  .hero-showcase {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 30px;
+  }
+  .hero-menubar-card {
+    width: min(100%, 196px);
+    margin: 0 auto;
+  }
   .hero-badges {
     flex-wrap: wrap;
     gap: 8px;
@@ -2199,6 +2625,29 @@ a:hover { text-decoration: underline; }
   .theme-toggle svg { width: 14px; height: 14px; }
   .features-grid { grid-template-columns: 1fr; }
   .mockup-cards { grid-template-columns: 1fr; }
+  .mockup-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .mock-time { display: none; }
+  .mockup-tabs {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 4px;
+  }
+  .mockup-tab {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+  .trust-social-proof { padding: 12px 14px; }
+  .trust-social-proof-list { gap: 6px; }
+  .trust-social-proof-item { max-width: 100%; }
+  .trust-stats { grid-template-columns: 1fr; }
+  .trust-country-map { height: 250px; min-height: 250px; }
+  .trust-map-meta { align-items: flex-start; }
+  .trust-chip-list--scroll { max-height: 144px; }
   .providers-grid { gap: 16px; flex-direction: column; }
   .install-methods { grid-template-columns: 1fr; max-width: 560px; margin: 0 auto; }
   .comparison-table { font-size: 12px; }
@@ -2229,8 +2678,20 @@ a:hover { text-decoration: underline; }
     font-size: 11px;
   }
   .hero-actions { flex-direction: column; }
-  .btn-primary, .btn-secondary { width: 100%; justify-content: center; }
+  .hero-actions .btn-primary,
+  .hero-actions .btn-secondary { width: 100%; justify-content: center; }
   .hero-install code { font-size: 11px; }
+  .mockup-body { padding: 16px; }
+  .mock-card { padding: 10px 11px; }
+  .mockup-tab {
+    font-size: 9px;
+    padding: 4px 6px;
+  }
+  .mock-card-value { font-size: 18px; }
+  .mock-card-sub { font-size: 10px; }
+  .mock-card-countdown { font-size: 9px; }
+  .trust-country-map { height: 220px; min-height: 220px; }
+  .trust-chip-list--scroll { max-height: 132px; }
   .cta-actions { flex-direction: column; }
   .cta-actions .btn-primary, .cta-actions .btn-secondary { width: 100%; justify-content: center; }
   .arch-stats { grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -2343,19 +2804,19 @@ a:hover { text-decoration: underline; }
                 </a>
                 <span class="hero-badge hero-badge-beta">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                    In active development (Beta)
+                    In Development
                 </span>
             </div>
-            <h1>The <span class="accent">intelligence</span> layer for your AI API stack</h1>
-            <p class="hero-desc">Track API usage across Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity in one place. onWatch polls every provider's quotas, stores historical data locally, and surfaces patterns, projections, and cross-provider context-so you always know where your budget stands and which provider has headroom. Get notified via email or push notifications when quotas approach limits.</p>
+            <h1>Quota <span class="accent">intelligence</span> for every coding plan you run</h1>
+            <p class="hero-desc">Track reset windows and usage for Anthropic Pro/Max plans, Codex, Synthetic, Z.ai, GitHub Copilot, MiniMax, and Antigravity in one place. onWatch keeps local history, shows cross-provider headroom, and helps you route coding work before quotas block your flow.</p>
             <div class="hero-actions">
                 <a href="#install" class="btn-primary">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                    Get Started
+                    Install Now
                 </a>
-                <a href="https://github.com/onllm-dev/onwatch" class="btn-secondary" target="_blank" rel="noopener noreferrer">
+                <a href="https://github.com/onllm-dev/onwatch" class="btn-secondary hero-secondary" target="_blank" rel="noopener noreferrer">
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-                    View on GitHub
+                    See on GitHub
                     <span class="star-count" id="star-count" title="GitHub Stars">
                         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25z"/></svg>
                         <span id="star-count-value">--</span>
@@ -2383,8 +2844,9 @@ a:hover { text-decoration: underline; }
             <p class="hero-meta"><span id="hero-version">v2.11.5</span> &middot; Go &middot; GPL-3.0 &middot; Zero Telemetry &middot; <50 MB RAM &middot; ~15 MB Binary</p>
         </div>
 
-        <!-- Dashboard Mockup -->
-        <div class="mockup-wrapper fade-in">
+        <!-- Dashboard + Menubar Companion -->
+        <div class="hero-showcase">
+            <div class="mockup-wrapper fade-in">
             <div class="mockup" id="dashboard-mockup">
                 <div class="mockup-bar">
                     <span class="mockup-dot"></span>
@@ -2666,6 +3128,93 @@ a:hover { text-decoration: underline; }
                     </div>
                 </div>
             </div>
+            </div>
+            <aside class="hero-menubar-card fade-in" aria-label="Menubar companion preview">
+                <div class="hero-menubar-media">
+                    <img
+                        class="hero-menubar-img"
+                        src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/menubar-standard-light.png"
+                        data-light-src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/menubar-standard-light.png"
+                        data-dark-src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/menubar-standard-dark.png"
+                        alt="onWatch menubar companion full screenshot for macOS"
+                        width="360"
+                        height="600"
+                        loading="eager"
+                        decoding="async"
+                        fetchpriority="high"
+                    >
+                </div>
+                <div class="hero-menubar-foot">
+                    <span class="hero-menubar-badge">Menubar - macOS only (beta)</span>
+                </div>
+            </aside>
+        </div>
+    </div>
+</section>
+
+<!-- Trust Proof -->
+<section class="trust-proof" id="trust-proof">
+    <div class="container">
+        <div class="trust-proof-wrap">
+            <div class="fade-in" style="text-align:center;margin-bottom:24px;">
+                <div class="section-label">Trust & Adoption</div>
+                <h2 class="section-title">Trusted by people building coding workflows worldwide</h2>
+                <p class="section-desc" style="margin-left:auto;margin-right:auto;">See live social proof from GitHub stars, country coverage, and public organization metadata in one clean snapshot.</p>
+            </div>
+
+            <div class="trust-stats fade-in" aria-live="polite">
+                <article class="trust-stat">
+                    <span class="trust-stat-label">GitHub Stars (Live)</span>
+                    <span class="trust-stat-value" id="trust-stars-snapshot">--</span>
+                    <span class="trust-stat-meta" id="trust-as-of">Snapshot context as of --</span>
+                </article>
+                <article class="trust-stat">
+                    <span class="trust-stat-label">Countries (Aggregate)</span>
+                    <span class="trust-stat-value" id="trust-countries-count">--</span>
+                    <span class="trust-stat-meta">Includes full spread + Unknown</span>
+                </article>
+                <article class="trust-stat">
+                    <span class="trust-stat-label">Organizations (Aggregate)</span>
+                    <span class="trust-stat-value" id="trust-org-count">--</span>
+                    <span class="trust-stat-meta">People with public organization metadata</span>
+                </article>
+            </div>
+
+            <div class="trust-list-grid fade-in">
+                <article class="trust-list-card" aria-label="Top countries by aggregate count">
+                    <h3 class="trust-list-title">Country spread from public star profiles</h3>
+                    <div class="trust-controls" role="toolbar" aria-label="Country coverage filters">
+                        <button type="button" class="trust-filter-btn is-active" data-trust-filter="country" data-trust-value="all">All</button>
+                        <button type="button" class="trust-filter-btn" data-trust-filter="country" data-trust-value="top">Top</button>
+                        <button type="button" class="trust-filter-btn" data-trust-filter="country" data-trust-value="single">Singles</button>
+                        <button type="button" class="trust-filter-btn" data-trust-filter="country" data-trust-value="unknown">Unknown</button>
+                    </div>
+                    <div class="trust-map-shell" aria-live="polite">
+                        <div class="trust-country-map" id="trust-country-map" role="img" aria-label="Interactive country coverage heat map"></div>
+                        <p class="trust-map-fallback" id="trust-country-map-fallback" hidden>Interactive map is unavailable right now. Country coverage is listed below.</p>
+                    </div>
+                    <div class="trust-map-meta">
+                        <span class="trust-map-meta-copy">Unknown locations: <strong id="trust-unknown-count">--</strong></span>
+                    </div>
+                    <div class="trust-chip-list trust-chip-list--scroll" id="trust-country-list">
+                        <span class="trust-chip trust-chip--muted">Loading country aggregates...</span>
+                    </div>
+                </article>
+                <article class="trust-list-card" aria-label="Organization examples from aggregate counts">
+                    <h3 class="trust-list-title">Starred by Employees of</h3>
+                    <div class="trust-controls" role="toolbar" aria-label="Organization coverage filters">
+                        <button type="button" class="trust-filter-btn is-active" data-trust-filter="org" data-trust-value="featured">Featured</button>
+                        <button type="button" class="trust-filter-btn" data-trust-filter="org" data-trust-value="all">All</button>
+                    </div>
+                    <div class="trust-chip-list trust-chip-list--scroll" id="trust-org-list">
+                        <span class="trust-chip trust-chip--muted">Loading organization aggregates...</span>
+                    </div>
+                </article>
+            </div>
+
+            <p class="trust-disclaimer fade-in" id="trust-disclaimer">Public profile metadata only. Organization names are examples and do not imply endorsement.</p>
+            <p class="trust-stale-note fade-in" id="trust-stale-note" hidden>Snapshot is stale. Showing neutral trust mode until refreshed data is verified.</p>
+            <p class="trust-neutral-note fade-in" id="trust-neutral-note" hidden>Curated trust snapshot unavailable. Showing neutral trust mode.</p>
         </div>
     </div>
 </section>
@@ -3587,16 +4136,16 @@ a:hover { text-decoration: underline; }
 <section class="cta-section" id="cta">
     <div class="container">
         <div class="cta-card fade-in">
-            <h2>Start making intelligent API decisions</h2>
-            <p>Every hour you run without onWatch is an hour of usage data you'll never get back. Install in under a minute, start collecting intelligence immediately. Free, open source, zero telemetry.</p>
+            <h2>Stay ahead of coding plan resets</h2>
+            <p>Keep one local timeline across providers, catch limits before they block work, and install in under a minute. Free, open source, zero telemetry.</p>
             <div class="cta-actions">
                 <a href="#install" class="btn-primary">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                    Get Started
+                    Install Now
                 </a>
                 <a href="https://github.com/onllm-dev/onwatch" class="btn-secondary" target="_blank" rel="noopener noreferrer">
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-                    View on GitHub
+                    See on GitHub
                 </a>
             </div>
         </div>
@@ -3632,13 +4181,11 @@ a:hover { text-decoration: underline; }
     </div>
 </div>
 
-<!-- Star History -->
-<section class="star-history" style="padding:60px 0;background:var(--bg-surface);">
-    <div class="container" style="text-align:center;">
-        <h2 style="font-size:1.75rem;font-weight:600;margin-bottom:24px;color:var(--text-primary);">Star History</h2>
-        <a href="https://star-history.com/#onllm-dev/onwatch&Timeline" target="_blank" rel="noopener noreferrer">
-            <img src="https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline" alt="Star History Chart" style="max-width:100%;width:700px;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.1);">
-        </a>
+<!-- Footer Trust Link -->
+<section class="star-history-footer" aria-label="Star history link">
+    <div class="container">
+        <span class="star-history-footer-copy">Need the full GitHub momentum timeline?</span>
+        <a class="star-history-footer-link" href="https://star-history.com/#onllm-dev/onwatch&Timeline" target="_blank" rel="noopener noreferrer">Open Star History</a>
     </div>
 </section>
 
@@ -3661,22 +4208,140 @@ a:hover { text-decoration: underline; }
                     Support onWatch
                 </a>
             </div>
-            <div class="footer-copy">Powered by <a href="https://onllm.dev" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">onllm.dev</a> &middot; Built with <a href="https://www.chartjs.org/" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">Chart.js</a> &middot; <a href="https://pkg.go.dev/modernc.org/sqlite" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">modernc.org/sqlite</a> &middot; Menubar is beta - feedback highly appreciated at <a href="https://github.com/onllm-dev/onwatch/issues" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">GitHub Issues</a></div>
+            <div class="footer-copy">Powered by <a href="https://onllm.dev" target="_blank" rel="noopener noreferrer" style="color:var(--accent-teal);">onllm.dev</a></div>
         </div>
     </div>
 </footer>
 
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script>
+function syncThemeMedia(theme) {
+    var activeTheme = theme || document.documentElement.getAttribute('data-theme') || 'light';
+    var targets = document.querySelectorAll('.hero-menubar-img[data-light-src][data-dark-src]');
+    targets.forEach(function(img) {
+        var nextSrc = activeTheme === 'dark' ? img.getAttribute('data-dark-src') : img.getAttribute('data-light-src');
+        if (!nextSrc) return;
+
+        if (img.getAttribute('src') !== nextSrc) {
+            img.classList.remove('media-ready');
+            img.onload = function() {
+                img.classList.add('media-ready');
+                img.onload = null;
+                img.onerror = null;
+            };
+            img.onerror = function() {
+                img.classList.add('media-ready');
+                img.onload = null;
+                img.onerror = null;
+            };
+            img.setAttribute('src', nextSrc);
+            return;
+        }
+
+        if (img.complete && img.naturalWidth > 0) {
+            img.classList.add('media-ready');
+        }
+    });
+}
+
+function preloadThemeMedia(theme) {
+    var activeTheme = theme || document.documentElement.getAttribute('data-theme') || 'light';
+    var nextTheme = activeTheme === 'dark' ? 'light' : 'dark';
+    var attr = nextTheme === 'dark' ? 'data-dark-src' : 'data-light-src';
+    var targets = document.querySelectorAll('.hero-menubar-img[data-light-src][data-dark-src]');
+    targets.forEach(function(img) {
+        var src = img.getAttribute(attr);
+        if (!src) return;
+        var preloaded = new Image();
+        preloaded.decoding = 'async';
+        preloaded.src = src;
+    });
+}
+
+function formatTrustNumber(value) {
+    if (!Number.isFinite(value)) return '--';
+    return value.toLocaleString('en-US');
+}
+
+function formatTrustDate(value) {
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function setTrustText(id, text) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+}
+
+function setTrustNote(id, text, hidden) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.hidden = !!hidden;
+}
+
+function renderTrustChips(id, entries, emptyText) {
+    var container = document.getElementById(id);
+    if (!container) return;
+    while (container.firstChild) container.removeChild(container.firstChild);
+    if (!entries || !entries.length) {
+        var empty = document.createElement('span');
+        empty.className = 'trust-chip trust-chip--muted';
+        empty.textContent = emptyText;
+        container.appendChild(empty);
+        return;
+    }
+    entries.forEach(function(entry) {
+        var chip = document.createElement('span');
+        chip.className = 'trust-chip';
+        chip.textContent = entry.name + ' (' + entry.count + ')';
+        container.appendChild(chip);
+    });
+}
+
+function renderTrustOrgSocialProof(id, entries, emptyText) {
+    var container = document.getElementById(id);
+    if (!container) return;
+
+    while (container.firstChild) container.removeChild(container.firstChild);
+
+    if (!entries || !entries.length) {
+        var empty = document.createElement('span');
+        empty.className = 'trust-social-proof-item trust-social-proof-item--muted';
+        empty.textContent = emptyText;
+        container.appendChild(empty);
+        return;
+    }
+
+    entries.forEach(function(entry) {
+        if (!entry || typeof entry.name !== 'string') return;
+        var item = document.createElement('span');
+        item.className = 'trust-social-proof-item';
+        item.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span></span>';
+        item.querySelector('span').textContent = entry.name;
+        container.appendChild(item);
+    });
+}
+
 /* Theme Toggle */
 (function() {
+    var html = document.documentElement;
     var toggle = document.getElementById('theme-toggle');
+    var initialTheme = html.getAttribute('data-theme') || 'light';
+    syncThemeMedia(initialTheme);
+    preloadThemeMedia(initialTheme);
+    if (typeof window.refreshTrustCountryMap === 'function') window.refreshTrustCountryMap();
     if (!toggle) return;
     toggle.addEventListener('click', function() {
-        var html = document.documentElement;
         var current = html.getAttribute('data-theme');
         var next = current === 'dark' ? 'light' : 'dark';
         html.setAttribute('data-theme', next);
         localStorage.setItem('onwatch-theme', next);
+        syncThemeMedia(next);
+        preloadThemeMedia(next);
+        if (typeof window.refreshTrustCountryMap === 'function') window.refreshTrustCountryMap();
     });
 })();
 
@@ -3755,8 +4420,417 @@ a:hover { text-decoration: underline; }
             // Update nav star count
             var navEls = document.querySelectorAll('.nav-star-value');
             navEls.forEach(function(el) { el.textContent = formatted; });
+            // Update trust star count (live from GitHub API)
+            var trustEl = document.getElementById('trust-stars-snapshot');
+            if (trustEl) trustEl.textContent = formatted;
+            var asOfEl = document.getElementById('trust-as-of');
+            if (asOfEl) asOfEl.textContent = 'Live from GitHub API';
         })
         .catch(function() { /* keep placeholder */ });
+})();
+
+/* Fetch curated trust proof with schema/privacy/freshness guards */
+(function() {
+    var TRUST_ALLOWED_KEYS = {
+        as_of: true,
+        stars_snapshot: true,
+        countries_count: true,
+        top_countries: true,
+        org_examples: true,
+        methodology: true,
+        disclaimer: true
+    };
+    var TRUST_MIN_COUNTRY_AGGREGATE = 1;
+    var TRUST_MIN_ORG_AGGREGATE = 1;
+    var TRUST_ORG_TOTAL_MARKER = '__total_users_with_org_metadata';
+    var TRUST_STALE_DAYS = 90;
+    var TRUST_TOP_COUNTRY_COUNT = 12;
+    var TRUST_FEATURED_ORG_COUNT = 12;
+    var TRUST_DISCLAIMER_COPY = 'Public profile metadata only. Organization names are examples and do not imply endorsement.';
+    var TRUST_RECOGNIZED_ORG_PRIORITY = [
+        'Microsoft',
+        'onllm.dev',
+        'Coriolis Technologies',
+        'Tailscale',
+        'Red Hat',
+        'Salesforce',
+        'Rackspace Technology',
+        'Khan Academy',
+        'Universal Music Group',
+        'Swisscom',
+        'Petrobras'
+    ];
+    var trustCountryEntries = [];
+    var trustCountryAllEntries = [];
+    var trustOrgAllEntries = [];
+    var trustCountryFilter = 'all';
+    var trustOrgFilter = 'featured';
+
+    function knownCountryEntries(entries) {
+        if (!Array.isArray(entries)) return [];
+        return entries.filter(function(entry) {
+            return entry && typeof entry.name === 'string' && entry.name.toLowerCase() !== 'unknown';
+        });
+    }
+
+    function filterCountryEntries(entries, mode) {
+        if (!Array.isArray(entries)) return [];
+        if (mode === 'top') {
+            var knownTop = entries.filter(function(entry) {
+                return entry.name.toLowerCase() !== 'unknown';
+            }).slice(0, TRUST_TOP_COUNTRY_COUNT);
+            var unknownTop = entries.filter(function(entry) {
+                return entry.name.toLowerCase() === 'unknown';
+            }).slice(0, 1);
+            return knownTop.concat(unknownTop);
+        }
+        if (mode === 'single') {
+            return entries.filter(function(entry) {
+                return entry.count === 1;
+            });
+        }
+        if (mode === 'unknown') {
+            return entries.filter(function(entry) {
+                return entry.name.toLowerCase() === 'unknown';
+            });
+        }
+        return entries.slice();
+    }
+
+    function getOrgRecognitionScore(name) {
+        if (typeof name !== 'string') return 0;
+        var normalized = name.trim().toLowerCase();
+        if (!normalized) return 0;
+
+        var idx = TRUST_RECOGNIZED_ORG_PRIORITY.findIndex(function(org) {
+            return org.toLowerCase() === normalized;
+        });
+        if (idx !== -1) return 200 - idx;
+
+        if (/(microsoft|google|amazon|meta|apple|openai|anthropic|nvidia|intel|ibm|oracle|salesforce|red hat|cloudflare|tailscale|rackspace|meituan|paypal|shopify|adobe|cisco|khan academy|universal music|swisscom|petrobras|onllm|coriolis)/.test(normalized)) {
+            return 140;
+        }
+
+        if (/(university|institute|academy|technolog|systems|labs|group|studio|consulting|solutions)/.test(normalized)) {
+            return 60;
+        }
+
+        return 0;
+    }
+
+    function filterOrgEntries(entries, mode) {
+        if (!Array.isArray(entries)) return [];
+        if (mode === 'featured') {
+            var recognized = entries.map(function(entry) {
+                return { entry: entry, score: getOrgRecognitionScore(entry && entry.name) };
+            }).filter(function(item) {
+                return item.entry && item.score > 0;
+            }).sort(function(a, b) {
+                if (b.score !== a.score) return b.score - a.score;
+                if (b.entry.count !== a.entry.count) return b.entry.count - a.entry.count;
+                return a.entry.name.localeCompare(b.entry.name);
+            }).map(function(item) {
+                return item.entry;
+            });
+
+            var featured = recognized.slice(0, TRUST_FEATURED_ORG_COUNT);
+            if (featured.length >= TRUST_FEATURED_ORG_COUNT) return featured;
+
+            var selected = new Set(featured.map(function(entry) { return entry.name; }));
+            var remainder = entries.filter(function(entry) {
+                return entry && typeof entry.name === 'string' && !selected.has(entry.name);
+            }).sort(function(a, b) {
+                if (b.count !== a.count) return b.count - a.count;
+                return a.name.localeCompare(b.name);
+            });
+            var merged = featured.concat(remainder.slice(0, Math.max(TRUST_FEATURED_ORG_COUNT - featured.length, 0)));
+            return merged;
+        }
+        return entries.slice();
+    }
+
+    function setActiveTrustFilterButtons(filter, value) {
+        var buttons = document.querySelectorAll('.trust-filter-btn[data-trust-filter="' + filter + '"]');
+        buttons.forEach(function(button) {
+            button.classList.toggle('is-active', button.getAttribute('data-trust-value') === value);
+        });
+    }
+
+    function countryEmptyText() {
+        if (trustCountryFilter === 'single') return 'No single-count countries are available in this snapshot.';
+        if (trustCountryFilter === 'unknown') return 'Unknown location counts are not available in this snapshot.';
+        return 'No country spread data is currently available.';
+    }
+
+    function orgEmptyText() {
+        if (trustOrgFilter === 'featured') return 'No featured organizations are available in this snapshot.';
+        return 'No organization examples are currently available.';
+    }
+
+    function renderTrustInteractiveLists() {
+        var filteredCountries = filterCountryEntries(trustCountryAllEntries, trustCountryFilter);
+        var filteredOrgs = filterOrgEntries(trustOrgAllEntries, trustOrgFilter);
+        var mapCountries = trustCountryFilter === 'unknown'
+            ? filterCountryEntries(trustCountryAllEntries, 'all')
+            : filteredCountries;
+        var socialProofEntries = filterOrgEntries(trustOrgAllEntries, 'featured').slice(0, 10);
+
+        renderTrustChips('trust-country-list', filteredCountries, countryEmptyText());
+        renderTrustChips('trust-org-list', filteredOrgs, orgEmptyText());
+        renderTrustCountryMap(mapCountries);
+    }
+
+    function initTrustFilters() {
+        document.querySelectorAll('.trust-filter-btn[data-trust-filter][data-trust-value]').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var filter = button.getAttribute('data-trust-filter');
+                var value = button.getAttribute('data-trust-value');
+                if (filter === 'country') {
+                    trustCountryFilter = value;
+                    setActiveTrustFilterButtons('country', value);
+                } else if (filter === 'org') {
+                    trustOrgFilter = value;
+                    setActiveTrustFilterButtons('org', value);
+                }
+                renderTrustInteractiveLists();
+            });
+        });
+    }
+
+    function renderTrustCountryMap(entries) {
+        trustCountryEntries = Array.isArray(entries) ? entries.slice() : [];
+
+        var mapEl = document.getElementById('trust-country-map');
+        var fallbackEl = document.getElementById('trust-country-map-fallback');
+        if (!mapEl) return;
+
+        var known = knownCountryEntries(trustCountryEntries);
+        if (!known.length) {
+            if (typeof Plotly !== 'undefined') Plotly.purge(mapEl);
+            if (fallbackEl) {
+                fallbackEl.textContent = 'Country map has no resolvable country data yet.';
+                fallbackEl.hidden = false;
+            }
+            return;
+        }
+
+        if (typeof Plotly === 'undefined') {
+            if (fallbackEl) {
+                fallbackEl.textContent = 'Interactive map is unavailable right now. Country coverage is listed below.';
+                fallbackEl.hidden = false;
+            }
+            return;
+        }
+
+        if (fallbackEl) fallbackEl.hidden = true;
+
+        var dark = (document.documentElement.getAttribute('data-theme') || 'light') === 'dark';
+        var colorscale = dark
+            ? [[0, '#3B82F6'], [0.25, '#22D3EE'], [0.5, '#2DD4BF'], [0.75, '#34D399'], [1, '#86EFAC']]
+            : [[0, '#1E3A8A'], [0.25, '#0369A1'], [0.5, '#0F766E'], [0.75, '#15803D'], [1, '#166534']];
+
+        Plotly.react(mapEl, [{
+            type: 'choropleth',
+            locationmode: 'country names',
+            locations: known.map(function(entry) { return entry.name; }),
+            z: known.map(function(entry) { return entry.count; }),
+            text: known.map(function(entry) { return entry.name; }),
+            colorscale: colorscale,
+            autocolorscale: false,
+            marker: {
+                line: {
+                    color: dark ? '#2A3346' : '#CBD5E1',
+                    width: 0.6
+                }
+            },
+            colorbar: {
+                thickness: 10,
+                len: 0.72,
+                outlinewidth: 0,
+                tickfont: { color: dark ? '#CBD5E1' : '#334155', size: 11 },
+                title: {
+                    text: 'Users',
+                    font: { color: dark ? '#CBD5E1' : '#334155', size: 11 }
+                }
+            },
+            hovertemplate: '%{text}<br>%{z} users<extra></extra>'
+        }], {
+            margin: { t: 0, r: 0, b: 0, l: 0 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            geo: {
+                projection: { type: 'natural earth' },
+                showframe: false,
+                showcoastlines: false,
+                showcountries: true,
+                countrycolor: dark ? '#2A3346' : '#CBD5E1',
+                showland: true,
+                landcolor: dark ? '#0E1627' : '#F8FAFC',
+                bgcolor: 'rgba(0,0,0,0)'
+            }
+        }, {
+            responsive: true,
+            displayModeBar: false,
+            scrollZoom: false
+        });
+    }
+
+    window.refreshTrustCountryMap = function() {
+        if (trustCountryEntries.length) renderTrustCountryMap(trustCountryEntries);
+    };
+
+    initTrustFilters();
+
+    function hasOwn(obj, key) {
+        return Object.prototype.hasOwnProperty.call(obj, key);
+    }
+
+    function isNonNegativeInteger(value) {
+        return Number.isInteger(value) && value >= 0;
+    }
+
+    function isNonEmptyString(value) {
+        return typeof value === 'string' && value.trim().length > 0;
+    }
+
+    function parseAsOfDate(value) {
+        if (!isNonEmptyString(value)) return null;
+        var date = new Date(value);
+        if (Number.isNaN(date.getTime())) return null;
+        return date;
+    }
+
+    function sanitizeAggregateEntries(value, minCount) {
+        if (!Array.isArray(value)) return [];
+        return value.map(function(entry) {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+            var name = typeof entry.name === 'string' ? entry.name.trim() : '';
+            var count = entry.count;
+            if (!name || !isNonNegativeInteger(count)) return null;
+            return { name: name, count: count };
+        }).filter(Boolean).filter(function(entry) {
+            return entry.count >= minCount;
+        });
+    }
+
+    function renderNeutralTrust(options) {
+        var asOfText = options && options.asOf ? formatTrustDate(options.asOf) : null;
+        setTrustText('trust-stars-snapshot', '--');
+        setTrustText('trust-countries-count', '--');
+        setTrustText('trust-org-count', '--');
+        setTrustText('trust-unknown-count', '--');
+        setTrustText('trust-as-of', asOfText ? ('Snapshot context as of ' + asOfText) : 'Snapshot context unavailable');
+        trustCountryAllEntries = [];
+        trustOrgAllEntries = [];
+        renderTrustInteractiveLists();
+        setTrustText('trust-disclaimer', TRUST_DISCLAIMER_COPY);
+        setTrustNote('trust-stale-note', TRUST_DISCLAIMER_COPY, !(options && options.stale));
+        setTrustNote('trust-neutral-note', TRUST_DISCLAIMER_COPY, false);
+    }
+
+    function validateTrustPayload(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+        var rawKeys = Object.keys(raw);
+        if (rawKeys.some(function(key) { return !hasOwn(TRUST_ALLOWED_KEYS, key); })) {
+            return null;
+        }
+
+        var known = {};
+        Object.keys(TRUST_ALLOWED_KEYS).forEach(function(key) {
+            if (hasOwn(raw, key)) known[key] = raw[key];
+        });
+
+        if (!Object.keys(TRUST_ALLOWED_KEYS).every(function(key) { return hasOwn(known, key); })) {
+            return null;
+        }
+
+        var asOfDate = parseAsOfDate(known.as_of);
+        if (!asOfDate) return null;
+        if (!isNonNegativeInteger(known.stars_snapshot)) return null;
+        if (!isNonNegativeInteger(known.countries_count)) return null;
+        if (!isNonEmptyString(known.methodology)) return null;
+        if (!isNonEmptyString(known.disclaimer)) return null;
+
+        var topCountries = sanitizeAggregateEntries(known.top_countries, TRUST_MIN_COUNTRY_AGGREGATE);
+        var orgEntries = sanitizeAggregateEntries(known.org_examples, TRUST_MIN_ORG_AGGREGATE);
+        var orgUsersTotal = null;
+        var orgExamples = orgEntries.filter(function(entry) {
+            if (entry.name === TRUST_ORG_TOTAL_MARKER) {
+                orgUsersTotal = entry.count;
+                return false;
+            }
+            return true;
+        });
+
+        return {
+            asOfDate: asOfDate,
+            starsSnapshot: known.stars_snapshot,
+            countriesCount: known.countries_count,
+            topCountries: topCountries,
+            orgUsersTotal: orgUsersTotal,
+            orgExamples: orgExamples,
+            methodology: known.methodology.trim(),
+            disclaimer: known.disclaimer.trim()
+        };
+    }
+
+    function renderValidatedTrust(data) {
+        var ageDays = (Date.now() - data.asOfDate.getTime()) / 86400000;
+        if (ageDays > TRUST_STALE_DAYS) {
+            renderNeutralTrust({
+                stale: true,
+                asOf: data.asOfDate.toISOString(),
+                message: 'Curated snapshot is stale. Trust proof is shown in neutral mode until refreshed.'
+            });
+            return;
+        }
+
+        /* Only use snapshot stars as fallback - live GitHub API count takes priority */
+        var trustStarsEl = document.getElementById('trust-stars-snapshot');
+        if (!trustStarsEl || trustStarsEl.textContent === '--') {
+            setTrustText('trust-stars-snapshot', formatTrustNumber(data.starsSnapshot));
+        }
+        setTrustText('trust-countries-count', formatTrustNumber(data.countriesCount));
+        var orgAggregateCount = Number.isInteger(data.orgUsersTotal) ? data.orgUsersTotal : data.orgExamples.length;
+        setTrustText('trust-org-count', formatTrustNumber(orgAggregateCount));
+        var unknownEntry = data.topCountries.find(function(entry) {
+            return entry.name.toLowerCase() === 'unknown';
+        });
+        setTrustText('trust-unknown-count', unknownEntry ? formatTrustNumber(unknownEntry.count) : '0');
+
+        var formattedAsOf = formatTrustDate(data.asOfDate.toISOString());
+        setTrustText('trust-as-of', formattedAsOf ? ('Snapshot context as of ' + formattedAsOf) : 'Snapshot context date unavailable');
+
+        trustCountryAllEntries = data.topCountries.slice();
+        trustOrgAllEntries = data.orgExamples.slice();
+        renderTrustInteractiveLists();
+        setTrustText('trust-disclaimer', TRUST_DISCLAIMER_COPY);
+
+        setTrustNote('trust-stale-note', '', true);
+        setTrustNote('trust-neutral-note', '', true);
+    }
+
+    fetch('trust-proof.json', { cache: 'no-store' })
+        .then(function(response) {
+            if (!response.ok) throw new Error('trust-proof.json unavailable');
+            return response.json();
+        })
+        .then(function(raw) {
+            var validated = validateTrustPayload(raw);
+            if (!validated) {
+                renderNeutralTrust({
+                    message: 'Curated trust snapshot failed validation. Showing neutral trust copy.'
+                });
+                return;
+            }
+            renderValidatedTrust(validated);
+        })
+        .catch(function() {
+            renderNeutralTrust({
+                message: 'Curated trust snapshot unavailable. Showing neutral trust copy.'
+            });
+        });
 })();
 
 /* Fade-in on scroll */
