@@ -11,14 +11,14 @@
       gtag('js', new Date());
       gtag('config', 'G-HLLYRRWW4R');
     </script>
-    <title>onWatch - Coding Plan Quota Intelligence for Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, Antigravity</title>
-    <meta name="description" content="onWatch helps coding-plan users track quota resets and usage across Anthropic, Codex, Synthetic, Z.ai, GitHub Copilot, MiniMax, and Antigravity. Install in one command, keep history local, and route work before limits hit - ~15 MB Go binary, <50 MB RAM, zero telemetry.">
+    <title>onWatch - Know your AI quota before it runs out</title>
+    <meta name="description" content="Track quota usage and reset windows across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. Detect anomalies, monitor burn rates, route work before limits hit. Open source Go binary, zero telemetry, all data local.">
     <meta name="keywords" content="onWatch, AI API intelligence, multi-provider API tracking, Synthetic API monitor, Z.ai API tracker, Anthropic API monitoring, Codex API monitoring, GitHub Copilot quota tracker, MiniMax quota tracker, Antigravity quota tracker, cross-provider insights, AI coding API usage, quota monitoring tool, open source API monitor, Cline quota tracker, Claude Code API usage, intelligent provider switching, API budget tracker, self-hosted API monitoring, reset cycle detection, rate projection, Go CLI tool, API quota dashboard">
     <link rel="canonical" href="https://onwatch.onllm.dev">
 
     <!-- Open Graph -->
-    <meta property="og:title" content="onWatch - Coding Plan Quota Intelligence across 7 Providers">
-    <meta property="og:description" content="Track coding plan quotas across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. Install fast, keep local history, and avoid surprise resets with clear usage intelligence.">
+    <meta property="og:title" content="onWatch - Know your AI quota before it runs out">
+    <meta property="og:description" content="Track quota usage across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. Detect anomalies, monitor burn rates, route work before limits hit. Open source, zero telemetry.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://onwatch.onllm.dev">
     <meta property="og:site_name" content="onWatch">
@@ -29,8 +29,8 @@
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="onWatch - Coding Plan Quota Intelligence across 7 Providers">
-    <meta name="twitter:description" content="Track coding plan usage and reset windows across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. One-command install, zero telemetry.">
+    <meta name="twitter:title" content="onWatch - Know your AI quota before it runs out">
+    <meta name="twitter:description" content="Track quota usage across 7 providers. Detect anomalies, monitor burn rates, route work before limits hit. Open source, zero telemetry.">
     <meta name="twitter:image" content="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/anthropic-dark.png">
 
     <!-- Additional SEO -->
@@ -624,10 +624,9 @@ a:hover { text-decoration: underline; }
 .btn-secondary svg { width: 18px; height: 18px; }
 
 .hero-secondary {
-  background: transparent;
-  border-color: var(--border-light);
-  color: var(--text-secondary);
-  opacity: 0.88;
+  background: var(--surface-card);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 .hero-secondary:hover {
   opacity: 1;
@@ -1031,10 +1030,9 @@ a:hover { text-decoration: underline; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--text-secondary);
 }
 
@@ -1408,7 +1406,7 @@ a:hover { text-decoration: underline; }
 
 .trust-list-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
   margin-bottom: 20px;
 }
@@ -2645,6 +2643,7 @@ a:hover { text-decoration: underline; }
   .trust-social-proof-list { gap: 6px; }
   .trust-social-proof-item { max-width: 100%; }
   .trust-stats { grid-template-columns: 1fr; }
+  .trust-list-grid { grid-template-columns: 1fr; }
   .trust-country-map { height: 250px; min-height: 250px; }
   .trust-map-meta { align-items: flex-start; }
   .trust-chip-list--scroll { max-height: 144px; }
@@ -2794,21 +2793,13 @@ a:hover { text-decoration: underline; }
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
                     Free &amp; Open Source
                 </a>
-                <a href="https://onllm.dev" class="hero-badge hero-badge-onllm" target="_blank" rel="noopener noreferrer">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v6"/><path d="M6.34 6.34a9 9 0 1 0 11.32 0"/></svg>
-                    onllm.dev
-                </a>
                 <a href="https://github.com/onllm-dev/onwatch/releases" class="hero-badge hero-badge-downloads" target="_blank" rel="noopener noreferrer">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                    Downloads <span class="download-count" id="download-count">--</span>
+                    Downloads <span class="download-count" id="hero-download-count">--</span>
                 </a>
-                <span class="hero-badge hero-badge-beta">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                    In Development
-                </span>
             </div>
-            <h1>Quota <span class="accent">intelligence</span> for every coding plan you run</h1>
-            <p class="hero-desc">Track reset windows and usage for Anthropic Pro/Max plans, Codex, Synthetic, Z.ai, GitHub Copilot, MiniMax, and Antigravity in one place. onWatch keeps local history, shows cross-provider headroom, and helps you route coding work before quotas block your flow.</p>
+            <h1>Know your AI quota.<br><span class="accent">Before it runs out.</span></h1>
+            <p class="hero-desc">Track usage and reset windows across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. Route work before limits hit. Detect anomalies. Monitor burn rates. All data stays on your machine.</p>
             <div class="hero-actions">
                 <a href="#install" class="btn-primary">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
@@ -2841,7 +2832,7 @@ a:hover { text-decoration: underline; }
                     <span class="copy-hint">Copy</span>
                 </div>
             </div>
-            <p class="hero-meta"><span id="hero-version">v2.11.5</span> &middot; Go &middot; GPL-3.0 &middot; Zero Telemetry &middot; <50 MB RAM &middot; ~15 MB Binary</p>
+            <p class="hero-meta"><span id="hero-version">v2.11.5</span> &middot; Go &middot; GPL-3.0 &middot; Zero Telemetry &middot; <60 MB RAM &middot; <20 MB Binary</p>
         </div>
 
         <!-- Dashboard + Menubar Companion -->
@@ -3152,14 +3143,43 @@ a:hover { text-decoration: underline; }
     </div>
 </section>
 
+<!-- Social Proof Strip -->
+<section class="social-proof-strip" aria-label="Social proof">
+    <div class="container">
+        <div class="social-proof-inner fade-in" style="display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap;padding:20px 0;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px;color:var(--accent-peach);"><path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279L12 19.771l-7.416 3.642 1.48-8.279L0 9.306l8.332-1.151z"/></svg>
+                <span style="font-size:20px;font-weight:700;color:var(--text-primary);font-family:var(--font-mono);" id="hero-star-count">330+</span>
+                <span style="font-size:14px;color:var(--text-secondary);">GitHub Stars</span>
+            </div>
+            <span style="width:1px;height:24px;background:var(--border-default);"></span>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--accent-teal);"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <span style="font-size:20px;font-weight:700;color:var(--text-primary);font-family:var(--font-mono);" id="hero-country-count">52</span>
+                <span style="font-size:14px;color:var(--text-secondary);">Countries</span>
+            </div>
+            <span style="width:1px;height:24px;background:var(--border-default);"></span>
+            <div style="font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                Starred by employees of
+                <span style="font-weight:600;color:var(--text-secondary);">Microsoft</span> &middot;
+                <span style="font-weight:600;color:var(--text-secondary);">Amazon</span> &middot;
+                <span style="font-weight:600;color:var(--text-secondary);">Salesforce</span> &middot;
+                <span style="font-weight:600;color:var(--text-secondary);">Red Hat</span> &middot;
+                <span style="font-weight:600;color:var(--text-secondary);">Tailscale</span>
+                &amp; more
+            </div>
+        </div>
+    </div>
+</section>
+
 <!-- Trust Proof -->
 <section class="trust-proof" id="trust-proof">
     <div class="container">
         <div class="trust-proof-wrap">
             <div class="fade-in" style="text-align:center;margin-bottom:24px;">
-                <div class="section-label">Trust & Adoption</div>
-                <h2 class="section-title">Trusted by people building coding workflows worldwide</h2>
-                <p class="section-desc" style="margin-left:auto;margin-right:auto;">See live social proof from GitHub stars, country coverage, and public organization metadata in one clean snapshot.</p>
+                <div class="section-label">Community</div>
+                <h2 class="section-title">Who likes onWatch</h2>
+                <p class="section-desc" style="margin-left:auto;margin-right:auto;">Live data from public GitHub stargazer profiles. Country spread, organizations, and preference at a glance.</p>
             </div>
 
             <div class="trust-stats fade-in" aria-live="polite">
@@ -3181,14 +3201,8 @@ a:hover { text-decoration: underline; }
             </div>
 
             <div class="trust-list-grid fade-in">
-                <article class="trust-list-card" aria-label="Top countries by aggregate count">
-                    <h3 class="trust-list-title">Country spread from public star profiles</h3>
-                    <div class="trust-controls" role="toolbar" aria-label="Country coverage filters">
-                        <button type="button" class="trust-filter-btn is-active" data-trust-filter="country" data-trust-value="all">All</button>
-                        <button type="button" class="trust-filter-btn" data-trust-filter="country" data-trust-value="top">Top</button>
-                        <button type="button" class="trust-filter-btn" data-trust-filter="country" data-trust-value="single">Singles</button>
-                        <button type="button" class="trust-filter-btn" data-trust-filter="country" data-trust-value="unknown">Unknown</button>
-                    </div>
+                <article class="trust-list-card" aria-label="Country coverage map">
+                    <h3 class="trust-list-title">Country spread</h3>
                     <div class="trust-map-shell" aria-live="polite">
                         <div class="trust-country-map" id="trust-country-map" role="img" aria-label="Interactive country coverage heat map"></div>
                         <p class="trust-map-fallback" id="trust-country-map-fallback" hidden>Interactive map is unavailable right now. Country coverage is listed below.</p>
@@ -3196,12 +3210,32 @@ a:hover { text-decoration: underline; }
                     <div class="trust-map-meta">
                         <span class="trust-map-meta-copy">Unknown locations: <strong id="trust-unknown-count">--</strong></span>
                     </div>
+                </article>
+                <article class="trust-list-card" aria-label="Star growth over time" style="display:flex;flex-direction:column;">
+                    <h3 class="trust-list-title">Star growth</h3>
+                    <div style="flex:1;display:flex;overflow:hidden;border-radius:var(--radius-md);border:1px solid var(--border-light);background:var(--surface-inset);">
+                        <a href="https://star-history.com/#onllm-dev/onwatch&Timeline" target="_blank" rel="noopener noreferrer" style="display:flex;flex:1;align-items:center;">
+                            <img id="star-history-chart"
+                                 src="https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline"
+                                 data-light-src="https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline"
+                                 data-dark-src="https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline&theme=dark"
+                                 alt="onWatch star history chart" style="width:100%;height:auto;display:block;" loading="lazy">
+                        </a>
+                    </div>
+                </article>
+                <article class="trust-list-card" aria-label="Top countries by aggregate count" style="grid-column:1/-1;">
+                    <div class="trust-controls" role="toolbar" aria-label="Country coverage filters">
+                        <button type="button" class="trust-filter-btn is-active" data-trust-filter="country" data-trust-value="all">All</button>
+                        <button type="button" class="trust-filter-btn" data-trust-filter="country" data-trust-value="top">Top</button>
+                        <button type="button" class="trust-filter-btn" data-trust-filter="country" data-trust-value="single">Singles</button>
+                        <button type="button" class="trust-filter-btn" data-trust-filter="country" data-trust-value="unknown">Unknown</button>
+                    </div>
                     <div class="trust-chip-list trust-chip-list--scroll" id="trust-country-list">
                         <span class="trust-chip trust-chip--muted">Loading country aggregates...</span>
                     </div>
                 </article>
-                <article class="trust-list-card" aria-label="Organization examples from aggregate counts">
-                    <h3 class="trust-list-title">Starred by Employees of</h3>
+                <article class="trust-list-card" aria-label="Organization examples from aggregate counts" style="grid-column:1/-1;">
+                    <h3 class="trust-list-title">Starred by employees of</h3>
                     <div class="trust-controls" role="toolbar" aria-label="Organization coverage filters">
                         <button type="button" class="trust-filter-btn is-active" data-trust-filter="org" data-trust-value="featured">Featured</button>
                         <button type="button" class="trust-filter-btn" data-trust-filter="org" data-trust-value="all">All</button>
@@ -3224,8 +3258,8 @@ a:hover { text-decoration: underline; }
     <div class="container">
         <div class="fade-in" style="text-align:center;margin-bottom:40px;">
             <div class="section-label">Providers</div>
-            <h2 class="section-title">Seven providers, one dashboard</h2>
-            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Each provider has different quotas, reset cycles, and gotchas. onWatch handles the complexity.</p>
+            <h2 class="section-title">Seven providers. One dashboard.</h2>
+            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Different quotas, different reset cycles, different gotchas. onWatch normalizes all of it.</p>
         </div>
         <div class="provider-grid fade-in">
             <!-- Codex -->
@@ -3236,12 +3270,7 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="provider-card-name">Codex</div>
                 </div>
-                <ul class="provider-card-quotas">
-                    <li><strong>5-Hour Limit</strong> - rolling limit utilization + reset</li>
-                    <li><strong>Review Requests</strong> - code review quota</li>
-                    <li><strong>Multi-Account (Beta)</strong> - track multiple accounts</li>
-                </ul>
-                <div class="provider-card-note">OAuth token from ~/.codex/auth.json. <strong>Multi-account:</strong> save profiles with <code>onwatch codex profile save &lt;name&gt;</code>, refresh with <code>onwatch codex profile refresh &lt;name&gt;</code>.</div>
+                <div class="provider-card-note">5-hour rolling + weekly limits + review requests + multi-account support</div>
             </div>
             <!-- Anthropic -->
             <div class="provider-card provider-card--anthropic">
@@ -3251,12 +3280,7 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="provider-card-name">Anthropic</div>
                 </div>
-                <ul class="provider-card-quotas">
-                    <li><strong>five_hour</strong> - utilization + reset</li>
-                    <li><strong>seven_day</strong> - utilization + reset</li>
-                    <li><strong>Per-model</strong> - Sonnet, Opus breakdown</li>
-                </ul>
-                <div class="provider-card-note">Auto-detects token from Claude Code (Keychain, keyring, or credentials file).</div>
+                <div class="provider-card-note">5-hour + 7-day + per-model (Sonnet, Opus) with auto-detected credentials</div>
             </div>
             <!-- Synthetic -->
             <div class="provider-card provider-card--synthetic">
@@ -3266,12 +3290,7 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="provider-card-name">Synthetic</div>
                 </div>
-                <ul class="provider-card-quotas">
-                    <li><strong>subscription</strong> - ~5h reset cycle</li>
-                    <li><strong>search.hourly</strong> - 250 req/hr</li>
-                    <li><strong>toolCallDiscounts</strong> - ~24h cycle</li>
-                </ul>
-                <div class="provider-card-note">Polls /v2/quotas every 60s. Does not count against quota.</div>
+                <div class="provider-card-note">Subscription (~5h cycle) + hourly search (250/hr) + tool call discounts (~24h)</div>
             </div>
             <!-- Z.ai -->
             <div class="provider-card provider-card--zai">
@@ -3281,12 +3300,7 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="provider-card-name">Z.ai</div>
                 </div>
-                <ul class="provider-card-quotas">
-                    <li><strong>TOKENS_LIMIT</strong> - daily token budget</li>
-                    <li><strong>TIME_LIMIT</strong> - daily + per-model</li>
-                    <li><strong>Tool Calls</strong> - daily limit</li>
-                </ul>
-                <div class="provider-card-note">Normalizes Z.ai's confusing field names (usage = limit, currentValue = used).</div>
+                <div class="provider-card-note">Daily token budget + time limits + tool calls with normalized field names</div>
             </div>
             <!-- GitHub Copilot -->
             <div class="provider-card provider-card--copilot">
@@ -3296,12 +3310,7 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="provider-card-name">GitHub Copilot</div>
                 </div>
-                <ul class="provider-card-quotas">
-                    <li><strong>premium_interactions</strong> - monthly limit (300-1500)</li>
-                    <li><strong>chat</strong> - unlimited</li>
-                    <li><strong>completions</strong> - unlimited</li>
-                </ul>
-                <div class="provider-card-note">Uses GitHub PAT with copilot scope. Monthly reset cycle detection.</div>
+                <div class="provider-card-note">Premium interactions (monthly 300-1500) + chat + completions tracking</div>
             </div>
             <!-- MiniMax -->
             <div class="provider-card provider-card--minimax">
@@ -3311,12 +3320,7 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="provider-card-name">MiniMax</div>
                 </div>
-                <ul class="provider-card-quotas">
-                    <li><strong>MiniMax Coding Plan</strong> - daily quota tracking</li>
-                    <li><strong>Shared pool</strong> - M2, M2.1, M2.5 usage</li>
-                    <li><strong>Burn rate</strong> - usage trend and reset forecast</li>
-                </ul>
-                <div class="provider-card-note">Tracks MiniMax Coding Plan usage from <code>platform.minimax.io</code>.</div>
+                <div class="provider-card-note">Daily coding plan quota + shared pool (M2, M2.1, M2.5) + burn rate forecast</div>
             </div>
             <!-- Antigravity -->
             <div class="provider-card provider-card--antigravity">
@@ -3326,12 +3330,7 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="provider-card-name">Antigravity</div>
                 </div>
-                <ul class="provider-card-quotas">
-                    <li><strong>Claude models</strong> - Sonnet, Opus quotas</li>
-                    <li><strong>Gemini models</strong> - Pro, Flash quotas</li>
-                    <li><strong>GPT OSS models</strong> - Open-source GPT variants</li>
-                </ul>
-                <div class="provider-card-note">Zero configuration - automatically connects to your running Antigravity instance.</div>
+                <div class="provider-card-note">Claude + GPT + Gemini Pro + Gemini Flash - zero-config auto-detection</div>
             </div>
         </div>
         <!-- Cross-provider banner -->
@@ -3352,42 +3351,38 @@ a:hover { text-decoration: underline; }
 <section class="intelligence" id="intelligence">
     <div class="container">
         <div class="fade-in">
-            <div class="section-label">Intelligence</div>
-            <h2 class="section-title">You can't optimize what you can't measure</h2>
-            <p class="section-desc">Provider dashboards show a snapshot. onWatch shows the story.</p>
+            <div class="section-label">Why onWatch</div>
+            <h2 class="section-title">What provider dashboards miss</h2>
+            <p class="section-desc">They show current usage. onWatch shows the full picture.</p>
         </div>
         <div class="intelligence-grid">
             <div class="intel-card fade-in">
                 <div class="intel-card-icon" style="background:var(--accent-teal-muted);color:var(--accent-teal);">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
                 </div>
-                <h3 class="intel-card-title">Discover your usage patterns</h3>
-                <p class="intel-card-desc">After a week of data, you stop guessing and start knowing when you burn quota fastest. onWatch reveals consumption rhythms that provider dashboards never show.</p>
-                <div class="intel-card-example">Anthropic five_hour utilization hits 80% by 2 PM on weekdays but barely moves on weekends.</div>
+                <h3 class="intel-card-title">Historical trends</h3>
+                <p class="intel-card-desc">Charts your consumption across hours, days, and weeks. See when you burn quota fastest. Plan around it.</p>
             </div>
             <div class="intel-card fade-in">
                 <div class="intel-card-icon" style="background:var(--accent-peach-muted);color:var(--accent-peach);">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
                 </div>
-                <h3 class="intel-card-title">Know before you're throttled</h3>
-                <p class="intel-card-desc">Extrapolates your consumption rate to the next reset boundary. Know whether you'll run out before relief arrives - and switch providers before it happens.</p>
-                <div class="intel-card-example">Anthropic seven_day: 31% used, resets Feb 14. Z.ai tokens: 95% used, resets tomorrow. Route to Anthropic.</div>
+                <h3 class="intel-card-title">Anomaly detection</h3>
+                <p class="intel-card-desc">OpenAI has reset limits early multiple times. onWatch catches unexpected resets and rate limit changes before they block your work.</p>
             </div>
             <div class="intel-card fade-in">
                 <div class="intel-card-icon" style="background:var(--accent-blue-muted);color:var(--accent-blue);">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
                 </div>
-                <h3 class="intel-card-title">Route intelligently across providers</h3>
-                <p class="intel-card-desc">See every provider's headroom at a glance. When one nears its limit, you know exactly which alternative still has capacity.</p>
-                <div class="intel-card-example">Anthropic: 50% (5h). Synthetic: 95% (search). Z.ai: 34% (tokens). Route to Z.ai.</div>
+                <h3 class="intel-card-title">Cross-provider routing</h3>
+                <p class="intel-card-desc">See remaining headroom across all providers. Anthropic at 90%? Codex still has capacity. Switch before you hit a wall.</p>
             </div>
             <div class="intel-card fade-in">
                 <div class="intel-card-icon" style="background:var(--accent-teal-muted);color:var(--accent-teal);">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                 </div>
-                <h3 class="intel-card-title">Never waste quota near a reset</h3>
-                <p class="intel-card-desc">Tracks every reset boundary independently - Anthropic's 5-hour and 7-day windows, Synthetic's ~5h subscription, Z.ai's daily token budget. Know when each resets and how much went unused.</p>
-                <div class="intel-card-example">Anthropic five_hour resets in 12 min. 50% utilization. Synthetic subscription resets in 3h.</div>
+                <h3 class="intel-card-title">Subscription intelligence</h3>
+                <p class="intel-card-desc">Track burn rates and cycle utilization over time. When renewal comes, you know whether to upgrade, downgrade, or stay put. All data stays local.</p>
             </div>
         </div>
     </div>
@@ -3398,8 +3393,8 @@ a:hover { text-decoration: underline; }
     <div class="container">
         <div class="fade-in" style="text-align:center;margin-bottom:32px;">
             <div class="section-label">Features</div>
-            <h2 class="section-title">What onWatch adds to every provider</h2>
-            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Provider dashboards show a number. onWatch shows the context, history, and projections behind it.</p>
+            <h2 class="section-title">What you get</h2>
+            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Context, history, and projections that provider dashboards do not have.</p>
         </div>
         <div class="features-grid">
             <div class="feature-card fade-in">
@@ -3407,234 +3402,43 @@ a:hover { text-decoration: underline; }
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 </div>
                 <h3 class="feature-title">Multi-Account Codex <span style="font-size:11px;font-weight:600;color:var(--accent-blue);background:var(--accent-blue-muted);padding:2px 8px;border-radius:var(--radius-full);margin-left:6px;">Beta</span></h3>
-                <p class="feature-desc">Track multiple Codex accounts simultaneously. Save profiles with <code>onwatch codex profile save</code>, switch between accounts in the dashboard, and see per-account usage charts, sessions, and cycle history. Perfect for teams or personal/work account separation.</p>
+                <p class="feature-desc">Save profiles with <code>onwatch codex profile save</code>, switch in the dashboard. Per-account charts, sessions, and cycle history. Good for personal/work separation.</p>
             </div>
             <div class="feature-card fade-in">
                 <div class="feature-icon peach">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
                 </div>
                 <h3 class="feature-title">Usage trends &amp; cycle detection</h3>
-                <p class="feature-desc">Time-series charts with 1h-30d ranges for every provider. Automatic reset cycle detection for Anthropic's 5-hour and 7-day windows, Synthetic's subscription cycles, and Z.ai's daily budget. Logs peak usage and delta per cycle.</p>
+                <p class="feature-desc">Time-series charts (1h to 30d) for every provider. Automatic reset cycle detection for Anthropic 5h/7d, Synthetic subscription, Z.ai daily budget. Peak usage and delta per cycle.</p>
             </div>
             <div class="feature-card fade-in">
                 <div class="feature-icon blue">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 </div>
                 <h3 class="feature-title">Live countdowns &amp; projections</h3>
-                <p class="feature-desc">Real-time countdown to each quota reset. Extrapolates your current rate to the next boundary so you know whether you'll make it - or should switch providers.</p>
+                <p class="feature-desc">Live countdown to each quota reset. Extrapolates your burn rate to the next boundary - tells you if you will run out before relief arrives.</p>
             </div>
             <div class="feature-card fade-in">
                 <div class="feature-icon teal">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 </div>
                 <h3 class="feature-title">Session tracking &amp; insights</h3>
-                <p class="feature-desc">Every agent run logs peak consumption per provider. Compare sessions side-by-side, see cycle utilization trends, and get cross-provider routing recommendations.</p>
+                <p class="feature-desc">Every coding session logs peak consumption per provider. Compare sessions side-by-side and see utilization trends across cycles.</p>
             </div>
             <div class="feature-card fade-in">
                 <div class="feature-icon peach">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                 </div>
                 <h3 class="feature-title">Email &amp; push alerts <span style="font-size:11px;font-weight:600;color:var(--accent-blue);background:var(--accent-blue-muted);padding:2px 8px;border-radius:var(--radius-full);margin-left:6px;">Beta</span></h3>
-                <p class="feature-desc">Get notified when quotas cross thresholds. SMTP email with AES-256 encrypted passwords, or browser push notifications via the PWA. Configure per-quota thresholds and delivery channels.</p>
-            </div>
-            <div class="feature-card fade-in">
-                <div class="feature-icon blue">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-                </div>
-                <h3 class="feature-title">PWA installable <span style="font-size:11px;font-weight:600;color:var(--accent-blue);background:var(--accent-blue-muted);padding:2px 8px;border-radius:var(--radius-full);margin-left:6px;">Beta</span></h3>
-                <p class="feature-desc">Install onWatch from your browser for a native app experience. Works on desktop and mobile. Powered by Web Push (VAPID) with zero external dependencies. <strong>Note:</strong> Push notifications require HTTPS.</p>
-            </div>
-            <div class="feature-card fade-in">
-                <div class="feature-icon teal">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-                </div>
-                <h3 class="feature-title">Anthropic OAuth auto-refresh</h3>
-                <p class="feature-desc">Automatically refreshes Anthropic tokens before expiry. Detects Claude Code credential changes, handles auth failures gracefully, and resumes polling when new tokens appear. Never manually update credentials.</p>
-            </div>
-            <div class="feature-card fade-in">
-                <div class="feature-icon peach">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                </div>
-                <h3 class="feature-title">Self-updating binary</h3>
-                <p class="feature-desc">Update from CLI or dashboard with one click. Automatic systemd restart on Linux, graceful binary replacement on macOS. Always stay current without manual downloads or service interruption.</p>
+                <p class="feature-desc">SMTP email or browser push when quotas cross your thresholds. AES-256 encrypted credentials. Configure per-quota levels and delivery channels.</p>
             </div>
             <div class="feature-card fade-in">
                 <div class="feature-icon blue">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                 </div>
                 <h3 class="feature-title">Enterprise-grade security</h3>
-                <p class="feature-desc">AES-256-GCM encrypted SMTP passwords, auto-generated VAPID keys (ECDSA P-256), Web Push RFC 8291 encryption, constant-time auth, parameterized SQL. Zero telemetry - all data stays local.</p>
+                <p class="feature-desc">Zero telemetry - your usage data never leaves your machine. AES-256 encrypted credentials, constant-time auth, parameterized SQL.</p>
             </div>
-            <div class="feature-card fade-in">
-                <div class="feature-icon peach">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-                </div>
-                <h3 class="feature-title">REST API &amp; Docker</h3>
-                <p class="feature-desc">15+ JSON endpoints for integration with your monitoring stack. Docker support with distroless base (~12 MB), non-root user, and Docker Compose ready. Perfect for DevOps workflows.</p>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- Comparison -->
-<section class="comparison" id="comparison">
-    <div class="container">
-        <div class="fade-in" style="text-align:center;margin-bottom:32px;">
-            <div class="section-label">Why onWatch</div>
-            <h2 class="section-title">What your provider doesn't show you</h2>
-            <p class="section-desc" style="margin-left:auto;margin-right:auto;">API providers show current usage. onWatch shows everything else.</p>
-        </div>
-        <div class="comparison-table-wrap fade-in">
-            <table class="comparison-table" role="table">
-                <thead>
-                    <tr>
-                        <th scope="col">Capability</th>
-                        <th scope="col">Synthetic</th>
-                        <th scope="col">Z.ai</th>
-                        <th scope="col">Anthropic</th>
-                        <th scope="col">Codex</th>
-                        <th scope="col">Copilot</th>
-                        <th scope="col" class="highlight-col">onWatch</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Current quota usage</td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Reset time visibility</td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Historical usage trends</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="check" aria-label="Yes">&#10003;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Reset cycle detection &amp; history</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Per-cycle consumption stats</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Usage rate &amp; projections</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Per-session tracking</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Cross-provider unified view</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Live countdown timers</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Email &amp; push alerts</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>PWA installable</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>OAuth token auto-refresh</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Self-updating binary</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>REST API &amp; Docker support</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                    <tr>
-                        <td>Open source &amp; self-hosted</td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td><span class="cross" aria-label="No">&#10005;</span></td>
-                        <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
-                    </tr>
-                </tbody>
-            </table>
         </div>
     </div>
 </section>
@@ -3644,8 +3448,8 @@ a:hover { text-decoration: underline; }
     <div class="container">
         <div class="fade-in" style="text-align:center;margin-bottom:48px;">
             <div class="section-label">Architecture</div>
-            <h2 class="section-title">How the intelligence works</h2>
-            <p class="section-desc" style="margin-left:auto;margin-right:auto;">A background agent polls your API quotas, stores snapshots in SQLite, detects patterns, and serves an intelligence dashboard. That's it.</p>
+            <h2 class="section-title">How it works</h2>
+            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Background daemon polls provider APIs every 60s. Stores snapshots in SQLite. Serves a dashboard. That is it.</p>
         </div>
         <div class="arch-diagram fade-in">
             <div class="arch-node">
@@ -3678,7 +3482,7 @@ a:hover { text-decoration: underline; }
         </div>
         <div class="arch-stats fade-in">
             <div class="arch-stat">
-                <div class="arch-stat-value"><50 MB</div>
+                <div class="arch-stat-value"><60 MB</div>
                 <div class="arch-stat-label">RAM Usage</div>
             </div>
             <div class="arch-stat">
@@ -3697,54 +3501,13 @@ a:hover { text-decoration: underline; }
     </div>
 </section>
 
-<!-- Who is onWatch for? -->
-<section class="features" id="use-cases" style="padding-top:40px;">
-    <div class="container">
-        <div class="fade-in" style="text-align:center;margin-bottom:32px;">
-            <div class="section-label">Use Cases</div>
-            <h2 class="section-title">Who is onWatch for?</h2>
-            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Anyone who pays for AI coding API access and wants to know where the budget goes.</p>
-        </div>
-        <div class="features-grid">
-            <div class="feature-card fade-in">
-                <div class="feature-icon teal">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                </div>
-                <h3 class="feature-title">Solo Developers</h3>
-                <p class="feature-desc">Running Cline, Claude Code, or Kilo Code on a single API key? onWatch tracks your burn rate across Anthropic, Synthetic, Z.ai, Codex, and GitHub Copilot so you never get throttled mid-task.</p>
-            </div>
-            <div class="feature-card fade-in">
-                <div class="feature-icon peach">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                </div>
-                <h3 class="feature-title">Teams Sharing API Keys</h3>
-                <p class="feature-desc">Multiple people on the same Anthropic Max plan or shared Z.ai key? A single onWatch instance gives everyone a shared dashboard with historical trends and session tracking.</p>
-            </div>
-            <div class="feature-card fade-in">
-                <div class="feature-icon blue">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
-                </div>
-                <h3 class="feature-title">Multi-Provider Users</h3>
-                <p class="feature-desc">Subscribed to more than one provider? The cross-provider view shows every quota side-by-side so you can route work to whichever provider has headroom.</p>
-            </div>
-            <div class="feature-card fade-in">
-                <div class="feature-icon teal">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                </div>
-                <h3 class="feature-title">DevOps &amp; Platform Engineers</h3>
-                <p class="feature-desc">Deploy as a ~15 MB binary (<50 MB RAM) with zero SaaS dependencies. Use the SQLite database as a Grafana data source or pipe the REST API into your existing monitoring stack.</p>
-            </div>
-        </div>
-    </div>
-</section>
-
 <!-- Install -->
 <section class="install" id="install">
     <div class="container">
         <div class="fade-in" style="text-align:center;margin-bottom:40px;">
             <div class="section-label">Quick Start</div>
-            <h2 class="section-title">Get up and running in minutes</h2>
-            <p class="section-desc" style="margin-left:auto;margin-right:auto;">Choose the method that works best for you. Supports macOS, Linux, and Windows.</p>
+            <h2 class="section-title">Install</h2>
+            <p class="section-desc" style="margin-left:auto;margin-right:auto;">macOS, Linux, and Windows. Pick what works for you.</p>
         </div>
 
         <div class="install-methods">
@@ -3926,12 +3689,6 @@ a:hover { text-decoration: underline; }
                 </div>
             </details>
             <details class="faq-item">
-                <summary class="faq-question">What is the Both view and why does it matter?</summary>
-                <div class="faq-answer">
-                    <p>The All Providers view is onWatch's cross-provider unified dashboard. It shows Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity quotas side-by-side so you can compare headroom across providers at a glance. For example, if your Synthetic search quota is at 95% but Z.ai tokens are at 34%, you know to route work to Z.ai. No other tool provides this cross-provider intelligence-provider dashboards only show their own data.</p>
-                </div>
-            </details>
-            <details class="faq-item">
                 <summary class="faq-question">Does onWatch send any data to external servers?</summary>
                 <div class="faq-answer">
                     <p>No. onWatch has zero telemetry. All usage data is stored locally in a SQLite file on your machine. The only outbound network calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity quota APIs you configure. No analytics, no tracking, no cloud. The source code is fully auditable on <a href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noopener noreferrer">GitHub</a> (GPL-3.0).</p>
@@ -3940,19 +3697,7 @@ a:hover { text-decoration: underline; }
             <details class="faq-item">
                 <summary class="faq-question">How much memory does onWatch use?</summary>
                 <div class="faq-answer">
-                    <p>onWatch uses <50 MB RAM under all conditions (typically ~34 MB idle, ~43 MB under heavy load), measured with all seven providers (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity) polling in parallel. Breakdown: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), polling buffer (1 MB). This is lighter than a single browser tab and designed to run as a background daemon indefinitely.</p>
-                </div>
-            </details>
-            <details class="faq-item">
-                <summary class="faq-question">How do email and push notifications work?</summary>
-                <div class="faq-answer">
-                    <p>Configure SMTP settings in the Settings page to receive email alerts when quotas cross warning or critical thresholds, or when they reset. SMTP passwords are encrypted at rest with AES-256-GCM. For push notifications (Beta), enable them in Settings &rarr; Notifications &rarr; Delivery Channels and allow browser notifications. onWatch uses the Web Push protocol (VAPID) with no external service dependencies - VAPID keys are auto-generated and all encryption is handled locally. <strong>Note:</strong> Push notifications require HTTPS to work. You can choose email, push, or both.</p>
-                </div>
-            </details>
-            <details class="faq-item">
-                <summary class="faq-question">What platforms does onWatch support?</summary>
-                <div class="faq-answer">
-                    <p>Pre-built binaries are available for macOS (ARM64 and AMD64), Linux (AMD64 and ARM64), and Windows (AMD64). onWatch is written in pure Go with no CGO dependencies, so it cross-compiles cleanly to any Go-supported platform.</p>
+                    <p>onWatch uses <60 MB RAM under all conditions (typically ~34 MB idle, ~43 MB under heavy load), measured with all seven providers (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity) polling in parallel. Breakdown: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), polling buffer (1 MB). This is lighter than a single browser tab and designed to run as a background daemon indefinitely.</p>
                 </div>
             </details>
         </div>
@@ -4136,8 +3881,8 @@ a:hover { text-decoration: underline; }
 <section class="cta-section" id="cta">
     <div class="container">
         <div class="cta-card fade-in">
-            <h2>Stay ahead of coding plan resets</h2>
-            <p>Keep one local timeline across providers, catch limits before they block work, and install in under a minute. Free, open source, zero telemetry.</p>
+            <h2>Stop flying blind on quota</h2>
+            <p>One command to install. All data stays local. Free, open source, zero telemetry.</p>
             <div class="cta-actions">
                 <a href="#install" class="btn-primary">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
@@ -4181,13 +3926,6 @@ a:hover { text-decoration: underline; }
     </div>
 </div>
 
-<!-- Footer Trust Link -->
-<section class="star-history-footer" aria-label="Star history link">
-    <div class="container">
-        <span class="star-history-footer-copy">Need the full GitHub momentum timeline?</span>
-        <a class="star-history-footer-link" href="https://star-history.com/#onllm-dev/onwatch&Timeline" target="_blank" rel="noopener noreferrer">Open Star History</a>
-    </div>
-</section>
 
 <!-- Footer -->
 <footer class="footer">
@@ -4217,7 +3955,7 @@ a:hover { text-decoration: underline; }
 <script>
 function syncThemeMedia(theme) {
     var activeTheme = theme || document.documentElement.getAttribute('data-theme') || 'light';
-    var targets = document.querySelectorAll('.hero-menubar-img[data-light-src][data-dark-src]');
+    var targets = document.querySelectorAll('[data-light-src][data-dark-src]');
     targets.forEach(function(img) {
         var nextSrc = activeTheme === 'dark' ? img.getAttribute('data-dark-src') : img.getAttribute('data-light-src');
         if (!nextSrc) return;
@@ -4248,7 +3986,7 @@ function preloadThemeMedia(theme) {
     var activeTheme = theme || document.documentElement.getAttribute('data-theme') || 'light';
     var nextTheme = activeTheme === 'dark' ? 'light' : 'dark';
     var attr = nextTheme === 'dark' ? 'data-dark-src' : 'data-light-src';
-    var targets = document.querySelectorAll('.hero-menubar-img[data-light-src][data-dark-src]');
+    var targets = document.querySelectorAll('[data-light-src][data-dark-src]');
     targets.forEach(function(img) {
         var src = img.getAttribute(attr);
         if (!src) return;
@@ -4293,10 +4031,11 @@ function renderTrustChips(id, entries, emptyText) {
         container.appendChild(empty);
         return;
     }
+    var showCount = (id !== 'trust-org-list');
     entries.forEach(function(entry) {
         var chip = document.createElement('span');
         chip.className = 'trust-chip';
-        chip.textContent = entry.name + ' (' + entry.count + ')';
+        chip.textContent = showCount ? entry.name + ' (' + entry.count + ')' : entry.name;
         container.appendChild(chip);
     });
 }
@@ -4398,7 +4137,7 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
                     });
                 }
             });
-            var el = document.getElementById('download-count');
+            var el = document.getElementById('hero-download-count');
             if (el && total > 0) {
                 el.textContent = total >= 1000 ? (total / 1000).toFixed(1) + 'k' : total;
             }
@@ -4417,6 +4156,12 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
             // Update hero star count
             var heroEl = document.getElementById('star-count-value');
             if (heroEl) heroEl.textContent = formatted;
+            // Update hero badge stars
+            var heroBadge = document.getElementById('hero-badge-stars');
+            if (heroBadge) heroBadge.textContent = formatted;
+            // Update social proof strip star count
+            var stripStar = document.getElementById('hero-star-count');
+            if (stripStar) stripStar.textContent = count + '+';
             // Update nav star count
             var navEls = document.querySelectorAll('.nav-star-value');
             navEls.forEach(function(el) { el.textContent = formatted; });
@@ -4792,6 +4537,9 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
             setTrustText('trust-stars-snapshot', formatTrustNumber(data.starsSnapshot));
         }
         setTrustText('trust-countries-count', formatTrustNumber(data.countriesCount));
+        // Update social proof strip country count
+        var stripCountry = document.getElementById('hero-country-count');
+        if (stripCountry) stripCountry.textContent = data.countriesCount;
         var orgAggregateCount = Number.isInteger(data.orgUsersTotal) ? data.orgUsersTotal : data.orgExamples.length;
         setTrustText('trust-org-count', formatTrustNumber(orgAggregateCount));
         var unknownEntry = data.topCountries.find(function(entry) {
