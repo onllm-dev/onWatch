@@ -16,8 +16,15 @@ import (
 // maxCodexAuthFailures is the number of consecutive auth failures before pausing polling.
 const maxCodexAuthFailures = 3
 
+// codexTokenRefreshThreshold is how soon before expiry we proactively refresh the token.
+// Codex tokens expire weekly, so refreshing 6 hours early provides a comfortable buffer.
+const codexTokenRefreshThreshold = 6 * time.Hour
+
 // CodexTokenRefreshFunc is called before each poll to get a fresh Codex token.
 type CodexTokenRefreshFunc func() string
+
+// CodexCredentialsRefreshFunc returns the full credentials for proactive OAuth refresh.
+type CodexCredentialsRefreshFunc func() *api.CodexCredentials
 
 // isCodexAuthError returns true if the error is an authentication/authorization error.
 func isCodexAuthError(err error) bool {
@@ -35,6 +42,7 @@ type CodexAgent struct {
 	notifier     *notify.NotificationEngine
 	pollingCheck func() bool
 	tokenRefresh CodexTokenRefreshFunc
+	credsRefresh CodexCredentialsRefreshFunc
 	lastToken    string
 
 	// Multi-account support
@@ -87,6 +95,26 @@ func (a *CodexAgent) SetTokenRefresh(fn CodexTokenRefreshFunc) {
 	a.tokenRefresh = fn
 }
 
+// SetCredentialsRefresh sets a function that returns full credentials for
+// proactive OAuth token refresh before expiry.
+func (a *CodexAgent) SetCredentialsRefresh(fn CodexCredentialsRefreshFunc) {
+	a.credsRefresh = fn
+}
+
+// sendAuthErrorNotification sends an auth error notification via the notifier.
+func (a *CodexAgent) sendAuthErrorNotification(title, message string, isRecoverable bool) {
+	if a.notifier == nil {
+		return
+	}
+	a.notifier.SendAuthErrorNotification(notify.AuthErrorAlert{
+		Provider:    "codex",
+		Title:       title,
+		Message:     message,
+		AccountID:   fmt.Sprintf("%d", a.accountID),
+		IsRecovable: isRecoverable,
+	})
+}
+
 // Run starts the agent polling loop.
 func (a *CodexAgent) Run(ctx context.Context) error {
 	a.logger.Info("Codex agent started", "interval", a.interval)
@@ -116,6 +144,55 @@ func (a *CodexAgent) Run(ctx context.Context) error {
 func (a *CodexAgent) poll(ctx context.Context) {
 	if a.pollingCheck != nil && !a.pollingCheck() {
 		return
+	}
+
+	// Proactive OAuth refresh: check if token expires soon and refresh via OAuth API
+	if a.credsRefresh != nil {
+		if creds := a.credsRefresh(); creds != nil {
+			// Check if token is expiring soon or already expired
+			if creds.IsExpiringSoon(codexTokenRefreshThreshold) && creds.RefreshToken != "" {
+				a.logger.Info("Codex token expiring soon, attempting proactive OAuth refresh",
+					"expires_in", creds.ExpiresIn.Round(time.Second))
+
+				newTokens, err := api.RefreshCodexToken(ctx, creds.RefreshToken)
+				if err != nil {
+					if errors.Is(err, api.ErrCodexRefreshTokenReused) {
+						// Unrecoverable - token is dead, user must re-authenticate
+						a.logger.Error("Codex refresh token already used - re-authenticate via 'codex auth'",
+							"error", err)
+						a.authPaused = true
+						a.lastFailedToken = creds.AccessToken
+						// Send auth error notification
+						a.sendAuthErrorNotification(
+							"Token Refresh Failed",
+							"Codex refresh token has been reused. Please re-authenticate via 'codex auth' to resume quota tracking.",
+							false, // not recoverable
+						)
+					} else {
+						a.logger.Error("Proactive Codex OAuth refresh failed", "error", err)
+						// Continue with existing token - it might still work
+					}
+				} else {
+					// CRITICAL: Save new tokens to disk IMMEDIATELY (refresh tokens are one-time use!)
+					if err := api.WriteCodexCredentials(newTokens.AccessToken, newTokens.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
+						a.logger.Error("Failed to save refreshed Codex credentials", "error", err)
+					} else {
+						a.client.SetToken(newTokens.AccessToken)
+						a.lastToken = newTokens.AccessToken
+						a.logger.Info("Proactively refreshed Codex OAuth token",
+							"expires_in_hours", newTokens.ExpiresIn/3600)
+
+						// Reset auth failures since we have fresh credentials
+						if a.authPaused {
+							a.authPaused = false
+							a.authFailCount = 0
+							a.lastFailedToken = ""
+							a.logger.Info("Codex auth failure pause lifted - token refreshed via OAuth")
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Refresh token before each poll (picks up rotated credentials from disk)
@@ -173,6 +250,12 @@ func (a *CodexAgent) poll(ctx context.Context) {
 							a.logger.Error("Codex polling PAUSED due to repeated auth failures",
 								"failure_count", a.authFailCount,
 								"action", "Re-authenticate Codex to resume polling")
+							// Send auth error notification
+							a.sendAuthErrorNotification(
+								"Authentication Failed",
+								"Codex polling has been paused due to repeated authentication failures. Please re-authenticate via 'codex auth' to resume.",
+								false, // not recoverable without re-auth
+							)
 						}
 					} else {
 						a.logger.Error("Codex retry failed with non-auth error", "error", err)

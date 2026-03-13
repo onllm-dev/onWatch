@@ -778,6 +778,7 @@ a:hover { text-decoration: underline; }
 
 .mockup-body {
   padding: 24px;
+  overflow: hidden;
 }
 
 .mockup-header {
@@ -2689,6 +2690,17 @@ a:hover { text-decoration: underline; }
   .mock-card-value { font-size: 18px; }
   .mock-card-sub { font-size: 10px; }
   .mock-card-countdown { font-size: 9px; }
+  .ant-quota-row {
+    flex-wrap: wrap;
+    gap: 4px 6px;
+  }
+  .ant-quota-label { min-width: 70px; font-size: 10px; }
+  .ant-quota-value { font-size: 16px; min-width: 36px; }
+  .ant-quota-reset { display: none; }
+  .mockup-cards { grid-template-columns: 1fr !important; }
+  .hero-install-group { flex-direction: column; align-items: stretch; gap: 8px; }
+  .hero-install-group .hero-install { min-width: 0; max-width: 100%; flex: none; }
+  .hero-meta { font-size: 11px; word-break: break-word; }
   .trust-country-map { height: 220px; min-height: 220px; }
   .trust-chip-list--scroll { max-height: 132px; }
   .cta-actions { flex-direction: column; }
@@ -4161,7 +4173,7 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
             if (heroBadge) heroBadge.textContent = formatted;
             // Update social proof strip star count
             var stripStar = document.getElementById('hero-star-count');
-            if (stripStar) stripStar.textContent = count + '+';
+            if (stripStar) stripStar.textContent = (count - count % 10) + '+';
             // Update nav star count
             var navEls = document.querySelectorAll('.nav-star-value');
             navEls.forEach(function(el) { el.textContent = formatted; });

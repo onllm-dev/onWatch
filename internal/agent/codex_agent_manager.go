@@ -245,6 +245,37 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 		return profile.Tokens.AccessToken
 	})
 
+	// Set credentials refresh function for proactive OAuth token refresh
+	isDefaultProfile := profile.Name == "default"
+	agent.SetCredentialsRefresh(func() *api.CodexCredentials {
+		if isDefaultProfile {
+			// Default profile reads from system credentials (~/.codex/auth.json)
+			return api.DetectCodexCredentials(m.logger)
+		}
+		// Profile-specific credentials - re-read from profile file
+		if data, err := os.ReadFile(profilePath); err == nil {
+			var p CodexProfile
+			if json.Unmarshal(data, &p) == nil {
+				idToken := p.Tokens.IDToken
+				expiresAt := api.ParseIDTokenExpiry(idToken)
+				var expiresIn time.Duration
+				if !expiresAt.IsZero() {
+					expiresIn = time.Until(expiresAt)
+				}
+				return &api.CodexCredentials{
+					AccessToken:  p.Tokens.AccessToken,
+					RefreshToken: p.Tokens.RefreshToken,
+					IDToken:      idToken,
+					APIKey:       p.APIKey,
+					AccountID:    p.AccountID,
+					ExpiresAt:    expiresAt,
+					ExpiresIn:    expiresIn,
+				}
+			}
+		}
+		return nil
+	})
+
 	// Set notifier if available
 	if m.notifier != nil {
 		agent.SetNotifier(m.notifier)

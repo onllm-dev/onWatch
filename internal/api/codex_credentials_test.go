@@ -4,7 +4,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func discardLoggerCredentials() *slog.Logger {
@@ -131,5 +133,177 @@ func TestDetectCodexToken_RejectsAPIKeyOnly(t *testing.T) {
 	token := DetectCodexToken(discardLoggerCredentials())
 	if token != "" {
 		t.Fatalf("DetectCodexToken() = %q, want empty", token)
+	}
+}
+
+func TestCodexCredentials_IsExpiringSoon(t *testing.T) {
+	tests := []struct {
+		name      string
+		creds     CodexCredentials
+		threshold time.Duration
+		want      bool
+	}{
+		{
+			name: "expiring soon",
+			creds: CodexCredentials{
+				ExpiresAt: time.Now().Add(5 * time.Minute),
+				ExpiresIn: 5 * time.Minute,
+			},
+			threshold: 10 * time.Minute,
+			want:      true,
+		},
+		{
+			name: "not expiring soon",
+			creds: CodexCredentials{
+				ExpiresAt: time.Now().Add(2 * time.Hour),
+				ExpiresIn: 2 * time.Hour,
+			},
+			threshold: 10 * time.Minute,
+			want:      false,
+		},
+		{
+			name: "zero expiry - assume not expiring",
+			creds: CodexCredentials{
+				ExpiresAt: time.Time{},
+				ExpiresIn: 0,
+			},
+			threshold: 10 * time.Minute,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.creds.IsExpiringSoon(tt.threshold); got != tt.want {
+				t.Errorf("IsExpiringSoon() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCodexCredentials_IsExpired(t *testing.T) {
+	tests := []struct {
+		name  string
+		creds CodexCredentials
+		want  bool
+	}{
+		{
+			name: "expired",
+			creds: CodexCredentials{
+				ExpiresAt: time.Now().Add(-1 * time.Hour),
+				ExpiresIn: -1 * time.Hour,
+			},
+			want: true,
+		},
+		{
+			name: "not expired",
+			creds: CodexCredentials{
+				ExpiresAt: time.Now().Add(1 * time.Hour),
+				ExpiresIn: 1 * time.Hour,
+			},
+			want: false,
+		},
+		{
+			name: "zero expiry - assume valid",
+			creds: CodexCredentials{
+				ExpiresAt: time.Time{},
+				ExpiresIn: 0,
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.creds.IsExpired(); got != tt.want {
+				t.Errorf("IsExpired() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteCodexCredentials(t *testing.T) {
+	// Create a temp directory for testing
+	tmpDir := t.TempDir()
+
+	// Set CODEX_HOME to our temp directory
+	t.Setenv("CODEX_HOME", tmpDir)
+
+	// Create an initial auth.json with existing fields
+	authPath := filepath.Join(tmpDir, "auth.json")
+	initialContent := `{
+  "OPENAI_API_KEY": "sk-test-key",
+  "tokens": {
+    "access_token": "old-access-token",
+    "refresh_token": "old-refresh-token",
+    "id_token": "old-id-token",
+    "account_id": "test-account-123"
+  }
+}`
+	if err := os.WriteFile(authPath, []byte(initialContent), 0o600); err != nil {
+		t.Fatalf("failed to write initial auth.json: %v", err)
+	}
+
+	// Write new credentials
+	err := WriteCodexCredentials("new-access-token", "new-refresh-token", "new-id-token", 604800)
+	if err != nil {
+		t.Fatalf("WriteCodexCredentials failed: %v", err)
+	}
+
+	// Read back and verify
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatalf("failed to read auth.json: %v", err)
+	}
+
+	content := string(data)
+
+	// Check that new tokens are present
+	if !strings.Contains(content, "new-access-token") {
+		t.Error("expected new-access-token in output")
+	}
+	if !strings.Contains(content, "new-refresh-token") {
+		t.Error("expected new-refresh-token in output")
+	}
+	if !strings.Contains(content, "new-id-token") {
+		t.Error("expected new-id-token in output")
+	}
+
+	// Check that existing fields are preserved
+	if !strings.Contains(content, "sk-test-key") {
+		t.Error("expected OPENAI_API_KEY to be preserved")
+	}
+	if !strings.Contains(content, "test-account-123") {
+		t.Error("expected account_id to be preserved")
+	}
+
+	// Check that backup was created
+	backupPath := authPath + ".bak"
+	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+		t.Error("expected backup file to be created")
+	}
+}
+
+func TestWriteCodexCredentials_NewFile(t *testing.T) {
+	// Create a temp directory for testing (no auth.json exists yet)
+	tmpDir := t.TempDir()
+	t.Setenv("CODEX_HOME", tmpDir)
+
+	// Write credentials to new file
+	err := WriteCodexCredentials("new-access-token", "new-refresh-token", "new-id-token", 604800)
+	if err != nil {
+		t.Fatalf("WriteCodexCredentials failed: %v", err)
+	}
+
+	// Read back and verify
+	authPath := filepath.Join(tmpDir, "auth.json")
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatalf("failed to read auth.json: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "new-access-token") {
+		t.Error("expected new-access-token in output")
 	}
 }

@@ -49,9 +49,10 @@ type ThresholdOverride struct {
 
 // NotificationTypes controls which notification types are enabled.
 type NotificationTypes struct {
-	Warning  bool `json:"warning"`
-	Critical bool `json:"critical"`
-	Reset    bool `json:"reset"`
+	Warning   bool `json:"warning"`
+	Critical  bool `json:"critical"`
+	Reset     bool `json:"reset"`
+	AuthError bool `json:"auth_error"` // Auth failure notifications
 }
 
 // QuotaStatus represents the current state of a quota for notification evaluation.
@@ -608,6 +609,118 @@ func (e *NotificationEngine) buildBody(status QuotaStatus, notifType string) str
 	}
 	sb.WriteString(fmt.Sprintf("Alert Type: %s\n", notifType))
 	sb.WriteString(fmt.Sprintf("Time: %s\n", time.Now().UTC().Format(time.RFC3339)))
+	sb.WriteString("\n-- Sent by onWatch")
+	return sb.String()
+}
+
+// AuthErrorAlert represents an authentication error for notification purposes.
+type AuthErrorAlert struct {
+	Provider    string
+	Title       string
+	Message     string
+	AccountID   string // For multi-account providers
+	IsRecovable bool   // If false, requires manual re-authentication
+}
+
+// SendAuthErrorNotification sends an auth error alert via email and/or push.
+// Also creates an in-dashboard system alert for when the user logs in.
+// Returns true if at least one notification was sent successfully.
+func (e *NotificationEngine) SendAuthErrorNotification(alert AuthErrorAlert) bool {
+	e.mu.RLock()
+	cfg := e.cfg
+	mailer := e.mailer
+	pushSender := e.pushSender
+	e.mu.RUnlock()
+
+	// Check if auth error notifications are enabled
+	if !cfg.Types.AuthError {
+		return false
+	}
+
+	// Build notification content
+	subject := fmt.Sprintf("[AUTH ERROR] %s - %s", titleCase(alert.Provider), alert.Title)
+	body := e.buildAuthErrorBody(alert)
+
+	sent := false
+
+	// Send via email if enabled and configured
+	if cfg.Channels.Email && mailer != nil {
+		if err := mailer.Send(subject, body); err != nil {
+			e.logger.Error("failed to send auth error email", "error", err, "provider", alert.Provider)
+		} else {
+			sent = true
+			e.logger.Info("sent auth error email notification", "provider", alert.Provider)
+		}
+	}
+
+	// Send via push if enabled and configured
+	if cfg.Channels.Push && pushSender != nil {
+		subs, err := e.store.GetPushSubscriptions()
+		if err != nil {
+			e.logger.Error("failed to get push subscriptions", "error", err)
+		} else {
+			for _, sub := range subs {
+				ps := PushSubscription{Endpoint: sub.Endpoint}
+				ps.Keys.P256dh = sub.P256dh
+				ps.Keys.Auth = sub.Auth
+				if err := pushSender.Send(ps, subject, alert.Message); err != nil {
+					e.logger.Error("failed to send auth error push", "error", err, "endpoint", sub.Endpoint)
+					if strings.Contains(err.Error(), "410") {
+						e.store.DeletePushSubscription(sub.Endpoint)
+					}
+				} else {
+					sent = true
+				}
+			}
+		}
+	}
+
+	// Create in-dashboard system alert (always, regardless of email/push success)
+	severity := "warning"
+	if !alert.IsRecovable {
+		severity = "error"
+	}
+	alertType := "auth_error"
+	if !alert.IsRecovable {
+		alertType = "token_refresh_failed"
+	}
+
+	// Check if there's already an active alert of this type for this provider
+	hasActive, err := e.store.HasActiveAlertOfType(alert.Provider, alertType)
+	if err != nil {
+		e.logger.Error("failed to check for existing alert", "error", err)
+	}
+	if !hasActive {
+		metadata := ""
+		if alert.AccountID != "" {
+			metadata = fmt.Sprintf(`{"account_id":"%s"}`, alert.AccountID)
+		}
+		if _, err := e.store.CreateSystemAlert(
+			alert.Provider, alertType, alert.Title, alert.Message, severity, metadata,
+		); err != nil {
+			e.logger.Error("failed to create system alert", "error", err)
+		}
+	}
+
+	return sent
+}
+
+// buildAuthErrorBody creates the email body for auth error notifications.
+func (e *NotificationEngine) buildAuthErrorBody(alert AuthErrorAlert) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Provider: %s\n", titleCase(alert.Provider)))
+	sb.WriteString(fmt.Sprintf("Issue: %s\n", alert.Title))
+	sb.WriteString(fmt.Sprintf("Details: %s\n", alert.Message))
+	if alert.AccountID != "" {
+		sb.WriteString(fmt.Sprintf("Account: %s\n", alert.AccountID))
+	}
+	sb.WriteString(fmt.Sprintf("Time: %s\n", time.Now().UTC().Format(time.RFC3339)))
+	sb.WriteString("\n")
+	if alert.IsRecovable {
+		sb.WriteString("This issue may resolve automatically. If it persists, please check your credentials.\n")
+	} else {
+		sb.WriteString("ACTION REQUIRED: Please re-authenticate to resume quota tracking.\n")
+	}
 	sb.WriteString("\n-- Sent by onWatch")
 	return sb.String()
 }

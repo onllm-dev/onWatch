@@ -251,6 +251,21 @@ func (s *Store) createTables() error {
 			value TEXT NOT NULL
 		);
 
+		-- System alerts for in-dashboard notifications
+		CREATE TABLE IF NOT EXISTS system_alerts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			provider TEXT NOT NULL,
+			alert_type TEXT NOT NULL,
+			title TEXT NOT NULL,
+			message TEXT NOT NULL,
+			severity TEXT NOT NULL DEFAULT 'warning',
+			created_at TEXT NOT NULL,
+			dismissed_at TEXT,
+			metadata TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_system_alerts_dismissed ON system_alerts(dismissed_at);
+		CREATE INDEX IF NOT EXISTS idx_system_alerts_created ON system_alerts(created_at);
+
 		CREATE TABLE IF NOT EXISTS auth_tokens (
 			token      TEXT PRIMARY KEY,
 			expires_at TEXT NOT NULL
@@ -1860,4 +1875,106 @@ func (s *Store) GetPushSubscriptions() ([]PushSubscriptionRow, error) {
 		subs = append(subs, sub)
 	}
 	return subs, rows.Err()
+}
+
+// SystemAlert represents an in-dashboard notification.
+type SystemAlert struct {
+	ID          int64      `json:"id"`
+	Provider    string     `json:"provider"`
+	AlertType   string     `json:"alert_type"`
+	Title       string     `json:"title"`
+	Message     string     `json:"message"`
+	Severity    string     `json:"severity"` // "info", "warning", "error"
+	CreatedAt   time.Time  `json:"created_at"`
+	DismissedAt *time.Time `json:"dismissed_at,omitempty"`
+	Metadata    string     `json:"metadata,omitempty"`
+}
+
+// CreateSystemAlert creates a new system alert for in-dashboard notifications.
+// Alert types: "auth_error", "token_refresh_failed", "polling_paused"
+// Severity: "info", "warning", "error"
+func (s *Store) CreateSystemAlert(provider, alertType, title, message, severity string, metadata string) (int64, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.Exec(`
+		INSERT INTO system_alerts (provider, alert_type, title, message, severity, created_at, metadata)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, provider, alertType, title, message, severity, now, metadata)
+	if err != nil {
+		return 0, fmt.Errorf("store.CreateSystemAlert: %w", err)
+	}
+	return res.LastInsertId()
+}
+
+// GetActiveSystemAlerts returns all non-dismissed alerts, ordered by most recent first.
+func (s *Store) GetActiveSystemAlerts() ([]SystemAlert, error) {
+	rows, err := s.db.Query(`
+		SELECT id, provider, alert_type, title, message, severity, created_at, metadata
+		FROM system_alerts
+		WHERE dismissed_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT 50
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("store.GetActiveSystemAlerts: %w", err)
+	}
+	defer rows.Close()
+
+	var alerts []SystemAlert
+	for rows.Next() {
+		var a SystemAlert
+		var createdAt, metadata string
+		if err := rows.Scan(&a.ID, &a.Provider, &a.AlertType, &a.Title, &a.Message, &a.Severity, &createdAt, &metadata); err != nil {
+			return nil, fmt.Errorf("store.GetActiveSystemAlerts: scan: %w", err)
+		}
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			a.CreatedAt = t
+		}
+		a.Metadata = metadata
+		alerts = append(alerts, a)
+	}
+	return alerts, rows.Err()
+}
+
+// DismissSystemAlert marks an alert as dismissed.
+func (s *Store) DismissSystemAlert(id int64) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(`UPDATE system_alerts SET dismissed_at = ? WHERE id = ?`, now, id)
+	if err != nil {
+		return fmt.Errorf("store.DismissSystemAlert: %w", err)
+	}
+	return nil
+}
+
+// DismissAllSystemAlerts marks all active alerts as dismissed.
+func (s *Store) DismissAllSystemAlerts() error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(`UPDATE system_alerts SET dismissed_at = ? WHERE dismissed_at IS NULL`, now)
+	if err != nil {
+		return fmt.Errorf("store.DismissAllSystemAlerts: %w", err)
+	}
+	return nil
+}
+
+// ClearOldSystemAlerts removes alerts older than the specified duration.
+func (s *Store) ClearOldSystemAlerts(olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().UTC().Add(-olderThan).Format(time.RFC3339)
+	res, err := s.db.Exec(`DELETE FROM system_alerts WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("store.ClearOldSystemAlerts: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// HasActiveAlertOfType checks if there's an active (non-dismissed) alert of the given type for the provider.
+// Used to prevent duplicate alerts.
+func (s *Store) HasActiveAlertOfType(provider, alertType string) (bool, error) {
+	var count int
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM system_alerts
+		WHERE provider = ? AND alert_type = ? AND dismissed_at IS NULL
+	`, provider, alertType).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("store.HasActiveAlertOfType: %w", err)
+	}
+	return count > 0, nil
 }

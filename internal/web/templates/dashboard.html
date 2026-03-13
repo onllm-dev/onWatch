@@ -29,6 +29,31 @@
                 <span class="status-indicator" id="status-dot" aria-label="Connection status"></span>
             </div>
         </div>
+        <!-- Notification Center -->
+        <div class="notification-center" id="notification-center">
+            <button class="notification-bell" id="notification-bell" aria-label="Notifications" aria-expanded="false" aria-haspopup="true" title="Notifications">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                <span class="notification-badge" id="notification-badge" style="display: none;" aria-live="polite">0</span>
+            </button>
+            <div class="notification-dropdown" id="notification-dropdown" role="menu" aria-label="Notifications">
+                <div class="notification-header">
+                    <span class="notification-title">Notifications</span>
+                    <button class="notification-dismiss-all" id="dismiss-all-alerts" title="Dismiss all" aria-label="Clear all notifications">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                        Clear all
+                    </button>
+                </div>
+                <div class="notification-list" id="notification-list">
+                    <div class="notification-empty">No notifications</div>
+                </div>
+            </div>
+        </div>
+
         <div class="header-controls">
             <a href="/settings" class="header-btn" id="settings-btn" aria-label="Settings" title="Settings">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -8234,3 +8234,143 @@ func (h *Handler) cycleOverviewCopilot(w http.ResponseWriter, r *http.Request) {
 		"cycles":     cycleOverviewRowsToJSON(rows),
 	})
 }
+
+// SystemAlerts returns active system alerts for the notification center.
+func (h *Handler) SystemAlerts(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"alerts": []interface{}{}})
+		return
+	}
+
+	alerts, err := h.store.GetActiveSystemAlerts()
+	if err != nil {
+		h.logger.Error("failed to get system alerts", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to get alerts")
+		return
+	}
+
+	// Convert to JSON-friendly format
+	result := make([]map[string]interface{}, 0, len(alerts))
+	for _, alert := range alerts {
+		result = append(result, map[string]interface{}{
+			"id":        alert.ID,
+			"type":      alert.AlertType,
+			"severity":  alert.Severity,
+			"title":     alert.Title,
+			"message":   alert.Message,
+			"provider":  alert.Provider,
+			"createdAt": alert.CreatedAt.Format(time.RFC3339),
+		})
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"alerts": result})
+}
+
+// DismissAlert dismisses a single system alert.
+func (h *Handler) DismissAlert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.store == nil {
+		respondError(w, http.StatusInternalServerError, "store not available")
+		return
+	}
+
+	var req struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.store.DismissSystemAlert(req.ID); err != nil {
+		h.logger.Error("failed to dismiss alert", "id", req.ID, "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to dismiss alert")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
+// DismissAllAlerts dismisses all active system alerts.
+func (h *Handler) DismissAllAlerts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.store == nil {
+		respondError(w, http.StatusInternalServerError, "store not available")
+		return
+	}
+
+	if err := h.store.DismissAllSystemAlerts(); err != nil {
+		h.logger.Error("failed to dismiss all alerts", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to dismiss alerts")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
+// SimulateAlert creates a test alert for UI verification.
+func (h *Handler) SimulateAlert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.store == nil {
+		respondError(w, http.StatusInternalServerError, "store not available")
+		return
+	}
+
+	var req struct {
+		Type     string `json:"type"`
+		Severity string `json:"severity"`
+		Title    string `json:"title"`
+		Message  string `json:"message"`
+		Provider string `json:"provider"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Default values for simulation
+	if req.Type == "" {
+		req.Type = "test_alert"
+	}
+	if req.Severity == "" {
+		req.Severity = "warning"
+	}
+	if req.Title == "" {
+		req.Title = "Test Notification"
+	}
+	if req.Message == "" {
+		req.Message = "This is a test notification to verify the notification center UI."
+	}
+	if req.Provider == "" {
+		req.Provider = "system"
+	}
+
+	id, err := h.store.CreateSystemAlert(req.Provider, req.Type, req.Title, req.Message, req.Severity, "")
+	if err != nil {
+		h.logger.Error("failed to create simulated alert", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to create alert")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"success":  true,
+		"id":       id,
+		"type":     req.Type,
+		"severity": req.Severity,
+		"title":    req.Title,
+		"message":  req.Message,
+		"provider": req.Provider,
+	})
+}

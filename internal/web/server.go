@@ -88,6 +88,12 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 		handler.insightsMiniMax(w, r, parseInsightsRange(r.URL.Query().Get("range")))
 	})
 
+	// System alerts (in-dashboard notifications)
+	mux.HandleFunc("/api/alerts", handler.SystemAlerts)
+	mux.HandleFunc("/api/alerts/dismiss", handler.DismissAlert)
+	mux.HandleFunc("/api/alerts/dismiss-all", handler.DismissAllAlerts)
+	mux.HandleFunc("/api/alerts/simulate", handler.SimulateAlert)
+
 	// Service worker (must be served from root scope, no-cache)
 	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
 		data, _ := staticFS.ReadFile("static/sw.js")

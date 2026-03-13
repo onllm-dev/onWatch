@@ -7253,6 +7253,184 @@ function addOverrideRow(quotaKey, provider, warning, critical, isAbsolute) {
   }
 }
 
+// ═══════════════════════════════════════════
+// NOTIFICATION CENTER
+// ═══════════════════════════════════════════
+
+let _notificationAlerts = [];
+
+async function fetchSystemAlerts() {
+  try {
+    const res = await authFetch('/api/alerts');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.alerts || [];
+  } catch (err) {
+    console.error('Failed to fetch system alerts:', err);
+    return [];
+  }
+}
+
+function formatRelativeTime(dateStr) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHr / 24);
+
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return date.toLocaleDateString();
+}
+
+function renderNotificationItem(alert) {
+  const iconSvg = alert.severity === 'error'
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>'
+    : alert.severity === 'warning'
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
+
+  return `
+    <div class="notification-item" data-alert-id="${alert.id}">
+      <div class="notification-icon ${alert.severity || 'info'}">
+        ${iconSvg}
+      </div>
+      <div class="notification-content">
+        <div class="notification-item-title">${escapeHtml(alert.title)}</div>
+        <div class="notification-item-message">${escapeHtml(alert.message)}</div>
+        <div class="notification-meta">
+          <span class="notification-provider">${escapeHtml(alert.provider || 'system')}</span>
+          <span class="notification-time">${formatRelativeTime(alert.createdAt)}</span>
+        </div>
+      </div>
+      <button class="notification-dismiss" data-dismiss-id="${alert.id}" title="Dismiss" aria-label="Dismiss notification">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+  `;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function updateNotificationCenter() {
+  const alerts = await fetchSystemAlerts();
+  _notificationAlerts = alerts;
+
+  const badge = document.getElementById('notification-badge');
+  const list = document.getElementById('notification-list');
+
+  if (!badge || !list) return;
+
+  // Update badge
+  if (alerts.length > 0) {
+    badge.textContent = alerts.length > 99 ? '99+' : alerts.length;
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  // Update list
+  if (alerts.length === 0) {
+    list.innerHTML = '<div class="notification-empty">No notifications</div>';
+  } else {
+    list.innerHTML = alerts.map(renderNotificationItem).join('');
+
+    // Add dismiss handlers
+    list.querySelectorAll('.notification-dismiss').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.dismissId, 10);
+        await dismissAlert(id);
+      });
+    });
+  }
+}
+
+async function dismissAlert(id) {
+  try {
+    const res = await authFetch('/api/alerts/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    if (res.ok) {
+      await updateNotificationCenter();
+    }
+  } catch (err) {
+    console.error('Failed to dismiss alert:', err);
+  }
+}
+
+async function dismissAllAlerts() {
+  try {
+    const res = await authFetch('/api/alerts/dismiss-all', {
+      method: 'POST'
+    });
+    if (res.ok) {
+      await updateNotificationCenter();
+    }
+  } catch (err) {
+    console.error('Failed to dismiss all alerts:', err);
+  }
+}
+
+function initNotificationCenter() {
+  const bell = document.getElementById('notification-bell');
+  const dropdown = document.getElementById('notification-dropdown');
+  const dismissAllBtn = document.getElementById('dismiss-all-alerts');
+
+  if (!bell || !dropdown) return;
+
+  // Toggle dropdown on bell click
+  bell.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isVisible = dropdown.classList.contains('visible');
+    dropdown.classList.toggle('visible', !isVisible);
+    bell.setAttribute('aria-expanded', !isVisible);
+  });
+
+  // Dismiss all button
+  if (dismissAllBtn) {
+    dismissAllBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await dismissAllAlerts();
+    });
+  }
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!bell.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.classList.remove('visible');
+      bell.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  // Close dropdown on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && dropdown.classList.contains('visible')) {
+      dropdown.classList.remove('visible');
+      bell.setAttribute('aria-expanded', 'false');
+      bell.focus(); // Return focus to bell for keyboard users
+    }
+  });
+
+  // Initial fetch
+  updateNotificationCenter();
+
+  // Refresh notifications periodically (every 60 seconds)
+  setInterval(updateNotificationCenter, 60000);
+}
+
 // ── Init ──
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -7306,6 +7484,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await setupOverviewControls();
   setupHeaderActions();
   setupCardModals();
+  initNotificationCenter();
 
   if (document.getElementById('usage-chart') || document.getElementById('both-view') || document.getElementById('all-providers-container')) {
     initChart();

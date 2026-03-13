@@ -425,3 +425,48 @@ func TestZaiAgent_SetPollingCheck_DisablesPolling(t *testing.T) {
 		t.Error("expected no Z.ai snapshot when polling disabled")
 	}
 }
+
+func TestCodexAgent_SetCredentialsRefresh(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":45.2,"reset_at":1766000000,"limit_window_seconds":18000}}}`))
+	}))
+	defer server.Close()
+
+	str, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer str.Close()
+
+	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+	client := api.NewCodexClient("test-token", logger, api.WithCodexBaseURL(server.URL))
+	tr := tracker.NewCodexTracker(str, logger)
+
+	agent := NewCodexAgent(client, str, tr, 5*time.Second, logger, nil)
+
+	// Set a credentials refresh function that returns non-expiring credentials
+	agent.SetCredentialsRefresh(func() *api.CodexCredentials {
+		return &api.CodexCredentials{
+			AccessToken:  "test-token",
+			RefreshToken: "test-refresh",
+			ExpiresIn:    2 * time.Hour, // Not expiring soon
+			ExpiresAt:    time.Now().Add(2 * time.Hour),
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- agent.Run(ctx)
+	}()
+	<-ctx.Done()
+	waitForAgentStop(t, errCh, 2*time.Second)
+
+	latest, _ := str.QueryLatestCodex(1)
+	if latest == nil {
+		t.Fatal("expected Codex snapshot after poll")
+	}
+}
