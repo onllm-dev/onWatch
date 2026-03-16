@@ -1814,6 +1814,7 @@
                     return;
                 }
                 const providers = visibleProviders();
+                storeMenubarPromos(providers);
                 if (providers.length === 0) {
                     body.innerHTML = renderStateCard("No Data", "Choose at least one provider.");
                     return;
@@ -2732,6 +2733,29 @@
                 }, Math.max(Number(state.preferences.refresh_seconds) || 60, 10) * 1000);
             }
 
+            // Promo countdown: update tags every 30s without API calls
+            let _menubarPromos = [];
+            let _promoCountdownTimer = null;
+
+            function storeMenubarPromos(providers) {
+                _menubarPromos = (providers || []).filter(p => p.promo).map(p => p.promo);
+                if (_promoCountdownTimer) clearInterval(_promoCountdownTimer);
+                if (_menubarPromos.length > 0) {
+                    _promoCountdownTimer = setInterval(refreshMenubarPromoTags, 30000);
+                }
+            }
+
+            function refreshMenubarPromoTags() {
+                document.querySelectorAll(".promo-tag").forEach(el => {
+                    // Find parent provider card to get promo data
+                    const promo = _menubarPromos[0]; // Currently only Anthropic has promo
+                    if (!promo) return;
+                    const offpeak = isPromoOffPeak(promo);
+                    el.className = "promo-tag " + (offpeak ? "promo-offpeak" : "promo-peak");
+                    el.textContent = promoLabel(promo);
+                });
+            }
+
             function isPromoOffPeak(promo) {
                 const now = new Date();
                 const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
@@ -2743,8 +2767,54 @@
                 return !isPeak;
             }
 
+            function promoMinutesUntilTransition(promo) {
+                const now = new Date();
+                const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
+                const et = new Date(etStr);
+                const hour = et.getHours();
+                const min = et.getMinutes();
+                const day = et.getDay();
+                const isWeekday = day >= 1 && day <= 5;
+                const isPeak = promo.peak_weekdays_only ? (isWeekday && hour >= promo.peak_start_hour_et && hour < promo.peak_end_hour_et) : false;
+                let totalMin;
+                if (isPeak) {
+                    totalMin = (promo.peak_end_hour_et - hour - 1) * 60 + (60 - min);
+                } else if (isWeekday && hour < promo.peak_start_hour_et) {
+                    totalMin = (promo.peak_start_hour_et - hour - 1) * 60 + (60 - min);
+                } else {
+                    let daysToAdd;
+                    if (day === 5) daysToAdd = 3;
+                    else if (day === 6) daysToAdd = 2;
+                    else if (day === 0) daysToAdd = 1;
+                    else daysToAdd = 1;
+                    totalMin = (daysToAdd - 1) * 1440 + (24 - hour - 1) * 60 + (60 - min) + promo.peak_start_hour_et * 60;
+                }
+                if (promo.ends_at) {
+                    const promoEndMin = Math.floor((new Date(promo.ends_at) - now) / 60000);
+                    if (promoEndMin > 0 && promoEndMin < totalMin) totalMin = promoEndMin;
+                }
+                return Math.max(0, totalMin);
+            }
+
+            function formatPromoCountdown(minutes) {
+                if (minutes <= 0) return "";
+                if (minutes >= 1440) {
+                    const d = Math.floor(minutes / 1440);
+                    const h = Math.floor((minutes % 1440) / 60);
+                    return h > 0 ? d + "d " + h + "h" : d + "d";
+                }
+                if (minutes >= 60) {
+                    const h = Math.floor(minutes / 60);
+                    const m = minutes % 60;
+                    return m > 0 ? h + "h " + m + "m" : h + "h";
+                }
+                return minutes + "m";
+            }
+
             function promoLabel(promo) {
-                return isPromoOffPeak(promo) ? "2x limits" : "Peak hours";
+                const label = isPromoOffPeak(promo) ? "2x limits" : "Peak hours";
+                const countdown = formatPromoCountdown(promoMinutesUntilTransition(promo));
+                return countdown ? label + " till " + countdown : label;
             }
 
             function escapeHTML(value) {

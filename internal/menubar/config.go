@@ -118,6 +118,7 @@ type ProviderPromo struct {
 	PeakStartHourET  int    `json:"peak_start_hour_et"`
 	PeakEndHourET    int    `json:"peak_end_hour_et"`
 	PeakWeekdaysOnly bool   `json:"peak_weekdays_only"`
+	EndsAt           string `json:"ends_at,omitempty"`
 }
 
 // QuotaMeter represents one circular quota meter inside a provider card.

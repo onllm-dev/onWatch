@@ -743,37 +743,95 @@ function isAnthropicPeakHours(promo) {
   return promo.peakWeekdaysOnly ? (isWeekday && hour >= promo.peakStartHourET && hour < promo.peakEndHourET) : false;
 }
 
+// Compute minutes until the next peak/off-peak transition in ET
+function promoMinutesUntilTransition(promo) {
+  const now = new Date();
+  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et = new Date(etStr);
+  const hour = et.getHours();
+  const min = et.getMinutes();
+  const day = et.getDay(); // 0=Sun, 6=Sat
+  const isWeekday = day >= 1 && day <= 5;
+  const isPeak = promo.peakWeekdaysOnly ? (isWeekday && hour >= promo.peakStartHourET && hour < promo.peakEndHourET) : false;
+
+  let totalMin;
+  if (isPeak) {
+    // Currently peak - countdown to peak end (peakEndHourET today)
+    totalMin = (promo.peakEndHourET - hour - 1) * 60 + (60 - min);
+  } else if (isWeekday && hour < promo.peakStartHourET) {
+    // Before peak today - countdown to peak start
+    totalMin = (promo.peakStartHourET - hour - 1) * 60 + (60 - min);
+  } else {
+    // After peak on weekday, or weekend - countdown to next weekday peak start
+    let daysToAdd;
+    if (day === 5) daysToAdd = 3;      // Fri after peak -> Mon
+    else if (day === 6) daysToAdd = 2;  // Sat -> Mon
+    else if (day === 0) daysToAdd = 1;  // Sun -> Mon
+    else daysToAdd = 1;                 // Weekday after peak -> next day
+    totalMin = (daysToAdd - 1) * 1440 + (24 - hour - 1) * 60 + (60 - min) + promo.peakStartHourET * 60;
+  }
+
+  // Cap at promo end date if available
+  if (promo.endsAt) {
+    const promoEndMin = Math.floor((new Date(promo.endsAt) - now) / 60000);
+    if (promoEndMin > 0 && promoEndMin < totalMin) totalMin = promoEndMin;
+  }
+
+  return Math.max(0, totalMin);
+}
+
+// Format minutes into a compact countdown string
+function formatPromoCountdown(minutes) {
+  if (minutes <= 0) return '';
+  if (minutes >= 1440) {
+    const d = Math.floor(minutes / 1440);
+    const h = Math.floor((minutes % 1440) / 60);
+    return h > 0 ? d + 'd ' + h + 'h' : d + 'd';
+  }
+  if (minutes >= 60) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m > 0 ? h + 'h ' + m + 'm' : h + 'h';
+  }
+  return minutes + 'm';
+}
+
+// Build the full promo label text with countdown
+function promoLabelWithCountdown(promo) {
+  const isPeak = isAnthropicPeakHours(promo);
+  const label = isPeak ? 'Standard limits' : '2x limits';
+  const mins = promoMinutesUntilTransition(promo);
+  const countdown = formatPromoCountdown(mins);
+  return countdown ? label + ' till ' + countdown : label;
+}
+
 // Store current promo for card rendering
 let _anthropicPromo = null;
 
 function updateAnthropicPromoState(promo) {
   _anthropicPromo = promo || null;
-  // Update existing promo tags in cards
+  refreshPromoTags();
+  // Re-evaluate every 30s for countdown updates (no API call)
+  if (window._promoInterval) clearInterval(window._promoInterval);
+  if (_anthropicPromo) {
+    window._promoInterval = setInterval(refreshPromoTags, 30000);
+  }
+}
+
+function refreshPromoTags() {
   document.querySelectorAll('.promo-tag-inline').forEach(el => {
     if (!_anthropicPromo) { el.remove(); return; }
     const isPeak = isAnthropicPeakHours(_anthropicPromo);
     el.className = 'promo-tag-inline ' + (isPeak ? 'promo-peak' : 'promo-offpeak');
-    el.textContent = isPeak ? 'Standard limits' : '2x limits';
+    el.textContent = promoLabelWithCountdown(_anthropicPromo);
   });
-  // Re-evaluate every 60s
-  if (window._promoInterval) clearInterval(window._promoInterval);
-  if (_anthropicPromo) {
-    window._promoInterval = setInterval(() => {
-      document.querySelectorAll('.promo-tag-inline').forEach(el => {
-        if (!_anthropicPromo) return;
-        const isPeak = isAnthropicPeakHours(_anthropicPromo);
-        el.className = 'promo-tag-inline ' + (isPeak ? 'promo-peak' : 'promo-offpeak');
-        el.textContent = isPeak ? 'Standard limits' : '2x limits';
-      });
-    }, 60000);
-  }
 }
 
 function promoTagHTML() {
   if (!_anthropicPromo) return '';
   const isPeak = isAnthropicPeakHours(_anthropicPromo);
   const cls = isPeak ? 'promo-peak' : 'promo-offpeak';
-  const text = isPeak ? 'Standard limits' : '2x limits';
+  const text = promoLabelWithCountdown(_anthropicPromo);
   return `<a class="promo-tag-inline ${cls}" href="https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escapeHTML(_anthropicPromo.description)}">${text}</a>`;
 }
 

@@ -237,6 +237,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 						PeakStartHourET:  p.PeakStartHourET,
 						PeakEndHourET:    p.PeakEndHourET,
 						PeakWeekdaysOnly: p.PeakWeekdaysOnly,
+						EndsAt:           p.EndsAt,
 					}
 				}
 			}
