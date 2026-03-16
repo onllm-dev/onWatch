@@ -3401,6 +3401,43 @@ func (h *Handler) buildZaiInsights(hidden map[string]bool) insightsResponse {
 	return resp
 }
 
+// ── Anthropic Promo Definitions ──
+
+type anthropicPromo struct {
+	ID               string `json:"id"`
+	Title            string `json:"title"`
+	Description      string `json:"description"`
+	StartsAt         string `json:"startsAt"`
+	EndsAt           string `json:"endsAt"`
+	PeakStartHourET  int    `json:"peakStartHourET"`
+	PeakEndHourET    int    `json:"peakEndHourET"`
+	PeakWeekdaysOnly bool   `json:"peakWeekdaysOnly"`
+}
+
+var anthropicPromos = []anthropicPromo{
+	{
+		ID:               "march-2026-offpeak-2x",
+		Title:            "Higher Limits Available",
+		Description:      "Off-peak hours get doubled 5-hour usage. Additional off-peak usage does not count toward weekly limits.",
+		StartsAt:         "2026-03-13T00:00:00-07:00",
+		EndsAt:           "2026-03-27T23:59:00-07:00",
+		PeakStartHourET:  8,
+		PeakEndHourET:    14,
+		PeakWeekdaysOnly: true,
+	},
+}
+
+func activeAnthropicPromo(now time.Time) *anthropicPromo {
+	for i := range anthropicPromos {
+		start, _ := time.Parse(time.RFC3339, anthropicPromos[i].StartsAt)
+		end, _ := time.Parse(time.RFC3339, anthropicPromos[i].EndsAt)
+		if now.After(start) && now.Before(end) {
+			return &anthropicPromos[i]
+		}
+	}
+	return nil
+}
+
 // ── Anthropic Provider Handlers ──
 
 // currentAnthropic returns Anthropic quota status.
@@ -3414,6 +3451,9 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 	response := map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
+	}
+	if promo := activeAnthropicPromo(now); promo != nil {
+		response["promo"] = promo
 	}
 
 	if h.store == nil {

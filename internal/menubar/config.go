@@ -106,7 +106,18 @@ type ProviderCard struct {
 	HighestPercent float64       `json:"highest_percent"`
 	UpdatedAt      string        `json:"updated_at,omitempty"`
 	Quotas         []QuotaMeter  `json:"quotas"`
-	Trends         []TrendSeries `json:"trends,omitempty"`
+	Trends         []TrendSeries  `json:"trends,omitempty"`
+	Promo          *ProviderPromo `json:"promo,omitempty"`
+}
+
+// ProviderPromo carries promo metadata for a provider card.
+type ProviderPromo struct {
+	ID               string `json:"id"`
+	Title            string `json:"title"`
+	CompactText      string `json:"compact_text"`
+	PeakStartHourET  int    `json:"peak_start_hour_et"`
+	PeakEndHourET    int    `json:"peak_end_hour_et"`
+	PeakWeekdaysOnly bool   `json:"peak_weekdays_only"`
 }
 
 // QuotaMeter represents one circular quota meter inside a provider card.

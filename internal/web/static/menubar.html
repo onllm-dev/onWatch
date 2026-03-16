@@ -385,6 +385,26 @@
             letter-spacing: -0.01em;
         }
 
+        .promo-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: rgba(13, 148, 136, 0.15);
+            color: #0D9488;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            margin-left: 4px;
+            text-decoration: none;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .promo-tag:hover {
+            background: rgba(13, 148, 136, 0.25);
+        }
+
         .provider-updated {
             flex-shrink: 0;
             color: var(--text-muted);
@@ -2031,6 +2051,7 @@
                         <div class="provider-copy">
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
+                            ${provider.promo ? `<a class="promo-tag" href="https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(provider.promo.compact_text)}</a>` : ''}
                         </div>
                         <span class="provider-updated">${escapeHTML(compactUpdatedLabel(provider.updated_at))}</span>
                     </div>

@@ -228,6 +228,18 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	if h.config != nil && h.config.HasProvider("anthropic") && h.providerDashboardVisible("anthropic", visibility) {
 		payload := h.buildAnthropicCurrent()
 		if card := normalizeProviderCard("anthropic", "Anthropic", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			if promoData, ok := payload["promo"]; ok && promoData != nil {
+				if p, ok := promoData.(*anthropicPromo); ok {
+					card.Promo = &menubar.ProviderPromo{
+						ID:               p.ID,
+						Title:            p.Title,
+						CompactText:      "Usage Promo",
+						PeakStartHourET:  p.PeakStartHourET,
+						PeakEndHourET:    p.PeakEndHourET,
+						PeakWeekdaysOnly: p.PeakWeekdaysOnly,
+					}
+				}
+			}
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
