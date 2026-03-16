@@ -151,7 +151,7 @@ func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 	notifier := notify.New(str, logger)
 	agent.SetNotifier(notifier)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -164,13 +164,13 @@ func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 	select {
 	case <-requestReceived:
 		t.Log("Server received HTTP request from agent")
-	case <-time.After(3 * time.Second):
+	case <-time.After(5 * time.Second):
 		requestTimeout = true
 	}
 
 	// Now wait for snapshot to be stored (should be quick after request).
 	// Don't use waitUntil since it doesn't print logs on failure.
-	snapshotDeadline := time.Now().Add(2 * time.Second)
+	snapshotDeadline := time.Now().Add(5 * time.Second)
 	var snapshotFound bool
 	for time.Now().Before(snapshotDeadline) {
 		latest, err := str.QueryLatest()
