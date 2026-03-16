@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCREENSHOTS_DIR = join(__dirname, '..', 'docs', 'screenshots');
 const BASE_URL = 'http://localhost:9211';
 const USERNAME = 'admin';
-const PASSWORD = 'changeme';
+const PASSWORD = process.env.ONWATCH_ADMIN_PASS || 'changeme';
 
 // Providers to capture: { filename prefix, tab data-provider value }
 const PROVIDERS = [
@@ -81,6 +81,39 @@ async function run() {
     }
   }
 
+  // ── Menubar Screenshots ──
+  console.log('\nCapturing menubar screenshots...');
+  const MENUBAR_VIEWPORT = { width: 360, height: 600 };
+  const menubarContext = await browser.newContext({ viewport: MENUBAR_VIEWPORT });
+  const menubarPage = await menubarContext.newPage();
+  await menubarPage.goto(`${BASE_URL}/menubar`);
+  await menubarPage.waitForTimeout(2000);
+
+  const MENUBAR_VIEWS = ['standard', 'detailed'];
+
+  for (const view of MENUBAR_VIEWS) {
+    // Set view mode
+    await menubarPage.evaluate((v) => {
+      localStorage.setItem('menubar_view_mode', v);
+    }, view);
+    await menubarPage.reload();
+    await menubarPage.waitForTimeout(2000);
+
+    for (const theme of THEMES) {
+      await menubarPage.evaluate((t) => {
+        document.documentElement.setAttribute('data-theme', t);
+        localStorage.setItem('menubar_theme_mode', t);
+      }, theme);
+      await menubarPage.waitForTimeout(500);
+
+      const filename = `menubar-${view}-${theme}.png`;
+      const filepath = join(SCREENSHOTS_DIR, filename);
+      await menubarPage.screenshot({ path: filepath });
+      console.log(`  Captured: ${filename}`);
+    }
+  }
+
+  await menubarContext.close();
   await browser.close();
   console.log('\nAll screenshots captured successfully!');
 }
