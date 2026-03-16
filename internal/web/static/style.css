@@ -3334,7 +3334,36 @@ select.settings-input {
 }
 
 /* ═══════════════════════════════════════════
-   19. REDUCED MOTION
+   19. ANTHROPIC PROMO TAG (inline in quota cards)
+   ═══════════════════════════════════════════ */
+
+.promo-tag-inline {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-full, 999px);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: var(--transition-base);
+}
+
+.promo-tag-inline:hover {
+  filter: brightness(0.9);
+}
+
+.promo-tag-inline.promo-offpeak {
+  background: var(--accent-teal-muted);
+  color: var(--accent-teal-text);
+}
+
+.promo-tag-inline.promo-peak {
+  background: var(--accent-peach-muted);
+  color: var(--accent-peach-text);
+}
+
+/* ═══════════════════════════════════════════
+   20. REDUCED MOTION
    ═══════════════════════════════════════════ */
 
 @media (prefers-reduced-motion: reduce) {

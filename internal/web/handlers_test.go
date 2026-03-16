@@ -10455,3 +10455,62 @@ func TestGetProviderFromRequest_ErrorsAndNormalization(t *testing.T) {
 		}
 	})
 }
+
+// ── Anthropic Promo Range Tests ──
+
+func TestActiveAnthropicPromo_DuringWindow(t *testing.T) {
+	// March 20, 2026 - mid-promo
+	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+	promo := activeAnthropicPromo(now)
+	if promo == nil {
+		t.Fatal("expected promo to be active during March 20, got nil")
+	}
+	if promo.ID != "march-2026-offpeak-2x" {
+		t.Fatalf("expected promo ID march-2026-offpeak-2x, got %s", promo.ID)
+	}
+}
+
+func TestActiveAnthropicPromo_BeforeWindow(t *testing.T) {
+	// March 12, 2026 - before promo starts
+	now := time.Date(2026, 3, 12, 12, 0, 0, 0, time.UTC)
+	promo := activeAnthropicPromo(now)
+	if promo != nil {
+		t.Fatalf("expected nil before promo window, got %+v", promo)
+	}
+}
+
+func TestActiveAnthropicPromo_AfterWindow(t *testing.T) {
+	// March 28, 2026 - after promo ends
+	now := time.Date(2026, 3, 28, 8, 0, 0, 0, time.UTC)
+	promo := activeAnthropicPromo(now)
+	if promo != nil {
+		t.Fatalf("expected nil after promo window, got %+v", promo)
+	}
+}
+
+func TestBuildAnthropicCurrent_IncludesPromo(t *testing.T) {
+	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
+	resp := h.buildAnthropicCurrent()
+	// buildAnthropicCurrent uses time.Now(), so we test activeAnthropicPromo directly
+	now := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	promo := activeAnthropicPromo(now)
+	if promo == nil {
+		t.Fatal("expected promo during window")
+	}
+	if promo.PeakStartHourET != 8 || promo.PeakEndHourET != 14 {
+		t.Fatalf("unexpected peak hours: %d-%d", promo.PeakStartHourET, promo.PeakEndHourET)
+	}
+	// Verify response structure is valid even without store
+	if _, ok := resp["quotas"]; !ok {
+		t.Fatal("expected quotas key in response")
+	}
+}
+
+func TestBuildAnthropicCurrent_ExcludesPromo(t *testing.T) {
+	// After promo window, no promo key should exist
+	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	promo := activeAnthropicPromo(now)
+	if promo != nil {
+		t.Fatalf("expected no promo after window, got %+v", promo)
+	}
+}

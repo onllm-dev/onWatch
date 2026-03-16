@@ -731,6 +731,52 @@ function getQuotaDisplayName(quotaKey, provider) {
 
 // ── Anthropic Dynamic Card Rendering ──
 
+// ── Anthropic Promo ──
+
+function isAnthropicPeakHours(promo) {
+  const now = new Date();
+  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et = new Date(etStr);
+  const hour = et.getHours();
+  const day = et.getDay();
+  const isWeekday = day >= 1 && day <= 5;
+  return promo.peakWeekdaysOnly ? (isWeekday && hour >= promo.peakStartHourET && hour < promo.peakEndHourET) : false;
+}
+
+// Store current promo for card rendering
+let _anthropicPromo = null;
+
+function updateAnthropicPromoState(promo) {
+  _anthropicPromo = promo || null;
+  // Update existing promo tags in cards
+  document.querySelectorAll('.promo-tag-inline').forEach(el => {
+    if (!_anthropicPromo) { el.remove(); return; }
+    const isPeak = isAnthropicPeakHours(_anthropicPromo);
+    el.className = 'promo-tag-inline ' + (isPeak ? 'promo-peak' : 'promo-offpeak');
+    el.textContent = isPeak ? 'Standard limits' : '2x limits';
+  });
+  // Re-evaluate every 60s
+  if (window._promoInterval) clearInterval(window._promoInterval);
+  if (_anthropicPromo) {
+    window._promoInterval = setInterval(() => {
+      document.querySelectorAll('.promo-tag-inline').forEach(el => {
+        if (!_anthropicPromo) return;
+        const isPeak = isAnthropicPeakHours(_anthropicPromo);
+        el.className = 'promo-tag-inline ' + (isPeak ? 'promo-peak' : 'promo-offpeak');
+        el.textContent = isPeak ? 'Standard limits' : '2x limits';
+      });
+    }, 60000);
+  }
+}
+
+function promoTagHTML() {
+  if (!_anthropicPromo) return '';
+  const isPeak = isAnthropicPeakHours(_anthropicPromo);
+  const cls = isPeak ? 'promo-peak' : 'promo-offpeak';
+  const text = isPeak ? 'Standard limits' : '2x limits';
+  return `<a class="promo-tag-inline ${cls}" href="https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escapeHTML(_anthropicPromo.description)}">${text}</a>`;
+}
+
 function renderAnthropicQuotaCards(quotas, containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -770,6 +816,7 @@ function renderAnthropicQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
+        ${promoTagHTML()}
         <span class="reset-time" id="${resetId}">${q.resetsAt ? 'Resets: ' + formatDateTime(q.resetsAt) : ''}</span>
       </footer>
     </article>`;
@@ -2521,7 +2568,9 @@ async function fetchCurrent() {
           data.quotas.forEach(q => updateCopilotCard(q));
         }
       } else if (provider === 'anthropic') {
-        // Anthropic response: { capturedAt: ..., quotas: [...] }
+        // Anthropic response: { capturedAt: ..., quotas: [...], promo?: {...} }
+        // Set promo state before rendering cards so promoTagHTML() works
+        updateAnthropicPromoState(data.promo || null);
         if (data.quotas) {
           const container = document.getElementById('quota-grid-anthropic');
           if (container && container.children.length === 0) {
@@ -3658,7 +3707,8 @@ function buildAllProviderEntries() {
       provider,
       cardKey: sanitizeProviderCardKey(provider),
       title: bothProviderNames[provider] || toTitleCase(provider),
-      badge: provider === 'copilot' ? 'Beta' : toTitleCase(payload.planType || ''),
+      badge: (provider === 'copilot' ? 'Beta' : toTitleCase(payload.planType || ''))
+             + (provider === 'anthropic' && payload.promo ? ' - Promo' : ''),
       planType: payload.planType || '',
       quotas: normalizeBothQuotas(provider, payload),
       insights: insights[provider] || { stats: [], insights: [] },
