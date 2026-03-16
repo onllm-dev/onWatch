@@ -390,8 +390,6 @@
             align-items: center;
             padding: 1px 6px;
             border-radius: 999px;
-            background: rgba(13, 148, 136, 0.15);
-            color: #0D9488;
             font-size: 9px;
             font-weight: 600;
             letter-spacing: 0.02em;
@@ -401,8 +399,22 @@
             flex-shrink: 0;
         }
 
-        .promo-tag:hover {
+        .promo-tag.promo-offpeak {
+            background: rgba(13, 148, 136, 0.15);
+            color: #0D9488;
+        }
+
+        .promo-tag.promo-offpeak:hover {
             background: rgba(13, 148, 136, 0.25);
+        }
+
+        .promo-tag.promo-peak {
+            background: rgba(245, 158, 11, 0.15);
+            color: #F59E0B;
+        }
+
+        .promo-tag.promo-peak:hover {
+            background: rgba(245, 158, 11, 0.25);
         }
 
         .provider-updated {
@@ -2051,7 +2063,7 @@
                         <div class="provider-copy">
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
-                            ${provider.promo ? `<a class="promo-tag" href="https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(provider.promo.compact_text)}</a>` : ''}
+                            ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
                         </div>
                         <span class="provider-updated">${escapeHTML(compactUpdatedLabel(provider.updated_at))}</span>
                     </div>
@@ -2718,6 +2730,21 @@
                 refreshTimer = window.setInterval(() => {
                     void loadSnapshot();
                 }, Math.max(Number(state.preferences.refresh_seconds) || 60, 10) * 1000);
+            }
+
+            function isPromoOffPeak(promo) {
+                const now = new Date();
+                const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
+                const et = new Date(etStr);
+                const hour = et.getHours();
+                const day = et.getDay();
+                const isWeekday = day >= 1 && day <= 5;
+                const isPeak = promo.peak_weekdays_only ? (isWeekday && hour >= promo.peak_start_hour_et && hour < promo.peak_end_hour_et) : false;
+                return !isPeak;
+            }
+
+            function promoLabel(promo) {
+                return isPromoOffPeak(promo) ? "2x limits" : "Peak hours";
             }
 
             function escapeHTML(value) {
