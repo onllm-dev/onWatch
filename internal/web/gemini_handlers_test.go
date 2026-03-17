@@ -58,15 +58,18 @@ func insertTestGeminiSnapshot(t *testing.T, s *store.Store, capturedAt time.Time
 	}
 }
 
-// insertTestGeminiData inserts a Gemini snapshot with 3 model quotas for realistic test data.
+// insertTestGeminiData inserts a Gemini snapshot with 6 model quotas (2 per family) for realistic test data.
 func insertTestGeminiData(t *testing.T, s *store.Store) {
 	t.Helper()
 	now := time.Now().UTC()
 	resetTime := now.Add(1 * time.Hour)
 	insertTestGeminiSnapshot(t, s, now.Add(-5*time.Minute), []api.GeminiQuota{
 		{ModelID: "gemini-2.5-pro", RemainingFraction: 0.8, UsagePercent: 20.0, ResetTime: &resetTime},
+		{ModelID: "gemini-3-pro-preview", RemainingFraction: 0.8, UsagePercent: 20.0, ResetTime: &resetTime},
 		{ModelID: "gemini-2.5-flash", RemainingFraction: 0.5, UsagePercent: 50.0, ResetTime: &resetTime},
-		{ModelID: "gemini-2.0-flash", RemainingFraction: 0.95, UsagePercent: 5.0, ResetTime: &resetTime},
+		{ModelID: "gemini-3-flash-preview", RemainingFraction: 0.5, UsagePercent: 50.0, ResetTime: &resetTime},
+		{ModelID: "gemini-2.5-flash-lite", RemainingFraction: 0.95, UsagePercent: 5.0, ResetTime: &resetTime},
+		{ModelID: "gemini-3.1-flash-lite-preview", RemainingFraction: 0.95, UsagePercent: 5.0, ResetTime: &resetTime},
 	})
 }
 
@@ -115,12 +118,21 @@ func TestGeminiCurrent_ViaRouter(t *testing.T) {
 		t.Fatalf("expected 3 quotas, got %d", len(quotas))
 	}
 
-	// Verify quota structure
+	// Verify quota structure (family-level with members)
 	q := quotas[0].(map[string]interface{})
-	for _, field := range []string{"modelId", "displayName", "remainingFraction", "usagePercent", "remainingPercent", "status"} {
+	for _, field := range []string{"modelId", "displayName", "members", "remainingFraction", "usagePercent", "remainingPercent", "status"} {
 		if _, ok := q[field]; !ok {
 			t.Errorf("quota missing field '%s'", field)
 		}
+	}
+
+	// Verify members is a non-empty array
+	members, ok := q["members"].([]interface{})
+	if !ok {
+		t.Fatal("expected 'members' to be an array")
+	}
+	if len(members) == 0 {
+		t.Error("expected non-empty members array")
 	}
 
 	// Must have tier and projectId
@@ -176,14 +188,14 @@ func TestGeminiHistory_ViaRouter(t *testing.T) {
 		if _, ok := entry["capturedAt"]; !ok {
 			t.Error("entry missing 'capturedAt'")
 		}
-		// Should have model IDs as flat keys
-		if _, ok := entry["gemini-2.5-pro"]; !ok {
-			t.Error("entry missing flat key 'gemini-2.5-pro'")
+		// Should have family IDs as flat keys (not model IDs)
+		if _, ok := entry["pro"]; !ok {
+			t.Error("entry missing flat key 'pro'")
 		}
-		if _, ok := entry["gemini-2.5-flash"]; !ok {
-			t.Error("entry missing flat key 'gemini-2.5-flash'")
+		if _, ok := entry["flash"]; !ok {
+			t.Error("entry missing flat key 'flash'")
 		}
-		// Must NOT have nested quotas
+		// Must NOT have nested quotas or old model IDs
 		if _, ok := entry["quotas"]; ok {
 			t.Error("entry should not have nested 'quotas' key")
 		}
@@ -191,7 +203,7 @@ func TestGeminiHistory_ViaRouter(t *testing.T) {
 }
 
 // TestGeminiCycles_ViaRouter verifies GET /api/cycles?provider=gemini returns
-// cycles response through the exported Cycles handler.
+// session history with quotaNames and per-family usage columns.
 func TestGeminiCycles_ViaRouter(t *testing.T) {
 	s, err := store.New(":memory:")
 	if err != nil {
@@ -203,6 +215,7 @@ func TestGeminiCycles_ViaRouter(t *testing.T) {
 	resetTime := now.Add(1 * time.Hour)
 	insertTestGeminiSnapshot(t, s, now, []api.GeminiQuota{
 		{ModelID: "gemini-2.5-pro", RemainingFraction: 0.8, UsagePercent: 20.0, ResetTime: &resetTime},
+		{ModelID: "gemini-2.5-flash", RemainingFraction: 0.5, UsagePercent: 50.0, ResetTime: &resetTime},
 	})
 
 	cfg := createTestConfigWithGemini()
@@ -221,9 +234,30 @@ func TestGeminiCycles_ViaRouter(t *testing.T) {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
 
-	// Must have cycles key
-	if _, ok := resp["cycles"]; !ok {
-		t.Error("response missing 'cycles'")
+	// Must have quotaNames with family IDs
+	quotaNames, ok := resp["quotaNames"].([]interface{})
+	if !ok {
+		t.Fatal("response missing 'quotaNames'")
+	}
+	if len(quotaNames) == 0 {
+		t.Error("expected non-empty quotaNames")
+	}
+
+	// Must have cycles array with snapshot entries
+	cycles, ok := resp["cycles"].([]interface{})
+	if !ok {
+		t.Fatal("response missing 'cycles'")
+	}
+	if len(cycles) == 0 {
+		t.Error("expected at least one cycle entry")
+	}
+
+	// Each entry should have capturedAt and family-keyed usage
+	if len(cycles) > 0 {
+		entry := cycles[0].(map[string]interface{})
+		if _, ok := entry["capturedAt"]; !ok {
+			t.Error("cycle entry missing 'capturedAt'")
+		}
 	}
 }
 
@@ -312,8 +346,8 @@ func TestGeminiInsights_ViaRouter(t *testing.T) {
 	}
 }
 
-// TestGeminiCycleOverview_ViaRouter verifies GET /api/cycle-overview?provider=gemini returns
-// groupBy/quotaNames/cycles through the exported CycleOverview handler.
+// TestGeminiCycleOverview_ViaRouter verifies GET /api/cycle-overview?provider=gemini
+// returns empty data since cycle overview is disabled for Gemini.
 func TestGeminiCycleOverview_ViaRouter(t *testing.T) {
 	s, err := store.New(":memory:")
 	if err != nil {
@@ -339,28 +373,13 @@ func TestGeminiCycleOverview_ViaRouter(t *testing.T) {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
 
-	// Must have provider
-	if provider, ok := resp["provider"].(string); !ok || provider != "gemini" {
-		t.Errorf("expected provider='gemini', got %v", resp["provider"])
-	}
-
-	// Must have groupBy
-	if _, ok := resp["groupBy"]; !ok {
-		t.Error("response missing 'groupBy'")
-	}
-
-	// Must have quotaNames
-	quotaNames, ok := resp["quotaNames"].([]interface{})
+	// Cycle overview disabled for Gemini - should return empty cycles
+	cycles, ok := resp["cycles"].([]interface{})
 	if !ok {
-		t.Fatalf("expected 'quotaNames' array, got: %v", resp)
+		t.Fatal("expected 'cycles' array")
 	}
-	if len(quotaNames) == 0 {
-		t.Error("expected non-empty quotaNames")
-	}
-
-	// Must have cycles
-	if _, ok := resp["cycles"]; !ok {
-		t.Error("response missing 'cycles'")
+	if len(cycles) != 0 {
+		t.Errorf("expected empty cycles for Gemini, got %d", len(cycles))
 	}
 }
 
@@ -377,6 +396,7 @@ func TestGeminiLoggingHistory_ViaRouter(t *testing.T) {
 	resetTime := now.Add(1 * time.Hour)
 	insertTestGeminiSnapshot(t, s, now.Add(-10*time.Minute), []api.GeminiQuota{
 		{ModelID: "gemini-2.5-pro", RemainingFraction: 0.8, UsagePercent: 20.0, ResetTime: &resetTime},
+		{ModelID: "gemini-3-pro-preview", RemainingFraction: 0.8, UsagePercent: 20.0, ResetTime: &resetTime},
 		{ModelID: "gemini-2.5-flash", RemainingFraction: 0.5, UsagePercent: 50.0, ResetTime: &resetTime},
 	})
 
@@ -468,13 +488,13 @@ func TestBothCurrent_IncludesGemini(t *testing.T) {
 		t.Fatalf("expected 'gemini' key in both current response, keys: %v", keysOf(resp))
 	}
 
-	// Gemini current must have quotas
+	// Gemini current must have quotas (3 families, not 6 models)
 	quotas, ok := gemini["quotas"].([]interface{})
 	if !ok {
 		t.Fatal("expected 'quotas' array in gemini current response")
 	}
 	if len(quotas) != 3 {
-		t.Errorf("expected 3 gemini quotas, got %d", len(quotas))
+		t.Errorf("expected 3 gemini family quotas, got %d", len(quotas))
 	}
 }
 
@@ -641,7 +661,7 @@ func TestBothSummary_IncludesGemini(t *testing.T) {
 }
 
 // TestBothCycleOverview_IncludesGemini verifies GET /api/cycle-overview?provider=both includes
-// Gemini in the combined response.
+// Gemini in the combined response (even if empty since cycle overview is disabled for Gemini).
 func TestBothCycleOverview_IncludesGemini(t *testing.T) {
 	s, err := store.New(":memory:")
 	if err != nil {
@@ -667,7 +687,7 @@ func TestBothCycleOverview_IncludesGemini(t *testing.T) {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
 
-	// cycleOverviewBoth includes Gemini when store has data
+	// Gemini cycle overview returns empty data but key must be present in both view
 	if _, ok := resp["gemini"]; !ok {
 		t.Errorf("expected 'gemini' key in both cycle-overview response, keys: %v", keysOf(resp))
 	}

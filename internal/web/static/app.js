@@ -654,21 +654,15 @@ const minimaxChartColorFallback = [
 ];
 
 const geminiDisplayNames = {
-  'gemini-2.5-pro': 'Gemini 2.5 Pro',
-  'gemini-2.5-flash': 'Gemini 2.5 Flash',
-  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
-  'gemini-3-pro-preview': 'Gemini 3 Pro',
-  'gemini-3-flash-preview': 'Gemini 3 Flash',
-  'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite',
+  'pro': 'Gemini Pro',
+  'flash': 'Gemini Flash',
+  'flash_lite': 'Gemini Flash Lite',
 };
 
 const geminiChartColorMap = {
-  'gemini-2.5-pro': { border: '#4285F4', bg: 'rgba(66, 133, 244, 0.08)' },
-  'gemini-2.5-flash': { border: '#34A853', bg: 'rgba(52, 168, 83, 0.08)' },
-  'gemini-2.5-flash-lite': { border: '#FBBC04', bg: 'rgba(251, 188, 4, 0.08)' },
-  'gemini-3-pro-preview': { border: '#EA4335', bg: 'rgba(234, 67, 53, 0.08)' },
-  'gemini-3-flash-preview': { border: '#8AB4F8', bg: 'rgba(138, 180, 248, 0.08)' },
-  'gemini-3.1-flash-lite-preview': { border: '#81C995', bg: 'rgba(129, 201, 149, 0.08)' },
+  'pro': { border: '#4285F4', bg: 'rgba(66, 133, 244, 0.08)' },
+  'flash': { border: '#34A853', bg: 'rgba(52, 168, 83, 0.08)' },
+  'flash_lite': { border: '#FBBC04', bg: 'rgba(251, 188, 4, 0.08)' },
 };
 
 const geminiChartColorFallback = [
@@ -715,11 +709,7 @@ const renewalCategories = {
   minimax: [
     { label: 'Coding Plan', groupBy: 'coding_plan' }
   ],
-  gemini: [
-    { label: 'Gemini 2.5 Pro', groupBy: 'gemini-2.5-pro' },
-    { label: 'Gemini 2.5 Flash', groupBy: 'gemini-2.5-flash' },
-    { label: 'Gemini 3 Pro', groupBy: 'gemini-3-pro-preview' },
-  ]
+  gemini: []
 };
 
 const overviewQuotaDisplayNames = {
@@ -751,12 +741,9 @@ const providerQuotaDisplayOverrides = {
     coding_plan: 'MiniMax Coding Plan'
   },
   gemini: {
-    'gemini-2.5-pro': 'Gemini 2.5 Pro',
-    'gemini-2.5-flash': 'Gemini 2.5 Flash',
-    'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
-    'gemini-3-pro-preview': 'Gemini 3 Pro',
-    'gemini-3-flash-preview': 'Gemini 3 Flash',
-    'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite',
+    'pro': 'Gemini Pro',
+    'flash': 'Gemini Flash',
+    'flash_lite': 'Gemini Flash Lite',
   }
 };
 
@@ -1690,7 +1677,8 @@ function renderGeminiQuotaCards(quotas, containerId) {
   }
 
   container.innerHTML = quotas.map((q, i) => {
-    const displayName = geminiDisplayNames[q.modelId] || q.modelId;
+    const displayName = q.displayName || geminiDisplayNames[q.modelId] || q.modelId;
+    const membersText = q.members && q.members.length > 0 ? q.members.join(', ') : '';
     const usagePct = (q.usagePercent || 0).toFixed(1);
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
@@ -1713,6 +1701,7 @@ function renderGeminiQuotaCards(quotas, containerId) {
         </h2>
         <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
+      ${membersText ? `<div class="family-members" style="font-size:0.75rem;opacity:0.7;margin:-4px 0 4px 0;padding:0 16px">${membersText}</div>` : ''}
       <div class="progress-stats">
         <span class="usage-percent" id="${percentId}">${usagePct}%</span>
         <span class="usage-fraction" id="${fractionId}">${fractionText}</span>
@@ -3949,6 +3938,11 @@ function buildAllProviderEntries() {
       order.push(provider);
     });
 
+  // Set Anthropic promo state so promoTagHTML() works in both view
+  if (current.anthropic && current.anthropic.promo) {
+    updateAnthropicPromoState(current.anthropic.promo);
+  }
+
   const entries = [];
 
   const addProviderEntry = (provider) => {
@@ -3993,8 +3987,8 @@ function buildAllProviderEntries() {
       provider,
       cardKey: sanitizeProviderCardKey(provider),
       title: bothProviderNames[provider] || toTitleCase(provider),
-      badge: (provider === 'copilot' ? 'Beta' : toTitleCase(payload.planType || ''))
-             + (provider === 'anthropic' && payload.promo ? ' - Promo' : ''),
+      badge: provider === 'copilot' ? 'Beta' : toTitleCase(payload.planType || ''),
+      promoHtml: provider === 'anthropic' && payload.promo ? promoTagHTML() : '',
       planType: payload.planType || '',
       quotas: normalizeBothQuotas(provider, payload),
       insights: insights[provider] || { stats: [], insights: [] },
@@ -4261,6 +4255,7 @@ function renderAllProvidersView() {
   container.innerHTML = entries.map((entry) => {
     const collapsed = Boolean(collapsedState[entry.cardKey]);
     const badge = entry.badge ? `<span class="provider-card-badge">${escapeHTML(entry.badge)}</span>` : '';
+    const promo = entry.promoHtml || '';
     const hasChartData = Array.isArray(entry.historyRows) && entry.historyRows.length > 0;
     const chartSection = hasChartData
       ? `<div class="provider-chart">
@@ -4273,7 +4268,7 @@ function renderAllProvidersView() {
       <header class="provider-card-header">
         <div class="provider-card-title">
           <span>${escapeHTML(entry.title)}</span>
-          ${badge}
+          ${badge}${promo}
         </div>
         <button class="provider-card-collapse-btn" type="button" data-card-key="${entry.cardKey}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${escapeHTML(entry.title)}">
           <svg class="provider-card-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -4964,7 +4959,7 @@ function renderCyclesTable() {
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
-          if (provider === 'minimax' || provider === 'gemini') {
+          if (provider === 'minimax') {
             const cq = getCrossQuotaValue(row, qn);
             const used = Number(cq?.value || 0);
             const limit = Number(cq?.limit || 0);
@@ -5822,9 +5817,21 @@ function setupCycleFilters() {
     });
   }
 
-  // Grouping window pills (1m/5m/10m/30m)
+  // Grouping window pills - dynamic based on poll interval
   const bucketPills = document.getElementById('cycles-bucket-pills');
   if (bucketPills) {
+    const appEl = document.querySelector('.app[data-poll-interval]');
+    const pollSec = parseInt(appEl?.dataset.pollInterval || '300', 10);
+    const pollMin = Math.max(1, Math.round(pollSec / 60));
+    const multipliers = [1, 3, 6, 12];
+    const buckets = multipliers.map(m => m * pollMin);
+    // Set default bucket to 1x poll interval
+    State.cyclesBucket = buckets[0];
+    bucketPills.innerHTML = buckets.map((mins, i) => {
+      const label = mins >= 60 ? `${mins / 60}h` : `${mins}m`;
+      return `<button class="filter-pill${i === 0 ? ' active' : ''}" data-bucket-minutes="${mins}">${label}</button>`;
+    }).join('');
+
     bucketPills.addEventListener('click', (e) => {
       const pill = e.target.closest('.filter-pill');
       if (!pill) return;
@@ -7911,18 +7918,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     const activeProvider = getCurrentProvider();
     const eagerHistoryProviders = new Set(['antigravity', 'minimax', 'gemini']);
     if (eagerHistoryProviders.has(activeProvider) && shouldShowHistoryTables(activeProvider)) {
-      _lazyLoaded.add('.cycle-overview-section');
       _lazyLoaded.add('.cycles-section');
       _lazyLoaded.add('.sessions-section');
-      fetchCycleOverview();
       fetchCycles();
       fetchSessions();
+      if (activeProvider !== 'gemini') {
+        _lazyLoaded.add('.cycle-overview-section');
+        fetchCycleOverview();
+      }
+    }
+
+    // Hide cycle overview section entirely for Gemini
+    const overviewSection = document.querySelector('.cycle-overview-section');
+    if (overviewSection) {
+      overviewSection.style.display = activeProvider === 'gemini' ? 'none' : '';
     }
 
     // Below-fold: lazy-load when sections scroll into view
     if (shouldShowHistoryTables(activeProvider)) {
       lazyLoadOnVisible('.cycles-section', () => fetchCycles());
-      lazyLoadOnVisible('.cycle-overview-section', () => fetchCycleOverview());
+      if (activeProvider !== 'gemini') {
+        lazyLoadOnVisible('.cycle-overview-section', () => fetchCycleOverview());
+      }
       lazyLoadOnVisible('.sessions-section', () => fetchSessions());
     }
 

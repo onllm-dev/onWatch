@@ -1699,16 +1699,24 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") && h.store != nil {
 		snapshots, err := h.store.QueryGeminiRange(start, now)
 		if err == nil {
-			step := downsampleStep(len(snapshots), maxChartPoints)
-			last := len(snapshots) - 1
-			gemData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
-			for i, snap := range snapshots {
+			// Filter empty snapshots and aggregate by family
+			var valid []*api.GeminiSnapshot
+			for _, s := range snapshots {
+				if len(s.Quotas) > 0 {
+					valid = append(valid, s)
+				}
+			}
+			step := downsampleStep(len(valid), maxChartPoints)
+			last := len(valid) - 1
+			gemData := make([]map[string]interface{}, 0, min(len(valid), maxChartPoints))
+			for i, snap := range valid {
 				if step > 1 && i != 0 && i != last && i%step != 0 {
 					continue
 				}
 				entry := map[string]interface{}{"capturedAt": snap.CapturedAt.Format(time.RFC3339)}
-				for _, q := range snap.Quotas {
-					entry[q.ModelID] = q.UsagePercent
+				families := api.AggregateGeminiByFamily(snap.Quotas)
+				for _, fq := range families {
+					entry[fq.FamilyID] = fq.UsagePercent
 				}
 				gemData = append(gemData, entry)
 			}
@@ -1977,30 +1985,8 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 			response["minimax"] = minimaxCycles
 		}
 	}
-	if h.config.HasProvider("gemini") && h.store != nil {
-		modelIDs, _ := h.store.QueryAllGeminiModelIDs()
-		var geminiCycles []map[string]interface{}
-		for _, modelID := range modelIDs {
-			cycles, err := h.store.QueryGeminiCycleHistory(modelID, 50)
-			if err == nil {
-				for _, c := range cycles {
-					entry := map[string]interface{}{
-						"modelId":    c.ModelID,
-						"cycleStart": c.CycleStart.Format(time.RFC3339),
-						"peakUsage":  c.PeakUsage,
-						"totalDelta": c.TotalDelta,
-					}
-					if c.CycleEnd != nil {
-						entry["cycleEnd"] = c.CycleEnd.Format(time.RFC3339)
-					}
-					if c.ResetTime != nil {
-						entry["resetTime"] = c.ResetTime.Format(time.RFC3339)
-					}
-					geminiCycles = append(geminiCycles, entry)
-				}
-			}
-		}
-		response["gemini"] = geminiCycles
+	if h.config.HasProvider("gemini") {
+		response["gemini"] = []interface{}{}
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -5313,12 +5299,12 @@ func (h *Handler) cycleOverviewBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.config.HasProvider("gemini") && h.store != nil {
-		modelIDs, _ := h.store.QueryAllGeminiModelIDs()
-		if len(modelIDs) > 0 {
-			if rows, err := h.store.QueryGeminiCycleOverview(modelIDs[0], limit); err == nil {
-				response["gemini"] = cycleOverviewRowsToJSON(rows)
-			}
+	if h.config.HasProvider("gemini") {
+		response["gemini"] = map[string]interface{}{
+			"groupBy":    "",
+			"provider":   "gemini",
+			"quotaNames": []string{},
+			"cycles":     []interface{}{},
 		}
 	}
 

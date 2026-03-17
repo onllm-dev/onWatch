@@ -54,14 +54,19 @@ func (t *GeminiTracker) SetOnReset(fn func(string)) {
 	t.onReset = fn
 }
 
-// Process iterates over all quotas in the snapshot, detects resets, and updates cycles.
+// Process aggregates snapshot quotas by family, then detects resets per-family.
 func (t *GeminiTracker) Process(snapshot *api.GeminiSnapshot) error {
-	for _, quota := range snapshot.Quotas {
-		if quota.ModelID == "" {
-			continue
+	families := api.AggregateGeminiByFamily(snapshot.Quotas)
+	for _, fq := range families {
+		q := api.GeminiQuota{
+			ModelID:           fq.FamilyID,
+			RemainingFraction: fq.RemainingFraction,
+			UsagePercent:      fq.UsagePercent,
+			ResetTime:         fq.ResetTime,
+			TimeUntilReset:    fq.TimeUntilReset,
 		}
-		if err := t.processModel(quota, snapshot.CapturedAt); err != nil {
-			return fmt.Errorf("gemini tracker: %s: %w", quota.ModelID, err)
+		if err := t.processModel(q, snapshot.CapturedAt); err != nil {
+			return fmt.Errorf("gemini tracker: %s: %w", fq.FamilyID, err)
 		}
 	}
 
@@ -205,19 +210,19 @@ func (t *GeminiTracker) processModel(quota api.GeminiQuota, capturedAt time.Time
 	return nil
 }
 
-// UsageSummary returns computed stats for a specific Gemini model.
-func (t *GeminiTracker) UsageSummary(modelID string) (*GeminiSummary, error) {
-	activeCycle, err := t.store.QueryActiveGeminiCycle(modelID)
+// UsageSummary returns computed stats for a Gemini family ID.
+func (t *GeminiTracker) UsageSummary(familyID string) (*GeminiSummary, error) {
+	activeCycle, err := t.store.QueryActiveGeminiCycle(familyID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active cycle: %w", err)
 	}
 
-	history, err := t.store.QueryGeminiCycleHistory(modelID)
+	history, err := t.store.QueryGeminiCycleHistory(familyID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cycle history: %w", err)
 	}
 
-	summary := &GeminiSummary{ModelID: modelID, CompletedCycles: len(history)}
+	summary := &GeminiSummary{ModelID: familyID, CompletedCycles: len(history)}
 
 	if len(history) > 0 {
 		var totalDelta float64
@@ -247,13 +252,15 @@ func (t *GeminiTracker) UsageSummary(modelID string) (*GeminiSummary, error) {
 			return nil, fmt.Errorf("failed to query latest: %w", err)
 		}
 		if latest != nil {
-			for _, q := range latest.Quotas {
-				if q.ModelID == modelID {
-					summary.RemainingFraction = q.RemainingFraction
-					summary.UsagePercent = q.UsagePercent
-					if summary.ResetTime == nil && q.ResetTime != nil {
-						summary.ResetTime = q.ResetTime
-						summary.TimeUntilReset = time.Until(*q.ResetTime)
+			// Aggregate latest quotas by family to find this family's values
+			families := api.AggregateGeminiByFamily(latest.Quotas)
+			for _, fq := range families {
+				if fq.FamilyID == familyID {
+					summary.RemainingFraction = fq.RemainingFraction
+					summary.UsagePercent = fq.UsagePercent
+					if summary.ResetTime == nil && fq.ResetTime != nil {
+						summary.ResetTime = fq.ResetTime
+						summary.TimeUntilReset = time.Until(*fq.ResetTime)
 					}
 					break
 				}

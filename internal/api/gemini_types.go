@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -42,6 +43,127 @@ type GeminiSnapshot struct {
 	ProjectID  string
 	Quotas     []GeminiQuota
 	RawJSON    string
+}
+
+// Gemini family constants for quota pool aggregation.
+const (
+	GeminiFamilyPro       = "pro"
+	GeminiFamilyFlash     = "flash"
+	GeminiFamilyFlashLite = "flash_lite"
+)
+
+// geminiFamilySortOrder defines display ordering for family cards.
+var geminiFamilySortOrder = map[string]int{
+	GeminiFamilyPro:       0,
+	GeminiFamilyFlash:     1,
+	GeminiFamilyFlashLite: 2,
+}
+
+// GeminiFamilyQuota represents an aggregated family-level quota.
+type GeminiFamilyQuota struct {
+	FamilyID          string
+	DisplayName       string
+	Members           []string // display names of member models
+	RemainingFraction float64
+	UsagePercent      float64
+	ResetTime         *time.Time
+	TimeUntilReset    time.Duration
+}
+
+// GeminiModelFamily classifies a model ID into its quota family.
+// Order matters: check flash+lite before flash-only.
+func GeminiModelFamily(modelID string) string {
+	lower := strings.ToLower(modelID)
+	hasFlash := strings.Contains(lower, "flash")
+	hasLite := strings.Contains(lower, "lite")
+	hasPro := strings.Contains(lower, "pro")
+
+	switch {
+	case hasFlash && hasLite:
+		return GeminiFamilyFlashLite
+	case hasPro:
+		return GeminiFamilyPro
+	case hasFlash:
+		return GeminiFamilyFlash
+	default:
+		return modelID // unknown model = own singleton family
+	}
+}
+
+// GeminiFamilyDisplayName returns the human-readable name for a family ID.
+func GeminiFamilyDisplayName(family string) string {
+	switch family {
+	case GeminiFamilyPro:
+		return "Gemini Pro"
+	case GeminiFamilyFlash:
+		return "Gemini Flash"
+	case GeminiFamilyFlashLite:
+		return "Gemini Flash Lite"
+	default:
+		return family
+	}
+}
+
+// AggregateGeminiByFamily groups per-model quotas into family-level quotas.
+// Within a family, remainingFraction is taken from the first member (identical
+// within the pool), and resetTime is the earliest valid timestamp.
+func AggregateGeminiByFamily(quotas []GeminiQuota) []GeminiFamilyQuota {
+	type familyAccum struct {
+		familyID          string
+		members           []string
+		remainingFraction float64
+		usagePercent      float64
+		resetTime         *time.Time
+		timeUntilReset    time.Duration
+		seen              bool
+	}
+
+	accum := map[string]*familyAccum{}
+	for _, q := range quotas {
+		fid := GeminiModelFamily(q.ModelID)
+		a, ok := accum[fid]
+		if !ok {
+			a = &familyAccum{familyID: fid}
+			accum[fid] = a
+		}
+		a.members = append(a.members, GeminiDisplayName(q.ModelID))
+		if !a.seen {
+			a.remainingFraction = q.RemainingFraction
+			a.usagePercent = q.UsagePercent
+			a.timeUntilReset = q.TimeUntilReset
+			a.resetTime = q.ResetTime
+			a.seen = true
+		} else if q.ResetTime != nil {
+			if a.resetTime == nil || q.ResetTime.Before(*a.resetTime) {
+				a.resetTime = q.ResetTime
+				a.timeUntilReset = q.TimeUntilReset
+			}
+		}
+	}
+
+	families := make([]GeminiFamilyQuota, 0, len(accum))
+	for _, a := range accum {
+		families = append(families, GeminiFamilyQuota{
+			FamilyID:          a.familyID,
+			DisplayName:       GeminiFamilyDisplayName(a.familyID),
+			Members:           a.members,
+			RemainingFraction: a.remainingFraction,
+			UsagePercent:      a.usagePercent,
+			ResetTime:         a.resetTime,
+			TimeUntilReset:    a.timeUntilReset,
+		})
+	}
+
+	sort.Slice(families, func(i, j int) bool {
+		oi := geminiFamilySortOrder[families[i].FamilyID]
+		oj := geminiFamilySortOrder[families[j].FamilyID]
+		if oi != oj {
+			return oi < oj
+		}
+		return families[i].FamilyID < families[j].FamilyID
+	})
+
+	return families
 }
 
 // geminiDisplayNames maps model IDs to human-readable labels.
