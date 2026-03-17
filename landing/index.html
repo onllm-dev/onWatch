@@ -3577,7 +3577,7 @@ a:hover { text-decoration: underline; }
                     </div>
                     <div class="method-title">Windows &amp; Docker</div>
                 </div>
-                <p class="method-desc">PowerShell installer for Windows with interactive setup and auto-detection of Claude Code/Codex credentials. Docker for containerized deployments with distroless image (~12 MB), non-root user, and persistent data volume.</p>
+                <p class="method-desc">PowerShell installer for Windows with interactive setup and auto-detection of Claude Code/Codex credentials. Docker for containerized deployments with distroless image (~12 MB) or Alpine variant (~15 MB, includes shell for docker exec), non-root user, and persistent data volume.</p>
                 <div class="method-code" style="margin-bottom:12px;">
                     <div class="method-code-header">
                         <span class="method-code-lang">Windows (PowerShell)</span>
@@ -3600,7 +3600,10 @@ a:hover { text-decoration: underline; }
 
 <span class="code-comment"># Run with Docker Compose</span>
 <span class="code-cmd">docker-compose</span> up -d
-<span class="code-cmd">docker-compose</span> logs -f  <span class="code-comment"># view logs</span></div>
+<span class="code-cmd">docker-compose</span> logs -f  <span class="code-comment"># view logs</span>
+
+<span class="code-comment"># Need shell access? Use the Alpine variant:</span>
+<span class="code-comment"># ghcr.io/onllm-dev/onwatch:alpine</span></div>
                 </div>
             </div>
 
