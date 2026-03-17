@@ -42,33 +42,49 @@ RUN ./onwatch --version || echo "Cross-compiled binary, skipping version check"
 # Fixes permission errors with both bind mounts and named volumes
 RUN mkdir -p /data && chown 65532:65532 /data
 
-# Runtime stage: Use distroless for minimal, secure image
-FROM gcr.io/distroless/static-debian12:nonroot
+# Shell variant: Alpine-based image with /bin/sh for docker exec access
+# Build with: docker build --target runtime-shell .
+# See: https://github.com/onllm-dev/onWatch/issues/34
+FROM alpine:3.21 AS runtime-shell
 
-# Build arguments (need to be redeclared for this stage)
+RUN apk add --no-cache ca-certificates tzdata && \
+    addgroup -g 65532 -S nonroot && \
+    adduser -u 65532 -S -G nonroot -h /app nonroot
+
 ARG VERSION=dev
-
-# Metadata labels
 LABEL maintainer="onllm-dev"
-LABEL description="onWatch - Lightweight API quota tracker for Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, Antigravity, and Gemini CLI"
+LABEL description="onWatch - Lightweight API quota tracker (shell variant)"
 LABEL version="${VERSION:-dev}"
 
-# Set working directory
 WORKDIR /app
-
-# Copy the binary from builder
 COPY --from=builder /build/onwatch /app/onwatch
-
-# Copy pre-created data directory with correct ownership for nonroot user
 COPY --from=builder --chown=65532:65532 /data /data
 
-# Expose the web UI port
 EXPOSE 9211
-
-# Set default environment variables for Docker
 ENV ONWATCH_DB_PATH=/data/onwatch.db \
     ONWATCH_PORT=9211 \
     ONWATCH_LOG_LEVEL=info
 
-# Run the binary (distroless has no shell, use exec form)
+USER nonroot
+ENTRYPOINT ["/app/onwatch"]
+
+# Default runtime stage: Use distroless for minimal, secure image
+# This is the last stage so "docker build ." (no --target) builds this
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+
+ARG VERSION=dev
+LABEL maintainer="onllm-dev"
+LABEL description="onWatch - Lightweight API quota tracker for Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, Antigravity, and Gemini CLI"
+LABEL version="${VERSION:-dev}"
+
+WORKDIR /app
+COPY --from=builder /build/onwatch /app/onwatch
+COPY --from=builder --chown=65532:65532 /data /data
+
+EXPOSE 9211
+ENV ONWATCH_DB_PATH=/data/onwatch.db \
+    ONWATCH_PORT=9211 \
+    ONWATCH_LOG_LEVEL=info
+
+# distroless has no shell, use exec form
 ENTRYPOINT ["/app/onwatch"]

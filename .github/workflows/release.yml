@@ -228,14 +228,41 @@ jobs:
             type=semver,pattern={{major}},value=${{ inputs.tag }}
             type=raw,value=latest
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (distroless)
         uses: docker/build-push-action@v6
         with:
           context: .
+          target: runtime
           platforms: linux/arm64,linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Alpine variant with shell access (issue #34)
+      - name: Extract metadata for Alpine variant
+        id: meta-alpine
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}-alpine,value=${{ inputs.tag }}
+            type=semver,pattern={{major}}.{{minor}}-alpine,value=${{ inputs.tag }}
+            type=raw,value=alpine
+
+      - name: Build and push Docker image (Alpine with shell)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime-shell
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ steps.meta-alpine.outputs.tags }}
+          labels: ${{ steps.meta-alpine.outputs.labels }}
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
