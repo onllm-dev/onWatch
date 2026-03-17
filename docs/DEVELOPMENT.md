@@ -176,7 +176,7 @@ make coverage              # Generate HTML coverage report → coverage.html
 
 ## Multi-Provider Architecture
 
-onWatch supports seven providers: Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity. When multiple API keys are set, all agents run in parallel goroutines, each polling its respective API and storing snapshots in the shared SQLite database.
+onWatch supports eight providers: Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, and Antigravity. When multiple API keys are set, all agents run in parallel goroutines, each polling its respective API and storing snapshots in the shared SQLite database.
 
 The dashboard switches between providers via the `?provider=` query parameter. Each provider renders its own quota cards, insight cards, and stat summaries. Synthetic insights focus on cycle utilization and billing periods; Z.ai insights show plan capacity (daily/monthly token budgets), tokens-per-call efficiency, and top tool analysis; Anthropic insights show burn rate forecasting, window averages, projected exhaustion, and cross-quota ratio analysis (5-Hour vs Weekly); Codex insights track 5-hour and weekly windows with trend and projection context; GitHub Copilot insights track entitlement burn and projected usage; MiniMax insights focus on shared-pool burn and reset projection; Antigravity insights focus on grouped pool burn rates and exhaustion timing.
 

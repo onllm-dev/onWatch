@@ -1,10 +1,10 @@
 # onWatch
 
-Go CLI for AI quota tracking. Polls 7 providers → SQLite → Material Design 3 dashboard.
+Go CLI for AI quota tracking. Polls 8 providers → SQLite → Material Design 3 dashboard.
 
 ## Task
 
-Background daemon (<50MB RAM) tracking: Anthropic, Synthetic, Z.ai, Copilot, Codex, MiniMax, Antigravity.
+Background daemon (<50MB RAM) tracking: Anthropic, Synthetic, Z.ai, Copilot, Codex, MiniMax, Antigravity, Gemini.
 
 ## Code Map
 
@@ -61,7 +61,7 @@ go test -race ./... && go vet ./...   # Pre-commit (mandatory)
 5. Add to `internal/web/handlers.go` endpoints
 6. Update dashboard JS in `internal/web/static/app.js`
 
-**API Docs:** See `docs/` for provider-specific setup (COPILOT_SETUP.md, CODEX_SETUP.md, ANTIGRAVITY_SETUP.md)
+**API Docs:** See `docs/` for provider-specific setup (COPILOT_SETUP.md, CODEX_SETUP.md, ANTIGRAVITY_SETUP.md, GEMINI_SETUP.md)
 
 **Containers:** `IsDockerEnvironment()` in `config.go` detects Docker/K8s. Containers run foreground only.
 

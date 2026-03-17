@@ -568,6 +568,10 @@ button, input, select { font-family: inherit; }
   margin-bottom: 28px;
 }
 
+#quota-grid-gemini {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 /* All Providers View */
 .all-providers-view {
   display: flex;
@@ -2193,6 +2197,7 @@ button, input, select { font-family: inherit; }
 
 @media (min-width: 769px) and (max-width: 1023px) {
   .quota-grid { grid-template-columns: repeat(2, 1fr); }
+  #quota-grid-gemini { grid-template-columns: repeat(3, 1fr); }
   .quota-card:nth-child(3) { grid-column: 1 / -1; }
   .table-controls { flex-wrap: wrap; }
   .both-view { grid-template-columns: 1fr; }

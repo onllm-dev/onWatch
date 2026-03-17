@@ -12,13 +12,13 @@
       gtag('config', 'G-HLLYRRWW4R');
     </script>
     <title>onWatch - Know your AI quota before it runs out</title>
-    <meta name="description" content="Track quota usage and reset windows across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. Detect anomalies, monitor burn rates, route work before limits hit. Open source Go binary, zero telemetry, all data local.">
-    <meta name="keywords" content="onWatch, AI API intelligence, multi-provider API tracking, Synthetic API monitor, Z.ai API tracker, Anthropic API monitoring, Codex API monitoring, GitHub Copilot quota tracker, MiniMax quota tracker, Antigravity quota tracker, cross-provider insights, AI coding API usage, quota monitoring tool, open source API monitor, Cline quota tracker, Claude Code API usage, intelligent provider switching, API budget tracker, self-hosted API monitoring, reset cycle detection, rate projection, Go CLI tool, API quota dashboard">
+    <meta name="description" content="Track quota usage and reset windows across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, Gemini CLI, and Antigravity. Detect anomalies, monitor burn rates, route work before limits hit. Open source Go binary, zero telemetry, all data local.">
+    <meta name="keywords" content="onWatch, AI API intelligence, multi-provider API tracking, Synthetic API monitor, Z.ai API tracker, Anthropic API monitoring, Codex API monitoring, GitHub Copilot quota tracker, MiniMax quota tracker, Gemini CLI quota tracker, Antigravity quota tracker, cross-provider insights, AI coding API usage, quota monitoring tool, open source API monitor, Cline quota tracker, Claude Code API usage, intelligent provider switching, API budget tracker, self-hosted API monitoring, reset cycle detection, rate projection, Go CLI tool, API quota dashboard">
     <link rel="canonical" href="https://onwatch.onllm.dev">
 
     <!-- Open Graph -->
     <meta property="og:title" content="onWatch - Know your AI quota before it runs out">
-    <meta property="og:description" content="Track quota usage across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. Detect anomalies, monitor burn rates, route work before limits hit. Open source, zero telemetry.">
+    <meta property="og:description" content="Track quota usage across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, Gemini CLI, and Antigravity. Detect anomalies, monitor burn rates, route work before limits hit. Open source, zero telemetry.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://onwatch.onllm.dev">
     <meta property="og:site_name" content="onWatch">
@@ -30,7 +30,7 @@
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="onWatch - Know your AI quota before it runs out">
-    <meta name="twitter:description" content="Track quota usage across 7 providers. Detect anomalies, monitor burn rates, route work before limits hit. Open source, zero telemetry.">
+    <meta name="twitter:description" content="Track quota usage across 8 providers. Detect anomalies, monitor burn rates, route work before limits hit. Open source, zero telemetry.">
     <meta name="twitter:image" content="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/anthropic-dark.png">
 
     <!-- Additional SEO -->
@@ -44,7 +44,7 @@
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "onWatch",
-      "description": "Coding plan quota intelligence for Anthropic, Codex, Synthetic, Z.ai, GitHub Copilot, MiniMax, and Antigravity. onWatch tracks usage and reset windows, keeps local history, and surfaces actionable headroom so you can route coding work before limits hit. ~15 MB Go binary, <50 MB RAM, zero telemetry.",
+      "description": "Coding plan quota intelligence for Anthropic, Codex, Synthetic, Z.ai, GitHub Copilot, MiniMax, Gemini CLI, and Antigravity. onWatch tracks usage and reset windows, keeps local history, and surfaces actionable headroom so you can route coding work before limits hit. ~15 MB Go binary, <50 MB RAM, zero telemetry.",
       "url": "https://onwatch.onllm.dev",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux, Windows",
@@ -73,7 +73,7 @@
         "Automatic quota reset cycle detection",
         "Consumption rate projections and time-to-exhaustion",
         "Per-session usage tracking",
-        "Multi-provider support: Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity",
+        "Multi-provider support: Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, and Antigravity",
         "MiniMax Coding Plan tracking (platform.minimax.io)",
         "Antigravity multi-model quota tracking (Claude, Gemini, GPT OSS)",
         "Unified All Providers view showing all providers side-by-side",
@@ -92,7 +92,7 @@
         "Configurable delivery channels: email, push, or both",
         "Built-in self-update via CLI or dashboard"
       ],
-      "keywords": "AI API intelligence, multi-provider API tracking, Synthetic API, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity, AI coding tools, usage monitoring, open source, Cline, Claude Code, cross-provider insights, API budget tracker, self-hosted"
+      "keywords": "AI API intelligence, multi-provider API tracking, Synthetic API, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Antigravity, AI coding tools, usage monitoring, open source, Cline, Claude Code, cross-provider insights, API budget tracker, self-hosted"
     }
     </script>
 
@@ -115,7 +115,7 @@
           "name": "What is the best open-source tool to track AI coding API usage?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "onWatch is the only open-source tool designed to track historical quota usage across Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity in a single dashboard. It provides features that provider dashboards lack: historical usage trends, automatic reset cycle detection, consumption rate projections, per-session tracking, and a multi-provider unified view. It's a ~15 MB Go binary that uses <50 MB RAM with zero telemetry and local SQLite storage."
+            "text": "onWatch is the only open-source tool designed to track historical quota usage across Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, and Antigravity in a single dashboard. It provides features that provider dashboards lack: historical usage trends, automatic reset cycle detection, consumption rate projections, per-session tracking, and a multi-provider unified view. It's a ~15 MB Go binary that uses <50 MB RAM with zero telemetry and local SQLite storage."
           }
         },
         {
@@ -123,7 +123,7 @@
           "name": "How does Anthropic API tracking work?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Anthropic's Pro/Max plan exposes utilization percentages and reset times for five_hour and seven_day windows, plus per-model breakdowns (seven_day_sonnet, seven_day_opus). onWatch polls this data, stores historical snapshots, and adds what Anthropic doesn't provide: usage trends, reset cycle detection, rate projections, and cross-provider context alongside Synthetic, Z.ai, Codex, GitHub Copilot, MiniMax, and Antigravity. Set ANTHROPIC_TOKEN in .env or let onWatch auto-detect it from your Claude Code credentials."
+            "text": "Anthropic's Pro/Max plan exposes utilization percentages and reset times for five_hour and seven_day windows, plus per-model breakdowns (seven_day_sonnet, seven_day_opus). onWatch polls this data, stores historical snapshots, and adds what Anthropic doesn't provide: usage trends, reset cycle detection, rate projections, and cross-provider context alongside Synthetic, Z.ai, Codex, GitHub Copilot, MiniMax, Gemini CLI, and Antigravity. Set ANTHROPIC_TOKEN in .env or let onWatch auto-detect it from your Claude Code credentials."
           }
         },
         {
@@ -131,7 +131,7 @@
           "name": "What is the Both view and why does it matter?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The All Providers view is onWatch's cross-provider unified dashboard that shows Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity quotas side-by-side in a single view. It lets you compare headroom across providers at a glance - for example, if your Synthetic search quota is at 95% but Z.ai tokens are at 34%, you know to route work to Z.ai. No other tool provides this cross-provider intelligence."
+            "text": "The All Providers view is onWatch's cross-provider unified dashboard that shows Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, and Antigravity quotas side-by-side in a single view. It lets you compare headroom across providers at a glance - for example, if your Synthetic search quota is at 95% but Z.ai tokens are at 34%, you know to route work to Z.ai. No other tool provides this cross-provider intelligence."
           }
         },
         {
@@ -139,7 +139,7 @@
           "name": "Does onWatch send any data to external servers?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. onWatch has zero telemetry. All usage data is stored locally in a SQLite file on your machine. The only outbound network calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity quota APIs you configure. No analytics, no tracking pixels, no cloud dependencies. The tool is fully open-source (GPL-3.0) and auditable on GitHub."
+            "text": "No. onWatch has zero telemetry. All usage data is stored locally in a SQLite file on your machine. The only outbound network calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, and Antigravity quota APIs you configure. No analytics, no tracking pixels, no cloud dependencies. The tool is fully open-source (GPL-3.0) and auditable on GitHub."
           }
         },
         {
@@ -147,7 +147,7 @@
           "name": "How much memory does onWatch use?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "onWatch uses <50 MB RAM under all conditions (typically ~34 MB idle, ~43 MB under heavy load), measured with all seven providers (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity) polling in parallel. It's designed to run as a background daemon with minimal resource usage: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), and polling buffer (1 MB). This is lighter than a single browser tab."
+            "text": "onWatch uses <50 MB RAM under all conditions (typically ~34 MB idle, ~43 MB under heavy load), measured with all eight providers (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Antigravity) polling in parallel. It's designed to run as a background daemon with minimal resource usage: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), and polling buffer (1 MB). This is lighter than a single browser tab."
           }
         },
         {
@@ -1156,7 +1156,7 @@ a:hover { text-decoration: underline; }
 
 .provider-grid {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 20px;
   margin-bottom: 24px;
 }
@@ -1178,14 +1178,14 @@ a:hover { text-decoration: underline; }
 
 .provider-card--synthetic { border-top-color: #6366F1; }
 .provider-card--zai { border-top-color: #0EA5E9; }
-.provider-card--anthropic { border-top-color: #D97757; grid-column: span 4; order: 1; }
-.provider-card--codex { border-top-color: #4F46E5; grid-column: span 4; order: 2; }
-.provider-card--minimax { border-top-color: #F59E0B; }
-.provider-card--antigravity { grid-column: span 4; order: 3; }
-.provider-card--synthetic { order: 4; }
-.provider-card--zai { order: 5; }
-.provider-card--copilot { order: 6; }
-.provider-card--minimax { order: 7; }
+.provider-card--anthropic { border-top-color: #D97757; order: 1; }
+.provider-card--codex { border-top-color: #4F46E5; order: 2; }
+.provider-card--antigravity { order: 3; }
+.provider-card--gemini { border-top-color: #4285F4; order: 4; }
+.provider-card--synthetic { order: 5; }
+.provider-card--zai { order: 6; }
+.provider-card--copilot { order: 7; }
+.provider-card--minimax { border-top-color: #F59E0B; order: 8; }
 
 .provider-card-head {
   display: flex;
@@ -1683,13 +1683,11 @@ a:hover { text-decoration: underline; }
 }
 
 @media (max-width: 768px) {
-  .provider-card { grid-column: auto; }
   .provider-grid { grid-template-columns: 1fr; }
   .cross-provider-banner { flex-direction: column; text-align: center; gap: 12px; }
   .intelligence-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 1024px) and (min-width: 769px) {
-  .provider-card { grid-column: auto; }
   .provider-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
@@ -2811,7 +2809,7 @@ a:hover { text-decoration: underline; }
                 </a>
             </div>
             <h1>Know your AI quota.<br><span class="accent">Before it runs out.</span></h1>
-            <p class="hero-desc">Track usage and reset windows across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, and Antigravity. Route work before limits hit. Detect anomalies. Monitor burn rates. All data stays on your machine.</p>
+            <p class="hero-desc">Track usage and reset windows across Anthropic, Codex, Synthetic, Z.ai, Copilot, MiniMax, Gemini CLI, and Antigravity. Route work before limits hit. Detect anomalies. Monitor burn rates. All data stays on your machine.</p>
             <div class="hero-actions">
                 <a href="#install" class="btn-primary">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
@@ -3270,7 +3268,7 @@ a:hover { text-decoration: underline; }
     <div class="container">
         <div class="fade-in" style="text-align:center;margin-bottom:40px;">
             <div class="section-label">Providers</div>
-            <h2 class="section-title">Seven providers. One dashboard.</h2>
+            <h2 class="section-title">Eight providers. One dashboard.</h2>
             <p class="section-desc" style="margin-left:auto;margin-right:auto;">Different quotas, different reset cycles, different gotchas. onWatch normalizes all of it.</p>
         </div>
         <div class="provider-grid fade-in">
@@ -3343,6 +3341,16 @@ a:hover { text-decoration: underline; }
                     <div class="provider-card-name">Antigravity</div>
                 </div>
                 <div class="provider-card-note">Claude + GPT + Gemini Pro + Gemini Flash - zero-config auto-detection</div>
+            </div>
+            <!-- Gemini CLI -->
+            <div class="provider-card provider-card--gemini">
+                <div class="provider-card-head">
+                    <div class="provider-card-icon" style="background:#4285F4;">
+                        <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 0C5.372 0 0 5.373 0 12s5.372 12 12 12c6.627 0 12-5.373 12-12S18.627 0 12 0zm-.182 5.357h.364c.96 0 1.858.25 2.638.688l-2.82 4.883-2.82-4.883a5.453 5.453 0 012.638-.688zm-5.46 3.286A5.44 5.44 0 018.996 6.73l-2.82 4.884H.54a5.432 5.432 0 015.818-2.97zM.54 12.386h5.636l2.82 4.884A5.455 5.455 0 01.54 12.386zm11.642 6.257h-.364a5.453 5.453 0 01-2.638-.688l2.82-4.883 2.82 4.883a5.453 5.453 0 01-2.638.688zm5.46-3.286a5.44 5.44 0 01-2.638 1.913l2.82-4.884h5.636a5.432 5.432 0 01-5.818 2.97zm-2.638-3.743l2.82-4.884a5.455 5.455 0 018.456 4.884h-5.636l-2.82-4.884z"/></svg>
+                    </div>
+                    <div class="provider-card-name">Gemini CLI <span style="font-size:0.65em;background:#4285F4;color:#fff;padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;">Beta</span></div>
+                </div>
+                <div class="provider-card-note">Per-model tracking (2.5/3.x Pro, Flash, Flash Lite) + 24-hour reset cycles</div>
             </div>
         </div>
         <!-- Cross-provider banner -->
@@ -3469,7 +3477,7 @@ a:hover { text-decoration: underline; }
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
                 </div>
                 <div class="arch-node-title">Your Providers</div>
-                <div class="arch-node-desc">Synthetic + Z.ai + Anthropic + Codex + Copilot</div>
+                <div class="arch-node-desc">Synthetic + Z.ai + Anthropic + Codex + Copilot + Gemini CLI</div>
             </div>
             <div class="arch-arrow">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -3685,7 +3693,7 @@ a:hover { text-decoration: underline; }
             <details class="faq-item">
                 <summary class="faq-question">Does onWatch work with Cline, Roo Code, Kilo Code, or Claude Code?</summary>
                 <div class="faq-answer">
-                    <p>Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, or Antigravity), not the coding tool. MiniMax support is live for MiniMax Coding Plan accounts on platform.minimax.io. Any tool that uses these API keys-including Cline, Roo Code, Kilo Code, Claude Code, Cursor, GitHub Copilot, MiniMax, Antigravity, and others-will have its usage tracked automatically.</p>
+                    <p>Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, or Antigravity), not the coding tool. MiniMax support is live for MiniMax Coding Plan accounts on platform.minimax.io. Any tool that uses these API keys-including Cline, Roo Code, Kilo Code, Claude Code, Cursor, GitHub Copilot, MiniMax, Gemini CLI, Antigravity, and others-will have its usage tracked automatically.</p>
                 </div>
             </details>
             <details class="faq-item">
@@ -3703,13 +3711,13 @@ a:hover { text-decoration: underline; }
             <details class="faq-item">
                 <summary class="faq-question">Does onWatch send any data to external servers?</summary>
                 <div class="faq-answer">
-                    <p>No. onWatch has zero telemetry. All usage data is stored locally in a SQLite file on your machine. The only outbound network calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, and Antigravity quota APIs you configure. No analytics, no tracking, no cloud. The source code is fully auditable on <a href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noopener noreferrer">GitHub</a> (GPL-3.0).</p>
+                    <p>No. onWatch has zero telemetry. All usage data is stored locally in a SQLite file on your machine. The only outbound network calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, and Antigravity quota APIs you configure. No analytics, no tracking, no cloud. The source code is fully auditable on <a href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noopener noreferrer">GitHub</a> (GPL-3.0).</p>
                 </div>
             </details>
             <details class="faq-item">
                 <summary class="faq-question">How much memory does onWatch use?</summary>
                 <div class="faq-answer">
-                    <p>onWatch uses <60 MB RAM under all conditions (typically ~34 MB idle, ~43 MB under heavy load), measured with all seven providers (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity) polling in parallel. Breakdown: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), polling buffer (1 MB). This is lighter than a single browser tab and designed to run as a background daemon indefinitely.</p>
+                    <p>onWatch uses <60 MB RAM under all conditions (typically ~34 MB idle, ~43 MB under heavy load), measured with all eight providers (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Antigravity) polling in parallel. Breakdown: Go runtime (5 MB), SQLite in-process (2 MB), HTTP server (1 MB), polling buffer (1 MB). This is lighter than a single browser tab and designed to run as a background daemon indefinitely.</p>
                 </div>
             </details>
         </div>
@@ -3829,14 +3837,14 @@ a:hover { text-decoration: underline; }
                 </div>
             </div>
             <div class="gallery-item fade-in visible hidden" data-theme="light" data-provider="both" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
-                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/all-light.png" alt="onWatch All Providers view in light mode - Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity side-by-side" loading="lazy">
+                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/all-light.png" alt="onWatch All Providers view in light mode - Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Antigravity side-by-side" loading="lazy">
                 <div class="gallery-caption">
                     <span class="gallery-caption-text">All Providers - Light Mode</span>
                     <span class="gallery-caption-badge">All</span>
                 </div>
             </div>
             <div class="gallery-item fade-in visible hidden" data-theme="dark" data-provider="both" onclick="openLightbox(this)" role="button" tabindex="0" aria-label="View full screenshot">
-                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/all-dark.png" alt="onWatch All Providers view in dark mode - Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Antigravity side-by-side" loading="lazy">
+                <img class="gallery-img" src="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/all-dark.png" alt="onWatch All Providers view in dark mode - Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Antigravity side-by-side" loading="lazy">
                 <div class="gallery-caption">
                     <span class="gallery-caption-text">All Providers - Dark Mode</span>
                     <span class="gallery-caption-badge">All</span>

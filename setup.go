@@ -34,6 +34,7 @@ type setupConfig struct {
 	anthropicToken     string
 	codexToken         string
 	antigravityEnabled bool
+	geminiEnabled      bool
 	adminUser          string
 	adminPass          string
 	port               int
@@ -101,6 +102,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		"Anthropic (Claude Code) only",
 		"Codex only",
 		"Antigravity (Windsurf) only",
+		"Gemini CLI only",
 		"Multiple (choose one at a time)",
 		"All available",
 	}
@@ -122,19 +124,24 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	case 5: // Antigravity only
 		cfg.antigravityEnabled = true
 		fmt.Printf("  %s ok %s  Antigravity enabled (auto-detects running Windsurf process)\n", colorGreen, colorReset)
-	case 6: // Multiple
-		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.antigravityEnabled = collectMultipleProviders(reader, logger)
-	case 7: // All
+	case 6: // Gemini only
+		cfg.geminiEnabled = true
+		fmt.Printf("  %s ok %s  Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n", colorGreen, colorReset)
+	case 7: // Multiple
+		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.antigravityEnabled, cfg.geminiEnabled = collectMultipleProviders(reader, logger)
+	case 8: // All
 		cfg.syntheticKey = collectSyntheticKey(reader)
 		cfg.zaiKey, cfg.zaiBaseURL = collectZaiConfig(reader)
 		cfg.anthropicToken = collectAnthropicToken(reader, logger)
 		cfg.codexToken = collectCodexToken(reader, logger)
 		cfg.antigravityEnabled = true
 		fmt.Printf("\n  %s ok %s  Antigravity enabled (auto-detects running Windsurf process)\n", colorGreen, colorReset)
+		cfg.geminiEnabled = true
+		fmt.Printf("  %s ok %s  Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n", colorGreen, colorReset)
 	}
 
 	// Validate at least one provider
-	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.antigravityEnabled {
+	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.antigravityEnabled && !cfg.geminiEnabled {
 		return nil, fmt.Errorf("at least one provider is required")
 	}
 
@@ -180,7 +187,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	return cfg, nil
 }
 
-func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, antiEnabled bool) {
+func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, antiEnabled, geminiEnabled bool) {
 	if promptYesNo(reader, "Add Synthetic provider?", false) {
 		synKey = collectSyntheticKey(reader)
 	}
@@ -196,6 +203,10 @@ func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey
 	if promptYesNo(reader, "Add Antigravity (Windsurf) provider?", false) {
 		antiEnabled = true
 		fmt.Printf("  %sAntigravity auto-detects the running Windsurf process%s\n", colorDim, colorReset)
+	}
+	if promptYesNo(reader, "Add Gemini CLI provider?", false) {
+		geminiEnabled = true
+		fmt.Printf("  %sGemini auto-detects from ~/.gemini/oauth_creds.json%s\n", colorDim, colorReset)
 	}
 	return
 }
@@ -320,6 +331,11 @@ func writeEnvFile(path string, cfg *setupConfig) error {
 		b.WriteString("ANTIGRAVITY_ENABLED=true\n\n")
 	}
 
+	if cfg.geminiEnabled {
+		b.WriteString("# Gemini CLI - auto-detected from ~/.gemini/oauth_creds.json\n")
+		b.WriteString("GEMINI_ENABLED=true\n\n")
+	}
+
 	b.WriteString("# Dashboard credentials\n")
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_USER=%s\n", cfg.adminUser))
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_PASS=%s\n\n", cfg.adminPass))
@@ -355,6 +371,9 @@ func printSummary(cfg *setupConfig) {
 	if cfg.antigravityEnabled {
 		providers = append(providers, "Antigravity")
 	}
+	if cfg.geminiEnabled {
+		providers = append(providers, "Gemini")
+	}
 	providerLabel := strings.Join(providers, ", ")
 
 	maskedPass := strings.Repeat("*", len(cfg.adminPass))
@@ -387,6 +406,7 @@ type existingEnv struct {
 	anthropicToken     string
 	codexToken         string
 	antigravityEnabled bool
+	geminiEnabled      bool
 }
 
 func loadExistingEnv(path string) *existingEnv {
@@ -416,17 +436,26 @@ func loadExistingEnv(path string) *existingEnv {
 			env.codexToken = val
 		case "ANTIGRAVITY_ENABLED":
 			env.antigravityEnabled = val == "true"
+		case "GEMINI_ENABLED":
+			env.geminiEnabled = val == "true"
+		}
+	}
+	if !env.geminiEnabled {
+		if home, err := os.UserHomeDir(); err == nil {
+			if _, err := os.Stat(filepath.Join(home, ".gemini", "oauth_creds.json")); err == nil {
+				env.geminiEnabled = true
+			}
 		}
 	}
 	return env
 }
 
 func allProvidersConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" && env.zaiKey != "" && env.anthropicToken != "" && env.codexToken != "" && env.antigravityEnabled
+	return env.syntheticKey != "" && env.zaiKey != "" && env.anthropicToken != "" && env.codexToken != "" && env.antigravityEnabled && env.geminiEnabled
 }
 
 func anyProviderConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.antigravityEnabled
+	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.antigravityEnabled || env.geminiEnabled
 }
 
 func addMissingProviders(reader *bufio.Reader, envFile string, existing *existingEnv) error {
@@ -447,6 +476,9 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 	}
 	if existing.antigravityEnabled {
 		configured = append(configured, "Antigravity")
+	}
+	if existing.geminiEnabled {
+		configured = append(configured, "Gemini")
 	}
 	fmt.Printf("  %sinfo%s  Existing .env found -- configured: %s\n\n", colorBlue, colorReset, strings.Join(configured, ", "))
 
@@ -505,6 +537,21 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 		if promptYesNo(reader, "Add Antigravity (Windsurf) provider?", false) {
 			fmt.Fprintf(f, "\n# Antigravity (Windsurf) - auto-detected from local process\nANTIGRAVITY_ENABLED=true\n")
 			fmt.Printf("  %s ok %s  Added Antigravity provider to .env\n", colorGreen, colorReset)
+		}
+	}
+
+	if !existing.geminiEnabled {
+		// Try to detect Gemini CLI credentials
+		if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".gemini", "oauth_creds.json")); err == nil {
+			fmt.Printf("  %s ok %s  Gemini CLI credentials detected on this system\n", colorGreen, colorReset)
+			if promptYesNo(reader, "Enable Gemini tracking?", true) {
+				fmt.Fprintf(f, "\n# Gemini CLI - auto-detected from ~/.gemini/oauth_creds.json\nGEMINI_ENABLED=true\n")
+				fmt.Printf("  %s ok %s  Added Gemini provider to .env (auto-detected)\n", colorGreen, colorReset)
+			}
+		} else if promptYesNo(reader, "Add Gemini CLI provider?", false) {
+			fmt.Fprintf(f, "\n# Gemini CLI - auto-detected from ~/.gemini/oauth_creds.json\nGEMINI_ENABLED=true\n")
+			fmt.Printf("  %s ok %s  Added Gemini provider to .env\n", colorGreen, colorReset)
+			fmt.Printf("  %sNote: Install Gemini CLI and run 'gemini' to authenticate%s\n", colorDim, colorReset)
 		}
 	}
 

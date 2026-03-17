@@ -273,6 +273,7 @@ func TestLoadExistingEnvAndProviderChecks(t *testing.T) {
 			"ANTHROPIC_TOKEN=anth_tok",
 			"CODEX_TOKEN=codex_tok",
 			"ANTIGRAVITY_ENABLED=true",
+			"GEMINI_ENABLED=true",
 			"MALFORMED_LINE",
 		}, "\n")
 		if err := os.WriteFile(envPath, []byte(content), 0o600); err != nil {

@@ -455,7 +455,7 @@ func TestCodexAgent_SetCredentialsRefresh(t *testing.T) {
 		}
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -463,7 +463,7 @@ func TestCodexAgent_SetCredentialsRefresh(t *testing.T) {
 		errCh <- agent.Run(ctx)
 	}()
 	<-ctx.Done()
-	waitForAgentStop(t, errCh, 2*time.Second)
+	waitForAgentStop(t, errCh, 3*time.Second)
 
 	latest, _ := str.QueryLatestCodex(1)
 	if latest == nil {

@@ -199,6 +199,11 @@ function Test-AntigravityRunning {
     }
 }
 
+function Test-GeminiCredentials {
+    $credPath = Join-Path $env:USERPROFILE ".gemini\oauth_creds.json"
+    return Test-Path $credPath
+}
+
 # ─── Provider Configuration Collection ─────────────────────────────────
 
 function Get-ZaiConfig {
@@ -354,7 +359,7 @@ function Install-Binary {
     # Sanity check: binary should be at least 1MB
     if ($fileInfo.Length -lt 1000000) {
         Remove-Item $tempDest -Force
-        Write-Fail "Downloaded file too small ($($fileInfo.Length) bytes) - expected ~13MB binary"
+        Write-Fail "Downloaded file too small ($($fileInfo.Length) bytes) - expected ~15MB binary"
     }
 
     # Move into place
@@ -400,14 +405,16 @@ function Start-InteractiveSetup {
         $hasAnth = $envContent -match "ANTHROPIC_TOKEN=\S+"
         $hasCodex = $envContent -match "CODEX_TOKEN=\S+"
         $hasAnti = $envContent -match "ANTIGRAVITY_ENABLED=true"
+        $hasGemini = ($envContent -match "GEMINI_ENABLED=true") -or (Test-GeminiCredentials)
 
-        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti) {
+        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini) {
             $configured = @()
             if ($hasSyn) { $configured += "Synthetic" }
             if ($hasZai) { $configured += "Z.ai" }
             if ($hasAnth) { $configured += "Anthropic" }
             if ($hasCodex) { $configured += "Codex" }
             if ($hasAnti) { $configured += "Antigravity" }
+            if ($hasGemini) { $configured += "Gemini" }
 
             Write-Info "Existing .env found - configured: $($configured -join ', ')"
 
@@ -439,6 +446,7 @@ function Start-InteractiveSetup {
         "Anthropic (Claude Code) only",
         "Codex only",
         "Antigravity (Windsurf) only",
+        "Gemini CLI only",
         "Multiple (choose one at a time)",
         "All available"
     )
@@ -449,8 +457,9 @@ function Start-InteractiveSetup {
     $anthropicToken = ""
     $codexToken = ""
     $antigravityEnabled = ""
+    $geminiEnabled = ""
 
-    if ($providerChoice -eq 6) {
+    if ($providerChoice -eq 8) {
         # Multiple - ask for each provider individually
         $addIt = Read-PromptWithDefault -Prompt "Add Synthetic provider? (y/N)" -Default "N"
         if ($addIt -match "^[Yy]") {
@@ -482,36 +491,48 @@ function Start-InteractiveSetup {
             Write-Host "  ${DIM}Antigravity auto-detects the running Windsurf process${NC}"
         }
 
+        $addIt = Read-PromptWithDefault -Prompt "Add Gemini CLI provider? (y/N)" -Default "N"
+        if ($addIt -match "^[Yy]") {
+            $geminiEnabled = "true"
+            Write-Host "  ${DIM}Gemini auto-detects from ~/.gemini/oauth_creds.json${NC}"
+        }
+
         # Validate at least one provider selected
-        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled) {
+        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled) {
             Write-Fail "At least one provider is required"
         }
     } else {
         # Single provider or All
-        if ($providerChoice -eq 1 -or $providerChoice -eq 7) {
+        if ($providerChoice -eq 1 -or $providerChoice -eq 8) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://synthetic.new/settings/api${NC}"
             $syntheticKey = Read-SecretPrompt -Prompt "Synthetic API key (syn_...)" -Validation { param($val) Test-SyntheticKey $val }
         }
 
-        if ($providerChoice -eq 2 -or $providerChoice -eq 7) {
+        if ($providerChoice -eq 2 -or $providerChoice -eq 8) {
             $zaiConfig = Get-ZaiConfig
             $zaiKey = $zaiConfig.Key
             $zaiBaseUrl = $zaiConfig.BaseUrl
         }
 
-        if ($providerChoice -eq 3 -or $providerChoice -eq 7) {
+        if ($providerChoice -eq 3 -or $providerChoice -eq 8) {
             $anthropicToken = Get-AnthropicConfig
         }
 
-        if ($providerChoice -eq 4 -or $providerChoice -eq 7) {
+        if ($providerChoice -eq 4 -or $providerChoice -eq 8) {
             $codexToken = Get-CodexConfig
         }
 
-        if ($providerChoice -eq 5 -or $providerChoice -eq 7) {
+        if ($providerChoice -eq 5 -or $providerChoice -eq 8) {
             $antigravityEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Antigravity enabled (auto-detects running Windsurf process)"
+        }
+
+        if ($providerChoice -eq 6 -or $providerChoice -eq 8) {
+            $geminiEnabled = "true"
+            Write-Host ""
+            Write-Host "  ${GREEN}OK${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)"
         }
     }
 
@@ -605,6 +626,14 @@ ANTIGRAVITY_ENABLED=true
 "@
     }
 
+    if ($geminiEnabled) {
+        $envContent += @"
+# Gemini CLI - auto-detected from ~/.gemini/oauth_creds.json
+GEMINI_ENABLED=true
+
+"@
+    }
+
     $envContent += @"
 # Dashboard credentials
 ONWATCH_ADMIN_USER=$($script:SetupUsername)
@@ -629,16 +658,18 @@ ONWATCH_PORT=$($script:SetupPort)
         3 { "Anthropic" }
         4 { "Codex" }
         5 { "Antigravity" }
-        6 {
+        6 { "Gemini" }
+        7 {
             $parts = @()
             if ($syntheticKey) { $parts += "Synthetic" }
             if ($zaiKey) { $parts += "Z.ai" }
             if ($anthropicToken) { $parts += "Anthropic" }
             if ($codexToken) { $parts += "Codex" }
             if ($antigravityEnabled) { $parts += "Antigravity" }
+            if ($geminiEnabled) { $parts += "Gemini" }
             $parts -join ", "
         }
-        7 { "All providers" }
+        8 { "All providers" }
     }
 
     $maskedPass = "*" * $script:SetupPassword.Length

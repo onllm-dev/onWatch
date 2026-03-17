@@ -356,6 +356,11 @@
             mask-image: url("/static/icons/antigravity.svg");
         }
 
+        .provider-icon-gemini {
+            -webkit-mask-image: url("/static/icons/gemini.svg");
+            mask-image: url("/static/icons/gemini.svg");
+        }
+
         .provider-icon-zai {
             -webkit-mask-image: url("/static/icons/zai.svg");
             mask-image: url("/static/icons/zai.svg");
@@ -510,7 +515,7 @@
 
         .quota-grid {
             display: grid;
-            grid-template-columns: repeat(var(--quota-count, 1), minmax(0, 1fr));
+            grid-template-columns: repeat(min(var(--quota-count, 1), 3), minmax(0, 1fr));
             gap: 1px;
             min-width: 0;
         }
@@ -569,7 +574,7 @@
         }
 
         .quota-label {
-            max-width: 60px;
+            max-width: 80px;
             color: var(--text-primary);
             font-size: var(--font-sm);
             font-weight: 500;
@@ -2114,7 +2119,7 @@
             }
 
             function providerQuotas(provider) {
-                return Array.isArray(provider && provider.quotas) ? provider.quotas.slice(0, 3) : [];
+                return Array.isArray(provider && provider.quotas) ? provider.quotas : [];
             }
 
             function cardSpan(provider) {
@@ -2514,6 +2519,8 @@
                     return "provider-icon-copilot";
                 case "antigravity":
                     return "provider-icon-antigravity";
+                case "gemini":
+                    return "provider-icon-gemini";
                 case "zai":
                     return "provider-icon-zai";
                 case "synthetic":
@@ -2635,6 +2642,24 @@
                 if (source.includes("claude + gpt") || source.includes("claude_+_gpt")) {
                     return "Cl+GPT";
                 }
+                if (source.includes("3.1 flash lite") || source.includes("3.1_flash_lite")) {
+                    return "3.1 FLite";
+                }
+                if (source.includes("2.5 flash lite") || source.includes("2.5_flash_lite") || source.includes("2.5-flash-lite")) {
+                    return "2.5 FLite";
+                }
+                if (source.includes("3 flash") || source.includes("3-flash")) {
+                    return "3 Flash";
+                }
+                if (source.includes("2.5 flash") || source.includes("2.5-flash")) {
+                    return "2.5 Flash";
+                }
+                if (source.includes("3 pro") || source.includes("3-pro")) {
+                    return "3 Pro";
+                }
+                if (source.includes("2.5 pro") || source.includes("2.5-pro")) {
+                    return "2.5 Pro";
+                }
                 if (source.includes("gemini flash")) {
                     return "Gem Fl";
                 }
@@ -2682,6 +2707,9 @@
                 }
                 if (text.startsWith("MiniMax")) {
                     return "Mini";
+                }
+                if (text.startsWith("Gemini")) {
+                    return "Gem";
                 }
                 if (text.startsWith("Z.ai")) {
                     return "Zai";

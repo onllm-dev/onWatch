@@ -509,6 +509,13 @@ func run() error {
 		_ = stopMenubarProcess(testMode)
 	}
 
+	// Early Gemini auto-detection for banner display
+	if os.Getenv("GEMINI_ENABLED") != "false" && !cfg.GeminiEnabled {
+		if creds := api.DetectGeminiCredentials(nil); creds != nil {
+			cfg.GeminiEnabled = true
+		}
+	}
+
 	// Daemonize: if not in debug mode, not already the daemon child, and NOT in Docker, fork
 	// Docker containers should always run in foreground mode (logs to stdout)
 	if !cfg.DebugMode && !isDaemonChild && !cfg.IsDockerEnvironment() {
@@ -710,6 +717,19 @@ func run() error {
 		logger.Info("MiniMax API client configured")
 	}
 
+	// Gemini provider - auto-detect from ~/.gemini/oauth_creds.json
+	var geminiClient *api.GeminiClient
+	var geminiCreds *api.GeminiCredentials
+	if os.Getenv("GEMINI_ENABLED") != "false" {
+		geminiCreds = api.DetectGeminiCredentials(logger)
+		if geminiCreds != nil {
+			cfg.GeminiEnabled = true
+			cfg.GeminiAutoToken = true
+			geminiClient = api.NewGeminiClient(geminiCreds.AccessToken, logger)
+			logger.Info("Gemini API client configured (auto-detected)")
+		}
+	}
+
 	// Create components
 	tr := tracker.New(db, logger)
 
@@ -791,6 +811,11 @@ func run() error {
 		minimaxTr = tracker.NewMiniMaxTracker(db, logger)
 	}
 
+	var geminiTr *tracker.GeminiTracker
+	if cfg.HasProvider("gemini") {
+		geminiTr = tracker.NewGeminiTracker(db, logger)
+	}
+
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
 		antigravitySm := agent.NewSessionManager(db, "antigravity", idleTimeout, logger)
@@ -801,6 +826,16 @@ func run() error {
 	if minimaxClient != nil {
 		minimaxSm := agent.NewSessionManager(db, "minimax", idleTimeout, logger)
 		minimaxAg = agent.NewMiniMaxAgent(minimaxClient, db, minimaxTr, cfg.PollInterval, logger, minimaxSm)
+	}
+
+	var geminiAg *agent.GeminiAgent
+	if geminiClient != nil {
+		geminiSm := agent.NewSessionManager(db, "gemini", idleTimeout, logger)
+		geminiAg = agent.NewGeminiAgent(geminiClient, db, geminiTr, cfg.PollInterval, logger, geminiSm)
+		geminiAg.SetCredentialsRefresh(func() *api.GeminiCredentials {
+			return api.DetectGeminiCredentials(logger)
+		})
+		geminiAg.SetClientCredentials(api.DetectGeminiClientCredentials())
 	}
 
 	// Create notification engine
@@ -832,6 +867,9 @@ func run() error {
 	}
 	if minimaxAg != nil {
 		minimaxAg.SetNotifier(notifier)
+	}
+	if geminiAg != nil {
+		geminiAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -902,6 +940,9 @@ func run() error {
 	if minimaxAg != nil {
 		minimaxAg.SetPollingCheck(func() bool { return isPollingEnabled("minimax") })
 	}
+	if geminiAg != nil {
+		geminiAg.SetPollingCheck(func() bool { return isPollingEnabled("gemini") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -937,6 +978,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "minimax", QuotaKey: modelName, ResetOccurred: true})
 		})
 	}
+	if geminiTr != nil {
+		geminiTr.SetOnReset(func(modelID string) {
+			notifier.Check(notify.QuotaStatus{Provider: "gemini", QuotaKey: modelID, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -955,6 +1001,9 @@ func run() error {
 	}
 	if minimaxTr != nil {
 		handler.SetMiniMaxTracker(minimaxTr)
+	}
+	if geminiTr != nil {
+		handler.SetGeminiTracker(geminiTr)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -978,6 +1027,9 @@ func run() error {
 	if minimaxAg != nil {
 		agentMgr.RegisterFactory("minimax", func() (agent.AgentRunner, error) { return minimaxAg, nil })
 	}
+	if geminiAg != nil {
+		agentMgr.RegisterFactory("gemini", func() (agent.AgentRunner, error) { return geminiAg, nil })
+	}
 	handler.SetAgentManager(agentMgr)
 	updater := update.NewUpdater(version, logger)
 	handler.SetUpdater(updater)
@@ -997,7 +1049,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "gemini"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
@@ -1482,6 +1534,9 @@ func printBanner(cfg *config.Config, version string) {
 	if cfg.HasProvider("minimax") {
 		fmt.Println("║  API:       minimax.io/coding_plan   ║")
 	}
+	if cfg.HasProvider("gemini") {
+		fmt.Println("║  API:       cloudcode-pa.google.com  ║")
+	}
 
 	fmt.Printf("║  Polling:   every %s              ║\n", cfg.PollInterval)
 	fmt.Printf("║  Dashboard: http://localhost:%d    ║\n", cfg.Port)
@@ -1522,6 +1577,9 @@ func printBanner(cfg *config.Config, version string) {
 	}
 	if cfg.HasProvider("minimax") {
 		fmt.Printf("MiniMax API Key:   %s\n", redactAPIKey(cfg.MiniMaxAPIKey))
+	}
+	if cfg.HasProvider("gemini") {
+		fmt.Printf("Gemini:            %s\n", "auto-detect")
 	}
 	fmt.Println()
 }

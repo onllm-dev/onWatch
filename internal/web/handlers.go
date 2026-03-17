@@ -80,6 +80,7 @@ type Handler struct {
 	codexTracker       *tracker.CodexTracker
 	antigravityTracker *tracker.AntigravityTracker
 	minimaxTracker     *tracker.MiniMaxTracker
+	geminiTracker      *tracker.GeminiTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -323,6 +324,11 @@ func (h *Handler) SetAntigravityTracker(t *tracker.AntigravityTracker) {
 // SetMiniMaxTracker sets the MiniMax tracker for usage summary enrichment.
 func (h *Handler) SetMiniMaxTracker(t *tracker.MiniMaxTracker) {
 	h.minimaxTracker = t
+}
+
+// SetGeminiTracker sets the Gemini tracker for usage summary enrichment.
+func (h *Handler) SetGeminiTracker(t *tracker.GeminiTracker) {
+	h.geminiTracker = t
 }
 
 // SetAgentManager sets provider agent lifecycle controller.
@@ -609,6 +615,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "codex", Name: "Codex", Description: "OpenAI Codex usage tracking", AutoDetectable: true},
 		{Key: "antigravity", Name: "Antigravity", Description: "Antigravity model usage tracking", AutoDetectable: true},
 		{Key: "minimax", Name: "MiniMax", Description: "MiniMax Coding Plan usage tracking"},
+		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 	}
 }
 
@@ -649,6 +656,8 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return h.detectAntigravityConnection() != nil
 	case "minimax":
 		return strings.TrimSpace(h.config.MiniMaxAPIKey) != ""
+	case "gemini":
+		return h.config.GeminiEnabled
 	default:
 		return false
 	}
@@ -728,6 +737,12 @@ func (h *Handler) tryAutoDetect(provider string) bool {
 			}
 			return true
 		}
+	case "gemini":
+		if token := strings.TrimSpace(api.DetectGeminiToken(h.logger)); token != "" {
+			h.config.GeminiEnabled = true
+			h.config.GeminiAutoToken = true
+			return true
+		}
 	}
 	return false
 }
@@ -766,6 +781,8 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
 	dst.MiniMaxAPIKey = src.MiniMaxAPIKey
+	dst.GeminiEnabled = src.GeminiEnabled
+	dst.GeminiAutoToken = src.GeminiAutoToken
 }
 
 func (h *Handler) providerStatuses() []ProviderStatus {
@@ -1068,6 +1085,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentAntigravity(w, r)
 	case "minimax":
 		h.currentMiniMax(w, r)
+	case "gemini":
+		h.currentGemini(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1114,6 +1133,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") {
 		response["minimax"] = h.buildMiniMaxCurrent()
+	}
+	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
+		response["gemini"] = h.buildGeminiCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -1449,6 +1471,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyAntigravity(w, r)
 	case "minimax":
 		h.historyMiniMax(w, r)
+	case "gemini":
+		h.historyGemini(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1672,6 +1696,26 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") && h.store != nil {
+		snapshots, err := h.store.QueryGeminiRange(start, now)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			gemData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{"capturedAt": snap.CapturedAt.Format(time.RFC3339)}
+				for _, q := range snap.Quotas {
+					entry[q.ModelID] = q.UsagePercent
+				}
+				gemData = append(gemData, entry)
+			}
+			response["gemini"] = gemData
+		}
+	}
+
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -1813,6 +1857,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesAntigravity(w, r)
 	case "minimax":
 		h.cyclesMiniMax(w, r)
+	case "gemini":
+		h.cyclesGemini(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1930,6 +1976,31 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 			}
 			response["minimax"] = minimaxCycles
 		}
+	}
+	if h.config.HasProvider("gemini") && h.store != nil {
+		modelIDs, _ := h.store.QueryAllGeminiModelIDs()
+		var geminiCycles []map[string]interface{}
+		for _, modelID := range modelIDs {
+			cycles, err := h.store.QueryGeminiCycleHistory(modelID, 50)
+			if err == nil {
+				for _, c := range cycles {
+					entry := map[string]interface{}{
+						"modelId":    c.ModelID,
+						"cycleStart": c.CycleStart.Format(time.RFC3339),
+						"peakUsage":  c.PeakUsage,
+						"totalDelta": c.TotalDelta,
+					}
+					if c.CycleEnd != nil {
+						entry["cycleEnd"] = c.CycleEnd.Format(time.RFC3339)
+					}
+					if c.ResetTime != nil {
+						entry["resetTime"] = c.ResetTime.Format(time.RFC3339)
+					}
+					geminiCycles = append(geminiCycles, entry)
+				}
+			}
+		}
+		response["gemini"] = geminiCycles
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -2100,6 +2171,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryAntigravity(w, r)
 	case "minimax":
 		h.summaryMiniMax(w, r)
+	case "gemini":
+		h.summaryGemini(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2144,6 +2217,25 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("minimax") {
 		response["minimax"] = h.buildMiniMaxSummaryMap()
+	}
+	if h.config.HasProvider("gemini") && h.geminiTracker != nil {
+		modelIDs, _ := h.store.QueryAllGeminiModelIDs()
+		var geminiSummaries []map[string]interface{}
+		for _, modelID := range modelIDs {
+			if summary, err := h.geminiTracker.UsageSummary(modelID); err == nil && summary != nil {
+				s := map[string]interface{}{
+					"modelId":           summary.ModelID,
+					"remainingFraction": summary.RemainingFraction,
+					"usagePercent":      summary.UsagePercent,
+					"currentRate":       summary.CurrentRate,
+				}
+				if summary.ResetTime != nil {
+					s["resetTime"] = summary.ResetTime.Format(time.RFC3339)
+				}
+				geminiSummaries = append(geminiSummaries, s)
+			}
+		}
+		response["gemini"] = geminiSummaries
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -2692,6 +2784,9 @@ func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("minimax") {
 		response["minimax"] = buildSessionList("minimax")
 	}
+	if h.config.HasProvider("gemini") {
+		response["gemini"] = buildSessionList("gemini")
+	}
 
 	respondJSON(w, http.StatusOK, response)
 }
@@ -2829,6 +2924,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsAntigravity(w, r, rangeDur)
 	case "minimax":
 		h.insightsMiniMax(w, r, rangeDur)
+	case "gemini":
+		h.insightsGemini(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2880,6 +2977,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") {
 		response["minimax"] = h.buildMiniMaxInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
+		response["gemini"] = insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -4966,6 +5066,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewAntigravity(w, r)
 	case "minimax":
 		h.cycleOverviewMiniMax(w, r)
+	case "gemini":
+		h.cycleOverviewGemini(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -5207,6 +5309,15 @@ func (h *Handler) cycleOverviewBoth(w http.ResponseWriter, r *http.Request) {
 				"provider":   "codex",
 				"quotaNames": quotaNames,
 				"cycles":     cycleOverviewRowsToJSON(rows),
+			}
+		}
+	}
+
+	if h.config.HasProvider("gemini") && h.store != nil {
+		modelIDs, _ := h.store.QueryAllGeminiModelIDs()
+		if len(modelIDs) > 0 {
+			if rows, err := h.store.QueryGeminiCycleOverview(modelIDs[0], limit); err == nil {
+				response["gemini"] = cycleOverviewRowsToJSON(rows)
 			}
 		}
 	}
@@ -7715,6 +7826,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryAntigravity(w, r)
 	case "minimax":
 		h.loggingHistoryMiniMax(w, r)
+	case "gemini":
+		h.loggingHistoryGemini(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}

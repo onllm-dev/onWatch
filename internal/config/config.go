@@ -47,6 +47,10 @@ type Config struct {
 	// MiniMax provider configuration
 	MiniMaxAPIKey string // MINIMAX_API_KEY
 
+	// Gemini provider configuration (auto-detected from ~/.gemini/oauth_creds.json)
+	GeminiEnabled   bool   // true if auto-detected or GEMINI_ENABLED=true
+	GeminiAutoToken bool   // true if token was auto-detected
+
 	// Shared configuration
 	PollInterval       time.Duration // ONWATCH_POLL_INTERVAL (seconds → Duration)
 	Port               int           // ONWATCH_PORT
@@ -158,6 +162,7 @@ var onwatchEnvKeys = []string{
 	"CODEX_TOKEN",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
+	"GEMINI_ENABLED",
 	"ONWATCH_",
 }
 
@@ -239,6 +244,14 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// MiniMax provider
 	cfg.MiniMaxAPIKey = strings.TrimSpace(os.Getenv("MINIMAX_API_KEY"))
+
+	// Gemini provider (auto-detected, or opt-out via GEMINI_ENABLED=false)
+	if os.Getenv("GEMINI_ENABLED") == "false" {
+		cfg.GeminiEnabled = false
+	} else if os.Getenv("GEMINI_ENABLED") == "true" {
+		cfg.GeminiEnabled = true
+	}
+	// Auto-detection is done later in main.go after credential check
 
 	// Poll Interval (seconds) - ONWATCH_* first, SYNTRACK_* fallback
 	if flags.interval > 0 {
@@ -393,6 +406,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.MiniMaxAPIKey != "" {
 		providers = append(providers, "minimax")
 	}
+	if c.GeminiEnabled {
+		providers = append(providers, "gemini")
+	}
 	return providers
 }
 
@@ -413,6 +429,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.AntigravityEnabled
 	case "minimax":
 		return c.MiniMaxAPIKey != ""
+	case "gemini":
+		return c.GeminiEnabled
 	}
 	return false
 }
@@ -439,6 +457,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.MiniMaxAPIKey != "" {
+		count++
+	}
+	if c.GeminiEnabled {
 		count++
 	}
 	return count > 1

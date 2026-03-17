@@ -59,6 +59,8 @@ function getCurrentProvider() {
   if (antigravityGrid) return 'antigravity';
   const minimaxGrid = document.getElementById('quota-grid-minimax');
   if (minimaxGrid) return 'minimax';
+  const geminiGrid = document.getElementById('quota-grid-gemini');
+  if (geminiGrid) return 'gemini';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -651,6 +653,33 @@ const minimaxChartColorFallback = [
   { border: '#BB8FCE', bg: 'rgba(187, 143, 206, 0.08)' },
 ];
 
+const geminiDisplayNames = {
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+  'gemini-3-pro-preview': 'Gemini 3 Pro',
+  'gemini-3-flash-preview': 'Gemini 3 Flash',
+  'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite',
+};
+
+const geminiChartColorMap = {
+  'gemini-2.5-pro': { border: '#4285F4', bg: 'rgba(66, 133, 244, 0.08)' },
+  'gemini-2.5-flash': { border: '#34A853', bg: 'rgba(52, 168, 83, 0.08)' },
+  'gemini-2.5-flash-lite': { border: '#FBBC04', bg: 'rgba(251, 188, 4, 0.08)' },
+  'gemini-3-pro-preview': { border: '#EA4335', bg: 'rgba(234, 67, 53, 0.08)' },
+  'gemini-3-flash-preview': { border: '#8AB4F8', bg: 'rgba(138, 180, 248, 0.08)' },
+  'gemini-3.1-flash-lite-preview': { border: '#81C995', bg: 'rgba(129, 201, 149, 0.08)' },
+};
+
+const geminiChartColorFallback = [
+  { border: '#4285F4', bg: 'rgba(66, 133, 244, 0.08)' },
+  { border: '#34A853', bg: 'rgba(52, 168, 83, 0.08)' },
+  { border: '#FBBC04', bg: 'rgba(251, 188, 4, 0.08)' },
+  { border: '#EA4335', bg: 'rgba(234, 67, 53, 0.08)' },
+  { border: '#8AB4F8', bg: 'rgba(138, 180, 248, 0.08)' },
+  { border: '#81C995', bg: 'rgba(129, 201, 149, 0.08)' },
+];
+
 // ── Renewal Categories for Cycle Overview ──
 
 const renewalCategories = {
@@ -685,6 +714,11 @@ const renewalCategories = {
   ],
   minimax: [
     { label: 'Coding Plan', groupBy: 'coding_plan' }
+  ],
+  gemini: [
+    { label: 'Gemini 2.5 Pro', groupBy: 'gemini-2.5-pro' },
+    { label: 'Gemini 2.5 Flash', groupBy: 'gemini-2.5-flash' },
+    { label: 'Gemini 3 Pro', groupBy: 'gemini-3-pro-preview' },
   ]
 };
 
@@ -715,6 +749,14 @@ const providerQuotaDisplayOverrides = {
   },
   minimax: {
     coding_plan: 'MiniMax Coding Plan'
+  },
+  gemini: {
+    'gemini-2.5-pro': 'Gemini 2.5 Pro',
+    'gemini-2.5-flash': 'Gemini 2.5 Flash',
+    'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+    'gemini-3-pro-preview': 'Gemini 3 Pro',
+    'gemini-3-flash-preview': 'Gemini 3 Flash',
+    'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite',
   }
 };
 
@@ -1634,6 +1676,138 @@ function updateAntigravityCard(quota) {
       countdownEl.style.display = 'none';
     }
   }
+}
+
+// ── Gemini Quota Cards ──
+
+function renderGeminiQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  if (!quotas || quotas.length === 0) {
+    container.innerHTML = '<p class="empty-state">No Gemini quota data available.</p>';
+    return;
+  }
+
+  container.innerHTML = quotas.map((q, i) => {
+    const displayName = geminiDisplayNames[q.modelId] || q.modelId;
+    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const status = q.status || 'healthy';
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const countdownId = `countdown-gemini-${q.modelId}`;
+    const progressId = `progress-gemini-${q.modelId}`;
+    const percentId = `percent-gemini-${q.modelId}`;
+    const fractionId = `fraction-gemini-${q.modelId}`;
+    const statusId = `status-gemini-${q.modelId}`;
+    const resetId = `reset-gemini-${q.modelId}`;
+
+    const remainingPct = (q.remainingPercent || (q.remainingFraction != null ? q.remainingFraction * 100 : 0)).toFixed(1);
+    const fractionText = `${remainingPct}% remaining`;
+
+    return `<article class="quota-card gemini-card" data-quota="${q.modelId}" data-provider="gemini" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+      <header class="card-header">
+        <h2 class="quota-title">
+          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          ${displayName}
+          ${q.isExhausted ? '<span class="exhausted-badge">Exhausted</span>' : ''}
+        </h2>
+        <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="${percentId}">${usagePct}%</span>
+        <span class="usage-fraction" id="${fractionId}">${fractionText}</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="${progressId}" style="width: ${usagePct}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="${statusId}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="${resetId}">${q.resetTime ? 'Resets: ' + formatDateTime(q.resetTime) : ''}</span>
+      </footer>
+    </article>`;
+  }).join('');
+
+  // Re-attach modal click handlers for new cards
+  container.querySelectorAll('.quota-card[role="button"]').forEach(card => {
+    const handler = () => {
+      openGeminiModal(card.dataset.quota);
+    };
+    card.addEventListener('click', handler);
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); }
+    });
+  });
+}
+
+function updateGeminiCard(q) {
+  const key = `gemini-${q.modelId}`;
+  const prev = State.currentQuotas[key];
+  State.currentQuotas[key] = {
+    percent: q.usagePercent || 0,
+    remainingFraction: q.remainingFraction,
+    remainingPercent: q.remainingPercent,
+    isExhausted: q.isExhausted,
+    status: q.status || 'healthy',
+    resetTime: q.resetTime,
+    timeUntilReset: q.timeUntilReset,
+    timeUntilResetSeconds: q.timeUntilResetSeconds || 0,
+    modelId: q.modelId,
+    label: q.label,
+    displayName: q.displayName
+  };
+
+  const progressEl = document.getElementById(`progress-gemini-${q.modelId}`);
+  const percentEl = document.getElementById(`percent-gemini-${q.modelId}`);
+  const fractionEl = document.getElementById(`fraction-gemini-${q.modelId}`);
+  const statusEl = document.getElementById(`status-gemini-${q.modelId}`);
+  const resetEl = document.getElementById(`reset-gemini-${q.modelId}`);
+  const countdownEl = document.getElementById(`countdown-gemini-${q.modelId}`);
+
+  const usagePct = (q.usagePercent || 0).toFixed(1);
+  const status = q.status || 'healthy';
+
+  if (progressEl) {
+    progressEl.style.width = `${usagePct}%`;
+    progressEl.setAttribute('data-status', status);
+  }
+  if (percentEl) {
+    const oldVal = prev ? prev.percent : 0;
+    if (Math.abs(oldVal - (q.usagePercent || 0)) > 0.2) {
+      animateValue(percentEl, oldVal, q.usagePercent || 0, 400, v => `${v.toFixed(1)}%`);
+    } else {
+      percentEl.textContent = `${usagePct}%`;
+    }
+  }
+  if (fractionEl) {
+    const remainingPct = (q.remainingPercent || (q.remainingFraction != null ? q.remainingFraction * 100 : 0)).toFixed(1);
+    fractionEl.textContent = `${remainingPct}% remaining`;
+  }
+  if (statusEl) {
+    const config = statusConfig[status] || statusConfig.healthy;
+    statusEl.setAttribute('data-status', status);
+    statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
+  }
+  if (resetEl) {
+    resetEl.textContent = q.resetTime ? `Resets: ${formatDateTime(q.resetTime)}` : '';
+  }
+  if (countdownEl) {
+    if (q.timeUntilResetSeconds > 0) {
+      countdownEl.textContent = formatDuration(q.timeUntilResetSeconds);
+      countdownEl.classList.toggle('imminent', q.timeUntilResetSeconds < 1800);
+      countdownEl.style.display = '';
+    } else {
+      countdownEl.style.display = 'none';
+    }
+  }
+}
+
+function openGeminiModal(modelId) {
+  openAntigravityModal(modelId, 'gemini');
 }
 
 // Antigravity quota detail modal
@@ -2663,6 +2837,14 @@ async function fetchCurrent() {
             data.quotas.forEach(q => updateMiniMaxCard(q));
           }
         }
+      } else if (provider === 'gemini') {
+        if (data.quotas) {
+          const container = document.getElementById('quota-grid-gemini');
+          if (container && container.children.length === 0) {
+            renderGeminiQuotaCards(data.quotas, 'quota-grid-gemini');
+          }
+          data.quotas.forEach(q => updateGeminiCard(q));
+        }
       } else if (provider === 'zai') {
         updateCard('tokensLimit', data.tokensLimit);
         updateCard('timeLimit', data.timeLimit);
@@ -2980,6 +3162,10 @@ function renderBothInsights(data, statsEl, cardsEl) {
 		html += renderProviderBox('minimax', 'MiniMax', data.minimax);
 	}
 
+	if (activeProviders.has('gemini') && data.gemini) {
+		html += renderProviderBox('gemini', 'Gemini', data.gemini);
+	}
+
 	if (activeProviders.has('codex')) {
     if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
       data.codexAccounts.forEach(acc => {
@@ -3169,6 +3355,8 @@ function initChart() {
     defaultDatasets = []; // Antigravity datasets are dynamic - populated when history data arrives
   } else if (provider === 'minimax') {
     defaultDatasets = []; // MiniMax datasets are dynamic - populated when history data arrives
+  } else if (provider === 'gemini') {
+    defaultDatasets = []; // Gemini datasets are dynamic - populated when history data arrives
   } else if (provider === 'zai') {
     defaultDatasets = [
       { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
@@ -3185,6 +3373,8 @@ function initChart() {
   const quotaMap = provider === 'zai'
     ? ['tokensLimit', 'timeLimit', 'toolCalls']
     : provider === 'minimax'
+      ? []
+    : provider === 'gemini'
       ? []
     : ['subscription', 'search', 'toolCalls'];
 
@@ -3461,6 +3651,42 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'gemini') {
+      const quotaKeys = new Set();
+      historyRows.forEach(d => {
+        Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
+      });
+      const sortedKeys = [...quotaKeys].sort();
+      let fallbackIdx = 0;
+      const datasets = [];
+      sortedKeys.forEach((key) => {
+        const color = geminiChartColorMap[key] || geminiChartColorFallback[fallbackIdx++ % geminiChartColorFallback.length];
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        const mainDataset = {
+          label: geminiDisplayNames[key] || key,
+          data: data,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: pointRadii,
+          pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key),
+          spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
+        };
+        datasets.push(mainDataset);
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
     if (provider === 'codex') {
       // Codex history: array of { capturedAt, five_hour, seven_day, ... }
       const quotaKeys = new Set();
@@ -3544,6 +3770,7 @@ const bothProviderNames = {
   codex: 'Codex',
   antigravity: 'Antigravity',
   minimax: 'MiniMax',
+  gemini: 'Gemini',
 };
 
 function escapeHTML(value) {
@@ -3676,6 +3903,7 @@ function normalizeBothQuotas(provider, payload) {
         || anthropicDisplayNames[quota.name]
         || copilotDisplayNames[quota.name]
         || minimaxDisplayNames[quota.name]
+        || geminiDisplayNames[quota.name]
         || getQuotaDisplayName(quota.name, provider),
       cardLabel: quota.cardLabel || 'Utilization',
       status: quota.status || 'healthy',
@@ -3852,7 +4080,7 @@ function compactInsightText(text, maxLength = 84) {
 }
 
 function getSingleViewInsightStats(provider, stats) {
-  if (provider !== 'minimax') return stats;
+  if (provider !== 'minimax' && provider !== 'gemini') return stats;
   return sortItemsByPreference(
     stats.filter((stat) => stat && stat.label !== 'Current Status'),
     ['Current Usage', 'Burn Rate', 'Resets In'],
@@ -3861,7 +4089,7 @@ function getSingleViewInsightStats(provider, stats) {
 }
 
 function getSingleViewInsightCards(provider, insights) {
-  if (provider !== 'minimax') return insights;
+  if (provider !== 'minimax' && provider !== 'gemini') return insights;
   const filtered = insights.filter((insight) => !['shared_status', 'burn_rate'].includes(insight.key));
   return sortItemsByPreference(
     filtered.length > 0 ? filtered : insights,
@@ -3871,7 +4099,7 @@ function getSingleViewInsightCards(provider, insights) {
 }
 
 function getCompactProviderStats(provider, stats) {
-  const preferred = provider === 'minimax'
+  const preferred = provider === 'minimax' || provider === 'gemini'
     ? ['Burn Rate', 'Current Usage', 'Resets In', 'Current Status']
     : [];
   const ordered = preferred.length > 0
@@ -3881,7 +4109,7 @@ function getCompactProviderStats(provider, stats) {
 }
 
 function getCompactProviderInsights(provider, insights) {
-  const ordered = provider === 'minimax'
+  const ordered = provider === 'minimax' || provider === 'gemini'
     ? sortItemsByPreference(insights, ['efficiency', 'trend', 'burn_rate', 'shared_status'], (insight) => insight.key)
     : insights;
   const urgent = ordered.filter((insight) => ['warning', 'negative'].includes(insight.severity));
@@ -4001,6 +4229,9 @@ function buildProviderCardDatasets(provider, rows, range) {
   }
   if (provider === 'minimax') {
     return buildDynamicDatasetsForRows(rows, range, minimaxDisplayNames, minimaxChartColorMap, minimaxChartColorFallback, 'minimax');
+  }
+  if (provider === 'gemini') {
+    return buildDynamicDatasetsForRows(rows, range, geminiDisplayNames, geminiChartColorMap, geminiChartColorFallback, 'gemini');
   }
   return [];
 }
@@ -4139,6 +4370,9 @@ function updateBothCharts(data, range = '6h') {
   if (activeProviders.has('minimax') && Array.isArray(data.minimax) && data.minimax.length > 0) {
     slots.push({ id: 'minimax', label: 'MiniMax', provider: 'minimax', rows: data.minimax });
   }
+  if (activeProviders.has('gemini') && Array.isArray(data.gemini) && data.gemini.length > 0) {
+    slots.push({ id: 'gemini', label: 'Gemini', provider: 'gemini', rows: data.gemini });
+  }
   if (activeProviders.has('codex')) {
     if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
       data.codexAccounts.forEach((account, idx) => {
@@ -4252,6 +4486,8 @@ function updateBothCharts(data, range = '6h') {
       datasets = createDynamicDatasets(slot.rows, {}, antigravityChartColorMap, antigravityChartColorFallback, 'antigravity');
     } else if (slot.provider === 'minimax') {
       datasets = createDynamicDatasets(slot.rows, minimaxDisplayNames, minimaxChartColorMap, minimaxChartColorFallback, 'minimax');
+    } else if (slot.provider === 'gemini') {
+      datasets = createDynamicDatasets(slot.rows, geminiDisplayNames, geminiChartColorMap, geminiChartColorFallback, 'gemini');
     }
 
     if (datasets.length === 0) return;
@@ -4397,7 +4633,7 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini']);
 
   if (loggingHistoryProviders.has(provider)) {
     // Convert range from ms to days (min 1, max 30)
@@ -4545,7 +4781,7 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini';
   const deltaUsesPercent = usePercent && provider !== 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
 
@@ -4728,7 +4964,7 @@ function renderCyclesTable() {
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
-          if (provider === 'minimax') {
+          if (provider === 'minimax' || provider === 'gemini') {
             const cq = getCrossQuotaValue(row, qn);
             const used = Number(cq?.value || 0);
             const limit = Number(cq?.limit || 0);
@@ -4791,6 +5027,7 @@ async function fetchSessions() {
       if (data.zai) merged = merged.concat(data.zai.map(s => ({ ...s, _provider: 'Z.ai' })));
       if (data.anthropic) merged = merged.concat(data.anthropic.map(s => ({ ...s, _provider: 'Anth' })));
       if (data.minimax) merged = merged.concat(data.minimax.map(s => ({ ...s, _provider: 'MiniMax' })));
+      if (data.gemini) merged = merged.concat(data.gemini.map(s => ({ ...s, _provider: 'Gemini' })));
       if (data.codex) merged = merged.concat(data.codex.map(s => ({ ...s, _provider: 'Codex' })));
       merged.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
       State.allSessionsData = merged;
@@ -4839,7 +5076,8 @@ function renderSessionsTable() {
   const isCodex = provider === 'codex';
   const isMiniMax = provider === 'minimax';
   const isAntigravity = provider === 'antigravity';
-  const colSpan = isBoth ? 6 : isZai ? 5 : isCodex ? 6 : isAntigravity ? 7 : 7;
+  const isGemini = provider === 'gemini';
+  const colSpan = isBoth ? 6 : isZai ? 5 : isCodex ? 6 : isAntigravity ? 7 : isGemini ? 7 : 7;
 
   let data = State.allSessionsData.map((s, i) => ({ ...s, _computed: getSessionComputedFields(s), _index: i }));
 
@@ -5151,6 +5389,68 @@ function renderSessionsTable() {
               </div>
               <div class="detail-item">
                 <span class="detail-label">Gemini Flash Quota</span>
+                <span class="detail-value">${fmtPct(session.startToolRequests)} &rarr; ${fmtPct(session.maxToolRequests)} (${fmtDelta(session.startToolRequests, session.maxToolRequests)})</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Snapshots</span>
+                <span class="detail-value">${session.snapshotCount || 0}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Duration</span>
+                <span class="detail-value">${c.durationStr}</span>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+      return mainRow + detailRow;
+    }).join('');
+  } else if (isGemini) {
+    // Gemini: show Session, Start, End, Duration, and per-model usage percentages
+    tbody.innerHTML = pageData.map(session => {
+      const c = session._computed;
+      const isExpanded = State.expandedSessionId === session.id;
+      const fmtPct = (v) => v != null ? v.toFixed(1) + '%' : '-';
+      const fmtDelta = (start, end) => {
+        const d = (end || 0) - (start || 0);
+        return d >= 0 ? `+${d.toFixed(1)}%` : `${d.toFixed(1)}%`;
+      };
+      const fmtWithDelta = (start, max) => {
+        const pct = max != null ? max.toFixed(1) + '%' : '-';
+        if (start == null || max == null) return pct;
+        const d = max - start;
+        const delta = d >= 0 ? `+${d.toFixed(1)}%` : `${d.toFixed(1)}%`;
+        return `${pct} <span class="delta">(${delta})</span>`;
+      };
+
+      const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
+        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.durationStr}</td>
+        <td>${fmtWithDelta(session.startSubRequests, session.maxSubRequests)}</td>
+        <td>${fmtWithDelta(session.startSearchRequests, session.maxSearchRequests)}</td>
+        <td>${fmtWithDelta(session.startToolRequests, session.maxToolRequests)}</td>
+      </tr>`;
+
+      const detailRow = `<tr class="session-detail-row ${isExpanded ? 'expanded' : ''}" data-detail-for="${session.id}">
+        <td colspan="7">
+          <div class="session-detail-content">
+            <div class="session-detail-grid">
+              <div class="detail-item">
+                <span class="detail-label">Model Quota 1</span>
+                <span class="detail-value">${fmtPct(session.startSubRequests)} &rarr; ${fmtPct(session.maxSubRequests)} (${fmtDelta(session.startSubRequests, session.maxSubRequests)})</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Model Quota 2</span>
+                <span class="detail-value">${fmtPct(session.startSearchRequests)} &rarr; ${fmtPct(session.maxSearchRequests)} (${fmtDelta(session.startSearchRequests, session.maxSearchRequests)})</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Model Quota 3</span>
                 <span class="detail-value">${fmtPct(session.startToolRequests)} &rarr; ${fmtPct(session.maxToolRequests)} (${fmtDelta(session.startToolRequests, session.maxToolRequests)})</span>
               </div>
               <div class="detail-item">
@@ -5602,7 +5902,8 @@ function getOverviewCategories() {
       ...(renewalCategories.copilot || []),
       ...renewalCategories.codex || [],
       ...(renewalCategories.antigravity || []),
-      ...(renewalCategories.minimax || [])
+      ...(renewalCategories.minimax || []),
+      ...(renewalCategories.gemini || [])
     ];
   }
   if (provider === 'codex') {
@@ -5734,7 +6035,7 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
 
   // Build dynamic header
@@ -5845,7 +6146,7 @@ function renderOverviewTable() {
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
-          if (overviewProv === 'minimax') {
+          if (overviewProv === 'minimax' || overviewProv === 'gemini') {
             const cq = getCrossQuotaValue(row, qn);
             const used = Number(cq?.value || 0);
             const limit = Number(cq?.limit || 0);
@@ -6421,6 +6722,7 @@ async function populateProviderToggles(visibility) {
       { key: 'codex', name: 'Codex', description: 'OpenAI Codex usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
       { key: 'antigravity', name: 'Antigravity', description: 'Antigravity model usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
       { key: 'minimax', name: 'MiniMax', description: 'MiniMax Coding Plan usage tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'gemini', name: 'Gemini', description: 'Google Gemini CLI quota tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
     ];
   }
 
@@ -7607,7 +7909,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Preload providers whose history tables should appear immediately.
     const activeProvider = getCurrentProvider();
-    const eagerHistoryProviders = new Set(['antigravity', 'minimax']);
+    const eagerHistoryProviders = new Set(['antigravity', 'minimax', 'gemini']);
     if (eagerHistoryProviders.has(activeProvider) && shouldShowHistoryTables(activeProvider)) {
       _lazyLoaded.add('.cycle-overview-section');
       _lazyLoaded.add('.cycles-section');

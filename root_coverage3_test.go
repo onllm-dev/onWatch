@@ -217,7 +217,7 @@ func TestFreshSetup_AllProviders(t *testing.T) {
 	t.Setenv("PATH", "")
 
 	input := strings.Join([]string{
-		"7",            // All providers
+		"8",            // All providers
 		"syn_abc12345", // synthetic key
 		"zai-key",      // zai key
 		"y",            // use default zai URL
@@ -234,7 +234,7 @@ func TestFreshSetup_AllProviders(t *testing.T) {
 	reader := bufio.NewReader(strings.NewReader(input))
 	cfg, err := freshSetup(reader)
 	if err != nil {
-		t.Fatalf("freshSetup choice 7 error: %v", err)
+		t.Fatalf("freshSetup choice 8 error: %v", err)
 	}
 	if cfg.syntheticKey == "" {
 		t.Fatal("expected synthetic key to be set")
@@ -244,6 +244,9 @@ func TestFreshSetup_AllProviders(t *testing.T) {
 	}
 	if !cfg.antigravityEnabled {
 		t.Fatal("expected antigravity enabled for 'all'")
+	}
+	if !cfg.geminiEnabled {
+		t.Fatal("expected gemini enabled for 'all'")
 	}
 }
 
@@ -255,13 +258,14 @@ func TestFreshSetup_MultipleProviders_Choice6(t *testing.T) {
 	t.Setenv("PATH", "")
 
 	input := strings.Join([]string{
-		"6",            // Multiple
+		"7",            // Multiple
 		"y",            // add synthetic
 		"syn_abc12345", // synthetic key
 		"n",            // skip zai
 		"n",            // skip anthropic
 		"n",            // skip codex
 		"y",            // add antigravity
+		"n",            // skip gemini
 		"",             // admin user (default)
 		"",             // auto-generate password
 		"9211",         // port
@@ -271,7 +275,7 @@ func TestFreshSetup_MultipleProviders_Choice6(t *testing.T) {
 	reader := bufio.NewReader(strings.NewReader(input))
 	cfg, err := freshSetup(reader)
 	if err != nil {
-		t.Fatalf("freshSetup choice 6 error: %v", err)
+		t.Fatalf("freshSetup choice 7 error: %v", err)
 	}
 	if cfg.syntheticKey == "" {
 		t.Fatal("expected synthetic key")
@@ -357,6 +361,7 @@ func TestAddMissingProviders_AllSkipped(t *testing.T) {
 		"n", // skip anthropic
 		"n", // skip codex
 		"n", // skip antigravity
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "existing"}
@@ -397,13 +402,14 @@ func TestAddMissingProviders_ZaiSkippedAnthropicAdded(t *testing.T) {
 		t.Fatalf("write env: %v", err)
 	}
 
-	// Zai=n, Anthropic=y (manual), Codex=n, Antigravity=n
+	// Zai=n, Anthropic=y (manual), Codex=n, Antigravity=n, Gemini=n
 	input := strings.Join([]string{
 		"n",        // skip zai
 		"y",        // add anthropic (no auto-detect found -> promptYesNo shown)
 		"anth-tok", // manual anthropic token
 		"n",        // skip codex
 		"n",        // skip antigravity
+		"n",        // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -780,12 +786,13 @@ func TestAddMissingProviders_AnthropicAutoDetected(t *testing.T) {
 		t.Fatalf("write env: %v", err)
 	}
 
-	// zai=n, anthropic auto-detected -> accept ("y"), codex=n, antigravity=n
+	// zai=n, anthropic auto-detected -> accept ("y"), codex=n, antigravity=n, gemini=n
 	input := strings.Join([]string{
 		"n", // skip zai
 		"y", // accept auto-detected anthropic
 		"n", // skip codex
 		"n", // skip antigravity
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -850,6 +857,7 @@ func TestAddMissingProviders_ZaiAdded(t *testing.T) {
 		"n",          // skip anthropic
 		"n",          // skip codex
 		"n",          // skip antigravity
+		"n",          // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -882,12 +890,13 @@ func TestAddMissingProviders_AntigravityAdded(t *testing.T) {
 		t.Fatalf("write env: %v", err)
 	}
 
-	// zai=n, anthropic=n, codex=n, antigravity=y
+	// zai=n, anthropic=n, codex=n, antigravity=y, gemini=n
 	input := strings.Join([]string{
 		"n", // skip zai
 		"n", // skip anthropic
 		"n", // skip codex
 		"y", // add antigravity
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -927,6 +936,7 @@ func TestAddMissingProviders_CodexManualPath(t *testing.T) {
 		"y",         // add codex (no auto-detect, manual)
 		"codex-man", // codex manual token
 		"n",         // skip antigravity
+		"n",         // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -973,12 +983,13 @@ func TestAddMissingProviders_AnthropicAutoDetectDeclined(t *testing.T) {
 		t.Fatalf("write env: %v", err)
 	}
 
-	// zai=n, anthropic auto-detected -> decline ("n"), codex=n, antigravity=n
+	// zai=n, anthropic auto-detected -> decline ("n"), codex=n, antigravity=n, gemini=n
 	input := strings.Join([]string{
 		"n", // skip zai
 		"n", // decline auto-detected anthropic
 		"n", // skip codex
 		"n", // skip antigravity
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -1018,12 +1029,13 @@ func TestAddMissingProviders_CodexAutoDetectDeclined(t *testing.T) {
 		t.Fatalf("write env: %v", err)
 	}
 
-	// zai=n, anthropic=n, codex auto-detected -> decline ("n"), antigravity=n
+	// zai=n, anthropic=n, codex auto-detected -> decline ("n"), antigravity=n, gemini=n
 	input := strings.Join([]string{
 		"n", // skip zai
 		"n", // skip anthropic (no auto-detect)
 		"n", // decline auto-detected codex
 		"n", // skip antigravity
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -1064,6 +1076,7 @@ func TestAddMissingProviders_SyntheticAdded(t *testing.T) {
 		"n",            // skip anthropic
 		"n",            // skip codex
 		"n",            // skip antigravity
+		"n",            // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{zaiKey: "zai_existing"}
@@ -1102,12 +1115,13 @@ func TestAddMissingProviders_CodexAutoDetected(t *testing.T) {
 		t.Fatalf("write env: %v", err)
 	}
 
-	// No anthropic creds -> zai=n, anthropic=n, codex auto-detected -> accept, antigravity=n
+	// No anthropic creds -> zai=n, anthropic=n, codex auto-detected -> accept, antigravity=n, gemini=n
 	input := strings.Join([]string{
 		"n", // skip zai
 		"n", // skip anthropic
 		"y", // accept auto-detected codex
 		"n", // skip antigravity
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing"}
@@ -1242,7 +1256,7 @@ func TestMigrateDBLocation_OldPathEqualsNew(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFreshSetup_NoProviderSelected_ReturnsError(t *testing.T) {
-	// Provide choice 6 (Multiple), answer "n" to everything.
+	// Provide choice 7 (Multiple), answer "n" to everything.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
@@ -1250,12 +1264,13 @@ func TestFreshSetup_NoProviderSelected_ReturnsError(t *testing.T) {
 	t.Setenv("PATH", "")
 
 	input := strings.Join([]string{
-		"6", // Multiple
+		"7", // Multiple
 		"n", // skip synthetic
 		"n", // skip zai
 		"n", // skip anthropic
 		"n", // skip codex
 		"n", // skip antigravity
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	reader := bufio.NewReader(strings.NewReader(input))
@@ -1724,6 +1739,7 @@ func TestRunSetup_ExistingEnvSomeProviders_AddsMore(t *testing.T) {
 		"n", // skip anthropic
 		"n", // skip codex
 		"n", // skip antigravity
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	withStdin(t, input, func() {
@@ -1750,14 +1766,15 @@ func TestCollectMultipleProviders_AllNo(t *testing.T) {
 		"n", // skip anthropic
 		"n", // skip codex
 		"n", // skip antigravity
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	reader := bufio.NewReader(strings.NewReader(input))
-	syn, zai, zaiURL, anth, codex, anti := collectMultipleProviders(reader, testLogger())
+	syn, zai, zaiURL, anth, codex, anti, gemini := collectMultipleProviders(reader, testLogger())
 
-	if syn != "" || zai != "" || zaiURL != "" || anth != "" || codex != "" || anti {
-		t.Fatalf("expected all empty/false: syn=%q zai=%q zaiURL=%q anth=%q codex=%q anti=%v",
-			syn, zai, zaiURL, anth, codex, anti)
+	if syn != "" || zai != "" || zaiURL != "" || anth != "" || codex != "" || anti || gemini {
+		t.Fatalf("expected all empty/false: syn=%q zai=%q zaiURL=%q anth=%q codex=%q anti=%v gemini=%v",
+			syn, zai, zaiURL, anth, codex, anti, gemini)
 	}
 }
 
@@ -1775,10 +1792,11 @@ func TestCollectMultipleProviders_AnthropicAndCodexAdded(t *testing.T) {
 		"y",         // add codex
 		"codex-tok", // codex manual token
 		"n",         // skip antigravity
+		"n",         // skip gemini
 	}, "\n") + "\n"
 
 	reader := bufio.NewReader(strings.NewReader(input))
-	_, _, _, anth, codex, _ := collectMultipleProviders(reader, testLogger())
+	_, _, _, anth, codex, _, _ := collectMultipleProviders(reader, testLogger())
 
 	if anth == "" {
 		t.Fatal("expected anthropic token")
@@ -3562,7 +3580,7 @@ func TestRun_SetupCommand(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(installDir, "data"), 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	envContent := "ANTHROPIC_TOKEN=test\nSYNTHETIC_API_KEY=test\nZAI_API_KEY=test\nCODEX_TOKEN=test\nANTIGRAVITY_ENABLED=true\nONWATCH_ADMIN_PASS=test\n"
+	envContent := "ANTHROPIC_TOKEN=test\nSYNTHETIC_API_KEY=test\nZAI_API_KEY=test\nCODEX_TOKEN=test\nANTIGRAVITY_ENABLED=true\nGEMINI_ENABLED=true\nONWATCH_ADMIN_PASS=test\n"
 	if err := os.WriteFile(filepath.Join(installDir, ".env"), []byte(envContent), 0644); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
@@ -3735,6 +3753,7 @@ func TestAddMissingProviders_AntigravityAlreadyEnabled(t *testing.T) {
 		"n", // skip zai
 		"n", // skip anthropic
 		"n", // skip codex
+		"n", // skip gemini
 	}, "\n") + "\n"
 
 	existing := &existingEnv{syntheticKey: "syn_existing", antigravityEnabled: true}

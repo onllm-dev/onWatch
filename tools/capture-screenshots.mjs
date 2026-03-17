@@ -21,6 +21,7 @@ const PROVIDERS = [
   { name: 'copilot', tab: 'copilot' },
   { name: 'codex', tab: 'codex' },
   { name: 'antigravity', tab: 'antigravity' },
+  { name: 'gemini', tab: 'gemini' },
   { name: 'all', tab: 'both' },
 ];
 

@@ -126,6 +126,7 @@ func TestSetupHelpers_AddMissingProvidersAndTokenCollectors(t *testing.T) {
 			"zai-token",    // zai key
 			"y",            // use default zai URL
 			"y",            // add antigravity
+			"n",            // skip gemini
 		}, "\n") + "\n"
 
 		existing := &existingEnv{anthropicToken: "already_set", codexToken: "already_set"}

@@ -12,7 +12,7 @@
             {{range .Providers}}
             <button class="provider-tab {{if eq . $.CurrentProvider}}active{{end}}"
                     data-provider="{{.}}" role="tab" aria-selected="{{if eq . $.CurrentProvider}}true{{else}}false{{end}}">
-                {{if eq . "synthetic"}}Synthetic{{else if eq . "zai"}}Z.ai{{else if eq . "anthropic"}}Anthropic{{else if eq . "copilot"}}Copilot{{else if eq . "codex"}}Codex{{else if eq . "antigravity"}}Antigravity{{else if eq . "minimax"}}MiniMax{{else if eq . "both"}}All{{else}}{{.}}{{end}}
+                {{if eq . "synthetic"}}Synthetic{{else if eq . "zai"}}Z.ai{{else if eq . "anthropic"}}Anthropic{{else if eq . "copilot"}}Copilot{{else if eq . "codex"}}Codex{{else if eq . "antigravity"}}Antigravity{{else if eq . "minimax"}}MiniMax{{else if eq . "gemini"}}Gemini{{else if eq . "both"}}All{{else}}{{.}}{{end}}
             </button>
             {{end}}
         </div>
@@ -101,7 +101,7 @@
             <h1 class="welcome-title">Dashboard</h1>
             <p class="welcome-subtitle">
                 {{if eq .CurrentProvider "both"}}Track all your API quotas in real time.
-                {{else}}Track your {{if eq .CurrentProvider "synthetic"}}Synthetic{{else if eq .CurrentProvider "zai"}}Z.ai{{else if eq .CurrentProvider "anthropic"}}Anthropic (Claude Code){{else if eq .CurrentProvider "copilot"}}GitHub Copilot{{else if eq .CurrentProvider "codex"}}Codex{{else if eq .CurrentProvider "antigravity"}}Antigravity{{else if eq .CurrentProvider "minimax"}}MiniMax{{else}}{{.CurrentProvider}}{{end}} API quota usage in real time.
+                {{else}}Track your {{if eq .CurrentProvider "synthetic"}}Synthetic{{else if eq .CurrentProvider "zai"}}Z.ai{{else if eq .CurrentProvider "anthropic"}}Anthropic (Claude Code){{else if eq .CurrentProvider "copilot"}}GitHub Copilot{{else if eq .CurrentProvider "codex"}}Codex{{else if eq .CurrentProvider "antigravity"}}Antigravity{{else if eq .CurrentProvider "minimax"}}MiniMax{{else if eq .CurrentProvider "gemini"}}Gemini{{else}}{{.CurrentProvider}}{{end}} API quota usage in real time.
                 {{end}}
             </p>
         </div>
@@ -125,6 +125,9 @@
         {{else if eq .CurrentProvider "minimax"}}
         <!-- MiniMax quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-minimax" data-provider="minimax"></div>
+        {{else if eq .CurrentProvider "gemini"}}
+        <!-- Gemini quota cards (dynamically populated by JS) -->
+        <div class="quota-grid" id="quota-grid-gemini" data-provider="gemini"></div>
         {{else}}
         <div class="quota-grid" id="quota-grid" data-provider="{{.CurrentProvider}}">
             {{if eq .CurrentProvider "zai"}}
@@ -402,6 +405,10 @@
                             <th data-sort-key="sub" role="button" tabindex="0">Claude + GPT Quota <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Gemini Pro Quota <span class="sort-arrow"></span></th>
                             <th data-sort-key="tool" role="button" tabindex="0">Gemini Flash Quota <span class="sort-arrow"></span></th>
+                            {{else if eq .CurrentProvider "gemini"}}
+                            <th data-sort-key="sub" role="button" tabindex="0">Peak Usage <span class="sort-arrow"></span></th>
+                            <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
+                            <th data-sort-key="tool" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
                             {{else}}
                             <th data-sort-key="sub" role="button" tabindex="0">Sub Usage <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Search Usage <span class="sort-arrow"></span></th>
@@ -418,6 +425,8 @@
                             {{else if eq .CurrentProvider "minimax"}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "antigravity"}}
+                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            {{else if eq .CurrentProvider "gemini"}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{else}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>

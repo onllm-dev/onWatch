@@ -552,6 +552,42 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_minimax_model_values_name ON minimax_model_values(model_name);
 		CREATE INDEX IF NOT EXISTS idx_minimax_cycles_name_start ON minimax_reset_cycles(model_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_minimax_cycles_name_active ON minimax_reset_cycles(model_name) WHERE cycle_end IS NULL;
+
+		-- Gemini-specific tables
+		CREATE TABLE IF NOT EXISTS gemini_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			tier TEXT,
+			project_id TEXT,
+			raw_json TEXT,
+			quota_count INTEGER DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS gemini_quota_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			model_id TEXT NOT NULL,
+			remaining_fraction REAL NOT NULL DEFAULT 0,
+			usage_percent REAL NOT NULL DEFAULT 0,
+			reset_time TEXT,
+			FOREIGN KEY (snapshot_id) REFERENCES gemini_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS gemini_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			model_id TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			reset_time TEXT,
+			peak_usage REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_gemini_snapshots_captured ON gemini_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_gemini_quota_values_snapshot ON gemini_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_gemini_quota_values_model ON gemini_quota_values(model_id);
+		CREATE INDEX IF NOT EXISTS idx_gemini_cycles_model_start ON gemini_reset_cycles(model_id, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_gemini_cycles_model_active ON gemini_reset_cycles(model_id) WHERE cycle_end IS NULL;
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {
