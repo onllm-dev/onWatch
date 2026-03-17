@@ -717,7 +717,7 @@ func run() error {
 		logger.Info("MiniMax API client configured")
 	}
 
-	// Gemini provider - auto-detect from ~/.gemini/oauth_creds.json
+	// Gemini provider - env vars or auto-detect from ~/.gemini/oauth_creds.json
 	var geminiClient *api.GeminiClient
 	var geminiCreds *api.GeminiCredentials
 	if os.Getenv("GEMINI_ENABLED") != "false" {
@@ -725,8 +725,19 @@ func run() error {
 		if geminiCreds != nil {
 			cfg.GeminiEnabled = true
 			cfg.GeminiAutoToken = true
-			geminiClient = api.NewGeminiClient(geminiCreds.AccessToken, logger)
-			logger.Info("Gemini API client configured (auto-detected)")
+			token := geminiCreds.AccessToken
+			// If only refresh token available (no access token), agent will refresh on first poll
+			if token == "" && geminiCreds.RefreshToken != "" {
+				token = "pending-refresh"
+			}
+			if token != "" {
+				geminiClient = api.NewGeminiClient(token, logger)
+				source := "auto-detected"
+				if os.Getenv("GEMINI_REFRESH_TOKEN") != "" || os.Getenv("GEMINI_ACCESS_TOKEN") != "" {
+					source = "environment variables"
+				}
+				logger.Info("Gemini API client configured", "source", source)
+			}
 		}
 	}
 
@@ -1579,7 +1590,11 @@ func printBanner(cfg *config.Config, version string) {
 		fmt.Printf("MiniMax API Key:   %s\n", redactAPIKey(cfg.MiniMaxAPIKey))
 	}
 	if cfg.HasProvider("gemini") {
-		fmt.Printf("Gemini:            %s\n", "auto-detect")
+		source := "auto-detect"
+		if cfg.GeminiRefreshToken != "" || cfg.GeminiAccessToken != "" {
+			source = "env vars"
+		}
+		fmt.Printf("Gemini:            %s\n", source)
 	}
 	fmt.Println()
 }

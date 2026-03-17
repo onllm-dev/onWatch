@@ -302,6 +302,10 @@ Additional environment variables:
 | `COPILOT_TOKEN`          | GitHub Copilot PAT with `copilot` scope (Beta)         |
 | `MINIMAX_API_KEY`        | MiniMax Coding Plan API key                            |
 | `GEMINI_ENABLED`         | Enable Gemini CLI quota tracking (Beta, auto-detected)   |
+| `GEMINI_REFRESH_TOKEN`   | Gemini OAuth refresh token (for Docker/headless)         |
+| `GEMINI_ACCESS_TOKEN`    | Gemini OAuth access token (for Docker/headless)          |
+| `GEMINI_CLIENT_ID`       | Custom OAuth client ID (optional, has defaults)          |
+| `GEMINI_CLIENT_SECRET`   | Custom OAuth client secret (optional, has defaults)      |
 | `ANTIGRAVITY_ENABLED`    | Enable Antigravity provider (auto-detects local server)|
 | `ANTIGRAVITY_BASE_URL`   | Antigravity base URL (for Docker/manual config)        |
 | `ANTIGRAVITY_CSRF_TOKEN` | Antigravity CSRF token (for Docker/manual config)      |
@@ -458,6 +462,7 @@ Copy `.env.docker.example` to `.env` and set provider keys as needed. onWatch ca
 | `ANTHROPIC_TOKEN`       | Anthropic token (auto-detected if not set) | --         |
 | `CODEX_TOKEN`           | Codex OAuth access token (recommended; required for Codex-only) | -- |
 | `MINIMAX_API_KEY`       | MiniMax Coding Plan API key                | --         |
+| `GEMINI_REFRESH_TOKEN`  | Gemini OAuth refresh token (Beta)          | --         |
 | `ONWATCH_ADMIN_USER`    | Dashboard username                         | `admin`    |
 | `ONWATCH_ADMIN_PASS`    | Dashboard password                         | `changeme` |
 | `ONWATCH_POLL_INTERVAL` | Polling interval (seconds)                 | `120`      |

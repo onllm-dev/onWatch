@@ -47,9 +47,11 @@ type Config struct {
 	// MiniMax provider configuration
 	MiniMaxAPIKey string // MINIMAX_API_KEY
 
-	// Gemini provider configuration (auto-detected from ~/.gemini/oauth_creds.json)
-	GeminiEnabled   bool   // true if auto-detected or GEMINI_ENABLED=true
-	GeminiAutoToken bool   // true if token was auto-detected
+	// Gemini provider configuration (auto-detected from ~/.gemini/oauth_creds.json or env vars)
+	GeminiEnabled      bool   // true if auto-detected or GEMINI_ENABLED=true
+	GeminiAutoToken    bool   // true if token was auto-detected
+	GeminiRefreshToken string // GEMINI_REFRESH_TOKEN (for Docker/headless)
+	GeminiAccessToken  string // GEMINI_ACCESS_TOKEN (for Docker/headless)
 
 	// Shared configuration
 	PollInterval       time.Duration // ONWATCH_POLL_INTERVAL (seconds → Duration)
@@ -163,6 +165,8 @@ var onwatchEnvKeys = []string{
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"GEMINI_ENABLED",
+	"GEMINI_REFRESH_TOKEN",
+	"GEMINI_ACCESS_TOKEN",
 	"ONWATCH_",
 }
 
@@ -245,13 +249,15 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// MiniMax provider
 	cfg.MiniMaxAPIKey = strings.TrimSpace(os.Getenv("MINIMAX_API_KEY"))
 
-	// Gemini provider (auto-detected, or opt-out via GEMINI_ENABLED=false)
+	// Gemini provider (auto-detected, env vars, or opt-out via GEMINI_ENABLED=false)
+	cfg.GeminiRefreshToken = strings.TrimSpace(os.Getenv("GEMINI_REFRESH_TOKEN"))
+	cfg.GeminiAccessToken = strings.TrimSpace(os.Getenv("GEMINI_ACCESS_TOKEN"))
 	if os.Getenv("GEMINI_ENABLED") == "false" {
 		cfg.GeminiEnabled = false
-	} else if os.Getenv("GEMINI_ENABLED") == "true" {
+	} else if os.Getenv("GEMINI_ENABLED") == "true" || cfg.GeminiRefreshToken != "" || cfg.GeminiAccessToken != "" {
 		cfg.GeminiEnabled = true
 	}
-	// Auto-detection is done later in main.go after credential check
+	// File-based auto-detection is done later in main.go
 
 	// Poll Interval (seconds) - ONWATCH_* first, SYNTRACK_* fallback
 	if flags.interval > 0 {
