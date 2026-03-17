@@ -1,5 +1,3 @@
-//go:build menubar && darwin
-
 package menubar
 
 import "errors"
@@ -9,7 +7,7 @@ const (
 	menubarPopoverHeight = 680
 )
 
-var errNativePopoverUnavailable = errors.New("native macOS menubar host unavailable")
+var errNativePopoverUnavailable = errors.New("native menubar host unavailable")
 
 type menubarPopover interface {
 	ShowURL(string) error

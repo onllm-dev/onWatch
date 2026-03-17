@@ -6,6 +6,7 @@ VERSION=$(cat "$SCRIPT_DIR/VERSION")
 BINARY="onwatch"
 DARWIN_FULL_TAGS="menubar,desktop,production"
 DARWIN_CGO_LDFLAGS="-framework UniformTypeIdentifiers"
+LINUX_DESKTOP_TAGS="menubar,desktop,production"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -193,6 +194,16 @@ build_native_binary() {
         return
     fi
 
+    # On Linux, build with menubar support if GTK and WebKitGTK dev libs are available
+    if [[ "$(uname)" == "Linux" ]] && pkg-config --exists gtk+-3.0 webkit2gtk-4.1 2>/dev/null; then
+        info "GTK3 and WebKitGTK detected - building with menubar support"
+        CGO_ENABLED=1 go build \
+            -tags "$LINUX_DESKTOP_TAGS" \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o "$output" .
+        return
+    fi
+
     go build \
         -ldflags="-s -w -X main.version=$VERSION" \
         -o "$output" .
@@ -270,6 +281,20 @@ do_release() {
             -ldflags="-s -w -X main.version=$VERSION" \
             -o "$SCRIPT_DIR/$output" .
     done
+
+    # Build Linux desktop variant with menubar support (requires GTK/WebKit dev libs)
+    if [[ "$(uname)" == "Linux" ]] && pkg-config --exists gtk+-3.0 webkit2gtk-4.1 2>/dev/null; then
+        for arch in amd64; do
+            local output="dist/onwatch-linux-${arch}-desktop"
+            info "  Building ${output} (with menubar support)..."
+            CGO_ENABLED=1 GOOS=linux GOARCH="$arch" go build \
+                -tags "$LINUX_DESKTOP_TAGS" \
+                -ldflags="-s -w -X main.version=$VERSION" \
+                -o "$SCRIPT_DIR/$output" .
+        done
+    else
+        warn "Skipping Linux desktop binary - GTK3/WebKitGTK dev libs not found. Install libgtk-3-dev and libwebkit2gtk-4.1-dev."
+    fi
 
     success "Release build complete. Binaries in dist/:"
     ls -lh "$SCRIPT_DIR/dist/"

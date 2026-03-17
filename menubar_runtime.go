@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -118,7 +117,7 @@ func waitForServerReady(port int, timeout time.Duration) bool {
 }
 
 func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
-	if cfg == nil || cfg.TestMode || !menubar.IsSupported() || runtime.GOOS != "darwin" {
+	if cfg == nil || cfg.TestMode || !menubar.IsSupported() {
 		return nil
 	}
 	logger.Info("Starting menubar companion process")

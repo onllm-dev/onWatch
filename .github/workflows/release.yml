@@ -81,6 +81,43 @@ jobs:
           name: ${{ matrix.binary }}
           path: ${{ matrix.binary }}
 
+  build-linux-desktop:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Build Linux desktop (amd64)
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install GTK and WebKitGTK dev libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Build Linux desktop artifact
+        run: |
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+            -tags menubar,desktop,production \
+            -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
+            -o onwatch-linux-amd64-desktop .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onwatch-linux-amd64-desktop
+          path: onwatch-linux-amd64-desktop
+
   build-macos-amd64:
     needs: test
     runs-on: macos-14
@@ -147,7 +184,7 @@ jobs:
 
   # Create GitHub release with all binaries
   release:
-    needs: [build-standard, build-macos-amd64, build-macos-arm64]
+    needs: [build-standard, build-macos-amd64, build-macos-arm64, build-linux-desktop]
     runs-on: ubuntu-latest
     name: Release
 
