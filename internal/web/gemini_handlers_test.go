@@ -294,21 +294,21 @@ func TestGeminiInsights_ViaRouter(t *testing.T) {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
 
-	// insightsGemini returns empty stats and insights (skipped for now)
+	// insightsGemini returns real stats and per-model insights
 	stats, ok := resp["stats"].([]interface{})
 	if !ok {
 		t.Fatalf("expected 'stats' array, got: %v", resp)
 	}
-	if len(stats) != 0 {
-		t.Errorf("expected empty stats for Gemini insights, got %d", len(stats))
+	if len(stats) == 0 {
+		t.Error("expected non-empty stats for Gemini insights")
 	}
 
 	insights, ok := resp["insights"].([]interface{})
 	if !ok {
 		t.Fatalf("expected 'insights' array, got: %v", resp)
 	}
-	if len(insights) != 0 {
-		t.Errorf("expected empty insights for Gemini insights, got %d", len(insights))
+	if len(insights) == 0 {
+		t.Error("expected non-empty insights for Gemini insights (per-model burn rates)")
 	}
 }
 

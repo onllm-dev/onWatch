@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -219,9 +220,9 @@ func (h *Handler) summaryGemini(w http.ResponseWriter, r *http.Request) {
 }
 
 // insightsGemini returns Gemini usage insights matching insightsResponse contract.
-// Insights are skipped for Gemini for now until we have richer data to present.
-func (h *Handler) insightsGemini(w http.ResponseWriter, _ *http.Request, _ time.Duration) {
-	respondJSON(w, http.StatusOK, insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}})
+func (h *Handler) insightsGemini(w http.ResponseWriter, _ *http.Request, rangeDur time.Duration) {
+	hidden := h.getHiddenInsightKeys()
+	respondJSON(w, http.StatusOK, h.buildGeminiInsights(hidden, rangeDur))
 }
 
 // buildGeminiInsights builds Gemini insights with burn rates, ETA, and per-model analysis.
@@ -503,20 +504,26 @@ func (h *Handler) loggingHistoryGemini(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build quotaNames from first snapshot or from DB
-	quotaNames := []string{}
+	// Build quotaNames from ALL snapshots (models may appear/disappear across polls)
+	quotaNameSet := map[string]bool{}
 	for _, snap := range snapshots {
 		for _, q := range snap.Quotas {
-			quotaNames = append(quotaNames, q.ModelID)
+			quotaNameSet[q.ModelID] = true
 		}
-		break
 	}
-	if len(quotaNames) == 0 {
-		quotaNames, _ = h.store.QueryAllGeminiModelIDs()
+	// Fall back to DB if no snapshots
+	if len(quotaNameSet) == 0 {
+		if dbNames, err := h.store.QueryAllGeminiModelIDs(); err == nil {
+			for _, n := range dbNames {
+				quotaNameSet[n] = true
+			}
+		}
 	}
-	if quotaNames == nil {
-		quotaNames = []string{}
+	quotaNames := make([]string, 0, len(quotaNameSet))
+	for n := range quotaNameSet {
+		quotaNames = append(quotaNames, n)
 	}
+	sort.Strings(quotaNames)
 
 	// Build series for loggingHistoryRowsFromSnapshots
 	capturedAt := make([]time.Time, 0, len(snapshots))
