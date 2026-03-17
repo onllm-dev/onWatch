@@ -38,10 +38,23 @@ type geminiOAuthErrorResponse struct {
 	ErrorDescription string `json:"error_description"`
 }
 
+// geminiOAuthTokenURLOverride allows tests to redirect OAuth requests to a mock server.
+var geminiOAuthTokenURLOverride string
+
+// SetGeminiOAuthTokenURLForTest overrides the OAuth token URL for testing.
+// Pass empty string to reset to default.
+func SetGeminiOAuthTokenURLForTest(url string) {
+	geminiOAuthTokenURLOverride = url
+}
+
 // RefreshGeminiToken exchanges a refresh token for a new access token via Google's OAuth endpoint.
 // Google does NOT rotate refresh tokens - the same refresh token can be reused.
 func RefreshGeminiToken(ctx context.Context, refreshToken, clientID, clientSecret string) (*GeminiOAuthTokenResponse, error) {
-	return RefreshGeminiTokenWithURL(ctx, refreshToken, clientID, clientSecret, GeminiOAuthTokenURL)
+	tokenURL := GeminiOAuthTokenURL
+	if geminiOAuthTokenURLOverride != "" {
+		tokenURL = geminiOAuthTokenURLOverride
+	}
+	return RefreshGeminiTokenWithURL(ctx, refreshToken, clientID, clientSecret, tokenURL)
 }
 
 // RefreshGeminiTokenWithURL allows specifying a custom OAuth URL (for testing).

@@ -145,21 +145,23 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 				if err != nil {
 					a.logger.Error("Proactive Gemini OAuth refresh failed", "error", err)
 				} else {
-					// Google does NOT rotate refresh tokens - only save access_token + expiry
+					// Save to file (local users)
 					if err := api.WriteGeminiCredentials(newTokens.AccessToken, newTokens.ExpiresIn); err != nil {
-						a.logger.Error("Failed to save refreshed Gemini credentials", "error", err)
-					} else {
-						a.client.SetToken(newTokens.AccessToken)
-						a.lastToken = newTokens.AccessToken
-						a.logger.Info("Proactively refreshed Gemini OAuth token",
-							"expires_in_seconds", newTokens.ExpiresIn)
+						a.logger.Debug("Failed to save Gemini credentials to file", "error", err)
+					}
+					// Save to DB (survives Docker container restarts)
+					a.saveTokensToDB(newTokens.AccessToken, creds.RefreshToken, newTokens.ExpiresIn)
 
-						if a.authPaused {
-							a.authPaused = false
-							a.authFailCount = 0
-							a.lastFailedToken = ""
-							a.logger.Info("Gemini auth failure pause lifted - token refreshed via OAuth")
-						}
+					a.client.SetToken(newTokens.AccessToken)
+					a.lastToken = newTokens.AccessToken
+					a.logger.Info("Proactively refreshed Gemini OAuth token",
+						"expires_in_seconds", newTokens.ExpiresIn)
+
+					if a.authPaused {
+						a.authPaused = false
+						a.authFailCount = 0
+						a.lastFailedToken = ""
+						a.logger.Info("Gemini auth failure pause lifted - token refreshed via OAuth")
 					}
 				}
 			}
@@ -220,8 +222,9 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 				)
 				if refreshErr == nil {
 					if err := api.WriteGeminiCredentials(newTokens.AccessToken, newTokens.ExpiresIn); err != nil {
-						a.logger.Error("Failed to save refreshed Gemini credentials", "error", err)
+						a.logger.Debug("Failed to save Gemini credentials to file", "error", err)
 					}
+					a.saveTokensToDB(newTokens.AccessToken, creds.RefreshToken, newTokens.ExpiresIn)
 					a.client.SetToken(newTokens.AccessToken)
 					a.lastToken = newTokens.AccessToken
 					a.logger.Info("Retrying Gemini poll with refreshed token")
@@ -318,5 +321,18 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 			"model", q.ModelID,
 			"remaining", fmt.Sprintf("%.1f%%", q.RemainingFraction*100),
 			"usage", fmt.Sprintf("%.1f%%", q.UsagePercent))
+	}
+}
+
+// saveTokensToDB persists tokens to the DB so they survive Docker restarts.
+func (a *GeminiAgent) saveTokensToDB(accessToken, refreshToken string, expiresInSec int) {
+	if a.store == nil {
+		return
+	}
+	expiresAt := time.Now().Add(time.Duration(expiresInSec) * time.Second).UnixMilli()
+	if err := a.store.SaveGeminiTokens(accessToken, refreshToken, expiresAt); err != nil {
+		a.logger.Error("Failed to persist Gemini tokens to DB", "error", err)
+	} else {
+		a.logger.Debug("Persisted Gemini tokens to DB")
 	}
 }

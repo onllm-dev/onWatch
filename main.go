@@ -721,7 +721,7 @@ func run() error {
 	var geminiClient *api.GeminiClient
 	var geminiCreds *api.GeminiCredentials
 	if os.Getenv("GEMINI_ENABLED") != "false" {
-		geminiCreds = api.DetectGeminiCredentials(logger)
+		geminiCreds = api.DetectGeminiCredentials(logger, db)
 		if geminiCreds != nil {
 			cfg.GeminiEnabled = true
 			cfg.GeminiAutoToken = true
@@ -844,7 +844,7 @@ func run() error {
 		geminiSm := agent.NewSessionManager(db, "gemini", idleTimeout, logger)
 		geminiAg = agent.NewGeminiAgent(geminiClient, db, geminiTr, cfg.PollInterval, logger, geminiSm)
 		geminiAg.SetCredentialsRefresh(func() *api.GeminiCredentials {
-			return api.DetectGeminiCredentials(logger)
+			return api.DetectGeminiCredentials(logger, db)
 		})
 		geminiAg.SetClientCredentials(api.DetectGeminiClientCredentials())
 	}

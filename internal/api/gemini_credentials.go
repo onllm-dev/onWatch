@@ -53,49 +53,98 @@ func GeminiCredentialsPath() string {
 	return filepath.Join(home, ".gemini", "oauth_creds.json")
 }
 
+// GeminiTokenStore is the interface for DB-based token persistence.
+// Implemented by store.Store.
+type GeminiTokenStore interface {
+	LoadGeminiTokens() (accessToken, refreshToken string, expiresAt int64, err error)
+	SaveGeminiTokens(accessToken, refreshToken string, expiresAt int64) error
+}
+
 // DetectGeminiCredentials loads Gemini credentials.
-// Priority: env vars (GEMINI_REFRESH_TOKEN / GEMINI_ACCESS_TOKEN) first,
-// then ~/.gemini/oauth_creds.json file as fallback.
-// Both sources are merged - env vars take precedence for individual fields,
-// but the file fills in anything the env vars don't provide.
-func DetectGeminiCredentials(logger *slog.Logger) *GeminiCredentials {
+// Priority: DB tokens (survives Docker restarts) > env vars > file.
+// All sources are merged - higher priority takes precedence per field.
+func DetectGeminiCredentials(logger *slog.Logger, tokenStore ...GeminiTokenStore) *GeminiCredentials {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
+	// 1. DB tokens (highest priority - persisted across container restarts)
+	var dbCreds *GeminiCredentials
+	if len(tokenStore) > 0 && tokenStore[0] != nil {
+		dbCreds = detectGeminiCredentialsFromDB(logger, tokenStore[0])
+	}
+
+	// 2. Env vars
 	envCreds := detectGeminiCredentialsFromEnv(logger)
+
+	// 3. File (~/.gemini/oauth_creds.json)
 	fileCreds := detectGeminiCredentialsFromFile(logger)
 
-	// Neither source has credentials
-	if envCreds == nil && fileCreds == nil {
+	// Merge: DB > env > file
+	return mergeGeminiCredentials(dbCreds, envCreds, fileCreds)
+}
+
+// detectGeminiCredentialsFromDB loads tokens persisted in the settings table.
+func detectGeminiCredentialsFromDB(logger *slog.Logger, ts GeminiTokenStore) *GeminiCredentials {
+	accessToken, refreshToken, expiresAtMs, err := ts.LoadGeminiTokens()
+	if err != nil {
+		logger.Debug("Gemini DB token load failed", "error", err)
+		return nil
+	}
+	if accessToken == "" && refreshToken == "" {
 		return nil
 	}
 
-	// Only file credentials available (typical local user)
-	if envCreds == nil {
-		return fileCreds
+	var expiresAt time.Time
+	var expiresIn time.Duration
+	if expiresAtMs > 0 {
+		expiresAt = time.UnixMilli(expiresAtMs)
+		expiresIn = time.Until(expiresAt)
 	}
 
-	// Only env credentials available (typical Docker user)
-	if fileCreds == nil {
-		return envCreds
-	}
+	logger.Debug("Gemini credentials loaded from DB",
+		"has_access_token", accessToken != "",
+		"has_refresh_token", refreshToken != "",
+		"expires_in", expiresIn.Round(time.Minute))
 
-	// Both available - env vars take precedence per field, file fills gaps
-	merged := &GeminiCredentials{
-		AccessToken:  envCreds.AccessToken,
-		RefreshToken: envCreds.RefreshToken,
-		ExpiresAt:    fileCreds.ExpiresAt,
-		ExpiresIn:    fileCreds.ExpiresIn,
-		IDToken:      fileCreds.IDToken,
+	return &GeminiCredentials{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresAt:    expiresAt,
+		ExpiresIn:    expiresIn,
 	}
-	if merged.AccessToken == "" {
-		merged.AccessToken = fileCreds.AccessToken
-	}
-	if merged.RefreshToken == "" {
-		merged.RefreshToken = fileCreds.RefreshToken
-	}
+}
 
+// mergeGeminiCredentials merges credentials from multiple sources.
+// Earlier sources take precedence per field.
+func mergeGeminiCredentials(sources ...*GeminiCredentials) *GeminiCredentials {
+	merged := &GeminiCredentials{}
+	hasAny := false
+	for _, src := range sources {
+		if src == nil {
+			continue
+		}
+		hasAny = true
+		if merged.AccessToken == "" && src.AccessToken != "" {
+			merged.AccessToken = src.AccessToken
+		}
+		if merged.RefreshToken == "" && src.RefreshToken != "" {
+			merged.RefreshToken = src.RefreshToken
+		}
+		if merged.ExpiresAt.IsZero() && !src.ExpiresAt.IsZero() {
+			merged.ExpiresAt = src.ExpiresAt
+			merged.ExpiresIn = src.ExpiresIn
+		}
+		if merged.IDToken == "" && src.IDToken != "" {
+			merged.IDToken = src.IDToken
+		}
+	}
+	if !hasAny {
+		return nil
+	}
+	if merged.AccessToken == "" && merged.RefreshToken == "" {
+		return nil
+	}
 	return merged
 }
 

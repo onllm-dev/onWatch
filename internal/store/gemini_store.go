@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -530,6 +531,32 @@ func (s *Store) QueryGeminiCycleOverview(modelID string, limit int) ([]CycleOver
 	}
 
 	return overviewRows, nil
+}
+
+// SaveGeminiTokens persists Gemini OAuth tokens to the settings table.
+// This survives container restarts when the DB is on a mounted volume.
+func (s *Store) SaveGeminiTokens(accessToken, refreshToken string, expiresAt int64) error {
+	data := fmt.Sprintf(`{"access_token":%q,"refresh_token":%q,"expires_at":%d}`,
+		accessToken, refreshToken, expiresAt)
+	return s.SetSetting("gemini_tokens", data)
+}
+
+// LoadGeminiTokens retrieves persisted Gemini OAuth tokens from the settings table.
+// Returns empty strings if no tokens are stored.
+func (s *Store) LoadGeminiTokens() (accessToken, refreshToken string, expiresAt int64, err error) {
+	data, err := s.GetSetting("gemini_tokens")
+	if err != nil || data == "" {
+		return "", "", 0, err
+	}
+	var tokens struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresAt    int64  `json:"expires_at"`
+	}
+	if err := json.Unmarshal([]byte(data), &tokens); err != nil {
+		return "", "", 0, fmt.Errorf("failed to parse gemini tokens: %w", err)
+	}
+	return tokens.AccessToken, tokens.RefreshToken, tokens.ExpiresAt, nil
 }
 
 // QueryAllGeminiModelIDs returns all distinct model IDs from Gemini quota values.
