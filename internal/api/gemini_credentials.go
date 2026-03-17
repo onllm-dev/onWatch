@@ -53,12 +53,73 @@ func GeminiCredentialsPath() string {
 	return filepath.Join(home, ".gemini", "oauth_creds.json")
 }
 
-// DetectGeminiCredentials loads Gemini credentials from ~/.gemini/oauth_creds.json.
+// DetectGeminiCredentials loads Gemini credentials.
+// Priority: env vars (GEMINI_REFRESH_TOKEN / GEMINI_ACCESS_TOKEN) first,
+// then ~/.gemini/oauth_creds.json file as fallback.
+// Both sources are merged - env vars take precedence for individual fields,
+// but the file fills in anything the env vars don't provide.
 func DetectGeminiCredentials(logger *slog.Logger) *GeminiCredentials {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
+	envCreds := detectGeminiCredentialsFromEnv(logger)
+	fileCreds := detectGeminiCredentialsFromFile(logger)
+
+	// Neither source has credentials
+	if envCreds == nil && fileCreds == nil {
+		return nil
+	}
+
+	// Only file credentials available (typical local user)
+	if envCreds == nil {
+		return fileCreds
+	}
+
+	// Only env credentials available (typical Docker user)
+	if fileCreds == nil {
+		return envCreds
+	}
+
+	// Both available - env vars take precedence per field, file fills gaps
+	merged := &GeminiCredentials{
+		AccessToken:  envCreds.AccessToken,
+		RefreshToken: envCreds.RefreshToken,
+		ExpiresAt:    fileCreds.ExpiresAt,
+		ExpiresIn:    fileCreds.ExpiresIn,
+		IDToken:      fileCreds.IDToken,
+	}
+	if merged.AccessToken == "" {
+		merged.AccessToken = fileCreds.AccessToken
+	}
+	if merged.RefreshToken == "" {
+		merged.RefreshToken = fileCreds.RefreshToken
+	}
+
+	return merged
+}
+
+// detectGeminiCredentialsFromEnv loads credentials from GEMINI_REFRESH_TOKEN or GEMINI_ACCESS_TOKEN env vars.
+func detectGeminiCredentialsFromEnv(logger *slog.Logger) *GeminiCredentials {
+	refreshToken := strings.TrimSpace(os.Getenv("GEMINI_REFRESH_TOKEN"))
+	accessToken := strings.TrimSpace(os.Getenv("GEMINI_ACCESS_TOKEN"))
+
+	if refreshToken == "" && accessToken == "" {
+		return nil
+	}
+
+	logger.Debug("Gemini credentials loaded from environment variables",
+		"has_refresh_token", refreshToken != "",
+		"has_access_token", accessToken != "")
+
+	return &GeminiCredentials{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}
+}
+
+// detectGeminiCredentialsFromFile loads credentials from ~/.gemini/oauth_creds.json.
+func detectGeminiCredentialsFromFile(logger *slog.Logger) *GeminiCredentials {
 	credPath := GeminiCredentialsPath()
 	if credPath == "" {
 		logger.Debug("Gemini credentials path unavailable")
@@ -88,7 +149,6 @@ func DetectGeminiCredentials(logger *slog.Logger) *GeminiCredentials {
 	var expiresAt time.Time
 	var expiresIn time.Duration
 	if creds.ExpiryDate > 0 {
-		// expiry_date is in Unix milliseconds
 		expiresAt = time.UnixMilli(creds.ExpiryDate)
 		expiresIn = time.Until(expiresAt)
 	}
