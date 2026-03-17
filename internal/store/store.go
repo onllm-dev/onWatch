@@ -162,10 +162,15 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Single connection: SQLite is single-writer anyway, and each connection
-	// allocates its own page cache (~2 MB with default settings). Limiting to 1
-	// connection saves 2-4 MB RSS. busy_timeout handles any contention.
-	db.SetMaxOpenConns(2)
+	// For :memory: databases, MUST use exactly 1 connection because each
+	// connection gets its own empty database. With >1, schema created on
+	// conn A is invisible to conn B, causing "no such table" errors.
+	// For file-based databases, 2 connections allow concurrent reads via WAL.
+	if dbPath == ":memory:" {
+		db.SetMaxOpenConns(1)
+	} else {
+		db.SetMaxOpenConns(2)
+	}
 	db.SetMaxIdleConns(1)
 
 	// Configure SQLite for RAM efficiency
