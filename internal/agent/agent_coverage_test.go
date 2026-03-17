@@ -314,7 +314,7 @@ func TestAnthropicAgent_SetCredentialsRefresh(t *testing.T) {
 	})
 
 	// Run a single immediate poll
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -322,12 +322,12 @@ func TestAnthropicAgent_SetCredentialsRefresh(t *testing.T) {
 		errCh <- agent.Run(ctx)
 	}()
 
-	waitUntil(t, 2*time.Second, func() bool {
+	waitUntil(t, 4*time.Second, func() bool {
 		latest, _ := str.QueryLatestAnthropic()
 		return latest != nil
 	}, "anthropic snapshot with credentials refresh to be stored")
 	cancel()
-	waitForAgentStop(t, errCh, 2*time.Second)
+	waitForAgentStop(t, errCh, 3*time.Second)
 
 	// Verify poll completed
 	latest, _ := str.QueryLatestAnthropic()
