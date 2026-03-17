@@ -146,6 +146,13 @@ do_deps() {
         else
             success "git already installed: $(git --version)"
         fi
+        # Install GTK/WebKit dev libs for Linux desktop menubar variant
+        if ! pkg-config --exists gtk+-3.0 webkit2gtk-4.1 2>/dev/null; then
+            info "Installing GTK3/WebKitGTK dev libs for desktop menubar support..."
+            sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+        else
+            success "GTK3/WebKitGTK dev libs already installed"
+        fi
     elif [[ -f /etc/redhat-release ]] || [[ -f /etc/fedora-release ]]; then
         info "Detected Fedora/RHEL -- using dnf"
         if ! command -v go &>/dev/null; then
@@ -159,6 +166,13 @@ do_deps() {
             sudo dnf install -y git
         else
             success "git already installed: $(git --version)"
+        fi
+        # Install GTK/WebKit dev libs for Linux desktop menubar variant
+        if ! pkg-config --exists gtk+-3.0 webkit2gtk-4.1 2>/dev/null; then
+            info "Installing GTK3/WebKitGTK dev libs for desktop menubar support..."
+            sudo dnf install -y gtk3-devel webkit2gtk4.1-devel libayatana-appindicator-gtk3-devel
+        else
+            success "GTK3/WebKitGTK dev libs already installed"
         fi
     else
         error "Unsupported OS. Please install Go and git manually."

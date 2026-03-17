@@ -1,7 +1,4 @@
-//go:build ignore
-
-// This file is compiled as part of webview_linux.go via CGO.
-// Build tag: menubar && linux && cgo
+//go:build menubar && linux && cgo
 
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
@@ -40,10 +37,12 @@ static gboolean main_thread_dispatch(gpointer user_data) {
 }
 
 static void onwatch_run_on_main_sync(void (*func)(void *), void *data) {
+    // Fast path: already on the main thread.
     if (g_main_context_is_owner(g_main_context_default())) {
         func(data);
         return;
     }
+
     MainThreadCall call;
     call.func = func;
     call.data = data;
@@ -53,9 +52,20 @@ static void onwatch_run_on_main_sync(void (*func)(void *), void *data) {
 
     g_idle_add(main_thread_dispatch, &call);
 
+    // Wait for the main loop to process our idle callback.
+    // Use a timed wait with context iteration fallback to avoid deadlock
+    // if the GTK main loop has not started processing idle sources yet
+    // (e.g. during early startup before gtk_main is fully entered).
     g_mutex_lock(&call.mutex);
     while (!call.done) {
-        g_cond_wait(&call.cond, &call.mutex);
+        if (!g_cond_wait_until(&call.cond, &call.mutex,
+                g_get_monotonic_time() + 50 * G_TIME_SPAN_MILLISECOND)) {
+            // Timed out - pump the main context manually in case the
+            // main loop is not yet iterating.
+            g_mutex_unlock(&call.mutex);
+            g_main_context_iteration(g_main_context_default(), FALSE);
+            g_mutex_lock(&call.mutex);
+        }
     }
     g_mutex_unlock(&call.mutex);
     g_mutex_clear(&call.mutex);
@@ -246,6 +256,7 @@ static void do_show(void *data) {
     position_at_tray(popover);
     gtk_widget_show(popover->window);
     gtk_window_present(GTK_WINDOW(popover->window));
+    gtk_widget_grab_focus(popover->window);
     popover->visible = TRUE;
     args->result = TRUE;
 }
@@ -275,6 +286,7 @@ static void do_toggle(void *data) {
     position_at_tray(popover);
     gtk_widget_show(popover->window);
     gtk_window_present(GTK_WINDOW(popover->window));
+    gtk_widget_grab_focus(popover->window);
     popover->visible = TRUE;
     args->result = TRUE;
 }
