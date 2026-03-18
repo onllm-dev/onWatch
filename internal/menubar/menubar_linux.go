@@ -7,7 +7,7 @@ import "sync/atomic"
 var running atomic.Bool
 
 // Init starts the real menubar companion. The implementation lives in
-// companion_unix.go to keep platform-specific UI code isolated.
+// companion_unix.go which is shared between macOS and Linux.
 func Init(cfg *Config) error {
 	if cfg == nil {
 		cfg = DefaultConfig()

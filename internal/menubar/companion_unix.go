@@ -128,18 +128,6 @@ func (c *trayController) toggleMenubar() {
 	_ = browser.OpenURL(url)
 }
 
-func (c *trayController) showMenubar() {
-	url := c.menubarURL()
-	if c.popover != nil {
-		if err := c.popover.ShowURL(url); err == nil {
-			return
-		} else {
-			slog.Default().Warn("failed to show native menubar host, opening browser fallback", "error", err)
-		}
-	}
-	_ = browser.OpenURL(url)
-}
-
 func (c *trayController) refreshLoop() {
 	interval := time.Duration(normalizeRefreshSeconds(c.cfg.RefreshSeconds)) * time.Second
 	ticker := time.NewTicker(interval)

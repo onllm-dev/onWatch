@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -36,12 +35,6 @@ func companionPIDPath(testMode bool) string {
 }
 
 func defaultCompanionPIDDir() string {
-	if runtime.GOOS == "windows" {
-		if dir := os.Getenv("LOCALAPPDATA"); dir != "" {
-			return filepath.Join(dir, "onwatch")
-		}
-		return filepath.Join(os.Getenv("USERPROFILE"), ".onwatch")
-	}
 	return filepath.Join(os.Getenv("HOME"), ".onwatch")
 }
 

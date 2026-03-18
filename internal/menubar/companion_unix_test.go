@@ -112,15 +112,8 @@ func TestTrayControllerDashboardURLNilConfig(t *testing.T) {
 	}
 }
 
-func TestRefreshStatusNilController(t *testing.T) {
-	// Should not panic with nil fields.
-	c := &trayController{}
-	// This calls systray.SetTitle/SetTooltip which requires systray to be
-	// initialized. We cannot call it directly in a unit test, but we can
-	// verify the snapshot provider nil-guard doesn't panic.
-	if c.cfg != nil && c.cfg.SnapshotProvider != nil {
-		t.Fatal("expected nil snapshot provider")
-	}
+func TestRefreshStatusRequiresSystray(t *testing.T) {
+	t.Skip("refreshStatus calls systray.SetTitle which requires systray init; covered by integration tests")
 }
 
 func TestRefreshStatusHandlesSnapshotError(t *testing.T) {
