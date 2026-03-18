@@ -725,21 +725,53 @@ func (s *Store) QueryCodexAccounts() ([]int64, error) {
 
 // ProviderAccount represents an account for a provider.
 type ProviderAccount struct {
-	ID        int64
-	Provider  string
-	Name      string
-	CreatedAt time.Time
-	Metadata  string
+	ID         int64
+	Provider   string
+	Name       string
+	CreatedAt  time.Time
+	Metadata   string
+	DeletedAt  *time.Time
+	ExternalID string // Provider-specific account identifier (e.g., Codex account_id from API)
 }
 
-// QueryProviderAccounts returns all accounts for a given provider.
+// QueryProviderAccounts returns all accounts for a given provider (including deleted).
 func (s *Store) QueryProviderAccounts(provider string) ([]ProviderAccount, error) {
 	rows, err := s.db.Query(
-		`SELECT id, provider, name, created_at, COALESCE(metadata, '') FROM provider_accounts WHERE provider = ? ORDER BY id`,
+		`SELECT id, provider, name, created_at, COALESCE(metadata, ''), deleted_at, COALESCE(external_id, '') FROM provider_accounts WHERE provider = ? ORDER BY id`,
 		provider,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query provider accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []ProviderAccount
+	for rows.Next() {
+		var acc ProviderAccount
+		var createdAt string
+		var deletedAt sql.NullString
+		if err := rows.Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata, &deletedAt, &acc.ExternalID); err != nil {
+			return nil, fmt.Errorf("failed to scan provider account: %w", err)
+		}
+		acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		if deletedAt.Valid && deletedAt.String != "" {
+			t, _ := time.Parse(time.RFC3339Nano, deletedAt.String)
+			acc.DeletedAt = &t
+		}
+		accounts = append(accounts, acc)
+	}
+
+	return accounts, rows.Err()
+}
+
+// QueryActiveProviderAccounts returns only non-deleted accounts for a given provider.
+func (s *Store) QueryActiveProviderAccounts(provider string) ([]ProviderAccount, error) {
+	rows, err := s.db.Query(
+		`SELECT id, provider, name, created_at, COALESCE(metadata, '') FROM provider_accounts WHERE provider = ? AND deleted_at IS NULL ORDER BY id`,
+		provider,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query active provider accounts: %w", err)
 	}
 	defer rows.Close()
 
@@ -757,6 +789,33 @@ func (s *Store) QueryProviderAccounts(provider string) ([]ProviderAccount, error
 	return accounts, rows.Err()
 }
 
+// MarkProviderAccountDeleted soft-deletes a provider account by name.
+func (s *Store) MarkProviderAccountDeleted(provider, name string) error {
+	_, err := s.db.Exec(
+		`UPDATE provider_accounts SET deleted_at = ? WHERE provider = ? AND name = ? AND deleted_at IS NULL`,
+		time.Now().UTC().Format(time.RFC3339Nano),
+		provider,
+		name,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to mark provider account deleted: %w", err)
+	}
+	return nil
+}
+
+// UndeleteProviderAccount clears the deleted_at flag for a provider account.
+func (s *Store) UndeleteProviderAccount(provider, name string) error {
+	_, err := s.db.Exec(
+		`UPDATE provider_accounts SET deleted_at = NULL WHERE provider = ? AND name = ?`,
+		provider,
+		name,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to undelete provider account: %w", err)
+	}
+	return nil
+}
+
 // GetOrCreateProviderAccount gets an existing account by name or creates a new one.
 // If the account doesn't exist and "default" is the only account for this provider,
 // it renames "default" to the new name (preserving historical data).
@@ -764,13 +823,20 @@ func (s *Store) GetOrCreateProviderAccount(provider, name string) (*ProviderAcco
 	// Try to get existing account
 	var acc ProviderAccount
 	var createdAt string
+	var deletedAt sql.NullString
 	err := s.db.QueryRow(
-		`SELECT id, provider, name, created_at, COALESCE(metadata, '') FROM provider_accounts WHERE provider = ? AND name = ?`,
+		`SELECT id, provider, name, created_at, COALESCE(metadata, ''), deleted_at FROM provider_accounts WHERE provider = ? AND name = ?`,
 		provider, name,
-	).Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata)
+	).Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata, &deletedAt)
 
 	if err == nil {
 		acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		// If account was previously deleted, undelete it (profile re-added)
+		if deletedAt.Valid && deletedAt.String != "" {
+			if undelErr := s.UndeleteProviderAccount(provider, name); undelErr == nil {
+				acc.DeletedAt = nil
+			}
+		}
 		return &acc, nil
 	}
 
@@ -834,14 +900,213 @@ func (s *Store) GetOrCreateProviderAccount(provider, name string) (*ProviderAcco
 	}, nil
 }
 
+// GetOrCreateProviderAccountByExternalID finds or creates a provider account,
+// using the external_id (e.g., Codex account_id from API) as the dedup key.
+// If an existing account has the same external_id, it reuses that row (updating
+// the name if different) instead of creating a duplicate. This ensures one DB
+// row per real provider account, regardless of how many profile names point to it.
+func (s *Store) GetOrCreateProviderAccountByExternalID(provider, name, externalID string) (*ProviderAccount, error) {
+	if externalID == "" {
+		// No external_id - fall back to name-based lookup
+		return s.GetOrCreateProviderAccount(provider, name)
+	}
+
+	// First, check if an account with this external_id already exists
+	var acc ProviderAccount
+	var createdAt string
+	var deletedAt sql.NullString
+	err := s.db.QueryRow(
+		`SELECT id, provider, name, created_at, COALESCE(metadata, ''), deleted_at, COALESCE(external_id, '') FROM provider_accounts WHERE provider = ? AND external_id = ?`,
+		provider, externalID,
+	).Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata, &deletedAt, &acc.ExternalID)
+
+	if err == nil {
+		acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		// Found existing account with same external_id
+		// Best-effort: update name if it changed (profile was renamed)
+		if acc.Name != name {
+			if _, execErr := s.db.Exec(`UPDATE provider_accounts SET name = ? WHERE id = ?`, name, acc.ID); execErr == nil {
+				acc.Name = name
+			}
+		}
+		// If account was previously deleted, undelete it (profile re-added)
+		if deletedAt.Valid && deletedAt.String != "" {
+			if undelErr := s.UndeleteProviderAccount(provider, acc.Name); undelErr == nil {
+				acc.DeletedAt = nil
+			}
+		}
+		return &acc, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to query provider account by external_id: %w", err)
+	}
+
+	// No account with this external_id - try name-based lookup and set external_id
+	acc2, err := s.GetOrCreateProviderAccount(provider, name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Best-effort: set the external_id on the account
+	if _, execErr := s.db.Exec(`UPDATE provider_accounts SET external_id = ? WHERE id = ?`, externalID, acc2.ID); execErr == nil {
+		acc2.ExternalID = externalID
+	}
+
+	return acc2, nil
+}
+
+// MergeCodexAccountData merges codex snapshot and cycle data from a source account
+// into a target account, then marks the source as deleted. Used to consolidate
+// duplicate profiles that belong to the same Codex account.
+func (s *Store) MergeCodexAccountData(targetID, sourceID int64) error {
+	if targetID == sourceID {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin merge transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Move snapshots from source to target
+	if _, err := tx.Exec(
+		`UPDATE codex_snapshots SET account_id = ? WHERE account_id = ?`,
+		targetID, sourceID,
+	); err != nil {
+		return fmt.Errorf("failed to merge snapshots: %w", err)
+	}
+
+	// Move reset cycles from source to target
+	if _, err := tx.Exec(
+		`UPDATE codex_reset_cycles SET account_id = ? WHERE account_id = ?`,
+		targetID, sourceID,
+	); err != nil {
+		return fmt.Errorf("failed to merge reset cycles: %w", err)
+	}
+
+	// Mark source account as deleted
+	if _, err := tx.Exec(
+		`UPDATE provider_accounts SET deleted_at = ? WHERE id = ?`,
+		time.Now().UTC().Format(time.RFC3339Nano), sourceID,
+	); err != nil {
+		return fmt.Errorf("failed to mark source account deleted: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// DeduplicateProviderAccounts consolidates duplicate provider accounts that share
+// the same external_id. For each group of duplicates:
+//   - If one is active and others are deleted: active one is the target
+//   - If both/all are active: lowest ID is the target
+//   - All telemetry data (snapshots, cycles) is merged into the target
+//   - Duplicate accounts are soft-deleted (telemetry data preserved, not removed)
+//
+// Returns the number of accounts merged.
+func (s *Store) DeduplicateProviderAccounts(provider string) (int, error) {
+	// Find external_ids with multiple accounts
+	rows, err := s.db.Query(
+		`SELECT external_id, COUNT(*) as cnt FROM provider_accounts
+		WHERE provider = ? AND external_id IS NOT NULL AND external_id != ''
+		GROUP BY external_id HAVING cnt > 1`,
+		provider,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query duplicate accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var duplicateExternalIDs []string
+	for rows.Next() {
+		var extID string
+		var cnt int
+		if err := rows.Scan(&extID, &cnt); err != nil {
+			return 0, fmt.Errorf("failed to scan duplicate: %w", err)
+		}
+		duplicateExternalIDs = append(duplicateExternalIDs, extID)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	merged := 0
+	for _, extID := range duplicateExternalIDs {
+		accounts, err := s.queryProviderAccountsByExternalID(provider, extID)
+		if err != nil {
+			return merged, err
+		}
+		if len(accounts) < 2 {
+			continue
+		}
+
+		// Determine the target: prefer active (non-deleted), then lowest ID
+		target := accounts[0]
+		for _, acc := range accounts[1:] {
+			if target.DeletedAt != nil && acc.DeletedAt == nil {
+				// Current target is deleted but this one is active - prefer active
+				target = acc
+			} else if target.DeletedAt == nil && acc.DeletedAt == nil && acc.ID < target.ID {
+				// Both active - prefer lower ID
+				target = acc
+			}
+		}
+
+		// Merge all non-target accounts into the target
+		for _, acc := range accounts {
+			if acc.ID == target.ID {
+				continue
+			}
+			if err := s.MergeCodexAccountData(target.ID, acc.ID); err != nil {
+				return merged, fmt.Errorf("failed to merge account %d into %d: %w", acc.ID, target.ID, err)
+			}
+			merged++
+		}
+	}
+
+	return merged, nil
+}
+
+// queryProviderAccountsByExternalID returns all accounts with a given external_id.
+func (s *Store) queryProviderAccountsByExternalID(provider, externalID string) ([]ProviderAccount, error) {
+	rows, err := s.db.Query(
+		`SELECT id, provider, name, created_at, COALESCE(metadata, ''), deleted_at, COALESCE(external_id, '')
+		FROM provider_accounts WHERE provider = ? AND external_id = ? ORDER BY id`,
+		provider, externalID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query accounts by external_id: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []ProviderAccount
+	for rows.Next() {
+		var acc ProviderAccount
+		var createdAt string
+		var deletedAt sql.NullString
+		if err := rows.Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata, &deletedAt, &acc.ExternalID); err != nil {
+			return nil, fmt.Errorf("failed to scan account: %w", err)
+		}
+		acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		if deletedAt.Valid && deletedAt.String != "" {
+			t, _ := time.Parse(time.RFC3339Nano, deletedAt.String)
+			acc.DeletedAt = &t
+		}
+		accounts = append(accounts, acc)
+	}
+	return accounts, rows.Err()
+}
+
 // GetProviderAccountByID returns an account by its ID.
 func (s *Store) GetProviderAccountByID(id int64) (*ProviderAccount, error) {
 	var acc ProviderAccount
 	var createdAt string
+	var deletedAt sql.NullString
 	err := s.db.QueryRow(
-		`SELECT id, provider, name, created_at, COALESCE(metadata, '') FROM provider_accounts WHERE id = ?`,
+		`SELECT id, provider, name, created_at, COALESCE(metadata, ''), deleted_at, COALESCE(external_id, '') FROM provider_accounts WHERE id = ?`,
 		id,
-	).Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata)
+	).Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata, &deletedAt, &acc.ExternalID)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -851,5 +1116,9 @@ func (s *Store) GetProviderAccountByID(id int64) (*ProviderAccount, error) {
 	}
 
 	acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+	if deletedAt.Valid && deletedAt.String != "" {
+		t, _ := time.Parse(time.RFC3339Nano, deletedAt.String)
+		acc.DeletedAt = &t
+	}
 	return &acc, nil
 }

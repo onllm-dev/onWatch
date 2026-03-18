@@ -31,7 +31,7 @@ func writeRefreshAuthJSON(t *testing.T, home, access, refresh, idToken, account 
 
 func writeProfileFile(t *testing.T, home, name, access, refresh, idToken, account string) string {
 	t.Helper()
-	profilesDir := filepath.Join(home, ".onwatch", "codex-profiles")
+	profilesDir := filepath.Join(home, ".onwatch", "data", "codex-profiles")
 	if err := os.MkdirAll(profilesDir, 0o700); err != nil {
 		t.Fatalf("mkdir profiles dir: %v", err)
 	}
@@ -72,7 +72,7 @@ func withStdinInput(t *testing.T, input string) func() {
 
 func loadProfileForTest(t *testing.T, home, name string) *CodexProfile {
 	t.Helper()
-	path := filepath.Join(home, ".onwatch", "codex-profiles", name+".json")
+	path := filepath.Join(home, ".onwatch", "data", "codex-profiles", name+".json")
 	profile, err := loadCodexProfile(path)
 	if err != nil {
 		t.Fatalf("load profile: %v", err)
@@ -109,7 +109,7 @@ func TestRefreshCodexProfile_SameAccount(t *testing.T) {
 		t.Fatalf("SavedAt should be updated recently, got %v", profile.SavedAt)
 	}
 
-	path := filepath.Join(home, ".onwatch", "codex-profiles", "work.json")
+	path := filepath.Join(home, ".onwatch", "data", "codex-profiles", "work.json")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat profile: %v", err)
@@ -213,7 +213,7 @@ func TestCodexProfilesDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	if got := codexProfilesDir(); got != filepath.Join(home, ".onwatch", "codex-profiles") {
+	if got := codexProfilesDir(); got != filepath.Join(home, ".onwatch", "data", "codex-profiles") {
 		t.Fatalf("codexProfilesDir() = %q", got)
 	}
 }
@@ -370,12 +370,12 @@ func TestCodexProfileSaveListStatusDeleteFlow(t *testing.T) {
 		t.Fatalf("unexpected delete output:\n%s", deleteOut)
 	}
 
-	if _, err := os.Stat(filepath.Join(home, ".onwatch", "codex-profiles", "work.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".onwatch", "data", "codex-profiles", "work.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected profile to be deleted, stat err=%v", err)
 	}
 }
 
-func TestCodexProfileSave_WarnsWhenAccountAlreadySaved(t *testing.T) {
+func TestCodexProfileSave_BlocksDuplicateAccount(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")
@@ -383,13 +383,15 @@ func TestCodexProfileSave_WarnsWhenAccountAlreadySaved(t *testing.T) {
 	writeRefreshAuthJSON(t, home, "dup_access", "dup_refresh", "dup_id", "acct_dup")
 	writeProfileFile(t, home, "personal", "old_access", "old_refresh", "old_id", "acct_dup")
 
-	out := captureStdout(t, func() {
-		if err := codexProfileSave("work"); err != nil {
-			t.Fatalf("codexProfileSave returned error: %v", err)
-		}
-	})
-	if !strings.Contains(out, `Warning: Account acct_dup is already saved as profile "personal"`) {
-		t.Fatalf("expected duplicate-account warning, got:\n%s", out)
+	err := codexProfileSave("work")
+	if err == nil {
+		t.Fatal("expected error for duplicate account, got nil")
+	}
+	if !strings.Contains(err.Error(), "already saved as profile") {
+		t.Fatalf("expected duplicate-account error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "codex profile refresh personal") {
+		t.Fatalf("expected refresh hint in error, got: %v", err)
 	}
 }
 
@@ -412,7 +414,7 @@ func TestListCodexProfiles_SkipsInvalidFilesAndDerivesName(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")
 
-	profilesDir := filepath.Join(home, ".onwatch", "codex-profiles")
+	profilesDir := filepath.Join(home, ".onwatch", "data", "codex-profiles")
 	if err := os.MkdirAll(profilesDir, 0o700); err != nil {
 		t.Fatalf("mkdir profiles dir: %v", err)
 	}
@@ -441,7 +443,7 @@ func TestCodexProfileStatus_NoCredentials(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")
 
-	profilesDir := filepath.Join(home, ".onwatch", "codex-profiles")
+	profilesDir := filepath.Join(home, ".onwatch", "data", "codex-profiles")
 	if err := os.MkdirAll(profilesDir, 0o700); err != nil {
 		t.Fatalf("mkdir profiles dir: %v", err)
 	}
@@ -566,11 +568,11 @@ func TestListCodexProfiles_ReadDirError(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")
 
-	onwatchDir := filepath.Join(home, ".onwatch")
-	if err := os.MkdirAll(onwatchDir, 0o700); err != nil {
-		t.Fatalf("mkdir .onwatch: %v", err)
+	dataDir := filepath.Join(home, ".onwatch", "data")
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatalf("mkdir .onwatch/data: %v", err)
 	}
-	profilesPath := filepath.Join(onwatchDir, "codex-profiles")
+	profilesPath := filepath.Join(dataDir, "codex-profiles")
 	if err := os.WriteFile(profilesPath, []byte("not-a-directory"), 0o600); err != nil {
 		t.Fatalf("write profiles placeholder file: %v", err)
 	}

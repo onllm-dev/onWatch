@@ -65,22 +65,20 @@ func NewCodexAgentManager(store *store.Store, tracker *tracker.CodexTracker, int
 		logger = slog.Default()
 	}
 
-	home, _ := os.UserHomeDir()
-	profilesDir := ""
-	if home != "" {
-		profilesDir = filepath.Join(home, ".onwatch", "codex-profiles")
-	}
-
 	return &CodexAgentManager{
 		store:            store,
 		tracker:          tracker,
 		interval:         interval,
 		logger:           logger,
 		instances:        make(map[string]*CodexAgentInstance),
-		profilesDir:      profilesDir,
 		scanInterval:     30 * time.Second, // Check for new profiles every 30 seconds
 		lastScanProfiles: make(map[string]time.Time),
 	}
+}
+
+// SetProfilesDir sets the directory to scan for Codex profile files.
+func (m *CodexAgentManager) SetProfilesDir(dir string) {
+	m.profilesDir = dir
 }
 
 // SetNotifier sets the notification engine for all agents.
@@ -122,6 +120,19 @@ func (m *CodexAgentManager) Run(ctx context.Context) error {
 		if err := m.startDefaultAgent(); err != nil {
 			m.logger.Warn("failed to start default agent", "error", err)
 		}
+	}
+
+	// Mark orphaned DB accounts as deleted - these are provider_accounts rows
+	// that have no corresponding running agent (e.g., profile file was deleted
+	// while daemon was not running). This ensures they don't show on the dashboard.
+	m.markOrphanedAccountsDeleted()
+
+	// Deduplicate provider accounts that share the same Codex account_id
+	// (merges telemetry data, never deletes it)
+	if merged, err := m.store.DeduplicateProviderAccounts("codex"); err != nil {
+		m.logger.Warn("failed to deduplicate Codex accounts", "error", err)
+	} else if merged > 0 {
+		m.logger.Info("deduplicated Codex accounts", "merged", merged)
 	}
 
 	// Start profile scanner in background
@@ -203,8 +214,10 @@ func (m *CodexAgentManager) loadAndStartProfile(path string) error {
 
 // startAgentForProfile creates and starts an agent for a specific profile.
 func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
-	// Get or create the database account ID for this profile
-	dbAccount, err := m.store.GetOrCreateProviderAccount("codex", profile.Name)
+	// Get or create the database account ID for this profile.
+	// Uses external_id (Codex account_id from API) for dedup - ensures one DB
+	// row per real Codex account, regardless of profile name.
+	dbAccount, err := m.store.GetOrCreateProviderAccountByExternalID("codex", profile.Name, profile.AccountID)
 	if err != nil {
 		return fmt.Errorf("failed to get/create provider account: %w", err)
 	}
@@ -424,6 +437,50 @@ func (m *CodexAgentManager) scanForProfileChanges() {
 			m.logger.Info("profile deleted, stopping agent", "profile", name)
 			m.stopAgent(name)
 			delete(m.lastScanProfiles, name)
+			// Mark the provider account as deleted in the database
+			if m.store != nil {
+				if err := m.store.MarkProviderAccountDeleted("codex", name); err != nil {
+					m.logger.Warn("failed to mark provider account deleted", "profile", name, "error", err)
+				}
+			}
+		}
+	}
+}
+
+// markOrphanedAccountsDeleted finds provider_accounts rows that have no
+// corresponding running agent and marks them as deleted. This handles the case
+// where profile files were deleted while the daemon was not running - the scanner
+// never saw the deletion, so the DB rows remain active.
+func (m *CodexAgentManager) markOrphanedAccountsDeleted() {
+	accounts, err := m.store.QueryActiveProviderAccounts("codex")
+	if err != nil {
+		m.logger.Warn("failed to query active accounts for orphan check", "error", err)
+		return
+	}
+
+	m.mu.RLock()
+	running := make(map[string]bool, len(m.instances))
+	for name := range m.instances {
+		running[name] = true
+	}
+	m.mu.RUnlock()
+
+	for _, acc := range accounts {
+		if running[acc.Name] {
+			continue // has a running agent, not orphaned
+		}
+		// Only mark as deleted if the profile file also doesn't exist on disk.
+		// A profile file might exist but failed to load (bad JSON, etc.) -
+		// in that case we don't want to mark it deleted prematurely.
+		if m.profilesDir != "" {
+			profilePath := filepath.Join(m.profilesDir, acc.Name+".json")
+			if _, statErr := os.Stat(profilePath); statErr == nil {
+				continue // file exists on disk, just failed to load - don't mark deleted
+			}
+		}
+		m.logger.Info("marking orphaned Codex account as deleted", "name", acc.Name, "id", acc.ID)
+		if err := m.store.MarkProviderAccountDeleted("codex", acc.Name); err != nil {
+			m.logger.Warn("failed to mark orphaned account deleted", "name", acc.Name, "error", err)
 		}
 	}
 }

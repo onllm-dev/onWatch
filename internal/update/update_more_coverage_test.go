@@ -3,6 +3,7 @@ package update
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -88,6 +90,55 @@ func TestApply_DownloadFailures(t *testing.T) {
 			t.Fatalf("Apply(invalid binary) = %v", err)
 		}
 	})
+}
+
+func TestDownloadWithRetry_TimeoutThenSuccess(t *testing.T) {
+	var attempts atomic.Int32
+	payload := []byte("downloaded-binary")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt := attempts.Add(1)
+		if attempt == 1 {
+			time.Sleep(120 * time.Millisecond)
+			return
+		}
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	u := NewUpdater("1.0.0", slog.Default())
+	u.downloadTimeout = 50 * time.Millisecond
+	u.downloadRetryBackoff = 1 * time.Millisecond
+	u.downloadMaxAttempts = 2
+
+	tmpDir := t.TempDir()
+	tmpFile, err := os.CreateTemp(tmpDir, "download-*.bin")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer tmpFile.Close()
+
+	written, err := u.downloadWithRetry(srv.URL, tmpFile)
+	if err != nil {
+		t.Fatalf("downloadWithRetry() error = %v", err)
+	}
+	if written != int64(len(payload)) {
+		t.Fatalf("written = %d, want %d", written, len(payload))
+	}
+	if attempts.Load() != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts.Load())
+	}
+
+	if _, err := tmpFile.Seek(0, 0); err != nil {
+		t.Fatalf("Seek: %v", err)
+	}
+	got, err := io.ReadAll(tmpFile)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("payload = %q, want %q", got, payload)
+	}
 }
 
 func TestRestart_SpawnsAppliedBinary(t *testing.T) {

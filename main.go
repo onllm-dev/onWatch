@@ -594,6 +594,9 @@ func run() error {
 		fixExplicitDBPath(cfg, logger)
 	}
 
+	// Migrate Codex profiles from legacy ~/.onwatch/codex-profiles/ to data directory
+	migrateCodexProfiles()
+
 	// Open database
 	db, err := store.New(cfg.DBPath)
 	if err != nil {
@@ -809,6 +812,7 @@ func run() error {
 	var codexMgr *agent.CodexAgentManager
 	if cfg.HasProvider("codex") {
 		codexMgr = agent.NewCodexAgentManager(db, codexTr, cfg.PollInterval, logger)
+		codexMgr.SetProfilesDir(codexProfilesDirWithDataDir(filepath.Dir(cfg.DBPath)))
 	}
 
 	// Create Antigravity tracker

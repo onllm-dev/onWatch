@@ -208,12 +208,16 @@ async function loadCodexProfiles() {
     if (!res.ok) return;
     const data = await res.json();
     if (data.profiles && data.profiles.length > 0) {
-      // Filter out "default" profile if there are custom profiles
-      const customProfiles = data.profiles.filter(p => p.name !== 'default');
+      // Filter out deleted profiles and "default" profile for dashboard tabs
+      const activeProfiles = data.profiles.filter(p => !p.deletedAt);
+      const customProfiles = activeProfiles.filter(p => p.name !== 'default');
       if (customProfiles.length > 0) {
         State.codexProfiles = customProfiles;
+      } else if (activeProfiles.length > 0) {
+        State.codexProfiles = activeProfiles;
       } else {
-        State.codexProfiles = data.profiles;
+        // All profiles deleted - no tabs needed
+        State.codexProfiles = [];
       }
       populateCodexProfileTabs();
       updateCodexProfileTabsVisibility();
@@ -6763,19 +6767,25 @@ async function populateProviderToggles(visibility) {
       const profiles = Array.isArray(data.profiles) ? data.profiles : [];
       if (profiles.length > 1) {
         profiles.forEach((profile) => {
+          const isDeleted = !!profile.deletedAt;
           const key = `codex:${profile.id}`;
-          const vis = baseVisibility[key] || baseVisibility.codex || {
-            polling: codexStatus ? codexStatus.pollingEnabled !== false : true,
-            dashboard: codexStatus ? codexStatus.dashboardVisible !== false : true
-          };
+          const vis = isDeleted
+            ? { polling: false, dashboard: false }
+            : (baseVisibility[key] || baseVisibility.codex || {
+                polling: codexStatus ? codexStatus.pollingEnabled !== false : true,
+                dashboard: codexStatus ? codexStatus.dashboardVisible !== false : true
+              });
           container.appendChild(createProviderToggleRow({
             key,
-            name: `Codex - ${profile.name}`,
-            desc: `ChatGPT account: ${profile.name}`,
+            name: `Codex - ${escapeHtml(profile.name)}`,
+            desc: isDeleted
+              ? 'Profile deleted - telemetry unavailable (credentials removed)'
+              : `ChatGPT account: ${escapeHtml(profile.name)}`,
             vis,
             configured: codexStatus ? codexStatus.configured !== false : true,
             autoDetectable: codexStatus ? !!codexStatus.autoDetectable : true,
-            isPolling: codexStatus ? !!codexStatus.isPolling : false
+            isPolling: codexStatus ? !!codexStatus.isPolling : false,
+            isDeleted,
           }));
         });
         renderedCodex = true;
@@ -6849,7 +6859,7 @@ async function fetchMenubarProviders() {
           const key = `codex:${profile.id}`;
           items.push({
             key,
-            name: `Codex - ${profile.name}`,
+            name: `Codex - ${escapeHtml(profile.name)}`,
             meta: 'Per-account Codex usage',
             dashboardVisible: true,
           });
@@ -7039,10 +7049,13 @@ function updateProviderVisibilityState(provider, role, enabled) {
   State.providerVisibility[provider][role] = enabled;
 }
 
-function createProviderToggleRow({ key, name, desc, vis, configured, autoDetectable, isPolling }) {
+function createProviderToggleRow({ key, name, desc, vis, configured, autoDetectable, isPolling, isDeleted }) {
   const row = document.createElement('div');
   row.className = 'settings-toggle-row settings-toggle-row-dual';
-  const badge = providerStatusBadge(configured, autoDetectable, isPolling);
+  const badge = isDeleted
+    ? '<span class="status-badge deleted" style="background:var(--md-error,#b3261e);color:#fff;padding:2px 8px;border-radius:12px;font-size:0.7rem;margin-left:8px">Deleted</span>'
+    : providerStatusBadge(configured, autoDetectable, isPolling);
+  const telemetryDisabled = isDeleted ? 'disabled title="Telemetry unavailable - profile deleted"' : '';
   row.innerHTML = `
     <div class="settings-toggle-info">
       <div class="settings-toggle-label">${name} ${badge}</div>
@@ -7051,15 +7064,15 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
     <div class="settings-toggle-group">
       <div class="settings-toggle-item">
         <div class="settings-toggle-item-label">Telemetry</div>
-        <div class="settings-toggle-item-hint">Track usage data in background</div>
-        <label class="settings-toggle" title="Telemetry">
-          <input type="checkbox" data-provider="${key}" data-role="polling" ${vis.polling !== false ? 'checked' : ''}>
+        <div class="settings-toggle-item-hint">${isDeleted ? 'Unavailable - profile deleted' : 'Track usage data in background'}</div>
+        <label class="settings-toggle" title="${isDeleted ? 'Telemetry unavailable - profile deleted' : 'Telemetry'}">
+          <input type="checkbox" data-provider="${key}" data-role="polling" ${vis.polling !== false && !isDeleted ? 'checked' : ''} ${telemetryDisabled}>
           <span class="settings-toggle-track"></span>
         </label>
       </div>
       <div class="settings-toggle-item">
         <div class="settings-toggle-item-label">Dashboard</div>
-        <div class="settings-toggle-item-hint">Show as individual tab</div>
+        <div class="settings-toggle-item-hint">${isDeleted ? 'Show historical data' : 'Show as individual tab'}</div>
         <label class="settings-toggle" title="Dashboard">
           <input type="checkbox" data-provider="${key}" data-role="dashboard" ${vis.dashboard !== false ? 'checked' : ''}>
           <span class="settings-toggle-track"></span>

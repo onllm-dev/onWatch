@@ -96,9 +96,9 @@ func TestNewCodexAgentManager_Defaults(t *testing.T) {
 	if manager.interval != 15*time.Second {
 		t.Fatalf("interval = %v, want 15s", manager.interval)
 	}
-	wantProfilesDir := filepath.Join(home, ".onwatch", "codex-profiles")
-	if manager.profilesDir != wantProfilesDir {
-		t.Fatalf("profilesDir = %q, want %q", manager.profilesDir, wantProfilesDir)
+	// profilesDir is no longer set by constructor - must be set via SetProfilesDir
+	if manager.profilesDir != "" {
+		t.Fatalf("profilesDir = %q, want empty (set via SetProfilesDir)", manager.profilesDir)
 	}
 	if manager.scanInterval != 30*time.Second {
 		t.Fatalf("scanInterval = %v, want 30s", manager.scanInterval)

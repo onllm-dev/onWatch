@@ -1,7 +1,9 @@
 package update
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,9 +19,12 @@ import (
 )
 
 const (
-	githubReleasesURL = "https://api.github.com/repos/onllm-dev/onwatch/releases/latest"
-	downloadBaseURL   = "https://github.com/onllm-dev/onwatch/releases/download"
-	defaultCacheTTL   = 1 * time.Hour
+	githubReleasesURL    = "https://api.github.com/repos/onllm-dev/onwatch/releases/latest"
+	downloadBaseURL      = "https://github.com/onllm-dev/onwatch/releases/download"
+	defaultCacheTTL      = 1 * time.Hour
+	downloadTimeout      = 10 * time.Minute
+	downloadRetryBackoff = 2 * time.Second
+	downloadMaxAttempts  = 2
 )
 
 var (
@@ -53,6 +58,10 @@ type Updater struct {
 	// For testing: override the GitHub API URL and download base URL
 	apiURL      string
 	downloadURL string
+
+	downloadTimeout      time.Duration
+	downloadRetryBackoff time.Duration
+	downloadMaxAttempts  int
 }
 
 // NewUpdater creates a new Updater with the given version and logger.
@@ -71,9 +80,12 @@ func NewUpdater(version string, logger *slog.Logger) *Updater {
 				IdleConnTimeout:     30 * time.Second,
 			},
 		},
-		cacheTTL:    defaultCacheTTL,
-		apiURL:      githubReleasesURL,
-		downloadURL: downloadBaseURL,
+		cacheTTL:             defaultCacheTTL,
+		apiURL:               githubReleasesURL,
+		downloadURL:          downloadBaseURL,
+		downloadTimeout:      downloadTimeout,
+		downloadRetryBackoff: downloadRetryBackoff,
+		downloadMaxAttempts:  downloadMaxAttempts,
 	}
 }
 
@@ -206,26 +218,14 @@ func (u *Updater) Apply() error {
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath) // cleanup on error
 
-	// Stream download (2 min timeout for large binaries on slow connections)
-	dlClient := &http.Client{Timeout: 2 * time.Minute}
-	resp, err := dlClient.Get(info.DownloadURL)
+	written, err := u.downloadWithRetry(info.DownloadURL, tmpFile)
 	if err != nil {
 		tmpFile.Close()
-		return fmt.Errorf("update.Apply: download failed: %w", err)
+		return fmt.Errorf("update.Apply: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		tmpFile.Close()
-		return fmt.Errorf("update.Apply: download returned HTTP %d", resp.StatusCode)
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("update.Apply: close temp file: %w", err)
 	}
-
-	written, err := io.Copy(tmpFile, resp.Body)
-	if err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("update.Apply: download write failed: %w", err)
-	}
-	tmpFile.Close()
 
 	if written == 0 {
 		return fmt.Errorf("update.Apply: downloaded file is empty")
@@ -267,6 +267,87 @@ func (u *Updater) Apply() error {
 	MigrateSystemdUnit(u.logger)
 
 	return nil
+}
+
+func (u *Updater) downloadWithRetry(url string, dst *os.File) (int64, error) {
+	attempts := u.downloadMaxAttempts
+	if attempts <= 0 {
+		attempts = 1
+	}
+
+	backoff := u.downloadRetryBackoff
+	if backoff <= 0 {
+		backoff = downloadRetryBackoff
+	}
+
+	timeout := u.downloadTimeout
+	if timeout <= 0 {
+		timeout = downloadTimeout
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if _, err := dst.Seek(0, 0); err != nil {
+			return 0, fmt.Errorf("download seek failed: %w", err)
+		}
+		if err := dst.Truncate(0); err != nil {
+			return 0, fmt.Errorf("download truncate failed: %w", err)
+		}
+
+		written, err := u.downloadOnce(url, dst, timeout)
+		if err == nil {
+			return written, nil
+		}
+		lastErr = err
+		if attempt < attempts && isRetryableDownloadError(err) {
+			u.logger.Warn("Download attempt failed, retrying",
+				"attempt", attempt,
+				"maxAttempts", attempts,
+				"error", err,
+				"backoff", backoff)
+			time.Sleep(backoff)
+			continue
+		}
+		break
+	}
+
+	return 0, fmt.Errorf("download failed: %w", lastErr)
+}
+
+func (u *Updater) downloadOnce(url string, dst io.Writer, timeout time.Duration) (int64, error) {
+	dlClient := &http.Client{Timeout: timeout}
+	resp, err := dlClient.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("download returned HTTP %d", resp.StatusCode)
+	}
+
+	written, err := io.Copy(dst, resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("download write failed: %w", err)
+	}
+	return written, nil
+}
+
+func isRetryableDownloadError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var netErr interface{ Timeout() bool }
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	return strings.Contains(strings.ToLower(err.Error()), "context deadline exceeded")
 }
 
 // replaceBinary replaces the binary at exePath with the one at tmpPath.
