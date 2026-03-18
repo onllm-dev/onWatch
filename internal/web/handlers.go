@@ -115,6 +115,7 @@ func parseCodexAccountID(r *http.Request) int64 {
 }
 
 // CodexProfiles returns available Codex profiles/accounts.
+// Returns all profiles (including deleted) so the UI can show deleted status in settings.
 func (h *Handler) CodexProfiles(w http.ResponseWriter, r *http.Request) {
 	if h.store == nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{"profiles": []interface{}{}})
@@ -130,11 +131,15 @@ func (h *Handler) CodexProfiles(w http.ResponseWriter, r *http.Request) {
 
 	profiles := make([]map[string]interface{}, 0, len(accounts))
 	for _, acc := range accounts {
-		profiles = append(profiles, map[string]interface{}{
+		p := map[string]interface{}{
 			"id":        acc.ID,
 			"name":      acc.Name,
 			"createdAt": acc.CreatedAt.Format(time.RFC3339),
-		})
+		}
+		if acc.DeletedAt != nil {
+			p["deletedAt"] = acc.DeletedAt.Format(time.RFC3339)
+		}
+		profiles = append(profiles, p)
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{"profiles": profiles})
@@ -145,7 +150,8 @@ func (h *Handler) codexUsageAccounts() []map[string]interface{} {
 		return []map[string]interface{}{}
 	}
 
-	accounts, err := h.store.QueryProviderAccounts("codex")
+	// Only return active (non-deleted) accounts for dashboard rendering
+	accounts, err := h.store.QueryActiveProviderAccounts("codex")
 	if err != nil {
 		h.logger.Error("failed to query Codex accounts", "error", err)
 		return []map[string]interface{}{}

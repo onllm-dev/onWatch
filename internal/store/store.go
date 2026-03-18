@@ -748,6 +748,25 @@ func (s *Store) migrateSchema() error {
 		}
 	}
 
+	// Add deleted_at column to provider_accounts for soft-delete support
+	if _, err := s.db.Exec(`
+		ALTER TABLE provider_accounts ADD COLUMN deleted_at TEXT
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("failed to add deleted_at to provider_accounts: %w", err)
+		}
+	}
+
+	// Add external_id column to provider_accounts for account-level dedup
+	// (e.g., Codex account_id from the API/JWT is the real identity)
+	if _, err := s.db.Exec(`
+		ALTER TABLE provider_accounts ADD COLUMN external_id TEXT
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("failed to add external_id to provider_accounts: %w", err)
+		}
+	}
+
 	return nil
 }
 

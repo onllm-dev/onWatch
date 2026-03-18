@@ -12,7 +12,41 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
+
+// defaultDBPath returns the default database path for CLI operations.
+func defaultDBPath() string {
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return "/data/onwatch.db"
+	}
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return "/data/onwatch.db"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".onwatch", "data", "onwatch.db")
+}
+
+// withProfileDB opens the database for a best-effort profile operation.
+// The callback receives a store; if the DB can't be opened, the callback is skipped.
+func withProfileDB(fn func(db *store.Store)) {
+	dbPath := defaultDBPath()
+	if dbPath == "" {
+		return
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		return // DB doesn't exist yet
+	}
+	db, err := store.New(dbPath)
+	if err != nil {
+		return // DB locked or inaccessible
+	}
+	defer db.Close()
+	fn(db)
+}
 
 // CodexProfile represents a saved Codex credential profile.
 type CodexProfile struct {
@@ -28,12 +62,101 @@ type CodexProfile struct {
 }
 
 // codexProfilesDir returns the directory for storing Codex profiles.
+// Profiles are stored in the data directory (alongside the SQLite DB) so they
+// persist automatically in Docker via the /data volume mount.
 func codexProfilesDir() string {
+	return codexProfilesDirWithDataDir("")
+}
+
+// codexProfilesDirWithDataDir returns the profiles directory using the given data dir.
+// If dataDir is empty, the default data directory is used.
+func codexProfilesDirWithDataDir(dataDir string) string {
+	if dataDir != "" {
+		return filepath.Join(dataDir, "codex-profiles")
+	}
+
+	// Docker: use /data
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return "/data/codex-profiles"
+	}
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return "/data/codex-profiles"
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".onwatch", "data", "codex-profiles")
+}
+
+// legacyCodexProfilesDir returns the old profiles directory for migration purposes.
+func legacyCodexProfilesDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
 	return filepath.Join(home, ".onwatch", "codex-profiles")
+}
+
+// migrateCodexProfiles migrates profile files from the legacy directory to the new data directory.
+func migrateCodexProfiles() {
+	oldDir := legacyCodexProfilesDir()
+	newDir := codexProfilesDir()
+	if oldDir == "" || newDir == "" || oldDir == newDir {
+		return
+	}
+
+	entries, err := os.ReadDir(oldDir)
+	if err != nil {
+		return // Old dir doesn't exist or isn't readable - nothing to migrate
+	}
+
+	hasProfiles := false
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			hasProfiles = true
+			break
+		}
+	}
+	if !hasProfiles {
+		return
+	}
+
+	if err := os.MkdirAll(newDir, 0700); err != nil {
+		return
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		oldPath := filepath.Join(oldDir, e.Name())
+		newPath := filepath.Join(newDir, e.Name())
+
+		// Don't overwrite if already exists in new location
+		if _, err := os.Stat(newPath); err == nil {
+			continue
+		}
+
+		if err := os.Rename(oldPath, newPath); err != nil {
+			// If rename fails (cross-device), copy then remove
+			data, readErr := os.ReadFile(oldPath)
+			if readErr != nil {
+				continue
+			}
+			if writeErr := os.WriteFile(newPath, data, 0600); writeErr != nil {
+				continue
+			}
+			os.Remove(oldPath)
+		}
+	}
+
+	// Remove old directory if empty
+	remaining, _ := os.ReadDir(oldDir)
+	if len(remaining) == 0 {
+		os.Remove(oldDir)
+	}
 }
 
 // validProfileName checks if a profile name is valid (alphanumeric, hyphen, underscore).
@@ -271,6 +394,11 @@ func codexProfileRefresh(name string) error {
 		return fmt.Errorf("failed to write profile: %w", err)
 	}
 
+	// Ensure the profile is active in the database (undelete if previously deleted).
+	withProfileDB(func(db *store.Store) {
+		db.GetOrCreateProviderAccountByExternalID("codex", name, creds.AccountID)
+	})
+
 	if isNewProfile {
 		fmt.Printf("Profile '%s' created successfully for account '%s'\n", name, creds.AccountID)
 	} else if accountOverride {
@@ -322,11 +450,14 @@ func codexProfileSave(name string) error {
 		}
 	}
 
-	// Check if another profile already uses this account
-	profiles, _ := listCodexProfiles()
+	// Block saving a duplicate profile for the same Codex account
+	profiles, err := listCodexProfiles()
+	if err != nil {
+		return fmt.Errorf("failed to list existing profiles for duplicate check: %w", err)
+	}
 	for _, p := range profiles {
 		if p.Name != name && p.AccountID != "" && p.AccountID == creds.AccountID {
-			fmt.Printf("Warning: Account %s is already saved as profile %q\n", creds.AccountID, p.Name)
+			return fmt.Errorf("account %s is already saved as profile %q.\nTo update credentials, run: onwatch codex profile refresh %s", creds.AccountID, p.Name, p.Name)
 		}
 	}
 
@@ -350,6 +481,16 @@ func codexProfileSave(name string) error {
 	if err := os.WriteFile(profilePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write profile: %w", err)
 	}
+
+	// Ensure the profile is active in the database (undelete if previously deleted,
+	// set external_id for dedup). Best-effort - daemon handles it too on next scan.
+	withProfileDB(func(db *store.Store) {
+		acc, err := db.GetOrCreateProviderAccountByExternalID("codex", name, creds.AccountID)
+		if err != nil || acc == nil {
+			return
+		}
+		// If it was previously deleted, it's already undeleted by GetOrCreateProviderAccountByExternalID
+	})
 
 	fmt.Printf("Saved Codex profile %q", name)
 	if creds.AccountID != "" {
@@ -407,6 +548,12 @@ func codexProfileDelete(name string) error {
 	if err := os.Remove(profilePath); err != nil {
 		return fmt.Errorf("failed to delete profile: %w", err)
 	}
+
+	// Mark the profile as deleted in the database immediately.
+	// Best-effort - daemon also handles this on next scan.
+	withProfileDB(func(db *store.Store) {
+		db.MarkProviderAccountDeleted("codex", name)
+	})
 
 	fmt.Printf("Deleted Codex profile %q\n", name)
 	fmt.Println("Note: Historical data for this profile remains in the database.")
