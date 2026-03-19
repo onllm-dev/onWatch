@@ -41,7 +41,7 @@ jobs:
         run: go build -o onwatch .
 
   menubar-macos:
-    runs-on: macos-latest
+    runs-on: macos-15
     name: Menubar macOS
 
     steps:
@@ -51,11 +51,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-
-      - name: Select Xcode and SDK
-        run: |
-          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
 
       - name: Compile tagged menubar packages
         run: |
