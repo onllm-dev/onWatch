@@ -52,6 +52,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
       - name: Compile tagged menubar packages
         run: |
           go test -tags menubar ./internal/menubar ./internal/web
