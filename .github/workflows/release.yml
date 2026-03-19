@@ -100,8 +100,10 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+      - name: Select Xcode and SDK
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
 
       - name: Build macOS artifact
         run: |
@@ -135,8 +137,10 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+      - name: Select Xcode and SDK
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
 
       - name: Build macOS artifact
         run: |
