@@ -83,7 +83,7 @@ jobs:
 
   build-macos-amd64:
     needs: test
-    runs-on: macos-14
+    runs-on: macos-15
     name: Build macOS amd64
 
     steps:
@@ -100,11 +100,6 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Select Xcode and SDK
-        run: |
-          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
-
       - name: Build macOS artifact
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build \
@@ -120,7 +115,7 @@ jobs:
 
   build-macos-arm64:
     needs: test
-    runs-on: macos-14
+    runs-on: macos-15
     name: Build macOS arm64
 
     steps:
@@ -136,11 +131,6 @@ jobs:
       - name: Read version
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
-
-      - name: Select Xcode and SDK
-        run: |
-          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
 
       - name: Build macOS artifact
         run: |
