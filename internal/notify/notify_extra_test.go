@@ -629,6 +629,12 @@ func TestSMTPMailer_TestConnection_NoUsername(t *testing.T) {
 			switch cmd {
 			case "EHLO", "HELO":
 				fmt.Fprintf(conn, "250 mock\r\n")
+			case "MAIL":
+				fmt.Fprintf(conn, "250 OK\r\n")
+			case "RCPT":
+				fmt.Fprintf(conn, "250 OK\r\n")
+			case "RSET":
+				fmt.Fprintf(conn, "250 OK\r\n")
 			case "QUIT":
 				fmt.Fprintf(conn, "221 Bye\r\n")
 				return

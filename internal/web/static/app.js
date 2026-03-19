@@ -228,26 +228,30 @@ async function loadCodexProfiles() {
 }
 
 function populateCodexProfileTabs() {
-  const container = document.getElementById('codex-profile-tabs');
-  if (!container) return;
+  const dropdown = document.getElementById('codex-profile-dropdown');
+  const menu = document.getElementById('codex-profile-menu');
+  if (!dropdown || !menu) return;
 
-  // Only show tabs if there are multiple profiles
+  // Only show dropdown if there are multiple profiles
   if (State.codexProfiles.length <= 1) {
-    container.style.display = 'none';
+    dropdown.style.display = 'none';
     return;
   }
 
-  container.innerHTML = '';
+  menu.innerHTML = '';
 
   for (const profile of State.codexProfiles) {
-    const btn = document.createElement('button');
-    btn.className = 'profile-tab' + (profile.id === State.codexAccount ? ' active' : '');
-    btn.dataset.accountId = profile.id;
-    btn.textContent = profile.name;
-    btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-selected', profile.id === State.codexAccount ? 'true' : 'false');
-    btn.addEventListener('click', () => switchCodexProfile(profile.id));
-    container.appendChild(btn);
+    const li = document.createElement('li');
+    li.className = 'codex-profile-item' + (profile.id === State.codexAccount ? ' active' : '');
+    li.dataset.accountId = profile.id;
+    li.textContent = profile.name;
+    li.setAttribute('role', 'option');
+    li.setAttribute('aria-selected', profile.id === State.codexAccount ? 'true' : 'false');
+    li.addEventListener('click', () => {
+      switchCodexProfile(profile.id);
+      closeCodexProfileDropdown();
+    });
+    menu.appendChild(li);
   }
 
   // If current account not in list, reset to first profile
@@ -256,6 +260,8 @@ function populateCodexProfileTabs() {
     saveCodexAccount(State.codexAccount);
     updateProfileTabsActive();
   }
+
+  updateProfileTabsActive();
 }
 
 function switchCodexProfile(accountId) {
@@ -267,23 +273,37 @@ function switchCodexProfile(accountId) {
 }
 
 function updateProfileTabsActive() {
-  const container = document.getElementById('codex-profile-tabs');
-  if (!container) return;
-  container.querySelectorAll('.profile-tab').forEach(tab => {
-    const isActive = parseInt(tab.dataset.accountId, 10) === State.codexAccount;
-    tab.classList.toggle('active', isActive);
-    tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  const label = document.getElementById('codex-profile-label');
+  const menu = document.getElementById('codex-profile-menu');
+  if (!menu) return;
+
+  const activeProfile = State.codexProfiles.find(p => p.id === State.codexAccount);
+  if (label && activeProfile) {
+    label.textContent = activeProfile.name;
+  }
+
+  menu.querySelectorAll('.codex-profile-item').forEach(item => {
+    const isActive = parseInt(item.dataset.accountId, 10) === State.codexAccount;
+    item.classList.toggle('active', isActive);
+    item.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
 }
 
-// Show/hide profile tabs based on current provider and profile count
+function closeCodexProfileDropdown() {
+  const trigger = document.getElementById('codex-profile-trigger');
+  const menu = document.getElementById('codex-profile-menu');
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  if (menu) menu.classList.remove('open');
+}
+
+// Show/hide profile dropdown based on current provider and profile count
 function updateCodexProfileTabsVisibility() {
-  const container = document.getElementById('codex-profile-tabs');
-  if (!container) return;
+  const dropdown = document.getElementById('codex-profile-dropdown');
+  if (!dropdown) return;
 
   const provider = getCurrentProvider();
-  const showTabs = provider === 'codex' && State.codexProfiles.length > 1;
-  container.style.display = showTabs ? 'flex' : 'none';
+  const show = provider === 'codex' && State.codexProfiles.length > 1;
+  dropdown.style.display = show ? '' : 'none';
 }
 
 // Refresh all dashboard data (used when switching profiles)
@@ -300,7 +320,28 @@ function refreshAll() {
 }
 
 function initCodexProfileTabs() {
-  // Profile tabs are initialized via populateCodexProfileTabs after loading profiles
+  // Set up dropdown toggle behavior
+  const trigger = document.getElementById('codex-profile-trigger');
+  const menu = document.getElementById('codex-profile-menu');
+  if (!trigger || !menu) return;
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = menu.classList.toggle('open');
+    trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  });
+
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.codex-profile-dropdown')) {
+      closeCodexProfileDropdown();
+    }
+  });
+
+  // Close on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeCodexProfileDropdown();
+  });
 }
 
 function codexAccountParam() {
@@ -2613,6 +2654,12 @@ function setLayoutDensity(mode) {
     });
   }
 
+  // Keep settings select in sync (if on settings page)
+  const settingsSelect = document.getElementById('settings-layout-density');
+  if (settingsSelect && settingsSelect.value !== next) {
+    settingsSelect.value = next;
+  }
+
   try {
     localStorage.setItem('onwatch-layout', next);
   } catch (e) {
@@ -2641,14 +2688,24 @@ function initLayoutToggle() {
   }
   setLayoutDensity(saved);
 
+  // Dashboard navbar toggle (if present)
   const toggle = document.getElementById('layout-toggle');
-  if (!toggle) return;
+  if (toggle) {
+    toggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('.layout-btn');
+      if (!btn) return;
+      setLayoutDensity(btn.dataset.layout);
+    });
+  }
 
-  toggle.addEventListener('click', (e) => {
-    const btn = e.target.closest('.layout-btn');
-    if (!btn) return;
-    setLayoutDensity(btn.dataset.layout);
-  });
+  // Settings page select (if present)
+  const settingsSelect = document.getElementById('settings-layout-density');
+  if (settingsSelect) {
+    settingsSelect.value = saved;
+    settingsSelect.addEventListener('change', () => {
+      setLayoutDensity(settingsSelect.value);
+    });
+  }
 }
 
 // ── Card Updates ──
@@ -5076,7 +5133,7 @@ function renderSessionsTable() {
   const isMiniMax = provider === 'minimax';
   const isAntigravity = provider === 'antigravity';
   const isGemini = provider === 'gemini';
-  const colSpan = isBoth ? 6 : isZai ? 5 : isCodex ? 6 : isAntigravity ? 7 : isGemini ? 7 : 7;
+  const colSpan = isBoth ? 6 : isZai ? 5 : isCodex ? 6 : isMiniMax ? 6 : isAntigravity ? 7 : isGemini ? 7 : 7;
 
   let data = State.allSessionsData.map((s, i) => ({ ...s, _computed: getSessionComputedFields(s), _index: i }));
 
@@ -5293,6 +5350,13 @@ function renderSessionsTable() {
       return mainRow + detailRow;
     }).join('');
   } else if (isMiniMax) {
+    // Helper to get current MiniMax plan quota total from loaded card data
+    function _minimaxQuotaTotal() {
+      for (const [key, q] of Object.entries(State.currentQuotas || {})) {
+        if (q && q.total > 0 && String(key).startsWith('minimax')) return q.total;
+      }
+      return 0;
+    }
     tbody.innerHTML = pageData.map(session => {
       const c = session._computed;
       const isExpanded = State.expandedSessionId === session.id;
@@ -5301,12 +5365,13 @@ function renderSessionsTable() {
       const sessionDelta = Math.max(0, peakUsed - startUsed);
       const hourlyRate = c.durationHours > 0 ? sessionDelta / c.durationHours : 0;
 
+      const quotaTotal = _minimaxQuotaTotal();
+      const peakPct = quotaTotal > 0 ? ((peakUsed / quotaTotal) * 100).toFixed(1) + '%' : '';
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
-        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
         <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '<span class="badge badge-active">Active</span>'}</td>
         <td>${c.durationStr}</td>
-        <td>${formatNumber(peakUsed)}</td>
+        <td>${formatNumber(peakUsed)}${peakPct ? ' (' + peakPct + ')' : ''}</td>
         <td>${formatNumber(sessionDelta)}</td>
         <td>${session.snapshotCount || 0}</td>
       </tr>`;
@@ -6637,7 +6702,7 @@ async function loadSettings() {
       }
       // Load overrides
       if (n.overrides && n.overrides.length > 0) {
-        n.overrides.forEach(o => addOverrideRow(o.quota_key, o.provider, o.warning, o.critical, o.is_absolute));
+        n.overrides.forEach(o => addOverrideRow(o.quota_key, o.provider, o.warning, o.critical, o.is_absolute, o.disable_reset, o.disable_warning, o.disable_critical));
       }
     }
 
@@ -7211,8 +7276,11 @@ function gatherSettings() {
       const w = parseFloat(row.querySelector('.override-warning')?.value);
       const c = parseFloat(row.querySelector('.override-critical')?.value);
       const isAbs = row.querySelector('.override-is-absolute')?.value === 'true';
+      const disableWarning = !(row.querySelector('.override-enable-warning')?.checked ?? true);
+      const disableCrit = !(row.querySelector('.override-enable-critical')?.checked ?? true);
+      const disableReset = !(row.querySelector('.override-enable-reset')?.checked ?? true);
       if (quota && !isNaN(w) && !isNaN(c)) {
-        overrides.push({ quota_key: quota, provider: provider || '', warning: w, critical: c, is_absolute: isAbs });
+        overrides.push({ quota_key: quota, provider: provider || '', warning: w, critical: c, is_absolute: isAbs, disable_reset: disableReset, disable_warning: disableWarning, disable_critical: disableCrit });
       }
     });
 
@@ -7343,6 +7411,12 @@ function setupSMTPTest() {
         result.textContent = data.message || (data.success ? 'Test email sent.' : 'Test failed.');
         result.className = 'settings-test-result ' + (data.success ? 'success' : 'error');
       }
+      // Show diagnostics if available
+      const diagEl = document.getElementById('smtp-diagnostics');
+      if (diagEl && data.diagnostics) {
+        diagEl.textContent = data.diagnostics;
+        diagEl.parentElement.hidden = false;
+      }
     } catch (e) {
       if (result) {
         result.textContent = 'Network error.';
@@ -7364,6 +7438,9 @@ function setupPushNotifications() {
   var testResult = document.getElementById('push-test-result');
 
   if (!statusLabel) return;
+
+  // Always collect diagnostics (most useful when push is NOT working)
+  collectPushDiagnostics();
 
   // Check for HTTPS - required for Push API on mobile devices
   // Note: window.isSecureContext is true for localhost over HTTP, but Android Chrome
@@ -7497,6 +7574,66 @@ function setupPushNotifications() {
       }
     });
   }
+
+}
+
+async function collectPushDiagnostics() {
+  var diagEl = document.getElementById('push-diagnostics');
+  if (!diagEl) return;
+
+  var lines = [];
+  lines.push('Protocol: ' + location.protocol);
+  lines.push('Secure context: ' + (window.isSecureContext ? 'Yes' : 'No'));
+  lines.push('Service Worker support: ' + ('serviceWorker' in navigator ? 'Yes' : 'No'));
+  lines.push('PushManager support: ' + ('PushManager' in window ? 'Yes' : 'No'));
+  lines.push('Notification support: ' + ('Notification' in window ? 'Yes' : 'No'));
+
+  if ('Notification' in window) {
+    lines.push('Notification permission: ' + Notification.permission);
+  }
+
+  lines.push('User agent: ' + navigator.userAgent);
+
+  // Check Safari
+  var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  if (isSafari) {
+    var match = navigator.userAgent.match(/Version\/(\d+\.\d+)/);
+    lines.push('Safari version: ' + (match ? match[1] : 'unknown'));
+  }
+
+  // Check VAPID key availability
+  try {
+    var resp = await authFetch('/api/push/vapid');
+    if (resp.ok) {
+      var data = await resp.json();
+      lines.push('VAPID key: ' + (data.public_key ? 'Available (' + data.public_key.substring(0, 12) + '...)' : 'Missing'));
+    } else {
+      lines.push('VAPID key: Unavailable (HTTP ' + resp.status + ')');
+    }
+  } catch (e) {
+    lines.push('VAPID key: Error fetching');
+  }
+
+  // Check service worker registration & subscription
+  if ('serviceWorker' in navigator) {
+    try {
+      var reg = await navigator.serviceWorker.getRegistration('/sw.js');
+      if (reg) {
+        lines.push('SW registered: Yes (scope: ' + reg.scope + ')');
+        lines.push('SW state: ' + (reg.active ? 'active' : reg.installing ? 'installing' : reg.waiting ? 'waiting' : 'none'));
+        var sub = await reg.pushManager.getSubscription();
+        lines.push('Push subscription: ' + (sub ? 'Active' : 'None'));
+      } else {
+        lines.push('SW registered: No');
+      }
+    } catch (e) {
+      lines.push('SW check error: ' + e.message);
+    }
+  }
+
+  diagEl.textContent = lines.join('\n');
+  const section = document.getElementById('push-diagnostics-section');
+  if (section) section.hidden = false;
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -7562,7 +7699,7 @@ function setupSettingsPassword() {
 function setupOverrides() {
   const addBtn = document.getElementById('add-override-btn');
   if (addBtn) {
-    addBtn.addEventListener('click', () => addOverrideRow('', 'anthropic', 80, 95, false));
+    addBtn.addEventListener('click', () => addOverrideRow('', 'anthropic', 80, 95, false, false, false, false));
   }
 }
 
@@ -7572,11 +7709,33 @@ const _overrideQuotasByProvider = {
     { key: 'seven_day', label: 'Weekly All-Model' },
     { key: 'seven_day_sonnet', label: 'Weekly Sonnet' },
     { key: 'monthly_limit', label: 'Monthly Limit' },
+    { key: 'extra_usage', label: 'Extra Usage' },
   ],
   codex: [
     { key: 'five_hour', label: '5-Hour Limit' },
     { key: 'seven_day', label: 'Weekly All-Model' },
     { key: 'code_review', label: 'Review Requests' },
+  ],
+  copilot: [
+    { key: 'premium_interactions', label: 'Premium Requests' },
+    { key: 'chat', label: 'Chat' },
+    { key: 'completions', label: 'Completions' },
+  ],
+  minimax: [
+    { key: 'coding_plan', label: 'Coding Plan (Shared Pool)' },
+  ],
+  antigravity: [
+    { key: 'antigravity_claude_gpt', label: 'Claude + GPT Quota' },
+    { key: 'antigravity_gemini_pro', label: 'Gemini Pro Quota' },
+    { key: 'antigravity_gemini_flash', label: 'Gemini Flash Quota' },
+  ],
+  gemini: [
+    { key: 'gemini-3-pro-preview', label: 'Gemini 3 Pro' },
+    { key: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { key: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
+    { key: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { key: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite' },
+    { key: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
   ],
   synthetic: [
     { key: 'subscription', label: 'Subscription' },
@@ -7631,7 +7790,7 @@ function _updateOverrideQuotas(row) {
   }
 }
 
-function addOverrideRow(quotaKey, provider, warning, critical, isAbsolute) {
+function addOverrideRow(quotaKey, provider, warning, critical, isAbsolute, disableReset, disableWarning, disableCrit) {
   const list = document.getElementById('override-list');
   if (!list) return;
 
@@ -7648,6 +7807,10 @@ function addOverrideRow(quotaKey, provider, warning, critical, isAbsolute) {
     <select class="settings-input override-provider-select" style="flex:1">
       <option value="anthropic" ${provider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
       <option value="codex" ${provider === 'codex' ? 'selected' : ''}>Codex</option>
+      <option value="copilot" ${provider === 'copilot' ? 'selected' : ''}>Copilot</option>
+      <option value="minimax" ${provider === 'minimax' ? 'selected' : ''}>MiniMax</option>
+      <option value="antigravity" ${provider === 'antigravity' ? 'selected' : ''}>Antigravity</option>
+      <option value="gemini" ${provider === 'gemini' ? 'selected' : ''}>Gemini</option>
       <option value="synthetic" ${provider === 'synthetic' ? 'selected' : ''}>Synthetic</option>
       <option value="zai" ${provider === 'zai' ? 'selected' : ''}>Z.ai</option>
     </select>
@@ -7656,6 +7819,9 @@ function addOverrideRow(quotaKey, provider, warning, critical, isAbsolute) {
     </select>
     <input type="number" class="settings-input settings-input-sm override-warning" value="${warning}" min="0" placeholder="Warn%">
     <input type="number" class="settings-input settings-input-sm override-critical" value="${critical}" min="0" placeholder="Crit%">
+    <label class="override-toggle" title="Send warning notifications"><input type="checkbox" class="override-enable-warning" ${!disableWarning ? 'checked' : ''}> Warn</label>
+    <label class="override-toggle" title="Send critical notifications"><input type="checkbox" class="override-enable-critical" ${!disableCrit ? 'checked' : ''}> Crit</label>
+    <label class="override-toggle" title="Send reset notifications"><input type="checkbox" class="override-enable-reset" ${!disableReset ? 'checked' : ''}> Reset</label>
     <input type="hidden" class="override-provider" value="${provider || 'anthropic'}">
     <input type="hidden" class="override-is-absolute" value="${isAbsolute ? 'true' : 'false'}">
     <button class="override-remove" title="Remove override" type="button">
@@ -7901,6 +8067,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else {
     updateCodexProfileTabsVisibility();
   }
+  initCodexProfileTabs();
 
   initTheme();
   initLayoutToggle();
@@ -8009,81 +8176,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // ═══════════════════════════════════════════
-  // PASSWORD CHANGE MODAL
-  // ═══════════════════════════════════════════
-
-  const passwordModal = document.getElementById('password-modal');
-  const passwordForm = document.getElementById('password-form');
-  const changePasswordBtn = document.getElementById('change-password-btn');
-  const passwordModalClose = document.getElementById('password-modal-close');
-  const passwordError = document.getElementById('password-error');
-  const passwordSuccess = document.getElementById('password-success');
-
-  if (changePasswordBtn && passwordModal) {
-    changePasswordBtn.addEventListener('click', () => {
-      passwordModal.hidden = false;
-      if (passwordError) { passwordError.hidden = true; passwordError.textContent = ''; }
-      if (passwordSuccess) { passwordSuccess.hidden = true; passwordSuccess.textContent = ''; }
-      if (passwordForm) passwordForm.reset();
-      const firstInput = document.getElementById('current-password');
-      if (firstInput) firstInput.focus();
-    });
-
-    if (passwordModalClose) {
-      passwordModalClose.addEventListener('click', () => { passwordModal.hidden = true; });
-    }
-
-    passwordModal.addEventListener('click', e => {
-      if (e.target === passwordModal) passwordModal.hidden = true;
-    });
-
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && !passwordModal.hidden) passwordModal.hidden = true;
-    });
-  }
-
-  if (passwordForm) {
-    passwordForm.addEventListener('submit', async e => {
-      e.preventDefault();
-      if (passwordError) { passwordError.hidden = true; passwordError.textContent = ''; }
-      if (passwordSuccess) { passwordSuccess.hidden = true; passwordSuccess.textContent = ''; }
-
-      const currentPass = document.getElementById('current-password').value;
-      const newPass = document.getElementById('new-password').value;
-      const confirmPass = document.getElementById('confirm-password').value;
-
-      if (newPass !== confirmPass) {
-        if (passwordError) { passwordError.textContent = 'New passwords do not match.'; passwordError.hidden = false; }
-        return;
-      }
-      if (newPass.length < 6) {
-        if (passwordError) { passwordError.textContent = 'New password must be at least 6 characters.'; passwordError.hidden = false; }
-        return;
-      }
-
-      const submitBtn = document.getElementById('password-submit-btn');
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Updating...'; }
-
-      try {
-        const resp = await authFetch('/api/password', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ current_password: currentPass, new_password: newPass })
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-          if (passwordError) { passwordError.textContent = data.error || 'Failed to update password.'; passwordError.hidden = false; }
-        } else {
-          if (passwordSuccess) { passwordSuccess.textContent = 'Password updated! Redirecting to login...'; passwordSuccess.hidden = true; passwordSuccess.hidden = false; }
-          passwordForm.reset();
-          setTimeout(() => { window.location.href = '/login'; }, 1500);
-        }
-      } catch (err) {
-        if (passwordError) { passwordError.textContent = 'Network error. Please try again.'; passwordError.hidden = false; }
-      } finally {
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Update Password'; }
-      }
-    });
-  }
 });

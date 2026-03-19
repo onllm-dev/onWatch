@@ -42,9 +42,12 @@ type NotificationChannels struct {
 
 // ThresholdOverride allows per-quota threshold customization.
 type ThresholdOverride struct {
-	Warning    float64 `json:"warning"`
-	Critical   float64 `json:"critical"`
-	IsAbsolute bool    `json:"is_absolute"`
+	Warning        float64 `json:"warning"`
+	Critical       float64 `json:"critical"`
+	IsAbsolute     bool    `json:"is_absolute"`
+	DisableReset   bool    `json:"disable_reset"`
+	DisableWarning bool    `json:"disable_warning"`
+	DisableCrit    bool    `json:"disable_critical"`
 }
 
 // NotificationTypes controls which notification types are enabled.
@@ -121,11 +124,14 @@ type notificationSettingsJSON struct {
 	CooldownMinutes   int                   `json:"cooldown_minutes"`
 	Channels          *NotificationChannels `json:"channels,omitempty"`
 	Overrides         []struct {
-		QuotaKey   string  `json:"quota_key"`
-		Provider   string  `json:"provider"`
-		Warning    float64 `json:"warning"`
-		Critical   float64 `json:"critical"`
-		IsAbsolute bool    `json:"is_absolute"`
+		QuotaKey       string  `json:"quota_key"`
+		Provider       string  `json:"provider"`
+		Warning        float64 `json:"warning"`
+		Critical       float64 `json:"critical"`
+		IsAbsolute     bool    `json:"is_absolute"`
+		DisableReset   bool    `json:"disable_reset"`
+		DisableWarning bool    `json:"disable_warning"`
+		DisableCrit    bool    `json:"disable_critical"`
 	} `json:"overrides"`
 }
 
@@ -169,7 +175,14 @@ func (e *NotificationEngine) Reload() error {
 		if provider := normalizeNotificationProvider(o.Provider); provider != "legacy" {
 			key = notificationOverrideKey(provider, key)
 		}
-		overrides[key] = ThresholdOverride{Warning: o.Warning, Critical: o.Critical, IsAbsolute: o.IsAbsolute}
+		overrides[key] = ThresholdOverride{
+			Warning:        o.Warning,
+			Critical:       o.Critical,
+			IsAbsolute:     o.IsAbsolute,
+			DisableReset:   o.DisableReset,
+			DisableWarning: o.DisableWarning,
+			DisableCrit:    o.DisableCrit,
+		}
 	}
 	e.cfg.Overrides = overrides
 
@@ -406,11 +419,17 @@ func (e *NotificationEngine) Check(status QuotaStatus) {
 	// Handle reset: clear notification log so alerts can fire again in the new cycle
 	provider := normalizeNotificationProvider(status.Provider)
 	quotaKey := notificationQuotaKey(status)
+	overrideKey := notificationOverrideKey(provider, status.QuotaKey)
+	override, hasOverride := cfg.Overrides[overrideKey]
+	if !hasOverride {
+		// Backward compatibility: legacy settings keyed by quota only.
+		override, hasOverride = cfg.Overrides[status.QuotaKey]
+	}
 	if status.ResetOccurred {
 		if err := e.store.ClearNotificationLog(provider, quotaKey); err != nil {
 			e.logger.Error("failed to clear notification log on reset", "error", err)
 		}
-		if cfg.Types.Reset {
+		if cfg.Types.Reset && !(hasOverride && override.DisableReset) {
 			e.sendNotification(mailer, pushSender, cfg.Channels, status, "reset")
 		}
 		return
@@ -419,27 +438,8 @@ func (e *NotificationEngine) Check(status QuotaStatus) {
 	// Resolve thresholds
 	warningThreshold := cfg.Warning
 	criticalThreshold := cfg.Critical
-	if override, ok := cfg.Overrides[notificationOverrideKey(provider, status.QuotaKey)]; ok {
+	if hasOverride {
 		if override.IsAbsolute && status.Limit > 0 {
-			// Convert absolute values to percentage for comparison
-			if override.Warning > 0 {
-				warningThreshold = (override.Warning / status.Limit) * 100
-			}
-			if override.Critical > 0 {
-				criticalThreshold = (override.Critical / status.Limit) * 100
-			}
-		} else {
-			if override.Warning > 0 {
-				warningThreshold = override.Warning
-			}
-			if override.Critical > 0 {
-				criticalThreshold = override.Critical
-			}
-		}
-	} else if override, ok := cfg.Overrides[status.QuotaKey]; ok {
-		// Backward compatibility: legacy settings keyed by quota only.
-		if override.IsAbsolute && status.Limit > 0 {
-			// Convert absolute values to percentage for comparison
 			if override.Warning > 0 {
 				warningThreshold = (override.Warning / status.Limit) * 100
 			}
@@ -457,13 +457,13 @@ func (e *NotificationEngine) Check(status QuotaStatus) {
 	}
 
 	// Check critical first (higher priority)
-	if status.Utilization >= criticalThreshold && cfg.Types.Critical {
+	if status.Utilization >= criticalThreshold && cfg.Types.Critical && !(hasOverride && override.DisableCrit) {
 		e.sendNotification(mailer, pushSender, cfg.Channels, status, "critical")
 		return
 	}
 
 	// Check warning
-	if status.Utilization >= warningThreshold && cfg.Types.Warning {
+	if status.Utilization >= warningThreshold && cfg.Types.Warning && !(hasOverride && override.DisableWarning) {
 		e.sendNotification(mailer, pushSender, cfg.Channels, status, "warning")
 		return
 	}
@@ -482,6 +482,23 @@ func (e *NotificationEngine) SendTestEmail() error {
 	subject := "[onWatch] Test Email"
 	body := "This is a test email from onWatch.\n\nIf you received this, your SMTP settings are configured correctly.\n\n-- Sent by onWatch"
 	return mailer.Send(subject, body)
+}
+
+// TestSMTPDiag sends a test email and returns diagnostics from the connection.
+// Uses a single SMTP connection for both diagnostics and delivery.
+func (e *NotificationEngine) TestSMTPDiag() (string, error) {
+	e.mu.RLock()
+	mailer := e.mailer
+	e.mu.RUnlock()
+
+	if mailer == nil {
+		return "", fmt.Errorf("SMTP not configured")
+	}
+
+	subject := "[onWatch] Test Email"
+	body := "This is a test email from onWatch.\n\nIf you received this, your SMTP settings are configured correctly.\n\n-- Sent by onWatch"
+	res := mailer.SendWithDiag(subject, body)
+	return res.Diagnostics, res.Error
 }
 
 // sendNotification sends notifications via enabled channels.

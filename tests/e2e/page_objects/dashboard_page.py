@@ -145,32 +145,39 @@ class DashboardPage:
         """Check if the settings link/button is present."""
         return self.page.is_visible("#settings-btn")
 
+    def navigate_to_settings_password(self) -> None:
+        """Navigate to the settings page and open the General tab for password."""
+        self.page.click("#settings-btn")
+        self.page.wait_for_selector(".settings-page", timeout=5000)
+        self.page.click('.settings-tab[data-tab="general"]')
+        self.page.wait_for_selector("#panel-general:not([hidden])", timeout=5000)
+
     def open_password_modal(self) -> None:
-        """Open the password change modal."""
-        self.page.click("#change-password-btn")
-        self.page.wait_for_selector("#password-modal:not([hidden])", timeout=5000)
+        """Navigate to settings page password section (replaces old modal)."""
+        self.navigate_to_settings_password()
 
     def close_password_modal(self) -> None:
-        """Close the password change modal."""
-        self.page.click("#password-modal-close")
+        """Navigate back to dashboard (replaces old modal close)."""
+        self.page.click(".settings-back")
+        self.page.wait_for_selector(".app-header", timeout=5000)
 
     def change_password(self, current: str, new: str, confirm: str) -> None:
         """Fill in the password change form and submit."""
-        self.page.fill("#current-password", current)
-        self.page.fill("#new-password", new)
-        self.page.fill("#confirm-password", confirm)
-        self.page.click("#password-submit-btn")
+        self.page.fill("#settings-current-password", current)
+        self.page.fill("#settings-new-password", new)
+        self.page.fill("#settings-confirm-password", confirm)
+        self.page.click("#password-save-btn")
 
     def get_password_error(self) -> str:
         """Return the password error message text."""
-        el = self.page.query_selector("#password-error")
+        el = self.page.query_selector("#settings-password-feedback")
         if el and not el.is_hidden():
             return el.inner_text().strip()
         return ""
 
     def get_password_success(self) -> str:
         """Return the password success message text."""
-        el = self.page.query_selector("#password-success")
+        el = self.page.query_selector("#settings-password-feedback")
         if el and not el.is_hidden():
             return el.inner_text().strip()
         return ""

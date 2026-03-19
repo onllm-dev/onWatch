@@ -47,6 +47,7 @@ type Notifier interface {
 	ConfigurePush() error
 	SendTestEmail() error
 	SendTestPush() error
+	TestSMTPDiag() (string, error)
 	SetEncryptionKey(key string)
 	GetVAPIDPublicKey() string
 }
@@ -1677,6 +1678,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") && h.store != nil {
 		snapshots, err := h.store.QueryMiniMaxRange(start, now)
 		if err == nil {
+			latestIsShared := len(snapshots) > 0 && snapshots[len(snapshots)-1].IsSharedQuota()
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			mmData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -1687,9 +1689,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				entry := map[string]interface{}{
 					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
 				}
-				if snap.IsSharedQuota() {
+				if latestIsShared || snap.IsSharedQuota() {
 					if merged := snap.MergedQuota(); merged != nil {
-						entry[merged.ModelName] = merged.UsedPercent
+						entry["MiniMax Coding Plan"] = merged.UsedPercent
 					}
 				} else {
 					for _, model := range snap.Models {
@@ -4538,11 +4540,14 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			NotifyReset       bool    `json:"notify_reset"`
 			CooldownMinutes   int     `json:"cooldown_minutes"`
 			Overrides         []struct {
-				QuotaKey   string  `json:"quota_key"`
-				Provider   string  `json:"provider"`
-				Warning    float64 `json:"warning"`
-				Critical   float64 `json:"critical"`
-				IsAbsolute bool    `json:"is_absolute"`
+				QuotaKey       string  `json:"quota_key"`
+				Provider       string  `json:"provider"`
+				Warning        float64 `json:"warning"`
+				Critical       float64 `json:"critical"`
+				IsAbsolute     bool    `json:"is_absolute"`
+				DisableReset   bool    `json:"disable_reset"`
+				DisableWarning bool    `json:"disable_warning"`
+				DisableCrit    bool    `json:"disable_critical"`
 			} `json:"overrides"`
 		}
 		if err := json.Unmarshal(raw, &notif); err != nil {
@@ -4669,20 +4674,22 @@ func (h *Handler) SMTPTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.notifier.SendTestEmail(); err != nil {
+	diag, err := h.notifier.TestSMTPDiag()
+	if err != nil {
 		h.logger.Error("SMTP test failed", "error", err)
-		// Sanitize error message to prevent information leakage
 		errorMsg := sanitizeSMTPError(err)
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"success": false,
-			"message": errorMsg,
+			"success":     false,
+			"message":     errorMsg,
+			"diagnostics": diag,
 		})
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": "Test email sent successfully",
+		"success":     true,
+		"message":     "Test email sent successfully",
+		"diagnostics": diag,
 	})
 }
 
@@ -6493,7 +6500,6 @@ func (h *Handler) buildMiniMaxCurrent() map[string]interface{} {
 		if merged != nil {
 			q := buildQuota(*merged, minimaxRepresentativeModel(latest))
 			q["displayName"] = minimaxSharedQuotaDisplayName
-			q["sharedModels"] = latest.ActiveModels()
 			response["quotas"] = []map[string]interface{}{q}
 			response["sharedQuota"] = true
 			return response
@@ -6861,6 +6867,10 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if the latest snapshot is shared - if so, consolidate all history
+	// into one line to avoid cluttering the chart with 24+ model names
+	latestIsShared := len(snapshots) > 0 && snapshots[len(snapshots)-1].IsSharedQuota()
+
 	step := downsampleStep(len(snapshots), maxChartPoints)
 	last := len(snapshots) - 1
 	response := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -6871,9 +6881,10 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 		entry := map[string]interface{}{
 			"capturedAt": snap.CapturedAt.Format(time.RFC3339),
 		}
-		if snap.IsSharedQuota() {
+		if latestIsShared || snap.IsSharedQuota() {
+			// Consolidate into single "MiniMax Coding Plan" line
 			if merged := snap.MergedQuota(); merged != nil {
-				entry[merged.ModelName] = merged.UsedPercent
+				entry["MiniMax Coding Plan"] = merged.UsedPercent
 			}
 		} else {
 			for _, model := range snap.Models {
@@ -7035,7 +7046,6 @@ func (h *Handler) buildMiniMaxSummaryMap() map[string]interface{} {
 		item := buildMiniMaxSummaryResponse(summary)
 		item["modelName"] = minimaxSharedQuotaDisplayName
 		item["displayName"] = minimaxSharedQuotaDisplayName
-		item["sharedModels"] = latest.ActiveModels()
 		response["coding_plan"] = item
 		return response
 	}
@@ -7094,7 +7104,6 @@ func (h *Handler) buildMiniMaxInsights(hidden map[string]bool, rangeDur time.Dur
 
 	if latest.IsSharedQuota() {
 		merged := latest.MergedQuota()
-		models := latest.ActiveModels()
 		if merged == nil {
 			return resp
 		}
@@ -7191,7 +7200,7 @@ func (h *Handler) buildMiniMaxInsights(hidden map[string]bool, rangeDur time.Dur
 		resp.Stats = append(resp.Stats,
 			insightStat{Value: fmt.Sprintf("%d / %d", merged.Used, merged.Total), Label: "Current Usage", Sublabel: fmt.Sprintf("%d remaining", merged.Remain)},
 			insightStat{Value: burnRateText, Label: "Burn Rate", Sublabel: "Projected " + minimaxProjectionSummary(projectedUsage, merged.Total)},
-			insightStat{Value: resetText, Label: "Resets In", Sublabel: minimaxSharedModelSummary(models)},
+			insightStat{Value: resetText, Label: "Resets In"},
 			insightStat{Value: fmt.Sprintf("%.1f%%", merged.UsedPercent), Label: "Current Status", Sublabel: minimaxStatusLabel(merged.UsedPercent)},
 		)
 
@@ -7204,12 +7213,11 @@ func (h *Handler) buildMiniMaxInsights(hidden map[string]bool, rangeDur time.Dur
 				Metric:   fmt.Sprintf("%.1f%% used", merged.UsedPercent),
 				Sublabel: "Shared quota pool",
 				Desc: fmt.Sprintf(
-					"%d of %d requests used, %d remaining, and the pool resets in %s across shared models: %s.",
+					"%d of %d requests used, %d remaining. Pool resets in %s.",
 					merged.Used,
 					merged.Total,
 					merged.Remain,
 					resetText,
-					minimaxSharedModelSummary(models),
 				),
 			})
 		}
@@ -7686,7 +7694,7 @@ func (h *Handler) buildCodexWeeklyPaceInsight(latest *api.CodexSnapshot, summari
 		item.Severity = "positive"
 		item.Desc = fmt.Sprintf("Weekly usage is tracking expected pace (%.0f%% used vs %.0f%% expected by now).", weeklyQuota.Utilization, expectedUsed)
 	case rawDelta > 2:
-		item.Metric = fmt.Sprintf("%.0f%% in deficit", rawDelta)
+		item.Metric = fmt.Sprintf("%.0f%% over pace", rawDelta)
 		item.Severity = "warning"
 		item.Desc = fmt.Sprintf("Weekly usage is ahead of pace (%.0f%% used vs %.0f%% expected by now).", weeklyQuota.Utilization, expectedUsed)
 	default:

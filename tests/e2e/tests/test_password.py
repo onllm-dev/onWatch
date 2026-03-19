@@ -15,18 +15,16 @@ PASSWORD = "testpass123"
 class TestPassword:
     """Password change modal tests."""
 
-    def test_password_modal_opens(self, dashboard_page: Page) -> None:
-        """Clicking the change password button should open the password modal."""
+    def test_password_section_opens(self, dashboard_page: Page) -> None:
+        """Navigating to settings General tab should show the password section."""
         dash = DashboardPage(dashboard_page)
         dash.open_password_modal()
 
-        expect(dashboard_page.locator("#password-modal")).not_to_have_attribute(
-            "hidden", ""
-        )
-        expect(dashboard_page.locator("#current-password")).to_be_visible()
-        expect(dashboard_page.locator("#new-password")).to_be_visible()
-        expect(dashboard_page.locator("#confirm-password")).to_be_visible()
-        expect(dashboard_page.locator("#password-submit-btn")).to_be_visible()
+        expect(dashboard_page.locator("#panel-general")).to_be_visible()
+        expect(dashboard_page.locator("#settings-current-password")).to_be_visible()
+        expect(dashboard_page.locator("#settings-new-password")).to_be_visible()
+        expect(dashboard_page.locator("#settings-confirm-password")).to_be_visible()
+        expect(dashboard_page.locator("#password-save-btn")).to_be_visible()
 
         dash.close_password_modal()
 
@@ -89,13 +87,13 @@ class TestPassword:
         dash = DashboardPage(dashboard_page)
         dash.open_password_modal()
 
-        dashboard_page.fill("#current-password", "wrongcurrent")
-        dashboard_page.fill("#new-password", "newpass123")
-        dashboard_page.fill("#confirm-password", "newpass123")
+        dashboard_page.fill("#settings-current-password", "wrongcurrent")
+        dashboard_page.fill("#settings-new-password", "newpass123")
+        dashboard_page.fill("#settings-confirm-password", "newpass123")
 
         # Intercept the API response to check the server returned 401
         with dashboard_page.expect_response("**/api/password") as response_info:
-            dashboard_page.click("#password-submit-btn")
+            dashboard_page.click("#password-save-btn")
 
         response = response_info.value
         assert response.status == 401, (
@@ -114,4 +112,4 @@ class TestPassword:
         has_error = error != ""
         # Also check if the browser's built-in validation is preventing submission
         # (HTML5 validation may block the submit)
-        assert has_error or dashboard_page.is_visible("#password-error") or True
+        assert has_error or dashboard_page.is_visible("#settings-password-feedback") or True

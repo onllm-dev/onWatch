@@ -98,16 +98,28 @@ func (a *MiniMaxAgent) poll(ctx context.Context) {
 	}
 
 	if a.notifier != nil {
-		for _, m := range snapshot.Models {
-			if m.Total == 0 {
-				continue
+		if snapshot.IsSharedQuota() {
+			// Shared pool: send one notification for the entire plan
+			if merged := snapshot.MergedQuota(); merged != nil && merged.Total > 0 {
+				a.notifier.Check(notify.QuotaStatus{
+					Provider:    "minimax",
+					QuotaKey:    "coding_plan",
+					Utilization: merged.UsedPercent,
+					Limit:       float64(merged.Total),
+				})
 			}
-			a.notifier.Check(notify.QuotaStatus{
-				Provider:    "minimax",
-				QuotaKey:    m.ModelName,
-				Utilization: m.UsedPercent,
-				Limit:       float64(m.Total),
-			})
+		} else {
+			for _, m := range snapshot.Models {
+				if m.Total == 0 {
+					continue
+				}
+				a.notifier.Check(notify.QuotaStatus{
+					Provider:    "minimax",
+					QuotaKey:    m.ModelName,
+					Utilization: m.UsedPercent,
+					Limit:       float64(m.Total),
+				})
+			}
 		}
 	}
 

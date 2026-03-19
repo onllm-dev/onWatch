@@ -17,7 +17,12 @@
             {{end}}
         </div>
         {{end}}
-        <div class="codex-profile-tabs" id="codex-profile-tabs" role="tablist" aria-label="Select Codex profile" style="display: none;">
+        <div class="codex-profile-dropdown" id="codex-profile-dropdown" style="display: none;">
+            <button class="codex-profile-trigger" id="codex-profile-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <span class="codex-profile-label" id="codex-profile-label">Profile</span>
+                <svg class="codex-profile-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <ul class="codex-profile-menu" id="codex-profile-menu" role="listbox" aria-label="Select Codex profile"></ul>
         </div>
         <div class="header-actions">
             <button class="header-btn" id="refresh-btn" aria-label="Refresh data" title="Refresh now">
@@ -25,7 +30,6 @@
             </button>
             <div class="header-meta">
                 <span class="last-updated" id="last-updated">Last updated: --:--:--</span>
-                <span class="timezone-badge" id="timezone-badge"></span>
                 <span class="status-indicator" id="status-dot" aria-label="Connection status"></span>
             </div>
         </div>
@@ -61,26 +65,6 @@
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
                 </svg>
             </a>
-            <button class="header-btn" id="change-password-btn" aria-label="Change password" title="Change password">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            </button>
-            <div class="layout-toggle" id="layout-toggle" role="group" aria-label="Layout density">
-                <button class="layout-btn" data-layout="compact" aria-label="Compact layout" title="Compact layout">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <path d="M4 7h16M4 12h16M4 17h16"/>
-                    </svg>
-                </button>
-                <button class="layout-btn" data-layout="normal" aria-label="Default layout" title="Default layout">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <path d="M5 7h14M5 12h14M5 17h14"/>
-                    </svg>
-                </button>
-                <button class="layout-btn" data-layout="wide" aria-label="Wide layout" title="Wide layout">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <path d="M3 7h18M3 12h18M3 17h18"/>
-                    </svg>
-                </button>
-            </div>
             <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
                 <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="5"/>
@@ -99,11 +83,6 @@
     <main id="main-content" class="main-content">
         <div class="welcome-banner">
             <h1 class="welcome-title">Dashboard</h1>
-            <p class="welcome-subtitle">
-                {{if eq .CurrentProvider "both"}}Track all your API quotas in real time.
-                {{else}}Track your {{if eq .CurrentProvider "synthetic"}}Synthetic{{else if eq .CurrentProvider "zai"}}Z.ai{{else if eq .CurrentProvider "anthropic"}}Anthropic (Claude Code){{else if eq .CurrentProvider "copilot"}}GitHub Copilot{{else if eq .CurrentProvider "codex"}}Codex{{else if eq .CurrentProvider "antigravity"}}Antigravity{{else if eq .CurrentProvider "minimax"}}MiniMax{{else if eq .CurrentProvider "gemini"}}Gemini{{else}}{{.CurrentProvider}}{{end}} API quota usage in real time.
-                {{end}}
-            </p>
         </div>
 
         {{if eq .CurrentProvider "both"}}
@@ -384,7 +363,7 @@
                 <table class="data-table" id="sessions-table" data-provider="{{.CurrentProvider}}">
                     <thead>
                         <tr>
-                            <th data-sort-key="id" role="button" tabindex="0">Session <span class="sort-arrow"></span></th>
+                            {{if ne .CurrentProvider "minimax"}}<th data-sort-key="id" role="button" tabindex="0">Session <span class="sort-arrow"></span></th>{{end}}
                             <th data-sort-key="start" role="button" tabindex="0">Started <span class="sort-arrow"></span></th>
                             <th data-sort-key="end" role="button" tabindex="0">Ended <span class="sort-arrow"></span></th>
                             <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
@@ -398,8 +377,8 @@
                             <th data-sort-key="sub" role="button" tabindex="0" id="codex-session-col-0">5-Hour Limit <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0" id="codex-session-col-1">Weekly All-Model <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "minimax"}}
-                            <th data-sort-key="sub" role="button" tabindex="0">Peak Used <span class="sort-arrow"></span></th>
-                            <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
+                            <th data-sort-key="sub" role="button" tabindex="0">Peak Requests <span class="sort-arrow"></span></th>
+                            <th data-sort-key="search" role="button" tabindex="0">Requests Used <span class="sort-arrow"></span></th>
                             <th data-sort-key="tool" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "antigravity"}}
                             <th data-sort-key="sub" role="button" tabindex="0">Claude + GPT Quota <span class="sort-arrow"></span></th>
@@ -423,7 +402,7 @@
                             {{else if eq .CurrentProvider "codex"}}
                             <td colspan="6" class="empty-state">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "minimax"}}
-                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="6" class="empty-state">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "antigravity"}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "gemini"}}
@@ -558,38 +537,6 @@
     </footer>
 </div>
 
-<!-- Password Change Modal -->
-<div class="modal-overlay" id="password-modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title" hidden>
-    <div class="modal-content" style="max-width:420px">
-        <header class="modal-header">
-            <h2 class="modal-title" id="password-modal-title">Change Password</h2>
-            <button class="modal-close" id="password-modal-close" aria-label="Close modal">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M18 6L6 18M6 6l12 12"/>
-                </svg>
-            </button>
-        </header>
-        <div class="modal-body">
-            <form id="password-form">
-                <div class="form-group">
-                    <label for="current-password">Current Password</label>
-                    <input type="password" id="current-password" class="form-input" required autocomplete="current-password">
-                </div>
-                <div class="form-group">
-                    <label for="new-password">New Password</label>
-                    <input type="password" id="new-password" class="form-input" required minlength="6" autocomplete="new-password">
-                </div>
-                <div class="form-group">
-                    <label for="confirm-password">Confirm New Password</label>
-                    <input type="password" id="confirm-password" class="form-input" required minlength="6" autocomplete="new-password">
-                </div>
-                <div id="password-error" class="password-error" hidden></div>
-                <div id="password-success" class="password-success" hidden></div>
-                <button type="submit" class="password-submit-btn" id="password-submit-btn">Update Password</button>
-            </form>
-        </div>
-    </div>
-</div>
 
 <!-- Detail Modal -->
 <div class="modal-overlay" id="detail-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
