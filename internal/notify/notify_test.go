@@ -126,11 +126,14 @@ func TestNotificationEngine_Reload_CustomValues(t *testing.T) {
 		NotifyReset:       true,
 		CooldownMinutes:   60,
 		Overrides: []struct {
-			QuotaKey   string  `json:"quota_key"`
-			Provider   string  `json:"provider"`
-			Warning    float64 `json:"warning"`
-			Critical   float64 `json:"critical"`
-			IsAbsolute bool    `json:"is_absolute"`
+			QuotaKey       string  `json:"quota_key"`
+			Provider       string  `json:"provider"`
+			Warning        float64 `json:"warning"`
+			Critical       float64 `json:"critical"`
+			IsAbsolute     bool    `json:"is_absolute"`
+			DisableReset   bool    `json:"disable_reset"`
+			DisableWarning bool    `json:"disable_warning"`
+			DisableCrit    bool    `json:"disable_critical"`
 		}{
 			{QuotaKey: "five_hour", Provider: "anthropic", Warning: 50, Critical: 75},
 		},
@@ -350,11 +353,14 @@ func TestNotificationEngine_Check_PerQuotaOverride(t *testing.T) {
 		NotifyCritical:    true,
 		CooldownMinutes:   30,
 		Overrides: []struct {
-			QuotaKey   string  `json:"quota_key"`
-			Provider   string  `json:"provider"`
-			Warning    float64 `json:"warning"`
-			Critical   float64 `json:"critical"`
-			IsAbsolute bool    `json:"is_absolute"`
+			QuotaKey       string  `json:"quota_key"`
+			Provider       string  `json:"provider"`
+			Warning        float64 `json:"warning"`
+			Critical       float64 `json:"critical"`
+			IsAbsolute     bool    `json:"is_absolute"`
+			DisableReset   bool    `json:"disable_reset"`
+			DisableWarning bool    `json:"disable_warning"`
+			DisableCrit    bool    `json:"disable_critical"`
 		}{
 			{QuotaKey: "five_hour", Provider: "anthropic", Warning: 50, Critical: 75},
 		},
@@ -1016,11 +1022,14 @@ func TestNotificationEngine_Reload_EmptyOverrideQuotaKey(t *testing.T) {
 		NotifyCritical:    true,
 		CooldownMinutes:   30,
 		Overrides: []struct {
-			QuotaKey   string  `json:"quota_key"`
-			Provider   string  `json:"provider"`
-			Warning    float64 `json:"warning"`
-			Critical   float64 `json:"critical"`
-			IsAbsolute bool    `json:"is_absolute"`
+			QuotaKey       string  `json:"quota_key"`
+			Provider       string  `json:"provider"`
+			Warning        float64 `json:"warning"`
+			Critical       float64 `json:"critical"`
+			IsAbsolute     bool    `json:"is_absolute"`
+			DisableReset   bool    `json:"disable_reset"`
+			DisableWarning bool    `json:"disable_warning"`
+			DisableCrit    bool    `json:"disable_critical"`
 		}{
 			{QuotaKey: "", Provider: "anthropic", Warning: 50, Critical: 75},
 			{QuotaKey: "five_hour", Provider: "", Warning: 60, Critical: 85},
@@ -1274,11 +1283,14 @@ func TestNotificationEngine_Check_AbsoluteOverride(t *testing.T) {
 		NotifyCritical:    true,
 		CooldownMinutes:   30,
 		Overrides: []struct {
-			QuotaKey   string  `json:"quota_key"`
-			Provider   string  `json:"provider"`
-			Warning    float64 `json:"warning"`
-			Critical   float64 `json:"critical"`
-			IsAbsolute bool    `json:"is_absolute"`
+			QuotaKey       string  `json:"quota_key"`
+			Provider       string  `json:"provider"`
+			Warning        float64 `json:"warning"`
+			Critical       float64 `json:"critical"`
+			IsAbsolute     bool    `json:"is_absolute"`
+			DisableReset   bool    `json:"disable_reset"`
+			DisableWarning bool    `json:"disable_warning"`
+			DisableCrit    bool    `json:"disable_critical"`
 		}{
 			{QuotaKey: "tokens", Provider: "anthropic", Warning: 800, Critical: 950, IsAbsolute: true},
 		},
@@ -1316,11 +1328,14 @@ func TestNotificationEngine_Check_LegacyOverride(t *testing.T) {
 		NotifyCritical:    true,
 		CooldownMinutes:   30,
 		Overrides: []struct {
-			QuotaKey   string  `json:"quota_key"`
-			Provider   string  `json:"provider"`
-			Warning    float64 `json:"warning"`
-			Critical   float64 `json:"critical"`
-			IsAbsolute bool    `json:"is_absolute"`
+			QuotaKey       string  `json:"quota_key"`
+			Provider       string  `json:"provider"`
+			Warning        float64 `json:"warning"`
+			Critical       float64 `json:"critical"`
+			IsAbsolute     bool    `json:"is_absolute"`
+			DisableReset   bool    `json:"disable_reset"`
+			DisableWarning bool    `json:"disable_warning"`
+			DisableCrit    bool    `json:"disable_critical"`
 		}{
 			// With empty provider, normalizeNotificationProvider returns "legacy"
 			// so the key becomes "legacy:five_hour" which won't match "anthropic:five_hour"

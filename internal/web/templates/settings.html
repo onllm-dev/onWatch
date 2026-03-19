@@ -87,6 +87,10 @@
                     </button>
                     <span class="settings-test-result" id="smtp-test-result"></span>
                 </div>
+                <details class="smtp-diagnostics-details" hidden>
+                    <summary>Connection Diagnostics</summary>
+                    <pre class="smtp-diagnostics-output" id="smtp-diagnostics"></pre>
+                </details>
             </div>
         </div>
 
@@ -130,6 +134,10 @@
                     </button>
                     <span class="settings-test-result" id="push-test-result"></span>
                 </div>
+                <details class="push-diagnostics-details" id="push-diagnostics-section" hidden>
+                    <summary>Push Diagnostics</summary>
+                    <pre class="push-diagnostics-output" id="push-diagnostics">Collecting...</pre>
+                </details>
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
@@ -273,6 +281,21 @@
                             <option value="">Browser Default</option>
                         </select>
                         <span class="settings-field-hint">Affects how times are displayed on the dashboard</span>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Layout Density</h3>
+                <p class="settings-section-desc">Choose how compact the dashboard cards appear.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="settings-layout-density">Density</label>
+                        <select id="settings-layout-density" class="settings-input">
+                            <option value="compact">Compact</option>
+                            <option value="normal" selected>Default</option>
+                            <option value="wide">Wide</option>
+                        </select>
                     </div>
                 </div>
             </div>

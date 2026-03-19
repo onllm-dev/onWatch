@@ -162,16 +162,14 @@ func (a *AntigravityAgent) poll(ctx context.Context) {
 		a.logger.Error("Antigravity tracker processing failed", "error", err)
 	}
 
-	// Check notification thresholds for models
+	// Check notification thresholds per quota group (not per-model)
 	if a.notifier != nil {
-		for _, m := range snapshot.Models {
-			if m.RemainingFraction == 1.0 {
-				continue // Skip unused models
-			}
-			utilization := (1.0 - m.RemainingFraction) * 100
+		groups := api.GroupAntigravityModelsByLogicalQuota(snapshot.Models)
+		for _, g := range groups {
+			utilization := (1.0 - g.RemainingFraction) * 100
 			a.notifier.Check(notify.QuotaStatus{
 				Provider:    "antigravity",
-				QuotaKey:    m.ModelID,
+				QuotaKey:    g.GroupKey,
 				Utilization: utilization,
 				Limit:       100, // Percentage-based
 			})

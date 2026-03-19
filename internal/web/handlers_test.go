@@ -1590,8 +1590,8 @@ func TestHandler_Dashboard_CodexView_RestoresProfileTabsAndTables(t *testing.T) 
 	}
 
 	body := rr.Body.String()
-	if !strings.Contains(body, `id="codex-profile-tabs"`) {
-		t.Error("expected codex profile tabs container")
+	if !strings.Contains(body, `id="codex-profile-dropdown"`) {
+		t.Error("expected codex profile dropdown container")
 	}
 	if !strings.Contains(body, `id="quota-grid-codex"`) {
 		t.Error("expected single-account codex quota grid")
@@ -3641,13 +3641,14 @@ type mockNotifier struct {
 	reloadCalled bool
 }
 
-func (m *mockNotifier) Reload() error             { m.reloadCalled = true; return nil }
-func (m *mockNotifier) ConfigureSMTP() error      { return nil }
-func (m *mockNotifier) ConfigurePush() error      { return nil }
-func (m *mockNotifier) SendTestEmail() error      { return m.sendTestErr }
-func (m *mockNotifier) SendTestPush() error       { return nil }
-func (m *mockNotifier) SetEncryptionKey(_ string) {}
-func (m *mockNotifier) GetVAPIDPublicKey() string { return "" }
+func (m *mockNotifier) Reload() error                    { m.reloadCalled = true; return nil }
+func (m *mockNotifier) ConfigureSMTP() error             { return nil }
+func (m *mockNotifier) ConfigurePush() error             { return nil }
+func (m *mockNotifier) SendTestEmail() error             { return m.sendTestErr }
+func (m *mockNotifier) SendTestPush() error              { return nil }
+func (m *mockNotifier) TestSMTPDiag() (string, error)    { return "", m.sendTestErr }
+func (m *mockNotifier) SetEncryptionKey(_ string)        {}
+func (m *mockNotifier) GetVAPIDPublicKey() string        { return "" }
 
 func TestHandler_SMTPTest_Success(t *testing.T) {
 	cfg := createTestConfigWithSynthetic()
@@ -5938,13 +5939,14 @@ type mockNotifierWithVAPID struct {
 	vapidKey     string
 }
 
-func (m *mockNotifierWithVAPID) Reload() error             { m.reloadCalled = true; return nil }
-func (m *mockNotifierWithVAPID) ConfigureSMTP() error      { return nil }
-func (m *mockNotifierWithVAPID) ConfigurePush() error      { return nil }
-func (m *mockNotifierWithVAPID) SendTestEmail() error      { return m.sendTestErr }
-func (m *mockNotifierWithVAPID) SendTestPush() error       { return m.sendPushErr }
-func (m *mockNotifierWithVAPID) SetEncryptionKey(_ string) {}
-func (m *mockNotifierWithVAPID) GetVAPIDPublicKey() string { return m.vapidKey }
+func (m *mockNotifierWithVAPID) Reload() error                    { m.reloadCalled = true; return nil }
+func (m *mockNotifierWithVAPID) ConfigureSMTP() error             { return nil }
+func (m *mockNotifierWithVAPID) ConfigurePush() error             { return nil }
+func (m *mockNotifierWithVAPID) SendTestEmail() error             { return m.sendTestErr }
+func (m *mockNotifierWithVAPID) SendTestPush() error              { return m.sendPushErr }
+func (m *mockNotifierWithVAPID) TestSMTPDiag() (string, error)    { return "", m.sendTestErr }
+func (m *mockNotifierWithVAPID) SetEncryptionKey(_ string)        {}
+func (m *mockNotifierWithVAPID) GetVAPIDPublicKey() string        { return m.vapidKey }
 
 func TestHandler_PushVAPIDKey_Success(t *testing.T) {
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())

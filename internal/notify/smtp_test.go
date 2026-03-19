@@ -422,6 +422,12 @@ func TestSMTPMailer_TestConnection_Success(t *testing.T) {
 				fmt.Fprintf(conn, "250 AUTH PLAIN LOGIN\r\n")
 			case "AUTH":
 				fmt.Fprintf(conn, "235 OK\r\n")
+			case "MAIL":
+				fmt.Fprintf(conn, "250 OK\r\n")
+			case "RCPT":
+				fmt.Fprintf(conn, "250 OK\r\n")
+			case "RSET":
+				fmt.Fprintf(conn, "250 OK\r\n")
 			case "QUIT":
 				fmt.Fprintf(conn, "221 Bye\r\n")
 				return
@@ -449,6 +455,18 @@ func TestSMTPMailer_TestConnection_Success(t *testing.T) {
 	err := mailer.TestConnection()
 	if err != nil {
 		t.Fatalf("TestConnection failed: %v", err)
+	}
+
+	// Also verify diagnostics are populated
+	result := mailer.TestConnectionDiag()
+	if result.Error != nil {
+		t.Fatalf("TestConnectionDiag failed: %v", result.Error)
+	}
+	if result.Diagnostics == "" {
+		t.Fatal("expected non-empty diagnostics")
+	}
+	if !strings.Contains(result.Diagnostics, "All checks passed") {
+		t.Errorf("diagnostics missing success marker: %s", result.Diagnostics)
 	}
 }
 

@@ -81,22 +81,133 @@ func (m *SMTPMailer) Send(subject, body string) error {
 	return nil
 }
 
+// TestConnectionResult holds diagnostic details from an SMTP connection test.
+type TestConnectionResult struct {
+	Diagnostics string
+	Error       error
+}
+
 // TestConnection verifies SMTP connectivity and authentication.
 func (m *SMTPMailer) TestConnection() error {
+	res := m.TestConnectionDiag()
+	return res.Error
+}
+
+// SendWithDiag sends an email and returns diagnostics from the connection.
+// Unlike TestConnectionDiag + Send, this uses a single SMTP connection.
+func (m *SMTPMailer) SendWithDiag(subject, body string) TestConnectionResult {
+	var diag strings.Builder
+	protocol := normalizedSMTPProtocol(m.config.Protocol)
+	diag.WriteString(fmt.Sprintf("Host: %s:%d\n", m.config.Host, m.config.Port))
+	diag.WriteString(fmt.Sprintf("Protocol: %s\n", protocol))
+
+	msg := m.buildMessage(subject, body)
+
 	client, encrypted, err := m.connect()
 	if err != nil {
-		return fmt.Errorf("notify.TestConnection: connect: %w", err)
+		diag.WriteString(fmt.Sprintf("Connection: FAILED - %v\n", err))
+		return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.Send: connect: %w", err)}
 	}
 	defer client.Close()
 
+	if encrypted {
+		diag.WriteString("Encryption: TLS active\n")
+	} else {
+		diag.WriteString("Encryption: None (plaintext)\n")
+	}
+
+	if err := m.authenticate(client, encrypted); err != nil {
+		diag.WriteString(fmt.Sprintf("Auth: FAILED - %v\n", err))
+		return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.Send: auth: %w", err)}
+	}
 	if m.config.Username != "" {
-		if err := m.authenticate(client, encrypted); err != nil {
-			return fmt.Errorf("notify.TestConnection: auth: %w", err)
+		diag.WriteString("Auth: OK\n")
+	}
+
+	if err := client.Mail(m.config.FromAddr); err != nil {
+		diag.WriteString(fmt.Sprintf("MAIL FROM <%s>: FAILED - %v\n", m.config.FromAddr, err))
+		return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.Send: MAIL FROM: %w", err)}
+	}
+	diag.WriteString(fmt.Sprintf("MAIL FROM <%s>: OK\n", m.config.FromAddr))
+
+	for _, addr := range m.config.ToAddrs {
+		if err := client.Rcpt(addr); err != nil {
+			diag.WriteString(fmt.Sprintf("RCPT TO <%s>: FAILED - %v\n", addr, err))
+			return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.Send: RCPT TO %s: %w", addr, err)}
 		}
+		diag.WriteString(fmt.Sprintf("RCPT TO <%s>: OK\n", addr))
+	}
+
+	w, err := client.Data()
+	if err != nil {
+		diag.WriteString(fmt.Sprintf("DATA: FAILED - %v\n", err))
+		return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.Send: DATA: %w", err)}
+	}
+
+	if _, err := w.Write([]byte(msg)); err != nil {
+		diag.WriteString("Send: FAILED\n")
+		return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.Send: write: %w", err)}
+	}
+
+	if err := w.Close(); err != nil {
+		diag.WriteString("Send: FAILED\n")
+		return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.Send: close data: %w", err)}
 	}
 
 	client.Quit()
-	return nil
+	diag.WriteString("Send: OK\n")
+	m.logger.Info("email sent", "subject", subject, "recipients", len(m.config.ToAddrs))
+	return TestConnectionResult{Diagnostics: diag.String(), Error: nil}
+}
+
+// TestConnectionDiag performs a full SMTP handshake and returns diagnostics.
+func (m *SMTPMailer) TestConnectionDiag() TestConnectionResult {
+	var diag strings.Builder
+	protocol := normalizedSMTPProtocol(m.config.Protocol)
+	diag.WriteString(fmt.Sprintf("Host: %s:%d\n", m.config.Host, m.config.Port))
+	diag.WriteString(fmt.Sprintf("Protocol: %s\n", protocol))
+
+	client, encrypted, err := m.connect()
+	if err != nil {
+		diag.WriteString(fmt.Sprintf("Connection: FAILED - %v\n", err))
+		return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.TestConnection: connect: %w", err)}
+	}
+	defer client.Close()
+
+	if encrypted {
+		diag.WriteString("Encryption: TLS active\n")
+	} else {
+		diag.WriteString("Encryption: None (plaintext)\n")
+	}
+
+	if m.config.Username != "" {
+		if err := m.authenticate(client, encrypted); err != nil {
+			diag.WriteString(fmt.Sprintf("Auth: FAILED - %v\n", err))
+			return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.TestConnection: auth: %w", err)}
+		}
+		diag.WriteString("Auth: OK\n")
+	} else {
+		diag.WriteString("Auth: Skipped (no username)\n")
+	}
+
+	if err := client.Mail(m.config.FromAddr); err != nil {
+		diag.WriteString(fmt.Sprintf("MAIL FROM <%s>: FAILED - %v\n", m.config.FromAddr, err))
+		return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.TestConnection: MAIL FROM: %w", err)}
+	}
+	diag.WriteString(fmt.Sprintf("MAIL FROM <%s>: OK\n", m.config.FromAddr))
+
+	for _, addr := range m.config.ToAddrs {
+		if err := client.Rcpt(addr); err != nil {
+			diag.WriteString(fmt.Sprintf("RCPT TO <%s>: FAILED - %v\n", addr, err))
+			return TestConnectionResult{Diagnostics: diag.String(), Error: fmt.Errorf("notify.TestConnection: RCPT TO %s: %w", addr, err)}
+		}
+		diag.WriteString(fmt.Sprintf("RCPT TO <%s>: OK\n", addr))
+	}
+
+	client.Reset()
+	client.Quit()
+	diag.WriteString("Result: All checks passed\n")
+	return TestConnectionResult{Diagnostics: diag.String(), Error: nil}
 }
 
 // connect establishes an SMTP connection using the configured protocol.

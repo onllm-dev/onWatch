@@ -90,7 +90,6 @@ func TestBuildMiniMaxCurrent_SharedQuota(t *testing.T) {
 			Remaining    int      `json:"remaining"`
 			Total        int      `json:"total"`
 			UsagePercent float64  `json:"usagePercent"`
-			SharedModels []string `json:"sharedModels"`
 		} `json:"quotas"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -109,9 +108,6 @@ func TestBuildMiniMaxCurrent_SharedQuota(t *testing.T) {
 	}
 	if quota.Used != 1 || quota.Remaining != 1499 || quota.Total != 1500 {
 		t.Fatalf("unexpected merged counts: %+v", quota)
-	}
-	if len(quota.SharedModels) != 3 || quota.SharedModels[0] != "MiniMax-M2" || quota.SharedModels[1] != "MiniMax-M2.1" || quota.SharedModels[2] != "MiniMax-M2.5" {
-		t.Fatalf("unexpected shared models: %v", quota.SharedModels)
 	}
 }
 
@@ -298,11 +294,10 @@ func TestBuildMiniMaxSummaryMap_SharedQuota(t *testing.T) {
 		t.Fatalf("Marshal: %v", err)
 	}
 	var summary struct {
-		ModelName     string   `json:"modelName"`
-		DisplayName   string   `json:"displayName"`
-		SharedModels  []string `json:"sharedModels"`
-		CurrentUsed   int      `json:"currentUsed"`
-		CurrentRemain int      `json:"currentRemain"`
+		ModelName     string `json:"modelName"`
+		DisplayName   string `json:"displayName"`
+		CurrentUsed   int    `json:"currentUsed"`
+		CurrentRemain int    `json:"currentRemain"`
 	}
 	if err := json.Unmarshal(body, &summary); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
@@ -312,9 +307,6 @@ func TestBuildMiniMaxSummaryMap_SharedQuota(t *testing.T) {
 	}
 	if summary.CurrentUsed != 1 || summary.CurrentRemain != 1499 {
 		t.Fatalf("unexpected summary counts: %+v", summary)
-	}
-	if len(summary.SharedModels) != 3 {
-		t.Fatalf("unexpected shared models: %+v", summary)
 	}
 }
 

@@ -345,46 +345,6 @@ button, input, select { font-family: inherit; }
   gap: 6px;
 }
 
-.layout-toggle {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--surface-inset);
-}
-
-.layout-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.layout-btn:hover {
-  color: var(--text-primary);
-  background: var(--surface-card);
-}
-
-.layout-btn.active {
-  color: var(--accent-teal);
-  background: var(--surface-card);
-  box-shadow: var(--shadow-xs);
-}
-
-.layout-btn svg {
-  width: 16px;
-  height: 16px;
-}
 
 .header-btn {
   display: flex;
@@ -423,25 +383,6 @@ button, input, select { font-family: inherit; }
 }
 
 /* Timezone Badge + Picker */
-.timezone-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  background: var(--accent-teal-muted);
-  color: var(--accent-teal);
-  font-family: var(--font-mono);
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition: background var(--transition-fast), box-shadow var(--transition-fast);
-  white-space: nowrap;
-}
-.timezone-badge:hover {
-  background: var(--accent-teal);
-  color: var(--text-inverse);
-  box-shadow: var(--shadow-sm);
-}
-.timezone-badge:empty { display: none; }
 
 .tz-picker {
   position: fixed;
@@ -543,18 +484,14 @@ button, input, select { font-family: inherit; }
 
 /* Welcome banner */
 .welcome-banner {
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 .welcome-title {
   font-size: 26px;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;
-  margin-bottom: 4px;
-}
-.welcome-subtitle {
-  font-size: 15px;
-  color: var(--text-secondary);
+  margin-bottom: 0;
 }
 
 /* ═══════════════════════════════════════════
@@ -1661,6 +1598,10 @@ button, input, select { font-family: inherit; }
   background: var(--accent-teal-muted);
   color: var(--accent-teal);
 }
+.badge-active {
+  background: var(--status-healthy-bg);
+  color: var(--status-healthy);
+}
 
 .table-info {
   font-size: 12px;
@@ -2147,41 +2088,6 @@ button, input, select { font-family: inherit; }
   box-shadow: 0 0 0 3px var(--accent-teal-muted);
 }
 
-.password-submit-btn {
-  width: 100%;
-  padding: 12px;
-  background: var(--accent-teal);
-  color: #FFFFFF;
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity var(--transition-fast);
-  margin-top: 8px;
-}
-.password-submit-btn:hover { opacity: 0.92; }
-.password-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.password-error {
-  padding: 10px 14px;
-  background: var(--status-danger-bg);
-  color: var(--status-danger-text);
-  border: 1px solid var(--status-danger);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  margin-bottom: 12px;
-}
-
-.password-success {
-  padding: 10px 14px;
-  background: var(--status-healthy-bg);
-  color: var(--status-healthy-text);
-  border: 1px solid var(--status-healthy);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  margin-bottom: 12px;
-}
 
 /* ═══════════════════════════════════════════
    16. RESPONSIVE
@@ -2263,8 +2169,8 @@ button, input, select { font-family: inherit; }
   .modal-kpi-row { grid-template-columns: repeat(2, 1fr); }
   .session-detail-grid { grid-template-columns: 1fr; }
   .last-updated { font-size: 11px; }
-  .timezone-badge { font-size: 10px; }
   .welcome-title { font-size: 20px; }
+  .codex-profile-menu { left: auto; right: 0; }
 }
 
 /* ═══════════════════════════════════════════
@@ -2662,6 +2568,7 @@ select.settings-input {
 .settings-override-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 10px 0;
   border-bottom: 1px solid var(--border-light);
@@ -2686,6 +2593,23 @@ select.settings-input {
   background: var(--status-danger-bg);
 }
 .settings-override-row .override-remove svg { width: 16px; height: 16px; }
+
+.override-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.override-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent-teal);
+}
 
 .settings-add-btn {
   display: inline-flex;
@@ -2755,6 +2679,34 @@ select.settings-input {
 }
 .settings-test-result.success { color: var(--status-healthy); }
 .settings-test-result.error { color: var(--status-danger); }
+
+.smtp-diagnostics-details,
+.push-diagnostics-details {
+  margin-top: 12px;
+}
+.smtp-diagnostics-details summary,
+.push-diagnostics-details summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.smtp-diagnostics-details[open] summary,
+.push-diagnostics-details[open] summary {
+  color: var(--text-primary);
+}
+.smtp-diagnostics-output,
+.push-diagnostics-output {
+  margin-top: 8px;
+  padding: 10px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* Save bar */
 .settings-save-bar {
@@ -2956,48 +2908,110 @@ select.settings-input {
 }
 
 /* ═══════════════════════════════════════════
-   17. CODEX PROFILE TABS
+   17. CODEX PROFILE DROPDOWN
    ═══════════════════════════════════════════ */
 
-.codex-profile-tabs {
-  display: flex;
-  gap: 2px;
-  background: var(--surface-inset);
-  padding: 2px;
-  border-radius: var(--radius-sm);
+.codex-profile-dropdown {
+  position: relative;
   margin-left: 8px;
 }
 
-.codex-profile-tabs::before {
+.codex-profile-dropdown::before {
   content: '';
+  position: absolute;
+  left: -8px;
+  top: 4px;
+  bottom: 4px;
   width: 1px;
   background: var(--border-default);
-  margin: 4px 6px 4px 0;
 }
 
-.profile-tab {
-  padding: 4px 10px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
+.codex-profile-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 4px 10px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-inset);
+  color: var(--text-primary);
   font-size: 11px;
   font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.codex-profile-trigger:hover {
+  background: var(--surface-card);
+  border-color: var(--accent-teal);
+}
+
+.codex-profile-trigger[aria-expanded="true"] {
+  border-color: var(--accent-teal);
+  background: var(--surface-card);
+}
+
+.codex-profile-trigger[aria-expanded="true"] .codex-profile-chevron {
+  transform: rotate(180deg);
+}
+
+.codex-profile-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.codex-profile-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: transform var(--transition-fast);
+}
+
+.codex-profile-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 1000;
+}
+
+.codex-profile-menu.open {
+  display: block;
+}
+
+.codex-profile-item {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
   border-radius: 4px;
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
 }
 
-.profile-tab:hover {
+.codex-profile-item:hover {
   color: var(--text-primary);
-  background: var(--surface-card);
+  background: var(--surface-inset);
 }
 
-.profile-tab.active {
-  background: var(--surface-card);
+.codex-profile-item.active {
   color: var(--accent-teal);
   font-weight: 600;
-  box-shadow: var(--shadow-xs);
+  background: var(--surface-inset);
 }
 
 /* Codex account sections for "both" view */
