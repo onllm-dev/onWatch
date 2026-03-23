@@ -75,7 +75,7 @@ func joinTrayParts(parts []string) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	out := parts[0]
+	out := "\u2009" + parts[0]
 	for i := 1; i < len(parts); i++ {
 		out += " │ " + parts[i]
 	}
