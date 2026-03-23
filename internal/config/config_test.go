@@ -78,6 +78,65 @@ func TestConfig_ZaiDefaults(t *testing.T) {
 	}
 }
 
+func TestConfig_ZaiRegion_LoadsFromEnv(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("ZAI_API_KEY", "zai_test_key")
+	os.Setenv("ZAI_REGION", "cn")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.ZaiRegion != "cn" {
+		t.Errorf("ZaiRegion = %q, want %q", cfg.ZaiRegion, "cn")
+	}
+}
+
+func TestConfig_ZaiRegion_DefaultsToGlobal(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("ZAI_API_KEY", "zai_test_key")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.ZaiRegion != "global" {
+		t.Errorf("ZaiRegion = %q, want %q (default)", cfg.ZaiRegion, "global")
+	}
+}
+
+func TestConfig_ZaiRegion_NormalizesToLowercase(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("ZAI_API_KEY", "zai_test_key")
+	os.Setenv("ZAI_REGION", "CN")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.ZaiRegion != "cn" {
+		t.Errorf("ZaiRegion = %q, want %q (lowercase)", cfg.ZaiRegion, "cn")
+	}
+}
+
+func TestConfig_ZaiRegion_SelectsCNBaseURL(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("ZAI_API_KEY", "zai_test_key")
+	os.Setenv("ZAI_REGION", "cn")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.ZaiBaseURL != "https://open.bigmodel.cn/api" {
+		t.Errorf("ZaiBaseURL = %q, want %q (CN endpoint)", cfg.ZaiBaseURL, "https://open.bigmodel.cn/api")
+	}
+}
+
 func TestConfig_DefaultValues(t *testing.T) {
 	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key_123")
 	defer os.Clearenv()

@@ -670,8 +670,9 @@ func run() error {
 	}
 
 	if cfg.HasProvider("zai") {
-		zaiClient = api.NewZaiClient(cfg.ZaiAPIKey, logger)
-		logger.Info("Z.ai API client configured", "base_url", cfg.ZaiBaseURL)
+		zaiBaseURL := cfg.ZaiBaseURL + "/monitor/usage/quota/limit"
+		zaiClient = api.NewZaiClient(cfg.ZaiAPIKey, logger, api.WithZaiBaseURL(zaiBaseURL))
+		logger.Info("Z.ai API client configured", "base_url", cfg.ZaiBaseURL, "region", cfg.ZaiRegion)
 	}
 
 	var anthropicClient *api.AnthropicClient
@@ -1638,6 +1639,7 @@ func printHelp() {
 	fmt.Println("  SYNTHETIC_API_KEY       Synthetic API key")
 	fmt.Println("  ZAI_API_KEY            Z.ai API key")
 	fmt.Println("  ZAI_BASE_URL           Z.ai base URL (default: https://api.z.ai/api)")
+	fmt.Println("  ZAI_REGION             Z.ai region: global or cn (default: global)")
 	fmt.Println("  ANTHROPIC_TOKEN         Anthropic token (auto-detected if not set)")
 	fmt.Println("  COPILOT_TOKEN           GitHub Copilot token (PAT with copilot scope)")
 	fmt.Println("  CODEX_TOKEN             Codex OAuth token (recommended; required for Codex-only)")

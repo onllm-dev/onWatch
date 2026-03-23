@@ -26,7 +26,8 @@ type Config struct {
 
 	// Z.ai provider configuration
 	ZaiAPIKey  string // ZAI_API_KEY
-	ZaiBaseURL string // ZAI_BASE_URL
+	ZaiBaseURL string // ZAI_BASE_URL (auto-selected based on ZaiRegion)
+	ZaiRegion  string // ZAI_REGION ( "global" | "cn", default: "global" )
 
 	// Anthropic provider configuration
 	AnthropicToken     string // ANTHROPIC_TOKEN or auto-detected
@@ -229,6 +230,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// Z.ai provider
 	cfg.ZaiAPIKey = os.Getenv("ZAI_API_KEY")
 	cfg.ZaiBaseURL = os.Getenv("ZAI_BASE_URL")
+	cfg.ZaiRegion = strings.ToLower(strings.TrimSpace(os.Getenv("ZAI_REGION")))
+	if cfg.ZaiRegion == "" {
+		cfg.ZaiRegion = "global"
+	}
 
 	// Anthropic provider
 	cfg.AnthropicToken = os.Getenv("ANTHROPIC_TOKEN")
@@ -361,7 +366,11 @@ func (c *Config) applyDefaults() {
 		c.LogLevel = "info"
 	}
 	if c.ZaiBaseURL == "" {
-		c.ZaiBaseURL = "https://api.z.ai/api"
+		if c.ZaiRegion == "cn" {
+			c.ZaiBaseURL = "https://open.bigmodel.cn/api"
+		} else {
+			c.ZaiBaseURL = "https://api.z.ai/api"
+		}
 	}
 	if c.SessionIdleTimeout == 0 {
 		c.SessionIdleTimeout = 600 * time.Second
