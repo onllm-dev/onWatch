@@ -21,6 +21,14 @@ Add this to your environment file (`~/.onwatch/.env` for local installs):
 MINIMAX_API_KEY=sk-cp-your_key_here
 ```
 
+**Region** (optional, default: `global`):
+
+```env
+MINIMAX_REGION=cn    # Use MiniMax CN endpoint (www.minimaxi.com)
+```
+
+Set `MINIMAX_REGION=cn` if you're using MiniMax from China; otherwise omit for the global endpoint (`api.minimax.io`).
+
 ## 3. Reload Providers
 
 You can apply the new key without full restart:
