@@ -670,8 +670,9 @@ func run() error {
 	}
 
 	if cfg.HasProvider("zai") {
-		zaiClient = api.NewZaiClient(cfg.ZaiAPIKey, logger)
-		logger.Info("Z.ai API client configured", "base_url", cfg.ZaiBaseURL)
+		zaiBaseURL := cfg.ZaiBaseURL + "/monitor/usage/quota/limit"
+		zaiClient = api.NewZaiClient(cfg.ZaiAPIKey, logger, api.WithZaiBaseURL(zaiBaseURL))
+		logger.Info("Z.ai API client configured", "base_url", cfg.ZaiBaseURL, "region", cfg.ZaiRegion)
 	}
 
 	var anthropicClient *api.AnthropicClient
@@ -716,8 +717,12 @@ func run() error {
 
 	var minimaxClient *api.MiniMaxClient
 	if cfg.HasProvider("minimax") {
-		minimaxClient = api.NewMiniMaxClient(cfg.MiniMaxAPIKey, logger)
-		logger.Info("MiniMax API client configured")
+		baseURL := "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
+		if cfg.MiniMaxRegion == "cn" {
+			baseURL = "https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains"
+		}
+		minimaxClient = api.NewMiniMaxClient(cfg.MiniMaxAPIKey, logger, api.WithMiniMaxBaseURL(baseURL))
+		logger.Info("MiniMax API client configured", "region", cfg.MiniMaxRegion)
 	}
 
 	// Gemini provider - env vars or auto-detect from ~/.gemini/oauth_creds.json
@@ -1634,10 +1639,12 @@ func printHelp() {
 	fmt.Println("  SYNTHETIC_API_KEY       Synthetic API key")
 	fmt.Println("  ZAI_API_KEY            Z.ai API key")
 	fmt.Println("  ZAI_BASE_URL           Z.ai base URL (default: https://api.z.ai/api)")
+	fmt.Println("  ZAI_REGION             Z.ai region: global or cn (default: global)")
 	fmt.Println("  ANTHROPIC_TOKEN         Anthropic token (auto-detected if not set)")
 	fmt.Println("  COPILOT_TOKEN           GitHub Copilot token (PAT with copilot scope)")
 	fmt.Println("  CODEX_TOKEN             Codex OAuth token (recommended; required for Codex-only)")
 	fmt.Println("  MINIMAX_API_KEY         MiniMax API key")
+	fmt.Println("  MINIMAX_REGION          MiniMax region: global or cn (default: global)")
 	fmt.Println("  CODEX_HOME              Optional Codex auth directory (uses CODEX_HOME/auth.json)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
 	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")

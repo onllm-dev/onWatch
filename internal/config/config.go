@@ -26,7 +26,8 @@ type Config struct {
 
 	// Z.ai provider configuration
 	ZaiAPIKey  string // ZAI_API_KEY
-	ZaiBaseURL string // ZAI_BASE_URL
+	ZaiBaseURL string // ZAI_BASE_URL (auto-selected based on ZaiRegion)
+	ZaiRegion  string // ZAI_REGION ( "global" | "cn", default: "global" )
 
 	// Anthropic provider configuration
 	AnthropicToken     string // ANTHROPIC_TOKEN or auto-detected
@@ -45,7 +46,8 @@ type Config struct {
 	AntigravityEnabled   bool   // true if auto-detection should be attempted
 
 	// MiniMax provider configuration
-	MiniMaxAPIKey string // MINIMAX_API_KEY
+	MiniMaxAPIKey  string // MINIMAX_API_KEY
+	MiniMaxRegion  string // MINIMAX_REGION ( "global" | "cn", default: "global" )
 
 	// Gemini provider configuration (auto-detected from ~/.gemini/oauth_creds.json or env vars)
 	GeminiEnabled      bool   // true if auto-detected or GEMINI_ENABLED=true
@@ -228,6 +230,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// Z.ai provider
 	cfg.ZaiAPIKey = os.Getenv("ZAI_API_KEY")
 	cfg.ZaiBaseURL = os.Getenv("ZAI_BASE_URL")
+	cfg.ZaiRegion = strings.ToLower(strings.TrimSpace(os.Getenv("ZAI_REGION")))
+	if cfg.ZaiRegion == "" {
+		cfg.ZaiRegion = "global"
+	}
 
 	// Anthropic provider
 	cfg.AnthropicToken = os.Getenv("ANTHROPIC_TOKEN")
@@ -248,6 +254,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// MiniMax provider
 	cfg.MiniMaxAPIKey = strings.TrimSpace(os.Getenv("MINIMAX_API_KEY"))
+	cfg.MiniMaxRegion = strings.ToLower(strings.TrimSpace(os.Getenv("MINIMAX_REGION")))
+	if cfg.MiniMaxRegion == "" {
+		cfg.MiniMaxRegion = "global"
+	}
 
 	// Gemini provider (auto-detected, env vars, or opt-out via GEMINI_ENABLED=false)
 	cfg.GeminiRefreshToken = strings.TrimSpace(os.Getenv("GEMINI_REFRESH_TOKEN"))
@@ -356,7 +366,11 @@ func (c *Config) applyDefaults() {
 		c.LogLevel = "info"
 	}
 	if c.ZaiBaseURL == "" {
-		c.ZaiBaseURL = "https://api.z.ai/api"
+		if c.ZaiRegion == "cn" {
+			c.ZaiBaseURL = "https://open.bigmodel.cn/api"
+		} else {
+			c.ZaiBaseURL = "https://api.z.ai/api"
+		}
 	}
 	if c.SessionIdleTimeout == 0 {
 		c.SessionIdleTimeout = 600 * time.Second
