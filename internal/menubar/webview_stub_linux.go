@@ -1,4 +1,4 @@
-//go:build menubar && darwin && !cgo
+//go:build menubar && linux && !cgo
 
 package menubar
 

@@ -1,4 +1,4 @@
-//go:build menubar && darwin
+//go:build menubar && (darwin || linux)
 
 package menubar
 
@@ -75,7 +75,7 @@ func (c *trayController) onReady() {
 	})
 
 	if popover, err := newMenubarPopover(menubarPopoverWidth, menubarPopoverHeight); err != nil {
-		logger.Warn("native macOS menubar host unavailable, using browser fallback", "error", err)
+		logger.Warn("native menubar host unavailable, using browser fallback", "error", err)
 	} else {
 		c.popover = popover
 	}
@@ -123,18 +123,6 @@ func (c *trayController) toggleMenubar() {
 			return
 		} else {
 			slog.Default().Warn("failed to toggle native menubar host, opening browser fallback", "error", err)
-		}
-	}
-	_ = browser.OpenURL(url)
-}
-
-func (c *trayController) showMenubar() {
-	url := c.menubarURL()
-	if c.popover != nil {
-		if err := c.popover.ShowURL(url); err == nil {
-			return
-		} else {
-			slog.Default().Warn("failed to show native menubar host, opening browser fallback", "error", err)
 		}
 	}
 	_ = browser.OpenURL(url)

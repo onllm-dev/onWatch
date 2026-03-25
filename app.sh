@@ -6,6 +6,7 @@ VERSION=$(cat "$SCRIPT_DIR/VERSION")
 BINARY="onwatch"
 DARWIN_FULL_TAGS="menubar,desktop,production"
 DARWIN_CGO_LDFLAGS="-framework UniformTypeIdentifiers"
+LINUX_DESKTOP_TAGS="menubar,desktop,production"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -145,6 +146,13 @@ do_deps() {
         else
             success "git already installed: $(git --version)"
         fi
+        # Install GTK/WebKit dev libs for Linux desktop menubar variant
+        if ! pkg-config --exists gtk+-3.0 webkit2gtk-4.1 2>/dev/null; then
+            info "Installing GTK3/WebKitGTK dev libs for desktop menubar support..."
+            sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+        else
+            success "GTK3/WebKitGTK dev libs already installed"
+        fi
     elif [[ -f /etc/redhat-release ]] || [[ -f /etc/fedora-release ]]; then
         info "Detected Fedora/RHEL -- using dnf"
         if ! command -v go &>/dev/null; then
@@ -158,6 +166,13 @@ do_deps() {
             sudo dnf install -y git
         else
             success "git already installed: $(git --version)"
+        fi
+        # Install GTK/WebKit dev libs for Linux desktop menubar variant
+        if ! pkg-config --exists gtk+-3.0 webkit2gtk-4.1 2>/dev/null; then
+            info "Installing GTK3/WebKitGTK dev libs for desktop menubar support..."
+            sudo dnf install -y gtk3-devel webkit2gtk4.1-devel libayatana-appindicator-gtk3-devel
+        else
+            success "GTK3/WebKitGTK dev libs already installed"
         fi
     else
         error "Unsupported OS. Please install Go and git manually."
@@ -188,6 +203,16 @@ build_native_binary() {
     if [[ "$(uname)" == "Darwin" ]]; then
         CGO_ENABLED=1 CGO_LDFLAGS="$DARWIN_CGO_LDFLAGS" go build \
             -tags "$DARWIN_FULL_TAGS" \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o "$output" .
+        return
+    fi
+
+    # On Linux, build with menubar support if GTK and WebKitGTK dev libs are available
+    if [[ "$(uname)" == "Linux" ]] && pkg-config --exists gtk+-3.0 webkit2gtk-4.1 2>/dev/null; then
+        info "GTK3 and WebKitGTK detected - building with menubar support"
+        CGO_ENABLED=1 go build \
+            -tags "$LINUX_DESKTOP_TAGS" \
             -ldflags="-s -w -X main.version=$VERSION" \
             -o "$output" .
         return
@@ -270,6 +295,20 @@ do_release() {
             -ldflags="-s -w -X main.version=$VERSION" \
             -o "$SCRIPT_DIR/$output" .
     done
+
+    # Build Linux desktop variant with menubar support (requires GTK/WebKit dev libs)
+    if [[ "$(uname)" == "Linux" ]] && pkg-config --exists gtk+-3.0 webkit2gtk-4.1 2>/dev/null; then
+        for arch in amd64; do
+            local output="dist/onwatch-linux-${arch}-desktop"
+            info "  Building ${output} (with menubar support)..."
+            CGO_ENABLED=1 GOOS=linux GOARCH="$arch" go build \
+                -tags "$LINUX_DESKTOP_TAGS" \
+                -ldflags="-s -w -X main.version=$VERSION" \
+                -o "$SCRIPT_DIR/$output" .
+        done
+    else
+        warn "Skipping Linux desktop binary - GTK3/WebKitGTK dev libs not found. Install libgtk-3-dev and libwebkit2gtk-4.1-dev."
+    fi
 
     success "Release build complete. Binaries in dist/:"
     ls -lh "$SCRIPT_DIR/dist/"
