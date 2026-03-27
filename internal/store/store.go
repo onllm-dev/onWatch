@@ -593,6 +593,36 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_gemini_quota_values_model ON gemini_quota_values(model_id);
 		CREATE INDEX IF NOT EXISTS idx_gemini_cycles_model_start ON gemini_reset_cycles(model_id, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_gemini_cycles_model_active ON gemini_reset_cycles(model_id) WHERE cycle_end IS NULL;
+
+		-- OpenRouter-specific tables
+		CREATE TABLE IF NOT EXISTS openrouter_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			label TEXT NOT NULL DEFAULT '',
+			usage REAL NOT NULL DEFAULT 0,
+			usage_daily REAL NOT NULL DEFAULT 0,
+			usage_weekly REAL NOT NULL DEFAULT 0,
+			usage_monthly REAL NOT NULL DEFAULT 0,
+			credit_limit REAL,
+			limit_remaining REAL,
+			is_free_tier INTEGER NOT NULL DEFAULT 0,
+			rate_limit_requests INTEGER NOT NULL DEFAULT 0,
+			rate_limit_interval TEXT NOT NULL DEFAULT ''
+		);
+
+		CREATE TABLE IF NOT EXISTS openrouter_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_type TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			peak_usage REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		-- OpenRouter indexes
+		CREATE INDEX IF NOT EXISTS idx_openrouter_snapshots_captured ON openrouter_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_openrouter_cycles_type_start ON openrouter_reset_cycles(quota_type, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_openrouter_cycles_type_active ON openrouter_reset_cycles(quota_type, cycle_end) WHERE cycle_end IS NULL;
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {

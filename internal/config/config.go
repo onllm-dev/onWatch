@@ -49,6 +49,9 @@ type Config struct {
 	MiniMaxAPIKey  string // MINIMAX_API_KEY
 	MiniMaxRegion  string // MINIMAX_REGION ( "global" | "cn", default: "global" )
 
+	// OpenRouter provider configuration
+	OpenRouterAPIKey string // OPENROUTER_API_KEY
+
 	// Gemini provider configuration (auto-detected from ~/.gemini/oauth_creds.json or env vars)
 	GeminiEnabled      bool   // true if auto-detected or GEMINI_ENABLED=true
 	GeminiAutoToken    bool   // true if token was auto-detected
@@ -166,6 +169,7 @@ var onwatchEnvKeys = []string{
 	"CODEX_TOKEN",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
+	"OPENROUTER_API_KEY",
 	"GEMINI_ENABLED",
 	"GEMINI_REFRESH_TOKEN",
 	"GEMINI_ACCESS_TOKEN",
@@ -258,6 +262,9 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	if cfg.MiniMaxRegion == "" {
 		cfg.MiniMaxRegion = "global"
 	}
+
+	// OpenRouter provider
+	cfg.OpenRouterAPIKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
 
 	// Gemini provider (auto-detected, env vars, or opt-out via GEMINI_ENABLED=false)
 	cfg.GeminiRefreshToken = strings.TrimSpace(os.Getenv("GEMINI_REFRESH_TOKEN"))
@@ -426,6 +433,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.MiniMaxAPIKey != "" {
 		providers = append(providers, "minimax")
 	}
+	if c.OpenRouterAPIKey != "" {
+		providers = append(providers, "openrouter")
+	}
 	if c.GeminiEnabled {
 		providers = append(providers, "gemini")
 	}
@@ -449,6 +459,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.AntigravityEnabled
 	case "minimax":
 		return c.MiniMaxAPIKey != ""
+	case "openrouter":
+		return c.OpenRouterAPIKey != ""
 	case "gemini":
 		return c.GeminiEnabled
 	}
@@ -477,6 +489,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.MiniMaxAPIKey != "" {
+		count++
+	}
+	if c.OpenRouterAPIKey != "" {
 		count++
 	}
 	if c.GeminiEnabled {

@@ -725,6 +725,12 @@ func run() error {
 		logger.Info("MiniMax API client configured", "region", cfg.MiniMaxRegion)
 	}
 
+	var openrouterClient *api.OpenRouterClient
+	if cfg.HasProvider("openrouter") {
+		openrouterClient = api.NewOpenRouterClient(cfg.OpenRouterAPIKey, logger)
+		logger.Info("OpenRouter API client configured")
+	}
+
 	// Gemini provider - env vars or auto-detect from ~/.gemini/oauth_creds.json
 	var geminiClient *api.GeminiClient
 	var geminiCreds *api.GeminiCredentials
@@ -831,6 +837,11 @@ func run() error {
 		minimaxTr = tracker.NewMiniMaxTracker(db, logger)
 	}
 
+	var openrouterTr *tracker.OpenRouterTracker
+	if cfg.HasProvider("openrouter") {
+		openrouterTr = tracker.NewOpenRouterTracker(db, logger)
+	}
+
 	var geminiTr *tracker.GeminiTracker
 	if cfg.HasProvider("gemini") {
 		geminiTr = tracker.NewGeminiTracker(db, logger)
@@ -846,6 +857,12 @@ func run() error {
 	if minimaxClient != nil {
 		minimaxSm := agent.NewSessionManager(db, "minimax", idleTimeout, logger)
 		minimaxAg = agent.NewMiniMaxAgent(minimaxClient, db, minimaxTr, cfg.PollInterval, logger, minimaxSm)
+	}
+
+	var openrouterAg *agent.OpenRouterAgent
+	if openrouterClient != nil {
+		openrouterSm := agent.NewSessionManager(db, "openrouter", idleTimeout, logger)
+		openrouterAg = agent.NewOpenRouterAgent(openrouterClient, db, openrouterTr, cfg.PollInterval, logger, openrouterSm)
 	}
 
 	var geminiAg *agent.GeminiAgent
@@ -887,6 +904,9 @@ func run() error {
 	}
 	if minimaxAg != nil {
 		minimaxAg.SetNotifier(notifier)
+	}
+	if openrouterAg != nil {
+		openrouterAg.SetNotifier(notifier)
 	}
 	if geminiAg != nil {
 		geminiAg.SetNotifier(notifier)
@@ -960,6 +980,9 @@ func run() error {
 	if minimaxAg != nil {
 		minimaxAg.SetPollingCheck(func() bool { return isPollingEnabled("minimax") })
 	}
+	if openrouterAg != nil {
+		openrouterAg.SetPollingCheck(func() bool { return isPollingEnabled("openrouter") })
+	}
 	if geminiAg != nil {
 		geminiAg.SetPollingCheck(func() bool { return isPollingEnabled("gemini") })
 	}
@@ -998,6 +1021,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "minimax", QuotaKey: modelName, ResetOccurred: true})
 		})
 	}
+	if openrouterTr != nil {
+		openrouterTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "openrouter", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 	if geminiTr != nil {
 		geminiTr.SetOnReset(func(modelID string) {
 			notifier.Check(notify.QuotaStatus{Provider: "gemini", QuotaKey: modelID, ResetOccurred: true})
@@ -1021,6 +1049,9 @@ func run() error {
 	}
 	if minimaxTr != nil {
 		handler.SetMiniMaxTracker(minimaxTr)
+	}
+	if openrouterTr != nil {
+		handler.SetOpenRouterTracker(openrouterTr)
 	}
 	if geminiTr != nil {
 		handler.SetGeminiTracker(geminiTr)
@@ -1047,6 +1078,9 @@ func run() error {
 	if minimaxAg != nil {
 		agentMgr.RegisterFactory("minimax", func() (agent.AgentRunner, error) { return minimaxAg, nil })
 	}
+	if openrouterAg != nil {
+		agentMgr.RegisterFactory("openrouter", func() (agent.AgentRunner, error) { return openrouterAg, nil })
+	}
 	if geminiAg != nil {
 		agentMgr.RegisterFactory("gemini", func() (agent.AgentRunner, error) { return geminiAg, nil })
 	}
@@ -1069,7 +1103,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "gemini"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
@@ -1554,6 +1588,9 @@ func printBanner(cfg *config.Config, version string) {
 	if cfg.HasProvider("minimax") {
 		fmt.Println("║  API:       minimax.io/coding_plan   ║")
 	}
+	if cfg.HasProvider("openrouter") {
+		fmt.Println("║  API:       openrouter.ai/api         ║")
+	}
 	if cfg.HasProvider("gemini") {
 		fmt.Println("║  API:       cloudcode-pa.google.com  ║")
 	}
@@ -1597,6 +1634,9 @@ func printBanner(cfg *config.Config, version string) {
 	}
 	if cfg.HasProvider("minimax") {
 		fmt.Printf("MiniMax API Key:   %s\n", redactAPIKey(cfg.MiniMaxAPIKey))
+	}
+	if cfg.HasProvider("openrouter") {
+		fmt.Printf("OpenRouter Key:    %s\n", redactAPIKey(cfg.OpenRouterAPIKey))
 	}
 	if cfg.HasProvider("gemini") {
 		source := "auto-detect"
@@ -1645,6 +1685,7 @@ func printHelp() {
 	fmt.Println("  CODEX_TOKEN             Codex OAuth token (recommended; required for Codex-only)")
 	fmt.Println("  MINIMAX_API_KEY         MiniMax API key")
 	fmt.Println("  MINIMAX_REGION          MiniMax region: global or cn (default: global)")
+	fmt.Println("  OPENROUTER_API_KEY      OpenRouter API key")
 	fmt.Println("  CODEX_HOME              Optional Codex auth directory (uses CODEX_HOME/auth.json)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
 	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")

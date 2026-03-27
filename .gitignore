@@ -81,3 +81,4 @@ __pycache__/
 
 # Mock server binary
 /mockserver
+onwatch-test
