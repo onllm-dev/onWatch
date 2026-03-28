@@ -1,35 +1,35 @@
 {
-  "as_of": "2026-03-12",
-  "stars_snapshot": 330,
-  "countries_count": 52,
+  "as_of": "2026-03-28",
+  "stars_snapshot": 479,
+  "countries_count": 57,
   "top_countries": [
     {
       "name": "United States",
-      "count": 21
+      "count": 22
+    },
+    {
+      "name": "China",
+      "count": 12
+    },
+    {
+      "name": "Germany",
+      "count": 12
+    },
+    {
+      "name": "India",
+      "count": 9
     },
     {
       "name": "Spain",
       "count": 9
     },
     {
-      "name": "China",
-      "count": 8
-    },
-    {
-      "name": "Germany",
+      "name": "Canada",
       "count": 8
     },
     {
       "name": "Brazil",
       "count": 7
-    },
-    {
-      "name": "India",
-      "count": 7
-    },
-    {
-      "name": "Canada",
-      "count": 6
     },
     {
       "name": "France",
@@ -41,18 +41,38 @@
     },
     {
       "name": "Italy",
-      "count": 5
+      "count": 6
+    },
+    {
+      "name": "United Kingdom",
+      "count": 6
+    },
+    {
+      "name": "Colombia",
+      "count": 4
     },
     {
       "name": "Russia",
       "count": 4
     },
     {
-      "name": "United Kingdom",
-      "count": 4
+      "name": "Austria",
+      "count": 3
     },
     {
-      "name": "Colombia",
+      "name": "Hong Kong",
+      "count": 3
+    },
+    {
+      "name": "Philippines",
+      "count": 3
+    },
+    {
+      "name": "Portugal",
+      "count": 3
+    },
+    {
+      "name": "South Korea",
       "count": 3
     },
     {
@@ -60,7 +80,7 @@
       "count": 3
     },
     {
-      "name": "Austria",
+      "name": "Azerbaijan",
       "count": 2
     },
     {
@@ -80,6 +100,10 @@
       "count": 2
     },
     {
+      "name": "Latvia",
+      "count": 2
+    },
+    {
       "name": "Morocco",
       "count": 2
     },
@@ -88,11 +112,7 @@
       "count": 2
     },
     {
-      "name": "Portugal",
-      "count": 2
-    },
-    {
-      "name": "South Korea",
+      "name": "Romania",
       "count": 2
     },
     {
@@ -105,10 +125,6 @@
     },
     {
       "name": "Argentina",
-      "count": 1
-    },
-    {
-      "name": "Azerbaijan",
       "count": 1
     },
     {
@@ -128,11 +144,19 @@
       "count": 1
     },
     {
-      "name": "Hong Kong",
+      "name": "Finland",
+      "count": 1
+    },
+    {
+      "name": "Greece",
       "count": 1
     },
     {
       "name": "Israel",
+      "count": 1
+    },
+    {
+      "name": "Japan",
       "count": 1
     },
     {
@@ -141,10 +165,6 @@
     },
     {
       "name": "Kazakhstan",
-      "count": 1
-    },
-    {
-      "name": "Latvia",
       "count": 1
     },
     {
@@ -176,10 +196,6 @@
       "count": 1
     },
     {
-      "name": "Romania",
-      "count": 1
-    },
-    {
       "name": "Slovakia",
       "count": 1
     },
@@ -204,6 +220,10 @@
       "count": 1
     },
     {
+      "name": "Uruguay",
+      "count": 1
+    },
+    {
       "name": "Vatican City",
       "count": 1
     },
@@ -213,13 +233,13 @@
     },
     {
       "name": "Unknown",
-      "count": 184
+      "count": 301
     }
   ],
   "org_examples": [
     {
       "name": "__total_users_with_org_metadata",
-      "count": 89
+      "count": 114
     },
     {
       "name": "Microsoft",
@@ -270,7 +290,7 @@
       "count": 1
     },
     {
-      "name": "Arriba SpA",
+      "name": "Braum Consulting",
       "count": 1
     },
     {
@@ -294,6 +314,10 @@
       "count": 1
     },
     {
+      "name": "Invest Capital",
+      "count": 1
+    },
+    {
       "name": "Keepler Data Tech",
       "count": 1
     },
@@ -302,7 +326,15 @@
       "count": 1
     },
     {
+      "name": "MBIX TECH",
+      "count": 1
+    },
+    {
       "name": "Politechnika \u0141\u00f3dzka",
+      "count": 1
+    },
+    {
+      "name": "Polytechnic University of the Philippines",
       "count": 1
     },
     {
@@ -314,11 +346,27 @@
       "count": 1
     },
     {
+      "name": "Roberto Francisco",
+      "count": 1
+    },
+    {
       "name": "Ruhr University Bochum",
       "count": 1
     },
     {
       "name": "SDU University",
+      "count": 1
+    },
+    {
+      "name": "Software Analysis and Intelligence Lab & Lab on Maintenance, Construction and Intelligence of Software",
+      "count": 1
+    },
+    {
+      "name": "Space \u0421ompany",
+      "count": 1
+    },
+    {
+      "name": "The Byford Law Firm, PLLC",
       "count": 1
     },
     {
@@ -335,6 +383,10 @@
     },
     {
       "name": "University of Michigan",
+      "count": 1
+    },
+    {
+      "name": "University of Modena and Reggio Emilia",
       "count": 1
     },
     {
