@@ -1,8 +1,28 @@
 package menubar
 
 import (
+	"bytes"
+	"image/png"
 	"testing"
 )
+
+func TestTrayIconsDimensions(t *testing.T) {
+	template, retina := trayIcons()
+
+	checkDim := func(data []byte, name string, expected int) {
+		img, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			t.Fatalf("failed to decode %s: %v", name, err)
+		}
+		bounds := img.Bounds()
+		if bounds.Dx() != expected || bounds.Dy() != expected {
+			t.Errorf("%s dimensions expected %dx%d, got %dx%d", name, expected, expected, bounds.Dx(), bounds.Dy())
+		}
+	}
+
+	checkDim(template, "template", 256)
+	checkDim(retina, "retina", 512)
+}
 
 func TestTrayIconsPNGNotEmpty(t *testing.T) {
 	template, retina := trayIcons()
@@ -11,24 +31,6 @@ func TestTrayIconsPNGNotEmpty(t *testing.T) {
 	}
 	if len(retina) == 0 {
 		t.Fatal("trayIcons() retina is empty")
-	}
-}
-
-func TestTrayIconPDFNotEmpty(t *testing.T) {
-	pdf := trayIconPDF()
-	if len(pdf) == 0 {
-		t.Fatal("trayIconPDF() is empty")
-	}
-}
-
-func TestTrayIconPDFStartsWithPDFHeader(t *testing.T) {
-	pdf := trayIconPDF()
-	if len(pdf) < 4 {
-		t.Fatal("trayIconPDF() too short to be valid")
-	}
-	// PDF files start with "%PDF-"
-	if string(pdf[:5]) != "%PDF-" {
-		t.Fatalf("trayIconPDF() does not start with %%PDF-, got %q", string(pdf[:5]))
 	}
 }
 

@@ -64,11 +64,7 @@ func (c *trayController) onReady() {
 	logger.Info("Systray initialized, setting icon")
 
 	templateIcon, regularIcon := trayIcons()
-	pdfIcon := trayIconPDF()
-	if len(pdfIcon) > 0 {
-		systray.SetIcon(pdfIcon)
-		logger.Debug("Tray icon set from PDF")
-	} else if len(templateIcon) > 0 && len(regularIcon) > 0 {
+	if len(templateIcon) > 0 && len(regularIcon) > 0 {
 		systray.SetTemplateIcon(templateIcon, regularIcon)
 		logger.Debug("Tray icon set from PNG")
 	}
