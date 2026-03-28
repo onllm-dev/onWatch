@@ -20,6 +20,8 @@ type CopilotQuotaSnapshot struct {
 }
 
 // CopilotUserResponse is the full response from the GitHub Copilot internal API.
+// Supports both the legacy/premium quota_snapshots format and the newer
+// limited_user_quotas/monthly_quotas format used by free plans.
 type CopilotUserResponse struct {
 	Login             string                           `json:"login"`
 	CopilotPlan       string                           `json:"copilot_plan"`
@@ -27,6 +29,53 @@ type CopilotUserResponse struct {
 	QuotaResetDate    string                           `json:"quota_reset_date"`
 	QuotaResetDateUTC string                           `json:"quota_reset_date_utc"`
 	QuotaSnapshots    map[string]*CopilotQuotaSnapshot `json:"quota_snapshots"`
+
+	// New format fields (free_limited_copilot plans)
+	LimitedUserQuotas       map[string]int `json:"limited_user_quotas"`
+	MonthlyQuotas           map[string]int `json:"monthly_quotas"`
+	LimitedUserSubscribedDay int           `json:"limited_user_subscribed_day"`
+	LimitedUserResetDate    string         `json:"limited_user_reset_date"`
+}
+
+// normalize synthesizes QuotaSnapshots from the new limited_user_quotas/monthly_quotas
+// fields when QuotaSnapshots is empty. This allows downstream code to work with a
+// single unified format.
+func (r *CopilotUserResponse) normalize() {
+	if len(r.QuotaSnapshots) > 0 || len(r.LimitedUserQuotas) == 0 {
+		return
+	}
+
+	r.QuotaSnapshots = make(map[string]*CopilotQuotaSnapshot, len(r.LimitedUserQuotas))
+
+	for key, used := range r.LimitedUserQuotas {
+		monthly, hasMonthly := r.MonthlyQuotas[key]
+		if !hasMonthly || monthly == 0 {
+			// No monthly limit - treat as unlimited
+			r.QuotaSnapshots[key] = &CopilotQuotaSnapshot{
+				Unlimited: true,
+			}
+			continue
+		}
+
+		remaining := monthly - used
+		if remaining < 0 {
+			remaining = 0
+		}
+		pctRemaining := float64(remaining) / float64(monthly) * 100
+
+		r.QuotaSnapshots[key] = &CopilotQuotaSnapshot{
+			Entitlement:      monthly,
+			Remaining:        remaining,
+			PercentRemaining: pctRemaining,
+			Unlimited:        false,
+		}
+	}
+
+	// Use limited_user_reset_date as the reset date if no other reset date is set
+	if r.QuotaResetDateUTC == "" && r.LimitedUserResetDate != "" {
+		r.QuotaResetDate = r.LimitedUserResetDate
+		r.QuotaResetDateUTC = r.LimitedUserResetDate + "T00:00:00.000Z"
+	}
 }
 
 // CopilotQuota represents a single normalized quota for storage.
@@ -121,5 +170,6 @@ func ParseCopilotResponse(data []byte) (*CopilotUserResponse, error) {
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, err
 	}
+	resp.normalize()
 	return &resp, nil
 }

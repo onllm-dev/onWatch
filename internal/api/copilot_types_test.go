@@ -262,3 +262,181 @@ func TestParseCopilotResponse_EmptySnapshots(t *testing.T) {
 		t.Errorf("ActiveQuotaNames should be empty, got %v", names)
 	}
 }
+
+func TestParseCopilotResponse_LimitedUserFormat(t *testing.T) {
+	raw := `{
+		"login": "testuser",
+		"copilot_plan": "individual",
+		"access_type_sku": "free_limited_copilot",
+		"limited_user_quotas": {"chat": 260, "completions": 3327},
+		"monthly_quotas": {"chat": 500, "completions": 4000},
+		"limited_user_subscribed_day": 24,
+		"limited_user_reset_date": "2026-04-24"
+	}`
+
+	resp, err := ParseCopilotResponse([]byte(raw))
+	if err != nil {
+		t.Fatalf("ParseCopilotResponse: %v", err)
+	}
+
+	if resp.Login != "testuser" {
+		t.Errorf("Login = %q, want %q", resp.Login, "testuser")
+	}
+	if resp.CopilotPlan != "individual" {
+		t.Errorf("CopilotPlan = %q, want %q", resp.CopilotPlan, "individual")
+	}
+	if resp.AccessTypeSKU != "free_limited_copilot" {
+		t.Errorf("AccessTypeSKU = %q, want %q", resp.AccessTypeSKU, "free_limited_copilot")
+	}
+
+	// normalize() should have synthesized QuotaSnapshots
+	if len(resp.QuotaSnapshots) != 2 {
+		t.Fatalf("QuotaSnapshots len = %d, want 2", len(resp.QuotaSnapshots))
+	}
+
+	chat := resp.QuotaSnapshots["chat"]
+	if chat == nil {
+		t.Fatal("chat quota not found")
+	}
+	if chat.Entitlement != 500 {
+		t.Errorf("chat.Entitlement = %d, want 500", chat.Entitlement)
+	}
+	if chat.Remaining != 240 {
+		t.Errorf("chat.Remaining = %d, want 240 (500-260)", chat.Remaining)
+	}
+	if chat.Unlimited {
+		t.Error("chat.Unlimited should be false")
+	}
+	if chat.PercentRemaining != 48.0 {
+		t.Errorf("chat.PercentRemaining = %f, want 48.0", chat.PercentRemaining)
+	}
+
+	completions := resp.QuotaSnapshots["completions"]
+	if completions == nil {
+		t.Fatal("completions quota not found")
+	}
+	if completions.Entitlement != 4000 {
+		t.Errorf("completions.Entitlement = %d, want 4000", completions.Entitlement)
+	}
+	if completions.Remaining != 673 {
+		t.Errorf("completions.Remaining = %d, want 673 (4000-3327)", completions.Remaining)
+	}
+
+	// Reset date should be synthesized from limited_user_reset_date
+	if resp.QuotaResetDateUTC != "2026-04-24T00:00:00.000Z" {
+		t.Errorf("QuotaResetDateUTC = %q, want %q", resp.QuotaResetDateUTC, "2026-04-24T00:00:00.000Z")
+	}
+}
+
+func TestParseCopilotResponse_LimitedUserToSnapshot(t *testing.T) {
+	raw := `{
+		"login": "testuser",
+		"copilot_plan": "individual",
+		"access_type_sku": "free_limited_copilot",
+		"limited_user_quotas": {"chat": 260, "completions": 3327},
+		"monthly_quotas": {"chat": 500, "completions": 4000},
+		"limited_user_reset_date": "2026-04-24"
+	}`
+
+	resp, err := ParseCopilotResponse([]byte(raw))
+	if err != nil {
+		t.Fatalf("ParseCopilotResponse: %v", err)
+	}
+
+	now := time.Now().UTC()
+	snapshot := resp.ToSnapshot(now)
+
+	if snapshot == nil {
+		t.Fatal("ToSnapshot returned nil")
+	}
+	if len(snapshot.Quotas) != 2 {
+		t.Fatalf("Quotas len = %d, want 2", len(snapshot.Quotas))
+	}
+
+	// Quotas should be sorted by name
+	if snapshot.Quotas[0].Name != "chat" {
+		t.Errorf("Quotas[0].Name = %q, want %q", snapshot.Quotas[0].Name, "chat")
+	}
+	if snapshot.Quotas[1].Name != "completions" {
+		t.Errorf("Quotas[1].Name = %q, want %q", snapshot.Quotas[1].Name, "completions")
+	}
+
+	// Verify reset date parsed
+	if snapshot.ResetDate == nil {
+		t.Fatal("ResetDate should not be nil")
+	}
+	expectedReset := time.Date(2026, 4, 24, 0, 0, 0, 0, time.UTC)
+	if !snapshot.ResetDate.Equal(expectedReset) {
+		t.Errorf("ResetDate = %v, want %v", snapshot.ResetDate, expectedReset)
+	}
+
+	// Verify non-unlimited quotas have correct values
+	chat := snapshot.Quotas[0]
+	if chat.Entitlement != 500 {
+		t.Errorf("chat.Entitlement = %d, want 500", chat.Entitlement)
+	}
+	if chat.Remaining != 240 {
+		t.Errorf("chat.Remaining = %d, want 240", chat.Remaining)
+	}
+	if chat.Unlimited {
+		t.Error("chat should not be unlimited")
+	}
+}
+
+func TestParseCopilotResponse_LimitedUserOverage(t *testing.T) {
+	// Test that used > monthly clamps remaining to 0
+	raw := `{
+		"limited_user_quotas": {"chat": 600},
+		"monthly_quotas": {"chat": 500}
+	}`
+
+	resp, err := ParseCopilotResponse([]byte(raw))
+	if err != nil {
+		t.Fatalf("ParseCopilotResponse: %v", err)
+	}
+
+	chat := resp.QuotaSnapshots["chat"]
+	if chat == nil {
+		t.Fatal("chat quota not found")
+	}
+	if chat.Remaining != 0 {
+		t.Errorf("chat.Remaining = %d, want 0 (clamped)", chat.Remaining)
+	}
+	if chat.PercentRemaining != 0 {
+		t.Errorf("chat.PercentRemaining = %f, want 0", chat.PercentRemaining)
+	}
+}
+
+func TestParseCopilotResponse_LegacyFormatUnchanged(t *testing.T) {
+	// Ensure the legacy quota_snapshots format still works and is not
+	// overwritten by normalize() when both formats are present.
+	raw := `{
+		"login": "legacyuser",
+		"copilot_plan": "individual_pro",
+		"quota_snapshots": {
+			"premium_interactions": {
+				"entitlement": 1500, "remaining": 473,
+				"percent_remaining": 31.578, "unlimited": false
+			}
+		},
+		"limited_user_quotas": {"chat": 100},
+		"monthly_quotas": {"chat": 500}
+	}`
+
+	resp, err := ParseCopilotResponse([]byte(raw))
+	if err != nil {
+		t.Fatalf("ParseCopilotResponse: %v", err)
+	}
+
+	// Legacy format should be preserved, not overwritten
+	if len(resp.QuotaSnapshots) != 1 {
+		t.Fatalf("QuotaSnapshots len = %d, want 1 (legacy preserved)", len(resp.QuotaSnapshots))
+	}
+	premium := resp.QuotaSnapshots["premium_interactions"]
+	if premium == nil {
+		t.Fatal("premium_interactions not found")
+	}
+	if premium.Entitlement != 1500 {
+		t.Errorf("premium.Entitlement = %d, want 1500", premium.Entitlement)
+	}
+}
