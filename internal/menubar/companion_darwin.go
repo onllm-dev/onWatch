@@ -66,7 +66,7 @@ func (c *trayController) onReady() {
 	templateIcon, regularIcon := trayIcons()
 	if len(templateIcon) > 0 && len(regularIcon) > 0 {
 		systray.SetTemplateIcon(templateIcon, regularIcon)
-		logger.Debug("Tray icon set successfully")
+		logger.Debug("Tray icon set from PNG")
 	}
 
 	systray.SetTooltip("onWatch menubar companion")

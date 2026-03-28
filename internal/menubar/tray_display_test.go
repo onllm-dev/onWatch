@@ -41,8 +41,8 @@ func TestTrayTitleProviderSpecific(t *testing.T) {
 		},
 	}
 
-	if got := TrayTitle(snapshot, settings); got != "84%" {
-		t.Fatalf("TrayTitle(multi_provider) = %q, want %q", got, "84%")
+	if got := TrayTitle(snapshot, settings); got != "\u200984%" {
+		t.Fatalf("TrayTitle(multi_provider) = %q, want %q", got, "\u200984%")
 	}
 }
 
@@ -73,8 +73,8 @@ func TestTrayTitleCriticalCountAndIconOnly(t *testing.T) {
 			{ProviderID: "copilot"},
 		},
 	}
-	if got := TrayTitle(snapshot, settings); got != "84% │ 12%" {
-		t.Fatalf("TrayTitle(multi_provider multiple) = %q, want %q", got, "84% │ 12%")
+	if got := TrayTitle(snapshot, settings); got != "\u200984% │ 12%" {
+		t.Fatalf("TrayTitle(multi_provider multiple) = %q, want %q", got, "\u200984% │ 12%")
 	}
 
 	settings.StatusDisplay = StatusDisplay{Mode: StatusDisplayIconOnly}
