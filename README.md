@@ -241,9 +241,13 @@ Set `COPILOT_TOKEN` in your `.env` with a GitHub Personal Access Token (classic)
 
 Set `MINIMAX_API_KEY` in your `.env` with your MiniMax Coding Plan API key. Get your key from the [MiniMax Console](https://platform.minimax.io). onWatch tracks the shared quota pool across all MiniMax models (M2, M2.1, M2.5) with 5-hour rolling window reset cycles. Full walkthrough: [MiniMax Setup Guide](docs/MINIMAX_SETUP.md).
 
+### How do I track my OpenRouter usage?
+
+Set `OPENROUTER_API_KEY` in your `.env` with your OpenRouter API key. Get one from [openrouter.ai/keys](https://openrouter.ai/keys). onWatch polls the OpenRouter auth key endpoint to track total credits usage, daily/weekly/monthly spending, credit limits, and remaining balance. Works with both free and paid accounts.
+
 ### Does onWatch work with Cline, Roo Code, Kilo Code, or Claude Code?
 
-Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, or Antigravity), not the coding tool. Any tool that uses a Synthetic, Z.ai, Anthropic, Codex, Copilot, MiniMax, Gemini CLI, or Antigravity API key -- including Cline, Roo Code, Kilo Code, Claude Code, Codex CLI, Cursor, GitHub Copilot, MiniMax Coding Plan, Gemini CLI, Antigravity, and others -- will have its usage tracked automatically.
+Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, OpenRouter, Gemini CLI, or Antigravity), not the coding tool. Any tool that uses a Synthetic, Z.ai, Anthropic, Codex, Copilot, MiniMax, OpenRouter, Gemini CLI, or Antigravity API key -- including Cline, Roo Code, Kilo Code, Claude Code, Codex CLI, Cursor, GitHub Copilot, MiniMax Coding Plan, OpenRouter, Gemini CLI, Antigravity, and others -- will have its usage tracked automatically.
 
 ### Does onWatch send any data to external servers?
 

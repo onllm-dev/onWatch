@@ -2005,16 +2005,9 @@ func (h *Handler) historyOpenRouter(w http.ResponseWriter, r *http.Request) {
 			"capturedAt": snapshot.CapturedAt.Format(time.RFC3339),
 			"usage":      snapshot.Usage,
 			"usageDaily": snapshot.UsageDaily,
-			"isFreeTier": snapshot.IsFreeTier,
 		}
-		if snapshot.Limit != nil {
-			entry["limit"] = *snapshot.Limit
-			if *snapshot.Limit > 0 {
-				entry["percent"] = (snapshot.Usage / *snapshot.Limit) * 100
-			}
-		}
-		if snapshot.LimitRemaining != nil {
-			entry["remaining"] = *snapshot.LimitRemaining
+		if snapshot.Limit != nil && *snapshot.Limit > 0 {
+			entry["percent"] = (snapshot.Usage / *snapshot.Limit) * 100
 		}
 		histResp = append(histResp, entry)
 	}
@@ -7088,6 +7081,10 @@ func (h *Handler) buildMiniMaxCurrent() map[string]interface{} {
 
 	quotas := make([]map[string]interface{}, 0, len(latest.Models))
 	for _, m := range latest.Models {
+		// Skip models with no quota allocation (total=0 and used=0)
+		if m.Total == 0 && m.Used == 0 {
+			continue
+		}
 		quotas = append(quotas, buildQuota(m, m.ModelName))
 	}
 
@@ -7468,6 +7465,9 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			for _, model := range snap.Models {
+				if model.Total == 0 && model.Used == 0 {
+					continue
+				}
 				entry[model.ModelName] = model.UsedPercent
 			}
 		}
@@ -8893,12 +8893,17 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 	quotaNames := []string{}
 	for _, snap := range snapshots {
 		for _, model := range snap.Models {
+			if model.Total == 0 && model.Used == 0 {
+				continue
+			}
 			quotaNames = append(quotaNames, model.ModelName)
 		}
 		break
 	}
 	if len(quotaNames) == 0 {
-		quotaNames, _ = h.store.QueryAllMiniMaxModelNames()
+		allNames, _ := h.store.QueryAllMiniMaxModelNames()
+		// Filter will happen at series level; use all names as fallback
+		quotaNames = allNames
 	}
 
 	capturedAt := make([]time.Time, 0, len(snapshots))
@@ -8909,6 +8914,9 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 		ids = append(ids, snap.ID)
 		row := make(map[string]loggingHistoryCrossQuota, len(snap.Models))
 		for _, model := range snap.Models {
+			if model.Total == 0 && model.Used == 0 {
+				continue
+			}
 			row[model.ModelName] = loggingHistoryCrossQuota{
 				Name:     model.ModelName,
 				Value:    float64(model.Used),
