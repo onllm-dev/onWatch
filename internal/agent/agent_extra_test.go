@@ -477,8 +477,11 @@ func TestAnthropicAgent_Poll_CredsRefresh_ExpiringToken_OAuthFails(t *testing.T)
 	if !bytes.Contains([]byte(logs), []byte("Token expiring soon")) {
 		t.Errorf("expected 'Token expiring soon' in logs, got: %s", logs)
 	}
-	if !bytes.Contains([]byte(logs), []byte("Proactive OAuth refresh failed")) {
-		t.Errorf("expected 'Proactive OAuth refresh failed' in logs, got: %s", logs)
+	// OAuth refresh should fail (either rate limited with backoff, or generic failure)
+	hasRateLimitBackoff := bytes.Contains([]byte(logs), []byte("Proactive OAuth refresh rate limited"))
+	hasGenericFailure := bytes.Contains([]byte(logs), []byte("Proactive OAuth refresh failed"))
+	if !hasRateLimitBackoff && !hasGenericFailure {
+		t.Errorf("expected proactive OAuth refresh failure in logs, got: %s", logs)
 	}
 }
 

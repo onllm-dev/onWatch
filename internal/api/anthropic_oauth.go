@@ -14,13 +14,32 @@ import (
 const (
 	// AnthropicOAuthClientID is the Claude Code OAuth client ID.
 	AnthropicOAuthClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-
-	// AnthropicOAuthTokenURL is the endpoint for OAuth token operations.
-	AnthropicOAuthTokenURL = "https://console.anthropic.com/v1/oauth/token"
 )
+
+// anthropicOAuthTokenURL is the endpoint for OAuth token operations.
+// Variable (not const) to allow test overrides.
+var anthropicOAuthTokenURL = "https://console.anthropic.com/v1/oauth/token"
+
+// AnthropicOAuthTokenURL is the public accessor for the OAuth token URL.
+const AnthropicOAuthTokenURL = "https://console.anthropic.com/v1/oauth/token"
+
+// setOAuthURL overrides the OAuth token URL (for testing).
+func setOAuthURL(url string) { anthropicOAuthTokenURL = url }
+
+// resetOAuthURL restores the OAuth token URL (for testing).
+func resetOAuthURL(url string) { anthropicOAuthTokenURL = url }
+
+// SetOAuthURLForTest overrides the OAuth token URL for external test packages.
+func SetOAuthURLForTest(url string) { anthropicOAuthTokenURL = url }
 
 // ErrOAuthRefreshFailed indicates the OAuth token refresh failed.
 var ErrOAuthRefreshFailed = errors.New("oauth: token refresh failed")
+
+// ErrOAuthRateLimited indicates the OAuth endpoint returned 429.
+var ErrOAuthRateLimited = errors.New("oauth: rate limited (429)")
+
+// ErrOAuthInvalidGrant indicates the refresh token is revoked or expired (terminal).
+var ErrOAuthInvalidGrant = errors.New("oauth: invalid_grant")
 
 // OAuthTokenResponse represents the response from the OAuth token endpoint.
 type OAuthTokenResponse struct {
@@ -61,7 +80,7 @@ func RefreshAnthropicToken(ctx context.Context, refreshToken string) (*OAuthToke
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, AnthropicOAuthTokenURL, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, anthropicOAuthTokenURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("oauth: create request: %w", err)
 	}
@@ -86,8 +105,17 @@ func RefreshAnthropicToken(ctx context.Context, refreshToken string) (*OAuthToke
 
 	// Handle error responses
 	if resp.StatusCode != http.StatusOK {
+		// 429 from the OAuth endpoint itself
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return nil, ErrOAuthRateLimited
+		}
+
 		var errResp oauthErrorResponse
 		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+			// invalid_grant means the refresh token is revoked/expired (terminal)
+			if errResp.Error == "invalid_grant" {
+				return nil, fmt.Errorf("%w: %s", ErrOAuthInvalidGrant, errResp.ErrorDescription)
+			}
 			return nil, fmt.Errorf("%w: %s - %s", ErrOAuthRefreshFailed, errResp.Error, errResp.ErrorDescription)
 		}
 		return nil, fmt.Errorf("%w: HTTP %d", ErrOAuthRefreshFailed, resp.StatusCode)
