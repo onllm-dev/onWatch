@@ -294,6 +294,15 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 			}
 		}
 	}
+	if h.config != nil && h.config.HasProvider("openrouter") && h.providerDashboardVisible("openrouter", visibility) {
+		payload := h.buildOpenRouterCurrent()
+		if card := normalizeProviderCard("openrouter", "OpenRouter", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			providers = append(providers, *card)
+			if captured := parseCapturedAt(payload); captured.After(latest) {
+				latest = captured
+			}
+		}
+	}
 	if h.config != nil && h.config.HasProvider("gemini") && h.providerDashboardVisible("gemini", visibility) {
 		payload := h.buildGeminiCurrent()
 		if card := normalizeProviderCard("gemini", "Gemini", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
@@ -555,7 +564,7 @@ func normalizeQuotas(payload map[string]interface{}, warningPercent, criticalPer
 	}
 
 	if len(rawQuotas) == 0 {
-		for _, key := range []string{"subscription", "search", "toolCalls", "tokensLimit", "timeLimit", "sharedQuota"} {
+		for _, key := range []string{"subscription", "search", "toolCalls", "tokensLimit", "timeLimit", "sharedQuota", "credits"} {
 			if quotaMap, ok := payload[key].(map[string]interface{}); ok {
 				rawQuotas = append(rawQuotas, quotaMap)
 			}

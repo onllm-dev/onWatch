@@ -59,6 +59,8 @@ function getCurrentProvider() {
   if (antigravityGrid) return 'antigravity';
   const minimaxGrid = document.getElementById('quota-grid-minimax');
   if (minimaxGrid) return 'minimax';
+  const openrouterGrid = document.getElementById('quota-grid-openrouter');
+  if (openrouterGrid) return 'openrouter';
   const geminiGrid = document.getElementById('quota-grid-gemini');
   if (geminiGrid) return 'gemini';
   const grid = document.getElementById('quota-grid');
@@ -754,6 +756,9 @@ const renewalCategories = {
   minimax: [
     { label: 'Coding Plan', groupBy: 'coding_plan' }
   ],
+  openrouter: [
+    { label: 'Credits', groupBy: 'credits' }
+  ],
   gemini: []
 };
 
@@ -774,7 +779,8 @@ const overviewQuotaDisplayNames = {
   coding_plan: 'MiniMax Coding Plan',
   antigravity_claude_gpt: 'Claude + GPT Quota',
   antigravity_gemini_pro: 'Gemini Pro Quota',
-  antigravity_gemini_flash: 'Gemini Flash Quota'
+  antigravity_gemini_flash: 'Gemini Flash Quota',
+  credits: 'Credits'
 };
 
 // Provider-specific display name overrides
@@ -1844,6 +1850,101 @@ function openGeminiModal(modelId) {
   openAntigravityModal(modelId, 'gemini');
 }
 
+// OpenRouter quota card rendering
+function renderOpenRouterCard(credits, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const usagePct = (credits.percent || 0).toFixed(1);
+  const status = getQuotaStatus(credits.percent || 0);
+  const statusCfg = statusConfig[status] || statusConfig.healthy;
+  const hasLimit = credits.limit != null && credits.limit > 0;
+  const usageStr = '$' + (credits.usage || 0).toFixed(4);
+  const limitStr = hasLimit ? '$' + credits.limit.toFixed(4) : 'Unlimited';
+  const remainStr = credits.remaining != null ? '$' + credits.remaining.toFixed(4) : '--';
+
+  container.innerHTML = `<article class="quota-card openrouter-card" data-quota="credits" data-provider="openrouter" style="animation-delay: 0ms">
+    <header class="card-header">
+      <div class="quota-title-block">
+        <h2 class="quota-title">
+          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          Credits
+        </h2>
+        ${credits.isFreeTier ? '<div class="quota-subtitle">Free Tier</div>' : ''}
+      </div>
+      <span class="countdown" id="countdown-openrouter-credits" style="display: none">--:--</span>
+    </header>
+    <div class="progress-stats">
+      <span class="usage-percent" id="percent-openrouter-credits">${usagePct}%</span>
+      <span class="usage-fraction" id="fraction-openrouter-credits">${usageStr} / ${limitStr}</span>
+    </div>
+    <div class="progress-wrapper">
+      <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(credits.percent || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-fill" id="progress-openrouter-credits" style="width: ${usagePct}%" data-status="${status}"></div>
+      </div>
+    </div>
+    <footer class="card-footer">
+      <span class="status-badge" id="status-openrouter-credits" data-status="${status}">
+        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+        ${statusCfg.label}
+      </span>
+      <span class="reset-time" id="reset-openrouter-credits">${hasLimit ? 'Remaining: ' + remainStr : ''}</span>
+    </footer>
+  </article>`;
+}
+
+function updateOpenRouterCard(credits) {
+  const key = 'openrouter-credits';
+  const prev = State.currentQuotas[key];
+  State.currentQuotas[key] = {
+    percent: credits.percent || 0,
+    usage: credits.usage || 0,
+    limit: credits.limit,
+    remaining: credits.remaining,
+    status: getQuotaStatus(credits.percent || 0),
+    isFreeTier: credits.isFreeTier
+  };
+
+  const usagePct = (credits.percent || 0).toFixed(1);
+  const status = getQuotaStatus(credits.percent || 0);
+  const hasLimit = credits.limit != null && credits.limit > 0;
+  const usageStr = '$' + (credits.usage || 0).toFixed(4);
+  const limitStr = hasLimit ? '$' + credits.limit.toFixed(4) : 'Unlimited';
+  const remainStr = credits.remaining != null ? '$' + credits.remaining.toFixed(4) : '--';
+
+  const progressEl = document.getElementById('progress-openrouter-credits');
+  const percentEl = document.getElementById('percent-openrouter-credits');
+  const fractionEl = document.getElementById('fraction-openrouter-credits');
+  const statusEl = document.getElementById('status-openrouter-credits');
+  const resetEl = document.getElementById('reset-openrouter-credits');
+
+  if (progressEl) {
+    progressEl.style.width = `${usagePct}%`;
+    progressEl.setAttribute('data-status', status);
+  }
+  if (percentEl) {
+    const oldVal = prev ? prev.percent : 0;
+    if (Math.abs(oldVal - (credits.percent || 0)) > 0.2) {
+      animateValue(percentEl, oldVal, credits.percent || 0, 400, v => `${v.toFixed(1)}%`);
+    } else {
+      percentEl.textContent = `${usagePct}%`;
+    }
+  }
+  if (fractionEl) fractionEl.textContent = `${usageStr} / ${limitStr}`;
+  if (statusEl) {
+    const config = statusConfig[status] || statusConfig.healthy;
+    statusEl.setAttribute('data-status', status);
+    statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
+  }
+  if (resetEl) resetEl.textContent = hasLimit ? 'Remaining: ' + remainStr : '';
+}
+
+function getQuotaStatus(percent) {
+  if (percent >= 90) return 'critical';
+  if (percent >= 75) return 'warning';
+  return 'healthy';
+}
+
 // Antigravity quota detail modal
 function openAntigravityModal(groupKey, providerOverride) {
   const key = `antigravity-${groupKey}`;
@@ -2895,6 +2996,15 @@ async function fetchCurrent() {
           }
           data.quotas.forEach(q => updateGeminiCard(q));
         }
+      } else if (provider === 'openrouter') {
+        if (data.credits) {
+          const container = document.getElementById('quota-grid-openrouter');
+          if (container && container.children.length === 0) {
+            renderOpenRouterCard(data.credits, 'quota-grid-openrouter');
+          } else {
+            updateOpenRouterCard(data.credits);
+          }
+        }
       } else if (provider === 'zai') {
         updateCard('tokensLimit', data.tokensLimit);
         updateCard('timeLimit', data.timeLimit);
@@ -3407,6 +3517,8 @@ function initChart() {
     defaultDatasets = []; // MiniMax datasets are dynamic - populated when history data arrives
   } else if (provider === 'gemini') {
     defaultDatasets = []; // Gemini datasets are dynamic - populated when history data arrives
+  } else if (provider === 'openrouter') {
+    defaultDatasets = []; // OpenRouter datasets are dynamic - populated when history data arrives
   } else if (provider === 'zai') {
     defaultDatasets = [
       { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
@@ -3425,6 +3537,8 @@ function initChart() {
     : provider === 'minimax'
       ? []
     : provider === 'gemini'
+      ? []
+    : provider === 'openrouter'
       ? []
     : ['subscription', 'search', 'toolCalls'];
 
@@ -3728,6 +3842,51 @@ async function fetchHistory(range) {
           segment: getSegmentStyle(gapSegments, color.border)
         };
         datasets.push(mainDataset);
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
+    if (provider === 'openrouter') {
+      const quotaKeys = new Set();
+      historyRows.forEach(d => {
+        Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
+      });
+      const sortedKeys = [...quotaKeys].sort();
+      const openrouterDisplayNames = { usage: 'Total Usage', usageDaily: 'Daily Usage', percent: 'Usage %' };
+      const openrouterChartColors = {
+        usage: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+        usageDaily: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
+        percent: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
+      };
+      const openrouterFallback = [
+        { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' },
+        { border: '#EC4899', bg: 'rgba(236, 72, 153, 0.06)' }
+      ];
+      let fallbackIdx = 0;
+      const datasets = [];
+      sortedKeys.forEach((key) => {
+        const color = openrouterChartColors[key] || openrouterFallback[fallbackIdx++ % openrouterFallback.length];
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        datasets.push({
+          label: openrouterDisplayNames[key] || key,
+          data: data,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: pointRadii,
+          pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key),
+          spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
+        });
       });
       State.chart.data.datasets = datasets;
       updateTimeScale(State.chart, range);
@@ -4144,7 +4303,7 @@ function getSingleViewInsightStats(provider, stats) {
 }
 
 function getSingleViewInsightCards(provider, insights) {
-  if (provider !== 'minimax' && provider !== 'gemini') return insights;
+  if (provider !== 'minimax' && provider !== 'gemini' && provider !== 'openrouter') return insights;
   const filtered = insights.filter((insight) => !['shared_status', 'burn_rate'].includes(insight.key));
   return sortItemsByPreference(
     filtered.length > 0 ? filtered : insights,
@@ -4154,7 +4313,7 @@ function getSingleViewInsightCards(provider, insights) {
 }
 
 function getCompactProviderStats(provider, stats) {
-  const preferred = provider === 'minimax' || provider === 'gemini'
+  const preferred = provider === 'minimax' || provider === 'gemini' || provider === 'openrouter'
     ? ['Burn Rate', 'Current Usage', 'Resets In', 'Current Status']
     : [];
   const ordered = preferred.length > 0
@@ -4164,7 +4323,7 @@ function getCompactProviderStats(provider, stats) {
 }
 
 function getCompactProviderInsights(provider, insights) {
-  const ordered = provider === 'minimax' || provider === 'gemini'
+  const ordered = provider === 'minimax' || provider === 'gemini' || provider === 'openrouter'
     ? sortItemsByPreference(insights, ['efficiency', 'trend', 'burn_rate', 'shared_status'], (insight) => insight.key)
     : insights;
   const urgent = ordered.filter((insight) => ['warning', 'negative'].includes(insight.severity));
@@ -4287,6 +4446,16 @@ function buildProviderCardDatasets(provider, rows, range) {
   }
   if (provider === 'gemini') {
     return buildDynamicDatasetsForRows(rows, range, geminiDisplayNames, geminiChartColorMap, geminiChartColorFallback, 'gemini');
+  }
+  if (provider === 'openrouter') {
+    const orDisplayNames = { usage: 'Total Usage', usageDaily: 'Daily Usage', percent: 'Usage %' };
+    const orColors = {
+      usage: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+      usageDaily: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
+      percent: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
+    };
+    const orFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+    return buildDynamicDatasetsForRows(rows, range, orDisplayNames, orColors, orFallback, 'openrouter');
   }
   return [];
 }
@@ -4544,6 +4713,11 @@ function updateBothCharts(data, range = '6h') {
       datasets = createDynamicDatasets(slot.rows, minimaxDisplayNames, minimaxChartColorMap, minimaxChartColorFallback, 'minimax');
     } else if (slot.provider === 'gemini') {
       datasets = createDynamicDatasets(slot.rows, geminiDisplayNames, geminiChartColorMap, geminiChartColorFallback, 'gemini');
+    } else if (slot.provider === 'openrouter') {
+      const orDN = { usage: 'Total Usage', usageDaily: 'Daily Usage', percent: 'Usage %' };
+      const orCM = { usage: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' }, usageDaily: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' }, percent: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' } };
+      const orFB = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+      datasets = createDynamicDatasets(slot.rows, orDN, orCM, orFB, 'openrouter');
     }
 
     if (datasets.length === 0) return;
@@ -4837,7 +5011,7 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter';
   const deltaUsesPercent = usePercent && provider !== 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
 
@@ -5979,6 +6153,7 @@ function getOverviewCategories() {
       ...renewalCategories.codex || [],
       ...(renewalCategories.antigravity || []),
       ...(renewalCategories.minimax || []),
+      ...(renewalCategories.openrouter || []),
       ...(renewalCategories.gemini || [])
     ];
   }
@@ -6111,7 +6286,7 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
 
   // Build dynamic header
@@ -7811,6 +7986,7 @@ function addOverrideRow(quotaKey, provider, warning, critical, isAbsolute, disab
       <option value="minimax" ${provider === 'minimax' ? 'selected' : ''}>MiniMax</option>
       <option value="antigravity" ${provider === 'antigravity' ? 'selected' : ''}>Antigravity</option>
       <option value="gemini" ${provider === 'gemini' ? 'selected' : ''}>Gemini</option>
+      <option value="openrouter" ${provider === 'openrouter' ? 'selected' : ''}>OpenRouter</option>
       <option value="synthetic" ${provider === 'synthetic' ? 'selected' : ''}>Synthetic</option>
       <option value="zai" ${provider === 'zai' ? 'selected' : ''}>Z.ai</option>
     </select>

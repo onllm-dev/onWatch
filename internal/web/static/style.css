@@ -509,6 +509,10 @@ button, input, select { font-family: inherit; }
   grid-template-columns: repeat(3, 1fr);
 }
 
+#quota-grid-openrouter {
+  grid-template-columns: 1fr;
+}
+
 /* All Providers View */
 .all-providers-view {
   display: flex;

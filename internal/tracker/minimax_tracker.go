@@ -59,6 +59,10 @@ func (t *MiniMaxTracker) SetOnReset(fn func(modelName string)) {
 // Process processes one snapshot and updates/reset-cycles per model.
 func (t *MiniMaxTracker) Process(snapshot *api.MiniMaxSnapshot) error {
 	for _, model := range snapshot.Models {
+		// Skip models with no quota allocation
+		if model.Total == 0 && model.Used == 0 {
+			continue
+		}
 		if err := t.processModel(model, snapshot.CapturedAt); err != nil {
 			return fmt.Errorf("minimax tracker: %s: %w", model.ModelName, err)
 		}
