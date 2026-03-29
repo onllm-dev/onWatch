@@ -4897,6 +4897,7 @@ func (h *Handler) loginPost(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		MaxAge:   sessionMaxAge,
+		Expires:  time.Now().Add(time.Duration(sessionMaxAge) * time.Second),
 		HttpOnly: true,
 		Secure:   h.config.SecureCookies || (h.config.Host != "" && h.config.Host != "0.0.0.0" && h.config.Host != "127.0.0.1"),
 		SameSite: http.SameSiteStrictMode,

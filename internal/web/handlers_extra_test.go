@@ -6800,15 +6800,27 @@ func TestHandler_LoginPost_SuccessWithRateLimiter(t *testing.T) {
 
 	// Cookie should be set
 	cookies := rr.Result().Cookies()
-	found := false
+	var sessionCookie *http.Cookie
 	for _, c := range cookies {
 		if c.Name == "onwatch_session" {
-			found = true
+			sessionCookie = c
 			break
 		}
 	}
-	if !found {
+	if sessionCookie == nil {
 		t.Error("expected session cookie to be set")
+		return
+	}
+	if sessionCookie.MaxAge != sessionMaxAge {
+		t.Errorf("expected MaxAge %d, got %d", sessionMaxAge, sessionCookie.MaxAge)
+	}
+	if sessionCookie.Expires.IsZero() {
+		t.Error("expected Expires to be set for persistent session cookie")
+	}
+	expectedMin := time.Now().Add(time.Duration(sessionMaxAge-5) * time.Second)
+	expectedMax := time.Now().Add(time.Duration(sessionMaxAge+5) * time.Second)
+	if sessionCookie.Expires.Before(expectedMin) || sessionCookie.Expires.After(expectedMax) {
+		t.Errorf("expected Expires within [%v, %v], got %v", expectedMin, expectedMax, sessionCookie.Expires)
 	}
 }
 
