@@ -82,6 +82,7 @@ type Handler struct {
 	antigravityTracker *tracker.AntigravityTracker
 	minimaxTracker     *tracker.MiniMaxTracker
 	geminiTracker      *tracker.GeminiTracker
+	openrouterTracker  *tracker.OpenRouterTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -336,6 +337,11 @@ func (h *Handler) SetMiniMaxTracker(t *tracker.MiniMaxTracker) {
 // SetGeminiTracker sets the Gemini tracker for usage summary enrichment.
 func (h *Handler) SetGeminiTracker(t *tracker.GeminiTracker) {
 	h.geminiTracker = t
+}
+
+// SetOpenRouterTracker sets the OpenRouter tracker for usage summary enrichment.
+func (h *Handler) SetOpenRouterTracker(t *tracker.OpenRouterTracker) {
+	h.openrouterTracker = t
 }
 
 // SetAgentManager sets provider agent lifecycle controller.
@@ -622,6 +628,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "codex", Name: "Codex", Description: "OpenAI Codex usage tracking", AutoDetectable: true},
 		{Key: "antigravity", Name: "Antigravity", Description: "Antigravity model usage tracking", AutoDetectable: true},
 		{Key: "minimax", Name: "MiniMax", Description: "MiniMax Coding Plan usage tracking"},
+		{Key: "openrouter", Name: "OpenRouter", Description: "OpenRouter credits usage tracking"},
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 	}
 }
@@ -663,6 +670,8 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return h.detectAntigravityConnection() != nil
 	case "minimax":
 		return strings.TrimSpace(h.config.MiniMaxAPIKey) != ""
+	case "openrouter":
+		return strings.TrimSpace(h.config.OpenRouterAPIKey) != ""
 	case "gemini":
 		return h.config.GeminiEnabled
 	default:
@@ -788,6 +797,7 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
 	dst.MiniMaxAPIKey = src.MiniMaxAPIKey
+	dst.OpenRouterAPIKey = src.OpenRouterAPIKey
 	dst.GeminiEnabled = src.GeminiEnabled
 	dst.GeminiAutoToken = src.GeminiAutoToken
 }
@@ -1044,6 +1054,8 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	hasCodex := hasVisibleProvider("codex")
 	hasAntigravity := hasVisibleProvider("antigravity")
 	hasMiniMax := hasVisibleProvider("minimax")
+	hasOpenRouter := hasVisibleProvider("openrouter")
+	_ = hasOpenRouter // used by template if needed
 	data := map[string]interface{}{
 		"Title":           "Dashboard",
 		"Providers":       providers,
@@ -1092,6 +1104,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentAntigravity(w, r)
 	case "minimax":
 		h.currentMiniMax(w, r)
+	case "openrouter":
+		h.currentOpenRouter(w, r)
 	case "gemini":
 		h.currentGemini(w, r)
 	default:
@@ -1140,6 +1154,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") {
 		response["minimax"] = h.buildMiniMaxCurrent()
+	}
+	if h.config.HasProvider("openrouter") && providerTelemetryEnabled(visibility, "openrouter") {
+		response["openrouter"] = h.buildOpenRouterCurrent()
 	}
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
 		response["gemini"] = h.buildGeminiCurrent()
@@ -1478,6 +1495,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyAntigravity(w, r)
 	case "minimax":
 		h.historyMiniMax(w, r)
+	case "openrouter":
+		h.historyOpenRouter(w, r)
 	case "gemini":
 		h.historyGemini(w, r)
 	default:
@@ -1704,6 +1723,34 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.config.HasProvider("openrouter") && providerTelemetryEnabled(visibility, "openrouter") && h.store != nil {
+		snapshots, err := h.store.QueryOpenRouterRange(start, now)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			orData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, s := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": s.CapturedAt.Format(time.RFC3339),
+					"usage":      s.Usage,
+					"usageDaily": s.UsageDaily,
+					"isFreeTier": s.IsFreeTier,
+				}
+				if s.Limit != nil {
+					entry["limit"] = *s.Limit
+					if *s.Limit > 0 {
+						entry["percent"] = (s.Usage / *s.Limit) * 100
+					}
+				}
+				orData = append(orData, entry)
+			}
+			response["openrouter"] = orData
+		}
+	}
+
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") && h.store != nil {
 		snapshots, err := h.store.QueryGeminiRange(start, now)
 		if err == nil {
@@ -1848,6 +1895,464 @@ func (h *Handler) historyZai(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, response)
 }
 
+// currentOpenRouter returns OpenRouter credits status
+func (h *Handler) currentOpenRouter(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildOpenRouterCurrent())
+}
+
+// buildOpenRouterCurrent builds the OpenRouter current credits response map.
+func (h *Handler) buildOpenRouterCurrent() map[string]interface{} {
+	now := time.Now().UTC()
+	response := map[string]interface{}{
+		"capturedAt": now.Format(time.RFC3339),
+		"credits": map[string]interface{}{
+			"name":        "Credits",
+			"description": "OpenRouter API credits usage",
+			"usage":       0.0,
+			"limit":       nil,
+			"remaining":   nil,
+			"percent":     0.0,
+			"isFreeTier":  false,
+			"rate":        0.0,
+			"projected":   0.0,
+		},
+	}
+
+	if h.store != nil {
+		latest, err := h.store.QueryLatestOpenRouter()
+		if err != nil {
+			h.logger.Error("failed to query latest OpenRouter snapshot", "error", err)
+			return response
+		}
+
+		if latest != nil {
+			response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
+			credits := map[string]interface{}{
+				"name":        "Credits",
+				"description": "OpenRouter API credits usage",
+				"usage":       latest.Usage,
+				"usageDaily":  latest.UsageDaily,
+				"limit":       nil,
+				"remaining":   nil,
+				"percent":     0.0,
+				"isFreeTier":  latest.IsFreeTier,
+				"rate":        0.0,
+				"projected":   0.0,
+			}
+			if latest.Limit != nil && *latest.Limit > 0 {
+				credits["limit"] = *latest.Limit
+				credits["percent"] = (latest.Usage / *latest.Limit) * 100
+			}
+			if latest.LimitRemaining != nil {
+				credits["remaining"] = *latest.LimitRemaining
+			}
+
+			// Enrich with tracker data
+			if h.openrouterTracker != nil {
+				if summary, err := h.openrouterTracker.UsageSummary(); err == nil && summary != nil {
+					credits["rate"] = summary.CurrentRate
+					credits["projected"] = summary.ProjectedUsage
+					credits["completedCycles"] = summary.CompletedCycles
+					credits["avgPerCycle"] = summary.AvgPerCycle
+					credits["peakCycle"] = summary.PeakCycle
+					credits["totalTracked"] = summary.TotalTracked
+					if !summary.TrackingSince.IsZero() {
+						credits["trackingSince"] = summary.TrackingSince.Format(time.RFC3339)
+					}
+				}
+			}
+
+			response["credits"] = credits
+		}
+	}
+
+	return response
+}
+
+// historyOpenRouter returns OpenRouter usage history
+func (h *Handler) historyOpenRouter(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	rangeStr := r.URL.Query().Get("range")
+	duration, err := parseTimeRange(rangeStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	now := time.Now().UTC()
+	start := now.Add(-duration)
+	end := now
+
+	snapshots, err := h.store.QueryOpenRouterRange(start, end)
+	if err != nil {
+		h.logger.Error("failed to query OpenRouter history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query history")
+		return
+	}
+
+	step := downsampleStep(len(snapshots), maxChartPoints)
+	last := len(snapshots) - 1
+	histResp := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+	for i, snapshot := range snapshots {
+		if step > 1 && i != 0 && i != last && i%step != 0 {
+			continue
+		}
+		entry := map[string]interface{}{
+			"capturedAt": snapshot.CapturedAt.Format(time.RFC3339),
+			"usage":      snapshot.Usage,
+			"usageDaily": snapshot.UsageDaily,
+			"isFreeTier": snapshot.IsFreeTier,
+		}
+		if snapshot.Limit != nil {
+			entry["limit"] = *snapshot.Limit
+			if *snapshot.Limit > 0 {
+				entry["percent"] = (snapshot.Usage / *snapshot.Limit) * 100
+			}
+		}
+		if snapshot.LimitRemaining != nil {
+			entry["remaining"] = *snapshot.LimitRemaining
+		}
+		histResp = append(histResp, entry)
+	}
+
+	respondJSON(w, http.StatusOK, histResp)
+}
+
+// cyclesOpenRouter returns OpenRouter cycle data
+func (h *Handler) cyclesOpenRouter(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	quotaType := "credits"
+	response := make([]map[string]interface{}, 0)
+
+	active, err := h.store.QueryActiveOpenRouterCycle(quotaType)
+	if err != nil {
+		h.logger.Error("failed to query active OpenRouter cycle", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycles")
+		return
+	}
+
+	if active != nil {
+		response = append(response, openrouterCycleToMap(active))
+	}
+
+	history, err := h.store.QueryOpenRouterCycleHistory(quotaType, 200)
+	if err != nil {
+		h.logger.Error("failed to query OpenRouter cycle history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycles")
+		return
+	}
+
+	for _, cycle := range history {
+		response = append(response, openrouterCycleToMap(cycle))
+	}
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+func openrouterCycleToMap(cycle *store.OpenRouterResetCycle) map[string]interface{} {
+	result := map[string]interface{}{
+		"id":           cycle.ID,
+		"quotaType":    cycle.QuotaType,
+		"cycleStart":   cycle.CycleStart.Format(time.RFC3339),
+		"cycleEnd":     nil,
+		"peakRequests": cycle.PeakUsage,
+		"totalDelta":   cycle.TotalDelta,
+	}
+
+	if cycle.CycleEnd != nil {
+		result["cycleEnd"] = cycle.CycleEnd.Format(time.RFC3339)
+	}
+
+	return result
+}
+
+// summaryOpenRouter returns OpenRouter usage summary
+func (h *Handler) summaryOpenRouter(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildOpenRouterSummaryMap())
+}
+
+// buildOpenRouterSummaryMap builds the OpenRouter summary response.
+func (h *Handler) buildOpenRouterSummaryMap() map[string]interface{} {
+	response := map[string]interface{}{
+		"credits": map[string]interface{}{
+			"quotaType":       "credits",
+			"currentUsage":    0.0,
+			"currentLimit":    0.0,
+			"usagePercent":    0.0,
+			"currentRate":     0.0,
+			"projectedUsage":  0.0,
+			"completedCycles": 0,
+			"avgPerCycle":     0.0,
+			"peakCycle":       0.0,
+			"totalTracked":    0.0,
+			"trackingSince":   nil,
+		},
+	}
+
+	if h.openrouterTracker != nil {
+		if summary, err := h.openrouterTracker.UsageSummary(); err == nil && summary != nil {
+			response["credits"] = map[string]interface{}{
+				"quotaType":       summary.QuotaType,
+				"currentUsage":    summary.CurrentUsage,
+				"currentLimit":    summary.CurrentLimit,
+				"usagePercent":    summary.UsagePercent,
+				"currentRate":     summary.CurrentRate,
+				"projectedUsage":  summary.ProjectedUsage,
+				"completedCycles": summary.CompletedCycles,
+				"avgPerCycle":     summary.AvgPerCycle,
+				"peakCycle":       summary.PeakCycle,
+				"totalTracked":    summary.TotalTracked,
+				"trackingSince":   nil,
+				"isFreeTier":      summary.IsFreeTier,
+			}
+			if !summary.TrackingSince.IsZero() {
+				response["credits"].(map[string]interface{})["trackingSince"] = summary.TrackingSince.Format(time.RFC3339)
+			}
+		}
+		return response
+	}
+
+	// Fallback to snapshot-only summary
+	if h.store != nil {
+		latest, err := h.store.QueryLatestOpenRouter()
+		if err != nil {
+			h.logger.Error("failed to query latest OpenRouter snapshot", "error", err)
+			return response
+		}
+		if latest != nil {
+			creditsMap := response["credits"].(map[string]interface{})
+			creditsMap["currentUsage"] = latest.Usage
+			if latest.Limit != nil && *latest.Limit > 0 {
+				creditsMap["currentLimit"] = *latest.Limit
+				creditsMap["usagePercent"] = (latest.Usage / *latest.Limit) * 100
+			}
+		}
+	}
+
+	return response
+}
+
+// insightsOpenRouter returns OpenRouter insights
+func (h *Handler) insightsOpenRouter(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
+	hidden := h.getHiddenInsightKeys()
+	respondJSON(w, http.StatusOK, h.buildOpenRouterInsights(hidden))
+}
+
+// buildOpenRouterInsights builds the OpenRouter insights response.
+func (h *Handler) buildOpenRouterInsights(hidden map[string]bool) insightsResponse {
+	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
+
+	if h.store == nil {
+		return resp
+	}
+
+	latest, err := h.store.QueryLatestOpenRouter()
+	if err != nil {
+		h.logger.Error("failed to query OpenRouter data for insights", "error", err)
+		return resp
+	}
+
+	if latest == nil {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "info",
+			Title: "Getting Started",
+			Desc:  "Keep onWatch running to collect OpenRouter usage data. Insights appear after a few snapshots.",
+		})
+		return resp
+	}
+
+	now := time.Now().UTC()
+
+	// Stats cards
+	if !hidden["usage"] {
+		usageLabel := fmt.Sprintf("$%.4f", latest.Usage)
+		resp.Stats = append(resp.Stats, insightStat{
+			Label: "Total Usage", Value: usageLabel, Sublabel: "credits consumed",
+		})
+	}
+
+	if !hidden["daily_usage"] {
+		dailyLabel := fmt.Sprintf("$%.4f", latest.UsageDaily)
+		resp.Stats = append(resp.Stats, insightStat{
+			Label: "Daily Usage", Value: dailyLabel, Sublabel: "today",
+		})
+	}
+
+	if latest.Limit != nil && *latest.Limit > 0 && !hidden["remaining"] {
+		remaining := *latest.Limit - latest.Usage
+		if remaining < 0 {
+			remaining = 0
+		}
+		pct := (latest.Usage / *latest.Limit) * 100
+		resp.Stats = append(resp.Stats, insightStat{
+			Label: "Remaining", Value: fmt.Sprintf("$%.4f", remaining), Sublabel: fmt.Sprintf("%.1f%% used", pct),
+		})
+	}
+
+	if h.openrouterTracker != nil {
+		if summary, err := h.openrouterTracker.UsageSummary(); err == nil && summary != nil {
+			if !hidden["rate"] && summary.CurrentRate > 0 {
+				resp.Stats = append(resp.Stats, insightStat{
+					Label: "Usage Rate", Value: fmt.Sprintf("$%.4f/hr", summary.CurrentRate), Sublabel: "current rate",
+				})
+			}
+		}
+	}
+
+	// Insights
+	if latest.IsFreeTier && !hidden["free_tier"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "info",
+			Title: "Free Tier",
+			Desc:  "You're on the OpenRouter free tier. Some models may have limited access.",
+		})
+	}
+
+	if latest.Limit != nil && *latest.Limit > 0 {
+		pct := (latest.Usage / *latest.Limit) * 100
+		if pct >= 90 && !hidden["high_usage"] {
+			resp.Insights = append(resp.Insights, insightItem{
+				Type: "warning", Severity: "high",
+				Title: "High Credit Usage",
+				Desc:  fmt.Sprintf("You've used %.1f%% of your $%.2f credit limit.", pct, *latest.Limit),
+			})
+		} else if pct >= 75 && !hidden["moderate_usage"] {
+			resp.Insights = append(resp.Insights, insightItem{
+				Type: "info", Severity: "medium",
+				Title: "Moderate Credit Usage",
+				Desc:  fmt.Sprintf("You've used %.1f%% of your $%.2f credit limit.", pct, *latest.Limit),
+			})
+		}
+	}
+
+	_ = now // for potential future time-based insights
+
+	return resp
+}
+
+// cycleOverviewOpenRouter returns OpenRouter cycle overview.
+func (h *Handler) cycleOverviewOpenRouter(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
+		return
+	}
+
+	quotaType := "credits"
+	var cycles []map[string]interface{}
+
+	if active, err := h.store.QueryActiveOpenRouterCycle(quotaType); err == nil && active != nil {
+		cycles = append(cycles, openrouterCycleToMap(active))
+	}
+	if history, err := h.store.QueryOpenRouterCycleHistory(quotaType, 50); err == nil {
+		for _, c := range history {
+			cycles = append(cycles, openrouterCycleToMap(c))
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"groupBy":    quotaType,
+		"provider":   "openrouter",
+		"quotaNames": []string{"credits"},
+		"cycles":     cycles,
+	})
+}
+
+// loggingHistoryOpenRouter returns OpenRouter polling history.
+func (h *Handler) loggingHistoryOpenRouter(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"provider": "openrouter", "quotaNames": []string{}, "logs": []interface{}{}})
+		return
+	}
+
+	start, end, limit := h.loggingHistoryRangeAndLimit(r)
+
+	snapshots, err := h.store.QueryOpenRouterRange(start, end, limit)
+	if err != nil {
+		h.logger.Error("failed to query OpenRouter logging history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query history")
+		return
+	}
+
+	quotaNames := []string{"credits"}
+	type quotaVal struct {
+		Name     string
+		Value    float64
+		Limit    float64
+		Percent  float64
+		HasValue bool
+		HasLimit bool
+	}
+
+	capturedAt := make([]string, 0, len(snapshots))
+	ids := make([]int64, 0, len(snapshots))
+	series := make([]map[string]quotaVal, 0, len(snapshots))
+
+	for _, snap := range snapshots {
+		capturedAt = append(capturedAt, snap.CapturedAt.Format(time.RFC3339))
+		ids = append(ids, snap.ID)
+
+		limitVal := 0.0
+		pct := 0.0
+		hasLimit := false
+		if snap.Limit != nil && *snap.Limit > 0 {
+			limitVal = *snap.Limit
+			pct = (snap.Usage / *snap.Limit) * 100
+			hasLimit = true
+		}
+
+		row := map[string]quotaVal{
+			"credits": {
+				Name:     "credits",
+				Value:    snap.Usage,
+				Limit:    limitVal,
+				Percent:  pct,
+				HasValue: true,
+				HasLimit: hasLimit,
+			},
+		}
+		series = append(series, row)
+	}
+
+	// Build logs manually since loggingHistoryRowsFromSnapshots expects specific types
+	logs := make([]map[string]interface{}, 0, len(snapshots))
+	for i := range snapshots {
+		entry := map[string]interface{}{
+			"capturedAt": capturedAt[i],
+			"id":         ids[i],
+			"quotas":     map[string]interface{}{},
+		}
+		quotas := map[string]interface{}{}
+		for _, qn := range quotaNames {
+			if qv, ok := series[i][qn]; ok {
+				quotas[qn] = map[string]interface{}{
+					"name":     qv.Name,
+					"value":    qv.Value,
+					"limit":    qv.Limit,
+					"percent":  qv.Percent,
+					"hasValue": qv.HasValue,
+					"hasLimit": qv.HasLimit,
+				}
+			}
+		}
+		entry["quotas"] = quotas
+		logs = append(logs, entry)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"provider":   "openrouter",
+		"quotaNames": quotaNames,
+		"logs":       logs,
+	})
+}
+
 // Cycles returns reset cycle data (API endpoint)
 func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 	provider, err := h.getProviderFromRequest(r)
@@ -1873,6 +2378,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesAntigravity(w, r)
 	case "minimax":
 		h.cyclesMiniMax(w, r)
+	case "openrouter":
+		h.cyclesOpenRouter(w, r)
 	case "gemini":
 		h.cyclesGemini(w, r)
 	default:
@@ -1993,6 +2500,25 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 			response["minimax"] = minimaxCycles
 		}
 	}
+	if h.config.HasProvider("openrouter") {
+		quotaType := "credits"
+		var orCycles []map[string]interface{}
+		if active, err := h.store.QueryActiveOpenRouterCycle(quotaType); err == nil && active != nil {
+			orCycles = append(orCycles, openrouterCycleToMap(active))
+		}
+		if history, err := h.store.QueryOpenRouterCycleHistory(quotaType, 50); err == nil {
+			for _, c := range history {
+				orCycles = append(orCycles, openrouterCycleToMap(c))
+			}
+		}
+		response["openrouter"] = map[string]interface{}{
+			"groupBy":    quotaType,
+			"provider":   "openrouter",
+			"quotaNames": []string{"credits"},
+			"cycles":     orCycles,
+		}
+	}
+
 	if h.config.HasProvider("gemini") {
 		response["gemini"] = []interface{}{}
 	}
@@ -2165,6 +2691,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryAntigravity(w, r)
 	case "minimax":
 		h.summaryMiniMax(w, r)
+	case "openrouter":
+		h.summaryOpenRouter(w, r)
 	case "gemini":
 		h.summaryGemini(w, r)
 	default:
@@ -2196,6 +2724,9 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("zai") {
 		response["zai"] = h.buildZaiSummaryMap()
+	}
+	if h.config.HasProvider("openrouter") {
+		response["openrouter"] = h.buildOpenRouterSummaryMap()
 	}
 	if h.config.HasProvider("anthropic") {
 		response["anthropic"] = h.buildAnthropicSummaryMap()
@@ -2778,8 +3309,30 @@ func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("minimax") {
 		response["minimax"] = buildSessionList("minimax")
 	}
+	if h.config.HasProvider("openrouter") {
+		quotaType := "credits"
+		var orCycles []map[string]interface{}
+		if active, err := h.store.QueryActiveOpenRouterCycle(quotaType); err == nil && active != nil {
+			orCycles = append(orCycles, openrouterCycleToMap(active))
+		}
+		if history, err := h.store.QueryOpenRouterCycleHistory(quotaType, 50); err == nil {
+			for _, c := range history {
+				orCycles = append(orCycles, openrouterCycleToMap(c))
+			}
+		}
+		response["openrouter"] = map[string]interface{}{
+			"groupBy":    quotaType,
+			"provider":   "openrouter",
+			"quotaNames": []string{"credits"},
+			"cycles":     orCycles,
+		}
+	}
+
 	if h.config.HasProvider("gemini") {
 		response["gemini"] = buildSessionList("gemini")
+	}
+	if h.config.HasProvider("openrouter") {
+		response["openrouter"] = buildSessionList("openrouter")
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -2918,6 +3471,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsAntigravity(w, r, rangeDur)
 	case "minimax":
 		h.insightsMiniMax(w, r, rangeDur)
+	case "openrouter":
+		h.insightsOpenRouter(w, r, rangeDur)
 	case "gemini":
 		h.insightsGemini(w, r, rangeDur)
 	default:
@@ -2971,6 +3526,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") {
 		response["minimax"] = h.buildMiniMaxInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("openrouter") && providerTelemetryEnabled(visibility, "openrouter") {
+		response["openrouter"] = h.buildOpenRouterInsights(hidden)
 	}
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
 		response["gemini"] = insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
@@ -5066,6 +5624,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewAntigravity(w, r)
 	case "minimax":
 		h.cycleOverviewMiniMax(w, r)
+	case "openrouter":
+		h.cycleOverviewOpenRouter(w, r)
 	case "gemini":
 		h.cycleOverviewGemini(w, r)
 	default:
@@ -5310,6 +5870,25 @@ func (h *Handler) cycleOverviewBoth(w http.ResponseWriter, r *http.Request) {
 				"quotaNames": quotaNames,
 				"cycles":     cycleOverviewRowsToJSON(rows),
 			}
+		}
+	}
+
+	if h.config.HasProvider("openrouter") {
+		quotaType := "credits"
+		var orCycles []map[string]interface{}
+		if active, err := h.store.QueryActiveOpenRouterCycle(quotaType); err == nil && active != nil {
+			orCycles = append(orCycles, openrouterCycleToMap(active))
+		}
+		if history, err := h.store.QueryOpenRouterCycleHistory(quotaType, 50); err == nil {
+			for _, c := range history {
+				orCycles = append(orCycles, openrouterCycleToMap(c))
+			}
+		}
+		response["openrouter"] = map[string]interface{}{
+			"groupBy":    quotaType,
+			"provider":   "openrouter",
+			"quotaNames": []string{"credits"},
+			"cycles":     orCycles,
 		}
 	}
 
@@ -7827,6 +8406,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryAntigravity(w, r)
 	case "minimax":
 		h.loggingHistoryMiniMax(w, r)
+	case "openrouter":
+		h.loggingHistoryOpenRouter(w, r)
 	case "gemini":
 		h.loggingHistoryGemini(w, r)
 	default:
