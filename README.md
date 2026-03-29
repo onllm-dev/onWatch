@@ -232,9 +232,10 @@ onWatch auto-detects your Claude Code credentials from the system keychain (macO
 
 Set `CODEX_TOKEN` in your `.env` (recommended for Codex-only installs). You can retrieve it from `~/.codex/auth.json` (`tokens.access_token`) or from `$CODEX_HOME/auth.json` if you use a custom Codex home. onWatch re-reads Codex credentials while running, so token rotation is picked up automatically. Full walkthrough: [Codex Setup Guide](docs/CODEX_SETUP.md).
 
-### How do I track my GitHub Copilot premium request usage?
+### How do I track my GitHub Copilot usage?
 
-Set `COPILOT_TOKEN` in your `.env` with a GitHub Personal Access Token (classic) that has the `copilot` scope. Generate one at [github.com/settings/tokens](https://github.com/settings/tokens). onWatch polls the GitHub Copilot internal API to track premium interactions, chat, and completions quotas with monthly reset cycle detection. This feature is in beta and uses an undocumented API.
+Set `COPILOT_TOKEN` in your `.env` with a GitHub Personal Access Token (classic) that has the `copilot` scope. Generate one at [github.com/settings/tokens](https://github.com/settings/tokens). onWatch polls the GitHub Copilot internal API to track Interactions, Chat, and Completions quotas with monthly reset cycle detection. Works with both free and paid plans. This feature is in beta and uses an undocumented API.
+
 
 ### How do I track my MiniMax Coding Plan usage?
 

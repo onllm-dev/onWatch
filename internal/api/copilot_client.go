@@ -134,6 +134,7 @@ func (c *CopilotClient) FetchQuotas(ctx context.Context) (*CopilotUserResponse, 
 	if err := json.Unmarshal(body, &quotaResp); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCopilotInvalidResponse, err)
 	}
+	quotaResp.normalize()
 
 	// Log active quota names on success
 	if names := quotaResp.ActiveQuotaNames(); len(names) > 0 {
