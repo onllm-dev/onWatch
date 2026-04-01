@@ -52,6 +52,7 @@ func TestAnthropicAgent_RateLimitBackoff_OAuthEndpoint429(t *testing.T) {
 	tr := tracker.NewAnthropicTracker(str, logger)
 
 	agent := NewAnthropicAgent(client, str, tr, 30*time.Millisecond, logger, nil)
+	agent.isClaudeCodeRunning = func() bool { return false }
 
 	// Provide credentials refresh function
 	agent.SetCredentialsRefresh(func() *api.AnthropicCredentials {
@@ -59,6 +60,7 @@ func TestAnthropicAgent_RateLimitBackoff_OAuthEndpoint429(t *testing.T) {
 			AccessToken:  "test-token",
 			RefreshToken: "test-refresh-token",
 			ExpiresIn:    time.Hour,
+			ExpiresAt:    time.Now().Add(time.Hour),
 		}
 	})
 
@@ -146,6 +148,7 @@ func TestAnthropicAgent_RateLimitBackoff_ResetsOnSuccess(t *testing.T) {
 	tr := tracker.NewAnthropicTracker(str, logger)
 
 	agent := NewAnthropicAgent(client, str, tr, 5*time.Second, logger, nil)
+	agent.isClaudeCodeRunning = func() bool { return false }
 
 	// Pre-set some backoff state to verify it gets cleared
 	agent.rateLimitFailCount = 3
@@ -156,6 +159,7 @@ func TestAnthropicAgent_RateLimitBackoff_ResetsOnSuccess(t *testing.T) {
 			AccessToken:  "test-token",
 			RefreshToken: "test-refresh-token",
 			ExpiresIn:    time.Hour,
+			ExpiresAt:    time.Now().Add(time.Hour),
 		}
 	})
 
@@ -203,6 +207,7 @@ func TestAnthropicAgent_RateLimitBackoff_ResetsOnCredentialChange(t *testing.T) 
 	tr := tracker.NewAnthropicTracker(str, logger)
 
 	agent := NewAnthropicAgent(client, str, tr, 50*time.Millisecond, logger, nil)
+	agent.isClaudeCodeRunning = func() bool { return false }
 
 	// Simulate being in rate limit backoff
 	agent.rateLimitPaused = true
@@ -271,11 +276,13 @@ func TestAnthropicAgent_InvalidGrant_PausesPolling(t *testing.T) {
 	tr := tracker.NewAnthropicTracker(str, logger)
 
 	agent := NewAnthropicAgent(client, str, tr, 30*time.Millisecond, logger, nil)
+	agent.isClaudeCodeRunning = func() bool { return false }
 	agent.SetCredentialsRefresh(func() *api.AnthropicCredentials {
 		return &api.AnthropicCredentials{
 			AccessToken:  "test-token",
 			RefreshToken: "test-refresh-token",
 			ExpiresIn:    time.Hour,
+			ExpiresAt:    time.Now().Add(time.Hour),
 		}
 	})
 
@@ -306,6 +313,111 @@ func TestAnthropicAgent_InvalidGrant_PausesPolling(t *testing.T) {
 	totalAPI := apiCalls.Load()
 	if totalAPI < 1 {
 		t.Errorf("Expected at least 1 API call, got %d", totalAPI)
+	}
+}
+
+// TestAnthropicAgent_RateLimitBackoff_DecaysOnBackoffExpiry verifies that when the
+// backoff window expires and the agent retries, rateLimitFailCount is decremented
+// first so that repeated failures don't escalate forever.
+func TestAnthropicAgent_RateLimitBackoff_DecaysOnBackoffExpiry(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":"rate_limited"}`))
+	}))
+	defer apiServer.Close()
+
+	oauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":"rate_limit_exceeded"}`))
+	}))
+	defer oauthServer.Close()
+
+	api.SetOAuthURLForTest(oauthServer.URL)
+	defer api.SetOAuthURLForTest(api.AnthropicOAuthTokenURL)
+
+	str, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer str.Close()
+
+	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+	client := api.NewAnthropicClient("test-token", logger, api.WithAnthropicBaseURL(apiServer.URL+"/api/oauth/usage"))
+	tr := tracker.NewAnthropicTracker(str, logger)
+
+	agent := NewAnthropicAgent(client, str, tr, 50*time.Millisecond, logger, nil)
+	agent.isClaudeCodeRunning = func() bool { return false }
+
+	// Simulate prior backoff at fail_count=5, with backoff already expired
+	agent.rateLimitFailCount = 5
+	agent.rateLimitPaused = true
+	agent.rateLimitResumeAt = time.Now().Add(-1 * time.Second) // expired
+
+	agent.SetCredentialsRefresh(func() *api.AnthropicCredentials {
+		return &api.AnthropicCredentials{
+			AccessToken:  "test-token",
+			RefreshToken: "test-refresh-token",
+			ExpiresIn:    time.Hour,
+			ExpiresAt:    time.Now().Add(time.Hour),
+		}
+	})
+
+	ctx := context.Background()
+	agent.poll(ctx)
+
+	// failCount should be 5 (decremented to 4 on expiry, then incremented back to 5
+	// by the new 429). NOT 6 - that's the bug we fixed.
+	if agent.rateLimitFailCount != 5 {
+		t.Errorf("rateLimitFailCount = %d, want 5 (decayed then re-incremented, not escalated to 6)", agent.rateLimitFailCount)
+	}
+}
+
+// TestAnthropicAgent_RateLimitBackoff_DecaysOnSuccessfulPoll verifies that successful
+// polls gradually decay the rateLimitFailCount even when no 429 is encountered.
+func TestAnthropicAgent_RateLimitBackoff_DecaysOnSuccessfulPoll(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(anthropicResponse(25.0, 10.0)))
+	}))
+	defer apiServer.Close()
+
+	str, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer str.Close()
+
+	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+	client := api.NewAnthropicClient("test-token", logger, api.WithAnthropicBaseURL(apiServer.URL+"/api/oauth/usage"))
+	tr := tracker.NewAnthropicTracker(str, logger)
+
+	agent := NewAnthropicAgent(client, str, tr, 50*time.Millisecond, logger, nil)
+
+	// Simulate prior backoff state (not currently paused, but failCount is elevated)
+	agent.rateLimitFailCount = 3
+	agent.lastToken = "test-token"
+
+	ctx := context.Background()
+	agent.poll(ctx)
+
+	if agent.rateLimitFailCount != 2 {
+		t.Errorf("rateLimitFailCount = %d, want 2 (decayed by 1 after success)", agent.rateLimitFailCount)
+	}
+
+	agent.poll(ctx)
+	if agent.rateLimitFailCount != 1 {
+		t.Errorf("rateLimitFailCount = %d, want 1 after second success", agent.rateLimitFailCount)
+	}
+
+	agent.poll(ctx)
+	if agent.rateLimitFailCount != 0 {
+		t.Errorf("rateLimitFailCount = %d, want 0 after third success", agent.rateLimitFailCount)
+	}
+
+	// Should not go below 0
+	agent.poll(ctx)
+	if agent.rateLimitFailCount != 0 {
+		t.Errorf("rateLimitFailCount = %d, want 0 (floor)", agent.rateLimitFailCount)
 	}
 }
 

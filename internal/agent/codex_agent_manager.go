@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -21,6 +22,7 @@ import (
 type CodexProfile struct {
 	Name      string    `json:"name"`
 	AccountID string    `json:"account_id"` // Codex's account ID (string from API)
+	UserID    string    `json:"user_id,omitempty"`
 	SavedAt   time.Time `json:"saved_at"`
 	Tokens    struct {
 		AccessToken  string `json:"access_token"`
@@ -200,6 +202,10 @@ func (m *CodexAgentManager) loadAndStartProfile(path string) error {
 		profile.Name = strings.TrimSuffix(base, ".json")
 	}
 
+	if profile.UserID == "" {
+		profile.UserID = api.ParseIDTokenUserID(profile.Tokens.IDToken)
+	}
+
 	// Check if we already have this profile running
 	m.mu.RLock()
 	_, exists := m.instances[profile.Name]
@@ -212,12 +218,155 @@ func (m *CodexAgentManager) loadAndStartProfile(path string) error {
 	return m.startAgentForProfile(profile)
 }
 
+func codexCredentialsFromProfile(profile CodexProfile) *api.CodexCredentials {
+	idToken := strings.TrimSpace(profile.Tokens.IDToken)
+	expiresAt := api.ParseIDTokenExpiry(idToken)
+	var expiresIn time.Duration
+	if !expiresAt.IsZero() {
+		expiresIn = time.Until(expiresAt)
+	}
+
+	userID := strings.TrimSpace(profile.UserID)
+	if userID == "" {
+		userID = api.ParseIDTokenUserID(idToken)
+	}
+
+	return &api.CodexCredentials{
+		AccessToken:  strings.TrimSpace(profile.Tokens.AccessToken),
+		RefreshToken: strings.TrimSpace(profile.Tokens.RefreshToken),
+		IDToken:      idToken,
+		APIKey:       strings.TrimSpace(profile.APIKey),
+		AccountID:    strings.TrimSpace(profile.AccountID),
+		UserID:       userID,
+		ExpiresAt:    expiresAt,
+		ExpiresIn:    expiresIn,
+	}
+}
+
+func readCodexProfileCredentials(profilePath string) *api.CodexCredentials {
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		return nil
+	}
+
+	var profile CodexProfile
+	if err := json.Unmarshal(data, &profile); err != nil {
+		return nil
+	}
+
+	return codexCredentialsFromProfile(profile)
+}
+
+func shouldUseSystemCredsForProfile(profileCreds, systemCreds *api.CodexCredentials, expectedAccountID string) bool {
+	if systemCreds == nil {
+		return false
+	}
+
+	systemAccountID := strings.TrimSpace(systemCreds.AccountID)
+	if systemAccountID == "" {
+		return false
+	}
+
+	if accountID := strings.TrimSpace(expectedAccountID); accountID != "" && accountID != systemAccountID {
+		return false
+	}
+	if profileCreds != nil {
+		if accountID := strings.TrimSpace(profileCreds.AccountID); accountID != "" && accountID != systemAccountID {
+			return false
+		}
+	}
+
+	if profileCreds == nil {
+		return systemCreds.AccessToken != "" || systemCreds.APIKey != ""
+	}
+
+	if profileCreds.AccessToken == "" && systemCreds.AccessToken != "" {
+		return true
+	}
+
+	if !profileCreds.ExpiresAt.IsZero() && !systemCreds.ExpiresAt.IsZero() {
+		if systemCreds.ExpiresAt.After(profileCreds.ExpiresAt) {
+			return true
+		}
+	}
+
+	if profileCreds.IsExpired() && !systemCreds.IsExpired() {
+		return true
+	}
+
+	return systemCreds.AccessToken != "" && subtle.ConstantTimeCompare([]byte(systemCreds.AccessToken), []byte(profileCreds.AccessToken)) == 0
+}
+
+func updateProfileFromSystemCreds(profilePath string, creds *api.CodexCredentials, logger *slog.Logger) error {
+	if creds == nil {
+		return fmt.Errorf("nil credentials")
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		return fmt.Errorf("read profile: %w", err)
+	}
+
+	var profile CodexProfile
+	if err := json.Unmarshal(data, &profile); err != nil {
+		return fmt.Errorf("parse profile: %w", err)
+	}
+
+	if creds.AccessToken != "" {
+		profile.Tokens.AccessToken = creds.AccessToken
+	}
+	if creds.RefreshToken != "" {
+		profile.Tokens.RefreshToken = creds.RefreshToken
+	}
+	if creds.IDToken != "" {
+		profile.Tokens.IDToken = creds.IDToken
+	}
+	if profile.AccountID == "" {
+		profile.AccountID = creds.AccountID
+	}
+	if profile.UserID == "" {
+		profile.UserID = creds.UserID
+	}
+	profile.SavedAt = time.Now().UTC()
+
+	updated, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal profile: %w", err)
+	}
+
+	tempPath := profilePath + ".tmp"
+	if err := os.WriteFile(tempPath, updated, 0o600); err != nil {
+		return fmt.Errorf("write temp profile: %w", err)
+	}
+	if err := os.Rename(tempPath, profilePath); err != nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("rename profile: %w", err)
+	}
+
+	logger.Info("updated Codex profile tokens from auth.json", "path", profilePath)
+	return nil
+}
+
 // startAgentForProfile creates and starts an agent for a specific profile.
 func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
+	if profile.UserID == "" {
+		profile.UserID = api.ParseIDTokenUserID(profile.Tokens.IDToken)
+	}
+
+	externalID := profile.AccountID
+	if creds := codexCredentialsFromProfile(profile); creds != nil {
+		if composite := creds.CompositeExternalID(); composite != "" {
+			externalID = composite
+		}
+	}
+
 	// Get or create the database account ID for this profile.
-	// Uses external_id (Codex account_id from API) for dedup - ensures one DB
-	// row per real Codex account, regardless of profile name.
-	dbAccount, err := m.store.GetOrCreateProviderAccountByExternalID("codex", profile.Name, profile.AccountID)
+	// Uses external_id (Codex account_id:user_id for Team-safe dedup) to ensure
+	// one DB row per real Codex identity, regardless of profile name.
+	dbAccount, err := m.store.GetOrCreateProviderAccountByExternalID("codex", profile.Name, externalID)
 	if err != nil {
 		return fmt.Errorf("failed to get/create provider account: %w", err)
 	}
@@ -228,13 +377,7 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 		"codex_account_id", profile.AccountID)
 
 	// Create credentials from profile
-	creds := &api.CodexCredentials{
-		AccessToken:  profile.Tokens.AccessToken,
-		RefreshToken: profile.Tokens.RefreshToken,
-		IDToken:      profile.Tokens.IDToken,
-		APIKey:       profile.APIKey,
-		AccountID:    profile.AccountID,
-	}
+	creds := codexCredentialsFromProfile(profile)
 
 	// Create client for this profile
 	client := api.NewCodexClient(creds.AccessToken, nil)
@@ -247,46 +390,61 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 
 	// Set token refresh function that reads from profile
 	profilePath := filepath.Join(m.profilesDir, profile.Name+".json")
+	isDefaultProfile := profile.Name == "default"
 	agent.SetTokenRefresh(func() string {
-		// Re-read profile to get potentially updated tokens
-		if data, err := os.ReadFile(profilePath); err == nil {
-			var p CodexProfile
-			if json.Unmarshal(data, &p) == nil {
-				return p.Tokens.AccessToken
+		if isDefaultProfile {
+			if systemCreds := api.DetectCodexCredentials(m.logger); systemCreds != nil {
+				return systemCreds.AccessToken
 			}
+			return profile.Tokens.AccessToken
+		}
+
+		profileCreds := readCodexProfileCredentials(profilePath)
+		if profileCreds != nil {
+			if !profileCreds.IsExpiringSoon(codexTokenRefreshThreshold) {
+				if profileCreds.AccessToken != "" {
+					return profileCreds.AccessToken
+				}
+			}
+		}
+
+		systemCreds := api.DetectCodexCredentials(m.logger)
+		if shouldUseSystemCredsForProfile(profileCreds, systemCreds, profile.AccountID) {
+			if err := updateProfileFromSystemCreds(profilePath, systemCreds, m.logger); err != nil {
+				m.logger.Warn("failed to persist Codex profile token refresh from auth.json", "error", err, "profile", profile.Name)
+			}
+			if systemCreds.AccessToken != "" {
+				return systemCreds.AccessToken
+			}
+		}
+
+		if profileCreds != nil && profileCreds.AccessToken != "" {
+			return profileCreds.AccessToken
 		}
 		return profile.Tokens.AccessToken
 	})
 
 	// Set credentials refresh function for proactive OAuth token refresh
-	isDefaultProfile := profile.Name == "default"
 	agent.SetCredentialsRefresh(func() *api.CodexCredentials {
 		if isDefaultProfile {
 			// Default profile reads from system credentials (~/.codex/auth.json)
 			return api.DetectCodexCredentials(m.logger)
 		}
-		// Profile-specific credentials - re-read from profile file
-		if data, err := os.ReadFile(profilePath); err == nil {
-			var p CodexProfile
-			if json.Unmarshal(data, &p) == nil {
-				idToken := p.Tokens.IDToken
-				expiresAt := api.ParseIDTokenExpiry(idToken)
-				var expiresIn time.Duration
-				if !expiresAt.IsZero() {
-					expiresIn = time.Until(expiresAt)
-				}
-				return &api.CodexCredentials{
-					AccessToken:  p.Tokens.AccessToken,
-					RefreshToken: p.Tokens.RefreshToken,
-					IDToken:      idToken,
-					APIKey:       p.APIKey,
-					AccountID:    p.AccountID,
-					ExpiresAt:    expiresAt,
-					ExpiresIn:    expiresIn,
-				}
-			}
+
+		profileCreds := readCodexProfileCredentials(profilePath)
+		if profileCreds != nil && !profileCreds.IsExpiringSoon(codexTokenRefreshThreshold) {
+			return profileCreds
 		}
-		return nil
+
+		systemCreds := api.DetectCodexCredentials(m.logger)
+		if shouldUseSystemCredsForProfile(profileCreds, systemCreds, profile.AccountID) {
+			if err := updateProfileFromSystemCreds(profilePath, systemCreds, m.logger); err != nil {
+				m.logger.Warn("failed to update Codex profile from auth.json", "error", err, "profile", profile.Name)
+			}
+			return systemCreds
+		}
+
+		return profileCreds
 	})
 
 	// Set notifier if available
@@ -354,6 +512,7 @@ func (m *CodexAgentManager) startDefaultAgent() error {
 	profile := CodexProfile{
 		Name:      "default",
 		AccountID: creds.AccountID,
+		UserID:    creds.UserID,
 	}
 	profile.Tokens.AccessToken = creds.AccessToken
 	profile.Tokens.RefreshToken = creds.RefreshToken

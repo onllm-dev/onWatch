@@ -135,6 +135,9 @@ type QuotaMeter struct {
 	ProjectedValue  float64   `json:"projected_value,omitempty"`
 	CurrentRate     float64   `json:"current_rate,omitempty"`
 	SparklinePoints []float64 `json:"sparkline_points,omitempty"`
+	Source          string    `json:"source,omitempty"`     // "statusline" or "api"
+	AgeSeconds      int64     `json:"age_seconds,omitempty"`
+	IsStale         bool      `json:"is_stale,omitempty"`
 }
 
 // TrendSeries groups sparkline points for a provider-level detailed view.

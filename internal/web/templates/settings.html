@@ -210,6 +210,40 @@
                     <!-- Populated dynamically by JS -->
                 </div>
             </div>
+
+            <div class="settings-section" id="anthropic-settings-section">
+                <h3 class="settings-section-title">Anthropic Configuration</h3>
+                <p class="settings-section-desc">Configure how onWatch collects Anthropic usage data. Settings here override environment variables. Changes take effect after daemon restart.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="anthropic-source">Data Source</label>
+                        <select id="anthropic-source" class="settings-input">
+                            <option value="auto">Auto (statusline + API fallback)</option>
+                            <option value="statusline">Statusline Only (zero API calls)</option>
+                            <option value="api">API Only (no statusline)</option>
+                        </select>
+                        <span class="settings-hint">Auto uses Claude Code's statusline for live data and polls the API every N cycles for supplementary quotas (Sonnet, etc.).</span>
+                    </div>
+                    <div class="settings-field">
+                        <label for="anthropic-api-poll-interval">API Poll Cycle Interval</label>
+                        <input type="number" id="anthropic-api-poll-interval" class="settings-input" min="1" max="100" value="10" />
+                        <span class="settings-hint">Full API poll every N cycles (e.g., 10 = every 10th poll). Gets Sonnet and supplementary quota data. Only applies in Auto mode.</span>
+                    </div>
+                    <div class="settings-field">
+                        <label for="anthropic-staleness">Statusline Staleness (minutes)</label>
+                        <input type="number" id="anthropic-staleness" class="settings-input" min="1" max="60" value="5" />
+                        <span class="settings-hint">How old the statusline data can be before falling back to API polling.</span>
+                    </div>
+                    <div class="settings-field">
+                        <label for="anthropic-cc-detection">Claude Code Detection</label>
+                        <select id="anthropic-cc-detection" class="settings-input">
+                            <option value="on">On (skip OAuth refresh when CC is running)</option>
+                            <option value="off">Off (always attempt OAuth refresh)</option>
+                        </select>
+                        <span class="settings-hint">When enabled, onWatch skips OAuth token refresh while Claude Code is running to prevent login disruption.</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Menubar Panel -->

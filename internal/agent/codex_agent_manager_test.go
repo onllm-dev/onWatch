@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -83,6 +84,34 @@ func (f *codexManagerFixture) instance(profile string) *CodexAgentInstance {
 	f.manager.mu.RLock()
 	defer f.manager.mu.RUnlock()
 	return f.manager.instances[profile]
+}
+
+func makeCodexIDToken(t *testing.T, exp time.Time, accountID, userID string) string {
+	t.Helper()
+
+	claims := map[string]interface{}{
+		"exp": exp.Unix(),
+	}
+	authClaims := map[string]interface{}{}
+	if accountID != "" {
+		authClaims["chatgpt_account_id"] = accountID
+	}
+	if userID != "" {
+		authClaims["chatgpt_user_id"] = userID
+		authClaims["user_id"] = userID
+	}
+	if len(authClaims) > 0 {
+		claims["https://api.openai.com/auth"] = authClaims
+	}
+
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatalf("marshal id token claims: %v", err)
+	}
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
+	body := base64.RawURLEncoding.EncodeToString(payload)
+	return header + "." + body + "."
 }
 
 func TestNewCodexAgentManager_Defaults(t *testing.T) {
@@ -455,4 +484,126 @@ func TestCodexAgentManager_StopAgentAndStopAllAgents(t *testing.T) {
 
 	fx.manager.stopAllAgents()
 	waitUntil(t, time.Second, func() bool { return len(fx.manager.GetRunningProfiles()) == 0 }, "all profiles to stop")
+}
+
+func TestCodexAgentManager_StartAgentForProfile_UsesAuthJSONWhenProfileTokenStale(t *testing.T) {
+	fx := newCodexManagerFixture(t)
+
+	staleToken := makeCodexIDToken(t, time.Now().Add(-2*time.Hour), "acct-work", "user-work")
+	freshToken := makeCodexIDToken(t, time.Now().Add(24*time.Hour), "acct-work", "user-work")
+	profile := CodexProfile{Name: "work", AccountID: "acct-work", SavedAt: time.Now().UTC()}
+	profile.Tokens.AccessToken = "stale-token"
+	profile.Tokens.RefreshToken = "stale-refresh"
+	profile.Tokens.IDToken = staleToken
+	profilePath := fx.writeProfile(t, profile)
+
+	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	if err := os.MkdirAll(authDir, 0o700); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	authJSON := `{"tokens":{"access_token":"fresh-token","refresh_token":"fresh-refresh","id_token":"` + freshToken + `","account_id":"acct-work"}}`
+	if err := os.WriteFile(filepath.Join(authDir, "auth.json"), []byte(authJSON), 0o600); err != nil {
+		t.Fatalf("write auth.json: %v", err)
+	}
+
+	if err := fx.manager.startAgentForProfile(profile); err != nil {
+		t.Fatalf("startAgentForProfile: %v", err)
+	}
+	waitUntil(t, time.Second, func() bool { return fx.instance("work") != nil }, "work profile to start")
+
+	instance := fx.instance("work")
+	if got := instance.Agent.tokenRefresh(); got != "fresh-token" {
+		t.Fatalf("tokenRefresh() = %q, want fresh-token", got)
+	}
+
+	freshCreds := instance.Agent.credsRefresh()
+	if freshCreds == nil {
+		t.Fatal("credsRefresh() returned nil")
+	}
+	if freshCreds.AccessToken != "fresh-token" {
+		t.Fatalf("credsRefresh().AccessToken = %q, want fresh-token", freshCreds.AccessToken)
+	}
+
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("read profile: %v", err)
+	}
+	var updated CodexProfile
+	if err := json.Unmarshal(data, &updated); err != nil {
+		t.Fatalf("unmarshal updated profile: %v", err)
+	}
+	if updated.Tokens.AccessToken != "fresh-token" {
+		t.Fatalf("updated profile token = %q, want fresh-token", updated.Tokens.AccessToken)
+	}
+}
+
+func TestCodexAgentManager_LoadAndStartProfiles_TeamUsersGetDistinctAccounts(t *testing.T) {
+	fx := newCodexManagerFixture(t)
+
+	sharedAccount := "acct-team"
+	work := CodexProfile{Name: "work", AccountID: sharedAccount, SavedAt: time.Now().UTC()}
+	work.Tokens.AccessToken = "token-work"
+	work.Tokens.IDToken = makeCodexIDToken(t, time.Now().Add(12*time.Hour), sharedAccount, "user-work")
+	personal := CodexProfile{Name: "personal", AccountID: sharedAccount, SavedAt: time.Now().UTC()}
+	personal.Tokens.AccessToken = "token-personal"
+	personal.Tokens.IDToken = makeCodexIDToken(t, time.Now().Add(12*time.Hour), sharedAccount, "user-personal")
+	fx.writeProfile(t, work)
+	fx.writeProfile(t, personal)
+
+	if err := fx.manager.loadAndStartProfiles(); err != nil {
+		t.Fatalf("loadAndStartProfiles: %v", err)
+	}
+
+	waitUntil(t, time.Second, func() bool {
+		return fx.instance("work") != nil && fx.instance("personal") != nil
+	}, "team profiles to start")
+
+	accounts, err := fx.store.QueryProviderAccounts("codex")
+	if err != nil {
+		t.Fatalf("QueryProviderAccounts: %v", err)
+	}
+	if len(accounts) != 2 {
+		t.Fatalf("provider account count = %d, want 2", len(accounts))
+	}
+
+	externalIDs := map[string]bool{}
+	for _, acc := range accounts {
+		externalIDs[acc.ExternalID] = true
+	}
+	if !externalIDs["acct-team:user-work"] {
+		t.Fatalf("missing external_id acct-team:user-work: %+v", accounts)
+	}
+	if !externalIDs["acct-team:user-personal"] {
+		t.Fatalf("missing external_id acct-team:user-personal: %+v", accounts)
+	}
+}
+
+func TestCodexAgentManager_StartDefaultAgent_UsesCompositeExternalID(t *testing.T) {
+	fx := newCodexManagerFixture(t)
+
+	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	if err := os.MkdirAll(authDir, 0o700); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	idToken := makeCodexIDToken(t, time.Now().Add(24*time.Hour), "acct-default", "user-default")
+	authJSON := `{"tokens":{"access_token":"default-token","refresh_token":"refresh","id_token":"` + idToken + `","account_id":"acct-default"}}`
+	if err := os.WriteFile(filepath.Join(authDir, "auth.json"), []byte(authJSON), 0o600); err != nil {
+		t.Fatalf("write auth.json: %v", err)
+	}
+
+	if err := fx.manager.startDefaultAgent(); err != nil {
+		t.Fatalf("startDefaultAgent: %v", err)
+	}
+	waitUntil(t, time.Second, func() bool { return fx.instance("default") != nil }, "default profile to start")
+
+	accounts, err := fx.store.QueryProviderAccounts("codex")
+	if err != nil {
+		t.Fatalf("QueryProviderAccounts: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("provider account count = %d, want 1", len(accounts))
+	}
+	if accounts[0].ExternalID != "acct-default:user-default" {
+		t.Fatalf("external_id = %q, want acct-default:user-default", accounts[0].ExternalID)
+	}
 }

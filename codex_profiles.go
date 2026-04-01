@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/onllm-dev/onwatch/v2/internal/agent"
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
@@ -48,17 +49,79 @@ func withProfileDB(fn func(db *store.Store)) {
 	fn(db)
 }
 
-// CodexProfile represents a saved Codex credential profile.
-type CodexProfile struct {
-	Name      string    `json:"name"`
-	AccountID string    `json:"account_id"`
-	SavedAt   time.Time `json:"saved_at"`
-	Tokens    struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		IDToken      string `json:"id_token"`
-	} `json:"tokens"`
-	APIKey string `json:"api_key,omitempty"`
+// CodexProfile is an alias for the agent package's CodexProfile.
+// This allows the CLI layer to use the same struct definition as the agent layer,
+// avoiding duplication. The json tags are defined in the agent package.
+type CodexProfile = agent.CodexProfile
+
+func codexCompositeExternalID(accountID, userID string) string {
+	if strings.TrimSpace(accountID) == "" {
+		return ""
+	}
+	creds := &api.CodexCredentials{AccountID: accountID, UserID: userID}
+	return creds.CompositeExternalID()
+}
+
+func codexProfileCompositeExternalID(profile CodexProfile) string {
+	userID := strings.TrimSpace(profile.UserID)
+	if userID == "" {
+		userID = api.ParseIDTokenUserID(profile.Tokens.IDToken)
+	}
+	return codexCompositeExternalID(profile.AccountID, userID)
+}
+
+func codexCredUserID(creds *api.CodexCredentials) string {
+	if creds == nil {
+		return ""
+	}
+	if strings.TrimSpace(creds.UserID) != "" {
+		return strings.TrimSpace(creds.UserID)
+	}
+	return api.ParseIDTokenUserID(creds.IDToken)
+}
+
+func codexRefreshUserID(creds *codexRefreshAuthCredentials) string {
+	if creds == nil {
+		return ""
+	}
+	return api.ParseIDTokenUserID(creds.IDToken)
+}
+
+func isDuplicateCodexProfile(profile CodexProfile, creds *api.CodexCredentials) bool {
+	if strings.TrimSpace(profile.Name) == "" || creds == nil {
+		return false
+	}
+
+	targetComposite := codexCompositeExternalID(creds.AccountID, codexCredUserID(creds))
+	existingComposite := codexProfileCompositeExternalID(profile)
+	if targetComposite != "" && existingComposite != "" {
+		return existingComposite == targetComposite
+	}
+
+	// Can't compare composites (one or both user IDs missing).
+	// Derive user identities for fallback comparison.
+	existingUser := strings.TrimSpace(profile.UserID)
+	if existingUser == "" {
+		existingUser = api.ParseIDTokenUserID(profile.Tokens.IDToken)
+	}
+	newUser := codexCredUserID(creds)
+
+	// When BOTH user IDs are empty, we genuinely cannot distinguish two profiles.
+	// Allow the save - the DB will handle them as separate entries.
+	if existingUser == "" && newUser == "" {
+		return false
+	}
+
+	// At least one user ID is known. If account IDs match and user IDs are both
+	// non-empty and equal, it's the same user (different profile name) -> block.
+	if existingUser != "" && newUser != "" && existingUser == newUser {
+		return true
+	}
+
+	// One user ID is known, the other is not. The known side is a distinct
+	// identity - allow the save so Team users can add profiles even when
+	// existing legacy profiles lack user_id.
+	return false
 }
 
 // codexProfilesDir returns the directory for storing Codex profiles.
@@ -123,7 +186,7 @@ func migrateCodexProfiles() {
 		return
 	}
 
-	if err := os.MkdirAll(newDir, 0700); err != nil {
+	if err := os.MkdirAll(newDir, 0o700); err != nil {
 		return
 	}
 
@@ -145,7 +208,7 @@ func migrateCodexProfiles() {
 			if readErr != nil {
 				continue
 			}
-			if writeErr := os.WriteFile(newPath, data, 0600); writeErr != nil {
+			if writeErr := os.WriteFile(newPath, data, 0o600); writeErr != nil {
 				continue
 			}
 			os.Remove(oldPath)
@@ -372,8 +435,27 @@ func codexProfileRefresh(name string) error {
 		accountOverride = true
 	}
 
+	refreshCreds := &api.CodexCredentials{
+		AccountID: creds.AccountID,
+		UserID:    codexRefreshUserID(creds),
+		IDToken:   creds.IDToken,
+	}
+	profiles, err := listCodexProfiles()
+	if err != nil {
+		return fmt.Errorf("failed to list existing profiles for duplicate check: %w", err)
+	}
+	for _, p := range profiles {
+		if p.Name == name {
+			continue
+		}
+		if isDuplicateCodexProfile(p, refreshCreds) {
+			return fmt.Errorf("account %s is already saved as profile %q.\nTo update credentials, run: onwatch codex profile refresh %s", creds.AccountID, p.Name, p.Name)
+		}
+	}
+
 	profile.Name = name
 	profile.AccountID = creds.AccountID
+	profile.UserID = codexRefreshUserID(creds)
 	profile.SavedAt = time.Now().UTC()
 	profile.Tokens.AccessToken = creds.AccessToken
 	profile.Tokens.RefreshToken = creds.RefreshToken
@@ -382,7 +464,7 @@ func codexProfileRefresh(name string) error {
 		profile.APIKey = creds.APIKey
 	}
 
-	if err := os.MkdirAll(profilesDir, 0700); err != nil {
+	if err := os.MkdirAll(profilesDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create profiles directory: %w", err)
 	}
 
@@ -390,13 +472,17 @@ func codexProfileRefresh(name string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal profile: %w", err)
 	}
-	if err := os.WriteFile(profilePath, data, 0600); err != nil {
+	if err := os.WriteFile(profilePath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write profile: %w", err)
 	}
 
 	// Ensure the profile is active in the database (undelete if previously deleted).
 	withProfileDB(func(db *store.Store) {
-		db.GetOrCreateProviderAccountByExternalID("codex", name, creds.AccountID)
+		externalID := codexCompositeExternalID(profile.AccountID, profile.UserID)
+		if externalID == "" {
+			externalID = profile.AccountID
+		}
+		db.GetOrCreateProviderAccountByExternalID("codex", name, externalID)
 	})
 
 	if isNewProfile {
@@ -436,7 +522,7 @@ func codexProfileSave(name string) error {
 		return fmt.Errorf("could not determine home directory")
 	}
 
-	if err := os.MkdirAll(profilesDir, 0700); err != nil {
+	if err := os.MkdirAll(profilesDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create profiles directory: %w", err)
 	}
 
@@ -450,13 +536,16 @@ func codexProfileSave(name string) error {
 		}
 	}
 
-	// Block saving a duplicate profile for the same Codex account
+	// Block saving a duplicate profile for the same Codex account/user identity.
 	profiles, err := listCodexProfiles()
 	if err != nil {
 		return fmt.Errorf("failed to list existing profiles for duplicate check: %w", err)
 	}
 	for _, p := range profiles {
-		if p.Name != name && p.AccountID != "" && p.AccountID == creds.AccountID {
+		if p.Name == name {
+			continue
+		}
+		if isDuplicateCodexProfile(p, creds) {
 			return fmt.Errorf("account %s is already saved as profile %q.\nTo update credentials, run: onwatch codex profile refresh %s", creds.AccountID, p.Name, p.Name)
 		}
 	}
@@ -465,6 +554,7 @@ func codexProfileSave(name string) error {
 	profile := CodexProfile{
 		Name:      name,
 		AccountID: creds.AccountID,
+		UserID:    codexCredUserID(creds),
 		SavedAt:   time.Now().UTC(),
 		APIKey:    creds.APIKey,
 	}
@@ -478,14 +568,18 @@ func codexProfileSave(name string) error {
 		return fmt.Errorf("failed to marshal profile: %w", err)
 	}
 
-	if err := os.WriteFile(profilePath, data, 0600); err != nil {
+	if err := os.WriteFile(profilePath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write profile: %w", err)
 	}
 
 	// Ensure the profile is active in the database (undelete if previously deleted,
 	// set external_id for dedup). Best-effort - daemon handles it too on next scan.
 	withProfileDB(func(db *store.Store) {
-		acc, err := db.GetOrCreateProviderAccountByExternalID("codex", name, creds.AccountID)
+		externalID := codexCompositeExternalID(profile.AccountID, profile.UserID)
+		if externalID == "" {
+			externalID = profile.AccountID
+		}
+		acc, err := db.GetOrCreateProviderAccountByExternalID("codex", name, externalID)
 		if err != nil || acc == nil {
 			return
 		}
@@ -644,6 +738,10 @@ func loadCodexProfile(path string) (*CodexProfile, error) {
 	if profile.Name == "" {
 		base := filepath.Base(path)
 		profile.Name = strings.TrimSuffix(base, ".json")
+	}
+
+	if strings.TrimSpace(profile.UserID) == "" {
+		profile.UserID = api.ParseIDTokenUserID(profile.Tokens.IDToken)
 	}
 
 	return &profile, nil

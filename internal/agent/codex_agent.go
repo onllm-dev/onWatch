@@ -50,9 +50,10 @@ type CodexAgent struct {
 	profileName string // Profile name for logging
 
 	// Auth failure rate limiting
-	authFailCount   int
-	authPaused      bool
-	lastFailedToken string
+	authFailCount            int
+	authPaused               bool
+	lastFailedToken          string
+	proactiveRefreshFailures int // consecutive proactive refresh failures (non-reused-token)
 }
 
 // NewCodexAgent creates a new CodexAgent with the given dependencies.
@@ -169,10 +170,27 @@ func (a *CodexAgent) poll(ctx context.Context) {
 							false, // not recoverable
 						)
 					} else {
-						a.logger.Error("Proactive Codex OAuth refresh failed", "error", err)
-						// Continue with existing token - it might still work
+						a.proactiveRefreshFailures++
+						a.logger.Error("Proactive Codex OAuth refresh failed",
+							"error", err,
+							"consecutive_failures", a.proactiveRefreshFailures)
+						if a.proactiveRefreshFailures >= maxCodexAuthFailures {
+							a.authPaused = true
+							a.lastFailedToken = creds.AccessToken
+							a.logger.Error("Codex proactive refresh PAUSED - too many consecutive failures",
+								"failure_count", a.proactiveRefreshFailures,
+								"action", "Re-authenticate via 'codex auth' to resume polling")
+							a.sendAuthErrorNotification(
+								"Token Refresh Failed",
+								fmt.Sprintf("Codex proactive OAuth refresh failed %d times. Please re-authenticate via 'codex auth' to resume.", a.proactiveRefreshFailures),
+								false,
+							)
+						}
 					}
 				} else {
+					// Proactive refresh succeeded - reset failure counter
+					a.proactiveRefreshFailures = 0
+
 					// CRITICAL: Save new tokens to disk IMMEDIATELY (refresh tokens are one-time use!)
 					if err := api.WriteCodexCredentials(newTokens.AccessToken, newTokens.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
 						a.logger.Error("Failed to save refreshed Codex credentials", "error", err)

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
 func writeRefreshAuthJSON(t *testing.T, home, access, refresh, idToken, account string) {
@@ -27,6 +30,34 @@ func writeRefreshAuthJSON(t *testing.T, home, access, refresh, idToken, account 
 	if err := os.WriteFile(authPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write auth.json: %v", err)
 	}
+}
+
+func makeProfileIDToken(accountID, userID string) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
+	payload := `{"https://api.openai.com/auth":{"chatgpt_account_id":"` + accountID + `","chatgpt_user_id":"` + userID + `","user_id":"` + userID + `"}}`
+	body := base64.RawURLEncoding.EncodeToString([]byte(payload))
+	return header + "." + body + "."
+}
+
+// makeProfileIDTokenWithoutUserID creates a JWT id_token with the chatgpt_account_id
+// claim but NO chatgpt_user_id. Used to test dedup behavior when user_id is absent.
+func makeProfileIDTokenWithoutUserID(accountID string) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
+	payload := `{"https://api.openai.com/auth":{"chatgpt_account_id":"` + accountID + `"}}`
+	body := base64.RawURLEncoding.EncodeToString([]byte(payload))
+	return header + "." + body + "."
+}
+
+func writeRefreshAuthJSONWithUser(t *testing.T, home, access, refresh, account, userID string) {
+	t.Helper()
+	idToken := makeProfileIDToken(account, userID)
+	writeRefreshAuthJSON(t, home, access, refresh, idToken, account)
+}
+
+func writeProfileFileWithUser(t *testing.T, home, name, access, refresh, account, userID string) string {
+	t.Helper()
+	idToken := makeProfileIDToken(account, userID)
+	return writeProfileFile(t, home, name, access, refresh, idToken, account)
 }
 
 func writeProfileFile(t *testing.T, home, name, access, refresh, idToken, account string) string {
@@ -380,12 +411,13 @@ func TestCodexProfileSave_BlocksDuplicateAccount(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")
 
-	writeRefreshAuthJSON(t, home, "dup_access", "dup_refresh", "dup_id", "acct_dup")
-	writeProfileFile(t, home, "personal", "old_access", "old_refresh", "old_id", "acct_dup")
+	// Both profile and new auth have the same account AND same user_id -> duplicate.
+	writeRefreshAuthJSONWithUser(t, home, "dup_access", "dup_refresh", "acct_dup", "user-same")
+	writeProfileFileWithUser(t, home, "personal", "old_access", "old_refresh", "acct_dup", "user-same")
 
 	err := codexProfileSave("work")
 	if err == nil {
-		t.Fatal("expected error for duplicate account, got nil")
+		t.Fatal("expected error for duplicate account+user, got nil")
 	}
 	if !strings.Contains(err.Error(), "already saved as profile") {
 		t.Fatalf("expected duplicate-account error, got: %v", err)
@@ -605,5 +637,151 @@ func TestCodexProfileRefresh_InvalidName(t *testing.T) {
 	err := codexProfileRefresh("bad name")
 	if err == nil || !strings.Contains(err.Error(), "invalid profile name") {
 		t.Fatalf("expected invalid profile name error, got %v", err)
+	}
+}
+
+func TestCodexProfileSave_AllowsSameAccountDifferentUser(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+
+	writeProfileFileWithUser(t, home, "personal", "old_access", "old_refresh", "acct_team", "user-one")
+	writeRefreshAuthJSONWithUser(t, home, "new_access", "new_refresh", "acct_team", "user-two")
+
+	if err := codexProfileSave("work"); err != nil {
+		t.Fatalf("codexProfileSave returned error: %v", err)
+	}
+
+	profiles, err := listCodexProfiles()
+	if err != nil {
+		t.Fatalf("listCodexProfiles: %v", err)
+	}
+	if len(profiles) != 2 {
+		t.Fatalf("profile count = %d, want 2", len(profiles))
+	}
+}
+
+func TestCodexProfileSave_StoresUserIDFromIDToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+
+	writeRefreshAuthJSONWithUser(t, home, "save_access", "save_refresh", "acct_one", "user-one")
+
+	if err := codexProfileSave("work"); err != nil {
+		t.Fatalf("codexProfileSave returned error: %v", err)
+	}
+
+	profile := loadProfileForTest(t, home, "work")
+	if profile.UserID != "user-one" {
+		t.Fatalf("profile.UserID = %q, want user-one", profile.UserID)
+	}
+}
+
+func TestCodexProfileRefresh_UpdatesUserIDFromIDToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+
+	writeProfileFileWithUser(t, home, "work", "old_access", "old_refresh", "acct_team", "user-one")
+	writeRefreshAuthJSONWithUser(t, home, "new_access", "new_refresh", "acct_team", "user-two")
+
+	if err := codexProfileRefresh("work"); err != nil {
+		t.Fatalf("codexProfileRefresh returned error: %v", err)
+	}
+
+	profile := loadProfileForTest(t, home, "work")
+	if profile.UserID != "user-two" {
+		t.Fatalf("profile.UserID = %q, want user-two", profile.UserID)
+	}
+}
+
+// TestCodexProfileSave_AllowsSameAccountNoUserIDRegression tests the fix for a false
+// positive in isDuplicateCodexProfile: when both the existing profile and the new auth
+// session have an empty user_id (account_id matches but no user_id is present in the
+// JWT), the function must NOT treat them as duplicates (return false), allowing the
+// save to proceed. Previously it incorrectly returned true, blocking saves.
+
+func TestIsDuplicateCodexProfile_Direct(t *testing.T) {
+	// Case: same account_id, both user_ids empty -> NOT duplicate (allow)
+	p := CodexProfile{Name: "personal", AccountID: "acct_team", UserID: "", Tokens: struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		IDToken      string `json:"id_token"`
+	}{IDToken: makeProfileIDTokenWithoutUserID("acct_team")}}
+	c := &api.CodexCredentials{AccountID: "acct_team", UserID: "", IDToken: makeProfileIDTokenWithoutUserID("acct_team")}
+	if got := isDuplicateCodexProfile(p, c); got {
+		t.Fatalf("isDuplicateCodexProfile with both empty user_ids: got %v, want false", got)
+	}
+}
+
+func TestCodexProfileSave_AllowsSameAccountNoUserIDRegression(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+
+	// Existing profile: same account, no user_id in JWT (legacy tokens)
+	idTokenNoUser := makeProfileIDTokenWithoutUserID("acct_team")
+	writeProfileFile(t, home, "personal", "old_access", "old_refresh", idTokenNoUser, "acct_team")
+
+	// New auth session: same account, no user_id in JWT
+	authIDTokenNoUser := makeProfileIDTokenWithoutUserID("acct_team")
+	writeRefreshAuthJSON(t, home, "new_access", "new_refresh", authIDTokenNoUser, "acct_team")
+
+	// This should succeed: same account_id but neither has user_id, so they are
+	// NOT duplicates (we can't distinguish them without user_id).
+	if err := codexProfileSave("work"); err != nil {
+		t.Fatalf("codexProfileSave returned error (false positive): %v", err)
+	}
+
+	profiles, err := listCodexProfiles()
+	if err != nil {
+		t.Fatalf("listCodexProfiles: %v", err)
+	}
+	if len(profiles) != 2 {
+		t.Fatalf("profile count = %d, want 2 (personal + work)", len(profiles))
+	}
+}
+
+// TestCodexProfileSave_AllowsNewUserAlongsideLegacyProfile verifies that a new user
+// with a known user_id can save a profile when an existing legacy profile for the same
+// account has no user_id. This is the Team upgrade scenario.
+func TestCodexProfileSave_AllowsNewUserAlongsideLegacyProfile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+
+	// Legacy profile: same account, no user_id in JWT
+	idTokenNoUser := makeProfileIDTokenWithoutUserID("acct_team")
+	writeProfileFile(t, home, "legacy", "old_access", "old_refresh", idTokenNoUser, "acct_team")
+
+	// New auth session: same account but WITH a user_id
+	writeRefreshAuthJSONWithUser(t, home, "new_access", "new_refresh", "acct_team", "user-new")
+
+	if err := codexProfileSave("teammate"); err != nil {
+		t.Fatalf("codexProfileSave returned error (should allow new user alongside legacy): %v", err)
+	}
+
+	profiles, err := listCodexProfiles()
+	if err != nil {
+		t.Fatalf("listCodexProfiles: %v", err)
+	}
+	if len(profiles) != 2 {
+		t.Fatalf("profile count = %d, want 2 (legacy + teammate)", len(profiles))
+	}
+}
+
+func TestIsDuplicateCodexProfile_LegacyVsKnownUser(t *testing.T) {
+	// Existing profile: account_id present, no user_id (legacy)
+	p := CodexProfile{Name: "legacy", AccountID: "acct_team", UserID: "", Tokens: struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		IDToken      string `json:"id_token"`
+	}{IDToken: makeProfileIDTokenWithoutUserID("acct_team")}}
+
+	// New creds: same account but with a known user_id
+	c := &api.CodexCredentials{AccountID: "acct_team", UserID: "user-new"}
+	if got := isDuplicateCodexProfile(p, c); got {
+		t.Fatalf("isDuplicateCodexProfile(legacy vs known user): got %v, want false", got)
 	}
 }

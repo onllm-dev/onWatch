@@ -896,6 +896,30 @@ button, input, select { font-family: inherit; }
   justify-content: space-between;
 }
 
+/* Per-quota freshness indicator */
+.card-freshness {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  margin-top: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+}
+.card-freshness.stale {
+  color: var(--outline);
+  font-style: italic;
+}
+.card-freshness.stale::before {
+  content: '\231B'; /* hourglass */
+  margin-right: 2px;
+}
+.quota-card.stale-card {
+  opacity: 0.7;
+}
+
 /* Per-tool usage breakdown (Z.ai Time Limit card) */
 .usage-details {
   margin: 8px 0 4px;

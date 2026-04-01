@@ -440,14 +440,27 @@ func TestAnthropicAgent_Poll_CredsRefresh_ExpiringToken_OAuthFails(t *testing.T)
 
 	agent := NewAnthropicAgent(client, str, tr, 5*time.Second, logger, nil)
 
+	// Disable Claude Code detection for tests
+	agent.isClaudeCodeRunning = func() bool { return false }
+
+	// Redirect OAuth endpoint to a mock that returns an error
+	oauthMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"test_error"}`))
+	}))
+	defer oauthMock.Close()
+	api.SetOAuthURLForTest(oauthMock.URL)
+	defer api.SetOAuthURLForTest(api.AnthropicOAuthTokenURL)
+
 	// Credentials are expiring in 1 minute (< 10 minute threshold → IsExpiringSoon = true)
 	// RefreshToken is set so the refresh path is triggered
-	// The refresh will fail because there's no real OAuth server
+	// The refresh will fail because the mock returns an error
 	agent.SetCredentialsRefresh(func() *api.AnthropicCredentials {
 		return &api.AnthropicCredentials{
 			AccessToken:  "test-token",
 			RefreshToken: "expiring-refresh-token",
 			ExpiresIn:    1 * time.Minute, // < 10 min threshold
+			ExpiresAt:    time.Now().Add(1 * time.Minute),
 		}
 	})
 
@@ -512,6 +525,7 @@ func TestAnthropicAgent_Poll_CredsRefresh_ExpiringButNoRefreshToken(t *testing.T
 			AccessToken:  "test-token",
 			RefreshToken: "", // empty → no refresh attempted
 			ExpiresIn:    1 * time.Minute,
+			ExpiresAt:    time.Now().Add(1 * time.Minute),
 		}
 	})
 

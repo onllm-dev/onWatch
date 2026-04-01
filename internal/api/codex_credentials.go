@@ -16,6 +16,7 @@ type CodexCredentials struct {
 	IDToken      string
 	APIKey       string
 	AccountID    string
+	UserID       string
 	ExpiresAt    time.Time     // Token expiry time (parsed from id_token JWT)
 	ExpiresIn    time.Duration // Time until expiry (computed)
 }
@@ -34,6 +35,22 @@ func (c *CodexCredentials) IsExpired() bool {
 		return false // Can't determine expiry, assume valid
 	}
 	return c.ExpiresIn <= 0
+}
+
+// CompositeExternalID returns a dedup identity for provider account rows.
+// Uses account_id:user_id for Team-safe uniqueness when both are present.
+// Returns empty string if user_id is absent, forcing callers to fall back to
+// account-level comparison and handle ambiguous identity cases explicitly.
+func (c *CodexCredentials) CompositeExternalID() string {
+	accountID := strings.TrimSpace(c.AccountID)
+	userID := strings.TrimSpace(c.UserID)
+	if accountID == "" {
+		return ""
+	}
+	if userID == "" {
+		return "" // Ambiguous - fall back to caller for account-level dedup
+	}
+	return accountID + ":" + userID
 }
 
 type codexAuthFile struct {
@@ -76,6 +93,7 @@ func DetectCodexCredentials(logger *slog.Logger) *CodexCredentials {
 					IDToken:      idToken,
 					APIKey:       strings.TrimSpace(auth.OpenAIAPIKey),
 					AccountID:    strings.TrimSpace(auth.Tokens.AccountID),
+					UserID:       ParseIDTokenUserID(idToken),
 					ExpiresAt:    expiresAt,
 					ExpiresIn:    expiresIn,
 				}

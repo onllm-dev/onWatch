@@ -402,6 +402,7 @@ func TestAnthropicAgent_PollRateLimitBypassWithOAuthRefresh(t *testing.T) {
 	client := api.NewAnthropicClient("stale-token", slog.Default(), api.WithAnthropicBaseURL(quotaServer.URL))
 	tr := tracker.NewAnthropicTracker(s, nil)
 	ag := NewAnthropicAgent(client, s, tr, time.Second, slog.Default(), nil)
+	ag.isClaudeCodeRunning = func() bool { return false }
 	ag.SetCredentialsRefresh(func() *api.AnthropicCredentials {
 		return &api.AnthropicCredentials{
 			AccessToken:  "stale-token",
@@ -453,6 +454,10 @@ func TestAnthropicAgent_PollProactiveOAuthRefresh(t *testing.T) {
 	client := api.NewAnthropicClient("old-token", slog.Default(), api.WithAnthropicBaseURL(quotaServer.URL))
 	tr := tracker.NewAnthropicTracker(s, nil)
 	ag := NewAnthropicAgent(client, s, tr, time.Second, slog.Default(), nil)
+
+	// Disable Claude Code detection for tests
+	ag.isClaudeCodeRunning = func() bool { return false }
+
 	ag.SetCredentialsRefresh(func() *api.AnthropicCredentials {
 		return &api.AnthropicCredentials{
 			AccessToken:  "old-token",

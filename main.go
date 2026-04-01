@@ -787,18 +787,67 @@ func run() error {
 
 	var anthropicAg *agent.AnthropicAgent
 	if anthropicClient != nil {
+		// Load provider settings from DB (overrides .env)
+		if db != nil {
+			if provJSON, _ := db.GetSetting("provider_settings"); provJSON != "" {
+				var provSettings map[string]map[string]interface{}
+				if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
+					if anthSettings, ok := provSettings["anthropic"]; ok {
+						if src, ok := anthSettings["source"].(string); ok && src != "" {
+							cfg.AnthropicSource = src
+						}
+					}
+				}
+			}
+		}
+
+		// ANTHROPIC_SOURCE controls how onWatch gets Anthropic usage data:
+		//   "auto"       - statusline when fresh, API polling as fallback (default)
+		//   "statusline" - statusline only, no API polling
+		//   "api"        - API polling only, no statusline
+		anthropicSource := cfg.AnthropicSource
+		logger.Info("Anthropic data source configured", "source", anthropicSource)
+
+		// Set up statusline bridge for "auto" and "statusline" modes
+		if anthropicSource == "auto" || anthropicSource == "statusline" {
+			agent.SetupStatuslineBridge(logger)
+		}
+
 		anthropicSm := agent.NewSessionManager(db, "anthropic", idleTimeout, logger)
 		anthropicAg = agent.NewAnthropicAgent(anthropicClient, db, anthropicTr, cfg.PollInterval, logger, anthropicSm)
-		// Enable automatic token refresh - re-reads credentials before each poll
-		// so expired OAuth tokens get picked up when Claude Code rotates them.
-		anthropicAg.SetTokenRefresh(func() string {
-			return api.DetectAnthropicToken(logger)
-		})
-		// Enable proactive OAuth refresh - refreshes token via OAuth API before expiry
-		// and saves new tokens to credentials file immediately.
-		anthropicAg.SetCredentialsRefresh(func() *api.AnthropicCredentials {
-			return api.DetectAnthropicCredentials(logger)
-		})
+
+		// Enable API polling for "auto" and "api" modes
+		if anthropicSource == "auto" || anthropicSource == "api" {
+			anthropicAg.SetTokenRefresh(func() string {
+				return api.DetectAnthropicToken(logger)
+			})
+			anthropicAg.SetCredentialsRefresh(func() *api.AnthropicCredentials {
+				return api.DetectAnthropicCredentials(logger)
+			})
+		}
+
+		// Enable statusline bridge for "auto" and "statusline" modes
+		if anthropicSource == "auto" || anthropicSource == "statusline" {
+			anthropicAg.EnableStatuslineBridge()
+			// In "statusline" mode, disable hybrid API polling since no API
+			// credentials are configured. Hybrid only works in "auto" mode.
+			if anthropicSource == "statusline" {
+				anthropicAg.SetAPIPollCycleInterval(0)
+			}
+			// Apply DB-configured cycle interval (overrides default 10)
+			if db != nil {
+				if provJSON, _ := db.GetSetting("provider_settings"); provJSON != "" {
+					var provSettings map[string]map[string]interface{}
+					if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
+						if anthSettings, ok := provSettings["anthropic"]; ok {
+							if interval, ok := anthSettings["api_poll_cycle_interval"].(float64); ok && int(interval) > 0 {
+								anthropicAg.SetAPIPollCycleInterval(int(interval))
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Create Copilot tracker

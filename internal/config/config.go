@@ -32,6 +32,7 @@ type Config struct {
 	// Anthropic provider configuration
 	AnthropicToken     string // ANTHROPIC_TOKEN or auto-detected
 	AnthropicAutoToken bool   // true if token was auto-detected
+	AnthropicSource    string // ANTHROPIC_SOURCE: "auto" (default), "statusline", "api"
 
 	// Copilot provider configuration
 	CopilotToken string // COPILOT_TOKEN (GitHub PAT with copilot scope)
@@ -241,6 +242,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// Anthropic provider
 	cfg.AnthropicToken = os.Getenv("ANTHROPIC_TOKEN")
+	cfg.AnthropicSource = strings.ToLower(strings.TrimSpace(os.Getenv("ANTHROPIC_SOURCE")))
+	if cfg.AnthropicSource == "" {
+		cfg.AnthropicSource = "auto"
+	}
 
 	// Copilot provider
 	cfg.CopilotToken = os.Getenv("COPILOT_TOKEN")

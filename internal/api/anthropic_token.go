@@ -28,7 +28,11 @@ type AnthropicCredentials struct {
 }
 
 // IsExpiringSoon returns true if the token expires within the given duration.
+// Returns false if expiry is unknown (zero ExpiresAt) to avoid spurious refreshes.
 func (c *AnthropicCredentials) IsExpiringSoon(threshold time.Duration) bool {
+	if c.ExpiresAt.IsZero() {
+		return false
+	}
 	return c.ExpiresIn < threshold
 }
 

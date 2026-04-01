@@ -146,6 +146,7 @@ func TestAnthropicCredentials_IsExpiringSoon(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			creds := &AnthropicCredentials{
 				ExpiresIn: tt.expiresIn,
+				ExpiresAt: time.Now().Add(tt.expiresIn), // non-zero to enable expiry check
 			}
 			got := creds.IsExpiringSoon(tt.threshold)
 			if got != tt.want {

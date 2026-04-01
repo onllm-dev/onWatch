@@ -11,6 +11,16 @@ import (
 	"time"
 )
 
+// testMode disables keychain/keyring operations during tests.
+// On Windows this is a no-op (no keychain), but the variable must exist
+// for cross-platform compilation.
+var testMode bool
+
+// SetTestMode enables or disables test mode.
+func SetTestMode(enabled bool) {
+	testMode = enabled
+}
+
 // detectAnthropicCredentialsPlatform tries to detect full OAuth credentials on Windows.
 func detectAnthropicCredentialsPlatform(logger *slog.Logger) *AnthropicCredentials {
 	if logger == nil {

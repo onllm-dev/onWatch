@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -305,5 +306,72 @@ func TestWriteCodexCredentials_NewFile(t *testing.T) {
 	content := string(data)
 	if !strings.Contains(content, "new-access-token") {
 		t.Error("expected new-access-token in output")
+	}
+}
+
+func TestDetectCodexCredentials_ParsesUserIDFromIDToken(t *testing.T) {
+	t.Setenv("CODEX_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	header := "eyJhbGciOiJub25lIn0"
+	payloadJSON := `{"https://api.openai.com/auth":{"chatgpt_user_id":"user-123"}}`
+	payload := base64.RawURLEncoding.EncodeToString([]byte(payloadJSON))
+	idToken := header + "." + payload + "."
+
+	authPath := filepath.Join(os.Getenv("CODEX_HOME"), "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{
+		"tokens": {
+			"access_token": "oauth_access",
+			"refresh_token": "oauth_refresh",
+			"id_token": "`+idToken+`",
+			"account_id": "acct_123"
+		}
+	}`), 0o600); err != nil {
+		t.Fatalf("write auth.json: %v", err)
+	}
+
+	creds := DetectCodexCredentials(discardLoggerCredentials())
+	if creds == nil {
+		t.Fatal("DetectCodexCredentials returned nil")
+	}
+	if creds.UserID != "user-123" {
+		t.Fatalf("UserID = %q, want user-123", creds.UserID)
+	}
+}
+
+func TestCodexCredentials_CompositeExternalID(t *testing.T) {
+	tests := []struct {
+		name  string
+		creds CodexCredentials
+		want  string
+	}{
+		{
+			name: "account and user present",
+			creds: CodexCredentials{
+				AccountID: "acc-1",
+				UserID:    "user-1",
+			},
+			want: "acc-1:user-1",
+		},
+		{
+			name: "only account present - returns empty (ambiguous, caller must handle)",
+			creds: CodexCredentials{
+				AccountID: "acc-1",
+			},
+			want: "", // user_id missing -> ambiguous identity, caller must dedupe at account level
+		},
+		{
+			name: "neither present",
+			creds: CodexCredentials{},
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.creds.CompositeExternalID(); got != tt.want {
+				t.Fatalf("CompositeExternalID() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

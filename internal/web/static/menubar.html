@@ -520,6 +520,36 @@
             min-width: 0;
         }
 
+        .supplementary-section {
+            margin-top: 6px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            background: var(--surface-variant, rgba(128,128,128,0.06));
+            border: 1px solid var(--border-subtle, rgba(128,128,128,0.1));
+        }
+        .supplementary-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .supplementary-title {
+            font-weight: 600;
+            opacity: 0.5;
+        }
+        .supplementary-hint {
+            font-style: italic;
+            text-transform: none;
+            letter-spacing: 0;
+            opacity: 0.4;
+        }
+        .supplementary-grid {
+            opacity: 0.75;
+        }
+
         .quota-item {
             display: flex;
             flex-direction: column;
@@ -2009,9 +2039,30 @@
                 return `
                     <article class="provider-card provider-card-standard status-${escapeHTML(provider.status || "healthy")}" style="--card-span:${cardSpan(provider)};">
                         ${providerHeaderMarkup(provider)}
-                        <div class="quota-grid" style="--quota-count:${Math.max(quotas.length, 1)};">
-                            ${quotas.map((quota) => renderStandardQuota(quota)).join("")}
-                        </div>
+                        ${(() => {
+                            const hasSource = quotas.some(q => q.source);
+                            const primary = hasSource ? quotas.filter(q => q.source !== 'api') : quotas;
+                            const supplementary = hasSource ? quotas.filter(q => q.source === 'api') : [];
+                            let html = `<div class="quota-grid" style="--quota-count:${Math.max(primary.length, 1)};">
+                                ${primary.map((quota) => renderStandardQuota(quota)).join("")}
+                            </div>`;
+                            if (supplementary.length > 0) {
+                                const maxAge = Math.max(...supplementary.map(q => q.age_seconds || 0));
+                                let ageHint = 'from API';
+                                if (maxAge > 0 && maxAge < 3600) ageHint = 'updated ' + Math.floor(maxAge / 60) + 'm ago';
+                                else if (maxAge >= 3600) ageHint = 'updated ' + Math.floor(maxAge / 3600) + 'h ago';
+                                html += `<div class="supplementary-section">
+                                    <div class="supplementary-header">
+                                        <span class="supplementary-title">Supplementary</span>
+                                        <span class="supplementary-hint">${escapeHTML(ageHint)}</span>
+                                    </div>
+                                    <div class="quota-grid supplementary-grid" style="--quota-count:${supplementary.length};">
+                                        ${supplementary.map((quota) => renderStandardQuota(quota)).join("")}
+                                    </div>
+                                </div>`;
+                            }
+                            return html;
+                        })()}
                     </article>
                 `;
             }

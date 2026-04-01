@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
@@ -494,6 +495,64 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 	}
 
 	return overviewRows, nil
+}
+
+// AnthropicLatestQuota holds the most recent value for a single quota across all snapshots.
+type AnthropicLatestQuota struct {
+	Name        string
+	Utilization float64
+	ResetsAt    *time.Time
+	CapturedAt  time.Time
+	Source      string // "statusline" or "api"
+}
+
+// QueryAnthropicLatestPerQuota returns the most recent value for each distinct quota name.
+// Scans only the last 50 snapshots (bounded) and merges in Go - fast even on large DBs.
+func (s *Store) QueryAnthropicLatestPerQuota() ([]AnthropicLatestQuota, error) {
+	rows, err := s.db.Query(`
+		SELECT qv.quota_name, qv.utilization, qv.resets_at, s.captured_at, s.raw_json
+		FROM anthropic_quota_values qv
+		JOIN anthropic_snapshots s ON s.id = qv.snapshot_id
+		WHERE s.id >= (SELECT MAX(id) - 50 FROM anthropic_snapshots)
+		ORDER BY s.captured_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query latest per-quota: %w", err)
+	}
+	defer rows.Close()
+
+	// Keep only the first (most recent) row per quota_name
+	seen := make(map[string]bool)
+	var results []AnthropicLatestQuota
+	for rows.Next() {
+		var name string
+		var utilization float64
+		var resetsAt sql.NullString
+		var capturedAt, rawJSON string
+		if err := rows.Scan(&name, &utilization, &resetsAt, &capturedAt, &rawJSON); err != nil {
+			return nil, fmt.Errorf("failed to scan latest quota: %w", err)
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+
+		q := AnthropicLatestQuota{
+			Name:        name,
+			Utilization: utilization,
+		}
+		q.CapturedAt, _ = time.Parse(time.RFC3339Nano, capturedAt)
+		if resetsAt.Valid && resetsAt.String != "" {
+			t, _ := time.Parse(time.RFC3339Nano, resetsAt.String)
+			q.ResetsAt = &t
+		}
+		if strings.Contains(rawJSON, `"_source":"statusline"`) {
+			q.Source = "statusline"
+		} else {
+			q.Source = "api"
+		}
+		results = append(results, q)
+	}
+	return results, rows.Err()
 }
 
 // QueryAllAnthropicQuotaNames returns all distinct quota names from Anthropic reset cycles.
