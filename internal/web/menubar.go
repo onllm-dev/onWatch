@@ -591,7 +591,7 @@ func normalizeQuotas(payload map[string]interface{}, warningPercent, criticalPer
 			continue
 		}
 		percent := firstFloat(item, "cardPercent", "usagePercent", "percent", "utilization", "remainingPercent")
-		quotas = append(quotas, menubar.QuotaMeter{
+		meter := menubar.QuotaMeter{
 			Key:            strings.ToLower(strings.ReplaceAll(label, " ", "_")),
 			Label:          label,
 			DisplayValue:   displayValue(item, percent),
@@ -603,7 +603,15 @@ func normalizeQuotas(payload map[string]interface{}, warningPercent, criticalPer
 			TimeUntilReset: stringValue(item, "timeUntilReset"),
 			ProjectedValue: firstFloat(item, "projectedUsage", "projectedUtil", "projectedValue"),
 			CurrentRate:    firstFloat(item, "currentRate"),
-		})
+			Source:         stringValue(item, "source"),
+			AgeSeconds:     int64(firstFloat(item, "ageSeconds")),
+		}
+		if v, ok := item["isStale"]; ok {
+			if b, ok := v.(bool); ok {
+				meter.IsStale = b
+			}
+		}
+		quotas = append(quotas, meter)
 	}
 	return quotas
 }

@@ -16,6 +16,19 @@ import (
 	"time"
 )
 
+// testMode disables all keychain/keyring operations. Set to true in tests
+// to prevent tests from reading or writing real Claude Code credentials.
+// This is a critical safety guard - without it, tests can overwrite the user's
+// real OAuth tokens in the macOS Keychain, logging them out of Claude Code.
+var testMode bool
+
+// SetTestMode enables or disables test mode. When enabled, all keychain and
+// keyring operations are skipped, and only file-based credential storage is used.
+// Files are redirected by setting HOME to a temp dir in tests.
+func SetTestMode(enabled bool) {
+	testMode = enabled
+}
+
 // getCredentialsFilePath returns the path to the Claude credentials file.
 func getCredentialsFilePath() string {
 	home, err := os.UserHomeDir()
@@ -43,8 +56,8 @@ func detectAnthropicTokenPlatform(logger *slog.Logger) string {
 		homeDir = u.HomeDir
 	}
 
-	// macOS: try Keychain
-	if runtime.GOOS == "darwin" && username != "" {
+	// macOS: try Keychain (skip in test mode to avoid reading real credentials)
+	if !testMode && runtime.GOOS == "darwin" && username != "" {
 		out, err := exec.Command("security", "find-generic-password",
 			"-s", "Claude Code-credentials",
 			"-a", username,
@@ -58,8 +71,8 @@ func detectAnthropicTokenPlatform(logger *slog.Logger) string {
 		}
 	}
 
-	// Linux: try secret-tool (GNOME Keyring)
-	if runtime.GOOS == "linux" && username != "" {
+	// Linux: try secret-tool (GNOME Keyring) (skip in test mode)
+	if !testMode && runtime.GOOS == "linux" && username != "" {
 		out, err := exec.Command("secret-tool", "lookup",
 			"service", "Claude Code-credentials",
 			"account", username).Output()
@@ -115,8 +128,8 @@ func detectAnthropicCredentialsPlatform(logger *slog.Logger) *AnthropicCredentia
 		username = u.Username
 	}
 
-	// macOS: try Keychain first
-	if runtime.GOOS == "darwin" && username != "" {
+	// macOS: try Keychain first (skip in test mode)
+	if !testMode && runtime.GOOS == "darwin" && username != "" {
 		out, err := exec.Command("security", "find-generic-password",
 			"-s", "Claude Code-credentials",
 			"-a", username,
@@ -133,8 +146,8 @@ func detectAnthropicCredentialsPlatform(logger *slog.Logger) *AnthropicCredentia
 		}
 	}
 
-	// Linux: try keyring first
-	if runtime.GOOS == "linux" && username != "" {
+	// Linux: try keyring first (skip in test mode)
+	if !testMode && runtime.GOOS == "linux" && username != "" {
 		out, err := exec.Command("secret-tool", "lookup",
 			"service", "Claude Code-credentials",
 			"account", username).Output()
@@ -201,19 +214,21 @@ func detectAnthropicCredentialsPlatform(logger *slog.Logger) *AnthropicCredentia
 //
 // Related: https://github.com/onllm-dev/onWatch/issues/16
 func WriteAnthropicCredentials(accessToken, refreshToken string, expiresIn int) error {
-	// On macOS, update Keychain first (primary credential store)
-	if runtime.GOOS == "darwin" {
-		if err := writeCredentialsToKeychain(accessToken, refreshToken, expiresIn); err != nil {
-			// Log but continue - file write may still succeed
-			slog.Debug("Failed to update macOS Keychain", "error", err)
+	if !testMode {
+		// On macOS, update Keychain first (primary credential store)
+		if runtime.GOOS == "darwin" {
+			if err := writeCredentialsToKeychain(accessToken, refreshToken, expiresIn); err != nil {
+				// Log but continue - file write may still succeed
+				slog.Debug("Failed to update macOS Keychain", "error", err)
+			}
 		}
-	}
 
-	// On Linux, update GNOME Keyring first (primary credential store)
-	if runtime.GOOS == "linux" {
-		if err := writeCredentialsToLinuxKeyring(accessToken, refreshToken, expiresIn); err != nil {
-			// Log but continue - file write may still succeed
-			slog.Debug("Failed to update Linux keyring", "error", err)
+		// On Linux, update GNOME Keyring first (primary credential store)
+		if runtime.GOOS == "linux" {
+			if err := writeCredentialsToLinuxKeyring(accessToken, refreshToken, expiresIn); err != nil {
+				// Log but continue - file write may still succeed
+				slog.Debug("Failed to update Linux keyring", "error", err)
+			}
 		}
 	}
 

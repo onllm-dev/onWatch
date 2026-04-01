@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
@@ -25,6 +27,26 @@ const maxAuthFailures = 3
 
 // maxRateLimitFailures is the number of consecutive OAuth 429s before entering extended backoff.
 const maxRateLimitFailures = 5
+
+// IsClaudeCodeRunning checks if Claude Code is currently executing.
+// When Claude Code is running, onWatch skips proactive OAuth refresh to avoid
+// competing for the same refresh token - a refresh by onWatch invalidates
+// Claude Code's pending refresh, causing it to get invalid_grant and re-auth.
+// Exported as a package-level variable so tests can override it.
+//
+// Uses pattern matching (-f) instead of exact name matching (-x) because
+// Claude Code may run as a Node.js process where the process name is "node"
+// rather than "claude". This trades false positive risk for reliable detection.
+var IsClaudeCodeRunning = func() bool {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		cmd := exec.Command("pgrep", "-f", "claude")
+		return cmd.Run() == nil
+	}
+	// Windows: tasklist always returns exit 0, so pipe through findstr
+	// to verify the process actually exists in the output.
+	cmd := exec.Command("cmd", "/C", `tasklist /FI "IMAGENAME eq claude.exe" /NH 2>nul | findstr /I "claude.exe"`)
+	return cmd.Run() == nil
+}
 
 // rateLimitBaseBackoff is the initial backoff duration after an OAuth 429.
 const rateLimitBaseBackoff = 5 * time.Minute
@@ -58,6 +80,21 @@ type AnthropicAgent struct {
 	rateLimitFailCount int       // consecutive OAuth 429 failures
 	rateLimitPaused    bool      // true when OAuth refresh is in backoff
 	rateLimitResumeAt  time.Time // when to next attempt OAuth refresh
+
+	// isClaudeCodeRunning checks if Claude Code is executing. If nil, uses the
+	// package-level IsClaudeCodeRunning. Override in tests to control behavior.
+	isClaudeCodeRunning func() bool
+
+	// Statusline bridge: reads Anthropic rate limits from Claude Code's statusline
+	// output file, avoiding the rate-limited usage API entirely.
+	statuslinePath      string        // path to statusline JSON file
+	statuslineStaleness time.Duration // max age before falling back to API
+
+	// Hybrid polling: in auto mode, do a full API poll every N cycles to get
+	// supplementary quotas (seven_day_sonnet, extra_usage, etc.) that the
+	// statusline doesn't provide. 0 = disabled.
+	apiPollCycleInterval int // API poll every N cycles (default: 10)
+	pollCycleCount       int // current cycle counter
 }
 
 // SetPollingCheck sets a function that is called before each poll.
@@ -99,6 +136,23 @@ func (a *AnthropicAgent) SetCredentialsRefresh(fn CredentialsRefreshFunc) {
 	a.credsRefresh = fn
 }
 
+// EnableStatuslineBridge activates the statusline file bridge for zero-429
+// Anthropic monitoring. When enabled, the agent checks a shared file written
+// by Claude Code's statusline before falling back to the OAuth usage API.
+// Must be called explicitly - not enabled by default to avoid test interference.
+func (a *AnthropicAgent) EnableStatuslineBridge() {
+	a.statuslinePath = StatuslineDataPath()
+	a.statuslineStaleness = statuslineStalenessDefault
+	a.apiPollCycleInterval = 10 // default: full API poll every 10 cycles
+}
+
+// SetAPIPollCycleInterval sets how often (in cycles) a full API poll is done
+// alongside statusline data to get supplementary quotas like seven_day_sonnet.
+// 0 disables periodic API polling. Default is 10 (every 10th cycle).
+func (a *AnthropicAgent) SetAPIPollCycleInterval(n int) {
+	a.apiPollCycleInterval = n
+}
+
 // Run starts the Anthropic agent's polling loop. It polls immediately,
 // then continues at the configured interval until the context is cancelled.
 func (a *AnthropicAgent) Run(ctx context.Context) error {
@@ -123,6 +177,10 @@ func (a *AnthropicAgent) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
+			// Periodic statusline bridge health check (only when bridge is enabled)
+			if a.statuslinePath != "" {
+				EnsureStatuslineBridge(a.logger)
+			}
 			a.poll(ctx)
 		case <-ctx.Done():
 			return nil
@@ -154,7 +212,20 @@ func rateLimitBackoff(failCount int) time.Duration {
 
 // proactiveRefresh attempts to refresh the OAuth token before it expires.
 // Respects rate limit backoff to avoid burning refresh tokens.
+// Skips proactive refresh if Claude Code is running to avoid competing for the
+// same refresh token (onWatch refreshes would invalidate Claude Code's pending
+// refresh and cause re-authentication).
 func (a *AnthropicAgent) proactiveRefresh(ctx context.Context, creds *api.AnthropicCredentials) {
+	// Skip if Claude Code is running - avoid competing for the same refresh token.
+	// onWatch refreshing burns Claude Code's scheduled refresh, causing invalid_grant.
+	checkFn := IsClaudeCodeRunning // package-level default
+	if a.isClaudeCodeRunning != nil {
+		checkFn = a.isClaudeCodeRunning
+	}
+	if checkFn() {
+		return
+	}
+
 	// Skip if in rate limit backoff
 	if a.rateLimitPaused && time.Now().Before(a.rateLimitResumeAt) {
 		a.logger.Debug("Skipping proactive OAuth refresh - in rate limit backoff",
@@ -169,12 +240,21 @@ func (a *AnthropicAgent) proactiveRefresh(ctx context.Context, creds *api.Anthro
 	if err != nil {
 		if errors.Is(err, api.ErrOAuthRateLimited) {
 			a.rateLimitFailCount++
-			backoff := rateLimitBackoff(a.rateLimitFailCount)
-			a.rateLimitPaused = true
-			a.rateLimitResumeAt = time.Now().Add(backoff)
-			a.logger.Warn("Proactive OAuth refresh rate limited - backing off",
-				"fail_count", a.rateLimitFailCount,
-				"backoff", backoff)
+			backoff := api.RetryAfter(err)
+			if backoff > 0 {
+				a.rateLimitPaused = true
+				a.rateLimitResumeAt = time.Now().Add(backoff)
+				a.logger.Warn("Proactive OAuth refresh rate limited - using server Retry-After",
+					"fail_count", a.rateLimitFailCount,
+					"retry_after", backoff)
+			} else {
+				backoff = rateLimitBackoff(a.rateLimitFailCount)
+				a.rateLimitPaused = true
+				a.rateLimitResumeAt = time.Now().Add(backoff)
+				a.logger.Warn("Proactive OAuth refresh rate limited - backing off",
+					"fail_count", a.rateLimitFailCount,
+					"backoff", backoff)
+			}
 		} else if errors.Is(err, api.ErrOAuthInvalidGrant) {
 			a.authPaused = true
 			a.authFailCount = maxAuthFailures
@@ -218,7 +298,49 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 		return // polling disabled for this provider
 	}
 
-	// Proactive OAuth refresh: check if token expires soon and refresh via OAuth API
+	// Statusline bridge: try to read rate limit data from Claude Code's statusline
+	// output file. If fresh and valid, use it and skip the rate-limited OAuth usage API.
+	// Falls back to API polling if data is stale, missing, corrupt, or out of range.
+	if a.statuslinePath != "" && isStatuslineFresh(a.statuslinePath, a.statuslineStaleness) {
+		rl, err := readStatuslineData(a.statuslinePath)
+		if err != nil {
+			a.logger.Info("Statusline read error, falling back to API polling", "error", err)
+		} else if !isValidStatuslineData(rl) {
+			a.logger.Warn("Statusline data invalid, falling back to API polling")
+		} else {
+			now := time.Now().UTC()
+			snapshot := statuslineToSnapshot(rl, now)
+			if _, err := a.store.InsertAnthropicSnapshot(snapshot); err != nil {
+				a.logger.Error("Failed to insert statusline snapshot", "error", err)
+				return // don't fall through to API polling on DB error
+			}
+			if a.tracker != nil {
+				if err := a.tracker.Process(snapshot); err != nil {
+					a.logger.Error("Anthropic tracker processing failed", "error", err)
+				}
+			}
+			a.pollCycleCount++
+			a.logger.Info("Anthropic poll complete",
+				"source", "statusline",
+				"quota_count", len(snapshot.Quotas),
+				"cycle", a.pollCycleCount)
+			if a.rateLimitFailCount > 0 {
+				a.rateLimitFailCount--
+			}
+			// Hybrid: periodically do a full API poll for supplementary quotas
+			// (seven_day_sonnet, extra_usage, etc.) that statusline doesn't provide.
+			if a.apiPollCycleInterval > 0 && a.pollCycleCount%a.apiPollCycleInterval == 0 {
+				a.logger.Info("Hybrid API poll triggered",
+					"cycle", a.pollCycleCount,
+					"interval", a.apiPollCycleInterval)
+				// Fall through to the API polling path below
+			} else {
+				return // Statusline only - skip API polling this cycle
+			}
+		}
+	}
+
+	// Proactive OAuth refresh
 	if a.credsRefresh != nil {
 		if creds := a.credsRefresh(); creds != nil {
 			// Check if token is expiring soon or already expired
@@ -290,35 +412,60 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 						"fail_count", a.rateLimitFailCount)
 					return
 				}
-				// Backoff expired - clear and retry
+				// Backoff expired - decay failCount so retries don't escalate forever.
+				// If retry succeeds, failCount resets to 0. If retry fails,
+				// failCount stays flat (decremented here, incremented below).
+				if a.rateLimitFailCount > 0 {
+					a.rateLimitFailCount--
+				}
 				a.rateLimitPaused = false
-				a.logger.Info("OAuth rate limit backoff expired, retrying refresh")
+				a.logger.Info("OAuth rate limit backoff expired, retrying refresh",
+					"fail_count", a.rateLimitFailCount)
 			}
 
-			// Try to refresh token to get fresh rate limit window
+			// Try to refresh token to get fresh rate limit window.
+			// Skip if Claude Code is running - refreshing burns CC's token.
+			checkFn := IsClaudeCodeRunning
+			if a.isClaudeCodeRunning != nil {
+				checkFn = a.isClaudeCodeRunning
+			}
+			if checkFn() {
+				a.logger.Debug("Claude Code running, skipping 429 bypass refresh")
+				return
+			}
 			if a.credsRefresh != nil {
 				if creds := a.credsRefresh(); creds != nil && creds.RefreshToken != "" {
 					newTokens, refreshErr := api.RefreshAnthropicToken(ctx, creds.RefreshToken)
 					if refreshErr != nil {
 						// Classify the OAuth refresh failure
 						if errors.Is(refreshErr, api.ErrOAuthRateLimited) {
-							// OAuth endpoint itself is rate limited - apply backoff
+							// OAuth endpoint itself is rate limited - apply backoff.
+							// Prefer server-provided Retry-After header if available.
 							a.rateLimitFailCount++
-							backoff := rateLimitBackoff(a.rateLimitFailCount)
-							a.rateLimitResumeAt = time.Now().Add(backoff)
-
-							if a.rateLimitFailCount >= maxRateLimitFailures {
+							backoff := api.RetryAfter(refreshErr)
+							if backoff > 0 {
 								a.rateLimitPaused = true
-								a.logger.Error("OAuth refresh rate limited - entering extended backoff",
+								a.rateLimitResumeAt = time.Now().Add(backoff)
+								a.logger.Warn("OAuth refresh rate limited - using server Retry-After",
 									"fail_count", a.rateLimitFailCount,
-									"backoff", backoff,
+									"retry_after", backoff,
 									"resume_at", a.rateLimitResumeAt)
 							} else {
-								a.rateLimitPaused = true
-								a.logger.Warn("OAuth refresh rate limited - backing off",
-									"fail_count", a.rateLimitFailCount,
-									"backoff", backoff,
-									"resume_at", a.rateLimitResumeAt)
+								backoff = rateLimitBackoff(a.rateLimitFailCount)
+								a.rateLimitResumeAt = time.Now().Add(backoff)
+								if a.rateLimitFailCount >= maxRateLimitFailures {
+									a.rateLimitPaused = true
+									a.logger.Error("OAuth refresh rate limited - entering extended backoff",
+										"fail_count", a.rateLimitFailCount,
+										"backoff", backoff,
+										"resume_at", a.rateLimitResumeAt)
+								} else {
+									a.rateLimitPaused = true
+									a.logger.Warn("OAuth refresh rate limited - backing off",
+										"fail_count", a.rateLimitFailCount,
+										"backoff", backoff,
+										"resume_at", a.rateLimitResumeAt)
+								}
 							}
 						} else if errors.Is(refreshErr, api.ErrOAuthInvalidGrant) {
 							// Terminal: refresh token revoked/expired - pause like auth errors
@@ -438,8 +585,11 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 			return
 		}
 	} else {
-		// Success - reset auth failure count
+		// Success - reset auth failure count and decay rate limit backoff
 		a.authFailCount = 0
+		if a.rateLimitFailCount > 0 {
+			a.rateLimitFailCount--
+		}
 	}
 
 processResponse:
@@ -498,6 +648,7 @@ processResponse:
 	}
 
 	a.logger.Info("Anthropic poll complete",
+		"source", "api",
 		"quota_count", quotaCount,
 		"max_utilization", maxUtil,
 	)

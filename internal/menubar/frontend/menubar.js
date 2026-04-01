@@ -67,6 +67,7 @@
     const length = circumference(radius);
     const percent = Math.max(0, Math.min(100, Number(quota.percent || 0)));
     const dashOffset = length - (length * percent / 100);
+    const ageTag = quota.source ? `<div class="meter-age">${escapeHTML(quotaAgeLabel(quota))}</div>` : '';
     return `
       <div class="quota-meter status-${severityClass(quota.status)}">
         <div class="meter-shell">
@@ -77,6 +78,7 @@
           <div class="meter-value">${escapeHTML(quota.display_value || `${percent.toFixed(0)}%`)}</div>
         </div>
         <div class="meter-label">${escapeHTML(quota.label)}</div>
+        ${ageTag}
       </div>
     `;
   }
@@ -104,15 +106,76 @@
     `;
   }
 
+  function quotaAgeLabel(quota) {
+    const age = quota.age_seconds || 0;
+    const src = quota.source === 'statusline' ? 'Live' : 'API';
+    if (age < 60) return `${src}`;
+    if (age < 3600) return `${src} ${Math.floor(age / 60)}m ago`;
+    if (age < 86400) return `${src} ${Math.floor(age / 3600)}h ago`;
+    return `${src} ${Math.floor(age / 86400)}d ago`;
+  }
+
+  function staleMeterMarkup(quota) {
+    const percent = Math.max(0, Math.min(100, Number(quota.percent || 0)));
+    const ring = severityClass(quota.status);
+    return `
+      <div class="stale-meter status-${ring}">
+        <div class="stale-meter-ring">
+          <svg viewBox="0 0 36 36" aria-hidden="true">
+            <circle class="stale-ring-track" cx="18" cy="18" r="14"></circle>
+            <circle class="stale-ring-fill" cx="18" cy="18" r="14"
+              stroke-dasharray="${2 * Math.PI * 14}"
+              stroke-dashoffset="${2 * Math.PI * 14 * (1 - percent / 100)}"></circle>
+          </svg>
+          <span class="stale-meter-pct">${percent.toFixed(0)}%</span>
+        </div>
+        <div class="stale-meter-info">
+          <span class="stale-meter-name">${escapeHTML(quota.label)}</span>
+          <span class="stale-meter-age">${escapeHTML(quotaAgeLabel(quota))}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function staleCardMarkup(staleQuotas) {
+    if (!staleQuotas.length) return '';
+    // Find the most recent age among supplementary quotas for the header
+    const maxAge = Math.max(...staleQuotas.map(q => q.age_seconds || 0));
+    let ageHint = 'from last API poll';
+    if (maxAge > 0 && maxAge < 3600) ageHint = `updated ${Math.floor(maxAge / 60)}m ago`;
+    else if (maxAge >= 3600) ageHint = `updated ${Math.floor(maxAge / 3600)}h ago`;
+    return `
+      <div class="stale-card">
+        <div class="stale-card-header">
+          <span class="stale-card-icon">\uD83D\uDD0D</span>
+          <span class="stale-card-title">Supplementary</span>
+          <span class="stale-card-hint">${escapeHTML(ageHint)}</span>
+        </div>
+        <div class="stale-card-meters">${staleQuotas.map(staleMeterMarkup).join('')}</div>
+      </div>
+    `;
+  }
+
   function providerCardMarkup(provider, view) {
-    const quotas = (provider.quotas || []).map(meterMarkup).join('');
+    const allQuotas = provider.quotas || [];
+    // Split by source: statusline (live) quotas as primary meters,
+    // API-sourced quotas in a separate supplementary card.
+    // For non-Anthropic providers (no source field), all quotas are primary.
+    const hasSourceInfo = allQuotas.some(q => q.source);
+    const freshQuotas = hasSourceInfo
+      ? allQuotas.filter(q => q.source !== 'api')
+      : allQuotas;
+    const staleQuotas = hasSourceInfo
+      ? allQuotas.filter(q => q.source === 'api')
+      : [];
+    const freshMarkup = freshQuotas.map(meterMarkup).join('');
     const showTrends = view === 'detailed';
     const trends = showTrends ? (provider.trends || []).map(trendMarkup).join('') : '';
     const percent = Number(provider.highest_percent || 0).toFixed(0);
     const meta = [
       provider.subtitle,
       provider.updated_at ? `Updated ${provider.updated_at}` : '',
-    ].filter(Boolean).join(' · ');
+    ].filter(Boolean).join(' \u00B7 ');
     return `
       <details class="provider-card status-${severityClass(provider.status)}" data-view="${escapeHTML(view)}" ${view === 'detailed' ? 'open' : ''}>
         <summary>
@@ -126,7 +189,8 @@
           <div class="provider-percent">${percent}%</div>
         </summary>
         <div class="provider-body">
-          <div class="provider-quotas">${quotas || '<div class="provider-empty">No quota data available yet.</div>'}</div>
+          <div class="provider-quotas">${freshMarkup || '<div class="provider-empty">No quota data available yet.</div>'}</div>
+          ${staleCardMarkup(staleQuotas)}
           ${trends ? `<div class="provider-trends">${trends}</div>` : ''}
         </div>
       </details>

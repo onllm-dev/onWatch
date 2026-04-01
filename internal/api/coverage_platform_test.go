@@ -204,6 +204,12 @@ func TestDarwinAnthropicKeychainPaths(t *testing.T) {
 		t.Skip("darwin-specific keychain detection behavior")
 	}
 
+	// This test uses mock binaries (SECURITY_FIND_OUTPUT env var) to simulate
+	// keychain reads/writes. Safe to disable test mode since the real `security`
+	// binary is replaced with our mock via PATH prepend.
+	SetTestMode(false)
+	t.Cleanup(func() { SetTestMode(true) })
+
 	binDir := prependPathDir(t)
 	capturePath := filepath.Join(t.TempDir(), "security-add.json")
 	home := t.TempDir()

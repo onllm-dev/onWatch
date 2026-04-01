@@ -156,3 +156,44 @@ func ParseIDTokenExpiry(idToken string) time.Time {
 
 	return time.Unix(claims.Exp, 0)
 }
+
+// ParseIDTokenUserID extracts chatgpt_user_id from a JWT id_token payload.
+// OpenAI places this under the nested "https://api.openai.com/auth" claim object.
+// Returns empty string if parsing fails or claim is missing.
+func ParseIDTokenUserID(idToken string) string {
+	if idToken == "" {
+		return ""
+	}
+
+	parts := strings.Split(idToken, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		payload, err = base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			return ""
+		}
+	}
+
+	var claims map[string]interface{}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+
+	authClaims, ok := claims["https://api.openai.com/auth"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	if userID, ok := authClaims["chatgpt_user_id"].(string); ok {
+		return strings.TrimSpace(userID)
+	}
+	if userID, ok := authClaims["user_id"].(string); ok {
+		return strings.TrimSpace(userID)
+	}
+
+	return ""
+}

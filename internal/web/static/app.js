@@ -503,6 +503,16 @@ const quotaNames = {
   coding_plan: 'MiniMax Coding Plan'
 };
 
+// freshnessLabel returns a human-readable label for per-quota data freshness.
+function freshnessLabel(quota) {
+  const age = quota.ageSeconds || 0;
+  const src = quota.source === 'statusline' ? 'Live' : 'API';
+  if (age < 60) return `${src} - just now`;
+  if (age < 3600) return `${src} - ${Math.floor(age / 60)}m ago`;
+  if (age < 86400) return `${src} - ${Math.floor(age / 3600)}h ago`;
+  return `${src} - ${Math.floor(age / 86400)}d ago`;
+}
+
 // Anthropic display names (mirrors backend anthropicDisplayNames)
 const anthropicDisplayNames = {
   five_hour: '5-Hour Limit',
@@ -932,7 +942,7 @@ function renderAnthropicQuotaCards(quotas, containerId) {
     const statusId = `status-anth-${q.name}`;
     const resetId = `reset-anth-${q.name}`;
 
-    return `<article class="quota-card anthropic-card" data-quota="${q.name}" data-provider="anthropic" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+    return `<article class="quota-card anthropic-card${q.isStale ? ' stale-card' : ''}" data-quota="${q.name}" data-provider="anthropic" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
@@ -949,6 +959,7 @@ function renderAnthropicQuotaCards(quotas, containerId) {
           <div class="progress-fill" id="${progressId}" style="width: ${utilPct}%" data-status="${status}"></div>
         </div>
       </div>
+      ${q.ageSeconds != null ? `<div class="card-freshness${q.isStale ? ' stale' : ''}">${freshnessLabel(q)}</div>` : ''}
       <footer class="card-footer">
         <span class="status-badge" id="${statusId}" data-status="${status}">
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
@@ -986,7 +997,10 @@ function updateAnthropicCard(quota) {
     timeUntilReset: quota.timeUntilReset,
     timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
     name: quota.name,
-    displayName: quota.displayName
+    displayName: quota.displayName,
+    source: quota.source || '',
+    ageSeconds: quota.ageSeconds || 0,
+    isStale: quota.isStale || false
   };
 
   const progressEl = document.getElementById(`progress-anth-${quota.name}`);
@@ -1045,6 +1059,11 @@ function openAnthropicModal(quotaName, providerOverride) {
 
   const statusCfg = statusConfig[data.status] || statusConfig.healthy;
   const timeLeft = data.timeUntilResetSeconds > 0 ? formatDuration(data.timeUntilResetSeconds) : 'N/A';
+  const sourceKpi = data.source ? `
+      <div class="modal-kpi">
+        <div class="modal-kpi-value">${data.source === 'statusline' ? '\u{1F7E2} Live' : '\u{1F310} API'}</div>
+        <div class="modal-kpi-label">Source${data.ageSeconds ? ' \u00B7 ' + freshnessLabel({source: data.source, ageSeconds: data.ageSeconds}) : ''}</div>
+      </div>` : '';
 
   bodyEl.innerHTML = `
     <div class="modal-kpi-row">
@@ -1060,6 +1079,7 @@ function openAnthropicModal(quotaName, providerOverride) {
         <div class="modal-kpi-value">${timeLeft}</div>
         <div class="modal-kpi-label">Until Reset</div>
       </div>
+      ${sourceKpi}
     </div>
     <h3 class="modal-section-title">Usage History</h3>
     <div class="modal-chart-container">
@@ -3716,7 +3736,7 @@ async function fetchHistory(range) {
       const datasets = [];
       sortedKeys.forEach((key) => {
         const color = anthropicChartColorMap[key] || anthropicChartColorFallback[fallbackIdx++ % anthropicChartColorFallback.length];
-        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] != null ? d[key] : null }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
         const mainDataset = {
           label: anthropicDisplayNames[key] || key,
@@ -6881,6 +6901,15 @@ async function loadSettings() {
       }
     }
 
+    // Anthropic provider settings
+    if (data.provider_settings && data.provider_settings.anthropic) {
+      const a = data.provider_settings.anthropic;
+      setVal('anthropic-source', a.source || 'auto');
+      setVal('anthropic-api-poll-interval', a.api_poll_cycle_interval || 10);
+      setVal('anthropic-staleness', a.staleness_minutes || 5);
+      setVal('anthropic-cc-detection', a.cc_detection || 'on');
+    }
+
     // Provider visibility + dynamic provider status
     await populateProviderToggles(data.provider_visibility || {});
     await populateMenubarSettings(data.menubar || {});
@@ -7491,6 +7520,19 @@ function gatherSettings() {
   const tzSelect = document.getElementById('settings-timezone');
   if (tzSelect) {
     settings.timezone = tzSelect.value;
+  }
+
+  // Anthropic provider settings
+  const anthropicSource = document.getElementById('anthropic-source');
+  if (anthropicSource) {
+    settings.provider_settings = {
+      anthropic: {
+        source: anthropicSource.value || 'auto',
+        api_poll_cycle_interval: parseInt(document.getElementById('anthropic-api-poll-interval')?.value, 10) || 10,
+        staleness_minutes: parseInt(document.getElementById('anthropic-staleness')?.value, 10) || 5,
+        cc_detection: document.getElementById('anthropic-cc-detection')?.value || 'on',
+      }
+    };
   }
 
   const menubarShell = document.getElementById('menubar-settings-shell');

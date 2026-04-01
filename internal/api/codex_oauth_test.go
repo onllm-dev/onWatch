@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -186,5 +187,43 @@ func TestParseIDTokenExpiry_NoExpClaim(t *testing.T) {
 	expiry := ParseIDTokenExpiry(idToken)
 	if !expiry.IsZero() {
 		t.Errorf("expected zero time for token without exp, got %v", expiry)
+	}
+}
+
+func TestParseIDTokenUserID_ValidJWT(t *testing.T) {
+	header := "eyJhbGciOiJub25lIn0"
+	payloadJSON := `{"https://api.openai.com/auth":{"chatgpt_user_id":"user-A49xYQ0FVIVFBd9E3FIkDYBh"}}`
+	payload := base64.RawURLEncoding.EncodeToString([]byte(payloadJSON))
+	idToken := header + "." + payload + "."
+
+	userID := ParseIDTokenUserID(idToken)
+	if userID != "user-A49xYQ0FVIVFBd9E3FIkDYBh" {
+		t.Fatalf("ParseIDTokenUserID() = %q, want user-A49xYQ0FVIVFBd9E3FIkDYBh", userID)
+	}
+}
+
+func TestParseIDTokenUserID_MissingClaim(t *testing.T) {
+	header := "eyJhbGciOiJub25lIn0"
+	payloadJSON := `{"https://api.openai.com/auth":{"chatgpt_account_id":"acc-123"}}`
+	payload := base64.RawURLEncoding.EncodeToString([]byte(payloadJSON))
+	idToken := header + "." + payload + "."
+
+	userID := ParseIDTokenUserID(idToken)
+	if userID != "" {
+		t.Fatalf("ParseIDTokenUserID() = %q, want empty", userID)
+	}
+}
+
+func TestParseIDTokenUserID_InvalidJWT(t *testing.T) {
+	userID := ParseIDTokenUserID("not.a.valid.jwt.token")
+	if userID != "" {
+		t.Fatalf("ParseIDTokenUserID() = %q, want empty", userID)
+	}
+}
+
+func TestParseIDTokenUserID_EmptyToken(t *testing.T) {
+	userID := ParseIDTokenUserID("")
+	if userID != "" {
+		t.Fatalf("ParseIDTokenUserID() = %q, want empty", userID)
 	}
 }

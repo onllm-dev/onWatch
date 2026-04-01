@@ -4091,6 +4091,8 @@ func (h *Handler) currentAnthropic(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildAnthropicCurrent builds the Anthropic current quota response map.
+// Merges data from the latest snapshot (statusline or API) with per-quota
+// freshness information so the UI can show all quotas with age indicators.
 func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 	now := time.Now().UTC()
 	response := map[string]interface{}{
@@ -4105,16 +4107,80 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 		return response
 	}
 
-	latest, err := h.store.QueryLatestAnthropic()
+	// Get per-quota latest values (merges statusline + API snapshots).
+	// This ensures we show Sonnet/extra_usage from older API polls alongside
+	// fresh five_hour/seven_day from statusline.
+	latestPerQuota, err := h.store.QueryAnthropicLatestPerQuota()
 	if err != nil {
-		h.logger.Error("failed to query latest Anthropic snapshot", "error", err)
+		h.logger.Error("failed to query latest per-quota Anthropic data", "error", err)
+		// Fall back to single-snapshot approach
+		return h.buildAnthropicCurrentFallback(response)
+	}
+
+	if len(latestPerQuota) == 0 {
 		return response
 	}
 
-	if latest == nil {
+	// Find the most recent capturedAt across all quotas
+	var latestCaptured time.Time
+	for _, q := range latestPerQuota {
+		if q.CapturedAt.After(latestCaptured) {
+			latestCaptured = q.CapturedAt
+		}
+	}
+	response["capturedAt"] = latestCaptured.Format(time.RFC3339)
+
+	// Sort by display order
+	sort.SliceStable(latestPerQuota, func(i, j int) bool {
+		left := anthropicQuotaDisplayOrder(latestPerQuota[i].Name)
+		right := anthropicQuotaDisplayOrder(latestPerQuota[j].Name)
+		if left != right {
+			return left < right
+		}
+		return latestPerQuota[i].Name < latestPerQuota[j].Name
+	})
+
+	var quotas []map[string]interface{}
+	for _, q := range latestPerQuota {
+		age := now.Sub(q.CapturedAt)
+		qMap := map[string]interface{}{
+			"name":          q.Name,
+			"displayName":   api.AnthropicDisplayName(q.Name),
+			"utilization":   q.Utilization,
+			"status":        anthropicUtilStatus(q.Utilization),
+			"source":        q.Source,
+			"lastUpdatedAt": q.CapturedAt.Format(time.RFC3339),
+			"ageSeconds":    int64(age.Seconds()),
+			"isStale":       age > 30*time.Minute,
+		}
+		if q.ResetsAt != nil {
+			timeUntilReset := time.Until(*q.ResetsAt)
+			qMap["resetsAt"] = q.ResetsAt.Format(time.RFC3339)
+			qMap["timeUntilReset"] = formatDuration(timeUntilReset)
+			qMap["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+		}
+		// Enrich with tracker data
+		if h.anthropicTracker != nil {
+			if summary, err := h.anthropicTracker.UsageSummary(q.Name); err == nil && summary != nil {
+				qMap["currentRate"] = summary.CurrentRate
+				qMap["projectedUtil"] = summary.ProjectedUtil
+			}
+		}
+		quotas = append(quotas, qMap)
+	}
+	response["quotas"] = quotas
+	return response
+}
+
+// buildAnthropicCurrentFallback uses the single latest snapshot when per-quota
+// merge fails. This preserves the original behavior as a safety net.
+func (h *Handler) buildAnthropicCurrentFallback(response map[string]interface{}) map[string]interface{} {
+	latest, err := h.store.QueryLatestAnthropic()
+	if err != nil || latest == nil {
 		return response
 	}
 
+	now := time.Now().UTC()
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 	orderedQuotas := make([]api.AnthropicQuota, len(latest.Quotas))
 	copy(orderedQuotas, latest.Quotas)
@@ -4127,12 +4193,17 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 		return orderedQuotas[i].Name < orderedQuotas[j].Name
 	})
 	var quotas []map[string]interface{}
+	age := now.Sub(latest.CapturedAt)
 	for _, q := range orderedQuotas {
 		qMap := map[string]interface{}{
-			"name":        q.Name,
-			"displayName": api.AnthropicDisplayName(q.Name),
-			"utilization": q.Utilization,
-			"status":      anthropicUtilStatus(q.Utilization),
+			"name":          q.Name,
+			"displayName":   api.AnthropicDisplayName(q.Name),
+			"utilization":   q.Utilization,
+			"status":        anthropicUtilStatus(q.Utilization),
+			"source":        "api",
+			"lastUpdatedAt": latest.CapturedAt.Format(time.RFC3339),
+			"ageSeconds":    int64(age.Seconds()),
+			"isStale":       age > 30*time.Minute,
 		}
 		if q.ResetsAt != nil {
 			timeUntilReset := time.Until(*q.ResetsAt)
@@ -4140,7 +4211,6 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 			qMap["timeUntilReset"] = formatDuration(timeUntilReset)
 			qMap["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
-		// Enrich with tracker data
 		if h.anthropicTracker != nil {
 			if summary, err := h.anthropicTracker.UsageSummary(q.Name); err == nil && summary != nil {
 				qMap["currentRate"] = summary.CurrentRate
@@ -4206,8 +4276,15 @@ func (h *Handler) historyAnthropic(w http.ResponseWriter, r *http.Request) {
 	}
 	step := downsampleStep(len(snapshots), maxChartPoints)
 	last := len(snapshots) - 1
+	// Track last known value for each quota so statusline snapshots (which only
+	// have five_hour + seven_day) don't chart supplementary quotas as 0.
+	lastKnown := make(map[string]float64)
 	response := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
 	for i, snap := range snapshots {
+		// Update lastKnown for all quotas in this snapshot
+		for _, q := range snap.Quotas {
+			lastKnown[q.Name] = q.Utilization
+		}
 		if step > 1 && i != 0 && i != last && i%step != 0 {
 			continue
 		}
@@ -4216,6 +4293,22 @@ func (h *Handler) historyAnthropic(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, q := range snap.Quotas {
 			entry[q.Name] = q.Utilization
+		}
+		// For quotas not in this snapshot, carry forward last known value.
+		// This prevents statusline-only snapshots from charting Sonnet/extra as 0.
+		isStatusline := strings.Contains(snap.RawJSON, `"_source":"statusline"`)
+		if isStatusline {
+			for name, val := range lastKnown {
+				if _, exists := entry[name]; !exists {
+					entry[name] = val
+				}
+			}
+		}
+		// Tag source
+		if isStatusline {
+			entry["_source"] = "statusline"
+		} else {
+			entry["_source"] = "api"
 		}
 		response = append(response, entry)
 	}
@@ -4924,6 +5017,15 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 				result["provider_visibility"] = vis
 			}
 		}
+
+		// Provider-specific settings (overrides .env)
+		provJSON, _ := h.store.GetSetting("provider_settings")
+		if provJSON != "" {
+			var prov map[string]interface{}
+			if json.Unmarshal([]byte(provJSON), &prov) == nil {
+				result["provider_settings"] = prov
+			}
+		}
 	}
 
 	respondJSON(w, http.StatusOK, result)
@@ -5196,6 +5298,31 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		h.triggerMenubarRefresh()
 		result["menubar"] = normalized
+	}
+
+	// Handle provider-specific settings
+	if raw, ok := body["provider_settings"]; ok {
+		var provSettings map[string]interface{}
+		if err := json.Unmarshal(raw, &provSettings); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid provider_settings value")
+			return
+		}
+		// Merge with existing settings (preserve other providers)
+		existing := make(map[string]interface{})
+		if existingJSON, _ := h.store.GetSetting("provider_settings"); existingJSON != "" {
+			_ = json.Unmarshal([]byte(existingJSON), &existing)
+		}
+		for k, v := range provSettings {
+			existing[k] = v
+		}
+		merged, _ := json.Marshal(existing)
+		if err := h.store.SetSetting("provider_settings", string(merged)); err != nil {
+			h.logger.Error("failed to save provider settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save provider settings")
+			return
+		}
+		h.logger.Info("Provider settings updated", "providers", provSettings)
+		result["provider_settings"] = existing
 	}
 
 	respondJSON(w, http.StatusOK, result)

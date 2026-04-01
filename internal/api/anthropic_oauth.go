@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -36,7 +38,50 @@ func SetOAuthURLForTest(url string) { anthropicOAuthTokenURL = url }
 var ErrOAuthRefreshFailed = errors.New("oauth: token refresh failed")
 
 // ErrOAuthRateLimited indicates the OAuth endpoint returned 429.
+// The backoff package provides RetryAfter() to get the Retry-After duration.
 var ErrOAuthRateLimited = errors.New("oauth: rate limited (429)")
+
+// oauthRateLimitedError wraps ErrOAuthRateLimited with a Retry-After duration.
+// When the server sends a Retry-After header, we use it directly instead of guessing.
+type oauthRateLimitedError struct {
+	RetryAfter time.Duration
+}
+
+func (e *oauthRateLimitedError) Error() string   { return ErrOAuthRateLimited.Error() }
+func (e *oauthRateLimitedError) Is(target error) bool { return errors.Is(target, ErrOAuthRateLimited) }
+
+// RetryAfter returns the Retry-After duration, or 0 if not available.
+func RetryAfter(err error) time.Duration {
+	var rle *oauthRateLimitedError
+	if errors.As(err, &rle) {
+		return rle.RetryAfter
+	}
+	return 0
+}
+
+// parseRetryAfterHeader parses a Retry-After header value.
+// Supports: seconds (integer), HTTP-date (RFC 7231), and relative seconds.
+func parseRetryAfterHeader(value string) time.Duration {
+	if value == "" {
+		return 0
+	}
+	value = strings.TrimSpace(value)
+
+	// Try parsing as seconds
+	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
+		return time.Duration(seconds) * time.Second
+	}
+
+	// Try parsing as HTTP-date (RFC 7231)
+	if t, err := time.Parse(time.RFC1123, value); err == nil {
+		delay := time.Until(t)
+		if delay > 0 {
+			return delay
+		}
+	}
+
+	return 0
+}
 
 // ErrOAuthInvalidGrant indicates the refresh token is revoked or expired (terminal).
 var ErrOAuthInvalidGrant = errors.New("oauth: invalid_grant")
@@ -105,8 +150,12 @@ func RefreshAnthropicToken(ctx context.Context, refreshToken string) (*OAuthToke
 
 	// Handle error responses
 	if resp.StatusCode != http.StatusOK {
-		// 429 from the OAuth endpoint itself
+		// 429 from the OAuth endpoint itself - check for Retry-After header
 		if resp.StatusCode == http.StatusTooManyRequests {
+			backoff := parseRetryAfterHeader(resp.Header.Get("Retry-After"))
+			if backoff > 0 {
+				return nil, &oauthRateLimitedError{RetryAfter: backoff}
+			}
 			return nil, ErrOAuthRateLimited
 		}
 
