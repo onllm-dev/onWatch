@@ -583,3 +583,39 @@ If onWatch saves you time, consider buying me a coffee:
 - [Z.ai](https://z.ai) for the API
 - [Chart.js](https://www.chartjs.org/) for charts
 - [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) for pure Go SQLite
+
+---
+
+## Uninstall
+
+**Homebrew (macOS & Linux):**
+```bash
+onwatch stop
+brew uninstall onwatch
+rm -rf ~/.onwatch
+```
+
+**Manual install (macOS):**
+```bash
+onwatch stop
+rm -rf ~/.onwatch
+sed -i '' '/# onWatch/d; /\.onwatch/d' ~/.zshrc ~/.bash_profile 2>/dev/null
+```
+
+**Manual install (Linux):**
+```bash
+onwatch stop
+rm -rf ~/.onwatch
+sed -i '/# onWatch/d; /\.onwatch/d' ~/.zshrc ~/.bashrc ~/.bash_profile 2>/dev/null
+# If using systemd user service:
+systemctl --user stop onwatch && systemctl --user disable onwatch && rm -f ~/.config/systemd/user/onwatch.service && systemctl --user daemon-reload
+# If using systemd system service:
+sudo systemctl stop onwatch && sudo systemctl disable onwatch && sudo rm -f /etc/systemd/system/onwatch.service && sudo systemctl daemon-reload
+```
+
+**Windows (PowerShell):**
+```powershell
+.\onwatch.exe stop
+$p = [Environment]::GetEnvironmentVariable("Path","User"); [Environment]::SetEnvironmentVariable("Path",($p -split ";" | Where-Object {$_ -notlike "*\.onwatch*"}) -join ";","User")
+Remove-Item -Recurse -Force $env:USERPROFILE\.onwatch
+```
