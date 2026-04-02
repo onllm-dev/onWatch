@@ -146,6 +146,7 @@ const State = {
   allProvidersInsights: null,
   allProvidersHistory: null,
   providerVisibility: {},
+  providerSettings: {},
   menubarCapabilities: null,
   menubarProviderOrder: [],
   menubarProviders: [],
@@ -6763,6 +6764,7 @@ async function initSettingsPage() {
   await loadSettings();
   setupSettingsSave();
   setupProviderReload();
+  setupProviderSettingsModal();
   setupSMTPTest();
   setupPushNotifications();
   setupSettingsPassword();
@@ -6901,14 +6903,8 @@ async function loadSettings() {
       }
     }
 
-    // Anthropic provider settings
-    if (data.provider_settings && data.provider_settings.anthropic) {
-      const a = data.provider_settings.anthropic;
-      setVal('anthropic-source', a.source || 'auto');
-      setVal('anthropic-api-poll-interval', a.api_poll_cycle_interval || 10);
-      setVal('anthropic-staleness', a.staleness_minutes || 5);
-      setVal('anthropic-cc-detection', a.cc_detection || 'on');
-    }
+    // Provider settings - store in State for modal use
+    State.providerSettings = data.provider_settings || {};
 
     // Provider visibility + dynamic provider status
     await populateProviderToggles(data.provider_visibility || {});
@@ -6971,6 +6967,80 @@ function populateTimezoneSelect() {
   });
 }
 
+// createCodexProviderSection creates a consolidated Codex card with sub-profiles.
+function createCodexProviderSection(profiles, codexStatus, baseVisibility) {
+  // Single account - render as a regular provider row (same as other providers)
+  if (profiles.length <= 1) {
+    const vis = baseVisibility.codex || {
+      polling: codexStatus ? codexStatus.pollingEnabled !== false : true,
+      dashboard: codexStatus ? codexStatus.dashboardVisible !== false : true
+    };
+    return createProviderToggleRow({
+      key: 'codex',
+      name: 'Codex',
+      desc: codexStatus?.description || 'OpenAI Codex usage tracking',
+      vis,
+      configured: codexStatus ? codexStatus.configured !== false : true,
+      autoDetectable: codexStatus ? !!codexStatus.autoDetectable : true,
+      isPolling: codexStatus ? !!codexStatus.isPolling : profiles.length === 1,
+    });
+  }
+
+  // Multiple accounts - consolidated card with nested sub-profiles
+  const wrapper = document.createElement('div');
+  wrapper.className = 'codex-provider-section';
+
+  const anyPolling = profiles.some(p => !p.deletedAt);
+
+  const headerVis = baseVisibility.codex || {
+    polling: codexStatus ? codexStatus.pollingEnabled !== false : true,
+    dashboard: codexStatus ? codexStatus.dashboardVisible !== false : true
+  };
+
+  // Header row with gear icon (shared settings for all accounts)
+  const headerRow = createProviderToggleRow({
+    key: 'codex',
+    name: 'Codex',
+    desc: `${profiles.length} accounts configured`,
+    vis: headerVis,
+    configured: codexStatus ? codexStatus.configured !== false : true,
+    autoDetectable: codexStatus ? !!codexStatus.autoDetectable : true,
+    isPolling: anyPolling,
+  });
+  wrapper.appendChild(headerRow);
+
+  // Sub-profiles - only telemetry & dashboard toggles, no gear
+  const subProfilesDiv = document.createElement('div');
+  subProfilesDiv.className = 'codex-subprofiles';
+
+  profiles.forEach(profile => {
+    const isDeleted = !!profile.deletedAt;
+    const key = `codex:${profile.id}`;
+    const vis = isDeleted
+      ? { polling: false, dashboard: false }
+      : (baseVisibility[key] || baseVisibility.codex || headerVis);
+
+    const subRow = createProviderToggleRow({
+      key,
+      name: escapeHtml(profile.name),
+      desc: isDeleted
+        ? 'Profile deleted - credentials removed'
+        : `ChatGPT account: ${escapeHtml(profile.name)}`,
+      vis,
+      configured: !isDeleted,
+      autoDetectable: true,
+      isPolling: false,
+      isDeleted,
+    });
+    subRow.classList.add('codex-subprofile-row');
+    subProfilesDiv.appendChild(subRow);
+  });
+
+  wrapper.appendChild(subProfilesDiv);
+
+  return wrapper;
+}
+
 async function populateProviderToggles(visibility) {
   const container = document.getElementById('provider-toggles');
   if (!container) return;
@@ -7027,44 +7097,23 @@ async function populateProviderToggles(visibility) {
       }));
     });
 
-  // Codex rows: per-account when multiple accounts exist, otherwise single row.
-  let renderedCodex = false;
+  // Codex: always ONE card with sub-profiles listed inside
+  let codexSection = null;
   try {
     const res = await authFetch(`${API_BASE}/api/codex/profiles`);
     if (res.ok) {
       const data = await res.json();
       const profiles = Array.isArray(data.profiles) ? data.profiles : [];
-      if (profiles.length > 1) {
-        profiles.forEach((profile) => {
-          const isDeleted = !!profile.deletedAt;
-          const key = `codex:${profile.id}`;
-          const vis = isDeleted
-            ? { polling: false, dashboard: false }
-            : (baseVisibility[key] || baseVisibility.codex || {
-                polling: codexStatus ? codexStatus.pollingEnabled !== false : true,
-                dashboard: codexStatus ? codexStatus.dashboardVisible !== false : true
-              });
-          container.appendChild(createProviderToggleRow({
-            key,
-            name: `Codex - ${escapeHtml(profile.name)}`,
-            desc: isDeleted
-              ? 'Profile deleted - telemetry unavailable (credentials removed)'
-              : `ChatGPT account: ${escapeHtml(profile.name)}`,
-            vis,
-            configured: codexStatus ? codexStatus.configured !== false : true,
-            autoDetectable: codexStatus ? !!codexStatus.autoDetectable : true,
-            isPolling: codexStatus ? !!codexStatus.isPolling : false,
-            isDeleted,
-          }));
-        });
-        renderedCodex = true;
-      }
+      codexSection = createCodexProviderSection(profiles, codexStatus, baseVisibility);
     }
   } catch (e) {
-    // fallback below
+    // fall back to single row below
   }
 
-  if (!renderedCodex) {
+  if (codexSection) {
+    container.appendChild(codexSection);
+  } else {
+    // fallback single row
     const fallbackCodex = codexStatus || {
       key: 'codex',
       name: 'Codex',
@@ -7325,6 +7374,18 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
     ? '<span class="status-badge deleted" style="background:var(--md-error,#b3261e);color:#fff;padding:2px 8px;border-radius:12px;font-size:0.7rem;margin-left:8px">Deleted</span>'
     : providerStatusBadge(configured, autoDetectable, isPolling);
   const telemetryDisabled = isDeleted ? 'disabled title="Telemetry unavailable - profile deleted"' : '';
+  // Determine base provider key for settings (codex:123 → codex)
+  // Gear icon only on top-level providers, not sub-profile rows (codex:xxx)
+  const isSubProfile = key.includes(':');
+  const baseKey = isSubProfile ? key.split(':')[0] : key;
+  const hasSettings = !isSubProfile && providerSettingsConfig[baseKey] != null;
+  const gearHTML = hasSettings ? `
+      <button class="provider-settings-btn" data-provider-key="${baseKey}" title="Configure ${name}" aria-label="Configure ${name}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>` : '';
   row.innerHTML = `
     <div class="settings-toggle-info">
       <div class="settings-toggle-label">${name} ${badge}</div>
@@ -7347,6 +7408,7 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
           <span class="settings-toggle-track"></span>
         </label>
       </div>
+      ${gearHTML}
     </div>
   `;
 
@@ -7394,7 +7456,328 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
     });
   });
 
+  // Gear icon click handler - open provider settings modal
+  const gearBtn = row.querySelector('.provider-settings-btn');
+  if (gearBtn) {
+    gearBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await openProviderSettingsModal(gearBtn.dataset.providerKey);
+    });
+  }
+
   return row;
+}
+
+// ── Provider Settings Modal ──
+
+// Configuration for each provider's settings fields.
+// Each entry defines the form fields shown in the modal.
+const providerSettingsConfig = {
+  anthropic: {
+    title: 'Anthropic',
+    desc: 'Configure how onWatch collects Anthropic usage data. Changes take effect after daemon restart.',
+    fields: [
+      { id: 'source', label: 'Data Source', type: 'select', options: [
+        { value: 'auto', text: 'Auto (statusline + API fallback)' },
+        { value: 'statusline', text: 'Statusline Only (zero API calls)' },
+        { value: 'api', text: 'API Only (no statusline)' },
+      ], default: 'auto', hint: 'Auto uses Claude Code\'s statusline for live data and polls the API every N cycles for supplementary quotas.' },
+      { id: 'api_poll_cycle_interval', label: 'API Poll Cycle Interval', type: 'number', min: 1, max: 100, default: 10, hint: 'Full API poll every N cycles (e.g., 10 = every 10th poll). Only applies in Auto mode.' },
+      { id: 'staleness_minutes', label: 'Statusline Staleness (minutes)', type: 'number', min: 1, max: 60, default: 5, hint: 'How old the statusline data can be before falling back to API polling.' },
+      { id: 'cc_detection', label: 'Claude Code Detection', type: 'select', options: [
+        { value: 'on', text: 'On (skip OAuth refresh when CC is running)' },
+        { value: 'off', text: 'Off (always attempt OAuth refresh)' },
+      ], default: 'on', hint: 'When enabled, onWatch skips OAuth token refresh while Claude Code is running to prevent login disruption.' },
+    ],
+  },
+  codex: {
+    title: 'Codex',
+    desc: 'Configure Codex profile discovery and display. Display changes take effect immediately; directory changes require a daemon restart.',
+    fields: [
+      { id: 'profiles_dir', label: 'Profiles Directory', type: 'text', placeholder: 'Auto-detected (default)', hint: 'Override the auto-detected Codex profiles directory. Leave blank to use the default.' },
+      { id: 'display_mode', label: 'Quota Display', type: 'select', options: [
+        { value: 'usage', text: 'Usage (show utilization %)' },
+        { value: 'available', text: 'Available (show remaining %)' },
+      ], default: 'usage', hint: 'Choose how to display five_hour and seven_day quota usage.' },
+    ],
+  },
+  copilot: {
+    title: 'Copilot',
+    desc: 'Configure GitHub Copilot quota tracking. Changes take effect after daemon restart.',
+    fields: [
+      { id: 'token', label: 'GitHub PAT', type: 'password', placeholder: 'Not configured', hint: 'GitHub Personal Access Token with the copilot scope. Overrides COPILOT_TOKEN from .env.', sensitive: true },
+    ],
+  },
+  zai: {
+    title: 'Z.ai',
+    desc: 'Configure Z.ai (ZhipuAI) quota tracking. Changes take effect after daemon restart.',
+    fields: [
+      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'Z.ai API key. Overrides ZAI_API_KEY from .env.', sensitive: true },
+      { id: 'region', label: 'Region', type: 'select', options: [
+        { value: 'global', text: 'Global (api.z.ai)' },
+        { value: 'cn', text: 'China (open.bigmodel.cn)' },
+      ], default: 'global', hint: 'Selects the API endpoint. Overrides ZAI_REGION from .env.' },
+    ],
+  },
+  minimax: {
+    title: 'MiniMax',
+    desc: 'Configure MiniMax quota tracking. Changes take effect after daemon restart.',
+    fields: [
+      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'MiniMax API key. Overrides MINIMAX_API_KEY from .env.', sensitive: true },
+      { id: 'region', label: 'Region', type: 'select', options: [
+        { value: 'global', text: 'Global' },
+        { value: 'cn', text: 'China' },
+      ], default: 'global', hint: 'Selects the API endpoint. Overrides MINIMAX_REGION from .env.' },
+    ],
+  },
+  openrouter: {
+    title: 'OpenRouter',
+    desc: 'Configure OpenRouter usage tracking. Changes take effect after daemon restart.',
+    fields: [
+      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'OpenRouter API key. Overrides OPENROUTER_API_KEY from .env.', sensitive: true },
+    ],
+  },
+  synthetic: {
+    title: 'Synthetic',
+    desc: 'Configure Synthetic quota tracking. Changes take effect after daemon restart.',
+    fields: [
+      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'Synthetic API key (must start with syn_). Overrides SYNTHETIC_API_KEY from .env.', sensitive: true },
+    ],
+  },
+  antigravity: {
+    title: 'Antigravity',
+    desc: 'Override auto-detection for Docker or remote environments. Leave blank to use auto-detection.',
+    fields: [
+      { id: 'base_url', label: 'Base URL', type: 'text', placeholder: 'Auto-detected', hint: 'Override the auto-detected Antigravity server URL (e.g. for Docker). Equivalent to ANTIGRAVITY_BASE_URL.' },
+      { id: 'csrf_token', label: 'CSRF Token', type: 'password', placeholder: 'Auto-detected', hint: 'Override the CSRF token for the Antigravity server. Equivalent to ANTIGRAVITY_CSRF_TOKEN.', sensitive: true },
+    ],
+  },
+  gemini: {
+    title: 'Gemini',
+    desc: 'Gemini is auto-detected from your local credentials. Use the telemetry toggle to enable or disable tracking.',
+    fields: [],
+  },
+};
+
+async function openProviderSettingsModal(providerKey) {
+  const config = providerSettingsConfig[providerKey];
+  if (!config) return;
+
+  const modal = document.getElementById('provider-settings-modal');
+  const titleEl = document.getElementById('provider-settings-title');
+  const bodyEl = document.getElementById('provider-settings-body');
+  const feedbackEl = document.getElementById('provider-settings-feedback');
+  if (!modal || !bodyEl) return;
+
+  titleEl.textContent = config.title + ' Settings';
+  if (feedbackEl) { feedbackEl.hidden = true; feedbackEl.textContent = ''; }
+
+  const saved = (State.providerSettings && State.providerSettings[providerKey]) || {};
+
+  // Build fields HTML (shared for non-Codex providers)
+  let buildFieldsHTML = () => {
+    if (config.fields.length === 0) {
+      return `<p style="color:var(--text-secondary);font-size:14px;margin:0">${config.desc}</p>`;
+    }
+    let html = `<p style="color:var(--text-secondary);font-size:13px;margin:0 0 20px">${config.desc}</p>`;
+    html += '<div class="settings-fields">';
+    config.fields.forEach(f => {
+      html += '<div class="settings-field">';
+      html += `<label for="ps-${providerKey}-${f.id}">${f.label}</label>`;
+
+      if (f.type === 'select') {
+        html += `<select id="ps-${providerKey}-${f.id}" class="settings-input">`;
+        f.options.forEach(o => {
+          const sel = (saved[f.id] || f.default) === o.value ? ' selected' : '';
+          html += `<option value="${o.value}"${sel}>${o.text}</option>`;
+        });
+        html += '</select>';
+      } else if (f.type === 'number') {
+        const val = saved[f.id] != null ? saved[f.id] : f.default;
+        html += `<input type="number" id="ps-${providerKey}-${f.id}" class="settings-input" min="${f.min || ''}" max="${f.max || ''}" value="${val}" />`;
+      } else if (f.type === 'password') {
+        const isSet = saved[f.id + '_set'] === true;
+        const placeholder = isSet ? 'Key is configured - leave blank to keep' : (f.placeholder || '');
+        html += `<input type="password" id="ps-${providerKey}-${f.id}" class="settings-input" placeholder="${placeholder}" autocomplete="off" />`;
+      } else {
+        const val = saved[f.id] || '';
+        html += `<input type="text" id="ps-${providerKey}-${f.id}" class="settings-input" value="${escapeHtml(val)}" placeholder="${f.placeholder || ''}" />`;
+      }
+
+      if (f.hint) {
+        html += `<span class="settings-field-hint">${f.hint}</span>`;
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  };
+
+  // For Codex, include profile management section
+  if (providerKey === 'codex') {
+    let profilesHTML = '<div class="codex-modal-profiles"><h4 style="margin:0 0 12px;font-size:13px;color:var(--text-secondary)">Saved Profiles</h4>';
+    profilesHTML += '<div id="codex-profiles-list">Loading...</div>';
+    profilesHTML += '</div>';
+
+    // Build the full body with profiles section first, then settings fields
+    bodyEl.innerHTML = profilesHTML + buildFieldsHTML();
+
+    // Fetch and render profiles
+    const profilesList = document.getElementById('codex-profiles-list');
+    try {
+      const res = await authFetch(`${API_BASE}/api/codex/profiles`);
+      if (res.ok) {
+        const data = await res.json();
+        const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+        if (profiles.length === 0) {
+          profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin:0">No profiles saved. Save your first profile using the CLI: <code>onwatch codex profile save &lt;name&gt;</code></p>';
+        } else {
+          let html = '';
+          profiles.forEach(profile => {
+            const isDeleted = !!profile.deletedAt;
+            html += `<div class="codex-profile-item" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-light)">`;
+            html += `<div>`;
+            html += `<div style="font-weight:500">${escapeHtml(profile.name)}</div>`;
+            html += `<div style="font-size:12px;color:var(--text-secondary)">${isDeleted ? 'Deleted' : 'Active'}</div>`;
+            html += `</div>`;
+            html += `<div style="display:flex;gap:8px">`;
+            if (!isDeleted) {
+              html += `<button class="codex-profile-action-btn" data-action="refresh" data-name="${escapeHtml(profile.name)}" title="Refresh from current auth.json" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Refresh</button>`;
+            }
+            html += `<button class="codex-profile-action-btn" data-action="delete" data-name="${escapeHtml(profile.name)}" title="Delete profile" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:${isDeleted ? 'var(--text-disabled)' : 'var(--md-error,#b3261e)'}">Delete</button>`;
+            html += `</div></div>`;
+          });
+          profilesList.innerHTML = html;
+
+          // Attach event handlers to profile action buttons
+          profilesList.querySelectorAll('.codex-profile-action-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              const action = btn.dataset.action;
+              const name = btn.dataset.name;
+              btn.disabled = true;
+              btn.textContent = '...';
+              try {
+                const url = action === 'refresh'
+                  ? `${API_BASE}/api/codex/profiles?refresh=${encodeURIComponent(name)}`
+                  : `${API_BASE}/api/codex/profiles?name=${encodeURIComponent(name)}`;
+                const res = await authFetch(url, {
+                  method: action === 'refresh' ? 'POST' : 'DELETE',
+                });
+                if (res.ok) {
+                  // Refresh the profiles list
+                  await openProviderSettingsModal('codex');
+                } else {
+                  const errData = await res.json().catch(() => ({}));
+                  alert(`${action === 'refresh' ? 'Refresh' : 'Delete'} failed: ${errData.error || res.statusText}`);
+                  btn.disabled = false;
+                  btn.textContent = action === 'refresh' ? 'Refresh' : 'Delete';
+                }
+              } catch (err) {
+                alert(`${action === 'refresh' ? 'Refresh' : 'Delete'} failed: ${err.message}`);
+                btn.disabled = false;
+                btn.textContent = action === 'refresh' ? 'Refresh' : 'Delete';
+              }
+            });
+          });
+        }
+      } else {
+        profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load profiles</p>';
+      }
+    } catch (e) {
+      profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load profiles</p>';
+    }
+  } else {
+    bodyEl.innerHTML = buildFieldsHTML();
+  }
+
+  // Store which provider is being edited
+  modal.dataset.providerKey = providerKey;
+  modal.hidden = false;
+}
+
+function closeProviderSettingsModal() {
+  const modal = document.getElementById('provider-settings-modal');
+  if (modal) modal.hidden = true;
+}
+
+async function saveProviderSettings() {
+  const modal = document.getElementById('provider-settings-modal');
+  if (!modal || modal.hidden) return;
+
+  const providerKey = modal.dataset.providerKey;
+  const config = providerSettingsConfig[providerKey];
+  if (!config || config.fields.length === 0) { closeProviderSettingsModal(); return; }
+
+  const feedbackEl = document.getElementById('provider-settings-feedback');
+  const saveBtn = document.getElementById('provider-settings-save');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+
+  // Gather values from the modal form
+  const provData = {};
+  config.fields.forEach(f => {
+    const el = document.getElementById(`ps-${providerKey}-${f.id}`);
+    if (!el) return;
+
+    if (f.type === 'password' && f.sensitive) {
+      // Only include if user typed a new value
+      if (el.value) provData[f.id] = el.value;
+    } else if (f.type === 'number') {
+      provData[f.id] = parseInt(el.value, 10) || f.default || 0;
+    } else {
+      provData[f.id] = el.value.trim();
+    }
+  });
+
+  try {
+    const payload = { provider_settings: { [providerKey]: provData } };
+    const res = await authFetch(`${API_BASE}/api/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Save failed');
+    }
+    const data = await res.json();
+    // Update local state with returned settings
+    if (data.provider_settings) {
+      State.providerSettings = data.provider_settings;
+    } else {
+      // Merge locally
+      if (!State.providerSettings) State.providerSettings = {};
+      State.providerSettings[providerKey] = provData;
+    }
+    showSettingsFeedback(feedbackEl, 'Settings saved. Restart daemon to apply changes.', 'success');
+    setTimeout(closeProviderSettingsModal, 1200);
+  } catch (e) {
+    showSettingsFeedback(feedbackEl, e.message || 'Failed to save settings.', 'error');
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save'; }
+  }
+}
+
+function setupProviderSettingsModal() {
+  const modal = document.getElementById('provider-settings-modal');
+  if (!modal) return;
+
+  const closeBtn = document.getElementById('provider-settings-close');
+  const cancelBtn = document.getElementById('provider-settings-cancel');
+  const saveBtn = document.getElementById('provider-settings-save');
+
+  if (closeBtn) closeBtn.addEventListener('click', closeProviderSettingsModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeProviderSettingsModal);
+  if (saveBtn) saveBtn.addEventListener('click', saveProviderSettings);
+
+  // Close on overlay click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeProviderSettingsModal();
+  });
+
+  // Close on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) closeProviderSettingsModal();
+  });
 }
 
 function setupProviderReload() {
@@ -7522,18 +7905,10 @@ function gatherSettings() {
     settings.timezone = tzSelect.value;
   }
 
-  // Anthropic provider settings
-  const anthropicSource = document.getElementById('anthropic-source');
-  if (anthropicSource) {
-    settings.provider_settings = {
-      anthropic: {
-        source: anthropicSource.value || 'auto',
-        api_poll_cycle_interval: parseInt(document.getElementById('anthropic-api-poll-interval')?.value, 10) || 10,
-        staleness_minutes: parseInt(document.getElementById('anthropic-staleness')?.value, 10) || 5,
-        cc_detection: document.getElementById('anthropic-cc-detection')?.value || 'on',
-      }
-    };
-  }
+  // Provider settings are saved via the provider settings modal (saveProviderSettings),
+  // NOT through the general settings save. Including them here would overwrite
+  // sensitive keys (API keys/tokens) with empty strings since the server strips
+  // them from GET responses for security.
 
   const menubarShell = document.getElementById('menubar-settings-shell');
   if (menubarShell && !menubarShell.hidden) {

@@ -1326,3 +1326,48 @@ func TestLoadEnvFile_IgnoresNonOnwatchLocalEnv(t *testing.T) {
 		t.Errorf("DATABASE_URL should be empty (generic .env should not be loaded), got %q", got)
 	}
 }
+
+func TestConfig_CodexShowAvailable(t *testing.T) {
+	tests := []struct {
+		name    string
+		envVal  string
+		want    string
+	}{
+		{"empty defaults to usage", "", "usage"},
+		{"usage passes through", "usage", "usage"},
+		{"available passes through", "available", "available"},
+		{"invalid resets to usage", "yes", "usage"},
+		{"mixed case normalized", "AVAILABLE", "available"},
+		{"whitespace trimmed", "  available  ", "available"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear all env vars to isolate
+			origKeys := []string{
+				"CODEX_SHOW_AVAILABLE", "SYNTHETIC_API_KEY", "SYNTRACK_API_KEY",
+				"ZAI_API_KEY", "ZAI_BASE_URL", "ZAI_REGION",
+				"COPILOT_TOKEN", "CODEX_TOKEN", "CODEX_HOME",
+				"ONWATCH_POLL_INTERVAL", "ONWATCH_PORT", "ONWATCH_DB_PATH",
+				"ONWATCH_ADMIN_USER", "ONWATCH_ADMIN_PASS",
+				"MINIMAX_API_KEY", "MINIMAX_REGION",
+				"OPENROUTER_API_KEY",
+				"ANTIGRAVITY_BASE_URL", "ANTIGRAVITY_CSRF_TOKEN",
+			}
+			for _, k := range origKeys {
+				os.Unsetenv(k)
+			}
+			if tt.envVal != "" {
+				os.Setenv("CODEX_SHOW_AVAILABLE", tt.envVal)
+			}
+			defer os.Unsetenv("CODEX_SHOW_AVAILABLE")
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() error: %v", err)
+			}
+			if cfg.CodexShowAvailable != tt.want {
+				t.Errorf("CodexShowAvailable = %q, want %q", cfg.CodexShowAvailable, tt.want)
+			}
+		})
+	}
+}

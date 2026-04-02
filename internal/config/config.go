@@ -38,8 +38,9 @@ type Config struct {
 	CopilotToken string // COPILOT_TOKEN (GitHub PAT with copilot scope)
 
 	// Codex provider configuration
-	CodexToken     string // CODEX_TOKEN or auto-detected
-	CodexAutoToken bool   // true if token was auto-detected
+	CodexToken        string // CODEX_TOKEN or auto-detected
+	CodexAutoToken    bool   // true if token was auto-detected
+	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage"
 
 	// Antigravity provider configuration (auto-detected from local process)
 	AntigravityBaseURL   string // ANTIGRAVITY_BASE_URL (for Docker)
@@ -252,6 +253,14 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// Codex provider
 	cfg.CodexToken = strings.TrimSpace(os.Getenv("CODEX_TOKEN"))
+	cfg.CodexShowAvailable = strings.ToLower(strings.TrimSpace(os.Getenv("CODEX_SHOW_AVAILABLE")))
+	if cfg.CodexShowAvailable == "" {
+		cfg.CodexShowAvailable = "usage"
+	}
+	// Validate display mode - only accept "usage" or "available"
+	if cfg.CodexShowAvailable != "usage" && cfg.CodexShowAvailable != "available" {
+		cfg.CodexShowAvailable = "usage"
+	}
 
 	// Antigravity provider (auto-detection, or manual via env vars for Docker)
 	cfg.AntigravityBaseURL = os.Getenv("ANTIGRAVITY_BASE_URL")

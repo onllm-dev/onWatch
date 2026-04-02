@@ -660,6 +660,11 @@ func run() error {
 		logger.Info("Auto-detected Codex token from Codex credentials")
 	}
 
+	// Apply provider_settings from DB (UI-configured keys/regions override .env)
+	if db != nil {
+		web.ApplyProviderSettingsFromDB(db, cfg, logger)
+	}
+
 	// Create API clients based on configured providers
 	var syntheticClient *api.Client
 	var zaiClient *api.ZaiClient
@@ -843,6 +848,12 @@ func run() error {
 							if interval, ok := anthSettings["api_poll_cycle_interval"].(float64); ok && int(interval) > 0 {
 								anthropicAg.SetAPIPollCycleInterval(int(interval))
 							}
+							if sm, ok := anthSettings["staleness_minutes"].(float64); ok && sm > 0 {
+								anthropicAg.SetStatuslineStaleness(time.Duration(sm) * time.Minute)
+							}
+							if cc, ok := anthSettings["cc_detection"].(string); ok {
+								anthropicAg.SetCCDetectionEnabled(cc != "off")
+							}
 						}
 					}
 				}
@@ -873,6 +884,20 @@ func run() error {
 	if cfg.HasProvider("codex") {
 		codexMgr = agent.NewCodexAgentManager(db, codexTr, cfg.PollInterval, logger)
 		codexMgr.SetProfilesDir(codexProfilesDirWithDataDir(filepath.Dir(cfg.DBPath)))
+		// Override profiles dir from DB if configured via UI
+		if db != nil {
+			if provJSON, _ := db.GetSetting("provider_settings"); provJSON != "" {
+				var provSettings map[string]map[string]interface{}
+				if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
+					if s := provSettings["codex"]; s != nil {
+						if dir, _ := s["profiles_dir"].(string); dir != "" {
+							codexMgr.SetProfilesDir(dir)
+							logger.Info("Codex profiles directory overridden from UI", "dir", dir)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Create Antigravity tracker

@@ -550,6 +550,28 @@
             opacity: 0.75;
         }
 
+        /* Inline API source badge for quota items */
+        .quota-source-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 9px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            padding: 1px 5px;
+            border-radius: 4px;
+            background: var(--surface-variant, rgba(128,128,128,0.1));
+            color: var(--text-muted, rgba(128,128,128,0.6));
+            opacity: 0.7;
+        }
+        .quota-source-tag .source-age {
+            font-weight: 400;
+            font-style: italic;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
         .quota-item {
             display: flex;
             flex-direction: column;
@@ -622,6 +644,13 @@
             color: var(--text-muted);
             font-size: 8px;
             line-height: 1;
+            white-space: nowrap;
+        }
+
+        .quota-usage-line {
+            font-size: 8px;
+            color: var(--text-muted);
+            opacity: 0.7;
             white-space: nowrap;
         }
 
@@ -1240,14 +1269,15 @@
         }
 
         .save-button {
-            min-width: 88px;
-            min-height: 44px;
-            padding: 0 var(--space-lg);
+            min-width: 60px;
+            min-height: 28px;
+            padding: 0 12px;
             border-radius: 999px;
             background: linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 18%, transparent), color-mix(in srgb, var(--text-primary) 8%, transparent));
             border: 1px solid var(--border);
             color: var(--text-primary);
-            font-weight: 700;
+            font-size: 11px;
+            font-weight: 600;
             transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
         }
 
@@ -2015,6 +2045,7 @@
                                         ${index > 0 ? '<span class="inline-divider" aria-hidden="true">|</span>' : ""}
                                         <span class="minimal-quota-inline">
                                             <span class="minimal-quota-label">${escapeHTML(compactQuotaLabel(quota.label, quota.key))}</span>
+                                            ${sourceTagMarkup(quota)}
                                             <span class="minimal-quota-percent">${Math.round(clampPercent(quota.percent))}%</span>
                                             <span class="minimal-quota-reset">${escapeHTML(compactResetLabel(quota))}</span>
                                         </span>
@@ -2039,30 +2070,9 @@
                 return `
                     <article class="provider-card provider-card-standard status-${escapeHTML(provider.status || "healthy")}" style="--card-span:${cardSpan(provider)};">
                         ${providerHeaderMarkup(provider)}
-                        ${(() => {
-                            const hasSource = quotas.some(q => q.source);
-                            const primary = hasSource ? quotas.filter(q => q.source !== 'api') : quotas;
-                            const supplementary = hasSource ? quotas.filter(q => q.source === 'api') : [];
-                            let html = `<div class="quota-grid" style="--quota-count:${Math.max(primary.length, 1)};">
-                                ${primary.map((quota) => renderStandardQuota(quota)).join("")}
-                            </div>`;
-                            if (supplementary.length > 0) {
-                                const maxAge = Math.max(...supplementary.map(q => q.age_seconds || 0));
-                                let ageHint = 'from API';
-                                if (maxAge > 0 && maxAge < 3600) ageHint = 'updated ' + Math.floor(maxAge / 60) + 'm ago';
-                                else if (maxAge >= 3600) ageHint = 'updated ' + Math.floor(maxAge / 3600) + 'h ago';
-                                html += `<div class="supplementary-section">
-                                    <div class="supplementary-header">
-                                        <span class="supplementary-title">Supplementary</span>
-                                        <span class="supplementary-hint">${escapeHTML(ageHint)}</span>
-                                    </div>
-                                    <div class="quota-grid supplementary-grid" style="--quota-count:${supplementary.length};">
-                                        ${supplementary.map((quota) => renderStandardQuota(quota)).join("")}
-                                    </div>
-                                </div>`;
-                            }
-                            return html;
-                        })()}
+                        <div class="quota-grid" style="--quota-count:${Math.max(quotas.length, 1)};">
+                            ${quotas.map((quota) => renderStandardQuota(quota)).join("")}
+                        </div>
                     </article>
                 `;
             }
@@ -2078,12 +2088,24 @@
                 `;
             }
 
+            function sourceTagMarkup(quota) {
+                if (!quota.source || quota.source !== 'api') return '';
+                const age = quota.age_seconds || 0;
+                let ageText = '';
+                if (age > 0 && age < 3600) ageText = Math.floor(age / 60) + 'm ago';
+                else if (age >= 3600) ageText = Math.floor(age / 3600) + 'h ago';
+                return `<span class="quota-source-tag">API${ageText ? `<span class="source-age">${escapeHTML(ageText)}</span>` : ''}</span>`;
+            }
+
             function renderStandardQuota(quota) {
+                const usage = usageSummary(quota);
                 return `
                     <div class="quota-item status-${escapeHTML(quota.status || "healthy")}">
                         ${pieChartMarkup(quota)}
                         <span class="quota-label">${escapeHTML(compactQuotaLabel(quota.label, quota.key))}</span>
                         <span class="quota-reset-line">${icons.clock}<span>${escapeHTML(compactResetLabel(quota))}</span></span>
+                        ${usage ? `<span class="quota-usage-line">${escapeHTML(usage)} used</span>` : ''}
+                        ${sourceTagMarkup(quota)}
                     </div>
                 `;
             }
@@ -2095,9 +2117,10 @@
                 return `
                     <section class="quota-detail-section status-${escapeHTML(quota.status || "healthy")}">
                         <div class="quota-detail-head">
-                            <span class="quota-detail-label">${escapeHTML(quota.label || compactQuotaLabel(quota.label, quota.key))}</span>
+                            <span class="quota-detail-label">${escapeHTML(quota.label || compactQuotaLabel(quota.label, quota.key))} ${sourceTagMarkup(quota)}</span>
                             <span class="quota-reset-line">${icons.clock}<span>${escapeHTML(compactResetLabel(quota))}</span></span>
                         </div>
+
                         <div class="quota-bar-row">
                             <div class="quota-bar-track">
                                 <span class="quota-bar-fill status-${escapeHTML(quota.status || "healthy")}" style="width:${percent.toFixed(2)}%;"></span>
@@ -2711,11 +2734,14 @@
                 if (source.includes("2.5 pro") || source.includes("2.5-pro")) {
                     return "2.5 Pro";
                 }
+                if (source.includes("gemini flash lite") || source.includes("gemini_flash_lite")) {
+                    return "F Lite";
+                }
                 if (source.includes("gemini flash")) {
-                    return "Gem Fl";
+                    return "Flash";
                 }
                 if (source.includes("gemini pro")) {
-                    return "Gem Pro";
+                    return "Pro";
                 }
                 if (source.includes("coding")) {
                     return "Coding";
