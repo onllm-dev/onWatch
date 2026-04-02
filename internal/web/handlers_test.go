@@ -959,7 +959,7 @@ func TestHandler_Summary_WithSyntheticProvider_DoesNotLeakOtherProviders(t *test
 	}
 
 	minimaxSnapshot := sharedMiniMaxSnapshot(time.Now().UTC(), 12)
-	if _, err := s.InsertMiniMaxSnapshot(minimaxSnapshot); err != nil {
+	if _, err := s.InsertMiniMaxSnapshot(minimaxSnapshot, 1); err != nil {
 		t.Fatalf("InsertMiniMaxSnapshot failed: %v", err)
 	}
 

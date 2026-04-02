@@ -1422,7 +1422,7 @@
             if (storedStatus) {
                 bootstrap.status_display = storedStatus;
             }
-            if (storedOrder.length > 0) {
+            if (storedOrder.length > 0 && (!bootstrap.providers_order || bootstrap.providers_order.length === 0)) {
                 bootstrap.providers_order = storedOrder;
             }
 
@@ -1535,7 +1535,7 @@
                         preferences.status_display = localStatus;
                     }
                     preferences.providers_order = mergeProviderOrder(
-                        localOrder.length > 0 ? localOrder : preferences.providers_order,
+                        preferences.providers_order.length > 0 ? preferences.providers_order : localOrder,
                         state.providerOptions.map((provider) => provider.id)
                     );
                     state.preferences = preferences;

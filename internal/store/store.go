@@ -797,6 +797,77 @@ func (s *Store) migrateSchema() error {
 		}
 	}
 
+	// Add account_id column to minimax_snapshots for multi-account support.
+	// Uses placeholder 0 initially, then backfills to the real provider_accounts.id.
+	if _, err := s.db.Exec(`
+		ALTER TABLE minimax_snapshots ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") &&
+			!strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to add account_id to minimax_snapshots: %w", err)
+		}
+	}
+
+	// Add account_id column to minimax_reset_cycles for multi-account support.
+	if _, err := s.db.Exec(`
+		ALTER TABLE minimax_reset_cycles ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") &&
+			!strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to add account_id to minimax_reset_cycles: %w", err)
+		}
+	}
+
+	// Ensure default MiniMax provider account exists. provider_accounts.id is
+	// global across all providers, so MiniMax cannot assume a fixed ID.
+	if _, err := s.db.Exec(`
+		INSERT OR IGNORE INTO provider_accounts (provider, name, created_at)
+		VALUES ('minimax', 'default', datetime('now'))
+	`); err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to insert default minimax account: %w", err)
+		}
+	}
+
+	// Backfill historical MiniMax rows from placeholder 0 to the real default
+	// MiniMax provider account ID. Wrapped in a transaction for atomicity.
+	var minimaxDefaultAccountID int64
+	if err := s.db.QueryRow(`
+		SELECT id FROM provider_accounts WHERE provider = 'minimax' AND name = 'default'
+	`).Scan(&minimaxDefaultAccountID); err == nil && minimaxDefaultAccountID > 0 {
+		tx, txErr := s.db.Begin()
+		if txErr != nil {
+			return fmt.Errorf("failed to begin minimax backfill transaction: %w", txErr)
+		}
+		if _, err := tx.Exec(`
+			UPDATE minimax_snapshots SET account_id = ? WHERE account_id = 0
+		`, minimaxDefaultAccountID); err != nil && !strings.Contains(err.Error(), "no such table") {
+			tx.Rollback()
+			return fmt.Errorf("failed to backfill minimax_snapshots account_id: %w", err)
+		}
+		if _, err := tx.Exec(`
+			UPDATE minimax_reset_cycles SET account_id = ? WHERE account_id = 0
+		`, minimaxDefaultAccountID); err != nil && !strings.Contains(err.Error(), "no such table") {
+			tx.Rollback()
+			return fmt.Errorf("failed to backfill minimax_reset_cycles account_id: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit minimax backfill transaction: %w", err)
+		}
+	}
+
+	// Add MiniMax multi-account indexes.
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_minimax_snapshots_account ON minimax_snapshots(account_id, captured_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_minimax_cycles_account ON minimax_reset_cycles(account_id, model_name)`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("failed minimax account index migration: %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 

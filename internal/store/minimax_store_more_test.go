@@ -12,7 +12,7 @@ func TestMiniMaxStore_QueryMiniMaxCycleOverview_EmptyDefaultGroup(t *testing.T) 
 	}
 	defer s.Close()
 
-	rows, err := s.QueryMiniMaxCycleOverview("", 10)
+	rows, err := s.QueryMiniMaxCycleOverview("", 10, 2)
 	if err != nil {
 		t.Fatalf("QueryMiniMaxCycleOverview(empty): %v", err)
 	}
@@ -29,30 +29,30 @@ func TestMiniMaxStore_QueryMiniMaxCycleOverview_ActiveHistorySortAndLimit(t *tes
 	defer s.Close()
 
 	base := time.Now().UTC().Truncate(time.Second)
-	if _, err := s.InsertMiniMaxSnapshot(newTestMiniMaxSnapshot(base.Add(-20*time.Minute), 500, 100)); err != nil {
+	if _, err := s.InsertMiniMaxSnapshot(newTestMiniMaxSnapshot(base.Add(-20*time.Minute), 500, 100), 2); err != nil {
 		t.Fatalf("InsertMiniMaxSnapshot(old): %v", err)
 	}
-	if _, err := s.InsertMiniMaxSnapshot(newTestMiniMaxSnapshot(base.Add(-5*time.Minute), 900, 180)); err != nil {
+	if _, err := s.InsertMiniMaxSnapshot(newTestMiniMaxSnapshot(base.Add(-5*time.Minute), 900, 180), 2); err != nil {
 		t.Fatalf("InsertMiniMaxSnapshot(new): %v", err)
 	}
 
 	closedStart := base.Add(-2 * time.Hour)
-	if _, err := s.CreateMiniMaxCycle("MiniMax-M2", closedStart, nil); err != nil {
+	if _, err := s.CreateMiniMaxCycle("MiniMax-M2", closedStart, nil, 2); err != nil {
 		t.Fatalf("CreateMiniMaxCycle(closed): %v", err)
 	}
-	if err := s.CloseMiniMaxCycle("MiniMax-M2", closedStart.Add(30*time.Minute), 700, 250); err != nil {
+	if err := s.CloseMiniMaxCycle("MiniMax-M2", closedStart.Add(30*time.Minute), 700, 250, 2); err != nil {
 		t.Fatalf("CloseMiniMaxCycle(closed): %v", err)
 	}
 
 	activeReset := base.Add(2 * time.Hour)
-	if _, err := s.CreateMiniMaxCycle("MiniMax-M2", base.Add(-10*time.Minute), &activeReset); err != nil {
+	if _, err := s.CreateMiniMaxCycle("MiniMax-M2", base.Add(-10*time.Minute), &activeReset, 2); err != nil {
 		t.Fatalf("CreateMiniMaxCycle(active): %v", err)
 	}
-	if err := s.UpdateMiniMaxCycle("MiniMax-M2", 950, 320); err != nil {
+	if err := s.UpdateMiniMaxCycle("MiniMax-M2", 950, 320, 2); err != nil {
 		t.Fatalf("UpdateMiniMaxCycle(active): %v", err)
 	}
 
-	rows, err := s.QueryMiniMaxCycleOverview("", 10)
+	rows, err := s.QueryMiniMaxCycleOverview("", 10, 2)
 	if err != nil {
 		t.Fatalf("QueryMiniMaxCycleOverview(default group): %v", err)
 	}
@@ -72,7 +72,7 @@ func TestMiniMaxStore_QueryMiniMaxCycleOverview_ActiveHistorySortAndLimit(t *tes
 		t.Fatalf("expected history row second, got cycle_end=%v", rows[1].CycleEnd)
 	}
 
-	limited, err := s.QueryMiniMaxCycleOverview("MiniMax-M2", 1)
+	limited, err := s.QueryMiniMaxCycleOverview("MiniMax-M2", 1, 2)
 	if err != nil {
 		t.Fatalf("QueryMiniMaxCycleOverview(limit=1): %v", err)
 	}
@@ -91,7 +91,7 @@ func TestMiniMaxStore_MiniMaxCrossQuotasAt_FallbackToLatest(t *testing.T) {
 	}
 	defer s.Close()
 
-	entries, err := s.minimaxCrossQuotasAt(time.Now().UTC())
+	entries, err := s.minimaxCrossQuotasAt(time.Now().UTC(), 2)
 	if err != nil {
 		t.Fatalf("minimaxCrossQuotasAt(empty): %v", err)
 	}
@@ -100,12 +100,12 @@ func TestMiniMaxStore_MiniMaxCrossQuotasAt_FallbackToLatest(t *testing.T) {
 	}
 
 	captured := time.Now().UTC().Truncate(time.Second)
-	if _, err := s.InsertMiniMaxSnapshot(newTestMiniMaxSnapshot(captured, 1100, 220)); err != nil {
+	if _, err := s.InsertMiniMaxSnapshot(newTestMiniMaxSnapshot(captured, 1100, 220), 2); err != nil {
 		t.Fatalf("InsertMiniMaxSnapshot: %v", err)
 	}
 
 	beforeAllSnapshots := captured.Add(-24 * time.Hour)
-	entries, err = s.minimaxCrossQuotasAt(beforeAllSnapshots)
+	entries, err = s.minimaxCrossQuotasAt(beforeAllSnapshots, 2)
 	if err != nil {
 		t.Fatalf("minimaxCrossQuotasAt(fallback): %v", err)
 	}

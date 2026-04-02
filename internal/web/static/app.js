@@ -70,9 +70,11 @@ function getCurrentProvider() {
 function providerParam() {
   const provider = getCurrentProvider();
   let param = `provider=${provider}`;
-  // Append account parameter for Codex provider
+  // Append account parameter for multi-account providers
   if (provider === 'codex') {
     param += codexAccountParam();
+  } else if (provider === 'minimax') {
+    param += minimaxAccountParam();
   }
   return param;
 }
@@ -349,6 +351,147 @@ function initCodexProfileTabs() {
 
 function codexAccountParam() {
   return State.codexAccount ? `&account=${encodeURIComponent(State.codexAccount)}` : '';
+}
+
+// ── MiniMax Account Persistence (multi-account) ──
+
+function loadMiniMaxAccount() {
+  try {
+    const stored = localStorage.getItem('onwatch-minimax-account');
+    if (stored) {
+      const parsed = parseInt(stored, 10);
+      State.minimaxAccount = isNaN(parsed) ? null : parsed;
+    }
+  } catch (e) {
+    State.minimaxAccount = null;
+  }
+}
+
+function saveMiniMaxAccount(account) {
+  State.minimaxAccount = account;
+  try {
+    localStorage.setItem('onwatch-minimax-account', account);
+  } catch (e) {
+    // silent
+  }
+}
+
+async function loadMiniMaxAccounts() {
+  try {
+    const res = await authFetch(`${API_BASE}/api/minimax/accounts`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.accounts && data.accounts.length > 0) {
+      const activeAccounts = data.accounts.filter(a => !a.deletedAt);
+      State.minimaxAccounts = activeAccounts;
+      populateMiniMaxAccountTabs();
+      updateMiniMaxAccountTabsVisibility();
+    }
+  } catch (e) {
+    // silent
+  }
+}
+
+function populateMiniMaxAccountTabs() {
+  const dropdown = document.getElementById('minimax-profile-dropdown');
+  const menu = document.getElementById('minimax-profile-menu');
+  if (!dropdown || !menu) return;
+
+  if (!State.minimaxAccounts || State.minimaxAccounts.length <= 1) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  menu.innerHTML = '';
+
+  for (const account of State.minimaxAccounts) {
+    const li = document.createElement('li');
+    li.className = 'codex-profile-item' + (account.id === State.minimaxAccount ? ' active' : '');
+    li.dataset.accountId = account.id;
+    li.textContent = account.name;
+    li.setAttribute('role', 'option');
+    li.setAttribute('aria-selected', account.id === State.minimaxAccount ? 'true' : 'false');
+    li.addEventListener('click', () => {
+      switchMiniMaxAccount(account.id);
+      closeMiniMaxAccountDropdown();
+    });
+    menu.appendChild(li);
+  }
+
+  if (!State.minimaxAccounts.find(a => a.id === State.minimaxAccount)) {
+    State.minimaxAccount = State.minimaxAccounts[0].id;
+    saveMiniMaxAccount(State.minimaxAccount);
+    updateMiniMaxAccountTabsActive();
+  }
+
+  updateMiniMaxAccountTabsActive();
+}
+
+function switchMiniMaxAccount(accountId) {
+  if (State.minimaxAccount === accountId) return;
+  State.minimaxAccount = accountId;
+  saveMiniMaxAccount(accountId);
+  updateMiniMaxAccountTabsActive();
+  refreshAll();
+}
+
+function updateMiniMaxAccountTabsActive() {
+  const label = document.getElementById('minimax-profile-label');
+  const menu = document.getElementById('minimax-profile-menu');
+  if (!menu) return;
+
+  const active = State.minimaxAccounts && State.minimaxAccounts.find(a => a.id === State.minimaxAccount);
+  if (label && active) {
+    label.textContent = active.name;
+  }
+
+  menu.querySelectorAll('.codex-profile-item').forEach(item => {
+    const isActive = parseInt(item.dataset.accountId, 10) === State.minimaxAccount;
+    item.classList.toggle('active', isActive);
+    item.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+}
+
+function closeMiniMaxAccountDropdown() {
+  const trigger = document.getElementById('minimax-profile-trigger');
+  const menu = document.getElementById('minimax-profile-menu');
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  if (menu) menu.classList.remove('open');
+}
+
+function updateMiniMaxAccountTabsVisibility() {
+  const dropdown = document.getElementById('minimax-profile-dropdown');
+  if (!dropdown) return;
+
+  const provider = getCurrentProvider();
+  const show = provider === 'minimax' && State.minimaxAccounts && State.minimaxAccounts.length > 1;
+  dropdown.style.display = show ? '' : 'none';
+}
+
+function initMiniMaxAccountTabs() {
+  const trigger = document.getElementById('minimax-profile-trigger');
+  const menu = document.getElementById('minimax-profile-menu');
+  if (!trigger || !menu) return;
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = menu.classList.toggle('open');
+    trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#minimax-profile-dropdown')) {
+      closeMiniMaxAccountDropdown();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMiniMaxAccountDropdown();
+  });
+}
+
+function minimaxAccountParam() {
+  return State.minimaxAccount ? `&account=${encodeURIComponent(State.minimaxAccount)}` : '';
 }
 
 // ── Insight Visibility (DB-persisted) ──
@@ -4051,8 +4194,8 @@ function isProviderTelemetryEnabled(provider, accountID) {
     ? State.providerVisibility
     : {};
 
-  if (provider === 'codex' && accountID != null) {
-    const accountKey = `codex:${accountID}`;
+  if ((provider === 'codex' || provider === 'minimax') && accountID != null) {
+    const accountKey = `${provider}:${accountID}`;
     const accountVis = visibility[accountKey];
     if (accountVis && typeof accountVis === 'object' && accountVis.polling === false) {
       return false;
@@ -4155,6 +4298,10 @@ function buildAllProviderEntries() {
       providerSet.add('codex');
       return;
     }
+    if (key === 'minimax' || key === 'minimaxAccounts') {
+      providerSet.add('minimax');
+      return;
+    }
     if (bothProviderNames[key]) {
       providerSet.add(key);
     }
@@ -4216,6 +4363,55 @@ function buildAllProviderEntries() {
           historyRows: Array.isArray(historyPayload?.history)
             ? historyPayload.history
             : (Array.isArray(history.codex) ? history.codex : []),
+        });
+      });
+      return;
+    }
+
+    if (provider === 'minimax') {
+      const currentAccounts = Array.isArray(current.minimaxAccounts)
+        ? current.minimaxAccounts
+        : (current.minimax ? [current.minimax] : []);
+      if (currentAccounts.length === 0) return;
+
+      const insightAccounts = Array.isArray(insights.minimaxAccounts) ? insights.minimaxAccounts : [];
+      const historyAccounts = Array.isArray(history.minimaxAccounts) ? history.minimaxAccounts : [];
+
+      // Single account - render as a normal provider entry
+      if (currentAccounts.length === 1 && !currentAccounts[0].accountId) {
+        const payload = currentAccounts[0];
+        if (!isProviderTelemetryEnabled('minimax')) return;
+        entries.push({
+          provider: 'minimax',
+          cardKey: sanitizeProviderCardKey('minimax'),
+          title: bothProviderNames.minimax || 'MiniMax',
+          badge: '',
+          quotas: normalizeBothQuotas('minimax', payload),
+          insights: insights.minimax || { stats: [], insights: [] },
+          historyRows: Array.isArray(history.minimax) ? history.minimax : [],
+        });
+        return;
+      }
+
+      currentAccounts.forEach((account, idx) => {
+        const accountID = account.accountId || account.id || idx + 1;
+        if (!isProviderTelemetryEnabled('minimax', accountID)) return;
+        const accountName = account.accountName || account.name || `Account ${idx + 1}`;
+        const cardKey = sanitizeProviderCardKey(`minimax-${accountID}`);
+        const insightPayload = insightAccounts.find(acc => String(acc.accountId || '') === String(accountID))
+          || insights.minimax
+          || { stats: [], insights: [] };
+        const historyPayload = historyAccounts.find(acc => String(acc.accountId || '') === String(accountID));
+        entries.push({
+          provider: 'minimax',
+          cardKey,
+          title: `MiniMax - ${accountName}`,
+          badge: '',
+          quotas: normalizeBothQuotas('minimax', account),
+          insights: insightPayload,
+          historyRows: Array.isArray(historyPayload?.history)
+            ? historyPayload.history
+            : (Array.isArray(history.minimax) ? history.minimax : []),
         });
       });
       return;
@@ -4892,7 +5088,7 @@ async function fetchCycles() {
     // Calculate limit based on range: 1 minute polling = rangeDays * 24 * 60 records
     // Cap at 50000 for performance (enough for ~35 days of 1-minute data)
     const dynamicLimit = Math.min(50000, rangeDays * 24 * 60);
-    const accountParam = provider === 'codex' ? codexAccountParam() : '';
+    const accountParam = provider === 'codex' ? codexAccountParam() : provider === 'minimax' ? minimaxAccountParam() : '';
     const url = `/api/logging-history?provider=${provider}&limit=${dynamicLimit}&range=${rangeDays}${accountParam}`;
     try {
       const res = await authFetch(url);
@@ -6013,7 +6209,7 @@ async function loadModalCycles(quotaType, effectiveProvider) {
     apiType = quotaType === 'toolCalls' ? 'toolcall' : quotaType;
   }
   try {
-    const accountParam = provider === 'codex' ? codexAccountParam() : '';
+    const accountParam = provider === 'codex' ? codexAccountParam() : provider === 'minimax' ? minimaxAccountParam() : '';
     const res = await authFetch(`${API_BASE}/api/cycles?type=${apiType}&provider=${provider}${accountParam}`);
     if (!res.ok) return;
     const cycles = await res.json();
@@ -6275,7 +6471,7 @@ async function fetchCycleOverview() {
         break;
       }
     }
-    const accountParam = effectiveProvider === 'codex' ? codexAccountParam() : '';
+    const accountParam = effectiveProvider === 'codex' ? codexAccountParam() : effectiveProvider === 'minimax' ? minimaxAccountParam() : '';
     url = `/api/cycle-overview?provider=${effectiveProvider}&groupBy=${requestGroupBy}&limit=50${accountParam}`;
   } else {
     url = `/api/cycle-overview?${providerParam()}&groupBy=${requestGroupBy}&limit=50`;
@@ -7041,6 +7237,74 @@ function createCodexProviderSection(profiles, codexStatus, baseVisibility) {
   return wrapper;
 }
 
+// createMiniMaxProviderSection creates a consolidated MiniMax card with sub-accounts.
+// Mirrors createCodexProviderSection pattern.
+function createMiniMaxProviderSection(accounts, minimaxStatus, baseVisibility) {
+  if (accounts.length <= 1) {
+    const vis = baseVisibility.minimax || {
+      polling: minimaxStatus ? minimaxStatus.pollingEnabled !== false : true,
+      dashboard: minimaxStatus ? minimaxStatus.dashboardVisible !== false : true
+    };
+    return createProviderToggleRow({
+      key: 'minimax',
+      name: 'MiniMax',
+      desc: minimaxStatus?.description || 'MiniMax Coding Plan usage tracking',
+      vis,
+      configured: minimaxStatus ? minimaxStatus.configured !== false : true,
+      autoDetectable: false,
+      isPolling: minimaxStatus ? !!minimaxStatus.isPolling : accounts.length === 1,
+    });
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'minimax-provider-section';
+
+  const headerVis = baseVisibility.minimax || {
+    polling: minimaxStatus ? minimaxStatus.pollingEnabled !== false : true,
+    dashboard: minimaxStatus ? minimaxStatus.dashboardVisible !== false : true
+  };
+
+  const headerRow = createProviderToggleRow({
+    key: 'minimax',
+    name: 'MiniMax',
+    desc: `${accounts.length} accounts configured`,
+    vis: headerVis,
+    configured: minimaxStatus ? minimaxStatus.configured !== false : true,
+    autoDetectable: false,
+    isPolling: accounts.some(a => !a.deletedAt),
+  });
+  wrapper.appendChild(headerRow);
+
+  const subProfilesDiv = document.createElement('div');
+  subProfilesDiv.className = 'minimax-subprofiles';
+
+  accounts.forEach(account => {
+    const isDeleted = !!account.deletedAt;
+    const key = `minimax:${account.id}`;
+    const vis = isDeleted
+      ? { polling: false, dashboard: false }
+      : (baseVisibility[key] || baseVisibility.minimax || headerVis);
+
+    const subRow = createProviderToggleRow({
+      key,
+      name: escapeHtml(account.name),
+      desc: isDeleted
+        ? 'Account deleted'
+        : `MiniMax account: ${escapeHtml(account.name)}${account.region ? ' (' + account.region + ')' : ''}`,
+      vis,
+      configured: !isDeleted && account.hasKey,
+      autoDetectable: false,
+      isPolling: false,
+      isDeleted,
+    });
+    subRow.classList.add('minimax-subprofile-row');
+    subProfilesDiv.appendChild(subRow);
+  });
+
+  wrapper.appendChild(subProfilesDiv);
+  return wrapper;
+}
+
 async function populateProviderToggles(visibility) {
   const container = document.getElementById('provider-toggles');
   if (!container) return;
@@ -7078,9 +7342,10 @@ async function populateProviderToggles(visibility) {
 
   const providerByKey = new Map(providers.map(p => [p.key, p]));
   const codexStatus = providerByKey.get('codex') || null;
+  const minimaxStatus = providerByKey.get('minimax') || null;
 
   providers
-    .filter(p => p.key !== 'codex')
+    .filter(p => p.key !== 'codex' && p.key !== 'minimax')
     .forEach((p) => {
       const vis = baseVisibility[p.key] || {
         polling: p.pollingEnabled !== false,
@@ -7136,6 +7401,47 @@ async function populateProviderToggles(visibility) {
       configured: fallbackCodex.configured !== false,
       autoDetectable: !!fallbackCodex.autoDetectable,
       isPolling: !!fallbackCodex.isPolling
+    }));
+  }
+
+  // MiniMax: similar to Codex - ONE card with sub-accounts listed inside
+  let minimaxSection = null;
+  try {
+    const res = await authFetch(`${API_BASE}/api/minimax/accounts`);
+    if (res.ok) {
+      const data = await res.json();
+      const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+      minimaxSection = createMiniMaxProviderSection(accounts, minimaxStatus, baseVisibility);
+    }
+  } catch (e) {
+    // fall back to single row below
+  }
+
+  if (minimaxSection) {
+    container.appendChild(minimaxSection);
+  } else {
+    const fallbackMinimax = minimaxStatus || {
+      key: 'minimax',
+      name: 'MiniMax',
+      description: 'MiniMax Coding Plan usage tracking',
+      configured: false,
+      autoDetectable: false,
+      pollingEnabled: true,
+      dashboardVisible: true,
+      isPolling: false
+    };
+    const vis = baseVisibility.minimax || {
+      polling: fallbackMinimax.pollingEnabled !== false,
+      dashboard: fallbackMinimax.dashboardVisible !== false
+    };
+    container.appendChild(createProviderToggleRow({
+      key: 'minimax',
+      name: fallbackMinimax.name || 'MiniMax',
+      desc: fallbackMinimax.description || 'MiniMax Coding Plan usage tracking',
+      vis,
+      configured: fallbackMinimax.configured !== false,
+      autoDetectable: false,
+      isPolling: !!fallbackMinimax.isPolling
     }));
   }
 }
@@ -7521,14 +7827,9 @@ const providerSettingsConfig = {
   },
   minimax: {
     title: 'MiniMax',
-    desc: 'Configure MiniMax quota tracking. Changes take effect after daemon restart.',
-    fields: [
-      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'MiniMax API key. Overrides MINIMAX_API_KEY from .env.', sensitive: true },
-      { id: 'region', label: 'Region', type: 'select', options: [
-        { value: 'global', text: 'Global' },
-        { value: 'cn', text: 'China' },
-      ], default: 'global', hint: 'Selects the API endpoint. Overrides MINIMAX_REGION from .env.' },
-    ],
+    desc: 'Manage MiniMax accounts and API keys. Add multiple accounts to track separate subscriptions.',
+    fields: [],
+    hasAccountManagement: true,
   },
   openrouter: {
     title: 'OpenRouter',
@@ -7685,6 +7986,147 @@ async function openProviderSettingsModal(providerKey) {
       }
     } catch (e) {
       profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load profiles</p>';
+    }
+  } else if (providerKey === 'minimax') {
+    // MiniMax: account management UI (fully UI-driven, unlike Codex file-based profiles)
+    let accountsHTML = '<div class="minimax-modal-accounts">';
+    accountsHTML += '<p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px">' + config.desc + '</p>';
+    accountsHTML += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+    accountsHTML += '<h4 style="margin:0;font-size:13px;color:var(--text-secondary)">Accounts</h4>';
+    accountsHTML += '<button id="minimax-add-account-btn" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">+ Add Account</button>';
+    accountsHTML += '</div>';
+    accountsHTML += '<div id="minimax-accounts-list">Loading...</div>';
+    accountsHTML += '<div id="minimax-add-form" hidden style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-inset)">';
+    accountsHTML += '<div class="settings-fields">';
+    accountsHTML += '<div class="settings-field"><label for="minimax-new-name">Account Name</label><input type="text" id="minimax-new-name" class="settings-input" placeholder="e.g. work, personal" /></div>';
+    accountsHTML += '<div class="settings-field"><label for="minimax-new-key">API Key</label><input type="password" id="minimax-new-key" class="settings-input" placeholder="MiniMax API key" autocomplete="off" /></div>';
+    accountsHTML += '<div class="settings-field"><label for="minimax-new-region">Region</label><select id="minimax-new-region" class="settings-input"><option value="global">Global</option><option value="cn">China</option></select></div>';
+    accountsHTML += '</div>';
+    accountsHTML += '<div style="display:flex;gap:8px;margin-top:8px">';
+    accountsHTML += '<button id="minimax-save-new-btn" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">Save</button>';
+    accountsHTML += '<button id="minimax-cancel-new-btn" style="padding:4px 12px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Cancel</button>';
+    accountsHTML += '</div></div>';
+    accountsHTML += '</div>';
+
+    bodyEl.innerHTML = accountsHTML;
+
+    // Wire add button
+    const addBtn = document.getElementById('minimax-add-account-btn');
+    const addForm = document.getElementById('minimax-add-form');
+    if (addBtn && addForm) {
+      addBtn.addEventListener('click', () => { addForm.hidden = false; addBtn.hidden = true; });
+      document.getElementById('minimax-cancel-new-btn')?.addEventListener('click', () => { addForm.hidden = true; addBtn.hidden = false; });
+      document.getElementById('minimax-save-new-btn')?.addEventListener('click', async () => {
+        const name = document.getElementById('minimax-new-name')?.value?.trim();
+        const apiKey = document.getElementById('minimax-new-key')?.value?.trim();
+        const region = document.getElementById('minimax-new-region')?.value || 'global';
+        if (!name) { alert('Account name is required'); return; }
+        try {
+          const res = await authFetch(`${API_BASE}/api/minimax/accounts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, api_key: apiKey, region }),
+          });
+          if (res.ok) {
+            await openProviderSettingsModal('minimax');
+          } else {
+            const err = await res.json().catch(() => ({}));
+            alert('Failed to create account: ' + (err.error || res.statusText));
+          }
+        } catch (e) { alert('Failed to create account: ' + e.message); }
+      });
+    }
+
+    // Fetch and render accounts
+    const accountsList = document.getElementById('minimax-accounts-list');
+    try {
+      const res = await authFetch(`${API_BASE}/api/minimax/accounts`);
+      if (res.ok) {
+        const data = await res.json();
+        const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+        if (accounts.length === 0) {
+          accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin:0">No accounts configured. Add your first MiniMax account above.</p>';
+        } else {
+          let html = '';
+          accounts.forEach(account => {
+            const isDeleted = !!account.deletedAt;
+            const regionLabel = account.region === 'cn' ? 'China' : 'Global';
+            html += `<div class="minimax-account-item" style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-light)">`;
+            html += `<div style="flex:1">`;
+            html += `<div style="font-weight:500">${escapeHtml(account.name)}</div>`;
+            html += `<div style="font-size:12px;color:var(--text-secondary)">${isDeleted ? 'Deleted' : regionLabel + ' - ' + (account.hasKey ? 'Key configured' : 'No key set')}</div>`;
+            html += `</div>`;
+            html += `<div style="display:flex;gap:8px;align-items:center">`;
+            if (!isDeleted) {
+              html += `<button class="minimax-acct-btn" data-action="edit" data-id="${account.id}" data-name="${escapeHtml(account.name)}" data-region="${account.region || 'global'}" data-has-key="${account.hasKey}" title="Edit account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Edit</button>`;
+              html += `<button class="minimax-acct-btn" data-action="delete" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="Delete account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--md-error,#b3261e)">Delete</button>`;
+            }
+            html += `</div></div>`;
+          });
+          accountsList.innerHTML = html;
+
+          // Wire action buttons
+          accountsList.querySelectorAll('.minimax-acct-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const action = btn.dataset.action;
+              const id = btn.dataset.id;
+              if (action === 'delete') {
+                if (!confirm(`Delete account "${btn.dataset.name}"? Historical data will be preserved.`)) return;
+                btn.disabled = true; btn.textContent = '...';
+                try {
+                  const res = await authFetch(`${API_BASE}/api/minimax/accounts?id=${id}`, { method: 'DELETE' });
+                  if (res.ok) { await openProviderSettingsModal('minimax'); }
+                  else { const e = await res.json().catch(() => ({})); alert('Delete failed: ' + (e.error || res.statusText)); btn.disabled = false; btn.textContent = 'Delete'; }
+                } catch (e) { alert('Delete failed: ' + e.message); btn.disabled = false; btn.textContent = 'Delete'; }
+              } else if (action === 'edit') {
+                // Show inline edit form
+                const item = btn.closest('.minimax-account-item');
+                if (!item) return;
+                const currentName = btn.dataset.name;
+                const currentRegion = btn.dataset.region;
+                const hasKey = btn.dataset.hasKey === 'true';
+                item.innerHTML = `<div style="width:100%">
+                  <div class="settings-fields" style="gap:8px">
+                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">Name</label><input type="text" class="settings-input minimax-edit-name" value="${escapeHtml(currentName)}" /></div>
+                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">API Key</label><input type="password" class="settings-input minimax-edit-key" placeholder="${hasKey ? 'Key configured - leave blank to keep' : 'Enter API key'}" autocomplete="off" /></div>
+                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">Region</label><select class="settings-input minimax-edit-region"><option value="global"${currentRegion !== 'cn' ? ' selected' : ''}>Global</option><option value="cn"${currentRegion === 'cn' ? ' selected' : ''}>China</option></select></div>
+                  </div>
+                  <div style="display:flex;gap:8px;margin-top:8px">
+                    <button class="minimax-edit-save" data-id="${id}" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">Save</button>
+                    <button class="minimax-edit-cancel" style="padding:4px 12px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Cancel</button>
+                  </div>
+                </div>`;
+                item.querySelector('.minimax-edit-cancel')?.addEventListener('click', () => openProviderSettingsModal('minimax'));
+                item.querySelector('.minimax-edit-save')?.addEventListener('click', async (e) => {
+                  const saveBtn = e.target;
+                  const newName = item.querySelector('.minimax-edit-name')?.value?.trim();
+                  const newKey = item.querySelector('.minimax-edit-key')?.value?.trim();
+                  const newRegion = item.querySelector('.minimax-edit-region')?.value;
+                  const body = {};
+                  if (newName && newName !== currentName) body.name = newName;
+                  if (newKey) body.api_key = newKey;
+                  if (newRegion && newRegion !== currentRegion) body.region = newRegion;
+                  if (Object.keys(body).length === 0) { await openProviderSettingsModal('minimax'); return; }
+                  saveBtn.disabled = true; saveBtn.textContent = '...';
+                  try {
+                    const res = await authFetch(`${API_BASE}/api/minimax/accounts?id=${id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(body),
+                    });
+                    if (res.ok) { await openProviderSettingsModal('minimax'); }
+                    else { const err = await res.json().catch(() => ({})); alert('Update failed: ' + (err.error || res.statusText)); saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+                  } catch (e) { alert('Update failed: ' + e.message); saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+                });
+              }
+            });
+          });
+        }
+      } else {
+        accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load accounts</p>';
+      }
+    } catch (e) {
+      accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load accounts</p>';
     }
   } else {
     bodyEl.innerHTML = buildFieldsHTML();
@@ -8661,6 +9103,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateCodexProfileTabsVisibility();
   }
   initCodexProfileTabs();
+
+  loadMiniMaxAccount();
+  if (getCurrentProvider() === 'minimax') {
+    await loadMiniMaxAccounts();
+  } else {
+    updateMiniMaxAccountTabsVisibility();
+  }
+  initMiniMaxAccountTabs();
 
   initTheme();
   initLayoutToggle();

@@ -1098,6 +1098,36 @@ func (s *Store) queryProviderAccountsByExternalID(provider, externalID string) (
 	return accounts, rows.Err()
 }
 
+// UpdateProviderAccountMetadata updates the metadata JSON for a provider account.
+func (s *Store) UpdateProviderAccountMetadata(id int64, metadata string) error {
+	_, err := s.db.Exec(`UPDATE provider_accounts SET metadata = ? WHERE id = ?`, metadata, id)
+	if err != nil {
+		return fmt.Errorf("failed to update provider account metadata: %w", err)
+	}
+	return nil
+}
+
+// RenameProviderAccount updates the name for a provider account.
+func (s *Store) RenameProviderAccount(id int64, newName string) error {
+	_, err := s.db.Exec(`UPDATE provider_accounts SET name = ? WHERE id = ?`, newName, id)
+	if err != nil {
+		return fmt.Errorf("failed to rename provider account: %w", err)
+	}
+	return nil
+}
+
+// MarkProviderAccountDeletedByID soft-deletes a provider account by ID.
+func (s *Store) MarkProviderAccountDeletedByID(id int64) error {
+	_, err := s.db.Exec(
+		`UPDATE provider_accounts SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`,
+		time.Now().UTC().Format(time.RFC3339Nano), id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to mark provider account deleted: %w", err)
+	}
+	return nil
+}
+
 // GetProviderAccountByID returns an account by its ID.
 func (s *Store) GetProviderAccountByID(id int64) (*ProviderAccount, error) {
 	var acc ProviderAccount

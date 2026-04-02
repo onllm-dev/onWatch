@@ -162,7 +162,7 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **Anthropic** -- Dynamic quota cards (5-Hour, 7-Day, 7-Day Sonnet, Monthly, etc.) with utilization percentages, OAuth token auto-refresh, and automatic rate limit bypass via token rotation
 - **Codex** -- Dynamic quota cards (LLMs, Review Requests) with OAuth auth-state refresh, historical cycle analytics, and **multi-account support (Beta)** for tracking multiple ChatGPT accounts
 - **GitHub Copilot (Beta)** -- Premium Interactions, Chat, and Completions quota cards with monthly reset tracking
-- **MiniMax Coding Plan** -- Shared quota pool tracking for M2, M2.1, and M2.5 models with 5-hour rolling window reset cycles
+- **MiniMax Coding Plan** -- Shared quota pool tracking for M2, M2.1, and M2.5 models with 5-hour rolling window reset cycles and **multi-account support** for tracking multiple MiniMax subscriptions via the dashboard UI
 - **Gemini CLI (Beta)** -- Per-model quota tracking for Gemini 2.5/3.x Pro, Flash, and Flash Lite models with 24-hour reset cycles
 - **Antigravity** -- Multi-model quota cards (Claude, Gemini, GPT) with grouped quota pools, logging history, and cycle overview
 - **All** -- Side-by-side view of all configured providers
@@ -239,7 +239,7 @@ Set `COPILOT_TOKEN` in your `.env` with a GitHub Personal Access Token (classic)
 
 ### How do I track my MiniMax Coding Plan usage?
 
-Set `MINIMAX_API_KEY` in your `.env` with your MiniMax Coding Plan API key. Get your key from the [MiniMax Console](https://platform.minimax.io). onWatch tracks the shared quota pool across all MiniMax models (M2, M2.1, M2.5) with 5-hour rolling window reset cycles. Full walkthrough: [MiniMax Setup Guide](docs/MINIMAX_SETUP.md).
+Set `MINIMAX_API_KEY` in your `.env` with your MiniMax Coding Plan API key. Get your key from the [MiniMax Console](https://platform.minimax.io). onWatch tracks the shared quota pool across all MiniMax models (M2, M2.1, M2.5) with 5-hour rolling window reset cycles. To track multiple MiniMax subscriptions, add additional accounts via the dashboard Settings > MiniMax > Add Account. Each account polls independently with its own API key and region. Full walkthrough: [MiniMax Setup Guide](docs/MINIMAX_SETUP.md).
 
 ### How do I track my OpenRouter usage?
 

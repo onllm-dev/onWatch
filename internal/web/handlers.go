@@ -73,6 +73,11 @@ type ProviderStatus struct {
 	IsPolling        bool   `json:"isPolling"`
 }
 
+// MiniMaxAccountReloader is called to hot-reload MiniMax agents after account CRUD.
+type MiniMaxAccountReloader interface {
+	Reload()
+}
+
 // Handler handles HTTP requests for the web dashboard
 type Handler struct {
 	store              *store.Store
@@ -88,6 +93,7 @@ type Handler struct {
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
+	minimaxAgentMgr    MiniMaxAccountReloader
 	logger             *slog.Logger
 	dashboardTmpl      *template.Template
 	loginTmpl          *template.Template
@@ -830,6 +836,11 @@ func (h *Handler) SetRateLimiter(l *LoginRateLimiter) {
 	h.rateLimiter = l
 }
 
+// SetMiniMaxAgentManager sets the MiniMax agent manager for hot-reload on account changes.
+func (h *Handler) SetMiniMaxAgentManager(m MiniMaxAccountReloader) {
+	h.minimaxAgentMgr = m
+}
+
 func (h *Handler) triggerMenubarRefresh() {
 	if h == nil {
 		return
@@ -1122,7 +1133,20 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		}
 		return h.detectAntigravityConnection() != nil
 	case "minimax":
-		return strings.TrimSpace(h.config.MiniMaxAPIKey) != ""
+		// Configured if any active MiniMax accounts have API keys, or legacy env var is set
+		if strings.TrimSpace(h.config.MiniMaxAPIKey) != "" {
+			return true
+		}
+		if h.store != nil {
+			if accounts, err := h.store.QueryActiveProviderAccounts("minimax"); err == nil {
+				for _, acc := range accounts {
+					if acc.Metadata != "" && strings.Contains(acc.Metadata, "api_key") {
+						return true
+					}
+				}
+			}
+		}
+		return false
 	case "openrouter":
 		return strings.TrimSpace(h.config.OpenRouterAPIKey) != ""
 	case "gemini":
@@ -1230,6 +1254,9 @@ func (h *Handler) detectAntigravityConnection() *api.AntigravityConnection {
 func providerKeyBase(provider string) string {
 	if strings.HasPrefix(provider, "codex:") {
 		return "codex"
+	}
+	if strings.HasPrefix(provider, "minimax:") {
+		return "minimax"
 	}
 	return provider
 }
@@ -1753,7 +1780,23 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 		response["antigravity"] = h.buildAntigravityCurrent()
 	}
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") {
-		response["minimax"] = h.buildMiniMaxCurrent()
+		minimaxAccounts := h.minimaxUsageAccounts()
+		originalCount := len(minimaxAccounts)
+		filtered := make([]map[string]interface{}, 0, len(minimaxAccounts))
+		for _, acc := range minimaxAccounts {
+			accountID := minimaxUsageAccountID(acc)
+			if minimaxAccountTelemetryEnabled(visibility, accountID) {
+				filtered = append(filtered, acc)
+			}
+		}
+		minimaxAccounts = filtered
+		if len(minimaxAccounts) > 1 {
+			response["minimaxAccounts"] = minimaxAccounts
+		} else if len(minimaxAccounts) == 1 {
+			response["minimax"] = minimaxAccounts[0]
+		} else if originalCount == 0 {
+			response["minimax"] = h.buildMiniMaxCurrent(h.defaultMiniMaxAccountID())
+		}
 	}
 	if h.config.HasProvider("openrouter") && providerTelemetryEnabled(visibility, "openrouter") {
 		response["openrouter"] = h.buildOpenRouterCurrent()
@@ -2295,8 +2338,17 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") && h.store != nil {
-		snapshots, err := h.store.QueryMiniMaxRange(start, now)
-		if err == nil {
+		minimaxAccounts := h.minimaxUsageAccounts()
+		minimaxHistories := make([]map[string]interface{}, 0, len(minimaxAccounts))
+		for _, acc := range minimaxAccounts {
+			accountID := minimaxUsageAccountID(acc)
+			if !minimaxAccountTelemetryEnabled(visibility, accountID) {
+				continue
+			}
+			snapshots, err := h.store.QueryMiniMaxRange(start, now, accountID)
+			if err != nil {
+				continue
+			}
 			latestIsShared := len(snapshots) > 0 && snapshots[len(snapshots)-1].IsSharedQuota()
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
@@ -2319,7 +2371,20 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				}
 				mmData = append(mmData, entry)
 			}
-			response["minimax"] = mmData
+			minimaxHistories = append(minimaxHistories, map[string]interface{}{
+				"accountId":   accountID,
+				"accountName": minimaxUsageAccountName(acc),
+				"history":     mmData,
+			})
+		}
+
+		if len(minimaxHistories) == 1 {
+			if single, ok := minimaxHistories[0]["history"]; ok {
+				response["minimax"] = single
+			}
+		}
+		if len(minimaxHistories) > 0 {
+			response["minimaxAccounts"] = minimaxHistories
 		}
 	}
 
@@ -3077,14 +3142,15 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if h.config.HasProvider("minimax") {
-		modelNames, err := h.store.QueryAllMiniMaxModelNames()
+		minimaxAccID := h.parseMiniMaxAccountID(r)
+		modelNames, err := h.store.QueryAllMiniMaxModelNames(minimaxAccID)
 		if err == nil {
 			var minimaxCycles []map[string]interface{}
 			for _, modelName := range modelNames {
-				if active, err := h.store.QueryActiveMiniMaxCycle(modelName); err == nil && active != nil {
+				if active, err := h.store.QueryActiveMiniMaxCycle(modelName, minimaxAccID); err == nil && active != nil {
 					minimaxCycles = append(minimaxCycles, minimaxCycleToMap(active))
 				}
-				if history, err := h.store.QueryMiniMaxCycleHistory(modelName, 50); err == nil {
+				if history, err := h.store.QueryMiniMaxCycleHistory(modelName, minimaxAccID, 50); err == nil {
 					for _, c := range history {
 						minimaxCycles = append(minimaxCycles, minimaxCycleToMap(c))
 					}
@@ -3334,7 +3400,7 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 		response["antigravity"] = h.buildAntigravitySummaryMap()
 	}
 	if h.config.HasProvider("minimax") {
-		response["minimax"] = h.buildMiniMaxSummaryMap()
+		response["minimax"] = h.buildMiniMaxSummaryMap(h.defaultMiniMaxAccountID())
 	}
 	if h.config.HasProvider("gemini") && h.geminiTracker != nil {
 		modelIDs, _ := h.store.QueryAllGeminiModelIDs()
@@ -3684,7 +3750,7 @@ func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
 		accountID := parseCodexAccountID(r)
 		sessions, queryErr = h.queryCodexSessionsByAccount(accountID)
 	} else if provider == "minimax" {
-		sessions, queryErr = h.queryMiniMaxSessions()
+		sessions, queryErr = h.queryMiniMaxSessions(h.parseMiniMaxAccountID(r))
 	} else {
 		sessions, queryErr = h.store.QuerySessionHistory(provider)
 	}
@@ -3731,13 +3797,17 @@ func minimaxSessionTimeChanged(a, b *time.Time) bool {
 	}
 }
 
-func (h *Handler) queryMiniMaxSessions() ([]*store.Session, error) {
+func (h *Handler) queryMiniMaxSessions(accountID int64) ([]*store.Session, error) {
 	if h.store == nil {
 		return []*store.Session{}, nil
 	}
 
 	now := time.Now().UTC()
-	snapshots, err := h.store.QueryMiniMaxRange(now.Add(-30*24*time.Hour), now, minimaxInsightSampleLimit)
+	minimaxAccID := accountID
+	if minimaxAccID == 0 {
+		minimaxAccID = h.defaultMiniMaxAccountID()
+	}
+	snapshots, err := h.store.QueryMiniMaxRange(now.Add(-30*24*time.Hour), now, minimaxAccID, minimaxInsightSampleLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -3851,7 +3921,7 @@ func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 		if provider == "codex" {
 			sessions, err = h.queryCodexSessionsByAccount(codexAccountID)
 		} else if provider == "minimax" {
-			sessions, err = h.queryMiniMaxSessions()
+			sessions, err = h.queryMiniMaxSessions(h.parseMiniMaxAccountID(r))
 		} else {
 			sessions, err = h.store.QuerySessionHistory(provider)
 		}
@@ -4118,7 +4188,27 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 		response["antigravity"] = h.buildAntigravityInsights(hidden, rangeDur)
 	}
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") {
-		response["minimax"] = h.buildMiniMaxInsights(hidden, rangeDur)
+		minimaxAccounts := h.minimaxUsageAccounts()
+		minimaxInsights := make([]map[string]interface{}, 0, len(minimaxAccounts))
+		for _, acc := range minimaxAccounts {
+			accountID := minimaxUsageAccountID(acc)
+			if !minimaxAccountTelemetryEnabled(visibility, accountID) {
+				continue
+			}
+			ins := h.buildMiniMaxInsights(accountID, hidden, rangeDur)
+			minimaxInsights = append(minimaxInsights, map[string]interface{}{
+				"accountId":   accountID,
+				"accountName": minimaxUsageAccountName(acc),
+				"stats":       ins.Stats,
+				"insights":    ins.Insights,
+			})
+		}
+		if len(minimaxInsights) == 1 {
+			response["minimax"] = minimaxInsights[0]
+		}
+		if len(minimaxInsights) > 0 {
+			response["minimaxAccounts"] = minimaxInsights
+		}
 	}
 	if h.config.HasProvider("openrouter") && providerTelemetryEnabled(visibility, "openrouter") {
 		response["openrouter"] = h.buildOpenRouterInsights(hidden)
@@ -7772,6 +7862,343 @@ const (
 	minimaxInsightSampleLimit     = 20000
 )
 
+// parseMiniMaxAccountID extracts the MiniMax account ID from query params.
+// Falls back to the default MiniMax account (looked up from provider_accounts) if not specified.
+func (h *Handler) parseMiniMaxAccountID(r *http.Request) int64 {
+	accountStr := r.URL.Query().Get("account")
+	if accountStr != "" {
+		if id, err := strconv.ParseInt(accountStr, 10, 64); err == nil && id > 0 {
+			return id
+		}
+	}
+	return h.defaultMiniMaxAccountID()
+}
+
+// defaultMiniMaxAccountID returns the provider_accounts.id for the default MiniMax account.
+func (h *Handler) defaultMiniMaxAccountID() int64 {
+	if h.store == nil {
+		return 0
+	}
+	accounts, err := h.store.QueryActiveProviderAccounts("minimax")
+	if err != nil || len(accounts) == 0 {
+		return 0
+	}
+	return accounts[0].ID
+}
+
+// minimaxUsageAccounts returns current usage for all active MiniMax accounts.
+// Mirrors codexUsageAccounts() pattern.
+func (h *Handler) minimaxUsageAccounts() []map[string]interface{} {
+	if h.store == nil {
+		return []map[string]interface{}{}
+	}
+
+	accounts, err := h.store.QueryActiveProviderAccounts("minimax")
+	if err != nil {
+		h.logger.Error("failed to query MiniMax accounts", "error", err)
+		return []map[string]interface{}{}
+	}
+	if len(accounts) == 0 {
+		defID := h.defaultMiniMaxAccountID()
+		if defID > 0 {
+			accounts = []store.ProviderAccount{
+				{ID: defID, Name: "default"},
+			}
+		}
+	}
+
+	usages := make([]map[string]interface{}, 0, len(accounts))
+	for _, acc := range accounts {
+		usage := h.buildMiniMaxCurrent(acc.ID)
+		usage["accountId"] = acc.ID
+		usage["accountName"] = acc.Name
+		usage["id"] = acc.ID
+		usage["name"] = acc.Name
+		usages = append(usages, usage)
+	}
+	return usages
+}
+
+func minimaxUsageAccountID(usage map[string]interface{}) int64 {
+	if usage == nil {
+		return 0
+	}
+	switch v := usage["accountId"].(type) {
+	case int64:
+		if v > 0 {
+			return v
+		}
+	case int:
+		if v > 0 {
+			return int64(v)
+		}
+	case float64:
+		if v > 0 {
+			return int64(v)
+		}
+	}
+	return 0
+}
+
+func minimaxUsageAccountName(usage map[string]interface{}) string {
+	if usage == nil {
+		return ""
+	}
+	name, _ := usage["accountName"].(string)
+	return name
+}
+
+func minimaxAccountTelemetryEnabled(visibility map[string]interface{}, accountID int64) bool {
+	accountKey := fmt.Sprintf("minimax:%d", accountID)
+	if polling, exists := providerPollingValue(visibility[accountKey]); exists {
+		return polling
+	}
+	return providerTelemetryEnabled(visibility, "minimax")
+}
+
+// MiniMaxAccounts handles MiniMax account management.
+// GET    /api/minimax/accounts        - list all accounts
+// POST   /api/minimax/accounts        - create account  (body: {name, api_key, region})
+// PUT    /api/minimax/accounts?id=N   - update account  (body: {name?, api_key?, region?})
+// DELETE /api/minimax/accounts?id=N   - soft-delete account
+func (h *Handler) MiniMaxAccounts(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.minimaxAccountsList(w, r)
+	case http.MethodPost:
+		h.minimaxAccountCreate(w, r)
+	case http.MethodPut:
+		h.minimaxAccountUpdate(w, r)
+	case http.MethodDelete:
+		h.minimaxAccountDelete(w, r)
+	default:
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (h *Handler) minimaxAccountsList(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"accounts": []interface{}{}})
+		return
+	}
+	accounts, err := h.store.QueryProviderAccounts("minimax")
+	if err != nil {
+		h.logger.Error("failed to query MiniMax accounts", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query accounts")
+		return
+	}
+	result := make([]map[string]interface{}, 0, len(accounts))
+	for _, acc := range accounts {
+		entry := map[string]interface{}{
+			"id":        acc.ID,
+			"name":      acc.Name,
+			"createdAt": acc.CreatedAt.Format(time.RFC3339),
+			"hasKey":    strings.Contains(acc.Metadata, "api_key"),
+		}
+		// Parse region from metadata
+		var meta map[string]interface{}
+		if acc.Metadata != "" {
+			if json.Unmarshal([]byte(acc.Metadata), &meta) == nil {
+				if r, ok := meta["region"].(string); ok {
+					entry["region"] = r
+				}
+			}
+		}
+		if acc.DeletedAt != nil {
+			entry["deletedAt"] = acc.DeletedAt.Format(time.RFC3339)
+		}
+		result = append(result, entry)
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{"accounts": result})
+}
+
+func (h *Handler) minimaxAccountCreate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name   string `json:"name"`
+		APIKey string `json:"api_key"`
+		Region string `json:"region"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		respondError(w, http.StatusBadRequest, "account name is required")
+		return
+	}
+	if !validProfileName.MatchString(req.Name) {
+		respondError(w, http.StatusBadRequest, "invalid account name: use only letters, numbers, hyphens, and underscores")
+		return
+	}
+	if h.store == nil {
+		respondError(w, http.StatusInternalServerError, "store not available")
+		return
+	}
+
+	acc, err := h.store.GetOrCreateProviderAccount("minimax", req.Name)
+	if err != nil {
+		h.logger.Error("failed to create MiniMax account", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to create account")
+		return
+	}
+
+	// Store metadata (API key + region)
+	meta := map[string]string{}
+	if req.APIKey != "" {
+		meta["api_key"] = req.APIKey
+	}
+	if req.Region != "" {
+		if req.Region != "global" && req.Region != "cn" {
+			respondError(w, http.StatusBadRequest, "invalid region: must be 'global' or 'cn'")
+			return
+		}
+		meta["region"] = req.Region
+	}
+	if len(meta) > 0 {
+		metaJSON, _ := json.Marshal(meta)
+		if err := h.store.UpdateProviderAccountMetadata(acc.ID, string(metaJSON)); err != nil {
+			h.logger.Error("failed to update MiniMax account metadata", "error", err)
+		}
+	}
+
+	// Hot-reload agents
+	if h.minimaxAgentMgr != nil {
+		h.minimaxAgentMgr.Reload()
+	}
+
+	respondJSON(w, http.StatusCreated, map[string]interface{}{
+		"message": "account created",
+		"id":      acc.ID,
+		"name":    req.Name,
+	})
+}
+
+func (h *Handler) minimaxAccountUpdate(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "valid account id is required")
+		return
+	}
+
+	var req struct {
+		Name   *string `json:"name"`
+		APIKey *string `json:"api_key"`
+		Region *string `json:"region"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if h.store == nil {
+		respondError(w, http.StatusInternalServerError, "store not available")
+		return
+	}
+
+	acc, err := h.store.GetProviderAccountByID(id)
+	if err != nil || acc == nil || acc.Provider != "minimax" {
+		respondError(w, http.StatusNotFound, "account not found")
+		return
+	}
+
+	// Update name
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		trimmedName := strings.TrimSpace(*req.Name)
+		if !validProfileName.MatchString(trimmedName) {
+			respondError(w, http.StatusBadRequest, "invalid account name")
+			return
+		}
+		if err := h.store.RenameProviderAccount(id, trimmedName); err != nil {
+			h.logger.Error("failed to rename MiniMax account", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to rename account")
+			return
+		}
+	}
+
+	// Update metadata (merge with existing)
+	if req.APIKey != nil || req.Region != nil {
+		existing := map[string]string{}
+		if acc.Metadata != "" {
+			json.Unmarshal([]byte(acc.Metadata), &existing)
+		}
+		if req.APIKey != nil && *req.APIKey != "" {
+			existing["api_key"] = *req.APIKey
+		}
+		if req.Region != nil {
+			if *req.Region != "" && *req.Region != "global" && *req.Region != "cn" {
+				respondError(w, http.StatusBadRequest, "invalid region: must be 'global' or 'cn'")
+				return
+			}
+			existing["region"] = *req.Region
+		}
+		metaJSON, _ := json.Marshal(existing)
+		if err := h.store.UpdateProviderAccountMetadata(id, string(metaJSON)); err != nil {
+			h.logger.Error("failed to update MiniMax account metadata", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to update account")
+			return
+		}
+	}
+
+	if h.minimaxAgentMgr != nil {
+		h.minimaxAgentMgr.Reload()
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "account updated", "id": id})
+}
+
+func (h *Handler) minimaxAccountDelete(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "valid account id is required")
+		return
+	}
+	if h.store == nil {
+		respondError(w, http.StatusInternalServerError, "store not available")
+		return
+	}
+
+	acc, err := h.store.GetProviderAccountByID(id)
+	if err != nil || acc == nil || acc.Provider != "minimax" {
+		respondError(w, http.StatusNotFound, "account not found")
+		return
+	}
+
+	if err := h.store.MarkProviderAccountDeletedByID(id); err != nil {
+		h.logger.Error("failed to delete MiniMax account", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to delete account")
+		return
+	}
+
+	if h.minimaxAgentMgr != nil {
+		h.minimaxAgentMgr.Reload()
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "account deleted", "id": id})
+}
+
+// MiniMaxAccountsUsage returns current usage for all active MiniMax accounts.
+func (h *Handler) MiniMaxAccountsUsage(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"accounts": []interface{}{}})
+		return
+	}
+	accounts, err := h.store.QueryActiveProviderAccounts("minimax")
+	if err != nil {
+		h.logger.Error("failed to query MiniMax accounts", "error", err)
+		respondJSON(w, http.StatusOK, map[string]interface{}{"accounts": []interface{}{}})
+		return
+	}
+	result := make([]map[string]interface{}, 0, len(accounts))
+	for _, acc := range accounts {
+		usage := h.buildMiniMaxCurrent(acc.ID)
+		usage["accountId"] = acc.ID
+		usage["accountName"] = acc.Name
+		result = append(result, usage)
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{"accounts": result})
+}
+
 type minimaxMergedSample struct {
 	CapturedAt     time.Time
 	Used           int
@@ -7786,11 +8213,12 @@ type minimaxMergedSample struct {
 
 // currentMiniMax returns current MiniMax model usage.
 func (h *Handler) currentMiniMax(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, h.buildMiniMaxCurrent())
+	accountID := h.parseMiniMaxAccountID(r)
+	respondJSON(w, http.StatusOK, h.buildMiniMaxCurrent(accountID))
 }
 
 // buildMiniMaxCurrent builds current MiniMax response.
-func (h *Handler) buildMiniMaxCurrent() map[string]interface{} {
+func (h *Handler) buildMiniMaxCurrent(accountID int64) map[string]interface{} {
 	now := time.Now().UTC()
 	response := map[string]interface{}{
 		"capturedAt":  now.Format(time.RFC3339),
@@ -7801,7 +8229,7 @@ func (h *Handler) buildMiniMaxCurrent() map[string]interface{} {
 		return response
 	}
 
-	latest, err := h.store.QueryLatestMiniMax()
+	latest, err := h.store.QueryLatestMiniMax(accountID)
 	if err != nil {
 		h.logger.Error("failed to query latest MiniMax snapshot", "error", err)
 		return response
@@ -7829,7 +8257,7 @@ func (h *Handler) buildMiniMaxCurrent() map[string]interface{} {
 			q["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
 		if h.minimaxTracker != nil && summaryModelName != "" {
-			if summary, err := h.minimaxTracker.UsageSummary(summaryModelName); err == nil && summary != nil {
+			if summary, err := h.minimaxTracker.UsageSummary(summaryModelName, accountID); err == nil && summary != nil {
 				q["currentRate"] = summary.CurrentRate
 				q["projectedUsage"] = summary.ProjectedUsage
 			}
@@ -8123,20 +8551,43 @@ func minimaxBurnStatus(projectedUsage, total int, timeToExhaustion, timeUntilRes
 	return "Current burn rate remains within the available quota."
 }
 
-func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int) ([]store.CycleOverviewRow, []string, string, error) {
+func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int, accountID int64) ([]store.CycleOverviewRow, []string, string, error) {
 	if h.store == nil {
 		return nil, nil, groupBy, nil
 	}
-	latest, err := h.store.QueryLatestMiniMax()
+	minimaxAccID := accountID
+	if minimaxAccID == 0 {
+		minimaxAccID = h.defaultMiniMaxAccountID()
+	}
+	h.logger.Debug("buildMiniMaxCycleOverviewRows", "groupBy_in", groupBy, "accountID_in", accountID, "minimaxAccID", minimaxAccID)
+
+	// Map the shared quota display name ("coding_plan") to the actual representative model.
+	// Also handle empty groupBy by checking if a shared/merged model exists.
+	if groupBy == "" || minimaxIsSharedGroup(groupBy) {
+		// Check if there's a merged "MiniMax-M*" model with cycles
+		if cycle, err := h.store.QueryActiveMiniMaxCycle("MiniMax-M*", minimaxAccID); err == nil && cycle != nil {
+			groupBy = "MiniMax-M*"
+		} else if history, err := h.store.QueryMiniMaxCycleHistory("MiniMax-M*", minimaxAccID, 1); err == nil && len(history) > 0 {
+			groupBy = "MiniMax-M*"
+		}
+	}
+
+	latest, err := h.store.QueryLatestMiniMax(minimaxAccID)
 	if err != nil {
 		return nil, nil, groupBy, err
 	}
-	if latest != nil && latest.IsSharedQuota() {
-		sourceModel := minimaxRepresentativeModel(latest)
+	useSharedPath := (latest != nil && latest.IsSharedQuota()) || groupBy == "MiniMax-M*"
+	if useSharedPath {
+		sourceModel := groupBy // use resolved groupBy (e.g. "MiniMax-M*") as primary
+		if sourceModel == "" || minimaxIsSharedGroup(sourceModel) {
+			// Resolution gave us the shared key (e.g. "coding_plan") or nothing.
+			// Fall back to a real model name so the cycle query finds data.
+			sourceModel = minimaxRepresentativeModel(latest)
+		}
 		if sourceModel == "" {
 			return nil, []string{minimaxSharedQuotaKey}, minimaxSharedQuotaKey, nil
 		}
-		rows, err := h.store.QueryMiniMaxCycleOverview(sourceModel, limit)
+		rows, err := h.store.QueryMiniMaxCycleOverview(sourceModel, limit, minimaxAccID)
 		if err != nil {
 			return nil, nil, groupBy, err
 		}
@@ -8172,7 +8623,7 @@ func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int) ([]st
 		return mergedRows, []string{minimaxSharedQuotaKey}, minimaxSharedQuotaKey, nil
 	}
 
-	rows, err := h.store.QueryMiniMaxCycleOverview(groupBy, limit)
+	rows, err := h.store.QueryMiniMaxCycleOverview(groupBy, limit, minimaxAccID)
 	if err != nil {
 		return nil, nil, groupBy, err
 	}
@@ -8187,7 +8638,7 @@ func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int) ([]st
 		break
 	}
 	if len(quotaNames) == 0 {
-		quotaNames, _ = h.store.QueryAllMiniMaxModelNames()
+		quotaNames, _ = h.store.QueryAllMiniMaxModelNames(minimaxAccID)
 	}
 	return rows, quotaNames, groupBy, nil
 }
@@ -8206,7 +8657,8 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	start := now.Add(-duration)
-	snapshots, err := h.store.QueryMiniMaxRange(start, now)
+	minimaxAccID := h.parseMiniMaxAccountID(r)
+	snapshots, err := h.store.QueryMiniMaxRange(start, now, minimaxAccID)
 	if err != nil {
 		h.logger.Error("failed to query MiniMax history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
@@ -8252,8 +8704,9 @@ func (h *Handler) cyclesMiniMax(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	minimaxAccID := h.parseMiniMaxAccountID(r)
 	modelName := r.URL.Query().Get("type")
-	latest, err := h.store.QueryLatestMiniMax()
+	latest, err := h.store.QueryLatestMiniMax(minimaxAccID)
 	if err != nil {
 		h.logger.Error("failed to query latest MiniMax snapshot", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycles")
@@ -8264,7 +8717,7 @@ func (h *Handler) cyclesMiniMax(w http.ResponseWriter, r *http.Request) {
 	if sharedQuota && (modelName == "" || minimaxIsSharedGroup(modelName)) {
 		rangeDur := parseInsightsRange(r.URL.Query().Get("range"))
 		since := time.Now().UTC().Add(-rangeDur)
-		snapshots, queryErr := h.store.QueryMiniMaxRange(since, time.Now().UTC(), minimaxInsightSampleLimit)
+		snapshots, queryErr := h.store.QueryMiniMaxRange(since, time.Now().UTC(), minimaxAccID, minimaxInsightSampleLimit)
 		if queryErr != nil {
 			h.logger.Error("failed to query MiniMax shared usage series", "error", queryErr)
 			respondError(w, http.StatusInternalServerError, "failed to query cycles")
@@ -8301,7 +8754,7 @@ func (h *Handler) cyclesMiniMax(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if modelName == "" {
-		models, err := h.store.QueryAllMiniMaxModelNames()
+		models, err := h.store.QueryAllMiniMaxModelNames(minimaxAccID)
 		if err != nil || len(models) == 0 {
 			respondJSON(w, http.StatusOK, []interface{}{})
 			return
@@ -8312,7 +8765,7 @@ func (h *Handler) cyclesMiniMax(w http.ResponseWriter, r *http.Request) {
 	rangeDur := parseInsightsRange(r.URL.Query().Get("range"))
 	since := time.Now().UTC().Add(-rangeDur)
 
-	points, err := h.store.QueryMiniMaxUsageSeries(modelName, since)
+	points, err := h.store.QueryMiniMaxUsageSeries(modelName, since, minimaxAccID)
 	if err != nil {
 		h.logger.Error("failed to query MiniMax usage series", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycles")
@@ -8375,20 +8828,24 @@ func minimaxCycleToMap(cycle *store.MiniMaxResetCycle) map[string]interface{} {
 
 // summaryMiniMax returns MiniMax usage summary.
 func (h *Handler) summaryMiniMax(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, h.buildMiniMaxSummaryMap())
+	respondJSON(w, http.StatusOK, h.buildMiniMaxSummaryMap(h.parseMiniMaxAccountID(r)))
 }
 
-func (h *Handler) buildMiniMaxSummaryMap() map[string]interface{} {
+func (h *Handler) buildMiniMaxSummaryMap(accountID int64) map[string]interface{} {
 	response := map[string]interface{}{}
 	if h.minimaxTracker == nil || h.store == nil {
 		return response
 	}
-	latest, err := h.store.QueryLatestMiniMax()
+	minimaxAccID := accountID
+	if minimaxAccID == 0 {
+		minimaxAccID = h.defaultMiniMaxAccountID()
+	}
+	latest, err := h.store.QueryLatestMiniMax(minimaxAccID)
 	if err != nil || latest == nil {
 		return response
 	}
 	if latest.IsSharedQuota() {
-		summary, err := h.minimaxTracker.UsageSummary(latest.Models[0].ModelName)
+		summary, err := h.minimaxTracker.UsageSummary(latest.Models[0].ModelName, minimaxAccID)
 		if err != nil || summary == nil {
 			return response
 		}
@@ -8399,7 +8856,7 @@ func (h *Handler) buildMiniMaxSummaryMap() map[string]interface{} {
 		return response
 	}
 	for _, model := range latest.Models {
-		if summary, err := h.minimaxTracker.UsageSummary(model.ModelName); err == nil && summary != nil {
+		if summary, err := h.minimaxTracker.UsageSummary(model.ModelName, minimaxAccID); err == nil && summary != nil {
 			response[model.ModelName] = buildMiniMaxSummaryResponse(summary)
 		}
 	}
@@ -8434,15 +8891,19 @@ func buildMiniMaxSummaryResponse(summary *tracker.MiniMaxSummary) map[string]int
 // insightsMiniMax returns MiniMax insights.
 func (h *Handler) insightsMiniMax(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildMiniMaxInsights(hidden, rangeDur))
+	respondJSON(w, http.StatusOK, h.buildMiniMaxInsights(h.parseMiniMaxAccountID(r), hidden, rangeDur))
 }
 
-func (h *Handler) buildMiniMaxInsights(hidden map[string]bool, rangeDur time.Duration) insightsResponse {
+func (h *Handler) buildMiniMaxInsights(accountID int64, hidden map[string]bool, rangeDur time.Duration) insightsResponse {
 	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
 	if h.store == nil {
 		return resp
 	}
-	latest, err := h.store.QueryLatestMiniMax()
+	minimaxAccID := accountID
+	if minimaxAccID == 0 {
+		minimaxAccID = h.defaultMiniMaxAccountID()
+	}
+	latest, err := h.store.QueryLatestMiniMax(minimaxAccID)
 	if err != nil || latest == nil || len(latest.Models) == 0 {
 		resp.Insights = append(resp.Insights, insightItem{
 			Type: "info", Severity: "info", Title: "Getting Started",
@@ -8461,7 +8922,7 @@ func (h *Handler) buildMiniMaxInsights(hidden map[string]bool, rangeDur time.Dur
 			rangeWindow = 7 * 24 * time.Hour
 		}
 		now := time.Now().UTC()
-		snapshots, err := h.store.QueryMiniMaxRange(now.Add(-rangeWindow), now, minimaxInsightSampleLimit)
+		snapshots, err := h.store.QueryMiniMaxRange(now.Add(-rangeWindow), now, minimaxAccID, minimaxInsightSampleLimit)
 		if err != nil {
 			h.logger.Error("failed to query MiniMax snapshots for insights", "error", err)
 		}
@@ -8534,7 +8995,7 @@ func (h *Handler) buildMiniMaxInsights(hidden map[string]bool, rangeDur time.Dur
 
 		lastCyclePercent := 0.0
 		if sourceModel := minimaxRepresentativeModel(latest); sourceModel != "" {
-			if history, err := h.store.QueryMiniMaxCycleHistory(sourceModel, 1); err == nil && len(history) > 0 && merged.Total > 0 {
+			if history, err := h.store.QueryMiniMaxCycleHistory(sourceModel, minimaxAccID, 1); err == nil && len(history) > 0 && merged.Total > 0 {
 				lastCyclePercent = (float64(history[0].TotalDelta) / float64(merged.Total)) * 100
 			}
 		}
@@ -8690,7 +9151,7 @@ func (h *Handler) cycleOverviewMiniMax(w http.ResponseWriter, r *http.Request) {
 	}
 	groupBy := r.URL.Query().Get("groupBy")
 	limit := parseCycleOverviewLimit(r)
-	rows, quotaNames, resolvedGroupBy, err := h.buildMiniMaxCycleOverviewRows(groupBy, limit)
+	rows, quotaNames, resolvedGroupBy, err := h.buildMiniMaxCycleOverviewRows(groupBy, limit, h.parseMiniMaxAccountID(r))
 	if err != nil {
 		h.logger.Error("failed to query MiniMax cycle overview", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycle overview")
@@ -9616,7 +10077,8 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 	}
 
 	start, end, limit := h.loggingHistoryRangeAndLimit(r)
-	snapshots, err := h.store.QueryMiniMaxRange(start, end, limit)
+	minimaxAccID := h.parseMiniMaxAccountID(r)
+	snapshots, err := h.store.QueryMiniMaxRange(start, end, minimaxAccID, limit)
 	if err != nil {
 		h.logger.Error("failed to query MiniMax snapshots", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query logging history")
@@ -9627,7 +10089,7 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 	if len(snapshots) > 0 {
 		latest = snapshots[len(snapshots)-1]
 	} else {
-		latest, _ = h.store.QueryLatestMiniMax()
+		latest, _ = h.store.QueryLatestMiniMax(minimaxAccID)
 	}
 
 	if latest != nil && latest.IsSharedQuota() {
@@ -9670,7 +10132,7 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 		break
 	}
 	if len(quotaNames) == 0 {
-		allNames, _ := h.store.QueryAllMiniMaxModelNames()
+		allNames, _ := h.store.QueryAllMiniMaxModelNames(minimaxAccID)
 		// Filter will happen at series level; use all names as fallback
 		quotaNames = allNames
 	}

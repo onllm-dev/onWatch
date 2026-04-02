@@ -286,11 +286,22 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		}
 	}
 	if h.config != nil && h.config.HasProvider("minimax") && h.providerDashboardVisible("minimax", visibility) {
-		payload := h.buildMiniMaxCurrent()
-		if card := normalizeProviderCard("minimax", "MiniMax", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
-			providers = append(providers, *card)
-			if captured := parseCapturedAt(payload); captured.After(latest) {
-				latest = captured
+		for _, usage := range h.minimaxUsageAccounts() {
+			accountID := minimaxUsageAccountID(usage)
+			providerKey := fmt.Sprintf("minimax:%d", accountID)
+			if !providerDashboardVisibleForKey(visibility, providerKey, "minimax") {
+				continue
+			}
+			name := stringValue(usage, "accountName")
+			if name == "" {
+				name = "default"
+			}
+			subtitle := "MiniMax account"
+			if card := normalizeProviderCard(providerKey, "MiniMax - "+name, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+				providers = append(providers, *card)
+				if captured := parseCapturedAt(usage); captured.After(latest) {
+					latest = captured
+				}
 			}
 		}
 	}

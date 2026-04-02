@@ -21,6 +21,7 @@ type MiniMaxAgent struct {
 	sm           *SessionManager
 	notifier     *notify.NotificationEngine
 	pollingCheck func() bool
+	accountID    int64
 }
 
 // NewMiniMaxAgent creates a new MiniMax polling agent.
@@ -36,6 +37,13 @@ func NewMiniMaxAgent(client *api.MiniMaxClient, store *store.Store, tr *tracker.
 		logger:   logger,
 		sm:       sm,
 	}
+}
+
+// NewMiniMaxAgentWithAccount creates a new MiniMax polling agent scoped to a specific account.
+func NewMiniMaxAgentWithAccount(client *api.MiniMaxClient, store *store.Store, tr *tracker.MiniMaxTracker, interval time.Duration, logger *slog.Logger, sm *SessionManager, accountID int64) *MiniMaxAgent {
+	ag := NewMiniMaxAgent(client, store, tr, interval, logger, sm)
+	ag.accountID = accountID
+	return ag
 }
 
 // SetPollingCheck sets a provider polling guard function.
@@ -89,11 +97,11 @@ func (a *MiniMaxAgent) poll(ctx context.Context) {
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
 
-	if _, err := a.store.InsertMiniMaxSnapshot(snapshot); err != nil {
+	if _, err := a.store.InsertMiniMaxSnapshot(snapshot, a.accountID); err != nil {
 		a.logger.Error("Failed to insert MiniMax snapshot", "error", err)
 	}
 
-	if err := a.tracker.Process(snapshot); err != nil {
+	if err := a.tracker.Process(snapshot, a.accountID); err != nil {
 		a.logger.Error("MiniMax tracker processing failed", "error", err)
 	}
 

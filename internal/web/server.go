@@ -87,6 +87,8 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc("/api/minimax/insights", func(w http.ResponseWriter, r *http.Request) {
 		handler.insightsMiniMax(w, r, parseInsightsRange(r.URL.Query().Get("range")))
 	})
+	mux.HandleFunc("/api/minimax/accounts", handler.MiniMaxAccounts)
+	mux.HandleFunc("/api/minimax/accounts/usage", handler.MiniMaxAccountsUsage)
 
 	// System alerts (in-dashboard notifications)
 	mux.HandleFunc("/api/alerts", handler.SystemAlerts)

@@ -29,7 +29,7 @@ type MiniMaxUsagePoint struct {
 }
 
 // InsertMiniMaxSnapshot inserts a MiniMax snapshot and all model rows.
-func (s *Store) InsertMiniMaxSnapshot(snapshot *api.MiniMaxSnapshot) (int64, error) {
+func (s *Store) InsertMiniMaxSnapshot(snapshot *api.MiniMaxSnapshot, accountID int64) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
@@ -37,10 +37,11 @@ func (s *Store) InsertMiniMaxSnapshot(snapshot *api.MiniMaxSnapshot) (int64, err
 	defer tx.Rollback()
 
 	result, err := tx.Exec(
-		`INSERT INTO minimax_snapshots (captured_at, raw_json, model_count) VALUES (?, ?, ?)`,
+		`INSERT INTO minimax_snapshots (captured_at, raw_json, model_count, account_id) VALUES (?, ?, ?, ?)`,
 		snapshot.CapturedAt.Format(time.RFC3339Nano),
 		snapshot.RawJSON,
 		len(snapshot.Models),
+		accountID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert minimax snapshot: %w", err)
@@ -91,14 +92,15 @@ func (s *Store) InsertMiniMaxSnapshot(snapshot *api.MiniMaxSnapshot) (int64, err
 	return snapshotID, nil
 }
 
-// QueryLatestMiniMax returns the latest MiniMax snapshot.
-func (s *Store) QueryLatestMiniMax() (*api.MiniMaxSnapshot, error) {
+// QueryLatestMiniMax returns the latest MiniMax snapshot for an account.
+func (s *Store) QueryLatestMiniMax(accountID int64) (*api.MiniMaxSnapshot, error) {
 	var snapshot api.MiniMaxSnapshot
 	var capturedAt string
 	var rawJSON sql.NullString
 
 	err := s.db.QueryRow(
-		`SELECT id, captured_at, raw_json, model_count FROM minimax_snapshots ORDER BY captured_at DESC LIMIT 1`,
+		`SELECT id, captured_at, raw_json, model_count FROM minimax_snapshots WHERE account_id = ? ORDER BY captured_at DESC LIMIT 1`,
+		accountID,
 	).Scan(&snapshot.ID, &capturedAt, &rawJSON, new(int))
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -122,24 +124,24 @@ func (s *Store) QueryLatestMiniMax() (*api.MiniMaxSnapshot, error) {
 }
 
 // QueryMiniMaxRange returns snapshots in a time range ordered ascending by capture time.
-func (s *Store) QueryMiniMaxRange(start, end time.Time, limit ...int) ([]*api.MiniMaxSnapshot, error) {
+func (s *Store) QueryMiniMaxRange(start, end time.Time, accountID int64, limit ...int) ([]*api.MiniMaxSnapshot, error) {
 	query := `SELECT id, captured_at, raw_json, model_count
 		FROM minimax_snapshots
-		WHERE captured_at BETWEEN ? AND ?
+		WHERE account_id = ? AND captured_at BETWEEN ? AND ?
 		ORDER BY captured_at ASC`
-	args := []interface{}{start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)}
+	args := []interface{}{accountID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)}
 
 	if len(limit) > 0 && limit[0] > 0 {
 		query = `SELECT id, captured_at, raw_json, model_count
 			FROM (
 				SELECT id, captured_at, raw_json, model_count
 				FROM minimax_snapshots
-				WHERE captured_at BETWEEN ? AND ?
+				WHERE account_id = ? AND captured_at BETWEEN ? AND ?
 				ORDER BY captured_at DESC
 				LIMIT ?
 			) recent
 			ORDER BY captured_at ASC`
-		args = append(args, limit[0])
+		args = []interface{}{accountID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano), limit[0]}
 	}
 
 	rows, err := s.db.Query(query, args...)
@@ -217,17 +219,18 @@ func (s *Store) queryMiniMaxModelValues(snapshotID int64) ([]api.MiniMaxModelQuo
 }
 
 // CreateMiniMaxCycle creates a new active cycle for a model.
-func (s *Store) CreateMiniMaxCycle(modelName string, cycleStart time.Time, resetAt *time.Time) (int64, error) {
+func (s *Store) CreateMiniMaxCycle(modelName string, cycleStart time.Time, resetAt *time.Time, accountID int64) (int64, error) {
 	var resetAtVal interface{}
 	if resetAt != nil {
 		resetAtVal = resetAt.Format(time.RFC3339Nano)
 	}
 
 	result, err := s.db.Exec(
-		`INSERT INTO minimax_reset_cycles (model_name, cycle_start, reset_at) VALUES (?, ?, ?)`,
+		`INSERT INTO minimax_reset_cycles (model_name, cycle_start, reset_at, account_id) VALUES (?, ?, ?, ?)`,
 		modelName,
 		cycleStart.Format(time.RFC3339Nano),
 		resetAtVal,
+		accountID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create minimax cycle: %w", err)
@@ -240,11 +243,11 @@ func (s *Store) CreateMiniMaxCycle(modelName string, cycleStart time.Time, reset
 }
 
 // CloseMiniMaxCycle closes an active model cycle.
-func (s *Store) CloseMiniMaxCycle(modelName string, cycleEnd time.Time, peakUsed, totalDelta int) error {
+func (s *Store) CloseMiniMaxCycle(modelName string, cycleEnd time.Time, peakUsed, totalDelta int, accountID int64) error {
 	_, err := s.db.Exec(
 		`UPDATE minimax_reset_cycles SET cycle_end = ?, peak_used = ?, total_delta = ?
-		WHERE model_name = ? AND cycle_end IS NULL`,
-		cycleEnd.Format(time.RFC3339Nano), peakUsed, totalDelta, modelName,
+		WHERE model_name = ? AND account_id = ? AND cycle_end IS NULL`,
+		cycleEnd.Format(time.RFC3339Nano), peakUsed, totalDelta, modelName, accountID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to close minimax cycle: %w", err)
@@ -253,11 +256,11 @@ func (s *Store) CloseMiniMaxCycle(modelName string, cycleEnd time.Time, peakUsed
 }
 
 // UpdateMiniMaxCycle updates an active cycle's peak/delta.
-func (s *Store) UpdateMiniMaxCycle(modelName string, peakUsed, totalDelta int) error {
+func (s *Store) UpdateMiniMaxCycle(modelName string, peakUsed, totalDelta int, accountID int64) error {
 	_, err := s.db.Exec(
 		`UPDATE minimax_reset_cycles SET peak_used = ?, total_delta = ?
-		WHERE model_name = ? AND cycle_end IS NULL`,
-		peakUsed, totalDelta, modelName,
+		WHERE model_name = ? AND account_id = ? AND cycle_end IS NULL`,
+		peakUsed, totalDelta, modelName, accountID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update minimax cycle: %w", err)
@@ -266,7 +269,7 @@ func (s *Store) UpdateMiniMaxCycle(modelName string, peakUsed, totalDelta int) e
 }
 
 // QueryActiveMiniMaxCycle returns the currently active cycle for a model.
-func (s *Store) QueryActiveMiniMaxCycle(modelName string) (*MiniMaxResetCycle, error) {
+func (s *Store) QueryActiveMiniMaxCycle(modelName string, accountID int64) (*MiniMaxResetCycle, error) {
 	var cycle MiniMaxResetCycle
 	var cycleStart string
 	var cycleEnd, resetAt sql.NullString
@@ -274,10 +277,10 @@ func (s *Store) QueryActiveMiniMaxCycle(modelName string) (*MiniMaxResetCycle, e
 	err := s.db.QueryRow(
 		`SELECT id, model_name, cycle_start, cycle_end, reset_at, peak_used, total_delta
 		FROM minimax_reset_cycles
-		WHERE model_name = ? AND cycle_end IS NULL
+		WHERE model_name = ? AND account_id = ? AND cycle_end IS NULL
 		ORDER BY cycle_start DESC, id DESC
 		LIMIT 1`,
-		modelName,
+		modelName, accountID,
 	).Scan(&cycle.ID, &cycle.ModelName, &cycleStart, &cycleEnd, &resetAt, &cycle.PeakUsed, &cycle.TotalDelta)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -300,12 +303,12 @@ func (s *Store) QueryActiveMiniMaxCycle(modelName string) (*MiniMaxResetCycle, e
 }
 
 // QueryMiniMaxCycleHistory returns completed cycles for a model.
-func (s *Store) QueryMiniMaxCycleHistory(modelName string, limit ...int) ([]*MiniMaxResetCycle, error) {
+func (s *Store) QueryMiniMaxCycleHistory(modelName string, accountID int64, limit ...int) ([]*MiniMaxResetCycle, error) {
 	query := `SELECT id, model_name, cycle_start, cycle_end, reset_at, peak_used, total_delta
 		FROM minimax_reset_cycles
-		WHERE model_name = ? AND cycle_end IS NOT NULL
+		WHERE model_name = ? AND account_id = ? AND cycle_end IS NOT NULL
 		ORDER BY cycle_start DESC`
-	args := []interface{}{modelName}
+	args := []interface{}{modelName, accountID}
 	if len(limit) > 0 && limit[0] > 0 {
 		query += ` LIMIT ?`
 		args = append(args, limit[0])
@@ -342,14 +345,15 @@ func (s *Store) QueryMiniMaxCycleHistory(modelName string, limit ...int) ([]*Min
 }
 
 // QueryMiniMaxUsageSeries returns usage points for one model since time `since`.
-func (s *Store) QueryMiniMaxUsageSeries(modelName string, since time.Time) ([]MiniMaxUsagePoint, error) {
+func (s *Store) QueryMiniMaxUsageSeries(modelName string, since time.Time, accountID int64) ([]MiniMaxUsagePoint, error) {
 	rows, err := s.db.Query(
 		`SELECT s.captured_at, mv.total, mv.remain, mv.used
 		FROM minimax_model_values mv
 		JOIN minimax_snapshots s ON s.id = mv.snapshot_id
-		WHERE mv.model_name = ? AND s.captured_at >= ?
+		WHERE mv.model_name = ? AND s.account_id = ? AND s.captured_at >= ?
 		ORDER BY s.captured_at ASC`,
 		modelName,
+		accountID,
 		since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
@@ -371,9 +375,16 @@ func (s *Store) QueryMiniMaxUsageSeries(modelName string, since time.Time) ([]Mi
 	return points, rows.Err()
 }
 
-// QueryAllMiniMaxModelNames returns distinct model names seen in MiniMax snapshots.
-func (s *Store) QueryAllMiniMaxModelNames() ([]string, error) {
-	rows, err := s.db.Query(`SELECT DISTINCT model_name FROM minimax_model_values ORDER BY model_name`)
+// QueryAllMiniMaxModelNames returns distinct model names seen in MiniMax snapshots for an account.
+func (s *Store) QueryAllMiniMaxModelNames(accountID int64) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT mv.model_name
+		FROM minimax_model_values mv
+		JOIN minimax_snapshots s ON s.id = mv.snapshot_id
+		WHERE s.account_id = ?
+		ORDER BY mv.model_name`,
+		accountID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query minimax model names: %w", err)
 	}
@@ -390,7 +401,7 @@ func (s *Store) QueryAllMiniMaxModelNames() ([]string, error) {
 	return models, rows.Err()
 }
 
-func (s *Store) queryMiniMaxSnapshotAtOrBefore(t time.Time) (*api.MiniMaxSnapshot, error) {
+func (s *Store) queryMiniMaxSnapshotAtOrBefore(t time.Time, accountID int64) (*api.MiniMaxSnapshot, error) {
 	var snap api.MiniMaxSnapshot
 	var capturedAt string
 	var rawJSON sql.NullString
@@ -398,10 +409,10 @@ func (s *Store) queryMiniMaxSnapshotAtOrBefore(t time.Time) (*api.MiniMaxSnapsho
 	err := s.db.QueryRow(
 		`SELECT id, captured_at, raw_json, model_count
 		FROM minimax_snapshots
-		WHERE captured_at <= ?
+		WHERE account_id = ? AND captured_at <= ?
 		ORDER BY captured_at DESC
 		LIMIT 1`,
-		t.UTC().Format(time.RFC3339Nano),
+		accountID, t.UTC().Format(time.RFC3339Nano),
 	).Scan(&snap.ID, &capturedAt, &rawJSON, new(int))
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -423,9 +434,9 @@ func (s *Store) queryMiniMaxSnapshotAtOrBefore(t time.Time) (*api.MiniMaxSnapsho
 }
 
 // QueryMiniMaxCycleOverview returns overview rows with cross-model values at cycle peak/end times.
-func (s *Store) QueryMiniMaxCycleOverview(groupBy string, limit int) ([]CycleOverviewRow, error) {
+func (s *Store) QueryMiniMaxCycleOverview(groupBy string, limit int, accountID int64) ([]CycleOverviewRow, error) {
 	if groupBy == "" {
-		models, err := s.QueryAllMiniMaxModelNames()
+		models, err := s.QueryAllMiniMaxModelNames(accountID)
 		if err != nil {
 			return nil, err
 		}
@@ -437,12 +448,12 @@ func (s *Store) QueryMiniMaxCycleOverview(groupBy string, limit int) ([]CycleOve
 
 	rows := make([]CycleOverviewRow, 0)
 
-	if active, err := s.QueryActiveMiniMaxCycle(groupBy); err == nil && active != nil {
+	if active, err := s.QueryActiveMiniMaxCycle(groupBy, accountID); err == nil && active != nil {
 		refTime := active.CycleStart
 		if active.ResetAt != nil {
 			refTime = *active.ResetAt
 		}
-		cross, crossErr := s.minimaxCrossQuotasAt(refTime)
+		cross, crossErr := s.minimaxCrossQuotasAt(refTime, accountID)
 		if crossErr != nil {
 			return nil, crossErr
 		}
@@ -458,7 +469,7 @@ func (s *Store) QueryMiniMaxCycleOverview(groupBy string, limit int) ([]CycleOve
 		})
 	}
 
-	history, err := s.QueryMiniMaxCycleHistory(groupBy, limit)
+	history, err := s.QueryMiniMaxCycleHistory(groupBy, accountID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +478,7 @@ func (s *Store) QueryMiniMaxCycleOverview(groupBy string, limit int) ([]CycleOve
 		if cycle.CycleEnd != nil {
 			refTime = *cycle.CycleEnd
 		}
-		cross, crossErr := s.minimaxCrossQuotasAt(refTime)
+		cross, crossErr := s.minimaxCrossQuotasAt(refTime, accountID)
 		if crossErr != nil {
 			return nil, crossErr
 		}
@@ -499,13 +510,13 @@ func (s *Store) QueryMiniMaxCycleOverview(groupBy string, limit int) ([]CycleOve
 	return rows, nil
 }
 
-func (s *Store) minimaxCrossQuotasAt(referenceTime time.Time) ([]CrossQuotaEntry, error) {
-	snap, err := s.queryMiniMaxSnapshotAtOrBefore(referenceTime)
+func (s *Store) minimaxCrossQuotasAt(referenceTime time.Time, accountID int64) ([]CrossQuotaEntry, error) {
+	snap, err := s.queryMiniMaxSnapshotAtOrBefore(referenceTime, accountID)
 	if err != nil {
 		return nil, err
 	}
 	if snap == nil {
-		snap, err = s.QueryLatestMiniMax()
+		snap, err = s.QueryLatestMiniMax(accountID)
 		if err != nil {
 			return nil, err
 		}

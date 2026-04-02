@@ -52,7 +52,9 @@ func setupMiniMaxAgentTest(t *testing.T) (*MiniMaxAgent, *store.Store, *httptest
 	tr := tracker.NewMiniMaxTracker(s, logger)
 	sm := NewSessionManager(s, "minimax", 600*time.Second, logger)
 
-	ag := NewMiniMaxAgent(client, s, tr, 100*time.Millisecond, logger, sm)
+	// Use account ID 2 which is the default minimax account created by migration
+	// (codex gets id=1, minimax default gets id=2)
+	ag := NewMiniMaxAgentWithAccount(client, s, tr, 100*time.Millisecond, logger, sm, 2)
 	return ag, s, server
 }
 
@@ -66,7 +68,7 @@ func TestMiniMaxAgent_SinglePoll(t *testing.T) {
 	time.Sleep(250 * time.Millisecond)
 	cancel()
 
-	latest, err := s.QueryLatestMiniMax()
+	latest, err := s.QueryLatestMiniMax(2)
 	if err != nil {
 		t.Fatalf("QueryLatestMiniMax: %v", err)
 	}
@@ -89,7 +91,7 @@ func TestMiniMaxAgent_PollingCheck(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	cancel()
 
-	latest, err := s.QueryLatestMiniMax()
+	latest, err := s.QueryLatestMiniMax(2)
 	if err != nil {
 		t.Fatalf("QueryLatestMiniMax: %v", err)
 	}

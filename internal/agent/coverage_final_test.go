@@ -128,7 +128,7 @@ func TestMiniMaxAgent_NewAndPollErrorBranches(t *testing.T) {
 		ag := NewMiniMaxAgent(client, s, tr, time.Second, slog.Default(), nil)
 		ag.poll(context.Background())
 
-		latest, err := s.QueryLatestMiniMax()
+		latest, err := s.QueryLatestMiniMax(2)
 		if err != nil {
 			t.Fatalf("QueryLatestMiniMax: %v", err)
 		}

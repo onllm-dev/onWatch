@@ -11,10 +11,10 @@ import (
 
 func insertAndProcessMiniMaxSnapshot(t *testing.T, s *store.Store, tr *MiniMaxTracker, snap *api.MiniMaxSnapshot) {
 	t.Helper()
-	if _, err := s.InsertMiniMaxSnapshot(snap); err != nil {
+	if _, err := s.InsertMiniMaxSnapshot(snap, 2); err != nil {
 		t.Fatalf("InsertMiniMaxSnapshot: %v", err)
 	}
-	if err := tr.Process(snap); err != nil {
+	if err := tr.Process(snap, 2); err != nil {
 		t.Fatalf("Process: %v", err)
 	}
 }
@@ -35,7 +35,7 @@ func TestMiniMaxTracker_UsageSummary(t *testing.T) {
 	insertAndProcessMiniMaxSnapshot(t, s, tr, miniMaxTrackerSnapshot(base.Add(65*time.Minute), &secondReset, 200))
 	insertAndProcessMiniMaxSnapshot(t, s, tr, miniMaxTrackerSnapshot(base.Add(95*time.Minute), &secondReset, 700))
 
-	summary, err := tr.UsageSummary("MiniMax-M2")
+	summary, err := tr.UsageSummary("MiniMax-M2", 2)
 	if err != nil {
 		t.Fatalf("UsageSummary: %v", err)
 	}
@@ -83,11 +83,11 @@ func TestMiniMaxTracker_UsageSummary_NoDataAndEmptyModel(t *testing.T) {
 		Models: []api.MiniMaxModelQuota{
 			{ModelName: "", Total: 100, Used: 5, Remain: 95, UsedPercent: 5},
 		},
-	}); err != nil {
+	}, 2); err != nil {
 		t.Fatalf("Process(empty model): %v", err)
 	}
 
-	summary, err := tr.UsageSummary("missing-model")
+	summary, err := tr.UsageSummary("missing-model", 2)
 	if err != nil {
 		t.Fatalf("UsageSummary(missing-model): %v", err)
 	}

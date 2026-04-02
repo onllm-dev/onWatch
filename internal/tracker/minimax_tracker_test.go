@@ -45,11 +45,11 @@ func TestMiniMaxTracker_Process(t *testing.T) {
 	resetAt := now.Add(2 * time.Hour)
 	snap := miniMaxTrackerSnapshot(now, &resetAt, 1200)
 
-	if err := tr.Process(snap); err != nil {
+	if err := tr.Process(snap, 2); err != nil {
 		t.Fatalf("Process: %v", err)
 	}
 
-	active, err := s.QueryActiveMiniMaxCycle("MiniMax-M2")
+	active, err := s.QueryActiveMiniMaxCycle("MiniMax-M2", 2)
 	if err != nil {
 		t.Fatalf("QueryActiveMiniMaxCycle: %v", err)
 	}
@@ -74,13 +74,13 @@ func TestMiniMaxTracker_ResetDetection(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	resetAt1 := now.Add(2 * time.Hour)
-	if err := tr.Process(miniMaxTrackerSnapshot(now, &resetAt1, 9000)); err != nil {
+	if err := tr.Process(miniMaxTrackerSnapshot(now, &resetAt1, 9000), 2); err != nil {
 		t.Fatalf("Process #1: %v", err)
 	}
 
 	// Advance reset window + drop usage to trigger reset detection.
 	resetAt2 := now.Add(7 * time.Hour)
-	if err := tr.Process(miniMaxTrackerSnapshot(now.Add(3*time.Minute), &resetAt2, 300)); err != nil {
+	if err := tr.Process(miniMaxTrackerSnapshot(now.Add(3*time.Minute), &resetAt2, 300), 2); err != nil {
 		t.Fatalf("Process #2: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestMiniMaxTracker_ResetDetection(t *testing.T) {
 		t.Fatal("expected reset callback")
 	}
 
-	history, err := s.QueryMiniMaxCycleHistory("MiniMax-M2")
+	history, err := s.QueryMiniMaxCycleHistory("MiniMax-M2", 2)
 	if err != nil {
 		t.Fatalf("QueryMiniMaxCycleHistory: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestMiniMaxTracker_ResetDetection(t *testing.T) {
 		t.Fatalf("history len=%d", len(history))
 	}
 
-	active, err := s.QueryActiveMiniMaxCycle("MiniMax-M2")
+	active, err := s.QueryActiveMiniMaxCycle("MiniMax-M2", 2)
 	if err != nil {
 		t.Fatalf("QueryActiveMiniMaxCycle: %v", err)
 	}
@@ -112,17 +112,17 @@ func TestMiniMaxTracker_CycleManagement(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	resetAt := now.Add(2 * time.Hour)
 
-	if err := tr.Process(miniMaxTrackerSnapshot(now, &resetAt, 1000)); err != nil {
+	if err := tr.Process(miniMaxTrackerSnapshot(now, &resetAt, 1000), 2); err != nil {
 		t.Fatalf("Process #1: %v", err)
 	}
-	if err := tr.Process(miniMaxTrackerSnapshot(now.Add(1*time.Minute), &resetAt, 1300)); err != nil {
+	if err := tr.Process(miniMaxTrackerSnapshot(now.Add(1*time.Minute), &resetAt, 1300), 2); err != nil {
 		t.Fatalf("Process #2: %v", err)
 	}
-	if err := tr.Process(miniMaxTrackerSnapshot(now.Add(2*time.Minute), &resetAt, 1800)); err != nil {
+	if err := tr.Process(miniMaxTrackerSnapshot(now.Add(2*time.Minute), &resetAt, 1800), 2); err != nil {
 		t.Fatalf("Process #3: %v", err)
 	}
 
-	active, err := s.QueryActiveMiniMaxCycle("MiniMax-M2")
+	active, err := s.QueryActiveMiniMaxCycle("MiniMax-M2", 2)
 	if err != nil {
 		t.Fatalf("QueryActiveMiniMaxCycle: %v", err)
 	}

@@ -13,9 +13,9 @@ import (
 type MiniMaxTracker struct {
 	store        *store.Store
 	logger       *slog.Logger
-	lastUsed     map[string]int
-	lastResetAt  map[string]time.Time
-	hasLastValue bool
+	lastUsed     map[string]int       // key: "accountID:modelName"
+	lastResetAt  map[string]time.Time // key: "accountID:modelName"
+	hasLastValue map[string]bool      // key: "accountID:modelName"
 
 	onReset func(modelName string)
 }
@@ -44,11 +44,17 @@ func NewMiniMaxTracker(store *store.Store, logger *slog.Logger) *MiniMaxTracker 
 		logger = slog.Default()
 	}
 	return &MiniMaxTracker{
-		store:       store,
-		logger:      logger,
-		lastUsed:    make(map[string]int),
-		lastResetAt: make(map[string]time.Time),
+		store:        store,
+		logger:       logger,
+		lastUsed:     make(map[string]int),
+		lastResetAt:  make(map[string]time.Time),
+		hasLastValue: make(map[string]bool),
 	}
+}
+
+// trackerKey returns a composite key for per-account per-model state.
+func trackerKey(accountID int64, modelName string) string {
+	return fmt.Sprintf("%d:%s", accountID, modelName)
 }
 
 // SetOnReset registers reset callback.
@@ -57,47 +63,53 @@ func (t *MiniMaxTracker) SetOnReset(fn func(modelName string)) {
 }
 
 // Process processes one snapshot and updates/reset-cycles per model.
-func (t *MiniMaxTracker) Process(snapshot *api.MiniMaxSnapshot) error {
+func (t *MiniMaxTracker) Process(snapshot *api.MiniMaxSnapshot, accountID int64) error {
 	for _, model := range snapshot.Models {
 		// Skip models with no quota allocation
 		if model.Total == 0 && model.Used == 0 {
 			continue
 		}
-		if err := t.processModel(model, snapshot.CapturedAt); err != nil {
+		if err := t.processModel(model, snapshot.CapturedAt, accountID); err != nil {
 			return fmt.Errorf("minimax tracker: %s: %w", model.ModelName, err)
 		}
 	}
-	t.hasLastValue = true
+	for _, model := range snapshot.Models {
+		if model.ModelName != "" {
+			t.hasLastValue[trackerKey(accountID, model.ModelName)] = true
+		}
+	}
 	return nil
 }
 
-func (t *MiniMaxTracker) processModel(model api.MiniMaxModelQuota, capturedAt time.Time) error {
+func (t *MiniMaxTracker) processModel(model api.MiniMaxModelQuota, capturedAt time.Time, accountID int64) error {
 	if model.ModelName == "" {
 		return nil
 	}
 
-	cycle, err := t.store.QueryActiveMiniMaxCycle(model.ModelName)
+	key := trackerKey(accountID, model.ModelName)
+
+	cycle, err := t.store.QueryActiveMiniMaxCycle(model.ModelName, accountID)
 	if err != nil {
 		return fmt.Errorf("failed to query active cycle: %w", err)
 	}
 
 	if cycle == nil {
-		if _, err := t.store.CreateMiniMaxCycle(model.ModelName, capturedAt, model.ResetAt); err != nil {
+		if _, err := t.store.CreateMiniMaxCycle(model.ModelName, capturedAt, model.ResetAt, accountID); err != nil {
 			return fmt.Errorf("failed to create cycle: %w", err)
 		}
-		if err := t.store.UpdateMiniMaxCycle(model.ModelName, model.Used, 0); err != nil {
+		if err := t.store.UpdateMiniMaxCycle(model.ModelName, model.Used, 0, accountID); err != nil {
 			return fmt.Errorf("failed to set initial peak: %w", err)
 		}
-		t.lastUsed[model.ModelName] = model.Used
+		t.lastUsed[key] = model.Used
 		if model.ResetAt != nil {
-			t.lastResetAt[model.ModelName] = *model.ResetAt
+			t.lastResetAt[key] = *model.ResetAt
 		}
 		return nil
 	}
 
 	resetDetected := false
 	if model.ResetAt != nil {
-		if last, ok := t.lastResetAt[model.ModelName]; ok {
+		if last, ok := t.lastResetAt[key]; ok {
 			d := model.ResetAt.Sub(last)
 			if d < 0 {
 				d = -d
@@ -108,8 +120,8 @@ func (t *MiniMaxTracker) processModel(model api.MiniMaxModelQuota, capturedAt ti
 		}
 	}
 
-	if !resetDetected && t.hasLastValue {
-		if last, ok := t.lastUsed[model.ModelName]; ok && last > 0 && model.Used < int(float64(last)*0.6) {
+	if !resetDetected && t.hasLastValue[key] {
+		if last, ok := t.lastUsed[key]; ok && last > 0 && model.Used < int(float64(last)*0.6) {
 			resetDetected = true
 		}
 	}
@@ -119,18 +131,18 @@ func (t *MiniMaxTracker) processModel(model api.MiniMaxModelQuota, capturedAt ti
 		if cycle.ResetAt != nil && capturedAt.After(*cycle.ResetAt) {
 			cycleEnd = *cycle.ResetAt
 		}
-		if err := t.store.CloseMiniMaxCycle(model.ModelName, cycleEnd, cycle.PeakUsed, cycle.TotalDelta); err != nil {
+		if err := t.store.CloseMiniMaxCycle(model.ModelName, cycleEnd, cycle.PeakUsed, cycle.TotalDelta, accountID); err != nil {
 			return fmt.Errorf("failed to close cycle: %w", err)
 		}
-		if _, err := t.store.CreateMiniMaxCycle(model.ModelName, capturedAt, model.ResetAt); err != nil {
+		if _, err := t.store.CreateMiniMaxCycle(model.ModelName, capturedAt, model.ResetAt, accountID); err != nil {
 			return fmt.Errorf("failed to create new cycle: %w", err)
 		}
-		if err := t.store.UpdateMiniMaxCycle(model.ModelName, model.Used, 0); err != nil {
+		if err := t.store.UpdateMiniMaxCycle(model.ModelName, model.Used, 0, accountID); err != nil {
 			return fmt.Errorf("failed to initialize new cycle: %w", err)
 		}
-		t.lastUsed[model.ModelName] = model.Used
+		t.lastUsed[key] = model.Used
 		if model.ResetAt != nil {
-			t.lastResetAt[model.ModelName] = *model.ResetAt
+			t.lastResetAt[key] = *model.ResetAt
 		}
 		if t.onReset != nil {
 			t.onReset(model.ModelName)
@@ -138,8 +150,8 @@ func (t *MiniMaxTracker) processModel(model api.MiniMaxModelQuota, capturedAt ti
 		return nil
 	}
 
-	if t.hasLastValue {
-		if last, ok := t.lastUsed[model.ModelName]; ok {
+	if t.hasLastValue[key] {
+		if last, ok := t.lastUsed[key]; ok {
 			delta := model.Used - last
 			if delta > 0 {
 				cycle.TotalDelta += delta
@@ -149,24 +161,24 @@ func (t *MiniMaxTracker) processModel(model api.MiniMaxModelQuota, capturedAt ti
 	if model.Used > cycle.PeakUsed {
 		cycle.PeakUsed = model.Used
 	}
-	if err := t.store.UpdateMiniMaxCycle(model.ModelName, cycle.PeakUsed, cycle.TotalDelta); err != nil {
+	if err := t.store.UpdateMiniMaxCycle(model.ModelName, cycle.PeakUsed, cycle.TotalDelta, accountID); err != nil {
 		return fmt.Errorf("failed to update cycle: %w", err)
 	}
 
-	t.lastUsed[model.ModelName] = model.Used
+	t.lastUsed[key] = model.Used
 	if model.ResetAt != nil {
-		t.lastResetAt[model.ModelName] = *model.ResetAt
+		t.lastResetAt[key] = *model.ResetAt
 	}
 	return nil
 }
 
 // UsageSummary returns computed stats for one MiniMax model.
-func (t *MiniMaxTracker) UsageSummary(modelName string) (*MiniMaxSummary, error) {
-	active, err := t.store.QueryActiveMiniMaxCycle(modelName)
+func (t *MiniMaxTracker) UsageSummary(modelName string, accountID int64) (*MiniMaxSummary, error) {
+	active, err := t.store.QueryActiveMiniMaxCycle(modelName, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active cycle: %w", err)
 	}
-	history, err := t.store.QueryMiniMaxCycleHistory(modelName)
+	history, err := t.store.QueryMiniMaxCycleHistory(modelName, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cycle history: %w", err)
 	}
@@ -200,7 +212,7 @@ func (t *MiniMaxTracker) UsageSummary(modelName string) (*MiniMaxSummary, error)
 		}
 	}
 
-	latest, err := t.store.QueryLatestMiniMax()
+	latest, err := t.store.QueryLatestMiniMax(accountID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query latest minimax: %w", err)
 	}

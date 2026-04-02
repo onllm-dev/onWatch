@@ -25,12 +25,12 @@ func TestMiniMaxTracker_ProcessAndSummary_ErrorOnClosedStore(t *testing.T) {
 		Models: []api.MiniMaxModelQuota{
 			{ModelName: "MiniMax-M2", Total: 1500, Used: 100, Remain: 1400, UsedPercent: 6.7, ResetAt: &resetAt},
 		},
-	})
+	}, 2)
 	if err == nil || !strings.Contains(err.Error(), "minimax tracker: MiniMax-M2") {
 		t.Fatalf("Process(closed store) error = %v", err)
 	}
 
-	_, err = tr.UsageSummary("MiniMax-M2")
+	_, err = tr.UsageSummary("MiniMax-M2", 2)
 	if err == nil || !strings.Contains(err.Error(), "failed to query active cycle") {
 		t.Fatalf("UsageSummary(closed store) error = %v", err)
 	}
@@ -73,17 +73,17 @@ func TestMiniMaxTracker_Process_ResetByUsageDrop(t *testing.T) {
 		},
 	}
 
-	if err := tr.Process(s1); err != nil {
+	if err := tr.Process(s1, 2); err != nil {
 		t.Fatalf("Process(s1): %v", err)
 	}
-	if err := tr.Process(s2); err != nil {
+	if err := tr.Process(s2, 2); err != nil {
 		t.Fatalf("Process(s2): %v", err)
 	}
-	if err := tr.Process(s3); err != nil {
+	if err := tr.Process(s3, 2); err != nil {
 		t.Fatalf("Process(s3): %v", err)
 	}
 
-	history, err := s.QueryMiniMaxCycleHistory("MiniMax-M2")
+	history, err := s.QueryMiniMaxCycleHistory("MiniMax-M2", 2)
 	if err != nil {
 		t.Fatalf("QueryMiniMaxCycleHistory: %v", err)
 	}
@@ -107,10 +107,10 @@ func TestMiniMaxTracker_UsageSummary_ProjectionAndLatestFallback(t *testing.T) {
 		resetAt := now.Add(90 * time.Minute)
 		cycleStart := now.Add(-2 * time.Hour)
 
-		if _, err := s.CreateMiniMaxCycle("MiniMax-M2", cycleStart, &resetAt); err != nil {
+		if _, err := s.CreateMiniMaxCycle("MiniMax-M2", cycleStart, &resetAt, 2); err != nil {
 			t.Fatalf("CreateMiniMaxCycle: %v", err)
 		}
-		if err := s.UpdateMiniMaxCycle("MiniMax-M2", 1400, 3000); err != nil {
+		if err := s.UpdateMiniMaxCycle("MiniMax-M2", 1400, 3000, 2); err != nil {
 			t.Fatalf("UpdateMiniMaxCycle: %v", err)
 		}
 
@@ -127,12 +127,12 @@ func TestMiniMaxTracker_UsageSummary_ProjectionAndLatestFallback(t *testing.T) {
 				},
 			},
 		}
-		if _, err := s.InsertMiniMaxSnapshot(snap); err != nil {
+		if _, err := s.InsertMiniMaxSnapshot(snap, 2); err != nil {
 			t.Fatalf("InsertMiniMaxSnapshot: %v", err)
 		}
 
 		tr := NewMiniMaxTracker(s, nil)
-		summary, err := tr.UsageSummary("MiniMax-M2")
+		summary, err := tr.UsageSummary("MiniMax-M2", 2)
 		if err != nil {
 			t.Fatalf("UsageSummary: %v", err)
 		}
@@ -165,12 +165,12 @@ func TestMiniMaxTracker_UsageSummary_ProjectionAndLatestFallback(t *testing.T) {
 				},
 			},
 		}
-		if _, err := s.InsertMiniMaxSnapshot(snap); err != nil {
+		if _, err := s.InsertMiniMaxSnapshot(snap, 2); err != nil {
 			t.Fatalf("InsertMiniMaxSnapshot: %v", err)
 		}
 
 		tr := NewMiniMaxTracker(s, nil)
-		summary, err := tr.UsageSummary("MiniMax-M2.5")
+		summary, err := tr.UsageSummary("MiniMax-M2.5", 2)
 		if err != nil {
 			t.Fatalf("UsageSummary: %v", err)
 		}
@@ -191,10 +191,10 @@ func TestMiniMaxTracker_processModel_HasLastValueWithoutModelCache(t *testing.T)
 	defer s.Close()
 
 	tr := NewMiniMaxTracker(s, nil)
-	tr.hasLastValue = true // simulate post-restart state
+	tr.hasLastValue[trackerKey(1, "MiniMax-M2.5")] = true // simulate post-restart state
 
 	now := time.Now().UTC().Truncate(time.Second)
-	if _, err := s.CreateMiniMaxCycle("MiniMax-M2.5", now.Add(-10*time.Minute), nil); err != nil {
+	if _, err := s.CreateMiniMaxCycle("MiniMax-M2.5", now.Add(-10*time.Minute), nil, 2); err != nil {
 		t.Fatalf("CreateMiniMaxCycle: %v", err)
 	}
 
@@ -205,11 +205,11 @@ func TestMiniMaxTracker_processModel_HasLastValueWithoutModelCache(t *testing.T)
 		Remain:      6500,
 		UsedPercent: 18.75,
 	}
-	if err := tr.processModel(model, now); err != nil {
+	if err := tr.processModel(model, now, 2); err != nil {
 		t.Fatalf("processModel: %v", err)
 	}
 
-	active, err := s.QueryActiveMiniMaxCycle("MiniMax-M2.5")
+	active, err := s.QueryActiveMiniMaxCycle("MiniMax-M2.5", 2)
 	if err != nil {
 		t.Fatalf("QueryActiveMiniMaxCycle: %v", err)
 	}

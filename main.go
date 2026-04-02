@@ -720,15 +720,8 @@ func run() error {
 		}
 	}
 
-	var minimaxClient *api.MiniMaxClient
-	if cfg.HasProvider("minimax") {
-		baseURL := "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
-		if cfg.MiniMaxRegion == "cn" {
-			baseURL = "https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains"
-		}
-		minimaxClient = api.NewMiniMaxClient(cfg.MiniMaxAPIKey, logger, api.WithMiniMaxBaseURL(baseURL))
-		logger.Info("MiniMax API client configured", "region", cfg.MiniMaxRegion)
-	}
+	// Note: MiniMax clients are now created per-account by MiniMaxAgentManager.
+	// The legacy MINIMAX_API_KEY is seeded into the default provider account at startup.
 
 	var openrouterClient *api.OpenRouterClient
 	if cfg.HasProvider("openrouter") {
@@ -927,10 +920,25 @@ func run() error {
 		antigravityAg = agent.NewAntigravityAgent(antigravityClient, db, antigravityTr, cfg.PollInterval, logger, antigravitySm)
 	}
 
-	var minimaxAg *agent.MiniMaxAgent
-	if minimaxClient != nil {
-		minimaxSm := agent.NewSessionManager(db, "minimax", idleTimeout, logger)
-		minimaxAg = agent.NewMiniMaxAgent(minimaxClient, db, minimaxTr, cfg.PollInterval, logger, minimaxSm)
+	// Create MiniMax agent manager for multi-account support.
+	// If a legacy MINIMAX_API_KEY is configured, seed the default account metadata.
+	var minimaxMgr *agent.MiniMaxAgentManager
+	if cfg.HasProvider("minimax") || minimaxTr != nil {
+		minimaxMgr = agent.NewMiniMaxAgentManager(db, minimaxTr, cfg.PollInterval, logger)
+		minimaxMgr.SetRegion(cfg.MiniMaxRegion)
+		// Seed the default account with the legacy API key if it has no metadata yet
+		if cfg.MiniMaxAPIKey != "" {
+			if accounts, err := db.QueryActiveProviderAccounts("minimax"); err == nil {
+				for _, acc := range accounts {
+					if acc.Name == "default" && (acc.Metadata == "" || acc.Metadata == "{}") {
+						meta := fmt.Sprintf(`{"api_key":%q,"region":%q}`, cfg.MiniMaxAPIKey, cfg.MiniMaxRegion)
+						db.UpdateProviderAccountMetadata(acc.ID, meta)
+						logger.Info("Seeded default MiniMax account with legacy API key", "id", acc.ID)
+						break
+					}
+				}
+			}
+		}
 	}
 
 	var openrouterAg *agent.OpenRouterAgent
@@ -976,8 +984,8 @@ func run() error {
 	if antigravityAg != nil {
 		antigravityAg.SetNotifier(notifier)
 	}
-	if minimaxAg != nil {
-		minimaxAg.SetNotifier(notifier)
+	if minimaxMgr != nil {
+		minimaxMgr.SetNotifier(notifier)
 	}
 	if openrouterAg != nil {
 		openrouterAg.SetNotifier(notifier)
@@ -1051,8 +1059,34 @@ func run() error {
 	if antigravityAg != nil {
 		antigravityAg.SetPollingCheck(func() bool { return isPollingEnabled("antigravity") })
 	}
-	if minimaxAg != nil {
-		minimaxAg.SetPollingCheck(func() bool { return isPollingEnabled("minimax") })
+	if minimaxMgr != nil {
+		minimaxMgr.SetPollingCheck(func() bool { return isPollingEnabled("minimax") })
+		minimaxMgr.SetAccountPollingCheck(func(accountID int64) bool {
+			v, err := db.GetSetting("provider_visibility")
+			if err != nil || v == "" {
+				return true
+			}
+			var vis map[string]interface{}
+			if json.Unmarshal([]byte(v), &vis) != nil {
+				return true
+			}
+			accountKey := fmt.Sprintf("minimax:%d", accountID)
+			if accountVis, ok := vis[accountKey].(map[string]interface{}); ok {
+				if polling, exists := accountVis["polling"]; exists {
+					if p, ok := polling.(bool); ok {
+						return p
+					}
+				}
+			}
+			if minimaxVis, ok := vis["minimax"].(map[string]interface{}); ok {
+				if polling, exists := minimaxVis["polling"]; exists {
+					if p, ok := polling.(bool); ok {
+						return p
+					}
+				}
+			}
+			return true
+		})
 	}
 	if openrouterAg != nil {
 		openrouterAg.SetPollingCheck(func() bool { return isPollingEnabled("openrouter") })
@@ -1149,8 +1183,8 @@ func run() error {
 	if antigravityAg != nil {
 		agentMgr.RegisterFactory("antigravity", func() (agent.AgentRunner, error) { return antigravityAg, nil })
 	}
-	if minimaxAg != nil {
-		agentMgr.RegisterFactory("minimax", func() (agent.AgentRunner, error) { return minimaxAg, nil })
+	if minimaxMgr != nil {
+		agentMgr.RegisterFactory("minimax", func() (agent.AgentRunner, error) { return minimaxMgr, nil })
 	}
 	if openrouterAg != nil {
 		agentMgr.RegisterFactory("openrouter", func() (agent.AgentRunner, error) { return openrouterAg, nil })
@@ -1159,6 +1193,9 @@ func run() error {
 		agentMgr.RegisterFactory("gemini", func() (agent.AgentRunner, error) { return geminiAg, nil })
 	}
 	handler.SetAgentManager(agentMgr)
+	if minimaxMgr != nil {
+		handler.SetMiniMaxAgentManager(minimaxMgr)
+	}
 	updater := update.NewUpdater(version, logger)
 	handler.SetUpdater(updater)
 

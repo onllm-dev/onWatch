@@ -132,10 +132,10 @@ func TestMiniMaxHandlersAndSummaryHelpers(t *testing.T) {
 		sharedMiniMaxSnapshotWithWindow(base.Add(80*time.Minute), 400, base.Add(-time.Hour), resetAt),
 	}
 	for _, snap := range snaps {
-		if _, err := s.InsertMiniMaxSnapshot(snap); err != nil {
+		if _, err := s.InsertMiniMaxSnapshot(snap, 2); err != nil {
 			t.Fatalf("InsertMiniMaxSnapshot: %v", err)
 		}
-		if err := tr.Process(snap); err != nil {
+		if err := tr.Process(snap, 2); err != nil {
 			t.Fatalf("Process: %v", err)
 		}
 	}
@@ -153,7 +153,7 @@ func TestMiniMaxHandlersAndSummaryHelpers(t *testing.T) {
 	if summaryRR.Code != http.StatusOK {
 		t.Fatalf("summaryMiniMax status = %d, want 200", summaryRR.Code)
 	}
-	summaryMap := h.buildMiniMaxSummaryMap()
+	summaryMap := h.buildMiniMaxSummaryMap(2)
 	if _, ok := summaryMap["coding_plan"]; !ok {
 		t.Fatalf("expected shared summary in response, got %+v", summaryMap)
 	}

@@ -511,7 +511,7 @@ func TestHandlerCyclesMiniMaxCoverage(t *testing.T) {
 		base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
 		for i, used := range []int{10, 30, 55} {
 			snap := sharedMiniMaxSnapshot(base.Add(time.Duration(i)*20*time.Minute), used)
-			if _, err := s.InsertMiniMaxSnapshot(snap); err != nil {
+			if _, err := s.InsertMiniMaxSnapshot(snap, 2); err != nil {
 				t.Fatalf("InsertMiniMaxSnapshot(%d): %v", i, err)
 			}
 		}
@@ -546,7 +546,7 @@ func TestHandlerCyclesMiniMaxCoverage(t *testing.T) {
 		base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
 		for i, used := range []int{40, 60, 120} {
 			snap := testMiniMaxSingleModelSnapshot(base.Add(time.Duration(i)*15*time.Minute), used)
-			if _, err := s.InsertMiniMaxSnapshot(snap); err != nil {
+			if _, err := s.InsertMiniMaxSnapshot(snap, 2); err != nil {
 				t.Fatalf("InsertMiniMaxSnapshot(%d): %v", i, err)
 			}
 		}
@@ -608,7 +608,7 @@ func TestHandlerLoggingHistoryMiniMaxCoverage(t *testing.T) {
 		base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
 		for i := 0; i < 3; i++ {
 			snap := testMiniMaxNonSharedSnapshot(base.Add(time.Duration(i)*20*time.Minute), 120+i*20, 80+i*15)
-			if _, err := s.InsertMiniMaxSnapshot(snap); err != nil {
+			if _, err := s.InsertMiniMaxSnapshot(snap, 2); err != nil {
 				t.Fatalf("InsertMiniMaxSnapshot(%d): %v", i, err)
 			}
 		}
@@ -644,7 +644,7 @@ func TestHandlerLoggingHistoryMiniMaxCoverage(t *testing.T) {
 func TestBuildMiniMaxCycleOverviewRowsAdditionalCoverage(t *testing.T) {
 	t.Run("nil store", func(t *testing.T) {
 		h := NewHandler(nil, nil, nil, nil, nil)
-		rows, names, groupBy, err := h.buildMiniMaxCycleOverviewRows("", 10)
+		rows, names, groupBy, err := h.buildMiniMaxCycleOverviewRows("", 10, 2)
 		if err != nil {
 			t.Fatalf("buildMiniMaxCycleOverviewRows: %v", err)
 		}
@@ -691,12 +691,12 @@ func TestBuildMiniMaxCycleOverviewRowsAdditionalCoverage(t *testing.T) {
 				},
 			},
 		}
-		if _, err := s.InsertMiniMaxSnapshot(snap); err != nil {
+		if _, err := s.InsertMiniMaxSnapshot(snap, 2); err != nil {
 			t.Fatalf("InsertMiniMaxSnapshot: %v", err)
 		}
 
 		h := NewHandler(s, nil, nil, nil, nil)
-		rows, names, groupBy, err := h.buildMiniMaxCycleOverviewRows("MiniMax-M2", 10)
+		rows, names, groupBy, err := h.buildMiniMaxCycleOverviewRows("MiniMax-M2", 10, 2)
 		if err != nil {
 			t.Fatalf("buildMiniMaxCycleOverviewRows: %v", err)
 		}
@@ -719,19 +719,19 @@ func TestBuildMiniMaxCycleOverviewRowsAdditionalCoverage(t *testing.T) {
 
 		base := time.Now().UTC().Add(-90 * time.Minute).Truncate(time.Second)
 		snap := testMiniMaxNonSharedSnapshot(base, 220, 140)
-		if _, err := s.InsertMiniMaxSnapshot(snap); err != nil {
+		if _, err := s.InsertMiniMaxSnapshot(snap, 2); err != nil {
 			t.Fatalf("InsertMiniMaxSnapshot: %v", err)
 		}
 		reset := base.Add(3 * time.Hour)
-		if _, err := s.CreateMiniMaxCycle("MiniMax-M2", base.Add(-30*time.Minute), &reset); err != nil {
+		if _, err := s.CreateMiniMaxCycle("MiniMax-M2", base.Add(-30*time.Minute), &reset, 2); err != nil {
 			t.Fatalf("CreateMiniMaxCycle: %v", err)
 		}
-		if err := s.UpdateMiniMaxCycle("MiniMax-M2", 260, 120); err != nil {
+		if err := s.UpdateMiniMaxCycle("MiniMax-M2", 260, 120, 2); err != nil {
 			t.Fatalf("UpdateMiniMaxCycle: %v", err)
 		}
 
 		h := NewHandler(s, nil, nil, nil, nil)
-		rows, names, groupBy, err := h.buildMiniMaxCycleOverviewRows("MiniMax-M2", 10)
+		rows, names, groupBy, err := h.buildMiniMaxCycleOverviewRows("MiniMax-M2", 10, 2)
 		if err != nil {
 			t.Fatalf("buildMiniMaxCycleOverviewRows: %v", err)
 		}
@@ -748,7 +748,7 @@ func TestBuildMiniMaxCycleOverviewRowsAdditionalCoverage(t *testing.T) {
 		if err := s.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
 		}
-		_, _, _, err = h.buildMiniMaxCycleOverviewRows("MiniMax-M2", 10)
+		_, _, _, err = h.buildMiniMaxCycleOverviewRows("MiniMax-M2", 10, 2)
 		if err == nil {
 			t.Fatal("expected error after closing store")
 		}
