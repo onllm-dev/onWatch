@@ -82,3 +82,7 @@ __pycache__/
 # Mock server binary
 /mockserver
 onwatch-test
+
+# Claude Code session artifacts
+.omc/
+.playwright-mcp/
