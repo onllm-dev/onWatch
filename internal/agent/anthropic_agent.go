@@ -153,6 +153,23 @@ func (a *AnthropicAgent) SetAPIPollCycleInterval(n int) {
 	a.apiPollCycleInterval = n
 }
 
+// SetStatuslineStaleness sets the maximum age of the statusline file before
+// falling back to API polling. Overrides the default (5 minutes).
+func (a *AnthropicAgent) SetStatuslineStaleness(d time.Duration) {
+	a.statuslineStaleness = d
+}
+
+// SetCCDetectionEnabled controls whether the agent checks if Claude Code is
+// running before attempting OAuth token refresh. When disabled, OAuth refresh
+// is always attempted regardless of CC state.
+func (a *AnthropicAgent) SetCCDetectionEnabled(enabled bool) {
+	if enabled {
+		a.isClaudeCodeRunning = IsClaudeCodeRunning
+	} else {
+		a.isClaudeCodeRunning = func() bool { return false }
+	}
+}
+
 // Run starts the Anthropic agent's polling loop. It polls immediately,
 // then continues at the configured interval until the context is cancelled.
 func (a *AnthropicAgent) Run(ctx context.Context) error {

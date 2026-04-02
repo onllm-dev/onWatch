@@ -11362,5 +11362,356 @@ func TestHandler_Login_PostInvalidJSON(t *testing.T) {
 	}
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// ── Codex display mode tests
+// ═══════════════════════════════════════════════════════════════════
+
+func TestHandler_GetCodexDisplayMode_DefaultUsage(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithCodex()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	mode := h.getCodexDisplayMode()
+	if mode != "usage" {
+		t.Errorf("getCodexDisplayMode() = %q, want %q", mode, "usage")
+	}
+}
+
+func TestHandler_GetCodexDisplayMode_EnvOverride(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "available"
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	mode := h.getCodexDisplayMode()
+	if mode != "available" {
+		t.Errorf("getCodexDisplayMode() = %q, want %q", mode, "available")
+	}
+}
+
+func TestHandler_GetCodexDisplayMode_DBOverridesEnv(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	// Set env to "usage"
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "usage"
+
+	// Set DB to "available" - should take priority
+	s.SetSetting("provider_settings", `{"codex":{"display_mode":"available"}}`)
+
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	mode := h.getCodexDisplayMode()
+	if mode != "available" {
+		t.Errorf("getCodexDisplayMode() = %q, want %q (DB should override env)", mode, "available")
+	}
+}
+
+func TestHandler_GetCodexDisplayMode_NilStore(t *testing.T) {
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "available"
+	h := NewHandler(nil, nil, nil, nil, cfg)
+
+	mode := h.getCodexDisplayMode()
+	if mode != "available" {
+		t.Errorf("getCodexDisplayMode() = %q, want %q (nil store should fall back to env)", mode, "available")
+	}
+}
+
+func TestHandler_BuildCodexCurrent_UsageMode(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	resetsAt := time.Now().Add(5 * time.Hour)
+	snap := &api.CodexSnapshot{
+		CapturedAt: time.Now().UTC(),
+		PlanType:   "pro",
+		Quotas: []api.CodexQuota{
+			{Name: "five_hour", Utilization: 45.0, ResetsAt: &resetsAt},
+			{Name: "seven_day", Utilization: 10.0},
+		},
+	}
+	s.InsertCodexSnapshot(snap)
+
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "usage"
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	result := h.buildCodexCurrent(0)
+	quotas, ok := result["quotas"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("expected quotas array, got %T", result["quotas"])
+	}
+
+	for _, q := range quotas {
+		name := q["name"].(string)
+		if name == "five_hour" || name == "seven_day" {
+			// In usage mode, five_hour and seven_day should NOT have cardPercent
+			if _, hasCard := q["cardPercent"]; hasCard {
+				t.Errorf("quota %q should NOT have cardPercent in usage mode", name)
+			}
+		}
+	}
+}
+
+func TestHandler_BuildCodexCurrent_AvailableMode(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	resetsAt := time.Now().Add(5 * time.Hour)
+	snap := &api.CodexSnapshot{
+		CapturedAt: time.Now().UTC(),
+		PlanType:   "pro",
+		Quotas: []api.CodexQuota{
+			{Name: "five_hour", Utilization: 45.0, ResetsAt: &resetsAt},
+			{Name: "seven_day", Utilization: 10.0},
+		},
+	}
+	s.InsertCodexSnapshot(snap)
+
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "available"
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	result := h.buildCodexCurrent(0)
+	quotas, ok := result["quotas"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("expected quotas array, got %T", result["quotas"])
+	}
+
+	for _, q := range quotas {
+		name := q["name"].(string)
+		if name == "five_hour" {
+			cardPercent, hasCard := q["cardPercent"].(float64)
+			if !hasCard {
+				t.Fatal("five_hour should have cardPercent in available mode")
+			}
+			// 100 - 45 = 55
+			if cardPercent != 55.0 {
+				t.Errorf("five_hour cardPercent = %f, want 55.0", cardPercent)
+			}
+			cardLabel, _ := q["cardLabel"].(string)
+			if cardLabel != "Remaining" {
+				t.Errorf("five_hour cardLabel = %q, want %q", cardLabel, "Remaining")
+			}
+		}
+		if name == "seven_day" {
+			cardPercent, hasCard := q["cardPercent"].(float64)
+			if !hasCard {
+				t.Fatal("seven_day should have cardPercent in available mode")
+			}
+			// 100 - 10 = 90
+			if cardPercent != 90.0 {
+				t.Errorf("seven_day cardPercent = %f, want 90.0", cardPercent)
+			}
+		}
+	}
+}
+
+func TestHandler_BuildCodexCurrent_AvailableMode_ClampsNegative(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	snap := &api.CodexSnapshot{
+		CapturedAt: time.Now().UTC(),
+		PlanType:   "pro",
+		Quotas: []api.CodexQuota{
+			{Name: "five_hour", Utilization: 120.0}, // over 100%
+		},
+	}
+	s.InsertCodexSnapshot(snap)
+
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "available"
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	result := h.buildCodexCurrent(0)
+	quotas, ok := result["quotas"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("expected quotas array, got %T", result["quotas"])
+	}
+
+	for _, q := range quotas {
+		if q["name"] == "five_hour" {
+			cardPercent := q["cardPercent"].(float64)
+			if cardPercent < 0 {
+				t.Errorf("cardPercent should be clamped to 0, got %f", cardPercent)
+			}
+		}
+	}
+}
+
+func TestHandler_BuildCodexCurrent_CodeReviewAlwaysRemaining(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	snap := &api.CodexSnapshot{
+		CapturedAt: time.Now().UTC(),
+		PlanType:   "pro",
+		Quotas: []api.CodexQuota{
+			{Name: "code_review", Utilization: 30.0},
+		},
+	}
+	s.InsertCodexSnapshot(snap)
+
+	// In "usage" mode, code_review should still show remaining
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "usage"
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	result := h.buildCodexCurrent(0)
+	quotas, ok := result["quotas"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("expected quotas array, got %T", result["quotas"])
+	}
+
+	for _, q := range quotas {
+		if q["name"] == "code_review" {
+			cardPercent, hasCard := q["cardPercent"].(float64)
+			if !hasCard {
+				t.Fatal("code_review should ALWAYS have cardPercent regardless of display mode")
+			}
+			// 100 - 30 = 70
+			if cardPercent != 70.0 {
+				t.Errorf("code_review cardPercent = %f, want 70.0", cardPercent)
+			}
+			cardLabel, _ := q["cardLabel"].(string)
+			if cardLabel != "Remaining" {
+				t.Errorf("code_review cardLabel = %q, want %q", cardLabel, "Remaining")
+			}
+		}
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ── sanitizeProviderSettings tests
+// ═══════════════════════════════════════════════════════════════════
+
+func TestSanitizeProviderSettings_ValidValues(t *testing.T) {
+	settings := map[string]interface{}{
+		"codex": map[string]interface{}{
+			"display_mode": "available",
+		},
+		"anthropic": map[string]interface{}{
+			"source":       "statusline",
+			"cc_detection": "off",
+		},
+		"zai": map[string]interface{}{
+			"region": "cn",
+		},
+	}
+
+	sanitizeProviderSettings(settings)
+
+	// Valid values should pass through unchanged
+	codex := settings["codex"].(map[string]interface{})
+	if codex["display_mode"] != "available" {
+		t.Errorf("display_mode = %q, want %q", codex["display_mode"], "available")
+	}
+	anthropic := settings["anthropic"].(map[string]interface{})
+	if anthropic["source"] != "statusline" {
+		t.Errorf("source = %q, want %q", anthropic["source"], "statusline")
+	}
+	if anthropic["cc_detection"] != "off" {
+		t.Errorf("cc_detection = %q, want %q", anthropic["cc_detection"], "off")
+	}
+	zai := settings["zai"].(map[string]interface{})
+	if zai["region"] != "cn" {
+		t.Errorf("zai region = %q, want %q", zai["region"], "cn")
+	}
+}
+
+func TestSanitizeProviderSettings_InvalidValuesReset(t *testing.T) {
+	settings := map[string]interface{}{
+		"codex": map[string]interface{}{
+			"display_mode": "bogus",
+		},
+		"anthropic": map[string]interface{}{
+			"source":       "invalid_source",
+			"cc_detection": "maybe",
+		},
+		"zai": map[string]interface{}{
+			"region": "mars",
+		},
+		"minimax": map[string]interface{}{
+			"region": "eu",
+		},
+	}
+
+	sanitizeProviderSettings(settings)
+
+	codex := settings["codex"].(map[string]interface{})
+	if codex["display_mode"] != "usage" {
+		t.Errorf("display_mode = %q, want %q (should reset to default)", codex["display_mode"], "usage")
+	}
+	anthropic := settings["anthropic"].(map[string]interface{})
+	if anthropic["source"] != "auto" {
+		t.Errorf("source = %q, want %q (should reset to default)", anthropic["source"], "auto")
+	}
+	if anthropic["cc_detection"] != "on" {
+		t.Errorf("cc_detection = %q, want %q (should reset to default)", anthropic["cc_detection"], "on")
+	}
+	zai := settings["zai"].(map[string]interface{})
+	if zai["region"] != "global" {
+		t.Errorf("zai region = %q, want %q (should reset to default)", zai["region"], "global")
+	}
+	minimax := settings["minimax"].(map[string]interface{})
+	if minimax["region"] != "global" {
+		t.Errorf("minimax region = %q, want %q (should reset to default)", minimax["region"], "global")
+	}
+}
+
+func TestSanitizeProviderSettings_NonEnumFieldsUntouched(t *testing.T) {
+	settings := map[string]interface{}{
+		"codex": map[string]interface{}{
+			"profiles_dir": "/custom/path",
+			"display_mode": "available",
+		},
+		"anthropic": map[string]interface{}{
+			"api_poll_cycle_interval": float64(20),
+			"staleness_minutes":      float64(10),
+			"source":                 "api",
+		},
+	}
+
+	sanitizeProviderSettings(settings)
+
+	codex := settings["codex"].(map[string]interface{})
+	if codex["profiles_dir"] != "/custom/path" {
+		t.Errorf("profiles_dir should be untouched, got %q", codex["profiles_dir"])
+	}
+	anthropic := settings["anthropic"].(map[string]interface{})
+	if anthropic["api_poll_cycle_interval"] != float64(20) {
+		t.Errorf("api_poll_cycle_interval should be untouched, got %v", anthropic["api_poll_cycle_interval"])
+	}
+}
+
+func TestSanitizeProviderSettings_EmptyAndMissing(t *testing.T) {
+	// Empty provider map
+	settings := map[string]interface{}{
+		"codex": map[string]interface{}{},
+	}
+	sanitizeProviderSettings(settings) // should not panic
+
+	// Missing provider
+	settings2 := map[string]interface{}{
+		"openrouter": map[string]interface{}{
+			"api_key": "sk-test",
+		},
+	}
+	sanitizeProviderSettings(settings2) // should not panic
+
+	// Non-map provider value
+	settings3 := map[string]interface{}{
+		"codex": "not-a-map",
+	}
+	sanitizeProviderSettings(settings3) // should not panic
+}
+
 // Ensure all compile-time references are used
 var _ = fmt.Sprintf

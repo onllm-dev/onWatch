@@ -2521,6 +2521,88 @@ select.settings-input {
   align-items: center;
 }
 
+.provider-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+  flex-shrink: 0;
+}
+.provider-settings-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+  background: var(--surface-inset);
+}
+.provider-settings-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Provider settings modal - ensure consistent sizing with settings page */
+#provider-settings-modal .settings-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+#provider-settings-modal .settings-input {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+#provider-settings-modal .settings-field-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+#provider-settings-modal .settings-fields {
+  gap: 16px;
+}
+
+/* Compact modal footer buttons */
+.modal-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 0 24px 20px;
+}
+.modal-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.modal-footer-btn:hover { opacity: 0.92; }
+.modal-footer-btn:active { transform: scale(0.98); }
+.modal-footer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.modal-footer-btn svg { width: 14px; height: 14px; }
+.modal-footer-btn-primary {
+  background: var(--accent-teal);
+  color: var(--text-inverse);
+}
+.modal-footer-btn-secondary {
+  background: var(--surface-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+}
+.modal-footer-btn-secondary:hover {
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+  opacity: 1;
+}
+
 .settings-toggle-item {
   display: flex;
   flex-direction: column;
@@ -3407,6 +3489,59 @@ select.settings-input {
 .promo-tag-inline.promo-peak {
   background: var(--accent-peach-muted);
   color: var(--accent-peach-text);
+}
+
+/* ═══════════════════════════════════════════
+   CODEX PROVIDER SECTION (Settings Page)
+   ═══════════════════════════════════════════ */
+
+.codex-provider-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--surface-inset);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  grid-column: span 2;
+}
+
+.codex-provider-section > .settings-toggle-row {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.codex-subprofiles {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.codex-subprofile-row.settings-toggle-row {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-light);
+  padding: 12px 16px 12px 32px;
+  background: transparent;
+}
+
+.codex-subprofile-row.settings-toggle-row:last-child {
+  border-bottom: none;
+}
+
+.codex-subprofile-row .settings-toggle-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.codex-subprofile-row .settings-toggle-sublabel {
+  font-size: 11px;
+}
+
+/* Align sub-profile toggles with parent row that has gear icon (32px + 20px gap) */
+.codex-subprofile-row .settings-toggle-group {
+  padding-right: 52px;
 }
 
 /* ═══════════════════════════════════════════

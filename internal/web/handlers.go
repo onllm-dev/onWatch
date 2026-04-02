@@ -7,6 +7,8 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -116,9 +118,206 @@ func parseCodexAccountID(r *http.Request) int64 {
 	return accountID
 }
 
-// CodexProfiles returns available Codex profiles/accounts.
-// Returns all profiles (including deleted) so the UI can show deleted status in settings.
+// CodexProfile represents a saved Codex credential profile (mirrors agent.CodexProfile).
+type CodexProfile struct {
+	Name      string    `json:"name"`
+	AccountID string    `json:"account_id"`
+	UserID    string    `json:"user_id"`
+	SavedAt   time.Time `json:"saved_at"`
+	Tokens    struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		IDToken      string `json:"id_token"`
+	} `json:"tokens"`
+	APIKey string `json:"api_key,omitempty"`
+}
+
+type codexRefreshAuthFile struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
+	AccountID    string `json:"account_id"`
+	OpenAIAPIKey string `json:"OPENAI_API_KEY"`
+	Tokens       struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		IDToken      string `json:"id_token"`
+		AccountID    string `json:"account_id"`
+	} `json:"tokens"`
+}
+
+type codexRefreshAuthCredentials struct {
+	AccessToken  string
+	RefreshToken string
+	IDToken      string
+	AccountID    string
+	APIKey       string
+}
+
+// validProfileName checks if a profile name is valid (alphanumeric, hyphen, underscore).
+var validProfileName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// codexProfilesDir returns the directory for storing Codex profiles.
+func codexProfilesDir() string {
+	// Docker: use /data
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return "/data/codex-profiles"
+	}
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return "/data/codex-profiles"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".onwatch", "data", "codex-profiles")
+}
+
+// codexAuthRefreshPath returns the path to the Codex auth.json file.
+func codexAuthRefreshPath() string {
+	if codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME")); codexHome != "" {
+		return filepath.Join(codexHome, "auth.json")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".codex", "auth.json")
+}
+
+// codexCompositeExternalID returns a composite external ID for deduplication.
+func codexCompositeExternalID(accountID, userID string) string {
+	if strings.TrimSpace(accountID) == "" {
+		return ""
+	}
+	creds := &api.CodexCredentials{AccountID: accountID, UserID: userID}
+	return creds.CompositeExternalID()
+}
+
+// codexCredUserID extracts the user ID from Codex credentials.
+func codexCredUserID(creds *api.CodexCredentials) string {
+	if creds == nil {
+		return ""
+	}
+	if strings.TrimSpace(creds.UserID) != "" {
+		return strings.TrimSpace(creds.UserID)
+	}
+	return api.ParseIDTokenUserID(creds.IDToken)
+}
+
+// codexRefreshUserID extracts the user ID from refresh credentials.
+func codexRefreshUserID(creds *codexRefreshAuthCredentials) string {
+	if creds == nil {
+		return ""
+	}
+	return api.ParseIDTokenUserID(creds.IDToken)
+}
+
+// isDuplicateCodexProfile checks if a profile matches the given credentials.
+func isDuplicateCodexProfile(profile CodexProfile, creds *api.CodexCredentials) bool {
+	if strings.TrimSpace(profile.Name) == "" || creds == nil {
+		return false
+	}
+	targetComposite := codexCompositeExternalID(creds.AccountID, codexCredUserID(creds))
+	existingComposite := codexProfileCompositeExternalID(profile)
+	if targetComposite != "" && existingComposite != "" {
+		return existingComposite == targetComposite
+	}
+	existingUser := strings.TrimSpace(profile.UserID)
+	if existingUser == "" {
+		existingUser = api.ParseIDTokenUserID(profile.Tokens.IDToken)
+	}
+	newUser := codexCredUserID(creds)
+	if existingUser == "" && newUser == "" {
+		return false
+	}
+	if existingUser != "" && newUser != "" && existingUser == newUser {
+		return true
+	}
+	return false
+}
+
+func codexProfileCompositeExternalID(profile CodexProfile) string {
+	userID := strings.TrimSpace(profile.UserID)
+	if userID == "" {
+		userID = api.ParseIDTokenUserID(profile.Tokens.IDToken)
+	}
+	return codexCompositeExternalID(profile.AccountID, userID)
+}
+
+// listCodexProfiles returns all saved Codex profiles from disk.
+func listCodexProfiles() ([]CodexProfile, error) {
+	profilesDir := codexProfilesDir()
+	if profilesDir == "" {
+		return nil, fmt.Errorf("could not determine profiles directory")
+	}
+	entries, err := os.ReadDir(profilesDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read profiles directory: %w", err)
+	}
+	var profiles []CodexProfile
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		profilePath := filepath.Join(profilesDir, entry.Name())
+		profile, err := loadCodexProfile(profilePath)
+		if err != nil {
+			continue
+		}
+		profiles = append(profiles, *profile)
+	}
+	return profiles, nil
+}
+
+// loadCodexProfile loads a single Codex profile from disk.
+func loadCodexProfile(path string) (*CodexProfile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var profile CodexProfile
+	if err := json.Unmarshal(data, &profile); err != nil {
+		return nil, err
+	}
+	if profile.Name == "" {
+		base := filepath.Base(path)
+		profile.Name = strings.TrimSuffix(base, ".json")
+	}
+	if strings.TrimSpace(profile.UserID) == "" {
+		profile.UserID = api.ParseIDTokenUserID(profile.Tokens.IDToken)
+	}
+	return &profile, nil
+}
+
+// CodexProfiles handles profile management for Codex.
+// GET /api/codex/profiles - list all profiles
+// POST /api/codex/profiles - save current auth as a new profile (body: {name: "xxx"})
+// DELETE /api/codex/profiles?name=xxx - delete a profile
+// POST /api/codex/profiles/refresh?name=xxx - refresh a profile from current auth
 func (h *Handler) CodexProfiles(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.codexProfilesList(w, r)
+	case http.MethodPost:
+		// Check if this is a refresh request
+		if r.URL.Query().Get("refresh") != "" {
+			h.codexProfileRefresh(w, r)
+		} else {
+			h.codexProfileSave(w, r)
+		}
+	case http.MethodDelete:
+		h.codexProfileDelete(w, r)
+	default:
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// codexProfilesList returns all Codex profiles/accounts from the database.
+func (h *Handler) codexProfilesList(w http.ResponseWriter, r *http.Request) {
 	if h.store == nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{"profiles": []interface{}{}})
 		return
@@ -145,6 +344,260 @@ func (h *Handler) CodexProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{"profiles": profiles})
+}
+
+// codexProfileSave saves the current Codex auth as a new profile.
+func (h *Handler) codexProfileSave(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		respondError(w, http.StatusBadRequest, "profile name is required")
+		return
+	}
+	if !validProfileName.MatchString(req.Name) {
+		respondError(w, http.StatusBadRequest, "invalid profile name: use only letters, numbers, hyphens, and underscores")
+		return
+	}
+
+	// Detect current Codex credentials
+	creds := api.DetectCodexCredentials(h.logger)
+	if creds == nil || (creds.AccessToken == "" && creds.APIKey == "") {
+		respondError(w, http.StatusBadRequest, "no Codex credentials found. Run 'codex auth' first to authenticate")
+		return
+	}
+
+	// Determine profiles directory
+	profilesDir := codexProfilesDir()
+	if profilesDir == "" {
+		respondError(w, http.StatusInternalServerError, "could not determine profiles directory")
+		return
+	}
+	if err := os.MkdirAll(profilesDir, 0o700); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to create profiles directory")
+		return
+	}
+
+	profilePath := filepath.Join(profilesDir, req.Name+".json")
+	if _, err := os.Stat(profilePath); err == nil {
+		respondError(w, http.StatusConflict, "profile already exists")
+		return
+	}
+
+	// Check for duplicate accounts
+	existingProfiles, err := listCodexProfiles()
+	if err != nil {
+		h.logger.Warn("failed to list existing profiles for duplicate check", "error", err)
+	}
+	for _, p := range existingProfiles {
+		if isDuplicateCodexProfile(p, creds) {
+			respondError(w, http.StatusConflict, "account "+creds.AccountID+" is already saved as profile "+p.Name)
+			return
+		}
+	}
+
+	profile := CodexProfile{
+		Name:      req.Name,
+		AccountID: creds.AccountID,
+		UserID:    codexCredUserID(creds),
+		SavedAt:   time.Now().UTC(),
+		APIKey:    creds.APIKey,
+	}
+	profile.Tokens.AccessToken = creds.AccessToken
+	profile.Tokens.RefreshToken = creds.RefreshToken
+	profile.Tokens.IDToken = creds.IDToken
+
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to marshal profile")
+		return
+	}
+	if err := os.WriteFile(profilePath, data, 0o600); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to write profile")
+		return
+	}
+
+	// Ensure profile is active in the database
+	if h.store != nil {
+		externalID := codexCompositeExternalID(profile.AccountID, profile.UserID)
+		if externalID == "" {
+			externalID = profile.AccountID
+		}
+		h.store.GetOrCreateProviderAccountByExternalID("codex", req.Name, externalID)
+	}
+
+	respondJSON(w, http.StatusCreated, map[string]interface{}{
+		"message":  "profile saved",
+		"name":     req.Name,
+		"accountID": creds.AccountID,
+	})
+}
+
+// codexProfileDelete deletes a Codex profile.
+func (h *Handler) codexProfileDelete(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		respondError(w, http.StatusBadRequest, "profile name is required")
+		return
+	}
+	if !validProfileName.MatchString(name) {
+		respondError(w, http.StatusBadRequest, "invalid profile name")
+		return
+	}
+
+	profilesDir := codexProfilesDir()
+	if profilesDir == "" {
+		respondError(w, http.StatusInternalServerError, "could not determine profiles directory")
+		return
+	}
+
+	profilePath := filepath.Join(profilesDir, name+".json")
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		respondError(w, http.StatusNotFound, "profile not found")
+		return
+	}
+
+	if err := os.Remove(profilePath); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to delete profile")
+		return
+	}
+
+	// Mark profile as deleted in database
+	if h.store != nil {
+		h.store.MarkProviderAccountDeleted("codex", name)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "profile deleted",
+		"name":   name,
+	})
+}
+
+// codexProfileRefresh refreshes a profile with current Codex auth.
+func (h *Handler) codexProfileRefresh(w http.ResponseWriter, r *http.Request) {
+	// JS sends ?refresh=profileName, fall back to ?name= for direct API callers
+	name := r.URL.Query().Get("refresh")
+	if name == "" {
+		name = r.URL.Query().Get("name")
+	}
+	if name == "" {
+		respondError(w, http.StatusBadRequest, "profile name is required")
+		return
+	}
+	if !validProfileName.MatchString(name) {
+		respondError(w, http.StatusBadRequest, "invalid profile name")
+		return
+	}
+
+	profilesDir := codexProfilesDir()
+	if profilesDir == "" {
+		respondError(w, http.StatusInternalServerError, "could not determine profiles directory")
+		return
+	}
+
+	profilePath := filepath.Join(profilesDir, name+".json")
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		respondError(w, http.StatusNotFound, "profile not found")
+		return
+	}
+
+	// Load current auth from auth.json
+	authPath := codexAuthRefreshPath()
+	if authPath == "" {
+		respondError(w, http.StatusBadRequest, "cannot determine Codex auth.json path")
+		return
+	}
+	authData, err := os.ReadFile(authPath)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "cannot read Codex auth.json: run 'codex auth' first")
+		return
+	}
+
+	var auth codexRefreshAuthFile
+	if err := json.Unmarshal(authData, &auth); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid auth.json format")
+		return
+	}
+
+	creds := &codexRefreshAuthCredentials{
+		AccessToken:  strings.TrimSpace(auth.Tokens.AccessToken),
+		RefreshToken: strings.TrimSpace(auth.Tokens.RefreshToken),
+		IDToken:      strings.TrimSpace(auth.Tokens.IDToken),
+		AccountID:    strings.TrimSpace(auth.Tokens.AccountID),
+		APIKey:       strings.TrimSpace(auth.OpenAIAPIKey),
+	}
+	// Backward support for flat auth.json
+	if creds.AccessToken == "" {
+		creds.AccessToken = strings.TrimSpace(auth.AccessToken)
+	}
+	if creds.RefreshToken == "" {
+		creds.RefreshToken = strings.TrimSpace(auth.RefreshToken)
+	}
+	if creds.IDToken == "" {
+		creds.IDToken = strings.TrimSpace(auth.IDToken)
+	}
+	if creds.AccountID == "" {
+		creds.AccountID = strings.TrimSpace(auth.AccountID)
+	}
+
+	if creds.AccessToken == "" {
+		respondError(w, http.StatusBadRequest, "auth.json has no access_token - run 'codex auth' first")
+		return
+	}
+
+	// Load existing profile
+	existing, err := loadCodexProfile(profilePath)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "cannot read profile")
+		return
+	}
+
+	// Check account override if account IDs differ
+	if existing.AccountID != "" && creds.AccountID != "" && existing.AccountID != creds.AccountID {
+		respondError(w, http.StatusConflict, "current auth is for account "+creds.AccountID+" but profile is linked to "+existing.AccountID+". Delete and re-save to change accounts.")
+		return
+	}
+
+	// Update profile
+	profile := *existing
+	profile.AccountID = creds.AccountID
+	profile.UserID = codexRefreshUserID(creds)
+	profile.SavedAt = time.Now().UTC()
+	profile.Tokens.AccessToken = creds.AccessToken
+	profile.Tokens.RefreshToken = creds.RefreshToken
+	profile.Tokens.IDToken = creds.IDToken
+	if creds.APIKey != "" {
+		profile.APIKey = creds.APIKey
+	}
+
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to marshal profile")
+		return
+	}
+	if err := os.WriteFile(profilePath, data, 0o600); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to write profile")
+		return
+	}
+
+	// Ensure the profile is active in the database (undelete if previously deleted)
+	if h.store != nil {
+		externalID := codexCompositeExternalID(profile.AccountID, profile.UserID)
+		if externalID == "" {
+			externalID = profile.AccountID
+		}
+		h.store.GetOrCreateProviderAccountByExternalID("codex", name, externalID)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message":    "profile refreshed",
+		"name":       name,
+		"accountID":  creds.AccountID,
+	})
 }
 
 func (h *Handler) codexUsageAccounts() []map[string]interface{} {
@@ -800,6 +1253,148 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.OpenRouterAPIKey = src.OpenRouterAPIKey
 	dst.GeminiEnabled = src.GeminiEnabled
 	dst.GeminiAutoToken = src.GeminiAutoToken
+	dst.ZaiRegion = src.ZaiRegion
+	dst.MiniMaxRegion = src.MiniMaxRegion
+}
+
+// providerSecretKeys lists the provider_settings field names that contain
+// sensitive values (API keys, tokens). These are stripped from GET responses
+// and replaced with a "{key}_set: true" flag so the UI can show status
+// without exposing the actual values.
+var providerSecretKeys = map[string]bool{
+	"api_key":    true,
+	"token":      true,
+	"csrf_token": true,
+}
+
+// stripProviderSecrets removes sensitive field values from provider_settings
+// and replaces them with "{field}_set: true" flags for the UI.
+func stripProviderSecrets(providers map[string]interface{}) {
+	for _, provMap := range providers {
+		m, ok := provMap.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for k, v := range m {
+			if !providerSecretKeys[k] {
+				continue
+			}
+			if str, ok := v.(string); ok && str != "" {
+				m[k] = ""             // Don't send actual value
+				m[k+"_set"] = true    // Signal that it's configured
+			}
+		}
+	}
+}
+
+// providerEnumFields defines valid values for enum-type provider settings.
+// Fields not listed here pass through unvalidated (free-form strings, numbers).
+var providerEnumFields = map[string]map[string][]string{
+	"codex": {
+		"display_mode": {"usage", "available"},
+	},
+	"anthropic": {
+		"source":       {"auto", "statusline", "api"},
+		"cc_detection": {"on", "off"},
+	},
+	"zai": {
+		"region": {"global", "cn"},
+	},
+	"minimax": {
+		"region": {"global", "cn"},
+	},
+}
+
+// sanitizeProviderSettings validates enum fields and resets invalid values
+// to their defaults before persisting to DB.
+func sanitizeProviderSettings(providers map[string]interface{}) {
+	for provKey, enumFields := range providerEnumFields {
+		provMap, ok := providers[provKey].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for field, validValues := range enumFields {
+			val, ok := provMap[field].(string)
+			if !ok || val == "" {
+				continue
+			}
+			valid := false
+			for _, v := range validValues {
+				if val == v {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				// Reset to first valid value (the default)
+				provMap[field] = validValues[0]
+			}
+		}
+	}
+}
+
+// ApplyProviderSettingsFromDB loads provider_settings from the DB and applies
+// API keys, tokens, and region overrides to the runtime config. This allows
+// the UI to override .env values without requiring a daemon restart.
+func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *slog.Logger) {
+	provJSON, err := st.GetSetting("provider_settings")
+	if err != nil || provJSON == "" {
+		return
+	}
+	var provSettings map[string]map[string]interface{}
+	if json.Unmarshal([]byte(provJSON), &provSettings) != nil {
+		return
+	}
+
+	if s := provSettings["synthetic"]; s != nil {
+		if key, _ := s["api_key"].(string); key != "" {
+			cfg.SyntheticAPIKey = key
+		}
+	}
+	if s := provSettings["zai"]; s != nil {
+		if key, _ := s["api_key"].(string); key != "" {
+			cfg.ZaiAPIKey = key
+		}
+		if region, _ := s["region"].(string); region != "" {
+			cfg.ZaiRegion = region
+			if region == "cn" {
+				cfg.ZaiBaseURL = "https://open.bigmodel.cn/api"
+			} else {
+				cfg.ZaiBaseURL = "https://api.z.ai/api"
+			}
+		}
+	}
+	if s := provSettings["copilot"]; s != nil {
+		if token, _ := s["token"].(string); token != "" {
+			cfg.CopilotToken = token
+		}
+	}
+	if s := provSettings["minimax"]; s != nil {
+		if key, _ := s["api_key"].(string); key != "" {
+			cfg.MiniMaxAPIKey = key
+		}
+		if region, _ := s["region"].(string); region != "" {
+			cfg.MiniMaxRegion = region
+		}
+	}
+	if s := provSettings["openrouter"]; s != nil {
+		if key, _ := s["api_key"].(string); key != "" {
+			cfg.OpenRouterAPIKey = key
+		}
+	}
+	if s := provSettings["antigravity"]; s != nil {
+		if url, _ := s["base_url"].(string); url != "" {
+			cfg.AntigravityBaseURL = url
+			cfg.AntigravityEnabled = true
+		}
+		if token, _ := s["csrf_token"].(string); token != "" {
+			cfg.AntigravityCSRFToken = token
+		}
+	}
+
+	if logger != nil {
+		logger.Debug("Applied provider_settings from DB")
+	}
 }
 
 func (h *Handler) providerStatuses() []ProviderStatus {
@@ -918,6 +1513,11 @@ func (h *Handler) ReloadProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyProviderConfig(h.config, cfg)
+
+	// Apply provider_settings from DB (keys/regions set via UI override .env)
+	if h.store != nil {
+		ApplyProviderSettingsFromDB(h.store, h.config, h.logger)
+	}
 
 	if h.agentManager != nil {
 		vis := h.providerVisibilityMap()
@@ -5023,6 +5623,8 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		if provJSON != "" {
 			var prov map[string]interface{}
 			if json.Unmarshal([]byte(provJSON), &prov) == nil {
+				// Strip sensitive fields (API keys, tokens) before sending to client
+				stripProviderSecrets(prov)
 				result["provider_settings"] = prov
 			}
 		}
@@ -5307,14 +5909,27 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusBadRequest, "invalid provider_settings value")
 			return
 		}
-		// Merge with existing settings (preserve other providers)
+		// Deep-merge with existing settings: preserve fields not in the update
+		// (e.g. sensitive keys omitted from the form when unchanged).
 		existing := make(map[string]interface{})
 		if existingJSON, _ := h.store.GetSetting("provider_settings"); existingJSON != "" {
 			_ = json.Unmarshal([]byte(existingJSON), &existing)
 		}
 		for k, v := range provSettings {
-			existing[k] = v
+			newMap, newOK := v.(map[string]interface{})
+			existingMap, existOK := existing[k].(map[string]interface{})
+			if newOK && existOK {
+				// Merge fields: new values override, missing keys preserved
+				for fk, fv := range newMap {
+					existingMap[fk] = fv
+				}
+				existing[k] = existingMap
+			} else {
+				existing[k] = v
+			}
 		}
+		// Sanitize known enum fields before persisting
+		sanitizeProviderSettings(existing)
 		merged, _ := json.Marshal(existing)
 		if err := h.store.SetSetting("provider_settings", string(merged)); err != nil {
 			h.logger.Error("failed to save provider settings", "error", err)
@@ -5322,6 +5937,8 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Info("Provider settings updated", "providers", provSettings)
+		// Strip sensitive fields before returning to client
+		stripProviderSecrets(existing)
 		result["provider_settings"] = existing
 	}
 
@@ -6454,6 +7071,28 @@ func (h *Handler) currentCodex(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, h.buildCodexCurrent(accountID))
 }
 
+// getCodexDisplayMode returns the Codex display mode for a given account.
+// Priority: 1) provider_settings[codex][display_mode] from DB, 2) CODEX_SHOW_AVAILABLE env var, 3) default "usage"
+func (h *Handler) getCodexDisplayMode() string {
+	if h.store != nil {
+		provJSON, err := h.store.GetSetting("provider_settings")
+		if err == nil && provJSON != "" {
+			var provSettings map[string]map[string]interface{}
+			if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
+				if codexSettings, ok := provSettings["codex"]; ok {
+					if dm, ok := codexSettings["display_mode"].(string); ok && dm != "" {
+						return dm
+					}
+				}
+			}
+		}
+	}
+	if h.config != nil && h.config.CodexShowAvailable != "" {
+		return h.config.CodexShowAvailable
+	}
+	return "usage"
+}
+
 func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 	now := time.Now().UTC()
 	response := map[string]interface{}{
@@ -6494,6 +7133,8 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 
 	quotas := make([]map[string]interface{}, 0, len(orderedQuotas))
 	quotaIndexByName := make(map[string]int, len(orderedQuotas))
+	displayMode := h.getCodexDisplayMode()
+	showAvailable := displayMode == "available"
 	for _, q := range orderedQuotas {
 		normalizedName := codexNormalizedQuotaName(latest.PlanType, q.Name)
 		headroom := 100 - q.Utilization
@@ -6508,7 +7149,8 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 			"headroom":    headroom,
 			"status":      status,
 		}
-		if normalizedName == "code_review" {
+		// code_review always shows remaining; five_hour/seven_day show remaining when display_mode="available"
+		if normalizedName == "code_review" || (showAvailable && (normalizedName == "five_hour" || normalizedName == "seven_day")) {
 			remaining := 100 - q.Utilization
 			if remaining < 0 {
 				remaining = 0
