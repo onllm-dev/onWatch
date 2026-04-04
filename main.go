@@ -1010,6 +1010,11 @@ func run() error {
 		geminiAg.SetClientCredentials(api.DetectGeminiClientCredentials())
 	}
 
+	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
+	if cfg.APIIntegrationsEnabled {
+		apiIntegrationsAg = agent.NewAPIIntegrationsIngestAgent(db, cfg.APIIntegrationsDir, logger)
+	}
+
 	// Create notification engine
 	notifier := notify.New(db, logger)
 	notifier.SetEncryptionKey(deriveEncryptionKey(cfg.AdminPassHash))
@@ -1245,6 +1250,9 @@ func run() error {
 	if geminiAg != nil {
 		agentMgr.RegisterFactory("gemini", func() (agent.AgentRunner, error) { return geminiAg, nil })
 	}
+	if apiIntegrationsAg != nil {
+		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
+	}
 	handler.SetAgentManager(agentMgr)
 	if minimaxMgr != nil {
 		handler.SetMiniMaxAgentManager(minimaxMgr)
@@ -1274,6 +1282,11 @@ func run() error {
 		if err := agentMgr.Start(providerKey); err == nil {
 			startedAny = true
 			continue
+		}
+	}
+	if apiIntegrationsAg != nil {
+		if err := agentMgr.Start("api_integrations"); err == nil {
+			startedAny = true
 		}
 	}
 	if !startedAny {

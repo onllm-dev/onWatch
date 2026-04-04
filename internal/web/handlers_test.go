@@ -79,6 +79,55 @@ func TestHandler_Dashboard_ReturnsHTML(t *testing.T) {
 	}
 }
 
+func TestHandler_Dashboard_IncludesAPIIntegrationsTabWhenVisible(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithSynthetic()
+	cfg.APIIntegrationsEnabled = true
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/?provider=api-integrations", nil)
+	rr := httptest.NewRecorder()
+	h.Dashboard(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `data-provider="api-integrations"`) {
+		t.Fatalf("expected API Integrations tab in dashboard, got %s", body)
+	}
+	if !strings.Contains(body, `id="api-integrations-dashboard"`) {
+		t.Fatalf("expected API integrations dashboard shell, got %s", body)
+	}
+}
+
+func TestHandler_Dashboard_OmitsAPIIntegrationsTabWhenHidden(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	if err := s.SetSetting("api_integrations_visibility", `{"dashboard":false}`); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	cfg := createTestConfigWithSynthetic()
+	cfg.APIIntegrationsEnabled = true
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	h.Dashboard(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, `data-provider="api-integrations"`) {
+		t.Fatalf("did not expect API Integrations tab in dashboard")
+	}
+}
+
 func TestHandler_Current_ReturnsJSON(t *testing.T) {
 	s, _ := store.New(":memory:")
 	defer s.Close()
@@ -3572,6 +3621,64 @@ func TestHandler_UpdateSettings_ProviderVisibility(t *testing.T) {
 	}
 }
 
+func TestHandler_GetSettings_APIIntegrationsVisibility(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	if err := s.SetSetting("api_integrations_visibility", `{"dashboard":false}`); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	cfg := createTestConfigWithSynthetic()
+	cfg.APIIntegrationsEnabled = true
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	rr := httptest.NewRecorder()
+	h.GetSettings(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	toolsVis, ok := response["api_integrations_visibility"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected api_integrations_visibility in response, got %v", response["api_integrations_visibility"])
+	}
+	if toolsVis["dashboard"] != false {
+		t.Fatalf("expected api_integrations_visibility.dashboard=false, got %v", toolsVis["dashboard"])
+	}
+}
+
+func TestHandler_UpdateSettings_APIIntegrationsVisibility(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithSynthetic()
+	cfg.APIIntegrationsEnabled = true
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	body := strings.NewReader(`{"api_integrations_visibility":{"dashboard":false}}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	h.UpdateSettings(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+
+	val, _ := s.GetSetting("api_integrations_visibility")
+	if !strings.Contains(val, `"dashboard":false`) {
+		t.Fatalf("expected api_integrations_visibility to be saved, got %s", val)
+	}
+}
+
 func TestHandler_UpdateSettings_Notifications(t *testing.T) {
 	s, _ := store.New(":memory:")
 	defer s.Close()
@@ -3641,14 +3748,14 @@ type mockNotifier struct {
 	reloadCalled bool
 }
 
-func (m *mockNotifier) Reload() error                    { m.reloadCalled = true; return nil }
-func (m *mockNotifier) ConfigureSMTP() error             { return nil }
-func (m *mockNotifier) ConfigurePush() error             { return nil }
-func (m *mockNotifier) SendTestEmail() error             { return m.sendTestErr }
-func (m *mockNotifier) SendTestPush() error              { return nil }
-func (m *mockNotifier) TestSMTPDiag() (string, error)    { return "", m.sendTestErr }
-func (m *mockNotifier) SetEncryptionKey(_ string)        {}
-func (m *mockNotifier) GetVAPIDPublicKey() string        { return "" }
+func (m *mockNotifier) Reload() error                 { m.reloadCalled = true; return nil }
+func (m *mockNotifier) ConfigureSMTP() error          { return nil }
+func (m *mockNotifier) ConfigurePush() error          { return nil }
+func (m *mockNotifier) SendTestEmail() error          { return m.sendTestErr }
+func (m *mockNotifier) SendTestPush() error           { return nil }
+func (m *mockNotifier) TestSMTPDiag() (string, error) { return "", m.sendTestErr }
+func (m *mockNotifier) SetEncryptionKey(_ string)     {}
+func (m *mockNotifier) GetVAPIDPublicKey() string     { return "" }
 
 func TestHandler_SMTPTest_Success(t *testing.T) {
 	cfg := createTestConfigWithSynthetic()
@@ -5939,14 +6046,14 @@ type mockNotifierWithVAPID struct {
 	vapidKey     string
 }
 
-func (m *mockNotifierWithVAPID) Reload() error                    { m.reloadCalled = true; return nil }
-func (m *mockNotifierWithVAPID) ConfigureSMTP() error             { return nil }
-func (m *mockNotifierWithVAPID) ConfigurePush() error             { return nil }
-func (m *mockNotifierWithVAPID) SendTestEmail() error             { return m.sendTestErr }
-func (m *mockNotifierWithVAPID) SendTestPush() error              { return m.sendPushErr }
-func (m *mockNotifierWithVAPID) TestSMTPDiag() (string, error)    { return "", m.sendTestErr }
-func (m *mockNotifierWithVAPID) SetEncryptionKey(_ string)        {}
-func (m *mockNotifierWithVAPID) GetVAPIDPublicKey() string        { return m.vapidKey }
+func (m *mockNotifierWithVAPID) Reload() error                 { m.reloadCalled = true; return nil }
+func (m *mockNotifierWithVAPID) ConfigureSMTP() error          { return nil }
+func (m *mockNotifierWithVAPID) ConfigurePush() error          { return nil }
+func (m *mockNotifierWithVAPID) SendTestEmail() error          { return m.sendTestErr }
+func (m *mockNotifierWithVAPID) SendTestPush() error           { return m.sendPushErr }
+func (m *mockNotifierWithVAPID) TestSMTPDiag() (string, error) { return "", m.sendTestErr }
+func (m *mockNotifierWithVAPID) SetEncryptionKey(_ string)     {}
+func (m *mockNotifierWithVAPID) GetVAPIDPublicKey() string     { return m.vapidKey }
 
 func TestHandler_PushVAPIDKey_Success(t *testing.T) {
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())

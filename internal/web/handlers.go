@@ -437,8 +437,8 @@ func (h *Handler) codexProfileSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"message":  "profile saved",
-		"name":     req.Name,
+		"message":   "profile saved",
+		"name":      req.Name,
 		"accountID": creds.AccountID,
 	})
 }
@@ -479,7 +479,7 @@ func (h *Handler) codexProfileDelete(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "profile deleted",
-		"name":   name,
+		"name":    name,
 	})
 }
 
@@ -600,9 +600,9 @@ func (h *Handler) codexProfileRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"message":    "profile refreshed",
-		"name":       name,
-		"accountID":  creds.AccountID,
+		"message":   "profile refreshed",
+		"name":      name,
+		"accountID": creds.AccountID,
 	})
 }
 
@@ -1051,6 +1051,40 @@ func (h *Handler) providerVisibilitySettings() map[string]interface{} {
 	return vis
 }
 
+func (h *Handler) apiIntegrationsVisibilityMap() map[string]bool {
+	if h.store == nil {
+		return map[string]bool{}
+	}
+	raw, err := h.store.GetSetting("api_integrations_visibility")
+	if err != nil || raw == "" {
+		return map[string]bool{}
+	}
+	var vis map[string]bool
+	if err := json.Unmarshal([]byte(raw), &vis); err != nil {
+		return map[string]bool{}
+	}
+	return vis
+}
+
+func (h *Handler) apiIntegrationsDashboardVisible() bool {
+	vis := h.apiIntegrationsVisibilityMap()
+	if dashboard, ok := vis["dashboard"]; ok {
+		return dashboard
+	}
+	return true
+}
+
+func (h *Handler) saveAPIIntegrationsVisibility(vis map[string]bool) error {
+	if h.store == nil {
+		return fmt.Errorf("store not available")
+	}
+	data, err := json.Marshal(vis)
+	if err != nil {
+		return err
+	}
+	return h.store.SetSetting("api_integrations_visibility", string(data))
+}
+
 func providerPollingValue(entry interface{}) (bool, bool) {
 	switch v := entry.(type) {
 	case map[string]interface{}:
@@ -1316,8 +1350,8 @@ func stripProviderSecrets(providers map[string]interface{}) {
 				continue
 			}
 			if str, ok := v.(string); ok && str != "" {
-				m[k] = ""             // Don't send actual value
-				m[k+"_set"] = true    // Signal that it's configured
+				m[k] = ""          // Don't send actual value
+				m[k+"_set"] = true // Signal that it's configured
 			}
 		}
 	}
@@ -1635,6 +1669,8 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	providers := []string{}
 	currentProvider := ""
+	hasTools := false
+	toolsVisible := false
 	if h.config != nil {
 		providers = h.config.AvailableProviders()
 
@@ -1653,6 +1689,12 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 					providers = filtered
 				}
 			}
+		}
+
+		hasTools = h.config.APIIntegrationsEnabled
+		toolsVisible = hasTools && h.apiIntegrationsDashboardVisible()
+		if toolsVisible {
+			providers = append(providers, "api-integrations")
 		}
 
 		// Always add "both" (All tab) when multiple providers configured
@@ -1691,6 +1733,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	hasAntigravity := hasVisibleProvider("antigravity")
 	hasMiniMax := hasVisibleProvider("minimax")
 	hasOpenRouter := hasVisibleProvider("openrouter")
+	hasToolsVisible := hasVisibleProvider("api-integrations")
 	_ = hasOpenRouter // used by template if needed
 	data := map[string]interface{}{
 		"Title":           "Dashboard",
@@ -1704,6 +1747,8 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		"HasCodex":        hasCodex,
 		"HasAntigravity":  hasAntigravity,
 		"HasMiniMax":      hasMiniMax,
+		"HasTools":        hasToolsVisible,
+		"ToolsVisible":    toolsVisible,
 		"PollIntervalSec": h.getPollIntervalSec(),
 		"BasePath":        h.getBasePath(),
 	}
@@ -5725,6 +5770,14 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		toolsVisJSON, _ := h.store.GetSetting("api_integrations_visibility")
+		if toolsVisJSON != "" {
+			var toolsVis map[string]bool
+			if json.Unmarshal([]byte(toolsVisJSON), &toolsVis) == nil {
+				result["api_integrations_visibility"] = toolsVis
+			}
+		}
+
 		// Provider-specific settings (overrides .env)
 		provJSON, _ := h.store.GetSetting("provider_settings")
 		if provJSON != "" {
@@ -5990,6 +6043,29 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result["provider_visibility"] = vis
+	}
+
+	if raw, ok := body["api_integrations_visibility"]; ok {
+		var vis map[string]bool
+		if err := json.Unmarshal(raw, &vis); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid api_integrations_visibility value")
+			return
+		}
+		if vis == nil {
+			vis = map[string]bool{}
+		}
+		normalized := map[string]bool{
+			"dashboard": true,
+		}
+		if dashboard, exists := vis["dashboard"]; exists {
+			normalized["dashboard"] = dashboard
+		}
+		if err := h.saveAPIIntegrationsVisibility(normalized); err != nil {
+			h.logger.Error("failed to save API integrations visibility settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save API integrations visibility settings")
+			return
+		}
+		result["api_integrations_visibility"] = normalized
 	}
 
 	// Handle menubar settings

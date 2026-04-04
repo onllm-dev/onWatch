@@ -49,8 +49,8 @@ type Config struct {
 	AntigravityEnabled   bool   // true if auto-detection should be attempted
 
 	// MiniMax provider configuration
-	MiniMaxAPIKey  string // MINIMAX_API_KEY
-	MiniMaxRegion  string // MINIMAX_REGION ( "global" | "cn", default: "global" )
+	MiniMaxAPIKey string // MINIMAX_API_KEY
+	MiniMaxRegion string // MINIMAX_REGION ( "global" | "cn", default: "global" )
 
 	// OpenRouter provider configuration
 	OpenRouterAPIKey string // OPENROUTER_API_KEY
@@ -60,6 +60,10 @@ type Config struct {
 	GeminiAutoToken    bool   // true if token was auto-detected
 	GeminiRefreshToken string // GEMINI_REFRESH_TOKEN (for Docker/headless)
 	GeminiAccessToken  string // GEMINI_ACCESS_TOKEN (for Docker/headless)
+
+	// Custom API Integrations telemetry ingestion
+	APIIntegrationsEnabled bool   // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
+	APIIntegrationsDir     string // ONWATCH_API_INTEGRATIONS_DIR (default: ~/.onwatch/api-integrations or /data/api-integrations)
 
 	// Shared configuration
 	PollInterval       time.Duration // ONWATCH_POLL_INTERVAL (seconds → Duration)
@@ -297,6 +301,13 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	}
 	// File-based auto-detection is done later in main.go
 
+	// Custom API Integrations telemetry ingestion
+	cfg.APIIntegrationsDir = strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_DIR"))
+	cfg.APIIntegrationsEnabled = true
+	if env := strings.ToLower(strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_ENABLED"))); env != "" {
+		cfg.APIIntegrationsEnabled = env == "true" || env == "1" || env == "yes" || env == "on"
+	}
+
 	// Poll Interval (seconds) - ONWATCH_* first, SYNTRACK_* fallback
 	if flags.interval > 0 {
 		cfg.PollInterval = time.Duration(flags.interval) * time.Second
@@ -411,6 +422,18 @@ func (c *Config) applyDefaults() {
 	}
 	if c.SessionIdleTimeout == 0 {
 		c.SessionIdleTimeout = 600 * time.Second
+	}
+	if c.APIIntegrationsDir == "" {
+		if c.IsDockerEnvironment() {
+			c.APIIntegrationsDir = "/data/api-integrations"
+		} else {
+			home, err := os.UserHomeDir()
+			if err != nil || home == "" {
+				c.APIIntegrationsDir = "./api-integrations"
+			} else {
+				c.APIIntegrationsDir = filepath.Join(home, ".onwatch", "api-integrations")
+			}
+		}
 	}
 }
 
@@ -566,6 +589,8 @@ func (c *Config) String() string {
 	// Redact MiniMax token
 	minimaxDisplay := redactAPIKey(c.MiniMaxAPIKey, "")
 	fmt.Fprintf(&sb, "  MiniMaxAPIKey: %s,\n", minimaxDisplay)
+	fmt.Fprintf(&sb, "  APIIntegrationsEnabled: %v,\n", c.APIIntegrationsEnabled)
+	fmt.Fprintf(&sb, "  APIIntegrationsDir: %s,\n", c.APIIntegrationsDir)
 
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)
 	fmt.Fprintf(&sb, "  SessionIdleTimeout: %v,\n", c.SessionIdleTimeout)
