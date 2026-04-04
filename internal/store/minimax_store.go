@@ -66,10 +66,22 @@ func (s *Store) InsertMiniMaxSnapshot(snapshot *api.MiniMaxSnapshot, accountID i
 			windowEndVal = m.WindowEnd.Format(time.RFC3339Nano)
 		}
 
+		var weeklyResetAtVal, weeklyWindowStartVal, weeklyWindowEndVal interface{}
+		if m.WeeklyResetAt != nil {
+			weeklyResetAtVal = m.WeeklyResetAt.Format(time.RFC3339Nano)
+		}
+		if m.WeeklyWindowStart != nil {
+			weeklyWindowStartVal = m.WeeklyWindowStart.Format(time.RFC3339Nano)
+		}
+		if m.WeeklyWindowEnd != nil {
+			weeklyWindowEndVal = m.WeeklyWindowEnd.Format(time.RFC3339Nano)
+		}
+
 		_, err := tx.Exec(
 			`INSERT INTO minimax_model_values
-			(snapshot_id, model_name, total, remain, used, used_percent, reset_at, window_start, window_end)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			(snapshot_id, model_name, total, remain, used, used_percent, reset_at, window_start, window_end,
+			 weekly_total, weekly_remain, weekly_used, weekly_used_percent, weekly_reset_at, weekly_window_start, weekly_window_end)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			snapshotID,
 			m.ModelName,
 			m.Total,
@@ -79,6 +91,13 @@ func (s *Store) InsertMiniMaxSnapshot(snapshot *api.MiniMaxSnapshot, accountID i
 			resetAtVal,
 			windowStartVal,
 			windowEndVal,
+			m.WeeklyTotal,
+			m.WeeklyRemain,
+			m.WeeklyUsed,
+			m.WeeklyUsedPercent,
+			weeklyResetAtVal,
+			weeklyWindowStartVal,
+			weeklyWindowEndVal,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("failed to insert minimax model value %s: %w", m.ModelName, err)
@@ -181,7 +200,8 @@ func (s *Store) QueryMiniMaxRange(start, end time.Time, accountID int64, limit .
 
 func (s *Store) queryMiniMaxModelValues(snapshotID int64) ([]api.MiniMaxModelQuota, error) {
 	rows, err := s.db.Query(
-		`SELECT model_name, total, remain, used, used_percent, reset_at, window_start, window_end
+		`SELECT model_name, total, remain, used, used_percent, reset_at, window_start, window_end,
+		 weekly_total, weekly_remain, weekly_used, weekly_used_percent, weekly_reset_at, weekly_window_start, weekly_window_end
 		FROM minimax_model_values WHERE snapshot_id = ? ORDER BY model_name`,
 		snapshotID,
 	)
@@ -194,7 +214,9 @@ func (s *Store) queryMiniMaxModelValues(snapshotID int64) ([]api.MiniMaxModelQuo
 	for rows.Next() {
 		var m api.MiniMaxModelQuota
 		var resetAt, windowStart, windowEnd sql.NullString
-		if err := rows.Scan(&m.ModelName, &m.Total, &m.Remain, &m.Used, &m.UsedPercent, &resetAt, &windowStart, &windowEnd); err != nil {
+		var weeklyResetAt, weeklyWindowStart, weeklyWindowEnd sql.NullString
+		if err := rows.Scan(&m.ModelName, &m.Total, &m.Remain, &m.Used, &m.UsedPercent, &resetAt, &windowStart, &windowEnd,
+			&m.WeeklyTotal, &m.WeeklyRemain, &m.WeeklyUsed, &m.WeeklyUsedPercent, &weeklyResetAt, &weeklyWindowStart, &weeklyWindowEnd); err != nil {
 			return nil, fmt.Errorf("failed to scan minimax model value: %w", err)
 		}
 		if resetAt.Valid {
@@ -212,6 +234,26 @@ func (s *Store) queryMiniMaxModelValues(snapshotID int64) ([]api.MiniMaxModelQuo
 		if windowEnd.Valid {
 			t, _ := time.Parse(time.RFC3339Nano, windowEnd.String)
 			m.WindowEnd = &t
+		}
+		// Weekly quota fields.
+		if m.WeeklyTotal > 0 || m.WeeklyUsed > 0 {
+			m.HasWeeklyQuota = true
+		}
+		if weeklyResetAt.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, weeklyResetAt.String)
+			m.WeeklyResetAt = &t
+			m.WeeklyTimeUntilReset = time.Until(t)
+			if m.WeeklyTimeUntilReset < 0 {
+				m.WeeklyTimeUntilReset = 0
+			}
+		}
+		if weeklyWindowStart.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, weeklyWindowStart.String)
+			m.WeeklyWindowStart = &t
+		}
+		if weeklyWindowEnd.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, weeklyWindowEnd.String)
+			m.WeeklyWindowEnd = &t
 		}
 		models = append(models, m)
 	}
@@ -525,7 +567,7 @@ func (s *Store) minimaxCrossQuotasAt(referenceTime time.Time, accountID int64) (
 		return nil, nil
 	}
 
-	entries := make([]CrossQuotaEntry, 0, len(snap.Models))
+	entries := make([]CrossQuotaEntry, 0, len(snap.Models)*2)
 	for _, model := range snap.Models {
 		entries = append(entries, CrossQuotaEntry{
 			Name:         model.ModelName,
@@ -535,6 +577,16 @@ func (s *Store) minimaxCrossQuotasAt(referenceTime time.Time, accountID int64) (
 			StartPercent: 0,
 			Delta:        model.UsedPercent,
 		})
+		if model.HasWeeklyQuota && (model.WeeklyTotal > 0 || model.WeeklyUsed > 0) {
+			entries = append(entries, CrossQuotaEntry{
+				Name:         "weekly_" + model.ModelName,
+				Value:        float64(model.WeeklyUsed),
+				Limit:        float64(model.WeeklyTotal),
+				Percent:      model.WeeklyUsedPercent,
+				StartPercent: 0,
+				Delta:        model.WeeklyUsedPercent,
+			})
+		}
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 	return entries, nil

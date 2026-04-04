@@ -868,6 +868,25 @@ func (s *Store) migrateSchema() error {
 		}
 	}
 
+	// Add weekly quota columns to minimax_model_values.
+	// Only accounts purchased from 2026-03-23 onwards have weekly limits.
+	for _, col := range []string{
+		"weekly_total INTEGER NOT NULL DEFAULT 0",
+		"weekly_remain INTEGER NOT NULL DEFAULT 0",
+		"weekly_used INTEGER NOT NULL DEFAULT 0",
+		"weekly_used_percent REAL NOT NULL DEFAULT 0",
+		"weekly_reset_at TEXT",
+		"weekly_window_start TEXT",
+		"weekly_window_end TEXT",
+	} {
+		if _, err := s.db.Exec(`ALTER TABLE minimax_model_values ADD COLUMN ` + col); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") &&
+				!strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("failed to add weekly column to minimax_model_values: %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 

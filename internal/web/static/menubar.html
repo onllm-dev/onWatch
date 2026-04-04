@@ -2743,6 +2743,27 @@
                 if (source.includes("gemini pro")) {
                     return "Pro";
                 }
+                if (source.includes("weekly all") || source.includes("weekly_minimax coding")) {
+                    return "Wkly All";
+                }
+                if (source.includes("weekly minimax-m") || source.includes("weekly_minimax-m")) {
+                    return "Wkly M*";
+                }
+                if (source.includes("weekly image") || source.includes("weekly_image")) {
+                    return "Wkly Img";
+                }
+                if (source.includes("weekly speech") || source.includes("weekly_speech")) {
+                    return "Wkly Spch";
+                }
+                if (source.includes("minimax-m") || source.includes("minimax_m")) {
+                    return "M*";
+                }
+                if (source.includes("image-01")) {
+                    return "image-01";
+                }
+                if (source.includes("speech-hd")) {
+                    return "speech-hd";
+                }
                 if (source.includes("coding")) {
                     return "Coding";
                 }

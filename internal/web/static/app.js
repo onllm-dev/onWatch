@@ -1494,12 +1494,15 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
     const resetId = `reset-minimax-${cardKey}`;
     const subtitleId = `subtitle-minimax-${cardKey}`;
 
-    return `<article class="quota-card minimax-card" data-quota="${q.name}" data-provider="minimax" style="animation-delay: ${i * 60}ms">
+    const isWeekly = q.isWeekly || false;
+    const weeklyBadge = isWeekly ? ' <span class="weekly-badge">Weekly</span>' : '';
+
+    return `<article class="quota-card minimax-card${isWeekly ? ' minimax-weekly' : ''}" data-quota="${q.name}" data-provider="minimax" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <div class="quota-title-block">
           <h2 class="quota-title">
             <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-            ${escapeHTML(displayName)}
+            ${escapeHTML(displayName)}${weeklyBadge}
           </h2>
           <div class="quota-subtitle" id="${subtitleId}"${subtitle ? '' : ' hidden'}>${escapeHTML(subtitle)}</div>
         </div>
@@ -5767,6 +5770,14 @@ function renderSessionsTable() {
         <td>${session.snapshotCount || 0}</td>
       </tr>`;
 
+      // Weekly quota data (repurposed fields: searchRequests=weekly, toolRequests=weeklyTotal)
+      const weeklyPeak = Number(session.maxSearchRequests || 0);
+      const weeklyStart = Number(session.startSearchRequests || 0);
+      const weeklyTotal = Number(session.maxToolRequests || 0);
+      const weeklyDelta = Math.max(0, weeklyPeak - weeklyStart);
+      const weeklyPct = weeklyTotal > 0 ? ((weeklyPeak / weeklyTotal) * 100).toFixed(1) + '%' : '';
+      const hasWeekly = weeklyTotal > 0;
+
       const detailRow = `<tr class="session-detail-row ${isExpanded ? 'expanded' : ''}" data-detail-for="${session.id}">
         <td colspan="${colSpan}">
           <div class="session-detail-content">
@@ -5795,6 +5806,19 @@ function renderSessionsTable() {
                 <span class="detail-label">Snapshots/min</span>
                 <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
               </div>
+              ${hasWeekly ? `
+              <div class="detail-item" style="grid-column: 1 / -1; border-top: 1px solid var(--border-default, #e0e0e0); padding-top: 8px; margin-top: 4px;">
+                <span class="detail-label" style="font-weight: 600;">Weekly Quota</span>
+                <span class="detail-value">${formatNumber(weeklyPeak)} / ${formatNumber(weeklyTotal)}${weeklyPct ? ' (' + weeklyPct + ')' : ''}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Weekly Start</span>
+                <span class="detail-value">${formatNumber(weeklyStart)}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Weekly Delta</span>
+                <span class="detail-value">${formatNumber(weeklyDelta)}</span>
+              </div>` : ''}
             </div>
           </div>
         </td>

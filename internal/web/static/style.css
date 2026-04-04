@@ -509,6 +509,24 @@ button, input, select { font-family: inherit; }
   grid-template-columns: repeat(3, 1fr);
 }
 
+#quota-grid-minimax {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.weekly-badge {
+  display: inline-block;
+  font-size: 0.65em;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent-primary, #6366f1);
+  color: #fff;
+  vertical-align: middle;
+  margin-left: 6px;
+  letter-spacing: 0.03em;
+  line-height: 1.6;
+}
+
 #quota-grid-openrouter {
   grid-template-columns: 1fr;
 }

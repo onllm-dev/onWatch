@@ -33,9 +33,12 @@ internal/
 
 ## Operations
 
+**Always use `app.sh` for build and test - never run `go build` or `go test` directly.**
+
 ```bash
-./app.sh --build            # Build before running
-./app.sh --test             # go test -race -cover ./...
+./app.sh --build            # Build production binary
+./app.sh --test             # Run all tests with race detection and coverage
+./app.sh --smoke            # Quick validation: vet + build check + short tests
 go test -race ./... && go vet ./...   # Pre-commit (mandatory)
 ```
 

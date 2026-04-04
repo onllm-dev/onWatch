@@ -22,6 +22,13 @@ type MiniMaxModelRemain struct {
 	CurrentIntervalTotalCount int         `json:"current_interval_total_count"`
 	// Despite the field name, this endpoint returns remaining requests.
 	CurrentIntervalUsageCount int `json:"current_interval_usage_count"`
+
+	// Weekly quota fields - only present for accounts purchased from 2026-03-23 onwards.
+	CurrentWeeklyTotalCount int         `json:"current_weekly_total_count"`
+	CurrentWeeklyUsageCount int         `json:"current_weekly_usage_count"`
+	WeeklyStartTime         interface{} `json:"weekly_start_time"`
+	WeeklyEndTime           interface{} `json:"weekly_end_time"`
+	WeeklyRemainsTime       int64       `json:"weekly_remains_time"`
 }
 
 // MiniMaxRemainsResponse is the full API response.
@@ -41,6 +48,17 @@ type MiniMaxModelQuota struct {
 	WindowStart    *time.Time
 	WindowEnd      *time.Time
 	TimeUntilReset time.Duration
+
+	// Weekly quota - zero values when not available (pre-March-23 accounts).
+	WeeklyTotal          int
+	WeeklyRemain         int
+	WeeklyUsed           int
+	WeeklyUsedPercent    float64
+	WeeklyResetAt        *time.Time
+	WeeklyWindowStart    *time.Time
+	WeeklyWindowEnd      *time.Time
+	WeeklyTimeUntilReset time.Duration
+	HasWeeklyQuota       bool
 }
 
 // MiniMaxSnapshot is a point-in-time capture.
@@ -97,15 +115,24 @@ func (s *MiniMaxSnapshot) MergedQuota() *MiniMaxModelQuota {
 	}
 	first := s.Models[0]
 	return &MiniMaxModelQuota{
-		ModelName:      "MiniMax Coding Plan",
-		Total:          first.Total,
-		Remain:         first.Remain,
-		Used:           first.Used,
-		UsedPercent:    first.UsedPercent,
-		ResetAt:        first.ResetAt,
-		WindowStart:    first.WindowStart,
-		WindowEnd:      first.WindowEnd,
-		TimeUntilReset: first.TimeUntilReset,
+		ModelName:            "MiniMax Coding Plan",
+		Total:                first.Total,
+		Remain:               first.Remain,
+		Used:                 first.Used,
+		UsedPercent:          first.UsedPercent,
+		ResetAt:              first.ResetAt,
+		WindowStart:          first.WindowStart,
+		WindowEnd:            first.WindowEnd,
+		TimeUntilReset:       first.TimeUntilReset,
+		HasWeeklyQuota:       first.HasWeeklyQuota,
+		WeeklyTotal:          first.WeeklyTotal,
+		WeeklyRemain:         first.WeeklyRemain,
+		WeeklyUsed:           first.WeeklyUsed,
+		WeeklyUsedPercent:    first.WeeklyUsedPercent,
+		WeeklyResetAt:        first.WeeklyResetAt,
+		WeeklyWindowStart:    first.WeeklyWindowStart,
+		WeeklyWindowEnd:      first.WeeklyWindowEnd,
+		WeeklyTimeUntilReset: first.WeeklyTimeUntilReset,
 	}
 }
 
@@ -229,7 +256,7 @@ func (r MiniMaxRemainsResponse) ToSnapshot(capturedAt time.Time) *MiniMaxSnapsho
 			usedPercent = (float64(used) / float64(total)) * 100
 		}
 
-		snapshot.Models = append(snapshot.Models, MiniMaxModelQuota{
+		quota := MiniMaxModelQuota{
 			ModelName:      model.ModelName,
 			Total:          total,
 			Remain:         remain,
@@ -239,7 +266,38 @@ func (r MiniMaxRemainsResponse) ToSnapshot(capturedAt time.Time) *MiniMaxSnapsho
 			WindowStart:    windowStart,
 			WindowEnd:      windowEnd,
 			TimeUntilReset: untilReset,
-		})
+		}
+
+		// Parse weekly quota fields if present.
+		if model.CurrentWeeklyTotalCount > 0 || model.CurrentWeeklyUsageCount > 0 {
+			quota.HasWeeklyQuota = true
+			quota.WeeklyTotal = model.CurrentWeeklyTotalCount
+			// Same naming quirk: current_weekly_usage_count is actually remaining.
+			quota.WeeklyRemain = model.CurrentWeeklyUsageCount
+			quota.WeeklyUsed = quota.WeeklyTotal - quota.WeeklyRemain
+			if quota.WeeklyUsed < 0 {
+				quota.WeeklyUsed = 0
+			}
+			if quota.WeeklyTotal > 0 {
+				quota.WeeklyUsedPercent = (float64(quota.WeeklyUsed) / float64(quota.WeeklyTotal)) * 100
+			}
+			quota.WeeklyWindowStart = parseMiniMaxTimestamp(model.WeeklyStartTime)
+			quota.WeeklyWindowEnd = parseMiniMaxTimestamp(model.WeeklyEndTime)
+			if model.WeeklyRemainsTime > 0 {
+				d := time.Duration(model.WeeklyRemainsTime) * time.Millisecond
+				wr := snapshot.CapturedAt.Add(d)
+				quota.WeeklyResetAt = &wr
+				quota.WeeklyTimeUntilReset = d
+			} else if quota.WeeklyWindowEnd != nil {
+				quota.WeeklyResetAt = quota.WeeklyWindowEnd
+				quota.WeeklyTimeUntilReset = quota.WeeklyWindowEnd.Sub(snapshot.CapturedAt)
+				if quota.WeeklyTimeUntilReset < 0 {
+					quota.WeeklyTimeUntilReset = 0
+				}
+			}
+		}
+
+		snapshot.Models = append(snapshot.Models, quota)
 	}
 
 	if raw, err := json.Marshal(r); err == nil {

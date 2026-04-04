@@ -3838,19 +3838,26 @@ func (h *Handler) queryMiniMaxSessions(accountID int64) ([]*store.Session, error
 		first := group[0]
 		last := group[len(group)-1]
 		peakUsed := first.Used
+		peakWeeklyUsed := first.WeeklyUsed
 		for _, sample := range group[1:] {
 			if sample.Used > peakUsed {
 				peakUsed = sample.Used
 			}
+			if sample.WeeklyUsed > peakWeeklyUsed {
+				peakWeeklyUsed = sample.WeeklyUsed
+			}
 		}
 
 		session := &store.Session{
-			ID:               fmt.Sprintf("minimax-%d", first.CapturedAt.UnixNano()),
-			StartedAt:        first.CapturedAt,
-			PollInterval:     int(pollInterval / time.Millisecond),
-			MaxSubRequests:   float64(peakUsed),
-			StartSubRequests: float64(first.Used),
-			SnapshotCount:    len(group),
+			ID:                  fmt.Sprintf("minimax-%d", first.CapturedAt.UnixNano()),
+			StartedAt:           first.CapturedAt,
+			PollInterval:        int(pollInterval / time.Millisecond),
+			MaxSubRequests:      float64(peakUsed),
+			StartSubRequests:    float64(first.Used),
+			MaxSearchRequests:   float64(peakWeeklyUsed),
+			StartSearchRequests: float64(first.WeeklyUsed),
+			MaxToolRequests:     float64(first.WeeklyTotal),
+			SnapshotCount:       len(group),
 		}
 		if !active {
 			endedAt := last.CapturedAt
@@ -8209,6 +8216,13 @@ type minimaxMergedSample struct {
 	TimeUntilReset time.Duration
 	WindowStart    *time.Time
 	WindowEnd      *time.Time
+	// Weekly quota data (zero when not available).
+	HasWeeklyQuota    bool
+	WeeklyUsed        int
+	WeeklyRemain      int
+	WeeklyTotal       int
+	WeeklyUsedPercent float64
+	WeeklyResetAt     *time.Time
 }
 
 // currentMiniMax returns current MiniMax model usage.
@@ -8265,24 +8279,66 @@ func (h *Handler) buildMiniMaxCurrent(accountID int64) map[string]interface{} {
 		return q
 	}
 
+	buildWeeklyQuota := func(quota api.MiniMaxModelQuota, displayNameOverride string) map[string]interface{} {
+		displayName := "Weekly " + api.MiniMaxDisplayName(quota.ModelName)
+		if displayNameOverride != "" {
+			displayName = displayNameOverride
+		}
+		q := map[string]interface{}{
+			"name":         "weekly_" + quota.ModelName,
+			"displayName":  displayName,
+			"total":        quota.WeeklyTotal,
+			"used":         quota.WeeklyUsed,
+			"remaining":    quota.WeeklyRemain,
+			"usagePercent": quota.WeeklyUsedPercent,
+			"status":       minimaxUsageStatus(quota.WeeklyUsedPercent),
+			"isWeekly":     true,
+		}
+		if quota.WeeklyResetAt != nil {
+			timeUntilReset := time.Until(*quota.WeeklyResetAt)
+			q["resetAt"] = quota.WeeklyResetAt.Format(time.RFC3339)
+			q["timeUntilReset"] = formatDuration(timeUntilReset)
+			q["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+		}
+		if quota.WeeklyWindowStart != nil {
+			q["windowStart"] = quota.WeeklyWindowStart.Format(time.RFC3339)
+		}
+		if quota.WeeklyWindowEnd != nil {
+			q["windowEnd"] = quota.WeeklyWindowEnd.Format(time.RFC3339)
+		}
+		return q
+	}
+
 	if latest.IsSharedQuota() {
 		merged := latest.MergedQuota()
 		if merged != nil {
 			q := buildQuota(*merged, minimaxRepresentativeModel(latest))
 			q["displayName"] = minimaxSharedQuotaDisplayName
-			response["quotas"] = []map[string]interface{}{q}
+			allQuotas := []map[string]interface{}{q}
+			if merged.HasWeeklyQuota {
+				wq := buildWeeklyQuota(*merged, "Weekly All")
+				allQuotas = append(allQuotas, wq)
+				response["weeklyQuotas"] = []map[string]interface{}{wq}
+			}
+			response["quotas"] = allQuotas
 			response["sharedQuota"] = true
 			return response
 		}
 	}
 
 	quotas := make([]map[string]interface{}, 0, len(latest.Models))
+	weeklyQuotas := make([]map[string]interface{}, 0)
 	for _, m := range latest.Models {
 		// Skip models with no quota allocation (total=0 and used=0)
 		if m.Total == 0 && m.Used == 0 {
 			continue
 		}
 		quotas = append(quotas, buildQuota(m, m.ModelName))
+		if m.HasWeeklyQuota && (m.WeeklyTotal > 0 || m.WeeklyUsed > 0) {
+			wq := buildWeeklyQuota(m, "")
+			weeklyQuotas = append(weeklyQuotas, wq)
+			quotas = append(quotas, wq)
+		}
 	}
 
 	sort.Slice(quotas, func(i, j int) bool {
@@ -8290,6 +8346,9 @@ func (h *Handler) buildMiniMaxCurrent(accountID int64) map[string]interface{} {
 		lj, _ := quotas[j]["name"].(string)
 		return li < lj
 	})
+	if len(weeklyQuotas) > 0 {
+		response["weeklyQuotas"] = weeklyQuotas
+	}
 	response["quotas"] = quotas
 	return response
 }
@@ -8387,15 +8446,21 @@ func minimaxMergedSamplesFromSnapshots(snapshots []*api.MiniMaxSnapshot) []minim
 			continue
 		}
 		samples = append(samples, minimaxMergedSample{
-			CapturedAt:     snap.CapturedAt,
-			Used:           quota.Used,
-			Remaining:      quota.Remain,
-			Total:          quota.Total,
-			UsedPercent:    quota.UsedPercent,
-			ResetAt:        quota.ResetAt,
-			TimeUntilReset: quota.TimeUntilReset,
-			WindowStart:    quota.WindowStart,
-			WindowEnd:      quota.WindowEnd,
+			CapturedAt:        snap.CapturedAt,
+			Used:              quota.Used,
+			Remaining:         quota.Remain,
+			Total:             quota.Total,
+			UsedPercent:       quota.UsedPercent,
+			ResetAt:           quota.ResetAt,
+			TimeUntilReset:    quota.TimeUntilReset,
+			WindowStart:       quota.WindowStart,
+			WindowEnd:         quota.WindowEnd,
+			HasWeeklyQuota:    quota.HasWeeklyQuota,
+			WeeklyUsed:        quota.WeeklyUsed,
+			WeeklyRemain:      quota.WeeklyRemain,
+			WeeklyTotal:       quota.WeeklyTotal,
+			WeeklyUsedPercent: quota.WeeklyUsedPercent,
+			WeeklyResetAt:     quota.WeeklyResetAt,
 		})
 	}
 	sort.Slice(samples, func(i, j int) bool {
@@ -8683,6 +8748,9 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 			// Consolidate into single "MiniMax Coding Plan" line
 			if merged := snap.MergedQuota(); merged != nil {
 				entry["MiniMax Coding Plan"] = merged.UsedPercent
+				if merged.HasWeeklyQuota && merged.WeeklyTotal > 0 {
+					entry["Weekly All"] = merged.WeeklyUsedPercent
+				}
 			}
 		} else {
 			for _, model := range snap.Models {
@@ -8690,6 +8758,9 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				entry[model.ModelName] = model.UsedPercent
+				if model.HasWeeklyQuota && model.WeeklyTotal > 0 {
+					entry["Weekly "+model.ModelName] = model.WeeklyUsedPercent
+				}
 			}
 		}
 		response = append(response, entry)
@@ -8928,15 +8999,21 @@ func (h *Handler) buildMiniMaxInsights(accountID int64, hidden map[string]bool, 
 		}
 		samples := minimaxMergedSamplesFromSnapshots(snapshots)
 		currentSample := minimaxMergedSample{
-			CapturedAt:     latest.CapturedAt,
-			Used:           merged.Used,
-			Remaining:      merged.Remain,
-			Total:          merged.Total,
-			UsedPercent:    merged.UsedPercent,
-			ResetAt:        merged.ResetAt,
-			TimeUntilReset: merged.TimeUntilReset,
-			WindowStart:    merged.WindowStart,
-			WindowEnd:      merged.WindowEnd,
+			CapturedAt:        latest.CapturedAt,
+			Used:              merged.Used,
+			Remaining:         merged.Remain,
+			Total:             merged.Total,
+			UsedPercent:       merged.UsedPercent,
+			ResetAt:           merged.ResetAt,
+			TimeUntilReset:    merged.TimeUntilReset,
+			WindowStart:       merged.WindowStart,
+			WindowEnd:         merged.WindowEnd,
+			HasWeeklyQuota:    merged.HasWeeklyQuota,
+			WeeklyUsed:        merged.WeeklyUsed,
+			WeeklyRemain:      merged.WeeklyRemain,
+			WeeklyTotal:       merged.WeeklyTotal,
+			WeeklyUsedPercent: merged.WeeklyUsedPercent,
+			WeeklyResetAt:     merged.WeeklyResetAt,
 		}
 		if len(samples) == 0 {
 			samples = append(samples, currentSample)
@@ -9078,6 +9155,31 @@ func (h *Handler) buildMiniMaxInsights(accountID int64, hidden map[string]bool, 
 				Metric:   fmt.Sprintf("%.1f%% this cycle", merged.UsedPercent),
 				Sublabel: recommendation,
 				Desc:     comparisonText,
+			})
+		}
+		// Weekly quota insight - only for accounts with weekly limits.
+		if !hidden["ratio_5h_weekly"] && merged.HasWeeklyQuota && merged.WeeklyTotal > 0 {
+			ratio := 0.0
+			if merged.WeeklyUsedPercent > 0 {
+				ratio = merged.UsedPercent / merged.WeeklyUsedPercent
+			}
+			weeklyResetText := "--"
+			if merged.WeeklyTimeUntilReset > 0 {
+				weeklyResetText = formatDuration(merged.WeeklyTimeUntilReset)
+			}
+			resp.Insights = append(resp.Insights, insightItem{
+				Key:      "ratio_5h_weekly",
+				Type:     "factual",
+				Severity: minimaxInsightSeverity(merged.WeeklyUsedPercent),
+				Title:    "5-Hour vs Weekly",
+				Metric:   fmt.Sprintf("%.1f%% weekly", merged.WeeklyUsedPercent),
+				Sublabel: fmt.Sprintf("1%% weekly ~ %.0f%% of 5-hr", ratio),
+				Desc: fmt.Sprintf(
+					"Weekly quota: %d of %d used (%d remaining). Resets in %s. "+
+						"Current interval at %.1f%%, weekly at %.1f%%.",
+					merged.WeeklyUsed, merged.WeeklyTotal, merged.WeeklyRemain,
+					weeklyResetText, merged.UsedPercent, merged.WeeklyUsedPercent,
+				),
 			})
 		}
 		return resp
@@ -10092,14 +10194,50 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 		latest, _ = h.store.QueryLatestMiniMax(minimaxAccID)
 	}
 
-	if latest != nil && latest.IsSharedQuota() {
-		capturedAt := make([]time.Time, 0, len(snapshots))
-		ids := make([]int64, 0, len(snapshots))
-		series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
-		for _, snap := range snapshots {
-			capturedAt = append(capturedAt, snap.CapturedAt)
-			ids = append(ids, snap.ID)
-			row := map[string]loggingHistoryCrossQuota{}
+	// Build quota names and series including weekly data.
+	// Collect all distinct quota names (interval + weekly) from snapshots.
+	quotaNameSet := map[string]bool{}
+	for _, snap := range snapshots {
+		if latest != nil && latest.IsSharedQuota() {
+			if merged := snap.MergedQuota(); merged != nil {
+				quotaNameSet[minimaxSharedQuotaKey] = true
+				if merged.HasWeeklyQuota {
+					quotaNameSet["weekly_"+minimaxSharedQuotaKey] = true
+				}
+			}
+		} else {
+			for _, model := range snap.Models {
+				if model.Total > 0 || model.Used > 0 {
+					quotaNameSet[model.ModelName] = true
+				}
+				if model.HasWeeklyQuota && (model.WeeklyTotal > 0 || model.WeeklyUsed > 0) {
+					quotaNameSet["weekly_"+model.ModelName] = true
+				}
+			}
+		}
+	}
+	if len(quotaNameSet) == 0 {
+		allNames, _ := h.store.QueryAllMiniMaxModelNames(minimaxAccID)
+		for _, n := range allNames {
+			quotaNameSet[n] = true
+		}
+	}
+
+	quotaNames := make([]string, 0, len(quotaNameSet))
+	for name := range quotaNameSet {
+		quotaNames = append(quotaNames, name)
+	}
+	sort.Strings(quotaNames)
+
+	capturedAt := make([]time.Time, 0, len(snapshots))
+	ids := make([]int64, 0, len(snapshots))
+	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
+	for _, snap := range snapshots {
+		capturedAt = append(capturedAt, snap.CapturedAt)
+		ids = append(ids, snap.ID)
+		row := make(map[string]loggingHistoryCrossQuota, len(quotaNames))
+
+		if latest != nil && latest.IsSharedQuota() {
 			if merged := snap.MergedQuota(); merged != nil {
 				row[minimaxSharedQuotaKey] = loggingHistoryCrossQuota{
 					Name:     minimaxSharedQuotaKey,
@@ -10109,52 +10247,41 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 					HasValue: true,
 					HasLimit: true,
 				}
+				if merged.HasWeeklyQuota {
+					wKey := "weekly_" + minimaxSharedQuotaKey
+					row[wKey] = loggingHistoryCrossQuota{
+						Name:     wKey,
+						Value:    float64(merged.WeeklyUsed),
+						Limit:    float64(merged.WeeklyTotal),
+						Percent:  merged.WeeklyUsedPercent,
+						HasValue: true,
+						HasLimit: true,
+					}
+				}
 			}
-			series = append(series, row)
-		}
-
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"provider":   "minimax",
-			"quotaNames": []string{minimaxSharedQuotaKey},
-			"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, []string{minimaxSharedQuotaKey}, series),
-		})
-		return
-	}
-
-	quotaNames := []string{}
-	for _, snap := range snapshots {
-		for _, model := range snap.Models {
-			if model.Total == 0 && model.Used == 0 {
-				continue
-			}
-			quotaNames = append(quotaNames, model.ModelName)
-		}
-		break
-	}
-	if len(quotaNames) == 0 {
-		allNames, _ := h.store.QueryAllMiniMaxModelNames(minimaxAccID)
-		// Filter will happen at series level; use all names as fallback
-		quotaNames = allNames
-	}
-
-	capturedAt := make([]time.Time, 0, len(snapshots))
-	ids := make([]int64, 0, len(snapshots))
-	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
-	for _, snap := range snapshots {
-		capturedAt = append(capturedAt, snap.CapturedAt)
-		ids = append(ids, snap.ID)
-		row := make(map[string]loggingHistoryCrossQuota, len(snap.Models))
-		for _, model := range snap.Models {
-			if model.Total == 0 && model.Used == 0 {
-				continue
-			}
-			row[model.ModelName] = loggingHistoryCrossQuota{
-				Name:     model.ModelName,
-				Value:    float64(model.Used),
-				Limit:    float64(model.Total),
-				Percent:  model.UsedPercent,
-				HasValue: true,
-				HasLimit: true,
+		} else {
+			for _, model := range snap.Models {
+				if model.Total > 0 || model.Used > 0 {
+					row[model.ModelName] = loggingHistoryCrossQuota{
+						Name:     model.ModelName,
+						Value:    float64(model.Used),
+						Limit:    float64(model.Total),
+						Percent:  model.UsedPercent,
+						HasValue: true,
+						HasLimit: true,
+					}
+				}
+				if model.HasWeeklyQuota && (model.WeeklyTotal > 0 || model.WeeklyUsed > 0) {
+					wKey := "weekly_" + model.ModelName
+					row[wKey] = loggingHistoryCrossQuota{
+						Name:     wKey,
+						Value:    float64(model.WeeklyUsed),
+						Limit:    float64(model.WeeklyTotal),
+						Percent:  model.WeeklyUsedPercent,
+						HasValue: true,
+						HasLimit: true,
+					}
+				}
 			}
 		}
 		series = append(series, row)
