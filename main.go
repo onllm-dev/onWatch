@@ -44,6 +44,36 @@ func init() {
 	}
 }
 
+// dualHandler fans out log records to two slog handlers:
+// a file handler (full verbosity) and a stdout handler (warn/error only).
+// Used in --debug mode so systemd/journald stays clean while .onwatch.log gets everything.
+type dualHandler struct {
+	file   slog.Handler
+	stdout slog.Handler
+}
+
+func (d dualHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return d.file.Enabled(context.Background(), level) || d.stdout.Enabled(context.Background(), level)
+}
+
+func (d dualHandler) Handle(ctx context.Context, r slog.Record) error {
+	if d.file.Enabled(ctx, r.Level) {
+		_ = d.file.Handle(ctx, r)
+	}
+	if d.stdout.Enabled(ctx, r.Level) {
+		_ = d.stdout.Handle(ctx, r)
+	}
+	return nil
+}
+
+func (d dualHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return dualHandler{file: d.file.WithAttrs(attrs), stdout: d.stdout.WithAttrs(attrs)}
+}
+
+func (d dualHandler) WithGroup(name string) slog.Handler {
+	return dualHandler{file: d.file.WithGroup(name), stdout: d.stdout.WithGroup(name)}
+}
+
 func main() {
 	if err := runWithCrashCapture(); err != nil {
 		if !errors.Is(err, errCodexProfileRefreshAborted) {
@@ -106,7 +136,8 @@ func menubarHelpText() string {
 		"Usage: onwatch menubar [OPTIONS]\n\n" +
 		"Options:\n" +
 		"  --port PORT    Dashboard port to connect to (default: 9211)\n" +
-		"  --debug        Run in foreground with verbose logging\n" +
+		"  --debug        Run in foreground (logs to file, stdout gets warn/error)\n" +
+		"  --debugstdout  Run in foreground with all logs to stdout\n" +
 		"  --help         Show this help message\n"
 }
 
@@ -540,7 +571,7 @@ func run() error {
 		return fmt.Errorf("failed to setup logging: %w", err)
 	}
 	defer func() {
-		if closer, ok := logWriter.(interface{ Close() error }); ok && !cfg.DebugMode {
+		if closer, ok := logWriter.(interface{ Close() error }); ok {
 			closer.Close()
 		}
 	}()
@@ -558,9 +589,21 @@ func run() error {
 		logLevel = slog.LevelInfo
 	}
 
-	logger := slog.New(slog.NewTextHandler(logWriter, &slog.HandlerOptions{
+	// Primary handler: writes to log file (or stdout for --debugstdout/Docker)
+	fileHandler := slog.NewTextHandler(logWriter, &slog.HandlerOptions{
 		Level: logLevel,
-	}))
+	})
+
+	var logger *slog.Logger
+	if cfg.DebugMode && !cfg.DebugStdout && !cfg.IsDockerEnvironment() {
+		// --debug mode: file gets full logs, stdout gets only warn/error
+		stdoutHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelWarn,
+		})
+		logger = slog.New(dualHandler{file: fileHandler, stdout: stdoutHandler})
+	} else {
+		logger = slog.New(fileHandler)
+	}
 	slog.SetDefault(logger)
 
 	logger.Info("Runtime startup",
@@ -1783,7 +1826,8 @@ func printHelp() {
 	fmt.Println("  --interval SEC     Polling interval in seconds (default: 120)")
 	fmt.Println("  --port PORT        Dashboard HTTP port (default: 9211)")
 	fmt.Println("  --db PATH          SQLite database file path (default: ~/.onwatch/data/onwatch.db)")
-	fmt.Println("  --debug            Run in foreground mode, log to stdout")
+	fmt.Println("  --debug            Run in foreground mode (logs to file, stdout gets warn/error)")
+	fmt.Println("  --debugstdout      Run in foreground mode with all logs to stdout")
 	fmt.Println("  --test             Test mode: isolated PID/log files, won't affect production")
 	fmt.Println()
 	fmt.Println("Environment Variables:")

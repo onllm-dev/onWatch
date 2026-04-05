@@ -496,18 +496,37 @@ func TestConfig_DebugMode_Flag(t *testing.T) {
 }
 
 func TestConfig_LogWriter(t *testing.T) {
+	// --debugstdout: should return os.Stdout
 	cfg := &Config{
-		DebugMode: true,
+		DebugMode:   true,
+		DebugStdout: true,
 	}
 	writer, err := cfg.LogWriter()
 	if err != nil {
 		t.Fatalf("LogWriter() failed: %v", err)
 	}
 	if writer != os.Stdout {
-		t.Error("Debug mode should return os.Stdout")
+		t.Error("DebugStdout mode should return os.Stdout")
 	}
 
+	// --debug (without --debugstdout): should return log file, not os.Stdout
 	tmpDir := t.TempDir()
+	cfg = &Config{
+		DebugMode: true,
+		DBPath:    filepath.Join(tmpDir, "onwatch.db"),
+	}
+	writer, err = cfg.LogWriter()
+	if err != nil {
+		t.Fatalf("LogWriter() failed: %v", err)
+	}
+	if writer == os.Stdout {
+		t.Error("Debug mode should return log file, not os.Stdout")
+	}
+	if file, ok := writer.(*os.File); ok {
+		_ = file.Close()
+	}
+
+	// Background mode: should return log file
 	cfg = &Config{
 		DebugMode: false,
 		DBPath:    filepath.Join(tmpDir, "onwatch.db"),

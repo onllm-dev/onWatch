@@ -73,6 +73,7 @@ type Config struct {
 	LogLevel           string        // ONWATCH_LOG_LEVEL
 	SessionIdleTimeout time.Duration // ONWATCH_SESSION_IDLE_TIMEOUT (seconds → Duration)
 	DebugMode          bool          // --debug flag (foreground mode)
+	DebugStdout        bool          // --debugstdout flag (foreground + all logs to stdout)
 	TestMode           bool          // --test flag (test mode isolation)
 }
 
@@ -103,8 +104,9 @@ type flagValues struct {
 	interval int
 	port     int
 	db       string
-	debug    bool
-	test     bool
+	debug       bool
+	debugStdout bool
+	test        bool
 }
 
 // Load reads configuration from .env file, environment variables, and CLI flags.
@@ -123,6 +125,9 @@ func loadWithArgs(args []string) (*Config, error) {
 		switch {
 		case arg == "--debug":
 			flags.debug = true
+		case arg == "--debugstdout":
+			flags.debug = true
+			flags.debugStdout = true
 		case arg == "--test":
 			flags.test = true
 		case strings.HasPrefix(arg, "--interval="):
@@ -341,6 +346,7 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// Debug mode (CLI flag only)
 	cfg.DebugMode = flags.debug
+	cfg.DebugStdout = flags.debugStdout
 
 	// Test mode (CLI flag only)
 	cfg.TestMode = flags.test
@@ -559,6 +565,7 @@ func (c *Config) String() string {
 	fmt.Fprintf(&sb, "  DBPath: %s,\n", c.DBPath)
 	fmt.Fprintf(&sb, "  LogLevel: %s,\n", c.LogLevel)
 	fmt.Fprintf(&sb, "  DebugMode: %v,\n", c.DebugMode)
+	fmt.Fprintf(&sb, "  DebugStdout: %v,\n", c.DebugStdout)
 	fmt.Fprintf(&sb, "}")
 
 	return sb.String()
@@ -615,12 +622,15 @@ func OpenRotatingLogFile(path string) (*os.File, error) {
 	return file, nil
 }
 
-// LogWriter returns the appropriate log destination based on debug mode.
-// In debug mode: returns os.Stdout
-// In Docker: returns os.Stdout (containers should log to stdout)
-// In background mode: returns a file handle to .onwatch.log
+// LogWriter returns the appropriate log destination based on mode.
+//
+// --debugstdout: returns os.Stdout (everything to stdout for manual debugging)
+// --debug:      returns .onwatch.log file (stdout gets only warn/error via separate handler)
+// Docker:       returns os.Stdout (containers should log to stdout)
+// Background:   returns .onwatch.log file
 func (c *Config) LogWriter() (io.Writer, error) {
-	if c.DebugMode {
+	// --debugstdout: all logs to stdout
+	if c.DebugStdout {
 		return os.Stdout, nil
 	}
 
@@ -629,7 +639,12 @@ func (c *Config) LogWriter() (io.Writer, error) {
 		return os.Stdout, nil
 	}
 
-	// Background mode: log to file in same directory as DB
+	// All other modes (--debug, background): log to file
+	return c.openLogFile()
+}
+
+// openLogFile opens the rotating log file for writing.
+func (c *Config) openLogFile() (io.Writer, error) {
 	logName := ".onwatch.log"
 	if c.TestMode {
 		logName = ".onwatch-test.log"
