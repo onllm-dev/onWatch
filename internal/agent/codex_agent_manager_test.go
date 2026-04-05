@@ -486,6 +486,11 @@ func TestCodexAgentManager_StopAgentAndStopAllAgents(t *testing.T) {
 	waitUntil(t, time.Second, func() bool { return len(fx.manager.GetRunningProfiles()) == 0 }, "all profiles to stop")
 }
 
+// TestCodexAgentManager_StartAgentForProfile_UsesAuthJSONWhenProfileTokenStale
+// verifies that named profiles auto-detect fresher credentials from global
+// auth.json when the account_id matches (e.g., user ran 'codex login').
+// This is safe because proactive refresh writes to the profile file, not
+// global auth.json (issue #55).
 func TestCodexAgentManager_StartAgentForProfile_UsesAuthJSONWhenProfileTokenStale(t *testing.T) {
 	fx := newCodexManagerFixture(t)
 
@@ -534,6 +539,69 @@ func TestCodexAgentManager_StartAgentForProfile_UsesAuthJSONWhenProfileTokenStal
 	}
 	if updated.Tokens.AccessToken != "fresh-token" {
 		t.Fatalf("updated profile token = %q, want fresh-token", updated.Tokens.AccessToken)
+	}
+}
+
+// TestCodexAgentManager_StartAgentForProfile_TokenSaveScopedToProfile verifies
+// that proactive refresh saves tokens to the profile file, NOT global auth.json.
+// This is the core fix for auth contamination (issue #55).
+func TestCodexAgentManager_StartAgentForProfile_TokenSaveScopedToProfile(t *testing.T) {
+	fx := newCodexManagerFixture(t)
+
+	idToken := makeCodexIDToken(t, time.Now().Add(24*time.Hour), "acct-work", "user-work")
+	profile := CodexProfile{Name: "work", AccountID: "acct-work", SavedAt: time.Now().UTC()}
+	profile.Tokens.AccessToken = "original-token"
+	profile.Tokens.RefreshToken = "original-refresh"
+	profile.Tokens.IDToken = idToken
+	profilePath := fx.writeProfile(t, profile)
+
+	// Write something to global auth.json so we can verify it's NOT modified
+	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	if err := os.MkdirAll(authDir, 0o700); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	origAuthJSON := `{"tokens":{"access_token":"global-token","refresh_token":"global-refresh","account_id":"acct-other"}}`
+	authPath := filepath.Join(authDir, "auth.json")
+	if err := os.WriteFile(authPath, []byte(origAuthJSON), 0o600); err != nil {
+		t.Fatalf("write auth.json: %v", err)
+	}
+
+	if err := fx.manager.startAgentForProfile(profile); err != nil {
+		t.Fatalf("startAgentForProfile: %v", err)
+	}
+	waitUntil(t, time.Second, func() bool { return fx.instance("work") != nil }, "work profile to start")
+
+	instance := fx.instance("work")
+
+	// Simulate proactive refresh saving new tokens via tokenSave
+	err := instance.Agent.tokenSave("refreshed-token", "refreshed-refresh", idToken, 604800)
+	if err != nil {
+		t.Fatalf("tokenSave: %v", err)
+	}
+
+	// Verify profile file was updated
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("read profile: %v", err)
+	}
+	var updated CodexProfile
+	if err := json.Unmarshal(data, &updated); err != nil {
+		t.Fatalf("unmarshal updated profile: %v", err)
+	}
+	if updated.Tokens.AccessToken != "refreshed-token" {
+		t.Fatalf("profile access_token = %q, want refreshed-token", updated.Tokens.AccessToken)
+	}
+	if updated.Tokens.RefreshToken != "refreshed-refresh" {
+		t.Fatalf("profile refresh_token = %q, want refreshed-refresh", updated.Tokens.RefreshToken)
+	}
+
+	// Verify global auth.json was NOT modified
+	authData, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatalf("read auth.json: %v", err)
+	}
+	if string(authData) != origAuthJSON {
+		t.Fatalf("global auth.json was modified by named profile tokenSave:\ngot: %s\nwant: %s", authData, origAuthJSON)
 	}
 }
 

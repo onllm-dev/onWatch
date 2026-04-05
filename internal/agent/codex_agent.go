@@ -26,6 +26,11 @@ type CodexTokenRefreshFunc func() string
 // CodexCredentialsRefreshFunc returns the full credentials for proactive OAuth refresh.
 type CodexCredentialsRefreshFunc func() *api.CodexCredentials
 
+// CodexTokenSaveFunc saves refreshed OAuth tokens to the appropriate storage.
+// For named profiles this writes to the profile JSON file; for the default
+// profile it writes to the global CODEX_HOME/auth.json.
+type CodexTokenSaveFunc func(accessToken, refreshToken, idToken string, expiresIn int) error
+
 // isCodexAuthError returns true if the error is an authentication/authorization error.
 func isCodexAuthError(err error) bool {
 	return errors.Is(err, api.ErrCodexUnauthorized) || errors.Is(err, api.ErrCodexForbidden)
@@ -43,6 +48,7 @@ type CodexAgent struct {
 	pollingCheck func() bool
 	tokenRefresh CodexTokenRefreshFunc
 	credsRefresh CodexCredentialsRefreshFunc
+	tokenSave    CodexTokenSaveFunc
 	lastToken    string
 
 	// Multi-account support
@@ -100,6 +106,13 @@ func (a *CodexAgent) SetTokenRefresh(fn CodexTokenRefreshFunc) {
 // proactive OAuth token refresh before expiry.
 func (a *CodexAgent) SetCredentialsRefresh(fn CodexCredentialsRefreshFunc) {
 	a.credsRefresh = fn
+}
+
+// SetTokenSave sets a function that saves refreshed OAuth tokens to disk.
+// This allows named profiles to write to their profile file instead of
+// the global CODEX_HOME/auth.json, preventing auth contamination between profiles.
+func (a *CodexAgent) SetTokenSave(fn CodexTokenSaveFunc) {
+	a.tokenSave = fn
 }
 
 // sendAuthErrorNotification sends an auth error notification via the notifier.
@@ -192,7 +205,11 @@ func (a *CodexAgent) poll(ctx context.Context) {
 					a.proactiveRefreshFailures = 0
 
 					// CRITICAL: Save new tokens to disk IMMEDIATELY (refresh tokens are one-time use!)
-					if err := api.WriteCodexCredentials(newTokens.AccessToken, newTokens.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
+					saveFn := a.tokenSave
+					if saveFn == nil {
+						saveFn = api.WriteCodexCredentials // fallback for backward compat
+					}
+					if err := saveFn(newTokens.AccessToken, newTokens.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
 						a.logger.Error("Failed to save refreshed Codex credentials", "error", err)
 					} else {
 						a.client.SetToken(newTokens.AccessToken)

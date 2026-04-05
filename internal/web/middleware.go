@@ -226,6 +226,10 @@ func generateToken() string {
 
 // SessionAuthMiddleware uses session cookies for browser requests and Basic Auth for API.
 func SessionAuthMiddleware(sessions *SessionStore, logger ...*slog.Logger) func(http.Handler) http.Handler {
+	return sessionAuthMiddlewareWithBasePath(sessions, "", logger...)
+}
+
+func sessionAuthMiddlewareWithBasePath(sessions *SessionStore, basePath string, logger ...*slog.Logger) func(http.Handler) http.Handler {
 	var log *slog.Logger
 	if len(logger) > 0 && logger[0] != nil {
 		log = logger[0]
@@ -235,13 +239,13 @@ func SessionAuthMiddleware(sessions *SessionStore, logger ...*slog.Logger) func(
 			path := r.URL.Path
 
 			// Static assets and public files bypass authentication
-			if isStaticAsset(path) {
+			if isStaticAsset(path, basePath) {
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			// Login page is always accessible
-			if path == "/login" {
+			if path == basePath+"/login" {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -261,7 +265,7 @@ func SessionAuthMiddleware(sessions *SessionStore, logger ...*slog.Logger) func(
 			}
 
 			// For API endpoints, also accept Basic Auth (for curl/scripts)
-			if strings.HasPrefix(path, "/api/") {
+			if strings.HasPrefix(path, basePath+"/api/") {
 				u, p, ok := extractCredentials(r)
 				if ok {
 					userMatch := subtle.ConstantTimeCompare([]byte(u), []byte(sessions.username)) == 1
@@ -295,7 +299,7 @@ func SessionAuthMiddleware(sessions *SessionStore, logger ...*slog.Logger) func(
 				// Return JSON 401 without WWW-Authenticate to prevent browser popup
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"unauthorized","login":"/login"}`))
+				w.Write([]byte(`{"error":"unauthorized","login":"` + basePath + `/login"}`))
 				return
 			}
 
@@ -303,7 +307,7 @@ func SessionAuthMiddleware(sessions *SessionStore, logger ...*slog.Logger) func(
 			if log != nil {
 				log.Debug("Unauthenticated request, redirecting to login", "path", path, "method", r.Method, "remote", r.RemoteAddr)
 			}
-			http.Redirect(w, r, "/login", http.StatusFound)
+			http.Redirect(w, r, basePath+"/login", http.StatusFound)
 		})
 	}
 }
@@ -373,8 +377,12 @@ func extractCredentials(r *http.Request) (username, password string, ok bool) {
 }
 
 // isStaticAsset checks if the request path is for a static asset.
-func isStaticAsset(path string) bool {
-	return strings.HasPrefix(path, "/static/") || path == "/sw.js" || path == "/manifest.json"
+func isStaticAsset(path string, basePath ...string) bool {
+	bp := ""
+	if len(basePath) > 0 {
+		bp = basePath[0]
+	}
+	return strings.HasPrefix(path, bp+"/static/") || path == bp+"/sw.js" || path == bp+"/manifest.json"
 }
 
 // writeUnauthorized sends a 401 Unauthorized response.

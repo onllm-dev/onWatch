@@ -1,6 +1,7 @@
 // onWatch Dashboard JavaScript
 
-const API_BASE = '';
+const BASE_PATH = (document.querySelector('meta[name="base-path"]') || {}).content || '';
+const API_BASE = BASE_PATH;
 const REFRESH_INTERVAL = 120000;
 
 // ── Lazy Loading via IntersectionObserver ──
@@ -35,8 +36,8 @@ async function authFetch(url, options) {
   const res = await fetch(url, options);
   if (res.status === 401) {
     // Don't redirect if already on the login page (avoids infinite refresh loop)
-    if (window.location.pathname !== '/login') {
-      window.location.href = '/login';
+    if (window.location.pathname !== BASE_PATH + '/login') {
+      window.location.href = BASE_PATH + '/login';
     }
     throw new Error('Session expired');
   }
@@ -6785,7 +6786,7 @@ function setupProviderSelector() {
     tab.addEventListener('click', () => {
       const provider = tab.dataset.provider;
       saveDefaultProvider(provider);
-      window.location.href = `/?provider=${provider}`;
+      window.location.href = `${BASE_PATH}/?provider=${provider}`;
     });
   });
 }
@@ -8524,7 +8525,7 @@ function setupPushNotifications() {
   }
 
   // Register service worker
-  navigator.serviceWorker.register('/sw.js').then(function(reg) {
+  navigator.serviceWorker.register(BASE_PATH + '/sw.js').then(function(reg) {
     return reg.pushManager.getSubscription();
   }).then(function(sub) {
     if (sub) {
@@ -8675,7 +8676,7 @@ async function collectPushDiagnostics() {
   // Check service worker registration & subscription
   if ('serviceWorker' in navigator) {
     try {
-      var reg = await navigator.serviceWorker.getRegistration('/sw.js');
+      var reg = await navigator.serviceWorker.getRegistration(BASE_PATH + '/sw.js');
       if (reg) {
         lines.push('SW registered: Yes (scope: ' + reg.scope + ')');
         lines.push('SW state: ' + (reg.active ? 'active' : reg.installing ? 'installing' : reg.waiting ? 'waiting' : 'none'));
@@ -8743,7 +8744,7 @@ function setupSettingsPassword() {
         showSettingsFeedback(feedback, data.error || 'Failed to update password.', 'error');
       } else {
         showSettingsFeedback(feedback, 'Password updated! Redirecting to login...', 'success');
-        setTimeout(() => { window.location.href = '/login'; }, 1500);
+        setTimeout(() => { window.location.href = BASE_PATH + '/login'; }, 1500);
       }
     } catch (e) {
       showSettingsFeedback(feedback, 'Network error.', 'error');
@@ -9091,7 +9092,7 @@ function initNotificationCenter() {
 document.addEventListener('DOMContentLoaded', async () => {
   // Register service worker for PWA + push (all pages)
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(function() {});
+    navigator.serviceWorker.register(BASE_PATH + '/sw.js').catch(function() {});
   }
 
   // Settings page has its own initialization
@@ -9112,7 +9113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const availableProviders = [...providerTabs.querySelectorAll('.provider-tab')].map(t => t.dataset.provider);
       // Only redirect if saved provider is available and different from server default
       if (availableProviders.includes(savedProvider) && savedProvider !== availableProviders[0]) {
-        window.location.href = `/?provider=${savedProvider}`;
+        window.location.href = `${BASE_PATH}/?provider=${savedProvider}`;
         return;
       }
     }

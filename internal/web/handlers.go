@@ -818,6 +818,14 @@ func (h *Handler) SetNotifier(n Notifier) {
 	h.notifier = n
 }
 
+// getBasePath returns the configured base path, or empty string if not configured.
+func (h *Handler) getBasePath() string {
+	if h.config != nil {
+		return h.config.BasePath
+	}
+	return ""
+}
+
 // getPollIntervalSec returns the poll interval in seconds, defaulting to 120 if not configured.
 func (h *Handler) getPollIntervalSec() int {
 	if h.config != nil && h.config.PollInterval > 0 {
@@ -857,8 +865,9 @@ func (h *Handler) triggerMenubarRefresh() {
 // SettingsPage renders the settings page.
 func (h *Handler) SettingsPage(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
-		"Title":   "Settings",
-		"Version": h.version,
+		"Title":    "Settings",
+		"Version":  h.version,
+		"BasePath": h.getBasePath(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1696,6 +1705,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		"HasAntigravity":  hasAntigravity,
 		"HasMiniMax":      hasMiniMax,
 		"PollIntervalSec": h.getPollIntervalSec(),
+		"BasePath":        h.getBasePath(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -6211,9 +6221,10 @@ func (h *Handler) PushTest(w http.ResponseWriter, r *http.Request) {
 // Login handles GET (show form) and POST (authenticate).
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	// If already logged in, redirect to dashboard
+	bp := h.getBasePath()
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		if h.sessions != nil && h.sessions.ValidateToken(cookie.Value) {
-			http.Redirect(w, r, "/", http.StatusFound)
+			http.Redirect(w, r, bp+"/", http.StatusFound)
 			return
 		}
 	}
@@ -6228,9 +6239,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	errorMsg := loginErrors[errorCode] // empty string if not in whitelist
 
 	data := map[string]interface{}{
-		"Title":   "Login",
-		"Error":   errorMsg,
-		"Version": h.version,
+		"Title":    "Login",
+		"Error":    errorMsg,
+		"Version":  h.version,
+		"BasePath": h.getBasePath(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -6241,18 +6253,21 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) loginPost(w http.ResponseWriter, r *http.Request) {
+	bp := h.getBasePath()
+	loginURL := bp + "/login"
+
 	// Check rate limit before processing login attempt
 	if h.rateLimiter != nil {
 		clientIP := getClientIP(r)
 		if h.rateLimiter.IsBlocked(clientIP) {
 			w.Header().Set("Retry-After", "300") // 5 minutes in seconds
-			http.Redirect(w, r, "/login?error="+LoginErrorRateLimit, http.StatusFound)
+			http.Redirect(w, r, loginURL+"?error="+LoginErrorRateLimit, http.StatusFound)
 			return
 		}
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/login?error="+LoginErrorInvalid, http.StatusFound)
+		http.Redirect(w, r, loginURL+"?error="+LoginErrorInvalid, http.StatusFound)
 		return
 	}
 
@@ -6260,7 +6275,7 @@ func (h *Handler) loginPost(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 
 	if h.sessions == nil {
-		http.Redirect(w, r, "/login?error="+LoginErrorRequired, http.StatusFound)
+		http.Redirect(w, r, loginURL+"?error="+LoginErrorRequired, http.StatusFound)
 		return
 	}
 
@@ -6274,7 +6289,7 @@ func (h *Handler) loginPost(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Retry-After", "300")
 			}
 		}
-		http.Redirect(w, r, "/login?error="+LoginErrorInvalid, http.StatusFound)
+		http.Redirect(w, r, loginURL+"?error="+LoginErrorInvalid, http.StatusFound)
 		return
 	}
 
@@ -6284,10 +6299,15 @@ func (h *Handler) loginPost(w http.ResponseWriter, r *http.Request) {
 		h.rateLimiter.Clear(clientIP)
 	}
 
+	// Cookie path must cover the base path for subdirectory hosting
+	cookiePath := "/"
+	if bp != "" {
+		cookiePath = bp + "/"
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
-		Path:     "/",
+		Path:     cookiePath,
 		MaxAge:   sessionMaxAge,
 		Expires:  time.Now().Add(time.Duration(sessionMaxAge) * time.Second),
 		HttpOnly: true,
@@ -6295,21 +6315,26 @@ func (h *Handler) loginPost(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, bp+"/", http.StatusFound)
 }
 
 // Logout clears the session and redirects to login.
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	bp := h.getBasePath()
 	if cookie, err := r.Cookie(sessionCookieName); err == nil && h.sessions != nil {
 		h.sessions.Invalidate(cookie.Value)
+	}
+	cookiePath := "/"
+	if bp != "" {
+		cookiePath = bp + "/"
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:   sessionCookieName,
 		Value:  "",
-		Path:   "/",
+		Path:   cookiePath,
 		MaxAge: -1,
 	})
-	http.Redirect(w, r, "/login", http.StatusFound)
+	http.Redirect(w, r, bp+"/login", http.StatusFound)
 }
 
 // ChangePassword handles password change requests.

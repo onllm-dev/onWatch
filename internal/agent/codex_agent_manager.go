@@ -297,6 +297,55 @@ func shouldUseSystemCredsForProfile(profileCreds, systemCreds *api.CodexCredenti
 	return systemCreds.AccessToken != "" && subtle.ConstantTimeCompare([]byte(systemCreds.AccessToken), []byte(profileCreds.AccessToken)) == 0
 }
 
+// saveTokensToProfile writes refreshed OAuth tokens to a named profile's JSON file.
+// This keeps credentials scoped to the profile and avoids contaminating the global auth.json.
+func saveTokensToProfile(profilePath, accessToken, refreshToken, idToken string, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		return fmt.Errorf("read profile: %w", err)
+	}
+
+	var profile CodexProfile
+	if err := json.Unmarshal(data, &profile); err != nil {
+		return fmt.Errorf("parse profile: %w", err)
+	}
+
+	if accessToken != "" {
+		profile.Tokens.AccessToken = accessToken
+	}
+	if refreshToken != "" {
+		profile.Tokens.RefreshToken = refreshToken
+	}
+	if idToken != "" {
+		profile.Tokens.IDToken = idToken
+		if uid := api.ParseIDTokenUserID(idToken); uid != "" {
+			profile.UserID = uid
+		}
+	}
+	profile.SavedAt = time.Now().UTC()
+
+	updated, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal profile: %w", err)
+	}
+
+	tempPath := profilePath + ".tmp"
+	if err := os.WriteFile(tempPath, updated, 0o600); err != nil {
+		return fmt.Errorf("write temp profile: %w", err)
+	}
+	if err := os.Rename(tempPath, profilePath); err != nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("rename profile: %w", err)
+	}
+
+	logger.Info("saved refreshed Codex tokens to profile", "path", profilePath)
+	return nil
+}
+
 func updateProfileFromSystemCreds(profilePath string, creds *api.CodexCredentials, logger *slog.Logger) error {
 	if creds == nil {
 		return fmt.Errorf("nil credentials")
@@ -388,9 +437,13 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 	// Create agent with account ID
 	agent := NewCodexAgentWithAccount(client, m.store, m.tracker, m.interval, m.logger, sm, dbAccount.ID)
 
-	// Set token refresh function that reads from profile
+	// Set token refresh / credentials refresh / token save functions.
+	// Named profiles are fully scoped to their profile JSON file and NEVER
+	// fall back to the global CODEX_HOME/auth.json at runtime. This prevents
+	// auth contamination between profiles (see issue #55).
 	profilePath := filepath.Join(m.profilesDir, profile.Name+".json")
 	isDefaultProfile := profile.Name == "default"
+
 	agent.SetTokenRefresh(func() string {
 		if isDefaultProfile {
 			if systemCreds := api.DetectCodexCredentials(m.logger); systemCreds != nil {
@@ -399,6 +452,9 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 			return profile.Tokens.AccessToken
 		}
 
+		// Named profiles: prefer profile file, fall back to global auth.json
+		// only if account_id matches (user ran 'codex login' externally).
+		// This is safe because proactive refresh no longer writes to auth.json.
 		profileCreds := readCodexProfileCredentials(profilePath)
 		if profileCreds != nil {
 			if !profileCreds.IsExpiringSoon(codexTokenRefreshThreshold) {
@@ -424,13 +480,13 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 		return profile.Tokens.AccessToken
 	})
 
-	// Set credentials refresh function for proactive OAuth token refresh
 	agent.SetCredentialsRefresh(func() *api.CodexCredentials {
 		if isDefaultProfile {
-			// Default profile reads from system credentials (~/.codex/auth.json)
 			return api.DetectCodexCredentials(m.logger)
 		}
 
+		// Named profiles: prefer profile file, fall back to global auth.json
+		// only if account_id matches. Safe because refresh writes to profile file.
 		profileCreds := readCodexProfileCredentials(profilePath)
 		if profileCreds != nil && !profileCreds.IsExpiringSoon(codexTokenRefreshThreshold) {
 			return profileCreds
@@ -445,6 +501,28 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 		}
 
 		return profileCreds
+	})
+
+	// Token save: named profiles write to their profile file, default writes to global auth.json.
+	// After writing, update lastScanProfiles so the profile scanner doesn't
+	// restart the agent for our own write.
+	agent.SetTokenSave(func(accessToken, refreshToken, idToken string, expiresIn int) error {
+		if isDefaultProfile {
+			return api.WriteCodexCredentials(accessToken, refreshToken, idToken, expiresIn)
+		}
+
+		// Named profiles: save refreshed tokens to the profile file only
+		if err := saveTokensToProfile(profilePath, accessToken, refreshToken, idToken, m.logger); err != nil {
+			return err
+		}
+
+		// Update scanner's last-known mod time so it doesn't restart this agent
+		if info, statErr := os.Stat(profilePath); statErr == nil {
+			m.mu.Lock()
+			m.lastScanProfiles[profile.Name] = info.ModTime()
+			m.mu.Unlock()
+		}
+		return nil
 	})
 
 	// Set notifier if available

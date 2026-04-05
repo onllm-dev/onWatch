@@ -72,6 +72,7 @@ type Config struct {
 	DBPathExplicit     bool          // true if user explicitly set --db or ONWATCH_DB_PATH
 	LogLevel           string        // ONWATCH_LOG_LEVEL
 	SessionIdleTimeout time.Duration // ONWATCH_SESSION_IDLE_TIMEOUT (seconds → Duration)
+	BasePath           string        // ONWATCH_BASE_PATH (subdirectory hosting, e.g. "/onwatch")
 	DebugMode          bool          // --debug flag (foreground mode)
 	DebugStdout        bool          // --debugstdout flag (foreground + all logs to stdout)
 	TestMode           bool          // --test flag (test mode isolation)
@@ -337,6 +338,9 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 		cfg.SecureCookies = strings.ToLower(env) == "true" || env == "1"
 	}
 
+	// Base Path (subdirectory hosting, e.g. "/onwatch")
+	cfg.BasePath = strings.TrimSpace(os.Getenv("ONWATCH_BASE_PATH"))
+
 	// Session Idle Timeout (seconds)
 	if env := envWithFallback("ONWATCH_SESSION_IDLE_TIMEOUT", "SYNTRACK_SESSION_IDLE_TIMEOUT"); env != "" {
 		if v, err := strconv.Atoi(env); err == nil {
@@ -391,6 +395,11 @@ func (c *Config) applyDefaults() {
 	}
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
+	}
+	// Normalize base path: ensure leading slash, no trailing slash, empty means root
+	c.BasePath = strings.TrimRight(c.BasePath, "/")
+	if c.BasePath != "" && !strings.HasPrefix(c.BasePath, "/") {
+		c.BasePath = "/" + c.BasePath
 	}
 	if c.ZaiBaseURL == "" {
 		if c.ZaiRegion == "cn" {
@@ -560,6 +569,9 @@ func (c *Config) String() string {
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)
 	fmt.Fprintf(&sb, "  SessionIdleTimeout: %v,\n", c.SessionIdleTimeout)
 	fmt.Fprintf(&sb, "  Port: %d,\n", c.Port)
+	if c.BasePath != "" {
+		fmt.Fprintf(&sb, "  BasePath: %s,\n", c.BasePath)
+	}
 	fmt.Fprintf(&sb, "  AdminUser: %s,\n", c.AdminUser)
 	fmt.Fprintf(&sb, "  AdminPass: ****,\n")
 	fmt.Fprintf(&sb, "  DBPath: %s,\n", c.DBPath)

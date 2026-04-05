@@ -4,23 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}} - onWatch</title>
-    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="{{.BasePath}}/static/favicon.svg">
+    <link rel="manifest" href="{{.BasePath}}/manifest.json">
     <meta name="theme-color" content="#0D9488">
+    <meta name="base-path" content="{{.BasePath}}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="preload" href="/static/style.css?v={{.Version}}" as="style">
-    <link rel="preload" href="/static/app.js?v={{.Version}}" as="script">
-    <link rel="stylesheet" href="/static/style.css?v={{.Version}}">
-    <script src="/static/theme-init.js?v={{.Version}}"></script>
+    <link rel="preload" href="{{.BasePath}}/static/style.css?v={{.Version}}" as="style">
+    <link rel="preload" href="{{.BasePath}}/static/app.js?v={{.Version}}" as="script">
+    <link rel="stylesheet" href="{{.BasePath}}/static/style.css?v={{.Version}}">
+    <script src="{{.BasePath}}/static/theme-init.js?v={{.Version}}"></script>
 </head>
 <body>
     {{if ne .Title "Login"}}<a href="#main-content" class="skip-link">Skip to dashboard</a>{{end}}
     {{template "content" .}}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js" defer></script>
-    <script src="/static/app.js?v={{.Version}}" defer></script>
+    <script src="{{.BasePath}}/static/app.js?v={{.Version}}" defer></script>
 </body>
 </html>
