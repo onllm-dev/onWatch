@@ -19,26 +19,32 @@ import (
 const (
 	apiIntegrationIngestIntervalDefault = 5 * time.Second
 	apiIntegrationIngestMaxReadBytes    = 256 * 1024
+	apiIntegrationPruneIntervalDefault  = time.Hour
 )
 
 // APIIntegrationsIngestAgent tails normalized JSONL API integration usage files and stores the events.
 type APIIntegrationsIngestAgent struct {
-	store    *store.Store
-	dir      string
-	interval time.Duration
-	logger   *slog.Logger
+	store         *store.Store
+	dir           string
+	interval      time.Duration
+	retention     time.Duration
+	pruneInterval time.Duration
+	lastPrune     time.Time
+	logger        *slog.Logger
 }
 
 // NewAPIIntegrationsIngestAgent creates a new API integrations file ingester.
-func NewAPIIntegrationsIngestAgent(store *store.Store, dir string, logger *slog.Logger) *APIIntegrationsIngestAgent {
+func NewAPIIntegrationsIngestAgent(store *store.Store, dir string, retention time.Duration, logger *slog.Logger) *APIIntegrationsIngestAgent {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &APIIntegrationsIngestAgent{
-		store:    store,
-		dir:      dir,
-		interval: apiIntegrationIngestIntervalDefault,
-		logger:   logger,
+		store:         store,
+		dir:           dir,
+		interval:      apiIntegrationIngestIntervalDefault,
+		retention:     retention,
+		pruneInterval: apiIntegrationPruneIntervalDefault,
+		logger:        logger,
 	}
 }
 
@@ -86,6 +92,10 @@ func (a *APIIntegrationsIngestAgent) scan() {
 		if err := a.scanFile(path); err != nil {
 			a.logger.Error("API integrations ingester scan failed", "path", path, "error", err)
 		}
+	}
+
+	if err := a.pruneExpiredUsageEvents(); err != nil {
+		a.logger.Error("API integrations ingester prune failed", "error", err)
 	}
 }
 
@@ -188,4 +198,26 @@ func (a *APIIntegrationsIngestAgent) recordInvalidLine(path, line string, err er
 	if _, createErr := a.store.CreateSystemAlert("api_integrations", "ingest_error", "API integrations ingest skipped invalid event", msg, "warning", metadata); createErr != nil {
 		a.logger.Warn("Failed to create API integrations ingest alert", "path", path, "error", createErr)
 	}
+}
+
+func (a *APIIntegrationsIngestAgent) pruneExpiredUsageEvents() error {
+	if a.store == nil || a.retention <= 0 {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	if !a.lastPrune.IsZero() && now.Sub(a.lastPrune) < a.pruneInterval {
+		return nil
+	}
+
+	cutoff := now.Add(-a.retention)
+	deleted, err := a.store.DeleteAPIIntegrationUsageEventsOlderThan(cutoff)
+	if err != nil {
+		return err
+	}
+	a.lastPrune = now
+	if deleted > 0 {
+		a.logger.Info("API integrations usage retention pruned events", "deleted", deleted, "cutoff", cutoff.Format(time.RFC3339))
+	}
+	return nil
 }

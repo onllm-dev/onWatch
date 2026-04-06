@@ -62,8 +62,9 @@ type Config struct {
 	GeminiAccessToken  string // GEMINI_ACCESS_TOKEN (for Docker/headless)
 
 	// Custom API Integrations telemetry ingestion
-	APIIntegrationsEnabled bool   // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
-	APIIntegrationsDir     string // ONWATCH_API_INTEGRATIONS_DIR (default: ~/.onwatch/api-integrations or /data/api-integrations)
+	APIIntegrationsEnabled   bool          // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
+	APIIntegrationsDir       string        // ONWATCH_API_INTEGRATIONS_DIR (default: ~/.onwatch/api-integrations or /data/api-integrations)
+	APIIntegrationsRetention time.Duration // ONWATCH_API_INTEGRATIONS_RETENTION (example: 720h, 0 disables pruning)
 
 	// Shared configuration
 	PollInterval       time.Duration // ONWATCH_POLL_INTERVAL (seconds → Duration)
@@ -304,8 +305,16 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// Custom API Integrations telemetry ingestion
 	cfg.APIIntegrationsDir = strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_DIR"))
 	cfg.APIIntegrationsEnabled = true
+	cfg.APIIntegrationsRetention = 60 * 24 * time.Hour
 	if env := strings.ToLower(strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_ENABLED"))); env != "" {
 		cfg.APIIntegrationsEnabled = env == "true" || env == "1" || env == "yes" || env == "on"
+	}
+	if env := strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_RETENTION")); env != "" {
+		if env == "0" {
+			cfg.APIIntegrationsRetention = 0
+		} else if v, err := time.ParseDuration(env); err == nil {
+			cfg.APIIntegrationsRetention = v
+		}
 	}
 
 	// Poll Interval (seconds) - ONWATCH_* first, SYNTRACK_* fallback
@@ -458,6 +467,9 @@ func (c *Config) Validate() error {
 	if c.Port < 1024 || c.Port > 65535 {
 		return fmt.Errorf("port must be between 1024 and 65535")
 	}
+	if c.APIIntegrationsRetention < 0 {
+		return fmt.Errorf("API integrations retention must be non-negative")
+	}
 
 	return nil
 }
@@ -591,6 +603,7 @@ func (c *Config) String() string {
 	fmt.Fprintf(&sb, "  MiniMaxAPIKey: %s,\n", minimaxDisplay)
 	fmt.Fprintf(&sb, "  APIIntegrationsEnabled: %v,\n", c.APIIntegrationsEnabled)
 	fmt.Fprintf(&sb, "  APIIntegrationsDir: %s,\n", c.APIIntegrationsDir)
+	fmt.Fprintf(&sb, "  APIIntegrationsRetention: %v,\n", c.APIIntegrationsRetention)
 
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)
 	fmt.Fprintf(&sb, "  SessionIdleTimeout: %v,\n", c.SessionIdleTimeout)

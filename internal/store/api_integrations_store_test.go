@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -65,6 +66,45 @@ func TestStore_QueryAPIIntegrationUsageSummary(t *testing.T) {
 	}
 }
 
+func TestStore_QueryAPIIntegrationUsageSummary_BoundedAndOrdered(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	base := time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)
+	totalGroups := apiIntegrationUsageSummaryLimit + 10
+	for i := 0; i < totalGroups; i++ {
+		line := fmt.Sprintf(`{"ts":"%s","integration":"integration-%03d","provider":"openai","model":"gpt-4.1-mini","prompt_tokens":1,"completion_tokens":1}`,
+			base.Add(time.Duration(i)*time.Minute).Format(time.RFC3339),
+			i,
+		)
+		event, err := apiintegrations.ParseUsageEventLine([]byte(line), "/tmp/api-integrations/bounded.jsonl")
+		if err != nil {
+			t.Fatalf("ParseUsageEventLine(%d): %v", i, err)
+		}
+		if _, err := s.InsertAPIIntegrationUsageEvent(event); err != nil {
+			t.Fatalf("InsertAPIIntegrationUsageEvent(%d): %v", i, err)
+		}
+	}
+
+	summary, err := s.QueryAPIIntegrationUsageSummary()
+	if err != nil {
+		t.Fatalf("QueryAPIIntegrationUsageSummary: %v", err)
+	}
+	if len(summary) != apiIntegrationUsageSummaryLimit {
+		t.Fatalf("len(summary)=%d want %d", len(summary), apiIntegrationUsageSummaryLimit)
+	}
+	if summary[0].IntegrationName != "integration-000" {
+		t.Fatalf("first summary row=%+v", summary[0])
+	}
+	last := summary[len(summary)-1]
+	if last.IntegrationName != fmt.Sprintf("integration-%03d", apiIntegrationUsageSummaryLimit-1) {
+		t.Fatalf("last summary row=%+v", last)
+	}
+}
+
 func TestStore_QueryAPIIntegrationUsageRange_AndIngestState(t *testing.T) {
 	s, err := New(":memory:")
 	if err != nil {
@@ -106,6 +146,44 @@ func TestStore_QueryAPIIntegrationUsageRange_AndIngestState(t *testing.T) {
 	}
 	if got == nil || got.Offset != 42 || got.PartialLine != state.PartialLine {
 		t.Fatalf("state=%+v", got)
+	}
+}
+
+func TestStore_DeleteAPIIntegrationUsageEventsOlderThan(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	lines := []string{
+		`{"ts":"2026-01-01T12:00:00Z","integration":"notes","provider":"openai","model":"gpt-4.1-mini","prompt_tokens":1,"completion_tokens":1}`,
+		`{"ts":"2026-03-15T12:00:00Z","integration":"notes","provider":"openai","model":"gpt-4.1-mini","prompt_tokens":2,"completion_tokens":2}`,
+	}
+	for i, line := range lines {
+		event, err := apiintegrations.ParseUsageEventLine([]byte(line), "/tmp/api-integrations/retention.jsonl")
+		if err != nil {
+			t.Fatalf("ParseUsageEventLine(%d): %v", i, err)
+		}
+		if _, err := s.InsertAPIIntegrationUsageEvent(event); err != nil {
+			t.Fatalf("InsertAPIIntegrationUsageEvent(%d): %v", i, err)
+		}
+	}
+
+	deleted, err := s.DeleteAPIIntegrationUsageEventsOlderThan(time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("DeleteAPIIntegrationUsageEventsOlderThan: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted=%d want 1", deleted)
+	}
+
+	events, err := s.QueryAPIIntegrationUsageRange(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("QueryAPIIntegrationUsageRange: %v", err)
+	}
+	if len(events) != 1 || events[0].Timestamp.Format(time.RFC3339) != "2026-03-15T12:00:00Z" {
+		t.Fatalf("events=%+v", events)
 	}
 }
 
@@ -153,6 +231,49 @@ func TestStore_QueryAPIIntegrationUsageBuckets(t *testing.T) {
 	}
 	if rows[2].IntegrationName != "notes" || rows[2].BucketStart.Format(time.RFC3339) != "2026-04-03T12:15:00Z" || rows[2].TotalTokens != 5 {
 		t.Fatalf("unexpected third bucket: %+v", rows[2])
+	}
+}
+
+func TestStore_QueryAPIIntegrationUsageBuckets_HourlyRange(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	lines := []string{
+		`{"ts":"2026-04-03T12:10:00Z","integration":"notes","provider":"anthropic","model":"claude-3-7-sonnet","prompt_tokens":3,"completion_tokens":2}`,
+		`{"ts":"2026-04-03T12:50:00Z","integration":"notes","provider":"anthropic","model":"claude-3-7-sonnet","prompt_tokens":4,"completion_tokens":1}`,
+		`{"ts":"2026-04-03T13:05:00Z","integration":"notes","provider":"anthropic","model":"claude-3-7-sonnet","prompt_tokens":5,"completion_tokens":5,"cost_usd":0.5}`,
+		`{"ts":"2026-04-03T13:25:00Z","integration":"report","provider":"openai","model":"gpt-4.1-mini","prompt_tokens":7,"completion_tokens":3}`,
+	}
+	for i, line := range lines {
+		event, err := apiintegrations.ParseUsageEventLine([]byte(line), "/tmp/api-integrations/hourly.jsonl")
+		if err != nil {
+			t.Fatalf("ParseUsageEventLine(%d): %v", i, err)
+		}
+		if _, err := s.InsertAPIIntegrationUsageEvent(event); err != nil {
+			t.Fatalf("InsertAPIIntegrationUsageEvent(%d): %v", i, err)
+		}
+	}
+
+	start := time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 4, 3, 14, 0, 0, 0, time.UTC)
+	rows, err := s.QueryAPIIntegrationUsageBuckets(start, end, time.Hour)
+	if err != nil {
+		t.Fatalf("QueryAPIIntegrationUsageBuckets: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("len(rows)=%d want 3", len(rows))
+	}
+	if rows[0].IntegrationName != "notes" || rows[0].BucketStart.Format(time.RFC3339) != "2026-04-03T12:00:00Z" || rows[0].TotalTokens != 10 {
+		t.Fatalf("unexpected first hourly bucket: %+v", rows[0])
+	}
+	if rows[1].IntegrationName != "notes" || rows[1].BucketStart.Format(time.RFC3339) != "2026-04-03T13:00:00Z" || rows[1].TotalCostUSD != 0.5 {
+		t.Fatalf("unexpected second hourly bucket: %+v", rows[1])
+	}
+	if rows[2].IntegrationName != "report" || rows[2].BucketStart.Format(time.RFC3339) != "2026-04-03T13:00:00Z" || rows[2].TotalTokens != 10 {
+		t.Fatalf("unexpected third hourly bucket: %+v", rows[2])
 	}
 }
 
@@ -224,5 +345,8 @@ func TestStore_QueryAPIIntegrationIngestHealth_AndAlertsByProvider(t *testing.T)
 	}
 	if alerts[0].Provider != "api_integrations" || alerts[0].AlertType != "ingest_warning" {
 		t.Fatalf("unexpected alert: %+v", alerts[0])
+	}
+	if alerts[0].CreatedAt.Format(time.RFC3339) == "0001-01-01T00:00:00Z" {
+		t.Fatalf("expected parsed alert createdAt, got %+v", alerts[0])
 	}
 }

@@ -4,12 +4,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
 	"time"
 
 	apiintegrations "github.com/onllm-dev/onwatch/v2/internal/api_integrations"
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
+
+const apiIntegrationUsageSummaryLimit = 500
 
 // APIIntegrationUsageSummaryRow contains grouped usage totals for backend reporting.
 type APIIntegrationUsageSummaryRow struct {
@@ -77,7 +79,7 @@ func (s *Store) InsertAPIIntegrationUsageEvent(event *apiintegrations.UsageEvent
 		time.Now().UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+		if isSQLiteUniqueConstraintError(err) {
 			return 0, ErrDuplicateAPIIntegrationUsageEvent
 		}
 		return 0, fmt.Errorf("failed to insert API integration usage event: %w", err)
@@ -150,6 +152,22 @@ func (s *Store) QueryAPIIntegrationUsageRange(start, end time.Time, limit ...int
 	return events, rows.Err()
 }
 
+// DeleteAPIIntegrationUsageEventsOlderThan removes stored usage events older than the cutoff.
+func (s *Store) DeleteAPIIntegrationUsageEventsOlderThan(cutoff time.Time) (int64, error) {
+	res, err := s.db.Exec(`
+		DELETE FROM api_integration_usage_events
+		WHERE captured_at < ?
+	`, cutoff.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete expired API integration usage events: %w", err)
+	}
+	deleted, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to count deleted API integration usage events: %w", err)
+	}
+	return deleted, nil
+}
+
 // QueryAPIIntegrationUsageSummary groups usage by integration/provider/account/model.
 func (s *Store) QueryAPIIntegrationUsageSummary() ([]APIIntegrationUsageSummaryRow, error) {
 	rows, err := s.db.Query(`
@@ -163,7 +181,8 @@ func (s *Store) QueryAPIIntegrationUsageSummary() ([]APIIntegrationUsageSummaryR
 		FROM api_integration_usage_events
 		GROUP BY integration_name, provider, account_name, model
 		ORDER BY integration_name, provider, account_name, model
-	`)
+		LIMIT ?
+	`, apiIntegrationUsageSummaryLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query API integration usage summary: %w", err)
 	}
@@ -199,48 +218,44 @@ func (s *Store) QueryAPIIntegrationUsageBuckets(start, end time.Time, bucketSize
 		return nil, fmt.Errorf("bucket size must be positive")
 	}
 
-	events, err := s.QueryAPIIntegrationUsageRange(start, end)
+	bucketSeconds := int64(bucketSize / time.Second)
+	rows, err := s.db.Query(`
+		SELECT integration_name,
+		       strftime('%Y-%m-%dT%H:%M:%SZ', (CAST(strftime('%s', captured_at) AS INTEGER) / ?) * ?, 'unixepoch'),
+		       COUNT(*),
+		       COALESCE(SUM(prompt_tokens), 0),
+		       COALESCE(SUM(completion_tokens), 0),
+		       COALESCE(SUM(total_tokens), 0),
+		       COALESCE(SUM(cost_usd), 0)
+		FROM api_integration_usage_events
+		WHERE captured_at BETWEEN ? AND ?
+		GROUP BY integration_name, 2
+		ORDER BY integration_name, 2
+	`, bucketSeconds, bucketSeconds, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query API integration usage buckets: %w", err)
 	}
+	defer rows.Close()
 
-	type bucketKey struct {
-		integration string
-		start       time.Time
-	}
-
-	buckets := make(map[bucketKey]*APIIntegrationUsageBucketRow)
-	for _, event := range events {
-		bucketStart := event.Timestamp.UTC().Truncate(bucketSize)
-		key := bucketKey{integration: event.Integration, start: bucketStart}
-		row, ok := buckets[key]
-		if !ok {
-			row = &APIIntegrationUsageBucketRow{
-				IntegrationName: event.Integration,
-				BucketStart:     bucketStart,
-			}
-			buckets[key] = row
+	var buckets []APIIntegrationUsageBucketRow
+	for rows.Next() {
+		var row APIIntegrationUsageBucketRow
+		var bucketStart string
+		if err := rows.Scan(
+			&row.IntegrationName,
+			&bucketStart,
+			&row.RequestCount,
+			&row.PromptTokens,
+			&row.CompletionTokens,
+			&row.TotalTokens,
+			&row.TotalCostUSD,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan API integration usage bucket: %w", err)
 		}
-		row.RequestCount++
-		row.PromptTokens += event.PromptTokens
-		row.CompletionTokens += event.CompletionTokens
-		row.TotalTokens += event.TotalTokens
-		if event.CostUSD != nil {
-			row.TotalCostUSD += *event.CostUSD
-		}
+		row.BucketStart, _ = time.Parse(time.RFC3339Nano, bucketStart)
+		buckets = append(buckets, row)
 	}
-
-	rows := make([]APIIntegrationUsageBucketRow, 0, len(buckets))
-	for _, row := range buckets {
-		rows = append(rows, *row)
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].IntegrationName != rows[j].IntegrationName {
-			return rows[i].IntegrationName < rows[j].IntegrationName
-		}
-		return rows[i].BucketStart.Before(rows[j].BucketStart)
-	})
-	return rows, nil
+	return buckets, rows.Err()
 }
 
 // GetAPIIntegrationIngestState returns the persisted tail cursor for a source file.
@@ -361,9 +376,6 @@ func (s *Store) GetActiveSystemAlertsByProvider(provider string, limit int) ([]S
 		if err := rows.Scan(&a.ID, &a.Provider, &a.AlertType, &a.Title, &a.Message, &a.Severity, &createdAt, &metadata); err != nil {
 			return nil, fmt.Errorf("store.GetActiveSystemAlertsByProvider: scan: %w", err)
 		}
-		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
-			a.CreatedAt = t
-		}
 		if t, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
 			a.CreatedAt = t
 		}
@@ -371,4 +383,12 @@ func (s *Store) GetActiveSystemAlertsByProvider(provider string, limit int) ([]S
 		alerts = append(alerts, a)
 	}
 	return alerts, rows.Err()
+}
+
+func isSQLiteUniqueConstraintError(err error) bool {
+	var sqliteErr *sqlite.Error
+	if !errors.As(err, &sqliteErr) {
+		return false
+	}
+	return sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE
 }

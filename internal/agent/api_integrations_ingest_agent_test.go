@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	apiintegrations "github.com/onllm-dev/onwatch/v2/internal/api_integrations"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
 
@@ -24,7 +25,7 @@ func TestAPIIntegrationsIngestAgent_ScanFile_PartialLineAndCompletion(t *testing
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	ag := NewAPIIntegrationsIngestAgent(st, dir, slog.Default())
+	ag := NewAPIIntegrationsIngestAgent(st, dir, 0, slog.Default())
 	if err := ag.scanFile(path); err != nil {
 		t.Fatalf("scanFile(1): %v", err)
 	}
@@ -73,7 +74,7 @@ func TestAPIIntegrationsIngestAgent_ScanFile_InvalidLineCreatesAlert(t *testing.
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	ag := NewAPIIntegrationsIngestAgent(st, dir, slog.Default())
+	ag := NewAPIIntegrationsIngestAgent(st, dir, 0, slog.Default())
 	if err := ag.scanFile(path); err != nil {
 		t.Fatalf("scanFile: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestAPIIntegrationsIngestAgent_ScanFile_DedupAndTruncation(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	ag := NewAPIIntegrationsIngestAgent(st, dir, slog.Default())
+	ag := NewAPIIntegrationsIngestAgent(st, dir, 0, slog.Default())
 	if err := ag.scanFile(path); err != nil {
 		t.Fatalf("scanFile(1): %v", err)
 	}
@@ -157,7 +158,7 @@ func TestAPIIntegrationsIngestAgent_Run_ProcessesMultipleFiles(t *testing.T) {
 		}
 	}
 
-	ag := NewAPIIntegrationsIngestAgent(st, dir, slog.Default())
+	ag := NewAPIIntegrationsIngestAgent(st, dir, 0, slog.Default())
 	ag.SetInterval(10 * time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -175,5 +176,49 @@ func TestAPIIntegrationsIngestAgent_Run_ProcessesMultipleFiles(t *testing.T) {
 	}
 	if len(summary) != 2 {
 		t.Fatalf("summary=%+v", summary)
+	}
+}
+
+func TestAPIIntegrationsIngestAgent_Scan_PrunesExpiredDatabaseRows(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer st.Close()
+
+	oldEvent := `{"ts":"2025-12-01T12:00:00Z","integration":"notes","provider":"openai","model":"gpt-4.1-mini","prompt_tokens":2,"completion_tokens":1}`
+	parsedOld, err := apiintegrations.ParseUsageEventLine([]byte(oldEvent), "/tmp/api-integrations/notes.jsonl")
+	if err != nil {
+		t.Fatalf("ParseUsageEventLine(old): %v", err)
+	}
+	if _, err := st.InsertAPIIntegrationUsageEvent(parsedOld); err != nil {
+		t.Fatalf("InsertAPIIntegrationUsageEvent(old): %v", err)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "notes.jsonl")
+	newLine := `{"ts":"2026-04-03T12:00:00Z","integration":"notes","provider":"openai","model":"gpt-4.1-mini","prompt_tokens":3,"completion_tokens":2}` + "\n"
+	if err := os.WriteFile(path, []byte(newLine), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	ag := NewAPIIntegrationsIngestAgent(st, dir, 24*time.Hour, slog.Default())
+	ag.pruneInterval = time.Millisecond
+	if err := ag.pruneExpiredUsageEvents(); err != nil {
+		t.Fatalf("pruneExpiredUsageEvents: %v", err)
+	}
+	if err := ag.scanFile(path); err != nil {
+		t.Fatalf("scanFile: %v", err)
+	}
+
+	events, err := st.QueryAPIIntegrationUsageRange(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("QueryAPIIntegrationUsageRange: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events=%+v", events)
+	}
+	if events[0].Timestamp.Format(time.RFC3339) != "2026-04-03T12:00:00Z" {
+		t.Fatalf("expected retained new event, got %+v", events[0])
 	}
 }
