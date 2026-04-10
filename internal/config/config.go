@@ -40,6 +40,7 @@ type Config struct {
 	// Codex provider configuration
 	CodexToken        string // CODEX_TOKEN or auto-detected
 	CodexAutoToken    bool   // true if token was auto-detected
+	CodexHasProfiles  bool   // true if saved profiles exist (enables bootstrap without token)
 	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage"
 
 	// Antigravity provider configuration (auto-detected from local process)
@@ -453,7 +454,7 @@ func (c *Config) AvailableProviders() []string {
 	if c.CopilotToken != "" {
 		providers = append(providers, "copilot")
 	}
-	if c.CodexToken != "" {
+	if c.CodexToken != "" || c.CodexHasProfiles {
 		providers = append(providers, "codex")
 	}
 	if c.AntigravityEnabled {
@@ -483,7 +484,7 @@ func (c *Config) HasProvider(name string) bool {
 	case "copilot":
 		return c.CopilotToken != ""
 	case "codex":
-		return c.CodexToken != ""
+		return c.CodexToken != "" || c.CodexHasProfiles
 	case "antigravity":
 		return c.AntigravityEnabled
 	case "minimax":
@@ -511,7 +512,7 @@ func (c *Config) HasMultipleProviders() bool {
 	if c.CopilotToken != "" {
 		count++
 	}
-	if c.CodexToken != "" {
+	if c.CodexToken != "" || c.CodexHasProfiles {
 		count++
 	}
 	if c.AntigravityEnabled {

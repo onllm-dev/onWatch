@@ -519,6 +519,16 @@ func run() error {
 		}
 	}
 
+	// If no global Codex token, check if saved profiles exist to bootstrap the provider.
+	// This allows Docker containers to start Codex polling from saved profiles alone.
+	if !cfg.HasProvider("codex") {
+		profilesDir := codexProfilesDirWithDataDir(filepath.Dir(cfg.DBPath))
+		if hasSavedCodexProfiles(profilesDir) {
+			cfg.CodexHasProfiles = true
+			preflightLogger.Info("Codex saved profiles detected, enabling provider", "dir", profilesDir)
+		}
+	}
+
 	isDaemonChild := os.Getenv("_ONWATCH_DAEMON") == "1"
 
 	// Write early diagnostic to stderr (inherited log file fd) BEFORE slog is configured.
@@ -736,7 +746,7 @@ func run() error {
 	}
 
 	var codexClient *api.CodexClient
-	if cfg.HasProvider("codex") {
+	if cfg.CodexToken != "" {
 		codexCreds := api.DetectCodexCredentials(logger)
 		codexClient = api.NewCodexClient(cfg.CodexToken, logger)
 		if codexCreds != nil && codexCreds.AccountID != "" {
