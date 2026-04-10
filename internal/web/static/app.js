@@ -7110,6 +7110,8 @@ async function loadSettings() {
       if (warnCheck) warnCheck.checked = n.notify_warning !== false;
       if (critCheck) critCheck.checked = n.notify_critical !== false;
       if (resetCheck) resetCheck.checked = n.notify_reset !== false;
+      const authErrorCheck = document.getElementById('notify-auth-error');
+      if (authErrorCheck) authErrorCheck.checked = !!n.notify_auth_error;
       setVal('notify-cooldown', n.cooldown_minutes || 30);
       // Load channel preferences
       if (n.channels) {
@@ -8344,6 +8346,7 @@ function gatherSettings() {
       notify_warning: document.getElementById('notify-warning')?.checked ?? true,
       notify_critical: document.getElementById('notify-critical')?.checked ?? true,
       notify_reset: document.getElementById('notify-reset')?.checked ?? true,
+      notify_auth_error: document.getElementById('notify-auth-error')?.checked ?? false,
       cooldown_minutes: parseInt(document.getElementById('notify-cooldown')?.value) || 30,
       channels: {
         email: document.getElementById('channel-email')?.checked ?? true,

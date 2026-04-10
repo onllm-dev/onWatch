@@ -5900,6 +5900,7 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			NotifyWarning     bool    `json:"notify_warning"`
 			NotifyCritical    bool    `json:"notify_critical"`
 			NotifyReset       bool    `json:"notify_reset"`
+			NotifyAuthError   bool    `json:"notify_auth_error"`
 			CooldownMinutes   int     `json:"cooldown_minutes"`
 			Overrides         []struct {
 				QuotaKey       string  `json:"quota_key"`
