@@ -90,6 +90,7 @@ type Handler struct {
 	minimaxTracker     *tracker.MiniMaxTracker
 	geminiTracker      *tracker.GeminiTracker
 	openrouterTracker  *tracker.OpenRouterTracker
+	cursorTracker      *tracker.CursorTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -437,8 +438,8 @@ func (h *Handler) codexProfileSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"message":  "profile saved",
-		"name":     req.Name,
+		"message":   "profile saved",
+		"name":      req.Name,
 		"accountID": creds.AccountID,
 	})
 }
@@ -479,7 +480,7 @@ func (h *Handler) codexProfileDelete(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "profile deleted",
-		"name":   name,
+		"name":    name,
 	})
 }
 
@@ -600,9 +601,9 @@ func (h *Handler) codexProfileRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"message":    "profile refreshed",
-		"name":       name,
-		"accountID":  creds.AccountID,
+		"message":   "profile refreshed",
+		"name":      name,
+		"accountID": creds.AccountID,
 	})
 }
 
@@ -801,6 +802,11 @@ func (h *Handler) SetGeminiTracker(t *tracker.GeminiTracker) {
 // SetOpenRouterTracker sets the OpenRouter tracker for usage summary enrichment.
 func (h *Handler) SetOpenRouterTracker(t *tracker.OpenRouterTracker) {
 	h.openrouterTracker = t
+}
+
+// SetCursorTracker sets the Cursor tracker for usage summary enrichment.
+func (h *Handler) SetCursorTracker(t *tracker.CursorTracker) {
+	h.cursorTracker = t
 }
 
 // SetAgentManager sets provider agent lifecycle controller.
@@ -1316,8 +1322,8 @@ func stripProviderSecrets(providers map[string]interface{}) {
 				continue
 			}
 			if str, ok := v.(string); ok && str != "" {
-				m[k] = ""             // Don't send actual value
-				m[k+"_set"] = true    // Signal that it's configured
+				m[k] = ""          // Don't send actual value
+				m[k+"_set"] = true // Signal that it's configured
 			}
 		}
 	}
@@ -1745,9 +1751,17 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentOpenRouter(w, r)
 	case "gemini":
 		h.currentGemini(w, r)
+	case "cursor":
+		h.currentCursor(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
+}
+
+func (h *Handler) currentCursor(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	response := h.buildCursorCurrent()
+	json.NewEncoder(w).Encode(response)
 }
 
 // currentBoth returns combined quota status for all configured providers.
@@ -1813,6 +1827,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
 		response["gemini"] = h.buildGeminiCurrent()
+	}
+	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") {
+		response["cursor"] = h.buildCursorCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -2152,6 +2169,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyOpenRouter(w, r)
 	case "gemini":
 		h.historyGemini(w, r)
+	case "cursor":
+		h.historyCursor(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2451,6 +2470,28 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				gemData = append(gemData, entry)
 			}
 			response["gemini"] = gemData
+		}
+	}
+
+	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") && h.store != nil {
+		snapshots, err := h.store.QueryCursorRange(start, now, 200)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			cursorData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+				}
+				for _, q := range snap.Quotas {
+					entry[q.Name] = q.Utilization
+				}
+				cursorData = append(cursorData, entry)
+			}
+			response["cursor"] = cursorData
 		}
 	}
 
@@ -3050,6 +3091,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesOpenRouter(w, r)
 	case "gemini":
 		h.cyclesGemini(w, r)
+	case "cursor":
+		h.cyclesCursor(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3364,6 +3407,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryOpenRouter(w, r)
 	case "gemini":
 		h.summaryGemini(w, r)
+	case "cursor":
+		h.summaryCursor(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3430,6 +3475,9 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		response["gemini"] = geminiSummaries
+	}
+	if h.config.HasProvider("cursor") && h.cursorTracker != nil {
+		response["cursor"] = h.buildCursorSummaryMap()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -4062,6 +4110,11 @@ type insightStat struct {
 	Value    string `json:"value"`
 	Label    string `json:"label"`
 	Sublabel string `json:"sublabel,omitempty"`
+	// Enriched fields for combined stat+insight display
+	Key      string `json:"key,omitempty"`
+	Metric   string `json:"metric,omitempty"`
+	Severity string `json:"severity,omitempty"`
+	Desc     string `json:"desc,omitempty"`
 }
 
 type insightItem struct {
@@ -4155,6 +4208,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsOpenRouter(w, r, rangeDur)
 	case "gemini":
 		h.insightsGemini(w, r, rangeDur)
+	case "cursor":
+		h.insightsCursor(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4232,6 +4287,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
 		response["gemini"] = insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
+	}
+	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") {
+		response["cursor"] = h.buildCursorInsights(hidden, rangeDur)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -6487,6 +6545,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewOpenRouter(w, r)
 	case "gemini":
 		h.cycleOverviewGemini(w, r)
+	case "cursor":
+		h.cycleOverviewCursor(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -9767,6 +9827,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryOpenRouter(w, r)
 	case "gemini":
 		h.loggingHistoryGemini(w, r)
+	case "cursor":
+		h.loggingHistoryCursor(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -10141,6 +10203,72 @@ func (h *Handler) loggingHistoryCodex(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"provider":   "codex",
+		"quotaNames": quotaNames,
+		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
+	})
+}
+
+func (h *Handler) loggingHistoryCursor(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"logs": []interface{}{}})
+		return
+	}
+
+	start, end, limit := h.loggingHistoryRangeAndLimit(r)
+	snapshots, err := h.store.QueryCursorRange(start, end, limit)
+	if err != nil {
+		h.logger.Error("failed to query Cursor snapshots", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query logging history")
+		return
+	}
+
+	quotaSet := map[string]bool{}
+	for _, snap := range snapshots {
+		for _, q := range snap.Quotas {
+			quotaSet[q.Name] = true
+		}
+	}
+
+	quotaNames := make([]string, 0, len(quotaSet))
+	for qn := range quotaSet {
+		quotaNames = append(quotaNames, qn)
+	}
+	if len(quotaNames) == 0 {
+		quotaNames = []string{"total_usage", "auto_usage", "api_usage"}
+	} else {
+		sort.SliceStable(quotaNames, func(i, j int) bool {
+			left := cursorQuotaOrder(quotaNames[i])
+			right := cursorQuotaOrder(quotaNames[j])
+			if left != right {
+				return left < right
+			}
+			return quotaNames[i] < quotaNames[j]
+		})
+	}
+
+	capturedAt := make([]time.Time, 0, len(snapshots))
+	ids := make([]int64, 0, len(snapshots))
+	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
+
+	for _, snap := range snapshots {
+		capturedAt = append(capturedAt, snap.CapturedAt)
+		ids = append(ids, snap.ID)
+		row := make(map[string]loggingHistoryCrossQuota, len(snap.Quotas))
+		for _, q := range snap.Quotas {
+			row[q.Name] = loggingHistoryCrossQuota{
+				Name:     q.Name,
+				Value:    q.Used,
+				Limit:    q.Limit,
+				Percent:  q.Utilization,
+				HasValue: q.Used > 0 || q.Limit > 0,
+				HasLimit: q.Limit > 0,
+			}
+		}
+		series = append(series, row)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"provider":   "cursor",
 		"quotaNames": quotaNames,
 		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
 	})
