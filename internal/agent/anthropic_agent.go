@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os/exec"
 	"runtime"
@@ -106,6 +107,19 @@ func (a *AnthropicAgent) SetPollingCheck(fn func() bool) {
 // SetNotifier sets the notification engine for sending alerts.
 func (a *AnthropicAgent) SetNotifier(n *notify.NotificationEngine) {
 	a.notifier = n
+}
+
+// sendAuthErrorNotification sends an auth error notification via the notifier.
+func (a *AnthropicAgent) sendAuthErrorNotification(title, message string, isRecoverable bool) {
+	if a.notifier == nil {
+		return
+	}
+	a.notifier.SendAuthErrorNotification(notify.AuthErrorAlert{
+		Provider:    "anthropic",
+		Title:       title,
+		Message:     message,
+		IsRecovable: isRecoverable,
+	})
 }
 
 // NewAnthropicAgent creates a new AnthropicAgent with the given dependencies.
@@ -492,6 +506,11 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 							a.logger.Error("OAuth refresh token invalid (invalid_grant) - polling PAUSED",
 								"error", refreshErr,
 								"action", "Re-authenticate with 'claude auth' to resume polling")
+							a.sendAuthErrorNotification(
+								"OAuth refresh token expired",
+								"Refresh token is invalid or revoked. Re-authenticate with 'claude auth' to resume polling.",
+								false,
+							)
 						} else {
 							// Transient OAuth error - apply mild backoff
 							a.rateLimitFailCount++
@@ -585,6 +604,11 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 							a.logger.Error("Anthropic polling PAUSED due to repeated auth failures",
 								"failure_count", a.authFailCount,
 								"action", "Re-authenticate with 'claude auth' to resume polling")
+							a.sendAuthErrorNotification(
+								"Anthropic polling paused",
+								fmt.Sprintf("Repeated auth failures (%d). Re-authenticate with 'claude auth' to resume.", a.authFailCount),
+								false,
+							)
 						}
 					} else {
 						a.logger.Error("Anthropic retry failed with non-auth error", "error", err)

@@ -119,7 +119,7 @@ func TestRefreshCodexProfile_SameAccount(t *testing.T) {
 	writeRefreshAuthJSON(t, home, "new_access", "new_refresh", "new_id", "acc_same")
 	writeProfileFile(t, home, "work", "old_access", "old_refresh", "old_id", "acc_same")
 
-	if err := codexProfileRefresh("work"); err != nil {
+	if err := codexProfileRefresh("work", ""); err != nil {
 		t.Fatalf("codexProfileRefresh returned error: %v", err)
 	}
 
@@ -161,7 +161,7 @@ func TestRefreshCodexProfile_DifferentAccount_UserConfirms(t *testing.T) {
 	restore := withStdinInput(t, "y\n")
 	defer restore()
 
-	if err := codexProfileRefresh("work"); err != nil {
+	if err := codexProfileRefresh("work", ""); err != nil {
 		t.Fatalf("codexProfileRefresh returned error: %v", err)
 	}
 
@@ -189,7 +189,7 @@ func TestRefreshCodexProfile_DifferentAccount_UserDeclines(t *testing.T) {
 	restore := withStdinInput(t, "n\n")
 	defer restore()
 
-	err = codexProfileRefresh("work")
+	err = codexProfileRefresh("work", "")
 	if !errors.Is(err, errCodexProfileRefreshAborted) {
 		t.Fatalf("expected errCodexProfileRefreshAborted, got %v", err)
 	}
@@ -210,7 +210,7 @@ func TestRefreshCodexProfile_NewProfile(t *testing.T) {
 
 	writeRefreshAuthJSON(t, home, "new_access", "new_refresh", "new_id", "acc_new")
 
-	if err := codexProfileRefresh("personal"); err != nil {
+	if err := codexProfileRefresh("personal", ""); err != nil {
 		t.Fatalf("codexProfileRefresh returned error: %v", err)
 	}
 
@@ -231,7 +231,7 @@ func TestRefreshCodexProfile_NoAuthJSON(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")
 
-	err := codexProfileRefresh("work")
+	err := codexProfileRefresh("work", "")
 	if err == nil {
 		t.Fatal("expected error when auth.json is missing")
 	}
@@ -358,7 +358,7 @@ func TestCodexProfileSaveListStatusDeleteFlow(t *testing.T) {
 	writeRefreshAuthJSON(t, home, "save_access", "save_refresh", "save_id", "acct_one")
 
 	saveOut := captureStdout(t, func() {
-		if err := codexProfileSave("work"); err != nil {
+		if err := codexProfileSave("work", ""); err != nil {
 			t.Fatalf("codexProfileSave returned error: %v", err)
 		}
 	})
@@ -415,7 +415,7 @@ func TestCodexProfileSave_BlocksDuplicateAccount(t *testing.T) {
 	writeRefreshAuthJSONWithUser(t, home, "dup_access", "dup_refresh", "acct_dup", "user-same")
 	writeProfileFileWithUser(t, home, "personal", "old_access", "old_refresh", "acct_dup", "user-same")
 
-	err := codexProfileSave("work")
+	err := codexProfileSave("work", "")
 	if err == nil {
 		t.Fatal("expected error for duplicate account+user, got nil")
 	}
@@ -432,11 +432,11 @@ func TestCodexProfileSave_InvalidNameAndMissingCredentials(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")
 
-	if err := codexProfileSave("bad name"); err == nil || !strings.Contains(err.Error(), "invalid profile name") {
+	if err := codexProfileSave("bad name", ""); err == nil || !strings.Contains(err.Error(), "invalid profile name") {
 		t.Fatalf("invalid name error = %v", err)
 	}
 
-	if err := codexProfileSave("work"); err == nil || !strings.Contains(err.Error(), "no Codex credentials found") {
+	if err := codexProfileSave("work", ""); err == nil || !strings.Contains(err.Error(), "no Codex credentials found") {
 		t.Fatalf("missing credentials error = %v", err)
 	}
 }
@@ -624,7 +624,7 @@ func TestCodexProfileSave_WarnsOnSameProfileAccountChange(t *testing.T) {
 	writeProfileFile(t, home, "work", "old_access", "old_refresh", "old_id", "acct_old")
 
 	out := captureStdout(t, func() {
-		if err := codexProfileSave("work"); err != nil {
+		if err := codexProfileSave("work", ""); err != nil {
 			t.Fatalf("codexProfileSave returned error: %v", err)
 		}
 	})
@@ -634,7 +634,7 @@ func TestCodexProfileSave_WarnsOnSameProfileAccountChange(t *testing.T) {
 }
 
 func TestCodexProfileRefresh_InvalidName(t *testing.T) {
-	err := codexProfileRefresh("bad name")
+	err := codexProfileRefresh("bad name", "")
 	if err == nil || !strings.Contains(err.Error(), "invalid profile name") {
 		t.Fatalf("expected invalid profile name error, got %v", err)
 	}
@@ -648,7 +648,7 @@ func TestCodexProfileSave_AllowsSameAccountDifferentUser(t *testing.T) {
 	writeProfileFileWithUser(t, home, "personal", "old_access", "old_refresh", "acct_team", "user-one")
 	writeRefreshAuthJSONWithUser(t, home, "new_access", "new_refresh", "acct_team", "user-two")
 
-	if err := codexProfileSave("work"); err != nil {
+	if err := codexProfileSave("work", ""); err != nil {
 		t.Fatalf("codexProfileSave returned error: %v", err)
 	}
 
@@ -668,7 +668,7 @@ func TestCodexProfileSave_StoresUserIDFromIDToken(t *testing.T) {
 
 	writeRefreshAuthJSONWithUser(t, home, "save_access", "save_refresh", "acct_one", "user-one")
 
-	if err := codexProfileSave("work"); err != nil {
+	if err := codexProfileSave("work", ""); err != nil {
 		t.Fatalf("codexProfileSave returned error: %v", err)
 	}
 
@@ -686,7 +686,7 @@ func TestCodexProfileRefresh_UpdatesUserIDFromIDToken(t *testing.T) {
 	writeProfileFileWithUser(t, home, "work", "old_access", "old_refresh", "acct_team", "user-one")
 	writeRefreshAuthJSONWithUser(t, home, "new_access", "new_refresh", "acct_team", "user-two")
 
-	if err := codexProfileRefresh("work"); err != nil {
+	if err := codexProfileRefresh("work", ""); err != nil {
 		t.Fatalf("codexProfileRefresh returned error: %v", err)
 	}
 
@@ -730,7 +730,7 @@ func TestCodexProfileSave_AllowsSameAccountNoUserIDRegression(t *testing.T) {
 
 	// This should succeed: same account_id but neither has user_id, so they are
 	// NOT duplicates (we can't distinguish them without user_id).
-	if err := codexProfileSave("work"); err != nil {
+	if err := codexProfileSave("work", ""); err != nil {
 		t.Fatalf("codexProfileSave returned error (false positive): %v", err)
 	}
 
@@ -758,7 +758,7 @@ func TestCodexProfileSave_AllowsNewUserAlongsideLegacyProfile(t *testing.T) {
 	// New auth session: same account but WITH a user_id
 	writeRefreshAuthJSONWithUser(t, home, "new_access", "new_refresh", "acct_team", "user-new")
 
-	if err := codexProfileSave("teammate"); err != nil {
+	if err := codexProfileSave("teammate", ""); err != nil {
 		t.Fatalf("codexProfileSave returned error (should allow new user alongside legacy): %v", err)
 	}
 
@@ -783,5 +783,266 @@ func TestIsDuplicateCodexProfile_LegacyVsKnownUser(t *testing.T) {
 	c := &api.CodexCredentials{AccountID: "acct_team", UserID: "user-new"}
 	if got := isDuplicateCodexProfile(p, c); got {
 		t.Fatalf("isDuplicateCodexProfile(legacy vs known user): got %v, want false", got)
+	}
+}
+
+func TestHasSavedCodexProfiles(t *testing.T) {
+	// Empty string returns false
+	if hasSavedCodexProfiles("") {
+		t.Fatal("expected false for empty dir")
+	}
+
+	// Nonexistent directory returns false
+	if hasSavedCodexProfiles("/nonexistent/path/12345") {
+		t.Fatal("expected false for nonexistent dir")
+	}
+
+	// Empty directory returns false
+	emptyDir := t.TempDir()
+	if hasSavedCodexProfiles(emptyDir) {
+		t.Fatal("expected false for empty dir")
+	}
+
+	// Directory with non-JSON files returns false
+	if err := os.WriteFile(filepath.Join(emptyDir, "readme.txt"), []byte("hi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if hasSavedCodexProfiles(emptyDir) {
+		t.Fatal("expected false for dir with only non-JSON files")
+	}
+
+	// Directory with a JSON file returns true
+	if err := os.WriteFile(filepath.Join(emptyDir, "work.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !hasSavedCodexProfiles(emptyDir) {
+		t.Fatal("expected true for dir with JSON file")
+	}
+
+	// Subdirectory with JSON does not count (not recursive)
+	subDir := t.TempDir()
+	nested := filepath.Join(subDir, "nested")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "profile.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if hasSavedCodexProfiles(subDir) {
+		t.Fatal("expected false when JSON is only in subdirectory")
+	}
+}
+
+func TestParseCodexProfileArgs(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		wantName     string
+		wantAuthFile string
+	}{
+		{"empty", []string{}, "", ""},
+		{"name only", []string{"Plus"}, "Plus", ""},
+		{"name with auth-file", []string{"Plus", "--auth-file", "/import/auth.json"}, "Plus", "/import/auth.json"},
+		{"dangling auth-file flag", []string{"Plus", "--auth-file"}, "Plus", ""},
+		{"flag as first arg", []string{"--auth-file", "/x"}, "", ""},
+		{"name with extra args", []string{"Work", "--verbose", "--auth-file", "/path"}, "Work", "/path"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, authFile := parseCodexProfileArgs(tt.args)
+			if name != tt.wantName {
+				t.Errorf("name = %q, want %q", name, tt.wantName)
+			}
+			if authFile != tt.wantAuthFile {
+				t.Errorf("authFile = %q, want %q", authFile, tt.wantAuthFile)
+			}
+		})
+	}
+}
+
+func TestParseCodexAuthData(t *testing.T) {
+	// Nested tokens shape
+	nested := `{"tokens":{"access_token":"at","refresh_token":"rt","id_token":"it","account_id":"acc1"}}`
+	creds, err := parseCodexAuthData([]byte(nested))
+	if err != nil {
+		t.Fatalf("nested shape error: %v", err)
+	}
+	if creds.AccessToken != "at" || creds.RefreshToken != "rt" || creds.IDToken != "it" || creds.AccountID != "acc1" {
+		t.Fatalf("nested shape: unexpected creds: %+v", creds)
+	}
+
+	// Flat shape
+	flat := `{"access_token":"at2","refresh_token":"rt2","id_token":"it2","account_id":"acc2"}`
+	creds, err = parseCodexAuthData([]byte(flat))
+	if err != nil {
+		t.Fatalf("flat shape error: %v", err)
+	}
+	if creds.AccessToken != "at2" || creds.RefreshToken != "rt2" || creds.AccountID != "acc2" {
+		t.Fatalf("flat shape: unexpected creds: %+v", creds)
+	}
+
+	// API key
+	apiKey := `{"OPENAI_API_KEY":"sk-test"}`
+	creds, err = parseCodexAuthData([]byte(apiKey))
+	if err != nil {
+		t.Fatalf("api key error: %v", err)
+	}
+	if creds.APIKey != "sk-test" {
+		t.Fatalf("api key: got %q, want sk-test", creds.APIKey)
+	}
+
+	// Invalid JSON
+	_, err = parseCodexAuthData([]byte("not json"))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+
+	// Empty JSON - no error from parse itself (validation is caller's job)
+	creds, err = parseCodexAuthData([]byte("{}"))
+	if err != nil {
+		t.Fatalf("empty JSON error: %v", err)
+	}
+	if creds.AccessToken != "" {
+		t.Fatalf("empty JSON: expected empty access token, got %q", creds.AccessToken)
+	}
+}
+
+func TestLoadCodexAuthFromFile(t *testing.T) {
+	// Valid nested auth file
+	dir := t.TempDir()
+	authPath := filepath.Join(dir, "auth.json")
+	content := `{"tokens":{"access_token":"tok","refresh_token":"ref","id_token":"id","account_id":"acc"}}`
+	if err := os.WriteFile(authPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	creds, err := loadCodexAuthFromFile(authPath)
+	if err != nil {
+		t.Fatalf("loadCodexAuthFromFile error: %v", err)
+	}
+	if creds.AccessToken != "tok" || creds.AccountID != "acc" {
+		t.Fatalf("unexpected creds: %+v", creds)
+	}
+
+	// Relative path rejected
+	_, err = loadCodexAuthFromFile("relative/path.json")
+	if err == nil || !strings.Contains(err.Error(), "absolute path") {
+		t.Fatalf("expected absolute path error, got: %v", err)
+	}
+
+	// Missing file
+	_, err = loadCodexAuthFromFile(filepath.Join(dir, "nonexistent.json"))
+	if err == nil || !strings.Contains(err.Error(), "cannot read auth file") {
+		t.Fatalf("expected read error, got: %v", err)
+	}
+
+	// File with no credentials
+	emptyAuth := filepath.Join(dir, "empty.json")
+	if err := os.WriteFile(emptyAuth, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = loadCodexAuthFromFile(emptyAuth)
+	if err == nil || !strings.Contains(err.Error(), "no access_token or API key") {
+		t.Fatalf("expected empty credentials error, got: %v", err)
+	}
+
+	// API key only - should succeed
+	apiKeyAuth := filepath.Join(dir, "apikey.json")
+	if err := os.WriteFile(apiKeyAuth, []byte(`{"OPENAI_API_KEY":"sk-abc"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	creds, err = loadCodexAuthFromFile(apiKeyAuth)
+	if err != nil {
+		t.Fatalf("api key auth error: %v", err)
+	}
+	if creds.APIKey != "sk-abc" {
+		t.Fatalf("expected APIKey sk-abc, got %q", creds.APIKey)
+	}
+}
+
+func TestCodexProfileSaveWithAuthFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CODEX_TOKEN", "")
+
+	// Write an auth file (not in the default location)
+	importDir := filepath.Join(home, "import")
+	if err := os.MkdirAll(importDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	authPath := filepath.Join(importDir, "auth.json")
+	content := `{"tokens":{"access_token":"import_at","refresh_token":"import_rt","id_token":"","account_id":"acct_import"}}`
+	if err := os.WriteFile(authPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := codexProfileSave("imported", authPath); err != nil {
+		t.Fatalf("codexProfileSave with --auth-file error: %v", err)
+	}
+
+	// Verify profile was created
+	profiles, err := listCodexProfiles()
+	if err != nil {
+		t.Fatalf("listCodexProfiles: %v", err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].Name != "imported" {
+		t.Fatalf("expected profile name 'imported', got %q", profiles[0].Name)
+	}
+	if profiles[0].AccountID != "acct_import" {
+		t.Fatalf("expected account_id 'acct_import', got %q", profiles[0].AccountID)
+	}
+	if profiles[0].Tokens.AccessToken != "import_at" {
+		t.Fatalf("expected access_token 'import_at', got %q", profiles[0].Tokens.AccessToken)
+	}
+}
+
+func TestCodexProfileRefreshWithAuthFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CODEX_TOKEN", "")
+
+	// Create an existing profile first
+	profilesDir := filepath.Join(home, ".onwatch", "data", "codex-profiles")
+	if err := os.MkdirAll(profilesDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	existingProfile := `{"name":"work","account_id":"acct_one","tokens":{"access_token":"old_at","refresh_token":"old_rt"}}`
+	if err := os.WriteFile(filepath.Join(profilesDir, "work.json"), []byte(existingProfile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write an import auth file with same account
+	importDir := filepath.Join(home, "import")
+	if err := os.MkdirAll(importDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	authPath := filepath.Join(importDir, "auth.json")
+	content := `{"tokens":{"access_token":"new_at","refresh_token":"new_rt","id_token":"","account_id":"acct_one"}}`
+	if err := os.WriteFile(authPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := codexProfileRefresh("work", authPath); err != nil {
+		t.Fatalf("codexProfileRefresh with --auth-file error: %v", err)
+	}
+
+	// Verify profile was updated
+	profiles, err := listCodexProfiles()
+	if err != nil {
+		t.Fatalf("listCodexProfiles: %v", err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].Tokens.AccessToken != "new_at" {
+		t.Fatalf("expected refreshed access_token 'new_at', got %q", profiles[0].Tokens.AccessToken)
+	}
+	if profiles[0].Tokens.RefreshToken != "new_rt" {
+		t.Fatalf("expected refreshed refresh_token 'new_rt', got %q", profiles[0].Tokens.RefreshToken)
 	}
 }

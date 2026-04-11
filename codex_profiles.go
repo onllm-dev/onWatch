@@ -153,6 +153,25 @@ func codexProfilesDirWithDataDir(dataDir string) string {
 	return filepath.Join(home, ".onwatch", "data", "codex-profiles")
 }
 
+// hasSavedCodexProfiles returns true if the given directory contains any saved
+// Codex profile JSON files. Used to bootstrap the Codex provider in Docker
+// when no global token is present.
+func hasSavedCodexProfiles(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			return true
+		}
+	}
+	return false
+}
+
 // legacyCodexProfilesDir returns the old profiles directory for migration purposes.
 func legacyCodexProfilesDir() string {
 	home, err := os.UserHomeDir()
@@ -227,6 +246,25 @@ var validProfileName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 var errCodexProfileRefreshAborted = errors.New("codex profile refresh aborted")
 
+// parseCodexProfileArgs extracts the profile name and optional --auth-file path
+// from the argument list after the subcommand (e.g., ["Plus", "--auth-file", "/import/auth.json"]).
+func parseCodexProfileArgs(args []string) (name, authFile string) {
+	if len(args) == 0 {
+		return "", ""
+	}
+	name = args[0]
+	if strings.HasPrefix(name, "-") {
+		return "", ""
+	}
+	for i := 1; i < len(args); i++ {
+		if args[i] == "--auth-file" && i+1 < len(args) {
+			authFile = args[i+1]
+			break
+		}
+	}
+	return name, authFile
+}
+
 // runCodexCommand handles the `onwatch codex` subcommand.
 func runCodexCommand() error {
 	args := os.Args[1:]
@@ -257,9 +295,10 @@ func runCodexCommand() error {
 	switch subCmd {
 	case "save":
 		if len(subArgs) < 3 {
-			return fmt.Errorf("usage: onwatch codex profile save <name>")
+			return fmt.Errorf("usage: onwatch codex profile save <name> [--auth-file <path>]")
 		}
-		return codexProfileSave(subArgs[2])
+		name, authFile := parseCodexProfileArgs(subArgs[2:])
+		return codexProfileSave(name, authFile)
 	case "list":
 		return codexProfileList()
 	case "delete":
@@ -271,9 +310,10 @@ func runCodexCommand() error {
 		return codexProfileStatus()
 	case "refresh":
 		if len(subArgs) < 3 {
-			return fmt.Errorf("usage: onwatch codex profile refresh <name>")
+			return fmt.Errorf("usage: onwatch codex profile refresh <name> [--auth-file <path>]")
 		}
-		return codexProfileRefresh(subArgs[2])
+		name, authFile := parseCodexProfileArgs(subArgs[2:])
+		return codexProfileRefresh(name, authFile)
 	default:
 		return printCodexHelp()
 	}
@@ -286,11 +326,16 @@ func printCodexHelp() error {
 	fmt.Println("Usage: onwatch codex profile <command> [args]")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  save <name>    Save current Codex credentials as a named profile")
-	fmt.Println("  refresh <name> Refresh a saved profile from current Codex auth session")
-	fmt.Println("  list           List saved Codex profiles")
-	fmt.Println("  delete <name>  Delete a saved Codex profile")
-	fmt.Println("  status         Show polling status for all profiles")
+	fmt.Println("  save <name> [--auth-file <path>]    Save Codex credentials as a named profile")
+	fmt.Println("  refresh <name> [--auth-file <path>] Refresh a saved profile with new credentials")
+	fmt.Println("  list                                List saved Codex profiles")
+	fmt.Println("  delete <name>                       Delete a saved Codex profile")
+	fmt.Println("  status                              Show polling status for all profiles")
+	fmt.Println()
+	fmt.Println("Options:")
+	fmt.Println("  --auth-file <path>  Import credentials from an auth.json file instead of")
+	fmt.Println("                      detecting from CODEX_HOME or ~/.codex/auth.json.")
+	fmt.Println("                      Useful for Docker/headless environments.")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  onwatch codex profile save work       # Save current credentials as 'work'")
@@ -299,12 +344,21 @@ func printCodexHelp() error {
 	fmt.Println("  onwatch codex profile list            # List all saved profiles")
 	fmt.Println("  onwatch codex profile delete work     # Delete the 'work' profile")
 	fmt.Println()
+	fmt.Println("  # Docker: import from a mounted auth file")
+	fmt.Println("  onwatch codex profile save Plus --auth-file /import/auth.json")
+	fmt.Println("  onwatch codex profile refresh Plus --auth-file /import/auth.json")
+	fmt.Println()
 	fmt.Println("Workflow:")
 	fmt.Println("  1. Log into your first Codex account")
 	fmt.Println("  2. Run: onwatch codex profile save work")
 	fmt.Println("  3. Log into your second Codex account")
 	fmt.Println("  4. Run: onwatch codex profile save personal")
 	fmt.Println("  5. onWatch will poll both profiles simultaneously")
+	fmt.Println()
+	fmt.Println("Docker workflow:")
+	fmt.Println("  1. Save profiles using --auth-file with a temporary mount")
+	fmt.Println("  2. Restart the container - saved profiles bootstrap Codex automatically")
+	fmt.Println("  3. No permanent Codex auth mount needed for normal operation")
 	return nil
 }
 
@@ -341,17 +395,9 @@ func codexAuthRefreshPath() string {
 	return filepath.Join(home, ".codex", "auth.json")
 }
 
-func loadCodexAuthForRefresh() (*codexRefreshAuthCredentials, error) {
-	authPath := codexAuthRefreshPath()
-	if authPath == "" {
-		return nil, fmt.Errorf("cannot determine Codex auth.json path")
-	}
-
-	data, err := os.ReadFile(authPath)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read Codex auth.json: %w\nHint: Run 'codex auth' first to authenticate", err)
-	}
-
+// parseCodexAuthData parses Codex credentials from raw auth.json bytes.
+// Supports both nested {"tokens":{...}} and flat {"access_token":...} shapes.
+func parseCodexAuthData(data []byte) (*codexRefreshAuthCredentials, error) {
 	var auth codexRefreshAuthFile
 	if err := json.Unmarshal(data, &auth); err != nil {
 		return nil, fmt.Errorf("invalid auth.json format: %w", err)
@@ -379,6 +425,25 @@ func loadCodexAuthForRefresh() (*codexRefreshAuthCredentials, error) {
 		creds.AccountID = strings.TrimSpace(auth.AccountID)
 	}
 
+	return creds, nil
+}
+
+func loadCodexAuthForRefresh() (*codexRefreshAuthCredentials, error) {
+	authPath := codexAuthRefreshPath()
+	if authPath == "" {
+		return nil, fmt.Errorf("cannot determine Codex auth.json path")
+	}
+
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read Codex auth.json: %w\nHint: Run 'codex auth' first to authenticate", err)
+	}
+
+	creds, err := parseCodexAuthData(data)
+	if err != nil {
+		return nil, err
+	}
+
 	if creds.AccessToken == "" {
 		return nil, fmt.Errorf("auth.json has no access_token - run 'codex auth' first")
 	}
@@ -386,13 +451,47 @@ func loadCodexAuthForRefresh() (*codexRefreshAuthCredentials, error) {
 	return creds, nil
 }
 
+// loadCodexAuthFromFile reads Codex credentials from an arbitrary auth.json file.
+// Used by --auth-file flag for Docker/headless flows where the default Codex auth
+// locations are not available.
+func loadCodexAuthFromFile(path string) (*codexRefreshAuthCredentials, error) {
+	path = filepath.Clean(path)
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("--auth-file requires an absolute path, got: %s", path)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read auth file: %w", err)
+	}
+
+	creds, err := parseCodexAuthData(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if creds.AccessToken == "" && creds.APIKey == "" {
+		return nil, fmt.Errorf("auth file has no access_token or API key")
+	}
+
+	return creds, nil
+}
+
 // codexProfileRefresh updates a saved profile with the current Codex auth session.
-func codexProfileRefresh(name string) error {
+// If authFile is non-empty, credentials are read from that file instead of the
+// default Codex auth locations - useful for Docker/headless flows.
+func codexProfileRefresh(name, authFile string) error {
 	if !validProfileName.MatchString(name) {
 		return fmt.Errorf("invalid profile name %q: use only letters, numbers, hyphens, and underscores", name)
 	}
 
-	creds, err := loadCodexAuthForRefresh()
+	var creds *codexRefreshAuthCredentials
+	var err error
+	if authFile != "" {
+		creds, err = loadCodexAuthFromFile(authFile)
+	} else {
+		creds, err = loadCodexAuthForRefresh()
+	}
 	if err != nil {
 		return err
 	}
@@ -500,16 +599,36 @@ func codexProfileRefresh(name string) error {
 }
 
 // codexProfileSave saves the current Codex credentials as a named profile.
-func codexProfileSave(name string) error {
+// If authFile is non-empty, credentials are read from that file instead of the
+// default Codex auth locations - useful for Docker/headless flows.
+func codexProfileSave(name, authFile string) error {
 	// Validate profile name
 	if !validProfileName.MatchString(name) {
 		return fmt.Errorf("invalid profile name %q: use only letters, numbers, hyphens, and underscores", name)
 	}
 
 	// Detect current Codex credentials
-	creds := api.DetectCodexCredentials(nil)
+	var creds *api.CodexCredentials
+	if authFile != "" {
+		authCreds, err := loadCodexAuthFromFile(authFile)
+		if err != nil {
+			return err
+		}
+		creds = &api.CodexCredentials{
+			AccessToken:  authCreds.AccessToken,
+			RefreshToken: authCreds.RefreshToken,
+			IDToken:      authCreds.IDToken,
+			AccountID:    authCreds.AccountID,
+			APIKey:       authCreds.APIKey,
+		}
+		if creds.UserID == "" && creds.IDToken != "" {
+			creds.UserID = api.ParseIDTokenUserID(creds.IDToken)
+		}
+	} else {
+		creds = api.DetectCodexCredentials(nil)
+	}
 	if creds == nil {
-		return fmt.Errorf("no Codex credentials found. Run 'codex auth' first to authenticate")
+		return fmt.Errorf("no Codex credentials found. Run 'codex auth' first to authenticate, or use --auth-file")
 	}
 
 	if creds.AccessToken == "" && creds.APIKey == "" {
