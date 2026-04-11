@@ -121,6 +121,7 @@ type notificationSettingsJSON struct {
 	NotifyWarning     bool                  `json:"notify_warning"`
 	NotifyCritical    bool                  `json:"notify_critical"`
 	NotifyReset       bool                  `json:"notify_reset"`
+	NotifyAuthError   bool                  `json:"notify_auth_error"`
 	CooldownMinutes   int                   `json:"cooldown_minutes"`
 	Channels          *NotificationChannels `json:"channels,omitempty"`
 	Overrides         []struct {
@@ -161,9 +162,10 @@ func (e *NotificationEngine) Reload() error {
 		e.cfg.Cooldown = time.Duration(notif.CooldownMinutes) * time.Minute
 	}
 	e.cfg.Types = NotificationTypes{
-		Warning:  notif.NotifyWarning,
-		Critical: notif.NotifyCritical,
-		Reset:    notif.NotifyReset,
+		Warning:   notif.NotifyWarning,
+		Critical:  notif.NotifyCritical,
+		Reset:     notif.NotifyReset,
+		AuthError: notif.NotifyAuthError,
 	}
 
 	overrides := make(map[string]ThresholdOverride, len(notif.Overrides))
