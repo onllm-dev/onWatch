@@ -7903,7 +7903,7 @@ func antigravityCycleToMap(cycle *store.AntigravityResetCycle) map[string]interf
 
 const (
 	minimaxSharedQuotaKey         = "coding_plan"
-	minimaxSharedQuotaDisplayName = "MiniMax Coding Plan"
+	minimaxSharedQuotaDisplayName = "Coding"
 	minimaxInsightSampleLimit     = 20000
 )
 

@@ -400,13 +400,13 @@ func TestCycleOverviewMiniMax_SharedQuota(t *testing.T) {
 	if resp.GroupBy != "coding_plan" {
 		t.Fatalf("groupBy=%q, want coding_plan", resp.GroupBy)
 	}
-	if len(resp.QuotaNames) != 1 || resp.QuotaNames[0] != "coding_plan" {
+	if len(resp.QuotaNames) != 1 || resp.QuotaNames[0] != "Coding" {
 		t.Fatalf("unexpected quota names: %+v", resp.QuotaNames)
 	}
 	if len(resp.Cycles) == 0 || resp.Cycles[0].QuotaType != "coding_plan" {
 		t.Fatalf("expected merged cycle rows, got %+v", resp.Cycles)
 	}
-	if len(resp.Cycles[0].CrossQuotas) != 1 || resp.Cycles[0].CrossQuotas[0].Name != "coding_plan" {
+	if len(resp.Cycles[0].CrossQuotas) != 1 || resp.Cycles[0].CrossQuotas[0].Name != "Coding" {
 		t.Fatalf("expected merged cross quota entry, got %+v", resp.Cycles[0].CrossQuotas)
 	}
 }
