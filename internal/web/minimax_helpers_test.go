@@ -34,7 +34,7 @@ func TestMiniMaxHelperFunctions(t *testing.T) {
 	if minimaxStatusLabel(10) != "Healthy" || minimaxStatusLabel(60) != "Warning" || minimaxStatusLabel(85) != "High" || minimaxStatusLabel(95) != "Critical" {
 		t.Fatal("unexpected minimaxStatusLabel mapping")
 	}
-	if !minimaxIsSharedGroup("coding_plan") || !minimaxIsSharedGroup("MiniMax Coding Plan") || minimaxIsSharedGroup("") {
+	if !minimaxIsSharedGroup("coding_plan") || !minimaxIsSharedGroup("Coding") || minimaxIsSharedGroup("") {
 		t.Fatal("unexpected minimaxIsSharedGroup result")
 	}
 

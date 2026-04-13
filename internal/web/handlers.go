@@ -8750,6 +8750,9 @@ func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int, accou
 			quotaNames = append(quotaNames, name)
 		}
 		sort.Strings(quotaNames)
+		if len(quotaNames) == 0 {
+			quotaNames = []string{minimaxSharedQuotaKey}
+		}
 		return mergedRows, quotaNames, minimaxSharedQuotaKey, nil
 	}
 
