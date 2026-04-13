@@ -926,13 +926,14 @@ func (s *Store) migrateSchema() error {
 	}
 
 	// Drop raw_line column from api_integration_usage_events - no longer stored.
-	// Ignore "no such column": fires on new DBs (column was never created) and on
-	// DBs that have already been migrated. 
+	// Ignore "no such column" (new DB or already migrated) and "no such table"
+	// (migrateSchema called directly on a partial DB in tests, or pre-api-integrations DB).
 	// TODO: remove this migration after all users have upgraded past the version that
-	// introduced raw_line (feat/api-integrations). Just to keep pulls clean for the limited 
+	// introduced raw_line (feat/api-integrations). Just to keep pulls clean for the limited
 	// number of users who are using this fork.
 	if _, err := s.db.Exec(`ALTER TABLE api_integration_usage_events DROP COLUMN raw_line`); err != nil {
-		if !strings.Contains(err.Error(), "no such column") {
+		if !strings.Contains(err.Error(), "no such column") &&
+			!strings.Contains(err.Error(), "no such table") {
 			return fmt.Errorf("failed to drop raw_line from api_integration_usage_events: %w", err)
 		}
 	}
