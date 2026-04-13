@@ -11713,5 +11713,254 @@ func TestSanitizeProviderSettings_EmptyAndMissing(t *testing.T) {
 	sanitizeProviderSettings(settings3) // should not panic
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// ── countWorkTime unit tests ──
+// ═══════════════════════════════════════════════════════════════════
+
+func TestCountWorkTime(t *testing.T) {
+	// Apr 6, 2026 = Monday, Apr 13 = Monday (full 7-day window)
+	mon := time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+	nextMon := time.Date(2026, 4, 13, 0, 0, 0, 0, time.UTC)
+	thu := time.Date(2026, 4, 9, 0, 0, 0, 0, time.UTC)
+	sun := time.Date(2026, 4, 12, 0, 0, 0, 0, time.UTC)
+	// Partial day: Monday 06:00 = 25% of the day
+	monPartial := time.Date(2026, 4, 6, 6, 0, 0, 0, time.UTC)
+	// Wed 12:00 = 2 full days (Mon, Tue) + 0.5 Wed
+	wedNoon := time.Date(2026, 4, 8, 12, 0, 0, 0, time.UTC)
+	// Saturday 12:00 - should not count in 5-day mode
+	satNoon := time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name string
+		from time.Time
+		to   time.Time
+		mode string
+		want float64
+	}{
+		{"calendar full week", mon, nextMon, "calendar", 7.0},
+		{"5-day full week", mon, nextMon, "5-day", 5.0},
+		{"6-day full week", mon, nextMon, "6-day", 6.0},
+		{"calendar Mon-Thu", mon, thu, "calendar", 3.0},
+		{"5-day Mon-Thu", mon, thu, "5-day", 3.0},
+		{"6-day Mon-Thu", mon, thu, "6-day", 3.0},
+		{"calendar Mon-Sun", mon, sun, "calendar", 6.0},
+		{"5-day Mon-Sun", mon, sun, "5-day", 5.0},
+		{"6-day Mon-Sun", mon, sun, "6-day", 6.0},
+		{"empty range", mon, mon, "5-day", 0.0},
+		{"partial first day", mon, monPartial, "5-day", 0.25},
+		{"2 full + partial day", mon, wedNoon, "5-day", 2.5},
+		{"5-day to Sat noon", mon, satNoon, "5-day", 5.0},    // Sat doesn't count
+		{"6-day to Sat noon", mon, satNoon, "6-day", 5.5},    // Sat counts, partial
+		{"calendar to Sat noon", mon, satNoon, "calendar", 5.5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := countWorkTime(tt.from, tt.to, tt.mode)
+			if got < tt.want-0.01 || got > tt.want+0.01 {
+				t.Errorf("countWorkTime(%s, %s, %q) = %.4f, want %.4f",
+					tt.from.Format("Mon 15:04"), tt.to.Format("Mon 15:04"), tt.mode, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsWorkDay(t *testing.T) {
+	tests := []struct {
+		day  time.Weekday
+		mode string
+		want bool
+	}{
+		{time.Monday, "5-day", true},
+		{time.Friday, "5-day", true},
+		{time.Saturday, "5-day", false},
+		{time.Sunday, "5-day", false},
+		{time.Saturday, "6-day", true},
+		{time.Sunday, "6-day", false},
+		{time.Sunday, "calendar", true},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s_%s", tt.day, tt.mode), func(t *testing.T) {
+			if got := isWorkDay(tt.day, tt.mode); got != tt.want {
+				t.Errorf("isWorkDay(%s, %q) = %v, want %v", tt.day, tt.mode, got, tt.want)
+			}
+		})
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ── Codex pace mode insight tests ──
+// ═══════════════════════════════════════════════════════════════════
+
+func TestHandler_Insights_Codex_5DayPace(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	s.SetSetting("codex_pace_mode", "5-day")
+
+	now := time.Now().UTC()
+	sevenDayReset := now.Add(3 * 24 * time.Hour) // resets in 3 days
+
+	s.InsertCodexSnapshot(&api.CodexSnapshot{
+		CapturedAt: now,
+		Quotas: []api.CodexQuota{
+			{Name: "seven_day", Utilization: 60.0, ResetsAt: &sevenDayReset},
+		},
+		PlanType: "pro",
+	})
+
+	// Create historical cycles so insights endpoint works
+	for i := 0; i < 3; i++ {
+		start := now.Add(-time.Duration(3-i) * 7 * 24 * time.Hour)
+		r := start.Add(7 * 24 * time.Hour)
+		s.CreateCodexCycle(store.DefaultCodexAccountID, "seven_day", start, &r)
+		end := start.Add(7 * 24 * time.Hour)
+		s.CloseCodexCycle(store.DefaultCodexAccountID, "seven_day", end, float64(20+i*10), float64(10+i*5))
+	}
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/insights?provider=codex&range=90d", nil)
+	rr := httptest.NewRecorder()
+	h.Insights(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Insights []struct {
+			Key  string `json:"key"`
+			Desc string `json:"description"`
+		} `json:"insights"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	found := false
+	for _, in := range resp.Insights {
+		if in.Key == "weekly_pace" {
+			found = true
+			if !strings.Contains(in.Desc, "expected by now") {
+				t.Errorf("expected pace description, got: %s", in.Desc)
+			}
+			if !strings.Contains(in.Desc, "[5-day]") {
+				t.Errorf("expected [5-day] mode label in description, got: %s", in.Desc)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected weekly_pace insight in 5-day mode")
+	}
+}
+
+func TestHandler_Insights_Codex_6DayPace(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	s.SetSetting("codex_pace_mode", "6-day")
+
+	now := time.Now().UTC()
+	sevenDayReset := now.Add(2 * 24 * time.Hour)
+
+	s.InsertCodexSnapshot(&api.CodexSnapshot{
+		CapturedAt: now,
+		Quotas: []api.CodexQuota{
+			{Name: "seven_day", Utilization: 50.0, ResetsAt: &sevenDayReset},
+		},
+		PlanType: "pro",
+	})
+
+	for i := 0; i < 3; i++ {
+		start := now.Add(-time.Duration(3-i) * 7 * 24 * time.Hour)
+		r := start.Add(7 * 24 * time.Hour)
+		s.CreateCodexCycle(store.DefaultCodexAccountID, "seven_day", start, &r)
+		end := start.Add(7 * 24 * time.Hour)
+		s.CloseCodexCycle(store.DefaultCodexAccountID, "seven_day", end, float64(20+i*10), float64(10+i*5))
+	}
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/insights?provider=codex&range=90d", nil)
+	rr := httptest.NewRecorder()
+	h.Insights(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Insights []struct {
+			Key  string `json:"key"`
+			Desc string `json:"description"`
+		} `json:"insights"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	found := false
+	for _, in := range resp.Insights {
+		if in.Key == "weekly_pace" {
+			found = true
+			if !strings.Contains(in.Desc, "expected by now") {
+				t.Errorf("expected pace description, got: %s", in.Desc)
+			}
+			if !strings.Contains(in.Desc, "[6-day]") {
+				t.Errorf("expected [6-day] mode label in description, got: %s", in.Desc)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected weekly_pace insight in 6-day mode")
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ── Codex pace mode settings validation ──
+// ═══════════════════════════════════════════════════════════════════
+
+func TestUpdateSettings_CodexPaceMode(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
+
+	tests := []struct {
+		name     string
+		body     string
+		wantCode int
+	}{
+		{"calendar", `{"codex_pace_mode":"calendar"}`, 200},
+		{"5-day", `{"codex_pace_mode":"5-day"}`, 200},
+		{"6-day", `{"codex_pace_mode":"6-day"}`, 200},
+		{"invalid", `{"codex_pace_mode":"3-day"}`, 400},
+		{"empty string", `{"codex_pace_mode":""}`, 400},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			h.UpdateSettings(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Errorf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
+			}
+		})
+	}
+
+	// Verify roundtrip: last valid save was "6-day"
+	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	rr := httptest.NewRecorder()
+	h.GetSettings(rr, req)
+
+	var data map[string]interface{}
+	json.Unmarshal(rr.Body.Bytes(), &data)
+	if data["codex_pace_mode"] != "6-day" {
+		t.Errorf("expected codex_pace_mode=6-day in GetSettings, got %v", data["codex_pace_mode"])
+	}
+}
+
 // Ensure all compile-time references are used
 var _ = fmt.Sprintf

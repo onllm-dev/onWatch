@@ -2743,29 +2743,29 @@
                 if (source.includes("gemini pro")) {
                     return "Pro";
                 }
-                if (source.includes("weekly all") || source.includes("weekly_minimax coding")) {
-                    return "Wkly All";
+                if (source.includes("wkly coding") || source.includes("wkly_coding") || source.includes("weekly_minimax coding") || source.includes("weekly all")) {
+                    return "Wkly Coding";
                 }
-                if (source.includes("weekly minimax-m") || source.includes("weekly_minimax-m")) {
-                    return "Wkly M*";
+                if (source.includes("wkly image") || source.includes("wkly_image") || source.includes("weekly_image") || source.includes("weekly image")) {
+                    return "Wkly Image";
                 }
-                if (source.includes("weekly image") || source.includes("weekly_image")) {
-                    return "Wkly Img";
+                if (source.includes("wkly music") || source.includes("wkly_music") || source.includes("weekly_music") || source.includes("weekly music")) {
+                    return "Wkly Music";
                 }
-                if (source.includes("weekly speech") || source.includes("weekly_speech")) {
-                    return "Wkly Spch";
-                }
-                if (source.includes("minimax-m") || source.includes("minimax_m")) {
-                    return "M*";
-                }
-                if (source.includes("image-01")) {
-                    return "image-01";
-                }
-                if (source.includes("speech-hd")) {
-                    return "speech-hd";
+                if (source.includes("wkly speech") || source.includes("wkly_speech") || source.includes("weekly_speech") || source.includes("weekly speech")) {
+                    return "Wkly Speech";
                 }
                 if (source.includes("coding")) {
                     return "Coding";
+                }
+                if (source.includes("image")) {
+                    return "Image";
+                }
+                if (source.includes("music")) {
+                    return "Music";
+                }
+                if (source.includes("speech")) {
+                    return "Speech";
                 }
                 if (source.includes("subscription")) {
                     return "Sub";

@@ -645,7 +645,7 @@ const quotaNames = {
   subscription: 'Subscription Quota',
   search: 'Search (Hourly)',
   toolCalls: 'Tool Call Discounts',
-  coding_plan: 'MiniMax Coding Plan'
+  coding_plan: 'Coding'
 };
 
 // freshnessLabel returns a human-readable label for per-quota data freshness.
@@ -836,19 +836,25 @@ const antigravityChartColorFallback = [
 ];
 
 const minimaxDisplayNames = {
-  'MiniMax Coding Plan': 'MiniMax Coding Plan',
-  'MiniMax-M2': 'MiniMax M2',
-  'MiniMax-M2.1': 'MiniMax M2.1',
-  'MiniMax-M2.5': 'MiniMax M2.5',
-  'MiniMax-M2.5-highspeed': 'MiniMax M2.5 Highspeed',
+  'Coding': 'Coding',
+  'Image': 'Image',
+  'Music': 'Music',
+  'Speech': 'Speech',
+  'Weekly Coding': 'Weekly Coding',
+  'Weekly Image': 'Weekly Image',
+  'Weekly Music': 'Weekly Music',
+  'Weekly Speech': 'Weekly Speech',
+  'weekly_Coding': 'Weekly Coding',
+  'weekly_Image': 'Weekly Image',
+  'weekly_Music': 'Weekly Music',
+  'weekly_Speech': 'Weekly Speech',
 };
 
 const minimaxChartColorMap = {
-  'MiniMax Coding Plan': { border: '#F97316', bg: 'rgba(249, 115, 22, 0.08)' },
-  'MiniMax-M2': { border: '#FF6B6B', bg: 'rgba(255, 107, 107, 0.08)' },
-  'MiniMax-M2.1': { border: '#4ECDC4', bg: 'rgba(78, 205, 196, 0.08)' },
-  'MiniMax-M2.5': { border: '#4ECDC4', bg: 'rgba(78, 205, 196, 0.08)' },
-  'MiniMax-M2.5-highspeed': { border: '#45B7D1', bg: 'rgba(69, 183, 209, 0.08)' },
+  'Coding': { border: '#F97316', bg: 'rgba(249, 115, 22, 0.08)' },
+  'Image': { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.08)' },
+  'Music': { border: '#EC4899', bg: 'rgba(236, 72, 153, 0.08)' },
+  'Speech': { border: '#14B8A6', bg: 'rgba(20, 184, 166, 0.08)' },
 };
 const minimaxChartColorFallback = [
   { border: '#F7DC6F', bg: 'rgba(247, 220, 111, 0.08)' },
@@ -909,7 +915,8 @@ const renewalCategories = {
     { label: 'Gemini Flash', groupBy: 'antigravity_gemini_flash' }
   ],
   minimax: [
-    { label: 'Coding Plan', groupBy: 'coding_plan' }
+    { label: '5-Hour', groupBy: 'coding_plan' },
+    { label: 'Weekly', groupBy: 'weekly_all' }
   ],
   openrouter: [
     { label: 'Credits', groupBy: 'credits' }
@@ -931,7 +938,7 @@ const overviewQuotaDisplayNames = {
   premium_interactions: 'Premium',
   chat: 'Chat',
   completions: 'Completions',
-  coding_plan: 'MiniMax Coding Plan',
+  coding_plan: 'Coding',
   antigravity_claude_gpt: 'Claude + GPT Quota',
   antigravity_gemini_pro: 'Gemini Pro Quota',
   antigravity_gemini_flash: 'Gemini Flash Quota',
@@ -944,7 +951,7 @@ const providerQuotaDisplayOverrides = {
     five_hour: '5-Hour Limit'
   },
   minimax: {
-    coding_plan: 'MiniMax Coding Plan'
+    coding_plan: 'Coding'
   },
   gemini: {
     'pro': 'Gemini Pro',
@@ -5457,6 +5464,13 @@ function renderCyclesTable() {
 async function fetchSessions() {
   if (!shouldShowHistoryTables()) return;
   const requestProvider = getCurrentProvider();
+  // Hide sessions section for providers without session tracking.
+  const sessionsEl = document.getElementById('sessions-section');
+  if (requestProvider === 'minimax') {
+    if (sessionsEl) sessionsEl.hidden = true;
+    return;
+  }
+  if (sessionsEl) sessionsEl.hidden = false;
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
   const requestSeq = (State.sessionsRequestSeq || 0) + 1;
   State.sessionsRequestSeq = requestSeq;
@@ -7079,6 +7093,10 @@ async function loadSettings() {
     const tzSelect = document.getElementById('settings-timezone');
     if (tzSelect && data.timezone) { tzSelect.value = data.timezone; }
 
+    // Codex pace mode
+    const paceSelect = document.getElementById('settings-codex-pace-mode');
+    if (paceSelect && data.codex_pace_mode) { paceSelect.value = data.codex_pace_mode; }
+
     // SMTP
     if (data.smtp) {
       const s = data.smtp;
@@ -8373,6 +8391,12 @@ function gatherSettings() {
   const tzSelect = document.getElementById('settings-timezone');
   if (tzSelect) {
     settings.timezone = tzSelect.value;
+  }
+
+  // Codex pace mode
+  const paceSelect = document.getElementById('settings-codex-pace-mode');
+  if (paceSelect) {
+    settings.codex_pace_mode = paceSelect.value;
   }
 
   // Provider settings are saved via the provider settings modal (saveProviderSettings),

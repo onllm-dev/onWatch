@@ -2359,7 +2359,6 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			latestIsShared := len(snapshots) > 0 && snapshots[len(snapshots)-1].IsSharedQuota()
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			mmData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -2370,14 +2369,8 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				entry := map[string]interface{}{
 					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
 				}
-				if latestIsShared || snap.IsSharedQuota() {
-					if merged := snap.MergedQuota(); merged != nil {
-						entry["MiniMax Coding Plan"] = merged.UsedPercent
-					}
-				} else {
-					for _, model := range snap.Models {
-						entry[model.ModelName] = model.UsedPercent
-					}
+				for _, g := range snap.GroupByPool() {
+					entry[api.MiniMaxGroupDisplayName(g.ModelNames)] = g.Quota.UsedPercent
 				}
 				mmData = append(mmData, entry)
 			}
@@ -5725,6 +5718,11 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Codex pace mode
+		if v, _ := h.store.GetSetting("codex_pace_mode"); v != "" {
+			result["codex_pace_mode"] = v
+		}
+
 		// Provider-specific settings (overrides .env)
 		provJSON, _ := h.store.GetSetting("provider_settings")
 		if provJSON != "" {
@@ -5809,6 +5807,27 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result["hidden_insights"] = keys
+	}
+
+	// Handle codex_pace_mode
+	if raw, ok := body["codex_pace_mode"]; ok {
+		var mode string
+		if err := json.Unmarshal(raw, &mode); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid codex_pace_mode value")
+			return
+		}
+		switch mode {
+		case "calendar", "5-day", "6-day":
+		default:
+			respondError(w, http.StatusBadRequest, "codex_pace_mode must be calendar, 5-day, or 6-day")
+			return
+		}
+		if err := h.store.SetSetting("codex_pace_mode", mode); err != nil {
+			h.logger.Error("failed to save codex_pace_mode setting", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save setting")
+			return
+		}
+		result["codex_pace_mode"] = mode
 	}
 
 	// Handle SMTP settings
@@ -8335,43 +8354,40 @@ func (h *Handler) buildMiniMaxCurrent(accountID int64) map[string]interface{} {
 		return q
 	}
 
-	if latest.IsSharedQuota() {
-		merged := latest.MergedQuota()
-		if merged != nil {
-			q := buildQuota(*merged, minimaxRepresentativeModel(latest))
-			q["displayName"] = minimaxSharedQuotaDisplayName
-			allQuotas := []map[string]interface{}{q}
-			if merged.HasWeeklyQuota {
-				wq := buildWeeklyQuota(*merged, "Weekly All")
-				allQuotas = append(allQuotas, wq)
-				response["weeklyQuotas"] = []map[string]interface{}{wq}
-			}
-			response["quotas"] = allQuotas
-			response["sharedQuota"] = true
-			return response
-		}
-	}
-
-	quotas := make([]map[string]interface{}, 0, len(latest.Models))
+	groups := latest.GroupByPool()
+	dailyQuotas := make([]map[string]interface{}, 0, len(groups))
 	weeklyQuotas := make([]map[string]interface{}, 0)
-	for _, m := range latest.Models {
-		// Skip models with no quota allocation (total=0 and used=0)
-		if m.Total == 0 && m.Used == 0 {
-			continue
+	allShared := len(groups) == 1 && len(groups[0].ModelNames) > 1
+
+	for _, g := range groups {
+		displayName := api.MiniMaxGroupDisplayName(g.ModelNames)
+		summaryModel := g.ModelNames[0]
+
+		q := buildQuota(g.Quota, summaryModel)
+		q["name"] = displayName
+		q["displayName"] = displayName
+		if len(g.ModelNames) > 1 {
+			q["sharedModels"] = g.ModelNames
 		}
-		quotas = append(quotas, buildQuota(m, m.ModelName))
-		if m.HasWeeklyQuota && (m.WeeklyTotal > 0 || m.WeeklyUsed > 0) {
-			wq := buildWeeklyQuota(m, "")
+		dailyQuotas = append(dailyQuotas, q)
+
+		if g.Quota.HasWeeklyQuota && (g.Quota.WeeklyTotal > 0 || g.Quota.WeeklyUsed > 0) {
+			weeklyName := "Wkly " + displayName
+			wq := buildWeeklyQuota(g.Quota, weeklyName)
+			wq["name"] = "wkly_" + displayName
+			if len(g.ModelNames) > 1 {
+				wq["sharedModels"] = g.ModelNames
+			}
 			weeklyQuotas = append(weeklyQuotas, wq)
-			quotas = append(quotas, wq)
 		}
 	}
 
-	sort.Slice(quotas, func(i, j int) bool {
-		li, _ := quotas[i]["name"].(string)
-		lj, _ := quotas[j]["name"].(string)
-		return li < lj
-	})
+	// All daily quotas first, then all weekly quotas.
+	quotas := make([]map[string]interface{}, 0, len(dailyQuotas)+len(weeklyQuotas))
+	quotas = append(quotas, dailyQuotas...)
+	quotas = append(quotas, weeklyQuotas...)
+
+	response["sharedQuota"] = allShared
 	if len(weeklyQuotas) > 0 {
 		response["weeklyQuotas"] = weeklyQuotas
 	}
@@ -8652,9 +8668,11 @@ func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int, accou
 	}
 	h.logger.Debug("buildMiniMaxCycleOverviewRows", "groupBy_in", groupBy, "accountID_in", accountID, "minimaxAccID", minimaxAccID)
 
+	isWeeklyView := groupBy == "weekly_all"
+
 	// Map the shared quota display name ("coding_plan") to the actual representative model.
 	// Also handle empty groupBy by checking if a shared/merged model exists.
-	if groupBy == "" || minimaxIsSharedGroup(groupBy) {
+	if groupBy == "" || minimaxIsSharedGroup(groupBy) || isWeeklyView {
 		// Check if there's a merged "MiniMax-M*" model with cycles
 		if cycle, err := h.store.QueryActiveMiniMaxCycle("MiniMax-M*", minimaxAccID); err == nil && cycle != nil {
 			groupBy = "MiniMax-M*"
@@ -8667,7 +8685,7 @@ func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int, accou
 	if err != nil {
 		return nil, nil, groupBy, err
 	}
-	useSharedPath := (latest != nil && latest.IsSharedQuota()) || groupBy == "MiniMax-M*"
+	useSharedPath := (latest != nil && latest.IsSharedQuota()) || groupBy == "MiniMax-M*" || isWeeklyView
 	if useSharedPath {
 		sourceModel := groupBy // use resolved groupBy (e.g. "MiniMax-M*") as primary
 		if sourceModel == "" || minimaxIsSharedGroup(sourceModel) {
@@ -8683,22 +8701,45 @@ func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int, accou
 			return nil, nil, groupBy, err
 		}
 		mergedRows := make([]store.CycleOverviewRow, 0, len(rows))
+		poolNameSet := map[string]bool{}
 		for _, row := range rows {
-			var mergedQuota *store.CrossQuotaEntry
+			// Group cross-quota entries by pool (same limit+value = same pool).
+			type poolKey struct{ limit, value float64 }
+			var poolKeys []poolKey
+			pools := map[poolKey]*store.CrossQuotaEntry{}
+			poolModels := map[poolKey][]string{}
 			for _, cq := range row.CrossQuotas {
 				entry := cq
-				if mergedQuota == nil || entry.Percent > mergedQuota.Percent || (entry.Percent == mergedQuota.Percent && entry.Limit > mergedQuota.Limit) {
-					mergedQuota = &entry
+				hasWeeklyPrefix := strings.HasPrefix(strings.ToLower(entry.Name), "weekly_")
+				// In 5-hour view, skip weekly entries; in weekly view, skip daily entries.
+				if isWeeklyView && !hasWeeklyPrefix {
+					continue
+				}
+				if !isWeeklyView && hasWeeklyPrefix {
+					continue
+				}
+				k := poolKey{entry.Limit, entry.Value}
+				if _, ok := pools[k]; !ok {
+					poolKeys = append(poolKeys, k)
+					pools[k] = &entry
+				}
+				poolModels[k] = append(poolModels[k], entry.Name)
+			}
+			crossQuotas := make([]store.CrossQuotaEntry, 0, len(poolKeys))
+			var codingQuota *store.CrossQuotaEntry
+			for _, k := range poolKeys {
+				entry := pools[k]
+				displayName := api.MiniMaxGroupDisplayName(poolModels[k])
+				entry.Name = displayName
+				poolNameSet[displayName] = true
+				crossQuotas = append(crossQuotas, *entry)
+				if displayName == "Coding" && codingQuota == nil {
+					codingQuota = entry
 				}
 			}
-			crossQuotas := []store.CrossQuotaEntry{}
-			if mergedQuota != nil {
-				mergedQuota.Name = minimaxSharedQuotaKey
-				crossQuotas = append(crossQuotas, *mergedQuota)
-			}
 			peakValue := row.PeakValue
-			if mergedQuota != nil {
-				peakValue = mergedQuota.Value
+			if codingQuota != nil {
+				peakValue = codingQuota.Value
 			}
 			mergedRows = append(mergedRows, store.CycleOverviewRow{
 				CycleID:     row.CycleID,
@@ -8711,7 +8752,12 @@ func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int, accou
 				CrossQuotas: crossQuotas,
 			})
 		}
-		return mergedRows, []string{minimaxSharedQuotaKey}, minimaxSharedQuotaKey, nil
+		quotaNames := make([]string, 0, len(poolNameSet))
+		for name := range poolNameSet {
+			quotaNames = append(quotaNames, name)
+		}
+		sort.Strings(quotaNames)
+		return mergedRows, quotaNames, minimaxSharedQuotaKey, nil
 	}
 
 	rows, err := h.store.QueryMiniMaxCycleOverview(groupBy, limit, minimaxAccID)
@@ -8756,10 +8802,6 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if the latest snapshot is shared - if so, consolidate all history
-	// into one line to avoid cluttering the chart with 24+ model names
-	latestIsShared := len(snapshots) > 0 && snapshots[len(snapshots)-1].IsSharedQuota()
-
 	step := downsampleStep(len(snapshots), maxChartPoints)
 	last := len(snapshots) - 1
 	response := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -8770,23 +8812,11 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 		entry := map[string]interface{}{
 			"capturedAt": snap.CapturedAt.Format(time.RFC3339),
 		}
-		if latestIsShared || snap.IsSharedQuota() {
-			// Consolidate into single "MiniMax Coding Plan" line
-			if merged := snap.MergedQuota(); merged != nil {
-				entry["MiniMax Coding Plan"] = merged.UsedPercent
-				if merged.HasWeeklyQuota && merged.WeeklyTotal > 0 {
-					entry["Weekly All"] = merged.WeeklyUsedPercent
-				}
-			}
-		} else {
-			for _, model := range snap.Models {
-				if model.Total == 0 && model.Used == 0 {
-					continue
-				}
-				entry[model.ModelName] = model.UsedPercent
-				if model.HasWeeklyQuota && model.WeeklyTotal > 0 {
-					entry["Weekly "+model.ModelName] = model.WeeklyUsedPercent
-				}
+		for _, g := range snap.GroupByPool() {
+			displayName := api.MiniMaxGroupDisplayName(g.ModelNames)
+			entry[displayName] = g.Quota.UsedPercent
+			if g.Quota.HasWeeklyQuota && g.Quota.WeeklyTotal > 0 {
+				entry["Wkly "+displayName] = g.Quota.WeeklyUsedPercent
 			}
 		}
 		response = append(response, entry)
@@ -9592,6 +9622,38 @@ func (h *Handler) buildCodexReviewPaceInsight(latest *api.CodexSnapshot, summari
 	return item, true
 }
 
+// isWorkDay returns whether the given weekday is a work day for the mode.
+func isWorkDay(wd time.Weekday, mode string) bool {
+	switch mode {
+	case "5-day":
+		return wd != time.Saturday && wd != time.Sunday
+	case "6-day":
+		return wd != time.Sunday
+	default:
+		return true
+	}
+}
+
+// countWorkTime returns fractional work days in [from, to).
+// Full work days contribute 1.0; partial days contribute the elapsed fraction.
+// Non-work days contribute 0. Window is always <=7 days.
+func countWorkTime(from, to time.Time, mode string) float64 {
+	dayDur := 24 * time.Hour
+	total := 0.0
+	for d := from; d.Before(to); d = d.Add(dayDur) {
+		if !isWorkDay(d.Weekday(), mode) {
+			continue
+		}
+		dayEnd := d.Add(dayDur)
+		if dayEnd.After(to) {
+			total += to.Sub(d).Seconds() / dayDur.Seconds()
+		} else {
+			total += 1.0
+		}
+	}
+	return total
+}
+
 func (h *Handler) buildCodexWeeklyPaceInsight(latest *api.CodexSnapshot, summaries map[string]*tracker.CodexSummary) (insightItem, bool) {
 	var weeklyQuota *api.CodexQuota
 	for i := range latest.Quotas {
@@ -9611,8 +9673,27 @@ func (h *Handler) buildCodexWeeklyPaceInsight(latest *api.CodexSnapshot, summari
 		return insightItem{}, false
 	}
 
-	elapsed := window - timeUntilReset
-	expectedUsed := (elapsed.Seconds() / window.Seconds()) * 100
+	// Compute expected pace based on configured mode.
+	paceMode, _ := h.store.GetSetting("codex_pace_mode")
+	var expectedUsed float64
+	todayIsOff := false
+	if paceMode == "5-day" || paceMode == "6-day" {
+		windowStart := weeklyQuota.ResetsAt.Add(-window)
+		totalWork := countWorkTime(windowStart, *weeklyQuota.ResetsAt, paceMode)
+		elapsedWork := countWorkTime(windowStart, now, paceMode)
+		if totalWork > 0 {
+			expectedUsed = (elapsedWork / totalWork) * 100
+		} else {
+			// Fallback to calendar if no work days in window.
+			elapsed := window - timeUntilReset
+			expectedUsed = (elapsed.Seconds() / window.Seconds()) * 100
+		}
+		todayIsOff = !isWorkDay(now.Weekday(), paceMode)
+	} else {
+		elapsed := window - timeUntilReset
+		expectedUsed = (elapsed.Seconds() / window.Seconds()) * 100
+	}
+
 	delta := weeklyQuota.Utilization - expectedUsed
 	if delta < 0 {
 		delta = -delta
@@ -9625,23 +9706,32 @@ func (h *Handler) buildCodexWeeklyPaceInsight(latest *api.CodexSnapshot, summari
 		Title:    "Weekly Pace",
 	}
 
+	// Mode suffix for description clarity.
+	modeSuffix := ""
+	if paceMode == "5-day" || paceMode == "6-day" {
+		modeSuffix = fmt.Sprintf(" [%s]", paceMode)
+	}
+
 	rawDelta := weeklyQuota.Utilization - expectedUsed
 	switch {
 	case rawDelta >= -2 && rawDelta <= 2:
 		item.Metric = "On pace"
 		item.Severity = "positive"
-		item.Desc = fmt.Sprintf("Weekly usage is tracking expected pace (%.0f%% used vs %.0f%% expected by now).", weeklyQuota.Utilization, expectedUsed)
+		item.Desc = fmt.Sprintf("Weekly usage is tracking expected pace (%.0f%% used vs %.0f%% expected by now).%s", weeklyQuota.Utilization, expectedUsed, modeSuffix)
 	case rawDelta > 2:
 		item.Metric = fmt.Sprintf("%.0f%% over pace", rawDelta)
 		item.Severity = "warning"
-		item.Desc = fmt.Sprintf("Weekly usage is ahead of pace (%.0f%% used vs %.0f%% expected by now).", weeklyQuota.Utilization, expectedUsed)
+		item.Desc = fmt.Sprintf("Weekly usage is ahead of pace (%.0f%% used vs %.0f%% expected by now).%s", weeklyQuota.Utilization, expectedUsed, modeSuffix)
 	default:
 		item.Metric = fmt.Sprintf("%.0f%% in reserve", delta)
 		item.Severity = "positive"
-		item.Desc = fmt.Sprintf("Weekly usage is below pace (%.0f%% used vs %.0f%% expected by now).", weeklyQuota.Utilization, expectedUsed)
+		item.Desc = fmt.Sprintf("Weekly usage is below pace (%.0f%% used vs %.0f%% expected by now).%s", weeklyQuota.Utilization, expectedUsed, modeSuffix)
 	}
 
-	if summary := summaries["seven_day"]; summary != nil && summary.CurrentRate > 0 && summary.ResetsAt != nil {
+	// Sublabel: weekend/off-day indicator takes priority.
+	if todayIsOff {
+		item.Sublabel = "off day - pace paused"
+	} else if summary := summaries["seven_day"]; summary != nil && summary.CurrentRate > 0 && summary.ResetsAt != nil {
 		hoursLeft := summary.TimeUntilReset.Hours()
 		if hoursLeft > 0 {
 			projected := weeklyQuota.Utilization + (summary.CurrentRate * hoursLeft)
@@ -10213,32 +10303,14 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	latest := (*api.MiniMaxSnapshot)(nil)
-	if len(snapshots) > 0 {
-		latest = snapshots[len(snapshots)-1]
-	} else {
-		latest, _ = h.store.QueryLatestMiniMax(minimaxAccID)
-	}
-
-	// Build quota names and series including weekly data.
-	// Collect all distinct quota names (interval + weekly) from snapshots.
+	// Build quota names and series using pool-grouped data.
 	quotaNameSet := map[string]bool{}
 	for _, snap := range snapshots {
-		if latest != nil && latest.IsSharedQuota() {
-			if merged := snap.MergedQuota(); merged != nil {
-				quotaNameSet[minimaxSharedQuotaKey] = true
-				if merged.HasWeeklyQuota {
-					quotaNameSet["weekly_"+minimaxSharedQuotaKey] = true
-				}
-			}
-		} else {
-			for _, model := range snap.Models {
-				if model.Total > 0 || model.Used > 0 {
-					quotaNameSet[model.ModelName] = true
-				}
-				if model.HasWeeklyQuota && (model.WeeklyTotal > 0 || model.WeeklyUsed > 0) {
-					quotaNameSet["weekly_"+model.ModelName] = true
-				}
+		for _, g := range snap.GroupByPool() {
+			name := api.MiniMaxGroupDisplayName(g.ModelNames)
+			quotaNameSet[name] = true
+			if g.Quota.HasWeeklyQuota && (g.Quota.WeeklyTotal > 0 || g.Quota.WeeklyUsed > 0) {
+				quotaNameSet["wkly_"+name] = true
 			}
 		}
 	}
@@ -10263,50 +10335,25 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 		ids = append(ids, snap.ID)
 		row := make(map[string]loggingHistoryCrossQuota, len(quotaNames))
 
-		if latest != nil && latest.IsSharedQuota() {
-			if merged := snap.MergedQuota(); merged != nil {
-				row[minimaxSharedQuotaKey] = loggingHistoryCrossQuota{
-					Name:     minimaxSharedQuotaKey,
-					Value:    float64(merged.Used),
-					Limit:    float64(merged.Total),
-					Percent:  merged.UsedPercent,
+		for _, g := range snap.GroupByPool() {
+			name := api.MiniMaxGroupDisplayName(g.ModelNames)
+			row[name] = loggingHistoryCrossQuota{
+				Name:     name,
+				Value:    float64(g.Quota.Used),
+				Limit:    float64(g.Quota.Total),
+				Percent:  g.Quota.UsedPercent,
+				HasValue: true,
+				HasLimit: true,
+			}
+			if g.Quota.HasWeeklyQuota && (g.Quota.WeeklyTotal > 0 || g.Quota.WeeklyUsed > 0) {
+				wKey := "wkly_" + name
+				row[wKey] = loggingHistoryCrossQuota{
+					Name:     wKey,
+					Value:    float64(g.Quota.WeeklyUsed),
+					Limit:    float64(g.Quota.WeeklyTotal),
+					Percent:  g.Quota.WeeklyUsedPercent,
 					HasValue: true,
 					HasLimit: true,
-				}
-				if merged.HasWeeklyQuota {
-					wKey := "weekly_" + minimaxSharedQuotaKey
-					row[wKey] = loggingHistoryCrossQuota{
-						Name:     wKey,
-						Value:    float64(merged.WeeklyUsed),
-						Limit:    float64(merged.WeeklyTotal),
-						Percent:  merged.WeeklyUsedPercent,
-						HasValue: true,
-						HasLimit: true,
-					}
-				}
-			}
-		} else {
-			for _, model := range snap.Models {
-				if model.Total > 0 || model.Used > 0 {
-					row[model.ModelName] = loggingHistoryCrossQuota{
-						Name:     model.ModelName,
-						Value:    float64(model.Used),
-						Limit:    float64(model.Total),
-						Percent:  model.UsedPercent,
-						HasValue: true,
-						HasLimit: true,
-					}
-				}
-				if model.HasWeeklyQuota && (model.WeeklyTotal > 0 || model.WeeklyUsed > 0) {
-					wKey := "weekly_" + model.ModelName
-					row[wKey] = loggingHistoryCrossQuota{
-						Name:     wKey,
-						Value:    float64(model.WeeklyUsed),
-						Limit:    float64(model.WeeklyTotal),
-						Percent:  model.WeeklyUsedPercent,
-						HasValue: true,
-						HasLimit: true,
-					}
 				}
 			}
 		}
