@@ -5718,11 +5718,6 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Codex pace mode
-		if v, _ := h.store.GetSetting("codex_pace_mode"); v != "" {
-			result["codex_pace_mode"] = v
-		}
-
 		// Provider-specific settings (overrides .env)
 		provJSON, _ := h.store.GetSetting("provider_settings")
 		if provJSON != "" {
@@ -5807,27 +5802,6 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result["hidden_insights"] = keys
-	}
-
-	// Handle codex_pace_mode
-	if raw, ok := body["codex_pace_mode"]; ok {
-		var mode string
-		if err := json.Unmarshal(raw, &mode); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid codex_pace_mode value")
-			return
-		}
-		switch mode {
-		case "calendar", "5-day", "6-day":
-		default:
-			respondError(w, http.StatusBadRequest, "codex_pace_mode must be calendar, 5-day, or 6-day")
-			return
-		}
-		if err := h.store.SetSetting("codex_pace_mode", mode); err != nil {
-			h.logger.Error("failed to save codex_pace_mode setting", "error", err)
-			respondError(w, http.StatusInternalServerError, "failed to save setting")
-			return
-		}
-		result["codex_pace_mode"] = mode
 	}
 
 	// Handle SMTP settings
@@ -7233,6 +7207,25 @@ func (h *Handler) getCodexDisplayMode() string {
 		return h.config.CodexShowAvailable
 	}
 	return "usage"
+}
+
+// getCodexPaceMode returns the Codex pace mode from provider_settings.
+// Returns "calendar", "5-day", or "6-day". Defaults to "calendar".
+func (h *Handler) getCodexPaceMode() string {
+	if h.store != nil {
+		provJSON, err := h.store.GetSetting("provider_settings")
+		if err == nil && provJSON != "" {
+			var provSettings map[string]map[string]interface{}
+			if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
+				if codexSettings, ok := provSettings["codex"]; ok {
+					if pm, ok := codexSettings["pace_mode"].(string); ok && pm != "" {
+						return pm
+					}
+				}
+			}
+		}
+	}
+	return "calendar"
 }
 
 func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
@@ -9674,7 +9667,7 @@ func (h *Handler) buildCodexWeeklyPaceInsight(latest *api.CodexSnapshot, summari
 	}
 
 	// Compute expected pace based on configured mode.
-	paceMode, _ := h.store.GetSetting("codex_pace_mode")
+	paceMode := h.getCodexPaceMode()
 	var expectedUsed float64
 	todayIsOff := false
 	if paceMode == "5-day" || paceMode == "6-day" {

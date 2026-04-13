@@ -11796,7 +11796,7 @@ func TestHandler_Insights_Codex_5DayPace(t *testing.T) {
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
-	s.SetSetting("codex_pace_mode", "5-day")
+	s.SetSetting("provider_settings", `{"codex":{"pace_mode":"5-day"}}`)
 
 	now := time.Now().UTC()
 	sevenDayReset := now.Add(3 * 24 * time.Hour) // resets in 3 days
@@ -11859,7 +11859,7 @@ func TestHandler_Insights_Codex_6DayPace(t *testing.T) {
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
-	s.SetSetting("codex_pace_mode", "6-day")
+	s.SetSetting("provider_settings", `{"codex":{"pace_mode":"6-day"}}`)
 
 	now := time.Now().UTC()
 	sevenDayReset := now.Add(2 * 24 * time.Hour)
@@ -11921,44 +11921,46 @@ func TestHandler_Insights_Codex_6DayPace(t *testing.T) {
 // ── Codex pace mode settings validation ──
 // ═══════════════════════════════════════════════════════════════════
 
-func TestUpdateSettings_CodexPaceMode(t *testing.T) {
+func TestProviderSettings_CodexPaceMode(t *testing.T) {
 	s, _ := store.New(":memory:")
 	defer s.Close()
 	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
 
-	tests := []struct {
-		name     string
-		body     string
-		wantCode int
-	}{
-		{"calendar", `{"codex_pace_mode":"calendar"}`, 200},
-		{"5-day", `{"codex_pace_mode":"5-day"}`, 200},
-		{"6-day", `{"codex_pace_mode":"6-day"}`, 200},
-		{"invalid", `{"codex_pace_mode":"3-day"}`, 400},
-		{"empty string", `{"codex_pace_mode":""}`, 400},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(tt.body))
-			req.Header.Set("Content-Type", "application/json")
-			rr := httptest.NewRecorder()
-			h.UpdateSettings(rr, req)
-			if rr.Code != tt.wantCode {
-				t.Errorf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
-			}
-		})
-	}
-
-	// Verify roundtrip: last valid save was "6-day"
-	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	// Save pace_mode via provider_settings
+	body := `{"provider_settings":{"codex":{"pace_mode":"5-day"}}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	h.GetSettings(rr, req)
+	h.UpdateSettings(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save failed: %d %s", rr.Code, rr.Body.String())
+	}
 
-	var data map[string]interface{}
-	json.Unmarshal(rr.Body.Bytes(), &data)
-	if data["codex_pace_mode"] != "6-day" {
-		t.Errorf("expected codex_pace_mode=6-day in GetSettings, got %v", data["codex_pace_mode"])
+	// Verify getCodexPaceMode reads it
+	if mode := h.getCodexPaceMode(); mode != "5-day" {
+		t.Errorf("getCodexPaceMode() = %q, want 5-day", mode)
+	}
+
+	// Update to 6-day
+	body = `{"provider_settings":{"codex":{"pace_mode":"6-day"}}}`
+	req = httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	h.UpdateSettings(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save failed: %d %s", rr.Code, rr.Body.String())
+	}
+
+	if mode := h.getCodexPaceMode(); mode != "6-day" {
+		t.Errorf("getCodexPaceMode() = %q, want 6-day", mode)
+	}
+
+	// Default when unset
+	s2, _ := store.New(":memory:")
+	defer s2.Close()
+	h2 := NewHandler(s2, nil, nil, nil, createTestConfigWithCodex())
+	if mode := h2.getCodexPaceMode(); mode != "calendar" {
+		t.Errorf("default getCodexPaceMode() = %q, want calendar", mode)
 	}
 }
 

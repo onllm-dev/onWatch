@@ -7093,10 +7093,6 @@ async function loadSettings() {
     const tzSelect = document.getElementById('settings-timezone');
     if (tzSelect && data.timezone) { tzSelect.value = data.timezone; }
 
-    // Codex pace mode
-    const paceSelect = document.getElementById('settings-codex-pace-mode');
-    if (paceSelect && data.codex_pace_mode) { paceSelect.value = data.codex_pace_mode; }
-
     // SMTP
     if (data.smtp) {
       const s = data.smtp;
@@ -7850,6 +7846,11 @@ const providerSettingsConfig = {
         { value: 'usage', text: 'Usage (show utilization %)' },
         { value: 'available', text: 'Available (show remaining %)' },
       ], default: 'usage', hint: 'Choose how to display five_hour and seven_day quota usage.' },
+      { id: 'pace_mode', label: 'Weekly Pace Mode', type: 'select', options: [
+        { value: 'calendar', text: 'Calendar (7-day)' },
+        { value: '6-day', text: '6-day (Mon-Sat)' },
+        { value: '5-day', text: '5-day (Mon-Fri)' },
+      ], default: 'calendar', hint: 'Distributes 100% expected pace across selected work days only. Non-work days show "off day - pace paused".' },
     ],
   },
   copilot: {
@@ -8391,12 +8392,6 @@ function gatherSettings() {
   const tzSelect = document.getElementById('settings-timezone');
   if (tzSelect) {
     settings.timezone = tzSelect.value;
-  }
-
-  // Codex pace mode
-  const paceSelect = document.getElementById('settings-codex-pace-mode');
-  if (paceSelect) {
-    settings.codex_pace_mode = paceSelect.value;
   }
 
   // Provider settings are saved via the provider settings modal (saveProviderSettings),
