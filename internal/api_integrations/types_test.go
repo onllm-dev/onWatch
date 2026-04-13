@@ -1,6 +1,8 @@
 package apiintegrations
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +44,48 @@ func TestParseUsageEventLine_RejectsInvalidMetadata(t *testing.T) {
 	line := []byte(`{"ts":"2026-04-03T12:00:00Z","integration":"notes","provider":"openai","model":"gpt-4.1-mini","prompt_tokens":1,"completion_tokens":1,"metadata":["bad"]}`)
 	if _, err := ParseUsageEventLine(line, "/tmp/test.jsonl"); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestParseUsageEventLine_RejectsOverlongFields(t *testing.T) {
+	long := func(n int) string {
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = 'a'
+		}
+		return string(b)
+	}
+
+	// integration too long
+	line := []byte(`{"ts":"2026-04-03T12:00:00Z","integration":"` + long(maxIntegrationFieldLen+1) + `","provider":"anthropic","model":"claude-3-7-sonnet","prompt_tokens":1,"completion_tokens":1}`)
+	if _, err := ParseUsageEventLine(line, "/tmp/test.jsonl"); err == nil {
+		t.Fatal("expected error for overlong integration")
+	}
+
+	// model too long
+	line = []byte(`{"ts":"2026-04-03T12:00:00Z","integration":"notes","provider":"anthropic","model":"` + long(maxIntegrationFieldLen+1) + `","prompt_tokens":1,"completion_tokens":1}`)
+	if _, err := ParseUsageEventLine(line, "/tmp/test.jsonl"); err == nil {
+		t.Fatal("expected error for overlong model")
+	}
+
+	// account too long
+	line = []byte(`{"ts":"2026-04-03T12:00:00Z","integration":"notes","provider":"anthropic","model":"claude-3-7-sonnet","account":"` + long(maxIntegrationFieldLen+1) + `","prompt_tokens":1,"completion_tokens":1}`)
+	if _, err := ParseUsageEventLine(line, "/tmp/test.jsonl"); err == nil {
+		t.Fatal("expected error for overlong account")
+	}
+}
+
+func TestParseUsageEventLine_RejectsOverlongMetadata(t *testing.T) {
+	// Build a metadata object whose compacted JSON exceeds maxMetadataJSONLen
+	// by repeating a key-value pair enough times.
+	pairs := make([]string, 0, 200)
+	for i := 0; i < 200; i++ {
+		pairs = append(pairs, fmt.Sprintf(`"key%d":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`, i))
+	}
+	metadata := "{" + strings.Join(pairs, ",") + "}"
+	line := []byte(`{"ts":"2026-04-03T12:00:00Z","integration":"notes","provider":"anthropic","model":"claude-3-7-sonnet","prompt_tokens":1,"completion_tokens":1,"metadata":` + metadata + `}`)
+	if _, err := ParseUsageEventLine(line, "/tmp/test.jsonl"); err == nil {
+		t.Fatal("expected error for overlong metadata")
 	}
 }
 

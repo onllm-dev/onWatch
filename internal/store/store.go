@@ -644,7 +644,6 @@ func (s *Store) createTables() error {
 			metadata_json TEXT NOT NULL DEFAULT '',
 			source_path TEXT NOT NULL,
 			fingerprint TEXT NOT NULL,
-			raw_line TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL
 		);
 
@@ -652,6 +651,7 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_api_integration_usage_events_captured ON api_integration_usage_events(captured_at);
 		CREATE INDEX IF NOT EXISTS idx_api_integration_usage_events_integration_provider ON api_integration_usage_events(integration_name, provider, captured_at);
 		CREATE INDEX IF NOT EXISTS idx_api_integration_usage_events_provider_model ON api_integration_usage_events(provider, model, captured_at);
+		CREATE INDEX IF NOT EXISTS idx_api_integration_usage_events_source ON api_integration_usage_events(source_path);
 
 		CREATE TABLE IF NOT EXISTS api_integration_ingest_state (
 			source_path TEXT PRIMARY KEY,
@@ -922,6 +922,18 @@ func (s *Store) migrateSchema() error {
 				!strings.Contains(err.Error(), "no such table") {
 				return fmt.Errorf("failed to add weekly column to minimax_model_values: %w", err)
 			}
+		}
+	}
+
+	// Drop raw_line column from api_integration_usage_events - no longer stored.
+	// Ignore "no such column": fires on new DBs (column was never created) and on
+	// DBs that have already been migrated. 
+	// TODO: remove this migration after all users have upgraded past the version that
+	// introduced raw_line (feat/api-integrations). Just to keep pulls clean for the limited 
+	// number of users who are using this fork.
+	if _, err := s.db.Exec(`ALTER TABLE api_integration_usage_events DROP COLUMN raw_line`); err != nil {
+		if !strings.Contains(err.Error(), "no such column") {
+			return fmt.Errorf("failed to drop raw_line from api_integration_usage_events: %w", err)
 		}
 	}
 

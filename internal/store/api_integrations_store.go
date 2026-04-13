@@ -11,7 +11,10 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-const apiIntegrationUsageSummaryLimit = 500
+const (
+	apiIntegrationUsageSummaryLimit = 500
+	apiIntegrationUsageBucketsLimit = 5000
+)
 
 // APIIntegrationUsageSummaryRow contains grouped usage totals for backend reporting.
 type APIIntegrationUsageSummaryRow struct {
@@ -58,8 +61,8 @@ func (s *Store) InsertAPIIntegrationUsageEvent(event *apiintegrations.UsageEvent
 		INSERT INTO api_integration_usage_events (
 			captured_at, integration_name, provider, account_name, model, request_id,
 			prompt_tokens, completion_tokens, total_tokens, cost_usd, latency_ms,
-			metadata_json, source_path, fingerprint, raw_line, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			metadata_json, source_path, fingerprint, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		event.Timestamp.Format(time.RFC3339Nano),
 		event.Integration,
@@ -75,7 +78,6 @@ func (s *Store) InsertAPIIntegrationUsageEvent(event *apiintegrations.UsageEvent
 		event.MetadataJSON,
 		event.SourcePath,
 		event.Fingerprint,
-		event.RawLine,
 		time.Now().UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
@@ -96,7 +98,7 @@ func (s *Store) QueryAPIIntegrationUsageRange(start, end time.Time, limit ...int
 	query := `
 		SELECT captured_at, integration_name, provider, account_name, model, request_id,
 		       prompt_tokens, completion_tokens, total_tokens, cost_usd, latency_ms,
-		       metadata_json, source_path, fingerprint, raw_line
+		       metadata_json, source_path, fingerprint
 		FROM api_integration_usage_events
 		WHERE captured_at BETWEEN ? AND ?
 		ORDER BY captured_at ASC
@@ -134,7 +136,6 @@ func (s *Store) QueryAPIIntegrationUsageRange(start, end time.Time, limit ...int
 			&event.MetadataJSON,
 			&event.SourcePath,
 			&event.Fingerprint,
-			&event.RawLine,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan API integration usage event: %w", err)
 		}
@@ -231,7 +232,8 @@ func (s *Store) QueryAPIIntegrationUsageBuckets(start, end time.Time, bucketSize
 		WHERE captured_at BETWEEN ? AND ?
 		GROUP BY integration_name, 2
 		ORDER BY integration_name, 2
-	`, bucketSeconds, bucketSeconds, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
+		LIMIT ?
+	`, bucketSeconds, bucketSeconds, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano), apiIntegrationUsageBucketsLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query API integration usage buckets: %w", err)
 	}

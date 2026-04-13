@@ -277,6 +277,40 @@ func TestStore_QueryAPIIntegrationUsageBuckets_HourlyRange(t *testing.T) {
 	}
 }
 
+func TestStore_QueryAPIIntegrationUsageBuckets_Bounded(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	// Insert apiIntegrationUsageBucketsLimit + 10 events, each in its own 1-minute bucket
+	// across different integrations so GROUP BY produces many rows.
+	base := time.Date(2026, 4, 3, 0, 0, 0, 0, time.UTC)
+	total := apiIntegrationUsageBucketsLimit + 10
+	for i := 0; i < total; i++ {
+		line := fmt.Sprintf(`{"ts":"%s","integration":"integ-%04d","provider":"openai","model":"gpt-4.1-mini","prompt_tokens":1,"completion_tokens":1}`,
+			base.Add(time.Duration(i)*time.Minute).Format(time.RFC3339), i)
+		event, err := apiintegrations.ParseUsageEventLine([]byte(line), "/tmp/bounded.jsonl")
+		if err != nil {
+			t.Fatalf("ParseUsageEventLine(%d): %v", i, err)
+		}
+		if _, err := s.InsertAPIIntegrationUsageEvent(event); err != nil {
+			t.Fatalf("InsertAPIIntegrationUsageEvent(%d): %v", i, err)
+		}
+	}
+
+	start := base
+	end := base.Add(time.Duration(total+1) * time.Minute)
+	rows, err := s.QueryAPIIntegrationUsageBuckets(start, end, time.Minute)
+	if err != nil {
+		t.Fatalf("QueryAPIIntegrationUsageBuckets: %v", err)
+	}
+	if len(rows) != apiIntegrationUsageBucketsLimit {
+		t.Fatalf("len(rows)=%d want %d", len(rows), apiIntegrationUsageBucketsLimit)
+	}
+}
+
 func TestStore_QueryAPIIntegrationIngestHealth_AndAlertsByProvider(t *testing.T) {
 	s, err := New(":memory:")
 	if err != nil {

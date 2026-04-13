@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	maxIntegrationFieldLen = 256
+	maxMetadataJSONLen     = 4096
+)
+
 var allowedProviders = map[string]struct{}{
 	"anthropic":  {},
 	"openai":     {},
@@ -33,7 +38,6 @@ type UsageEvent struct {
 	MetadataJSON     string
 	SourcePath       string
 	Fingerprint      string
-	RawLine          string
 }
 
 // IngestState stores the persistent cursor for a tailed JSONL file.
@@ -82,6 +86,9 @@ func ParseUsageEventLine(line []byte, sourcePath string) (*UsageEvent, error) {
 	if integrationName == "" {
 		return nil, fmt.Errorf("integration is required")
 	}
+	if len(integrationName) > maxIntegrationFieldLen {
+		return nil, fmt.Errorf("integration exceeds %d characters", maxIntegrationFieldLen)
+	}
 
 	provider := strings.ToLower(strings.TrimSpace(wire.Provider))
 	if _, ok := allowedProviders[provider]; !ok {
@@ -91,6 +98,9 @@ func ParseUsageEventLine(line []byte, sourcePath string) (*UsageEvent, error) {
 	model := strings.TrimSpace(wire.Model)
 	if model == "" {
 		return nil, fmt.Errorf("model is required")
+	}
+	if len(model) > maxIntegrationFieldLen {
+		return nil, fmt.Errorf("model exceeds %d characters", maxIntegrationFieldLen)
 	}
 
 	if wire.PromptTokens < 0 {
@@ -119,6 +129,9 @@ func ParseUsageEventLine(line []byte, sourcePath string) (*UsageEvent, error) {
 	if account == "" {
 		account = "default"
 	}
+	if len(account) > maxIntegrationFieldLen {
+		return nil, fmt.Errorf("account exceeds %d characters", maxIntegrationFieldLen)
+	}
 
 	metadataJSON := ""
 	if len(wire.Metadata) > 0 && string(wire.Metadata) != "null" {
@@ -131,6 +144,9 @@ func ParseUsageEventLine(line []byte, sourcePath string) (*UsageEvent, error) {
 			return nil, fmt.Errorf("compact metadata: %w", err)
 		}
 		metadataJSON = string(compact)
+	}
+	if len(metadataJSON) > maxMetadataJSONLen {
+		return nil, fmt.Errorf("metadata_json exceeds %d bytes after compaction", maxMetadataJSONLen)
 	}
 
 	event := &UsageEvent{
@@ -147,7 +163,6 @@ func ParseUsageEventLine(line []byte, sourcePath string) (*UsageEvent, error) {
 		LatencyMS:        wire.LatencyMS,
 		MetadataJSON:     metadataJSON,
 		SourcePath:       sourcePath,
-		RawLine:          trimmed,
 	}
 	event.Fingerprint = eventFingerprint(event)
 	return event, nil
@@ -156,7 +171,7 @@ func ParseUsageEventLine(line []byte, sourcePath string) (*UsageEvent, error) {
 func eventFingerprint(event *UsageEvent) string {
 	h := sha256.New()
 	writeHashPart(h, event.SourcePath)
-	writeHashPart(h, event.Timestamp.Format(time.RFC3339))
+	writeHashPart(h, event.Timestamp.Format(time.RFC3339Nano))
 	writeHashPart(h, event.Integration)
 	writeHashPart(h, event.Provider)
 	writeHashPart(h, event.Account)
