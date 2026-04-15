@@ -11,6 +11,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/config"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
 
 // freePort returns an available TCP port for testing
@@ -29,7 +32,7 @@ func TestServer_StartsOnPort(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
-	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "")
+	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "", "")
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -63,7 +66,7 @@ func TestServer_ServesHTML(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
-	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "")
+	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "", "")
 
 	// Start server
 	go server.Start()
@@ -106,7 +109,7 @@ func TestServer_ServesStaticCSS(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
-	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "")
+	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "", "")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
@@ -146,7 +149,7 @@ func TestServer_ServesStaticJS(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
-	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "")
+	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "", "")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
@@ -186,7 +189,7 @@ func TestServer_GracefulShutdown(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
-	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "")
+	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "", "")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
@@ -221,7 +224,7 @@ func TestServer_EmbeddedAssets(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
-	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "")
+	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "", "")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
@@ -273,7 +276,7 @@ func TestServer_RequiresCSRFHeader_OnPost(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	// No auth to test CSRF independently
-	server := NewServer(freePort(t), handler, logger, "", "", "", "")
+	server := NewServer(freePort(t), handler, logger, "", "", "", "", "")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
@@ -337,7 +340,7 @@ func TestServer_AllowsGet_WithoutCSRFHeader(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
-	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "")
+	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "", "")
 
 	go server.Start()
 	time.Sleep(100 * time.Millisecond)
@@ -371,5 +374,112 @@ func TestServer_AllowsGet_WithoutCSRFHeader(t *testing.T) {
 
 	if resp2.StatusCode == http.StatusForbidden {
 		t.Error("HEAD request should not be blocked by CSRF middleware")
+	}
+}
+
+func TestServer_MetricsUsesBearerAuthWithoutDashboardRedirect(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	cfg := &config.Config{PollInterval: time.Minute}
+	handler := NewHandler(s, nil, logger, nil, cfg)
+	passHash, _ := HashPassword("test")
+	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "", "metrics-secret")
+
+	go server.Start()
+	time.Sleep(100 * time.Millisecond)
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
+	}()
+
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	addr := "http://" + server.httpServer.Addr + "/metrics"
+
+	req, _ := http.NewRequest(http.MethodGet, addr, nil)
+	req.Header.Set("Authorization", "Bearer metrics-secret")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("metrics request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("metrics status = %d, want 200; body=%s", resp.StatusCode, string(body))
+	}
+	if location := resp.Header.Get("Location"); location != "" {
+		t.Fatalf("metrics should not redirect, got Location=%q", location)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/plain") {
+		t.Fatalf("metrics content type = %q, want text/plain", ct)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "onwatch_auth_token_status") {
+		t.Fatalf("metrics body missing expected metric, body=%s", string(body))
+	}
+}
+
+func TestServer_MetricsRejectsMissingOrInvalidBearerToken(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	cfg := &config.Config{PollInterval: time.Minute}
+	handler := NewHandler(s, nil, logger, nil, cfg)
+	passHash, _ := HashPassword("test")
+	server := NewServer(freePort(t), handler, logger, "admin", passHash, "", "", "metrics-secret")
+
+	go server.Start()
+	time.Sleep(100 * time.Millisecond)
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
+	}()
+
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	addr := "http://" + server.httpServer.Addr + "/metrics"
+
+	tests := []struct {
+		name          string
+		authorization string
+	}{
+		{name: "missing token"},
+		{name: "wrong token", authorization: "Bearer wrong"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodGet, addr, nil)
+			if tt.authorization != "" {
+				req.Header.Set("Authorization", tt.authorization)
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("metrics request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusUnauthorized {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("metrics status = %d, want 401; body=%s", resp.StatusCode, string(body))
+			}
+			if location := resp.Header.Get("Location"); location != "" {
+				t.Fatalf("metrics should not redirect on auth failure, got Location=%q", location)
+			}
+		})
 	}
 }

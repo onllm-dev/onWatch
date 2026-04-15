@@ -72,6 +72,7 @@ type Config struct {
 	DBPath             string        // ONWATCH_DB_PATH
 	DBPathExplicit     bool          // true if user explicitly set --db or ONWATCH_DB_PATH
 	LogLevel           string        // ONWATCH_LOG_LEVEL
+	MetricsToken      string        // ONWATCH_METRICS_TOKEN (bearer token for /metrics endpoint)
 	SessionIdleTimeout time.Duration // ONWATCH_SESSION_IDLE_TIMEOUT (seconds → Duration)
 	BasePath           string        // ONWATCH_BASE_PATH (subdirectory hosting, e.g. "/onwatch")
 	DebugMode          bool          // --debug flag (foreground mode)
@@ -330,6 +331,9 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// Log Level
 	cfg.LogLevel = envWithFallback("ONWATCH_LOG_LEVEL", "SYNTRACK_LOG_LEVEL")
+
+	// Metrics token for Prometheus endpoint
+	cfg.MetricsToken = os.Getenv("ONWATCH_METRICS_TOKEN")
 
 	// Host (bind address)
 	cfg.Host = envWithFallback("ONWATCH_HOST", "SYNTRACK_HOST")

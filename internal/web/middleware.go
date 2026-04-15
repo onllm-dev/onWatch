@@ -244,8 +244,8 @@ func sessionAuthMiddlewareWithBasePath(sessions *SessionStore, basePath string, 
 				return
 			}
 
-			// Login page is always accessible
-			if path == basePath+"/login" {
+			// Login page and metrics endpoint are always accessible to their own auth layers.
+			if path == basePath+"/login" || path == basePath+"/metrics" {
 				next.ServeHTTP(w, r)
 				return
 			}

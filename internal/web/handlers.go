@@ -19,6 +19,7 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
+	"github.com/onllm-dev/onwatch/v2/internal/metrics"
 	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
@@ -100,6 +101,7 @@ type Handler struct {
 	settingsTmpl       *template.Template
 	sessions           *SessionStore
 	config             *config.Config
+	metrics            *metrics.Metrics
 	version            string
 	smtpTestMu         sync.Mutex
 	smtpTestLastSent   time.Time
@@ -756,6 +758,7 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 		settingsTmpl:  settingsTmpl,
 		sessions:      sessions,
 		config:        cfg,
+		metrics:       metrics.New(),
 	}
 	if len(zaiTracker) > 0 && zaiTracker[0] != nil {
 		h.zaiTracker = zaiTracker[0]
@@ -5651,6 +5654,15 @@ func compactNum(v float64) string {
 }
 
 // GetSettings returns current settings as JSON.
+func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
+	h.metrics.Scrape(h.store, h.config.PollInterval)
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	if err := h.metrics.WriteText(w); err != nil {
+		h.logger.Error("failed to write metrics", "error", err)
+		http.Error(w, "failed to collect metrics", http.StatusInternalServerError)
+	}
+}
+
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	tz := ""
 	var hiddenInsights []string

@@ -1256,7 +1256,7 @@ func run() error {
 	loginRateLimiter := web.NewLoginRateLimiter(1000)
 	handler.SetRateLimiter(loginRateLimiter)
 
-	server := web.NewServer(cfg.Port, handler, logger, cfg.AdminUser, cfg.AdminPassHash, cfg.Host, cfg.BasePath)
+	server := web.NewServer(cfg.Port, handler, logger, cfg.AdminUser, cfg.AdminPassHash, cfg.Host, cfg.BasePath, cfg.MetricsToken)
 
 	// Setup signal handling
 	ctx, cancel := context.WithCancel(context.Background())
