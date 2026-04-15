@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	maxIntegrationFieldLen = 256
-	maxMetadataJSONLen     = 4096
+	maxIntegrationFieldLen    = 256
+	maxMetadataJSONLen        = 4096
+	MaxIngestPartialLineBytes = 512 * 1024
 )
 
 var allowedProviders = map[string]struct{}{
@@ -42,12 +43,14 @@ type UsageEvent struct {
 
 // IngestState stores the persistent cursor for a tailed JSONL file.
 type IngestState struct {
-	SourcePath  string
-	Offset      int64
-	FileSize    int64
-	FileModTime time.Time
-	PartialLine string
-	UpdatedAt   time.Time
+	SourcePath           string
+	Offset               int64
+	FileSize             int64
+	FileModTime          time.Time
+	PartialLine          string
+	PartialLineBytes     int
+	PartialLineOversized bool
+	UpdatedAt            time.Time
 }
 
 type usageEventWire struct {

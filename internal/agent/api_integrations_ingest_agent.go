@@ -17,20 +17,23 @@ import (
 )
 
 const (
-	apiIntegrationIngestIntervalDefault = 5 * time.Second
-	apiIntegrationIngestMaxReadBytes    = 256 * 1024
-	apiIntegrationPruneIntervalDefault  = time.Hour
+	apiIntegrationIngestIntervalDefault                = 5 * time.Second
+	apiIntegrationIngestMaxReadBytes                   = 256 * 1024
+	apiIntegrationIngestMaxInvalidAlertsPerFilePerScan = 10
+	apiIntegrationIngestMaxFilesPerScan                = 100
+	apiIntegrationPruneIntervalDefault                 = time.Hour
 )
 
 // APIIntegrationsIngestAgent tails normalized JSONL API integration usage files and stores the events.
 type APIIntegrationsIngestAgent struct {
-	store         *store.Store
-	dir           string
-	interval      time.Duration
-	retention     time.Duration
-	pruneInterval time.Duration
-	lastPrune     time.Time
-	logger        *slog.Logger
+	store          *store.Store
+	dir            string
+	interval       time.Duration
+	retention      time.Duration
+	pruneInterval  time.Duration
+	lastPrune      time.Time
+	scanPathCursor int
+	logger         *slog.Logger
 }
 
 // NewAPIIntegrationsIngestAgent creates a new API integrations file ingester.
@@ -87,6 +90,24 @@ func (a *APIIntegrationsIngestAgent) scan() {
 		return
 	}
 	sort.Strings(paths)
+	if len(paths) > apiIntegrationIngestMaxFilesPerScan {
+		start := a.scanPathCursor % len(paths)
+		selected := make([]string, 0, apiIntegrationIngestMaxFilesPerScan)
+		for i := 0; i < apiIntegrationIngestMaxFilesPerScan; i++ {
+			selected = append(selected, paths[(start+i)%len(paths)])
+		}
+		a.logger.Warn(
+			"API integrations ingester skipped files beyond scan cap",
+			"dir", a.dir,
+			"total_files", len(paths),
+			"processed_files", apiIntegrationIngestMaxFilesPerScan,
+			"skipped_files", len(paths)-apiIntegrationIngestMaxFilesPerScan,
+		)
+		a.scanPathCursor = (start + len(selected)) % len(paths)
+		paths = selected
+	} else {
+		a.scanPathCursor = 0
+	}
 
 	for _, path := range paths {
 		if err := a.scanFile(path); err != nil {
@@ -117,6 +138,15 @@ func (a *APIIntegrationsIngestAgent) scanFile(path string) error {
 	}
 	if state == nil {
 		state = &apiintegrations.IngestState{SourcePath: path}
+	}
+	if state.PartialLineOversized {
+		a.logger.Warn(
+			"API integrations ingester discarded oversized persisted partial line",
+			"path", path,
+			"partial_line_bytes", state.PartialLineBytes,
+			"max_partial_line_bytes", apiintegrations.MaxIngestPartialLineBytes,
+		)
+		state.PartialLine = ""
 	}
 
 	if info.Size() < state.Offset {
@@ -152,6 +182,18 @@ func (a *APIIntegrationsIngestAgent) scanFile(path string) error {
 	combined := state.PartialLine + string(data)
 	lines, remainder := splitCompleteLines(combined)
 	state.PartialLine = remainder
+	if len(state.PartialLine) > apiintegrations.MaxIngestPartialLineBytes {
+		a.logger.Warn(
+			"API integrations ingester discarded oversized partial line",
+			"path", path,
+			"partial_line_bytes", len(state.PartialLine),
+			"max_partial_line_bytes", apiintegrations.MaxIngestPartialLineBytes,
+		)
+		state.PartialLine = ""
+	}
+
+	invalidAlertsCreated := 0
+	invalidAlertsSuppressed := 0
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -160,7 +202,12 @@ func (a *APIIntegrationsIngestAgent) scanFile(path string) error {
 		}
 		event, err := apiintegrations.ParseUsageEventLine([]byte(trimmed), path)
 		if err != nil {
-			a.recordInvalidLine(path, trimmed, err)
+			if invalidAlertsCreated < apiIntegrationIngestMaxInvalidAlertsPerFilePerScan {
+				a.recordInvalidLine(path, trimmed, err)
+				invalidAlertsCreated++
+			} else {
+				invalidAlertsSuppressed++
+			}
 			continue
 		}
 		if _, err := a.store.InsertAPIIntegrationUsageEvent(event); err != nil {
@@ -169,6 +216,15 @@ func (a *APIIntegrationsIngestAgent) scanFile(path string) error {
 			}
 			return err
 		}
+	}
+	if invalidAlertsSuppressed > 0 {
+		a.logger.Warn(
+			"API integrations ingester suppressed invalid line alerts",
+			"path", path,
+			"alert_limit", apiIntegrationIngestMaxInvalidAlertsPerFilePerScan,
+			"alerts_created", invalidAlertsCreated,
+			"alerts_suppressed", invalidAlertsSuppressed,
+		)
 	}
 
 	return a.store.UpsertAPIIntegrationIngestState(state)

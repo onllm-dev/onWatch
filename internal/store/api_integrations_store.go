@@ -264,18 +264,35 @@ func (s *Store) QueryAPIIntegrationUsageBuckets(start, end time.Time, bucketSize
 func (s *Store) GetAPIIntegrationIngestState(sourcePath string) (*apiintegrations.IngestState, error) {
 	var state apiintegrations.IngestState
 	var modTime sql.NullString
+	var partialLineBytes int64
 	var updatedAt string
 	err := s.db.QueryRow(`
-		SELECT source_path, offset_bytes, file_size, file_mod_time, partial_line, updated_at
+		SELECT source_path, offset_bytes, file_size, file_mod_time,
+		       CASE
+		           WHEN length(CAST(partial_line AS BLOB)) > ? THEN ''
+		           ELSE partial_line
+		       END,
+		       length(CAST(partial_line AS BLOB)),
+		       updated_at
 		FROM api_integration_ingest_state
 		WHERE source_path = ?
-	`, sourcePath).Scan(&state.SourcePath, &state.Offset, &state.FileSize, &modTime, &state.PartialLine, &updatedAt)
+	`, apiintegrations.MaxIngestPartialLineBytes, sourcePath).Scan(
+		&state.SourcePath,
+		&state.Offset,
+		&state.FileSize,
+		&modTime,
+		&state.PartialLine,
+		&partialLineBytes,
+		&updatedAt,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API integration ingest state: %w", err)
 	}
+	state.PartialLineBytes = int(partialLineBytes)
+	state.PartialLineOversized = partialLineBytes > apiintegrations.MaxIngestPartialLineBytes
 	if modTime.Valid {
 		state.FileModTime, _ = time.Parse(time.RFC3339Nano, modTime.String)
 	}

@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -146,6 +147,45 @@ func TestStore_QueryAPIIntegrationUsageRange_AndIngestState(t *testing.T) {
 	}
 	if got == nil || got.Offset != 42 || got.PartialLine != state.PartialLine {
 		t.Fatalf("state=%+v", got)
+	}
+	if got.PartialLineBytes != len(state.PartialLine) || got.PartialLineOversized {
+		t.Fatalf("unexpected partial line metadata: %+v", got)
+	}
+}
+
+func TestStore_GetAPIIntegrationIngestState_BoundsOversizedPartialLine(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	state := &apiintegrations.IngestState{
+		SourcePath:  "/tmp/api-integrations/oversized.jsonl",
+		Offset:      7,
+		FileSize:    9,
+		FileModTime: time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC),
+		PartialLine: strings.Repeat("x", apiintegrations.MaxIngestPartialLineBytes+1),
+	}
+	if err := s.UpsertAPIIntegrationIngestState(state); err != nil {
+		t.Fatalf("UpsertAPIIntegrationIngestState: %v", err)
+	}
+
+	got, err := s.GetAPIIntegrationIngestState(state.SourcePath)
+	if err != nil {
+		t.Fatalf("GetAPIIntegrationIngestState: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected ingest state")
+	}
+	if got.PartialLine != "" {
+		t.Fatalf("expected bounded partial line to be empty, got len=%d", len(got.PartialLine))
+	}
+	if !got.PartialLineOversized {
+		t.Fatalf("expected oversized flag, got %+v", got)
+	}
+	if got.PartialLineBytes != len(state.PartialLine) {
+		t.Fatalf("partial line bytes=%d want %d", got.PartialLineBytes, len(state.PartialLine))
 	}
 }
 
