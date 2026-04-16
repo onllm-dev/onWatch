@@ -254,3 +254,53 @@ func TestCursorStore_LatestPerQuota(t *testing.T) {
 		}
 	}
 }
+
+func TestCursorStore_LatestPerQuota_UsesOnlyLatestSnapshot(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Now().UTC()
+	oldReset := now.Add(30 * 24 * time.Hour)
+
+	individual := &api.CursorSnapshot{
+		CapturedAt:  now.Add(-time.Hour),
+		AccountType: api.CursorAccountIndividual,
+		PlanName:    "Pro",
+		Quotas: []api.CursorQuota{
+			{Name: "total_usage", Used: 50, Limit: 400, Utilization: 12.5, Format: api.CursorFormatPercent, ResetsAt: &oldReset},
+			{Name: "auto_usage", Utilization: 3, Format: api.CursorFormatPercent, ResetsAt: &oldReset},
+		},
+	}
+	enterprise := &api.CursorSnapshot{
+		CapturedAt:  now,
+		AccountType: api.CursorAccountEnterprise,
+		PlanName:    "Enterprise",
+		Quotas: []api.CursorQuota{
+			{Name: "requests_gpt-4.1", Used: 15, Limit: 100, Utilization: 15, Format: api.CursorFormatCount},
+		},
+	}
+
+	if _, err := s.InsertCursorSnapshot(individual); err != nil {
+		t.Fatalf("Insert individual snapshot: %v", err)
+	}
+	if _, err := s.InsertCursorSnapshot(enterprise); err != nil {
+		t.Fatalf("Insert enterprise snapshot: %v", err)
+	}
+
+	latest, err := s.QueryCursorLatestPerQuota()
+	if err != nil {
+		t.Fatalf("QueryCursorLatestPerQuota: %v", err)
+	}
+	if len(latest) != 1 {
+		t.Fatalf("Latest len = %d, want 1", len(latest))
+	}
+	if latest[0].Name != "requests_gpt-4.1" {
+		t.Fatalf("Latest[0].Name = %q, want requests_gpt-4.1", latest[0].Name)
+	}
+	if latest[0].AccountType != string(api.CursorAccountEnterprise) {
+		t.Fatalf("Latest[0].AccountType = %q, want %q", latest[0].AccountType, api.CursorAccountEnterprise)
+	}
+}

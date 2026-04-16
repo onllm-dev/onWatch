@@ -302,7 +302,7 @@ func TestParseUnixMsString_Empty(t *testing.T) {
 func TestParseIntString(t *testing.T) {
 	tests := []struct {
 		input    string
-		expected int
+		expected int64
 	}{
 		{"12345", 12345},
 		{"0", 0},
@@ -329,6 +329,16 @@ func TestParseIntString_Invalid(t *testing.T) {
 	}
 }
 
+func TestParseIntString_LargeValue(t *testing.T) {
+	got, err := ParseIntString("1768399334000")
+	if err != nil {
+		t.Fatalf("ParseIntString large value: %v", err)
+	}
+	if got != 1768399334000 {
+		t.Fatalf("ParseIntString large value = %d, want 1768399334000", got)
+	}
+}
+
 func TestToCursorSnapshot_Individual(t *testing.T) {
 	usage := &CursorUsageResponse{
 		BillingCycleStart: "1768399334000",
@@ -352,7 +362,7 @@ func TestToCursorSnapshot_Individual(t *testing.T) {
 		},
 	}
 
-	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil)
+	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil, false)
 
 	if snapshot.AccountType != CursorAccountIndividual {
 		t.Errorf("AccountType = %q, want %q", snapshot.AccountType, CursorAccountIndividual)
@@ -418,7 +428,7 @@ func TestToCursorSnapshot_IndividualIncludesZeroBreakdownQuotas(t *testing.T) {
 		},
 	}
 
-	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil)
+	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil, false)
 
 	autoFound := false
 	apiFound := false
@@ -469,7 +479,7 @@ func TestToCursorSnapshot_Team(t *testing.T) {
 		},
 	}
 
-	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil)
+	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil, false)
 
 	if snapshot.AccountType != CursorAccountTeam {
 		t.Errorf("AccountType = %q, want %q", snapshot.AccountType, CursorAccountTeam)
@@ -523,7 +533,7 @@ func TestToCursorSnapshot_Credits(t *testing.T) {
 		CustomerBalance: -2000,
 	}
 
-	snapshot := ToCursorSnapshot(usage, planInfo, creditGrants, stripeResp, nil)
+	snapshot := ToCursorSnapshot(usage, planInfo, creditGrants, stripeResp, nil, false)
 
 	creditsFound := false
 	for _, q := range snapshot.Quotas {
@@ -563,7 +573,7 @@ func TestToCursorSnapshot_Enterprise(t *testing.T) {
 		},
 	}
 
-	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, requestUsage)
+	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, requestUsage, true)
 
 	if snapshot.AccountType != CursorAccountEnterprise {
 		t.Errorf("AccountType = %q, want %q", snapshot.AccountType, CursorAccountEnterprise)
@@ -611,7 +621,7 @@ func TestToCursorSnapshot_OnDemand(t *testing.T) {
 		},
 	}
 
-	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil)
+	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil, false)
 
 	ondemandFound := false
 	for _, q := range snapshot.Quotas {
@@ -634,13 +644,24 @@ func TestToCursorSnapshot_OnDemand(t *testing.T) {
 }
 
 func TestToCursorSnapshot_NilUsage(t *testing.T) {
-	snapshot := ToCursorSnapshot(nil, nil, nil, nil, nil)
+	snapshot := ToCursorSnapshot(nil, nil, nil, nil, nil, false)
 
 	if snapshot.AccountType != CursorAccountIndividual {
 		t.Errorf("AccountType = %q, want %q", snapshot.AccountType, CursorAccountIndividual)
 	}
 	if len(snapshot.Quotas) != 0 {
 		t.Errorf("Quotas len = %d, want 0", len(snapshot.Quotas))
+	}
+}
+
+func TestDetermineCursorAccountType_RequestBasedPromotesToEnterprise(t *testing.T) {
+	usage := &CursorUsageResponse{
+		Enabled:   true,
+		PlanUsage: &CursorPlanUsage{Limit: 0},
+	}
+	accountType := DetermineCursorAccountType("pro", usage, true)
+	if accountType != CursorAccountEnterprise {
+		t.Fatalf("DetermineCursorAccountType() = %q, want %q", accountType, CursorAccountEnterprise)
 	}
 }
 
@@ -658,7 +679,7 @@ func TestToCursorSnapshot_TeamZeroLimitDoesNotProduceInfiniteUtilization(t *test
 		},
 	}
 
-	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil)
+	snapshot := ToCursorSnapshot(usage, planInfo, nil, nil, nil, false)
 	if len(snapshot.Quotas) == 0 {
 		t.Fatal("expected at least one quota")
 	}

@@ -3,22 +3,15 @@
 package api
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
-
-	_ "modernc.org/sqlite"
 )
-
-var _ = cursorTestMode // Package-level var defined in cursor_token.go
 
 var (
 	cursorWriteSQLiteToken  = WriteCursorTokenToSQLite
@@ -36,25 +29,7 @@ func getCursorStateDBPath() string {
 	if home == "" {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "Cursor", "User", "globalStorage", "state.vscdb")
-}
-
-func readCursorStateValue(dbPath, key string) (string, error) {
-	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
-	if err != nil {
-		return "", fmt.Errorf("cursor: open state db: %w", err)
-	}
-	defer db.Close()
-
-	var value string
-	err = db.QueryRow("SELECT value FROM ItemTable WHERE key = ? LIMIT 1", key).Scan(&value)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", nil
-		}
-		return "", fmt.Errorf("cursor: query state db: %w", err)
-	}
-	return value, nil
+	return cursorStateDBPathForOS(home, runtime.GOOS)
 }
 
 func detectCursorAuthPlatform(logger *slog.Logger) *cursorAuthState {
@@ -80,67 +55,20 @@ func detectCursorAuthPlatform(logger *slog.Logger) *cursorAuthState {
 	if sqliteAccessToken != "" || sqliteRefreshToken != "" {
 		if (keychainAccessToken != "" || keychainRefreshToken != "") && sqliteLooksFree && hasDifferentSubjects {
 			logger.Info("cursor: SQLite auth looks free and differs from keychain; preferring keychain token")
-			return buildCursorAuthState(keychainAccessToken, keychainRefreshToken, "keychain", logger)
+			return buildCursorAuthState(keychainAccessToken, keychainRefreshToken, "keychain", logger, true)
 		}
-		return buildCursorAuthState(sqliteAccessToken, sqliteRefreshToken, "sqlite", logger)
+		return buildCursorAuthState(sqliteAccessToken, sqliteRefreshToken, "sqlite", logger, true)
 	}
 
 	if keychainAccessToken != "" || keychainRefreshToken != "" {
-		return buildCursorAuthState(keychainAccessToken, keychainRefreshToken, "keychain", logger)
+		return buildCursorAuthState(keychainAccessToken, keychainRefreshToken, "keychain", logger, true)
 	}
 
 	return nil
 }
 
-func readCursorSQLiteAuth(logger *slog.Logger) (accessToken, refreshToken, email, membership string) {
-	if cursorTestMode {
-		return
-	}
-
-	dbPath := getCursorStateDBPath()
-	if dbPath == "" {
-		return
-	}
-
-	if _, err := os.Stat(dbPath); err != nil {
-		logger.Debug("cursor: state.vscdb not found", "path", dbPath)
-		return
-	}
-
-	at, err := readCursorStateValue(dbPath, "cursorAuth/accessToken")
-	if err != nil {
-		logger.Debug("cursor: failed to read accessToken from SQLite", "error", err)
-	} else {
-		accessToken = strings.TrimSpace(at)
-	}
-
-	rt, err := readCursorStateValue(dbPath, "cursorAuth/refreshToken")
-	if err != nil {
-		logger.Debug("cursor: failed to read refreshToken from SQLite", "error", err)
-	} else {
-		refreshToken = strings.TrimSpace(rt)
-	}
-
-	em, err := readCursorStateValue(dbPath, "cursorAuth/cachedEmail")
-	if err == nil {
-		email = strings.TrimSpace(em)
-	}
-
-	mt, err := readCursorStateValue(dbPath, "cursorAuth/stripeMembershipType")
-	if err == nil {
-		membership = strings.ToLower(strings.TrimSpace(mt))
-	}
-
-	logger.Info("cursor: auth detected from SQLite",
-		"has_access_token", accessToken != "",
-		"has_refresh_token", refreshToken != "",
-		"membership", membership,
-	)
-	return
-}
-
 func readCursorKeychainAuth(logger *slog.Logger) (accessToken, refreshToken string) {
-	if cursorTestMode {
+	if cursorTestMode.Load() {
 		return
 	}
 
@@ -201,41 +129,8 @@ func readCursorKeychainAuth(logger *slog.Logger) (accessToken, refreshToken stri
 	return
 }
 
-func buildCursorAuthState(accessToken, refreshToken, source string, logger *slog.Logger) *cursorAuthState {
-	state := &cursorAuthState{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		Source:       source,
-	}
-
-	if accessToken != "" {
-		expUnix := ExtractJWTExpiry(accessToken)
-		if expUnix > 0 {
-			state.ExpiresAt = time.Unix(expUnix, 0)
-			state.ExpiresIn = time.Until(state.ExpiresAt)
-		}
-		membership := ""
-		dbPath := getCursorStateDBPath()
-		if dbPath != "" {
-			mt, err := readCursorStateValue(dbPath, "cursorAuth/stripeMembershipType")
-			if err == nil {
-				membership = strings.ToLower(strings.TrimSpace(mt))
-			}
-		}
-		state.Membership = membership
-	}
-
-	logger.Debug("cursor: auth state built",
-		"source", source,
-		"has_access_token", accessToken != "",
-		"has_refresh_token", refreshToken != "",
-		"expires_in", state.ExpiresIn.Round(time.Minute),
-	)
-	return state
-}
-
 func writeCursorCredentials(accessToken, refreshToken string) error {
-	if cursorTestMode {
+	if cursorTestMode.Load() {
 		return nil
 	}
 

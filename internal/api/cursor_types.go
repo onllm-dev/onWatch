@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -276,20 +277,16 @@ func ParseUnixMsString(s string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	return time.UnixMilli(int64(ms)), nil
+	return time.UnixMilli(ms), nil
 }
 
-func ParseIntString(s string) (int, error) {
+func ParseIntString(s string) (int64, error) {
 	if s == "" {
 		return 0, nil
 	}
-	var result int
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			result = result*10 + int(c-'0')
-		} else {
-			return 0, errInvalidIntString
-		}
+	result, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, errInvalidIntString
 	}
 	return result, nil
 }
@@ -302,27 +299,17 @@ func ToCursorSnapshot(
 	creditGrants *CursorCreditGrantsResponse,
 	stripeResp *CursorStripeResponse,
 	requestUsage *CursorRequestUsageResponse,
+	useRequestBased bool,
 ) *CursorSnapshot {
 	snapshot := &CursorSnapshot{
 		CapturedAt: time.Now().UTC(),
 	}
 
-	var accountType CursorAccountType
 	planName := ""
 	if planInfo != nil {
 		planName = planInfo.PlanInfo.PlanName
 	}
-	normalizedPlan := NormalizeCursorPlanName(planName)
-
-	if normalizedPlan == "team" ||
-		(usage != nil && usage.SpendLimitUsage != nil && usage.SpendLimitUsage.LimitType == "team") ||
-		(usage != nil && usage.SpendLimitUsage != nil && usage.SpendLimitUsage.PooledLimit > 0) {
-		accountType = CursorAccountTeam
-	} else if normalizedPlan == "enterprise" {
-		accountType = CursorAccountEnterprise
-	} else {
-		accountType = CursorAccountIndividual
-	}
+	accountType := DetermineCursorAccountType(planName, usage, useRequestBased)
 	snapshot.AccountType = accountType
 	snapshot.PlanName = planName
 
@@ -435,7 +422,7 @@ func buildStandardQuotas(
 		grantTotalCents := 0
 		if creditGrants.HasCreditGrants {
 			if tc, err := ParseIntString(creditGrants.TotalCents); err == nil {
-				grantTotalCents = tc
+				grantTotalCents = int(tc)
 			}
 		}
 		stripeBalanceCents := 0
@@ -447,7 +434,7 @@ func buildStandardQuotas(
 			usedCents := 0
 			if creditGrants.HasCreditGrants {
 				if uc, err := ParseIntString(creditGrants.UsedCents); err == nil {
-					usedCents = uc
+					usedCents = int(uc)
 				}
 			}
 			quotas = append(quotas, CursorQuota{
@@ -481,6 +468,23 @@ func buildStandardQuotas(
 	}
 
 	return quotas
+}
+
+func DetermineCursorAccountType(planName string, usage *CursorUsageResponse, useRequestBased bool) CursorAccountType {
+	normalizedPlan := NormalizeCursorPlanName(planName)
+	hasPlanUsageLimit := usage != nil && usage.PlanUsage != nil && usage.PlanUsage.Limit > 0
+
+	if normalizedPlan == "team" ||
+		(usage != nil && usage.SpendLimitUsage != nil && usage.SpendLimitUsage.LimitType == "team") ||
+		(usage != nil && usage.SpendLimitUsage != nil && usage.SpendLimitUsage.PooledLimit > 0) {
+		return CursorAccountTeam
+	}
+
+	if normalizedPlan == "enterprise" || (useRequestBased && !hasPlanUsageLimit) {
+		return CursorAccountEnterprise
+	}
+
+	return CursorAccountIndividual
 }
 
 func buildEnterpriseQuotas(usage *CursorUsageResponse, requestUsage *CursorRequestUsageResponse) []CursorQuota {

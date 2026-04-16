@@ -209,7 +209,7 @@ func TestBuildCursorInsights_IncludesPlanStat(t *testing.T) {
 	h := NewHandler(s, nil, nil, nil, createTestConfigWithCursor())
 	resp := h.buildCursorInsights(map[string]bool{}, 7*24*time.Hour)
 
-	var planStat *insightStat
+	var planStat *cursorInsightStat
 	for i := range resp.Stats {
 		if resp.Stats[i].Label == "Plan" {
 			planStat = &resp.Stats[i]
@@ -249,7 +249,7 @@ func TestBuildCursorInsights_ShowsProjectedBurnRateInsights(t *testing.T) {
 	h.cursorTracker = tr
 	resp := h.buildCursorInsights(map[string]bool{}, 7*24*time.Hour)
 
-	statByLabel := map[string]insightStat{}
+	statByLabel := map[string]cursorInsightStat{}
 	for _, s := range resp.Stats {
 		statByLabel[s.Label] = s
 	}

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -190,5 +191,33 @@ func TestCursorAgent_ApplyRefreshedCredentials_SavesTokens(t *testing.T) {
 	}
 	if agent.lastToken != "fresh_access_token" {
 		t.Fatalf("lastToken = %q, want fresh_access_token", agent.lastToken)
+	}
+}
+
+func TestCursorAgent_ApplyRefreshedCredentials_FailsWhenSaveFails(t *testing.T) {
+	s, tr, sm := newTestCursorDeps(t)
+	client := api.NewCursorClient("expired_token", slog.Default())
+	agent := NewCursorAgent(client, s, tr, 30*time.Second, slog.Default(), sm)
+	agent.lastFailedToken = "expired_token"
+
+	agent.SetTokenSave(func(accessToken, refreshToken string) error {
+		return errors.New("save failed")
+	})
+
+	ok := agent.applyRefreshedCredentials(&api.CursorOAuthResponse{
+		AccessToken:  "fresh_access_token",
+		RefreshToken: "fresh_refresh_token",
+	})
+	if ok {
+		t.Fatal("applyRefreshedCredentials returned true despite save failure")
+	}
+	if got := client.GetToken(); got != "expired_token" {
+		t.Fatalf("client token = %q, want expired_token", got)
+	}
+	if agent.lastToken != "" {
+		t.Fatalf("lastToken = %q, want empty", agent.lastToken)
+	}
+	if agent.lastFailedToken != "expired_token" {
+		t.Fatalf("lastFailedToken = %q, want expired_token", agent.lastFailedToken)
 	}
 }

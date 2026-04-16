@@ -80,31 +80,37 @@ func TestParseCursorStateRows(t *testing.T) {
 	}
 }
 
-func TestCursorAuthToCredentials(t *testing.T) {
-	state := &cursorAuthState{
-		AccessToken:  "access_token_123",
-		RefreshToken: "refresh_token_456",
-		Source:       "sqlite",
+func TestCursorStateDBPathForOS(t *testing.T) {
+	home := "/tmp/testhome"
+
+	tests := []struct {
+		name string
+		goos string
+		want string
+	}{
+		{
+			name: "darwin path",
+			goos: "darwin",
+			want: "/tmp/testhome/Library/Application Support/Cursor/User/globalStorage/state.vscdb",
+		},
+		{
+			name: "linux path",
+			goos: "linux",
+			want: "/tmp/testhome/.config/Cursor/User/globalStorage/state.vscdb",
+		},
+		{
+			name: "windows path",
+			goos: "windows",
+			want: "/tmp/testhome/AppData/Roaming/Cursor/User/globalStorage/state.vscdb",
+		},
 	}
 
-	creds := cursorAuthToCredentials(state)
-	if creds == nil {
-		t.Fatal("cursorAuthToCredentials returned nil")
-	}
-	if creds.AccessToken != "access_token_123" {
-		t.Errorf("AccessToken = %q, want %q", creds.AccessToken, "access_token_123")
-	}
-	if creds.RefreshToken != "refresh_token_456" {
-		t.Errorf("RefreshToken = %q, want %q", creds.RefreshToken, "refresh_token_456")
-	}
-	if creds.Source != "sqlite" {
-		t.Errorf("Source = %q, want %q", creds.Source, "sqlite")
-	}
-}
-
-func TestCursorAuthToCredentials_Nil(t *testing.T) {
-	creds := cursorAuthToCredentials(nil)
-	if creds != nil {
-		t.Errorf("Expected nil for nil state, got %+v", creds)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cursorStateDBPathForOS(home, tt.goos)
+			if got != tt.want {
+				t.Fatalf("cursorStateDBPathForOS() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

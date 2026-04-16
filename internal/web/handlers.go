@@ -1109,6 +1109,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "minimax", Name: "MiniMax", Description: "MiniMax Coding Plan usage tracking"},
 		{Key: "openrouter", Name: "OpenRouter", Description: "OpenRouter credits usage tracking"},
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
+		{Key: "cursor", Name: "Cursor", Description: "Cursor usage and quota tracking", AutoDetectable: true},
 	}
 }
 
@@ -1166,6 +1167,8 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return strings.TrimSpace(h.config.OpenRouterAPIKey) != ""
 	case "gemini":
 		return h.config.GeminiEnabled
+	case "cursor":
+		return strings.TrimSpace(h.config.CursorToken) != "" || strings.TrimSpace(api.DetectCursorToken(h.logger)) != ""
 	default:
 		return false
 	}
@@ -4110,11 +4113,6 @@ type insightStat struct {
 	Value    string `json:"value"`
 	Label    string `json:"label"`
 	Sublabel string `json:"sublabel,omitempty"`
-	// Enriched fields for combined stat+insight display
-	Key      string `json:"key,omitempty"`
-	Metric   string `json:"metric,omitempty"`
-	Severity string `json:"severity,omitempty"`
-	Desc     string `json:"desc,omitempty"`
 }
 
 type insightItem struct {

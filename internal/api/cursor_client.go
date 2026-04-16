@@ -13,8 +13,6 @@ import (
 	"net/url"
 	"sync"
 	"time"
-
-	_ "modernc.org/sqlite"
 )
 
 var (
@@ -110,24 +108,11 @@ func (c *CursorClient) FetchQuotas(ctx context.Context) (*CursorSnapshot, error)
 		c.logger.Warn("cursor: failed to fetch plan info, continuing without", "error", err)
 	}
 
-	var accountType CursorAccountType
 	planName := ""
 	if planInfo != nil {
 		planName = planInfo.PlanInfo.PlanName
 	}
 	normalizedPlan := NormalizeCursorPlanName(planName)
-	hasPlanUsage := usage != nil && usage.PlanUsage != nil
-	hasPlanUsageLimit := hasPlanUsage && usage.PlanUsage.Limit > 0
-
-	if normalizedPlan == "team" ||
-		(usage != nil && usage.SpendLimitUsage != nil && usage.SpendLimitUsage.LimitType == "team") ||
-		(usage != nil && usage.SpendLimitUsage != nil && usage.SpendLimitUsage.PooledLimit > 0) {
-		accountType = CursorAccountTeam
-	} else if normalizedPlan == "enterprise" {
-		accountType = CursorAccountEnterprise
-	} else {
-		accountType = CursorAccountIndividual
-	}
 
 	var requestUsage *CursorRequestUsageResponse
 	if shouldFetchCursorRequestBasedUsage(usage, normalizedPlan) {
@@ -139,9 +124,6 @@ func (c *CursorClient) FetchQuotas(ctx context.Context) (*CursorSnapshot, error)
 		}
 	}
 	useRequestBased := shouldUseCursorRequestBasedUsage(usage, requestUsage)
-	if useRequestBased && accountType == CursorAccountIndividual && !hasPlanUsageLimit {
-		accountType = CursorAccountEnterprise
-	}
 
 	var creditGrants *CursorCreditGrantsResponse
 	var stripeResp *CursorStripeResponse
@@ -162,12 +144,8 @@ func (c *CursorClient) FetchQuotas(ctx context.Context) (*CursorSnapshot, error)
 		}
 	}
 
-	snapshot := ToCursorSnapshot(usage, planInfo, creditGrants, stripeResp, requestUsage)
-	snapshot.AccountType = accountType
-	snapshot.PlanName = planName
-	if useRequestBased {
-		snapshot.Quotas = buildEnterpriseQuotas(usage, requestUsage)
-	}
+	accountType := DetermineCursorAccountType(planName, usage, useRequestBased)
+	snapshot := ToCursorSnapshot(usage, planInfo, creditGrants, stripeResp, requestUsage, useRequestBased)
 
 	c.logger.Debug("cursor: quotas fetched",
 		"account_type", accountType,
@@ -397,7 +375,7 @@ func RefreshCursorToken(ctx context.Context, refreshToken string) (*CursorOAuthR
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if err != nil {
 		return nil, fmt.Errorf("cursor: read refresh response: %w", err)
 	}

@@ -10,6 +10,23 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
+// cursorInsightsResponse is the JSON payload for Cursor deep insights.
+type cursorInsightsResponse struct {
+	Stats    []cursorInsightStat `json:"stats"`
+	Insights []insightItem       `json:"insights"`
+}
+
+// cursorInsightStat is a stats-row shape that carries linked forecast metadata for the Cursor dashboard.
+type cursorInsightStat struct {
+	Value    string `json:"value"`
+	Label    string `json:"label"`
+	Sublabel string `json:"sublabel,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Metric   string `json:"metric,omitempty"`
+	Severity string `json:"severity,omitempty"`
+	Desc     string `json:"desc,omitempty"`
+}
+
 var cursorQuotaDisplayOrder = map[string]int{
 	"total_usage": 1,
 	"auto_usage":  2,
@@ -468,8 +485,8 @@ func (h *Handler) buildCursorSummaryMap() map[string]interface{} {
 	return result
 }
 
-func (h *Handler) buildCursorInsights(hidden map[string]bool, _ time.Duration) insightsResponse {
-	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
+func (h *Handler) buildCursorInsights(hidden map[string]bool, _ time.Duration) cursorInsightsResponse {
+	resp := cursorInsightsResponse{Stats: []cursorInsightStat{}, Insights: []insightItem{}}
 
 	if h.store == nil {
 		return resp
@@ -485,7 +502,7 @@ func (h *Handler) buildCursorInsights(hidden map[string]bool, _ time.Duration) i
 		planLabel = string(latest.AccountType)
 	}
 	if planLabel != "" {
-		resp.Stats = append(resp.Stats, insightStat{
+		resp.Stats = append(resp.Stats, cursorInsightStat{
 			Label: "Plan",
 			Value: planLabel,
 		})
@@ -536,7 +553,7 @@ func (h *Handler) buildCursorInsights(hidden map[string]bool, _ time.Duration) i
 			value = fmt.Sprintf("%.1f%%/hr", rate.Rate)
 		}
 		insight := buildCursorBurnRateInsight(quota, rate)
-		resp.Stats = append(resp.Stats, insightStat{
+		resp.Stats = append(resp.Stats, cursorInsightStat{
 			Key:      insightKey,
 			Label:    fmt.Sprintf("%s Burn Rate", cursorDisplayName(quota.Name)),
 			Value:    value,

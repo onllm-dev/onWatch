@@ -380,14 +380,13 @@ func (s *Store) QueryCursorLatestPerQuota() ([]CursorLatestQuota, error) {
 		       s.captured_at, s.account_type, s.plan_name
 		FROM cursor_quota_values qv
 		JOIN cursor_snapshots s ON s.id = qv.snapshot_id
-		WHERE s.id >= (SELECT MAX(id) - 50 FROM cursor_snapshots)
-		ORDER BY s.captured_at DESC`)
+		WHERE s.id = (SELECT MAX(id) FROM cursor_snapshots)
+		ORDER BY qv.quota_name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query latest per-quota: %w", err)
 	}
 	defer rows.Close()
 
-	seen := make(map[string]bool)
 	var results []CursorLatestQuota
 	for rows.Next() {
 		var name, format, accountType, planName string
@@ -398,10 +397,6 @@ func (s *Store) QueryCursorLatestPerQuota() ([]CursorLatestQuota, error) {
 		if err := rows.Scan(&name, &used, &limitValue, &utilization, &format, &resetsAt, &capturedAt, &accountType, &planName); err != nil {
 			return nil, fmt.Errorf("failed to scan latest quota: %w", err)
 		}
-		if seen[name] {
-			continue
-		}
-		seen[name] = true
 
 		q := CursorLatestQuota{
 			Name:        name,

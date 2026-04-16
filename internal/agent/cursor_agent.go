@@ -247,6 +247,7 @@ func (a *CursorAgent) applyRefreshedCredentials(oauthResp *api.CursorOAuthRespon
 	}
 	if err := saveFn(oauthResp.AccessToken, oauthResp.RefreshToken); err != nil {
 		a.logger.Error("Failed to save refreshed Cursor credentials", "error", err)
+		return false
 	}
 
 	a.client.SetToken(oauthResp.AccessToken)
