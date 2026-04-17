@@ -405,21 +405,22 @@
         }
 
         .promo-tag.promo-offpeak {
-            background: rgba(13, 148, 136, 0.15);
-            color: #0D9488;
+            background: transparent;
+            color: var(--text-muted);
+            padding: 0 4px;
         }
 
         .promo-tag.promo-offpeak:hover {
-            background: rgba(13, 148, 136, 0.25);
+            color: var(--text-primary);
         }
 
         .promo-tag.promo-peak {
-            background: rgba(245, 158, 11, 0.15);
-            color: #F59E0B;
+            background: rgba(239, 68, 68, 0.15);
+            color: #EF4444;
         }
 
         .promo-tag.promo-peak:hover {
-            background: rgba(245, 158, 11, 0.25);
+            background: rgba(239, 68, 68, 0.25);
         }
 
         .provider-updated {
@@ -2938,7 +2939,7 @@
             }
 
             function promoLabel(promo) {
-                const label = isPromoOffPeak(promo) ? "Off-peak hours" : "Peak hours";
+                const label = isPromoOffPeak(promo) ? "Off-peak" : "Peak hours";
                 const countdown = formatPromoCountdown(promoMinutesUntilTransition(promo));
                 return countdown ? label + " till " + countdown : label;
             }
