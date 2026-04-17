@@ -33,6 +33,7 @@ func timePtr(t time.Time) *time.Time {
 }
 
 func TestAnthropicTracker_Process_FirstSnapshot_CreatesCycle(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -72,6 +73,7 @@ func TestAnthropicTracker_Process_FirstSnapshot_CreatesCycle(t *testing.T) {
 }
 
 func TestAnthropicTracker_Process_SameCycle_UpdatesPeakAndDelta(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -129,6 +131,7 @@ func TestAnthropicTracker_Process_SameCycle_UpdatesPeakAndDelta(t *testing.T) {
 }
 
 func TestAnthropicTracker_Process_ResetDetected_ClosesCycleCreatesNew(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -191,6 +194,7 @@ func TestAnthropicTracker_Process_ResetDetected_ClosesCycleCreatesNew(t *testing
 }
 
 func TestAnthropicTracker_Process_JitterIgnored(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -247,6 +251,7 @@ func TestAnthropicTracker_Process_JitterIgnored(t *testing.T) {
 }
 
 func TestAnthropicTracker_Process_MultipleQuotas(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -315,6 +320,7 @@ func TestAnthropicTracker_Process_MultipleQuotas(t *testing.T) {
 }
 
 func TestAnthropicTracker_Process_UtilizationDecrease_NoDelta(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -368,6 +374,7 @@ func TestAnthropicTracker_Process_UtilizationDecrease_NoDelta(t *testing.T) {
 }
 
 func TestAnthropicTracker_OnResetCallback_Called(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -415,6 +422,7 @@ func TestAnthropicTracker_OnResetCallback_Called(t *testing.T) {
 }
 
 func TestAnthropicTracker_UsageSummary_WithHistory(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -494,6 +502,7 @@ func TestAnthropicTracker_UsageSummary_WithHistory(t *testing.T) {
 }
 
 func TestAnthropicTracker_UsageSummary_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)

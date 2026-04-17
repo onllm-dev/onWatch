@@ -14,6 +14,7 @@ import (
 )
 
 func TestStore_CreateTables(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -32,6 +33,7 @@ func TestStore_CreateTables(t *testing.T) {
 }
 
 func TestStore_WALMode(t *testing.T) {
+	t.Parallel()
 	// WAL mode doesn't apply to :memory: databases
 	// Test with a temp file instead
 	tmpFile := t.TempDir() + "/test.db"
@@ -52,6 +54,7 @@ func TestStore_WALMode(t *testing.T) {
 }
 
 func TestStore_BoundedCache(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -70,6 +73,7 @@ func TestStore_BoundedCache(t *testing.T) {
 }
 
 func TestStore_AntigravityActiveCycleUniqueIndexExists(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -111,6 +115,7 @@ func TestStore_AntigravityActiveCycleUniqueIndexExists(t *testing.T) {
 }
 
 func TestPreflightDatabasePath_MemoryPaths(t *testing.T) {
+	t.Parallel()
 	paths := []string{
 		":memory:",
 		"file::memory:?cache=shared",
@@ -128,6 +133,7 @@ func TestPreflightDatabasePath_MemoryPaths(t *testing.T) {
 }
 
 func TestPreflightDatabasePath_EmptyPath(t *testing.T) {
+	t.Parallel()
 	err := preflightDatabasePath("   ")
 	if err == nil {
 		t.Fatal("preflightDatabasePath should fail for empty path")
@@ -138,6 +144,7 @@ func TestPreflightDatabasePath_EmptyPath(t *testing.T) {
 }
 
 func TestPreflightDatabasePath_SQLiteFileURI(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	dbURI := fmt.Sprintf("file:%s?cache=shared", filepath.Join(tmpDir, "uri.db"))
 
@@ -147,6 +154,7 @@ func TestPreflightDatabasePath_SQLiteFileURI(t *testing.T) {
 }
 
 func TestStoreNew_SQLiteFileURI(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "uri-open.db")
 	dbURI := fmt.Sprintf("file:%s?cache=shared", dbPath)
@@ -163,6 +171,7 @@ func TestStoreNew_SQLiteFileURI(t *testing.T) {
 }
 
 func TestPreflightDatabasePath_UnwritableExistingFile(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod-based permission test is not reliable on Windows")
 	}
@@ -186,6 +195,7 @@ func TestPreflightDatabasePath_UnwritableExistingFile(t *testing.T) {
 }
 
 func TestPreflightDatabasePath_UnwritableDirectory(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod-based permission test is not reliable on Windows")
 	}
@@ -212,6 +222,7 @@ func TestPreflightDatabasePath_UnwritableDirectory(t *testing.T) {
 }
 
 func TestStore_InsertSnapshot(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -259,6 +270,7 @@ func TestStore_InsertSnapshot(t *testing.T) {
 }
 
 func TestStore_QueryLatest_EmptyDB(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -275,6 +287,7 @@ func TestStore_QueryLatest_EmptyDB(t *testing.T) {
 }
 
 func TestStore_QueryRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -309,6 +322,7 @@ func TestStore_QueryRange(t *testing.T) {
 }
 
 func TestStore_QueryRange_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -340,6 +354,7 @@ func TestStore_QueryRange_Empty(t *testing.T) {
 }
 
 func TestStore_QueryRange_WithLimitReturnsLatestChronological(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -376,6 +391,7 @@ func TestStore_QueryRange_WithLimitReturnsLatestChronological(t *testing.T) {
 }
 
 func TestStore_CreateAndCloseSession(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -420,6 +436,7 @@ func TestStore_CreateAndCloseSession(t *testing.T) {
 }
 
 func TestStore_UpdateSessionMaxRequests(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -470,6 +487,7 @@ func TestStore_UpdateSessionMaxRequests(t *testing.T) {
 }
 
 func TestStore_IncrementSnapshotCount(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -500,6 +518,7 @@ func TestStore_IncrementSnapshotCount(t *testing.T) {
 }
 
 func TestStore_CreateAndCloseCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -573,6 +592,7 @@ func TestStore_CreateAndCloseCycle(t *testing.T) {
 }
 
 func TestStore_MultipleInserts(t *testing.T) {
+	t.Parallel()
 	// The real app uses serialized access from a single agent
 	// This test verifies multiple sequential inserts work correctly
 	s, err := New(":memory:")
@@ -608,6 +628,7 @@ func TestStore_MultipleInserts(t *testing.T) {
 }
 
 func TestStore_GetSetting_NotFound(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -624,6 +645,7 @@ func TestStore_GetSetting_NotFound(t *testing.T) {
 }
 
 func TestStore_SetAndGetSetting(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -661,6 +683,7 @@ func TestStore_SetAndGetSetting(t *testing.T) {
 }
 
 func TestStore_QuerySyntheticCycleOverview_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -677,6 +700,7 @@ func TestStore_QuerySyntheticCycleOverview_NoCycles(t *testing.T) {
 }
 
 func TestStore_QuerySyntheticCycleOverview_WithData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -760,6 +784,7 @@ func TestStore_QuerySyntheticCycleOverview_WithData(t *testing.T) {
 }
 
 func TestStore_NotificationLog_TableExists(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -777,6 +802,7 @@ func TestStore_NotificationLog_TableExists(t *testing.T) {
 }
 
 func TestStore_UpsertNotificationLog_Insert(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -801,6 +827,7 @@ func TestStore_UpsertNotificationLog_Insert(t *testing.T) {
 }
 
 func TestStore_UpsertNotificationLog_Upsert(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -840,6 +867,7 @@ func TestStore_UpsertNotificationLog_Upsert(t *testing.T) {
 }
 
 func TestStore_GetLastNotification_NotFound(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -859,6 +887,7 @@ func TestStore_GetLastNotification_NotFound(t *testing.T) {
 }
 
 func TestStore_UpsertNotificationLog_DifferentKeys(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -896,6 +925,7 @@ func TestStore_UpsertNotificationLog_DifferentKeys(t *testing.T) {
 }
 
 func TestStore_NotificationLog_ProviderScoped(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -927,6 +957,7 @@ func TestStore_NotificationLog_ProviderScoped(t *testing.T) {
 }
 
 func TestStore_ClearNotificationLog_ProviderScoped(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -962,6 +993,7 @@ func TestStore_ClearNotificationLog_ProviderScoped(t *testing.T) {
 }
 
 func TestStore_NotificationLog_MigratesLegacySchema(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir() + "/legacy-notification.db"
 
 	legacyDB, err := sql.Open("sqlite", dbPath)
@@ -1033,6 +1065,7 @@ func TestStore_NotificationLog_MigratesLegacySchema(t *testing.T) {
 }
 
 func TestStore_QuerySyntheticCycleOverview_NoSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1067,6 +1100,7 @@ func TestStore_QuerySyntheticCycleOverview_NoSnapshots(t *testing.T) {
 // --- Auth Token Lifecycle Tests ---
 
 func TestStore_SaveAuthToken_RoundTrip(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1095,6 +1129,7 @@ func TestStore_SaveAuthToken_RoundTrip(t *testing.T) {
 }
 
 func TestStore_GetAuthTokenExpiry_NotFound(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1114,6 +1149,7 @@ func TestStore_GetAuthTokenExpiry_NotFound(t *testing.T) {
 }
 
 func TestStore_DeleteAllAuthTokens(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1159,6 +1195,7 @@ func TestStore_DeleteAllAuthTokens(t *testing.T) {
 }
 
 func TestStore_CleanExpiredAuthTokens(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1207,6 +1244,7 @@ func TestStore_CleanExpiredAuthTokens(t *testing.T) {
 // --- User CRUD Tests ---
 
 func TestStore_UpsertUser_Create(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1228,6 +1266,7 @@ func TestStore_UpsertUser_Create(t *testing.T) {
 }
 
 func TestStore_UpsertUser_Update(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1256,6 +1295,7 @@ func TestStore_UpsertUser_Update(t *testing.T) {
 }
 
 func TestStore_GetUser_NotFound(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1274,6 +1314,7 @@ func TestStore_GetUser_NotFound(t *testing.T) {
 // --- Session Tests ---
 
 func TestStore_CreateSession_WithStartValues(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1307,6 +1348,7 @@ func TestStore_CreateSession_WithStartValues(t *testing.T) {
 }
 
 func TestStore_CloseOrphanedSessions(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1353,6 +1395,7 @@ func TestStore_CloseOrphanedSessions(t *testing.T) {
 // --- QueryCyclesSince Test ---
 
 func TestStore_QueryCyclesSince(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)

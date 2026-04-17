@@ -11,6 +11,7 @@ import (
 )
 
 func TestStore_InsertAPIIntegrationUsageEvent_Dedup(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -31,6 +32,7 @@ func TestStore_InsertAPIIntegrationUsageEvent_Dedup(t *testing.T) {
 }
 
 func TestStore_QueryAPIIntegrationUsageSummary(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -68,6 +70,7 @@ func TestStore_QueryAPIIntegrationUsageSummary(t *testing.T) {
 }
 
 func TestStore_QueryAPIIntegrationUsageSummary_BoundedAndOrdered(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -107,6 +110,7 @@ func TestStore_QueryAPIIntegrationUsageSummary_BoundedAndOrdered(t *testing.T) {
 }
 
 func TestStore_QueryAPIIntegrationUsageRange_AndIngestState(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -154,6 +158,7 @@ func TestStore_QueryAPIIntegrationUsageRange_AndIngestState(t *testing.T) {
 }
 
 func TestStore_GetAPIIntegrationIngestState_BoundsOversizedPartialLine(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -190,6 +195,7 @@ func TestStore_GetAPIIntegrationIngestState_BoundsOversizedPartialLine(t *testin
 }
 
 func TestStore_DeleteAPIIntegrationUsageEventsOlderThan(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -228,6 +234,7 @@ func TestStore_DeleteAPIIntegrationUsageEventsOlderThan(t *testing.T) {
 }
 
 func TestStore_QueryAPIIntegrationUsageBuckets(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -275,6 +282,7 @@ func TestStore_QueryAPIIntegrationUsageBuckets(t *testing.T) {
 }
 
 func TestStore_QueryAPIIntegrationUsageBuckets_HourlyRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -318,6 +326,7 @@ func TestStore_QueryAPIIntegrationUsageBuckets_HourlyRange(t *testing.T) {
 }
 
 func TestStore_QueryAPIIntegrationUsageBuckets_Bounded(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -352,6 +361,7 @@ func TestStore_QueryAPIIntegrationUsageBuckets_Bounded(t *testing.T) {
 }
 
 func TestStore_QueryAPIIntegrationIngestHealth_AndAlertsByProvider(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)

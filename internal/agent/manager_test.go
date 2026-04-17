@@ -34,6 +34,7 @@ func (r *managerTestRunner) Run(ctx context.Context) error {
 }
 
 func TestAgentManager_StartStop(t *testing.T) {
+	t.Parallel()
 	mgr := NewAgentManager(slog.Default())
 	runner := newManagerTestRunner()
 	mgr.RegisterFactory("synthetic", func() (AgentRunner, error) { return runner, nil })
@@ -65,6 +66,7 @@ func TestAgentManager_StartStop(t *testing.T) {
 }
 
 func TestAgentManager_StartUnknown(t *testing.T) {
+	t.Parallel()
 	mgr := NewAgentManager(slog.Default())
 	if err := mgr.Start("missing"); err == nil {
 		t.Fatal("expected error for unknown provider")
@@ -72,6 +74,7 @@ func TestAgentManager_StartUnknown(t *testing.T) {
 }
 
 func TestAgentManager_StartFactoryError(t *testing.T) {
+	t.Parallel()
 	mgr := NewAgentManager(slog.Default())
 	mgr.RegisterFactory("synthetic", func() (AgentRunner, error) {
 		return nil, errors.New("boom")
@@ -82,6 +85,7 @@ func TestAgentManager_StartFactoryError(t *testing.T) {
 }
 
 func TestAgentManager_StopAll(t *testing.T) {
+	t.Parallel()
 	mgr := NewAgentManager(slog.Default())
 	r1 := newManagerTestRunner()
 	r2 := newManagerTestRunner()
@@ -124,6 +128,7 @@ func TestAgentManager_StopAll(t *testing.T) {
 }
 
 func TestAgentManager_RegisteredProviders(t *testing.T) {
+	t.Parallel()
 	mgr := NewAgentManager(slog.Default())
 	mgr.RegisterFactory("zai", func() (AgentRunner, error) { return newManagerTestRunner(), nil })
 	mgr.RegisterFactory("anthropic", func() (AgentRunner, error) { return newManagerTestRunner(), nil })

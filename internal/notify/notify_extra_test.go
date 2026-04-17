@@ -25,6 +25,7 @@ import (
 // TestSendNotification_EmailSent verifies that sendNotification sends an email
 // when the mailer is configured and no prior notification exists in the log.
 func TestSendNotification_EmailSent(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -54,6 +55,7 @@ func TestSendNotification_EmailSent(t *testing.T) {
 // TestSendNotification_AlreadySent verifies that sendNotification skips sending
 // when a notification was already logged for the same provider/quota/type.
 func TestSendNotification_AlreadySent(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -83,6 +85,7 @@ func TestSendNotification_AlreadySent(t *testing.T) {
 // TestSendNotification_EmailFailure verifies that when the email send fails, the
 // notification is NOT logged (sent==false path).
 func TestSendNotification_EmailFailure(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -157,6 +160,7 @@ func saveTestSubscription(t *testing.T, s *store.Store, server *httptest.Server)
 // TestSendNotification_PushSent verifies that sendNotification sends a push
 // notification to a stored subscription and logs success.
 func TestSendNotification_PushSent(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -191,6 +195,7 @@ func TestSendNotification_PushSent(t *testing.T) {
 // TestSendNotification_Push410DeletesSubscription verifies that a 410 response
 // from the push service causes the subscription to be deleted.
 func TestSendNotification_Push410DeletesSubscription(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -225,6 +230,7 @@ func TestSendNotification_Push410DeletesSubscription(t *testing.T) {
 // TestSendTestPush_SendError verifies that SendTestPush returns the last error
 // when all push sends fail (sent == 0 && lastErr != nil path).
 func TestSendTestPush_SendError(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -255,6 +261,7 @@ func TestSendTestPush_SendError(t *testing.T) {
 // TestSMTPConnect_TLSDialError verifies that the "tls" protocol path returns
 // an error when the server is not reachable (no TLS listener at that port).
 func TestSMTPConnect_TLSDialError(t *testing.T) {
+	t.Parallel()
 	cfg := SMTPConfig{
 		Host:     "127.0.0.1",
 		Port:     19996,
@@ -273,6 +280,7 @@ func TestSMTPConnect_TLSDialError(t *testing.T) {
 // TestSMTPConnect_StartTLSError verifies that the "starttls" protocol path
 // returns an error when STARTTLS negotiation fails (server does not advertise it).
 func TestSMTPConnect_StartTLSError(t *testing.T) {
+	t.Parallel()
 	// Start a plain SMTP server that does NOT advertise STARTTLS.
 	var connCount atomic.Int32
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
@@ -319,6 +327,7 @@ func TestSMTPConnect_StartTLSError(t *testing.T) {
 // TestSMTPConnect_StartTLS_DialError verifies that the "starttls" protocol path
 // returns an error when the initial TCP connection fails.
 func TestSMTPConnect_StartTLS_DialError(t *testing.T) {
+	t.Parallel()
 	cfg := SMTPConfig{
 		Host:     "127.0.0.1",
 		Port:     19995,
@@ -341,6 +350,7 @@ func TestSMTPConnect_StartTLS_DialError(t *testing.T) {
 // TestGenerateEncryptionKey_ConcurrentCalls exercises GenerateEncryptionKey from
 // multiple goroutines to validate race-safety and key uniqueness.
 func TestGenerateEncryptionKey_ConcurrentCalls(t *testing.T) {
+	t.Parallel()
 	const workers = 8
 	results := make(chan string, workers)
 
@@ -379,6 +389,7 @@ func TestGenerateEncryptionKey_ConcurrentCalls(t *testing.T) {
 // TestConfigurePush_GetSettingError verifies that ConfigurePush returns an error
 // when the store cannot be queried (closed store).
 func TestConfigurePush_GetSettingError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -399,6 +410,7 @@ func TestConfigurePush_GetSettingError(t *testing.T) {
 // TestConfigurePush_InvalidVAPIDJSON verifies that ConfigurePush returns an error
 // when the stored vapid_keys value is not valid JSON.
 func TestConfigurePush_InvalidVAPIDJSON(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -423,6 +435,7 @@ func TestConfigurePush_InvalidVAPIDJSON(t *testing.T) {
 // TestConfigureSMTP_StoreError verifies that ConfigureSMTP returns an error when
 // the store cannot be queried (closed store).
 func TestConfigureSMTP_StoreError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -443,6 +456,7 @@ func TestConfigureSMTP_StoreError(t *testing.T) {
 // when password decryption fails - it simply keeps the plaintext password.
 // This exercises the decrypt-failure debug-log branch.
 func TestConfigureSMTP_DecryptionFailure(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -485,6 +499,7 @@ func TestConfigureSMTP_DecryptionFailure(t *testing.T) {
 // TestSendTestPush_GetSubscriptionsError verifies that SendTestPush returns an
 // error when the store cannot be queried for subscriptions.
 func TestSendTestPush_GetSubscriptionsError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -511,6 +526,7 @@ func TestSendTestPush_GetSubscriptionsError(t *testing.T) {
 // TestSendTestPush_PartialSuccess verifies that SendTestPush returns nil when
 // at least one push send succeeds (even if another fails).
 func TestSendTestPush_PartialSuccess(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -554,6 +570,7 @@ func TestSendTestPush_PartialSuccess(t *testing.T) {
 // TestSendNotification_StoreError verifies that sendNotification returns early
 // when GetLastNotification fails (closed store).
 func TestSendNotification_StoreError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -594,6 +611,7 @@ func TestSendNotification_StoreError(t *testing.T) {
 // TestSendNotification_PushGetSubscriptionsError verifies that sendNotification
 // handles a GetPushSubscriptions error gracefully (logs the error, does not panic).
 func TestSendNotification_PushGetSubscriptionsError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -619,6 +637,7 @@ func TestSendNotification_PushGetSubscriptionsError(t *testing.T) {
 // TestSMTPMailer_TestConnection_NoUsername verifies that TestConnection skips
 // authentication when no username is configured.
 func TestSMTPMailer_TestConnection_NoUsername(t *testing.T) {
+	t.Parallel()
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		fmt.Fprintf(conn, "220 mock ESMTP\r\n")
@@ -671,6 +690,7 @@ func TestSMTPMailer_TestConnection_NoUsername(t *testing.T) {
 // TestSMTPMailer_Send_MailFromError verifies that Send returns an error when
 // the SMTP server rejects the MAIL FROM command.
 func TestSMTPMailer_Send_MailFromError(t *testing.T) {
+	t.Parallel()
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		fmt.Fprintf(conn, "220 mock ESMTP\r\n")
@@ -726,6 +746,7 @@ func TestSMTPMailer_Send_MailFromError(t *testing.T) {
 // TestSMTPMailer_Send_RcptToError verifies that Send returns an error when
 // the SMTP server rejects the RCPT TO command.
 func TestSMTPMailer_Send_RcptToError(t *testing.T) {
+	t.Parallel()
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		fmt.Fprintf(conn, "220 mock ESMTP\r\n")

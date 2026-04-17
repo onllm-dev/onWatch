@@ -7,6 +7,7 @@ import (
 )
 
 func TestSyntheticResponseJSON_UsesProvidedValues(t *testing.T) {
+	t.Parallel()
 	renewsAt := time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC)
 
 	body := SyntheticResponseJSON(123.5, 7, 456.25, renewsAt)
@@ -46,6 +47,7 @@ func TestSyntheticResponseJSON_UsesProvidedValues(t *testing.T) {
 }
 
 func TestResponseSequences_IncrementDeterministically(t *testing.T) {
+	t.Parallel()
 	synthetic := SyntheticResponseSequence(3)
 	if len(synthetic) != 3 {
 		t.Fatalf("expected 3 synthetic responses, got %d", len(synthetic))
@@ -140,6 +142,7 @@ func TestResponseSequences_IncrementDeterministically(t *testing.T) {
 }
 
 func TestResetResponses_MoveQuotaWindowsForward(t *testing.T) {
+	t.Parallel()
 	synBefore, synAfter := SyntheticResponseWithReset()
 	var synA, synB struct {
 		Subscription struct {
@@ -218,6 +221,7 @@ func TestResetResponses_MoveQuotaWindowsForward(t *testing.T) {
 }
 
 func TestAnthropicAndZaiSpecialResponses(t *testing.T) {
+	t.Parallel()
 	var zaiAuth map[string]interface{}
 	if err := json.Unmarshal([]byte(ZaiAuthErrorResponse()), &zaiAuth); err != nil {
 		t.Fatalf("unmarshal zai auth error: %v", err)

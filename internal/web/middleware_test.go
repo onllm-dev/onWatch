@@ -12,6 +12,7 @@ import (
 )
 
 func TestAuth_ValidCredentials(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	username := "admin"
 	password := "secret123"
@@ -41,6 +42,7 @@ func TestAuth_ValidCredentials(t *testing.T) {
 }
 
 func TestAuth_InvalidPassword(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	username := "admin"
 	password := "secret123"
@@ -66,6 +68,7 @@ func TestAuth_InvalidPassword(t *testing.T) {
 }
 
 func TestAuth_InvalidUsername(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	username := "admin"
 	password := "secret123"
@@ -91,6 +94,7 @@ func TestAuth_InvalidUsername(t *testing.T) {
 }
 
 func TestAuth_MissingHeader(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	username := "admin"
 	password := "secret123"
@@ -116,6 +120,7 @@ func TestAuth_MissingHeader(t *testing.T) {
 }
 
 func TestAuth_MalformedHeader(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name   string
 		header string
@@ -168,6 +173,7 @@ func TestAuth_MalformedHeader(t *testing.T) {
 }
 
 func TestAuth_TimingSafe(t *testing.T) {
+	t.Parallel()
 	// This test verifies that the implementation uses subtle.ConstantTimeCompare
 	// by checking that the middleware doesn't leak timing information
 	// through early returns or different code paths
@@ -209,6 +215,7 @@ func TestAuth_TimingSafe(t *testing.T) {
 }
 
 func TestAuth_SetsWWWAuthenticate(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	middleware := AuthMiddleware("admin", "secret")
@@ -238,6 +245,7 @@ func TestAuth_SetsWWWAuthenticate(t *testing.T) {
 }
 
 func TestAuth_StaticAssets_NoAuth(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -275,6 +283,7 @@ func TestAuth_StaticAssets_NoAuth(t *testing.T) {
 }
 
 func TestAuth_NonStaticPath_RequiresAuth(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called without auth")
@@ -310,6 +319,7 @@ func TestAuth_NonStaticPath_RequiresAuth(t *testing.T) {
 }
 
 func TestExtractCredentials_ValidHeader(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	username := "admin"
 	password := "secret123"
@@ -334,6 +344,7 @@ func TestExtractCredentials_ValidHeader(t *testing.T) {
 }
 
 func TestExtractCredentials_InvalidHeader(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name   string
 		header string
@@ -380,6 +391,7 @@ func TestExtractCredentials_InvalidHeader(t *testing.T) {
 }
 
 func TestRequireAuth_DirectUsage(t *testing.T) {
+	t.Parallel()
 	// RequireAuth should be an alias or wrapper for AuthMiddleware
 	// Both should behave identically
 	username := "admin"
@@ -411,6 +423,7 @@ func TestRequireAuth_DirectUsage(t *testing.T) {
 }
 
 func TestConstantTimeComparison(t *testing.T) {
+	t.Parallel()
 	// Verify that the implementation uses constant-time comparison
 	// This is a security requirement to prevent timing attacks
 
@@ -430,6 +443,7 @@ func TestConstantTimeComparison(t *testing.T) {
 }
 
 func TestAuth_PasswordNotLogged(t *testing.T) {
+	t.Parallel()
 	// This test ensures that passwords are never logged
 	// We verify by checking the implementation doesn't log the Authorization header
 	// or any decoded credentials
@@ -444,6 +458,7 @@ func TestAuth_PasswordNotLogged(t *testing.T) {
 }
 
 func TestAuth_CaseSensitivity(t *testing.T) {
+	t.Parallel()
 	// Credentials should be case-sensitive
 	username := "Admin"
 	password := "Secret123"
@@ -477,6 +492,7 @@ func TestAuth_CaseSensitivity(t *testing.T) {
 }
 
 func TestExtractCredentials_EdgeCases(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name         string
 		encoded      string
@@ -537,6 +553,7 @@ func TestExtractCredentials_EdgeCases(t *testing.T) {
 }
 
 func TestAuth_ResponseBody(t *testing.T) {
+	t.Parallel()
 	// 401 responses should not contain sensitive information
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	middleware := AuthMiddleware("admin", "secret")
@@ -564,6 +581,7 @@ func TestAuth_ResponseBody(t *testing.T) {
 }
 
 func TestAuth_ConcurrentRequests(t *testing.T) {
+	t.Parallel()
 	// Ensure middleware is safe for concurrent use
 	username := "admin"
 	password := "secret"
@@ -607,6 +625,7 @@ func TestAuth_ConcurrentRequests(t *testing.T) {
 // =============================================================================
 
 func TestLoginRateLimit_Blocks_After5Failures(t *testing.T) {
+	t.Parallel()
 	limiter := NewLoginRateLimiter(1000)
 	ip := "192.168.1.1"
 
@@ -630,6 +649,7 @@ func TestLoginRateLimit_Blocks_After5Failures(t *testing.T) {
 }
 
 func TestLoginRateLimit_Clears_OnSuccess(t *testing.T) {
+	t.Parallel()
 	limiter := NewLoginRateLimiter(1000)
 	ip := "192.168.1.2"
 
@@ -656,6 +676,7 @@ func TestLoginRateLimit_Clears_OnSuccess(t *testing.T) {
 }
 
 func TestLoginRateLimit_EvictsStale(t *testing.T) {
+	t.Parallel()
 	limiter := NewLoginRateLimiter(1000)
 	ip := "192.168.1.3"
 
@@ -675,6 +696,7 @@ func TestLoginRateLimit_EvictsStale(t *testing.T) {
 }
 
 func TestLoginRateLimit_MaxIPsLimit(t *testing.T) {
+	t.Parallel()
 	limiter := NewLoginRateLimiter(10)
 
 	for i := 0; i < 15; i++ {
@@ -689,6 +711,7 @@ func TestLoginRateLimit_MaxIPsLimit(t *testing.T) {
 }
 
 func TestLoginRateLimit_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	limiter := NewLoginRateLimiter(1000)
 	ip := "192.168.1.100"
 	var wg sync.WaitGroup
@@ -716,6 +739,7 @@ func TestLoginRateLimit_ConcurrentAccess(t *testing.T) {
 }
 
 func TestLoginRateLimit_DifferentIPsIndependent(t *testing.T) {
+	t.Parallel()
 	limiter := NewLoginRateLimiter(1000)
 	ip1 := "192.168.1.5"
 	ip2 := "192.168.1.6"

@@ -29,6 +29,7 @@ func freePort(t *testing.T) int {
 }
 
 func TestServer_StartsOnPort(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
@@ -63,6 +64,7 @@ func TestServer_StartsOnPort(t *testing.T) {
 }
 
 func TestServer_ServesHTML(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
@@ -106,6 +108,7 @@ func TestServer_ServesHTML(t *testing.T) {
 }
 
 func TestServer_ServesStaticCSS(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
@@ -146,6 +149,7 @@ func TestServer_ServesStaticCSS(t *testing.T) {
 }
 
 func TestServer_ServesStaticJS(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
@@ -186,6 +190,7 @@ func TestServer_ServesStaticJS(t *testing.T) {
 }
 
 func TestServer_GracefulShutdown(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
@@ -220,6 +225,7 @@ func TestServer_GracefulShutdown(t *testing.T) {
 }
 
 func TestServer_EmbeddedAssets(t *testing.T) {
+	t.Parallel()
 	// Test that embedded assets are accessible
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
@@ -273,6 +279,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestServer_RequiresCSRFHeader_OnPost(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	// No auth to test CSRF independently
@@ -337,6 +344,7 @@ func TestServer_RequiresCSRFHeader_OnPost(t *testing.T) {
 }
 
 func TestServer_AllowsGet_WithoutCSRFHeader(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewHandler(nil, nil, logger, nil, nil)
 	passHash, _ := HashPassword("test")
@@ -378,6 +386,7 @@ func TestServer_AllowsGet_WithoutCSRFHeader(t *testing.T) {
 }
 
 func TestServer_MetricsUsesBearerAuthWithoutDashboardRedirect(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s, err := store.New(":memory:")
 	if err != nil {
@@ -428,6 +437,7 @@ func TestServer_MetricsUsesBearerAuthWithoutDashboardRedirect(t *testing.T) {
 }
 
 func TestServer_MetricsRejectsMissingOrInvalidBearerToken(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s, err := store.New(":memory:")
 	if err != nil {

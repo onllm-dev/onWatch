@@ -24,6 +24,7 @@ func insertAPIIntegrationEventForTest(t *testing.T, s *store.Store, line, source
 }
 
 func TestHandler_APIIntegrationsCurrent_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -49,6 +50,7 @@ func TestHandler_APIIntegrationsCurrent_Empty(t *testing.T) {
 }
 
 func TestHandler_APIIntegrationsCurrent_GroupedTotals(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -133,6 +135,7 @@ func TestHandler_APIIntegrationsCurrent_GroupedTotals(t *testing.T) {
 }
 
 func TestHandler_APIIntegrationsHistory_RangeAndDownsample(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -180,6 +183,7 @@ func TestHandler_APIIntegrationsHistory_RangeAndDownsample(t *testing.T) {
 }
 
 func TestHandler_APIIntegrationsHistory_InvalidRange(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -198,6 +202,7 @@ func TestHandler_APIIntegrationsHistory_InvalidRange(t *testing.T) {
 }
 
 func TestHandler_APIIntegrationsHealth_StatusFilesAndAlerts(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -268,6 +273,7 @@ func TestHandler_APIIntegrationsHealth_StatusFilesAndAlerts(t *testing.T) {
 }
 
 func TestHandler_APIIntegrationsHealth_Disabled(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -299,6 +305,7 @@ func TestHandler_APIIntegrationsHealth_Disabled(t *testing.T) {
 }
 
 func TestHandler_Current_DoesNotIncludeAPIIntegrationsTelemetry(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -327,6 +334,7 @@ func TestHandler_Current_DoesNotIncludeAPIIntegrationsTelemetry(t *testing.T) {
 }
 
 func TestServer_APIIntegrationsRoute_UsesAuthMiddleware(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)

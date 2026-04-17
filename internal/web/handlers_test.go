@@ -55,6 +55,7 @@ func createTestConfigWithBoth() *config.Config {
 }
 
 func TestHandler_Dashboard_ReturnsHTML(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
@@ -80,6 +81,7 @@ func TestHandler_Dashboard_ReturnsHTML(t *testing.T) {
 }
 
 func TestHandler_Dashboard_IncludesAPIIntegrationsTabWhenVisible(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -104,6 +106,7 @@ func TestHandler_Dashboard_IncludesAPIIntegrationsTabWhenVisible(t *testing.T) {
 }
 
 func TestHandler_Dashboard_OmitsAPIIntegrationsTabWhenHidden(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -129,6 +132,7 @@ func TestHandler_Dashboard_OmitsAPIIntegrationsTabWhenHidden(t *testing.T) {
 }
 
 func TestHandler_Current_ReturnsJSON(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -170,6 +174,7 @@ func TestHandler_Current_ReturnsJSON(t *testing.T) {
 }
 
 func TestHandler_Current_IncludesResetCountdown(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -212,6 +217,7 @@ func TestHandler_Current_IncludesResetCountdown(t *testing.T) {
 }
 
 func TestHandler_Current_IncludesToolCallReset(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -253,6 +259,7 @@ func TestHandler_Current_IncludesToolCallReset(t *testing.T) {
 }
 
 func TestHandler_Current_EmptyDB(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -282,6 +289,7 @@ func TestHandler_Current_EmptyDB(t *testing.T) {
 }
 
 func TestHandler_History_DefaultRange(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -318,6 +326,7 @@ func TestHandler_History_DefaultRange(t *testing.T) {
 }
 
 func TestHandler_History_AllRanges(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -347,6 +356,7 @@ func TestHandler_History_AllRanges(t *testing.T) {
 }
 
 func TestHandler_History_InvalidRange(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -370,6 +380,7 @@ func TestHandler_History_InvalidRange(t *testing.T) {
 }
 
 func TestHandler_History_ReturnsPercentages(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -411,6 +422,7 @@ func TestHandler_History_ReturnsPercentages(t *testing.T) {
 }
 
 func TestHandler_Cycles_FilterByType(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -441,6 +453,7 @@ func TestHandler_Cycles_FilterByType(t *testing.T) {
 }
 
 func TestHandler_Cycles_AllTypes(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -467,6 +480,7 @@ func TestHandler_Cycles_AllTypes(t *testing.T) {
 }
 
 func TestHandler_Cycles_InvalidType(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -483,6 +497,7 @@ func TestHandler_Cycles_InvalidType(t *testing.T) {
 }
 
 func TestHandler_Cycles_IncludesActiveCycle(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -510,6 +525,7 @@ func TestHandler_Cycles_IncludesActiveCycle(t *testing.T) {
 }
 
 func TestHandler_Summary_AllThreeQuotas(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -544,6 +560,7 @@ func TestHandler_Summary_AllThreeQuotas(t *testing.T) {
 }
 
 func TestHandler_Summary_IncludesProjectedUsage(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -577,6 +594,7 @@ func TestHandler_Summary_IncludesProjectedUsage(t *testing.T) {
 }
 
 func TestHandler_Sessions_ReturnsList(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -605,6 +623,7 @@ func TestHandler_Sessions_ReturnsList(t *testing.T) {
 }
 
 func TestHandler_Sessions_IncludesMaxRequests(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -635,6 +654,7 @@ func TestHandler_Sessions_IncludesMaxRequests(t *testing.T) {
 }
 
 func TestHandler_Sessions_IncludesActiveSession(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -672,6 +692,7 @@ func TestHandler_Sessions_IncludesActiveSession(t *testing.T) {
 }
 
 func TestHandler_Sessions_EmptyDB(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -701,6 +722,7 @@ func TestHandler_Sessions_EmptyDB(t *testing.T) {
 }
 
 func TestHandler_respondJSON(t *testing.T) {
+	t.Parallel()
 	type TestData struct {
 		Message string `json:"message"`
 		Count   int    `json:"count"`
@@ -728,6 +750,7 @@ func TestHandler_respondJSON(t *testing.T) {
 }
 
 func TestHandler_respondError(t *testing.T) {
+	t.Parallel()
 	rr := httptest.NewRecorder()
 	respondError(rr, http.StatusBadRequest, "invalid input")
 
@@ -744,6 +767,7 @@ func TestHandler_respondError(t *testing.T) {
 }
 
 func TestHandler_parseTimeRange(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected time.Duration
@@ -776,6 +800,7 @@ func TestHandler_parseTimeRange(t *testing.T) {
 // Provider Endpoint Tests
 
 func TestHandler_Providers_ReturnsAvailableProviders(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -809,6 +834,7 @@ func TestHandler_Providers_ReturnsAvailableProviders(t *testing.T) {
 }
 
 func TestHandler_Providers_WithNoProviders(t *testing.T) {
+	t.Parallel()
 	cfg := &config.Config{
 		PollInterval: 60 * time.Second,
 		Port:         9211,
@@ -842,6 +868,7 @@ func TestHandler_Providers_WithNoProviders(t *testing.T) {
 }
 
 func TestHandler_Providers_WithBothProviders(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithBoth()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -870,6 +897,7 @@ func TestHandler_Providers_WithBothProviders(t *testing.T) {
 // Synthetic Provider Tests
 
 func TestHandler_Current_WithSyntheticProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -910,6 +938,7 @@ func TestHandler_Current_WithSyntheticProvider(t *testing.T) {
 }
 
 func TestHandler_History_WithSyntheticProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -943,6 +972,7 @@ func TestHandler_History_WithSyntheticProvider(t *testing.T) {
 }
 
 func TestHandler_Summary_WithSyntheticProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -979,6 +1009,7 @@ func TestHandler_Summary_WithSyntheticProvider(t *testing.T) {
 }
 
 func TestHandler_Summary_WithSyntheticProvider_DoesNotLeakOtherProviders(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1052,6 +1083,7 @@ func TestHandler_Summary_WithSyntheticProvider_DoesNotLeakOtherProviders(t *test
 }
 
 func TestHandler_Cycles_WithSyntheticProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1084,6 +1116,7 @@ func TestHandler_Cycles_WithSyntheticProvider(t *testing.T) {
 }
 
 func TestHandler_Insights_WithSyntheticProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1122,6 +1155,7 @@ func TestHandler_Insights_WithSyntheticProvider(t *testing.T) {
 // Z.ai Provider Tests
 
 func TestHandler_Current_WithZaiProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1150,6 +1184,7 @@ func TestHandler_Current_WithZaiProvider(t *testing.T) {
 }
 
 func TestHandler_Current_ZaiReturnsTokensAndTimeLimits(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1212,6 +1247,7 @@ func TestHandler_Current_ZaiReturnsTokensAndTimeLimits(t *testing.T) {
 }
 
 func TestHandler_History_WithZaiProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1259,6 +1295,7 @@ func TestHandler_History_WithZaiProvider(t *testing.T) {
 }
 
 func TestHandler_Summary_WithZaiProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1302,6 +1339,7 @@ func TestHandler_Summary_WithZaiProvider(t *testing.T) {
 }
 
 func TestHandler_Cycles_WithZaiProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1335,6 +1373,7 @@ func TestHandler_Cycles_WithZaiProvider(t *testing.T) {
 }
 
 func TestHandler_Cycles_ZaiTokensAndTimeTypes(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1380,6 +1419,7 @@ func TestHandler_Cycles_ZaiTokensAndTimeTypes(t *testing.T) {
 }
 
 func TestHandler_Insights_WithZaiProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1425,6 +1465,7 @@ func TestHandler_Insights_WithZaiProvider(t *testing.T) {
 // Provider Switching Tests
 
 func TestHandler_ProviderSwitching_SyntheticToZai(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1486,6 +1527,7 @@ func TestHandler_ProviderSwitching_SyntheticToZai(t *testing.T) {
 }
 
 func TestHandler_ProviderSwitching_ZaiToSynthetic(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1547,6 +1589,7 @@ func TestHandler_ProviderSwitching_ZaiToSynthetic(t *testing.T) {
 }
 
 func TestHandler_InvalidProvider_ReturnsError(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -1567,6 +1610,7 @@ func TestHandler_InvalidProvider_ReturnsError(t *testing.T) {
 }
 
 func TestHandler_UnconfiguredProvider_ReturnsError(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -1583,6 +1627,7 @@ func TestHandler_UnconfiguredProvider_ReturnsError(t *testing.T) {
 // Dashboard Template Tests
 
 func TestHandler_Dashboard_WithSingleProvider_NoSelector(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -1601,6 +1646,7 @@ func TestHandler_Dashboard_WithSingleProvider_NoSelector(t *testing.T) {
 }
 
 func TestHandler_Dashboard_WithMultipleProviders_ShowsSelector(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithBoth()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -1614,6 +1660,7 @@ func TestHandler_Dashboard_WithMultipleProviders_ShowsSelector(t *testing.T) {
 }
 
 func TestHandler_Dashboard_PreservesProviderQueryParam(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithBoth()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -1627,6 +1674,7 @@ func TestHandler_Dashboard_PreservesProviderQueryParam(t *testing.T) {
 }
 
 func TestHandler_Dashboard_CodexView_RestoresProfileTabsAndTables(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithCodex()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -1660,6 +1708,7 @@ func TestHandler_Dashboard_CodexView_RestoresProfileTabsAndTables(t *testing.T) 
 }
 
 func TestHandler_Dashboard_AllView_UsesCodexMultiAccountLayout(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithAll()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -1692,6 +1741,7 @@ func TestHandler_Dashboard_AllView_UsesCodexMultiAccountLayout(t *testing.T) {
 // Mock Data Tests
 
 func TestHandler_Current_SyntheticWithMockData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1735,6 +1785,7 @@ func TestHandler_Current_SyntheticWithMockData(t *testing.T) {
 }
 
 func TestHandler_Current_ZaiWithMockData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1786,6 +1837,7 @@ func TestHandler_Current_ZaiWithMockData(t *testing.T) {
 }
 
 func TestHandler_History_SyntheticMultipleSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1822,6 +1874,7 @@ func TestHandler_History_SyntheticMultipleSnapshots(t *testing.T) {
 }
 
 func TestHandler_History_ZaiMultipleSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1865,6 +1918,7 @@ func TestHandler_History_ZaiMultipleSnapshots(t *testing.T) {
 }
 
 func TestHandler_Cycles_SyntheticActiveAndCompleted(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1904,6 +1958,7 @@ func TestHandler_Cycles_SyntheticActiveAndCompleted(t *testing.T) {
 }
 
 func TestHandler_Cycles_ZaiActiveAndCompleted(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1945,6 +2000,7 @@ func TestHandler_Cycles_ZaiActiveAndCompleted(t *testing.T) {
 // of chart range buttons (data-range), sending range=undefined to the API.
 
 func TestHandler_History_UndefinedRange_Returns400(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1961,6 +2017,7 @@ func TestHandler_History_UndefinedRange_Returns400(t *testing.T) {
 }
 
 func TestHandler_History_EmptyDB_ReturnsEmptyArray_Synthetic(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -1982,6 +2039,7 @@ func TestHandler_History_EmptyDB_ReturnsEmptyArray_Synthetic(t *testing.T) {
 }
 
 func TestHandler_History_EmptyDB_ReturnsEmptyArray_Zai(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2003,6 +2061,7 @@ func TestHandler_History_EmptyDB_ReturnsEmptyArray_Zai(t *testing.T) {
 }
 
 func TestHandler_History_EmptyDB_ReturnsEmptyArrays_Both(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2079,6 +2138,7 @@ func createTestConfigWithCodex() *config.Config {
 }
 
 func TestHandler_SetAnthropicTracker(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2094,6 +2154,7 @@ func TestHandler_SetAnthropicTracker(t *testing.T) {
 }
 
 func TestHandler_SetCodexTracker(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2109,6 +2170,7 @@ func TestHandler_SetCodexTracker(t *testing.T) {
 }
 
 func TestHandler_Current_WithAnthropicProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2169,6 +2231,7 @@ func TestHandler_Current_WithAnthropicProvider(t *testing.T) {
 }
 
 func TestHandler_Current_AnthropicEmptyDB(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2202,6 +2265,7 @@ func TestHandler_Current_AnthropicEmptyDB(t *testing.T) {
 }
 
 func TestHandler_History_WithAnthropicProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2244,6 +2308,7 @@ func TestHandler_History_WithAnthropicProvider(t *testing.T) {
 }
 
 func TestHandler_Cycles_WithAnthropicProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2309,6 +2374,7 @@ func TestHandler_Cycles_WithAnthropicProvider(t *testing.T) {
 }
 
 func TestHandler_Summary_WithAnthropicProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2347,6 +2413,7 @@ func TestHandler_Summary_WithAnthropicProvider(t *testing.T) {
 }
 
 func TestHandler_Insights_WithAnthropicProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2385,6 +2452,7 @@ func TestHandler_Insights_WithAnthropicProvider(t *testing.T) {
 }
 
 func TestHandler_Current_WithCodexProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2470,6 +2538,7 @@ func TestHandler_Current_WithCodexProvider(t *testing.T) {
 }
 
 func TestHandler_History_WithCodexProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2518,6 +2587,7 @@ func TestHandler_History_WithCodexProvider(t *testing.T) {
 }
 
 func TestHandler_Cycles_WithCodexProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2568,6 +2638,7 @@ func TestHandler_Cycles_WithCodexProvider(t *testing.T) {
 }
 
 func TestHandler_Cycles_CodexInvalidType(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2584,6 +2655,7 @@ func TestHandler_Cycles_CodexInvalidType(t *testing.T) {
 }
 
 func TestHandler_Summary_WithCodexProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2626,6 +2698,7 @@ func TestHandler_Summary_WithCodexProvider(t *testing.T) {
 }
 
 func TestHandler_Insights_CodexEmptyDB(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2653,6 +2726,7 @@ func TestHandler_Insights_CodexEmptyDB(t *testing.T) {
 }
 
 func TestHandler_Insights_CodexRichData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2783,6 +2857,7 @@ func TestHandler_Insights_CodexRichData(t *testing.T) {
 }
 
 func TestHandler_Providers_WithCodexOnly(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithCodex()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -2812,6 +2887,7 @@ func TestHandler_Providers_WithCodexOnly(t *testing.T) {
 }
 
 func TestHandler_Current_BothIncludesCodex(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2845,6 +2921,7 @@ func TestHandler_Current_BothIncludesCodex(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_Codex(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -2872,6 +2949,7 @@ func TestHandler_CycleOverview_Codex(t *testing.T) {
 }
 
 func TestHandler_CodexUtilStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		util   float64
 		status string
@@ -2897,6 +2975,7 @@ func TestHandler_CodexUtilStatus(t *testing.T) {
 }
 
 func TestHandler_CodexRemainingStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		remaining float64
 		status    string
@@ -2919,6 +2998,7 @@ func TestHandler_CodexRemainingStatus(t *testing.T) {
 }
 
 func TestHandler_Providers_WithAnthropicOnly(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithAnthropic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -2948,6 +3028,7 @@ func TestHandler_Providers_WithAnthropicOnly(t *testing.T) {
 }
 
 func TestHandler_Providers_WithAllProviders_IncludesBoth(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithAll()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -2976,6 +3057,7 @@ func TestHandler_Providers_WithAllProviders_IncludesBoth(t *testing.T) {
 }
 
 func TestHandler_Current_BothIncludesAnthropicAndAntigravity(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3039,6 +3121,7 @@ func TestHandler_Current_BothIncludesAnthropicAndAntigravity(t *testing.T) {
 }
 
 func TestHandler_AnthropicUtilStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		util   float64
 		status string
@@ -3064,6 +3147,7 @@ func TestHandler_AnthropicUtilStatus(t *testing.T) {
 }
 
 func TestHandler_Insights_AnthropicEmptyDB(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3097,6 +3181,7 @@ func TestHandler_Insights_AnthropicEmptyDB(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Login_GET_RendersForm(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 	h.SetVersion("2.11.0")
@@ -3123,6 +3208,7 @@ func TestHandler_Login_GET_RendersForm(t *testing.T) {
 }
 
 func TestHandler_Login_POST_ValidCredentials_Redirects(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3160,6 +3246,7 @@ func TestHandler_Login_POST_ValidCredentials_Redirects(t *testing.T) {
 }
 
 func TestHandler_Login_POST_InvalidCredentials_RedirectsWithError(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3186,6 +3273,7 @@ func TestHandler_Login_POST_InvalidCredentials_RedirectsWithError(t *testing.T) 
 }
 
 func TestHandler_Login_GET_AlreadyAuthenticated_RedirectsToDashboard(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3216,6 +3304,7 @@ func TestHandler_Login_GET_AlreadyAuthenticated_RedirectsToDashboard(t *testing.
 }
 
 func TestHandler_Logout_ClearsCookieAndRedirects(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3252,6 +3341,7 @@ func TestHandler_Logout_ClearsCookieAndRedirects(t *testing.T) {
 }
 
 func TestHandler_SettingsPage_RendersHTML(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 	h.SetVersion("2.5.0")
@@ -3281,6 +3371,7 @@ func TestHandler_SettingsPage_RendersHTML(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_ChangePassword_Success(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3310,6 +3401,7 @@ func TestHandler_ChangePassword_Success(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_WrongCurrentPassword(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3332,6 +3424,7 @@ func TestHandler_ChangePassword_WrongCurrentPassword(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_TooShortNewPassword(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3359,6 +3452,7 @@ func TestHandler_ChangePassword_TooShortNewPassword(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_MissingFields(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3381,6 +3475,7 @@ func TestHandler_ChangePassword_MissingFields(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_InvalidatesAllSessions(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3418,6 +3513,7 @@ func TestHandler_ChangePassword_InvalidatesAllSessions(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_MethodNotAllowed(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -3435,6 +3531,7 @@ func TestHandler_ChangePassword_MethodNotAllowed(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_GetSettings_ReturnsTimezoneAndHiddenInsights(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3465,6 +3562,7 @@ func TestHandler_GetSettings_ReturnsTimezoneAndHiddenInsights(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_Timezone(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3490,6 +3588,7 @@ func TestHandler_UpdateSettings_Timezone(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_InvalidTimezone(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3509,6 +3608,7 @@ func TestHandler_UpdateSettings_InvalidTimezone(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_HiddenInsights(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3533,6 +3633,7 @@ func TestHandler_UpdateSettings_HiddenInsights(t *testing.T) {
 }
 
 func TestHandler_GetSettings_SMTPMasksPassword(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3568,6 +3669,7 @@ func TestHandler_GetSettings_SMTPMasksPassword(t *testing.T) {
 }
 
 func TestHandler_GetSettings_NotificationSettings(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3598,6 +3700,7 @@ func TestHandler_GetSettings_NotificationSettings(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_ProviderVisibility(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3622,6 +3725,7 @@ func TestHandler_UpdateSettings_ProviderVisibility(t *testing.T) {
 }
 
 func TestHandler_GetSettings_APIIntegrationsVisibility(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3655,6 +3759,7 @@ func TestHandler_GetSettings_APIIntegrationsVisibility(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_APIIntegrationsVisibility(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3680,6 +3785,7 @@ func TestHandler_UpdateSettings_APIIntegrationsVisibility(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_Notifications(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3704,6 +3810,7 @@ func TestHandler_UpdateSettings_Notifications(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_Notifications_InvalidThresholds(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3724,6 +3831,7 @@ func TestHandler_UpdateSettings_Notifications_InvalidThresholds(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_MethodNotAllowed(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -3758,6 +3866,7 @@ func (m *mockNotifier) SetEncryptionKey(_ string)     {}
 func (m *mockNotifier) GetVAPIDPublicKey() string     { return "" }
 
 func TestHandler_SMTPTest_Success(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 	h.SetNotifier(&mockNotifier{})
@@ -3779,6 +3888,7 @@ func TestHandler_SMTPTest_Success(t *testing.T) {
 }
 
 func TestHandler_SMTPTest_RateLimit(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 	h.SetNotifier(&mockNotifier{})
@@ -3803,6 +3913,7 @@ func TestHandler_SMTPTest_RateLimit(t *testing.T) {
 }
 
 func TestHandler_SMTPTest_NoNotifierConfigured(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 	// No notifier set
@@ -3817,6 +3928,7 @@ func TestHandler_SMTPTest_NoNotifierConfigured(t *testing.T) {
 }
 
 func TestHandler_SMTPTest_MethodNotAllowed(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -3834,6 +3946,7 @@ func TestHandler_SMTPTest_MethodNotAllowed(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_CycleOverview_Synthetic(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3860,6 +3973,7 @@ func TestHandler_CycleOverview_Synthetic(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_Zai(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3886,6 +4000,7 @@ func TestHandler_CycleOverview_Zai(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_Anthropic(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3912,6 +4027,7 @@ func TestHandler_CycleOverview_Anthropic(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_Both(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3938,6 +4054,7 @@ func TestHandler_CycleOverview_Both(t *testing.T) {
 }
 
 func TestHandler_Sessions_BothIncludesCodexAndAntigravity(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -3988,6 +4105,7 @@ func TestHandler_Sessions_BothIncludesCodexAndAntigravity(t *testing.T) {
 }
 
 func TestHandler_Sessions_CodexAccountFiltering(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4037,6 +4155,7 @@ func TestHandler_Sessions_CodexAccountFiltering(t *testing.T) {
 }
 
 func TestHandler_Sessions_BothCodexAccountFiltering(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4070,6 +4189,7 @@ func TestHandler_Sessions_BothCodexAccountFiltering(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_AntigravityReturnsCycleOverview(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4113,6 +4233,7 @@ func TestHandler_CycleOverview_AntigravityReturnsCycleOverview(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_BothCodexRespectsGroupByFallback(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4147,6 +4268,7 @@ func TestHandler_CycleOverview_BothCodexRespectsGroupByFallback(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_AntigravityReturnsEmptyWhenNoCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4195,6 +4317,7 @@ func TestHandler_CycleOverview_AntigravityReturnsEmptyWhenNoCycles(t *testing.T)
 }
 
 func TestHandler_CycleOverview_AntigravityReturnsSingleActiveCycleRowPerGroup(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4266,6 +4389,7 @@ func TestHandler_CycleOverview_AntigravityReturnsSingleActiveCycleRowPerGroup(t 
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_LoggingHistory_AntigravityReturnsSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4326,6 +4450,7 @@ func TestHandler_LoggingHistory_AntigravityReturnsSnapshots(t *testing.T) {
 }
 
 func TestHandler_LoggingHistory_AntigravityCalculatesDeltas(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4390,6 +4515,7 @@ func TestHandler_LoggingHistory_AntigravityCalculatesDeltas(t *testing.T) {
 }
 
 func TestHandler_LoggingHistory_SyntheticReturnsSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4470,6 +4596,7 @@ func TestHandler_LoggingHistory_SyntheticReturnsSnapshots(t *testing.T) {
 }
 
 func TestHandler_LoggingHistory_ZaiReturnsSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4553,6 +4680,7 @@ func TestHandler_LoggingHistory_ZaiReturnsSnapshots(t *testing.T) {
 }
 
 func TestHandler_LoggingHistory_AnthropicReturnsSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4627,6 +4755,7 @@ func TestHandler_LoggingHistory_AnthropicReturnsSnapshots(t *testing.T) {
 }
 
 func TestHandler_LoggingHistory_CopilotReturnsSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4702,6 +4831,7 @@ func TestHandler_LoggingHistory_CopilotReturnsSnapshots(t *testing.T) {
 }
 
 func TestHandler_LoggingHistory_CodexReturnsSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4777,6 +4907,7 @@ func TestHandler_LoggingHistory_CodexReturnsSnapshots(t *testing.T) {
 }
 
 func TestHandler_LoggingHistory_UnknownProviderReturnsError(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithAll()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -4802,6 +4933,7 @@ func TestHandler_LoggingHistory_UnknownProviderReturnsError(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_CheckUpdate_NoUpdater(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 	// No updater set
@@ -4816,6 +4948,7 @@ func TestHandler_CheckUpdate_NoUpdater(t *testing.T) {
 }
 
 func TestHandler_CheckUpdate_MethodNotAllowed(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -4829,6 +4962,7 @@ func TestHandler_CheckUpdate_MethodNotAllowed(t *testing.T) {
 }
 
 func TestHandler_ApplyUpdate_NoUpdater(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 	// No updater set
@@ -4843,6 +4977,7 @@ func TestHandler_ApplyUpdate_NoUpdater(t *testing.T) {
 }
 
 func TestHandler_ApplyUpdate_MethodNotAllowed(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -4860,6 +4995,7 @@ func TestHandler_ApplyUpdate_MethodNotAllowed(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Current_Anthropic_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4910,6 +5046,7 @@ func TestHandler_Current_Anthropic_WithData(t *testing.T) {
 }
 
 func TestHandler_Current_Anthropic_EmptyDB(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4937,6 +5074,7 @@ func TestHandler_Current_Anthropic_EmptyDB(t *testing.T) {
 }
 
 func TestHandler_History_Anthropic(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -4977,6 +5115,7 @@ func TestHandler_History_Anthropic(t *testing.T) {
 }
 
 func TestHandler_Insights_Anthropic_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -5016,6 +5155,7 @@ func TestHandler_Insights_Anthropic_WithData(t *testing.T) {
 }
 
 func TestHandler_History_Antigravity_UsesRFC3339Labels(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -5077,6 +5217,7 @@ func TestHandler_History_Antigravity_UsesRFC3339Labels(t *testing.T) {
 }
 
 func TestBuildAntigravityInsights_AggregatesBurnRateByAverageAcrossGroups(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -5132,6 +5273,7 @@ func TestBuildAntigravityInsights_AggregatesBurnRateByAverageAcrossGroups(t *tes
 }
 
 func TestBuildAntigravityInsights_RangeFiltersOldCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -5199,6 +5341,7 @@ func TestBuildAntigravityInsights_RangeFiltersOldCycles(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Dashboard_WithProviderParam(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithAll()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -5216,6 +5359,7 @@ func TestHandler_Dashboard_WithProviderParam(t *testing.T) {
 }
 
 func TestHandler_Dashboard_AppJSVersionedURL_Rendered(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithAll()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 	h.SetVersion("2.11.0")
@@ -5239,6 +5383,7 @@ func TestHandler_Dashboard_AppJSVersionedURL_Rendered(t *testing.T) {
 }
 
 func TestHandler_Dashboard_NotFound_For_NonRootPath(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -5256,6 +5401,7 @@ func TestHandler_Dashboard_NotFound_For_NonRootPath(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_formatDuration(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    time.Duration
@@ -5279,6 +5425,7 @@ func TestHandler_formatDuration(t *testing.T) {
 }
 
 func TestHandler_downsampleStep(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		n, max, want int
 	}{
@@ -5298,6 +5445,7 @@ func TestHandler_downsampleStep(t *testing.T) {
 }
 
 func TestHandler_parseInsightsRange(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input string
 		want  time.Duration
@@ -5324,6 +5472,7 @@ func TestHandler_parseInsightsRange(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_MaxBytesReader_RejectsLargeBody(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -5364,6 +5513,7 @@ func TestHandler_MaxBytesReader_RejectsLargeBody(t *testing.T) {
 }
 
 func TestHandler_ApplyUpdate_SanitizesErrors(t *testing.T) {
+	t.Parallel()
 	// Create a mock updater that will return an error
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
@@ -5398,6 +5548,7 @@ func TestHandler_ApplyUpdate_SanitizesErrors(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestLogin_WhitelistsErrorCodes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		errorCode    string
@@ -5442,6 +5593,7 @@ func TestLogin_WhitelistsErrorCodes(t *testing.T) {
 }
 
 func TestLogin_RejectsUnknownErrorCode(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -5514,6 +5666,7 @@ func createTestConfigWithAllProviders() *config.Config {
 }
 
 func TestHandler_SetCopilotTracker(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -5529,6 +5682,7 @@ func TestHandler_SetCopilotTracker(t *testing.T) {
 }
 
 func TestHandler_SetAntigravityTracker(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -5544,6 +5698,7 @@ func TestHandler_SetAntigravityTracker(t *testing.T) {
 }
 
 func TestHandler_SetUpdater(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	// SetUpdater with nil should not panic
 	h.SetUpdater(nil)
@@ -5553,6 +5708,7 @@ func TestHandler_SetUpdater(t *testing.T) {
 }
 
 func TestHandler_GetSessionStore(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	ss := h.GetSessionStore()
 	if ss != nil {
@@ -5561,6 +5717,7 @@ func TestHandler_GetSessionStore(t *testing.T) {
 }
 
 func TestHandler_SetRateLimiter(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	rl := NewLoginRateLimiter(100)
 	h.SetRateLimiter(rl)
@@ -5570,6 +5727,7 @@ func TestHandler_SetRateLimiter(t *testing.T) {
 }
 
 func TestIsMaxBytesError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		err      error
@@ -5591,6 +5749,7 @@ func TestIsMaxBytesError(t *testing.T) {
 }
 
 func TestSanitizeSMTPError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		err      error
@@ -5618,6 +5777,7 @@ func TestSanitizeSMTPError(t *testing.T) {
 }
 
 func TestSeverityFromPercent(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		pct      float64
 		expected string
@@ -5643,6 +5803,7 @@ func TestSeverityFromPercent(t *testing.T) {
 }
 
 func TestCompactNum(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    float64
 		expected string
@@ -5669,6 +5830,7 @@ func TestCompactNum(t *testing.T) {
 }
 
 func TestFormatDuration_AllBranches(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		dur      time.Duration
@@ -5693,6 +5855,7 @@ func TestFormatDuration_AllBranches(t *testing.T) {
 }
 
 func TestParseCycleOverviewLimit(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		query    string
 		expected int
@@ -5721,6 +5884,7 @@ func TestParseCycleOverviewLimit(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestGroupBillingPeriods_Empty(t *testing.T) {
+	t.Parallel()
 	result := groupBillingPeriods(nil)
 	if result != nil {
 		t.Errorf("expected nil for empty cycles, got %v", result)
@@ -5728,6 +5892,7 @@ func TestGroupBillingPeriods_Empty(t *testing.T) {
 }
 
 func TestGroupBillingPeriods_SingleCycle(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycles := []*store.ResetCycle{
 		{CycleStart: now, PeakRequests: 100},
@@ -5742,6 +5907,7 @@ func TestGroupBillingPeriods_SingleCycle(t *testing.T) {
 }
 
 func TestGroupBillingPeriods_MultiCyclesSamePeriod(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	// DESC order (newest first) - all have similar peaks so same period
 	cycles := []*store.ResetCycle{
@@ -5759,6 +5925,7 @@ func TestGroupBillingPeriods_MultiCyclesSamePeriod(t *testing.T) {
 }
 
 func TestGroupBillingPeriods_WithReset(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	// DESC order (newest first) - peak drops >50% indicating reset
 	cycles := []*store.ResetCycle{
@@ -5773,6 +5940,7 @@ func TestGroupBillingPeriods_WithReset(t *testing.T) {
 }
 
 func TestBillingPeriodAvg_Empty(t *testing.T) {
+	t.Parallel()
 	result := billingPeriodAvg(nil)
 	if result != 0 {
 		t.Errorf("expected 0 for empty cycles, got %.1f", result)
@@ -5780,6 +5948,7 @@ func TestBillingPeriodAvg_Empty(t *testing.T) {
 }
 
 func TestBillingPeriodAvg_WithData(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycles := []*store.ResetCycle{
 		{CycleStart: now, PeakRequests: 100},
@@ -5791,6 +5960,7 @@ func TestBillingPeriodAvg_WithData(t *testing.T) {
 }
 
 func TestBillingPeriodPeak(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	// Two billing periods with different peaks
 	cycles := []*store.ResetCycle{
@@ -5805,6 +5975,7 @@ func TestBillingPeriodPeak(t *testing.T) {
 }
 
 func TestBillingPeriodCount(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycles := []*store.ResetCycle{
 		{CycleStart: now, PeakRequests: 100},
@@ -5816,6 +5987,7 @@ func TestBillingPeriodCount(t *testing.T) {
 }
 
 func TestCycleSumConsumptionSince(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycles := []*store.ResetCycle{
 		{CycleStart: now, PeakRequests: 100},
@@ -5834,6 +6006,7 @@ func TestCycleSumConsumptionSince(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestGroupAnthropicBillingPeriods_Empty(t *testing.T) {
+	t.Parallel()
 	result := groupAnthropicBillingPeriods(nil)
 	if result != nil {
 		t.Errorf("expected nil for empty cycles, got %v", result)
@@ -5841,6 +6014,7 @@ func TestGroupAnthropicBillingPeriods_Empty(t *testing.T) {
 }
 
 func TestGroupAnthropicBillingPeriods_SingleCycle(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycles := []*store.AnthropicResetCycle{
 		{CycleStart: now, PeakUtilization: 50.0},
@@ -5855,6 +6029,7 @@ func TestGroupAnthropicBillingPeriods_SingleCycle(t *testing.T) {
 }
 
 func TestGroupAnthropicBillingPeriods_WithReset(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	// DESC order: peak drops >50% indicating reset. Need peak > 5 for detection.
 	cycles := []*store.AnthropicResetCycle{
@@ -5869,6 +6044,7 @@ func TestGroupAnthropicBillingPeriods_WithReset(t *testing.T) {
 }
 
 func TestGroupAnthropicBillingPeriods_LowPeakNoReset(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	// Peak <= 5 should not trigger a reset boundary even if it drops
 	cycles := []*store.AnthropicResetCycle{
@@ -5882,6 +6058,7 @@ func TestGroupAnthropicBillingPeriods_LowPeakNoReset(t *testing.T) {
 }
 
 func TestAnthropicBillingPeriodCount(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycles := []*store.AnthropicResetCycle{
 		{CycleStart: now, PeakUtilization: 50.0},
@@ -5893,6 +6070,7 @@ func TestAnthropicBillingPeriodCount(t *testing.T) {
 }
 
 func TestAnthropicBillingPeriodAvg_Empty(t *testing.T) {
+	t.Parallel()
 	result := anthropicBillingPeriodAvg(nil)
 	if result != 0 {
 		t.Errorf("expected 0 for empty, got %.1f", result)
@@ -5900,6 +6078,7 @@ func TestAnthropicBillingPeriodAvg_Empty(t *testing.T) {
 }
 
 func TestAnthropicBillingPeriodAvg_WithData(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycles := []*store.AnthropicResetCycle{
 		{CycleStart: now, PeakUtilization: 60.0},
@@ -5911,6 +6090,7 @@ func TestAnthropicBillingPeriodAvg_WithData(t *testing.T) {
 }
 
 func TestAnthropicBillingPeriodPeak(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycles := []*store.AnthropicResetCycle{
 		{CycleStart: now, PeakUtilization: 10.0},
@@ -5928,6 +6108,7 @@ func TestAnthropicBillingPeriodPeak(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestAnthropicCycleToMap(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	endTime := now.Add(1 * time.Hour)
 	resetsAt := now.Add(2 * time.Hour)
@@ -5960,6 +6141,7 @@ func TestAnthropicCycleToMap(t *testing.T) {
 }
 
 func TestAnthropicCycleToMap_NilEnds(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycle := &store.AnthropicResetCycle{
 		ID:              1,
@@ -5982,6 +6164,7 @@ func TestAnthropicCycleToMap_NilEnds(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestBuildZaiTrackerSummaryResponse_WithRenewsAt(t *testing.T) {
+	t.Parallel()
 	renewsAt := time.Now().UTC().Add(3 * time.Hour)
 	summary := &tracker.ZaiSummary{
 		QuotaType:       "tokens",
@@ -6019,6 +6202,7 @@ func TestBuildZaiTrackerSummaryResponse_WithRenewsAt(t *testing.T) {
 }
 
 func TestBuildZaiTrackerSummaryResponse_WithoutRenewsAt(t *testing.T) {
+	t.Parallel()
 	summary := &tracker.ZaiSummary{
 		QuotaType:    "time",
 		CurrentUsage: 100,
@@ -6056,6 +6240,7 @@ func (m *mockNotifierWithVAPID) SetEncryptionKey(_ string)     {}
 func (m *mockNotifierWithVAPID) GetVAPIDPublicKey() string     { return m.vapidKey }
 
 func TestHandler_PushVAPIDKey_Success(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	h.SetNotifier(&mockNotifierWithVAPID{vapidKey: "test-vapid-key-abc123"})
 
@@ -6076,6 +6261,7 @@ func TestHandler_PushVAPIDKey_Success(t *testing.T) {
 }
 
 func TestHandler_PushVAPIDKey_MethodNotAllowed(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	h.SetNotifier(&mockNotifierWithVAPID{vapidKey: "key"})
 
@@ -6089,6 +6275,7 @@ func TestHandler_PushVAPIDKey_MethodNotAllowed(t *testing.T) {
 }
 
 func TestHandler_PushVAPIDKey_NoNotifier(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/push/vapid", nil)
@@ -6101,6 +6288,7 @@ func TestHandler_PushVAPIDKey_NoNotifier(t *testing.T) {
 }
 
 func TestHandler_PushVAPIDKey_EmptyKey(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	h.SetNotifier(&mockNotifierWithVAPID{vapidKey: ""})
 
@@ -6114,6 +6302,7 @@ func TestHandler_PushVAPIDKey_EmptyKey(t *testing.T) {
 }
 
 func TestHandler_PushSubscribe_Post_Success(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6137,6 +6326,7 @@ func TestHandler_PushSubscribe_Post_Success(t *testing.T) {
 }
 
 func TestHandler_PushSubscribe_Post_MissingFields(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6153,6 +6343,7 @@ func TestHandler_PushSubscribe_Post_MissingFields(t *testing.T) {
 }
 
 func TestHandler_PushSubscribe_Post_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6168,6 +6359,7 @@ func TestHandler_PushSubscribe_Post_InvalidJSON(t *testing.T) {
 }
 
 func TestHandler_PushSubscribe_Delete_Success(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6194,6 +6386,7 @@ func TestHandler_PushSubscribe_Delete_Success(t *testing.T) {
 }
 
 func TestHandler_PushSubscribe_Delete_MissingEndpoint(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6210,6 +6403,7 @@ func TestHandler_PushSubscribe_Delete_MissingEndpoint(t *testing.T) {
 }
 
 func TestHandler_PushSubscribe_Delete_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6225,6 +6419,7 @@ func TestHandler_PushSubscribe_Delete_InvalidJSON(t *testing.T) {
 }
 
 func TestHandler_PushSubscribe_MethodNotAllowed(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6240,6 +6435,7 @@ func TestHandler_PushSubscribe_MethodNotAllowed(t *testing.T) {
 }
 
 func TestHandler_PushTest_Success(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	h.SetNotifier(&mockNotifierWithVAPID{vapidKey: "key"})
 
@@ -6260,6 +6456,7 @@ func TestHandler_PushTest_Success(t *testing.T) {
 }
 
 func TestHandler_PushTest_MethodNotAllowed(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/push/test", nil)
@@ -6272,6 +6469,7 @@ func TestHandler_PushTest_MethodNotAllowed(t *testing.T) {
 }
 
 func TestHandler_PushTest_NoNotifier(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	// Reset the push test cooldown to avoid rate limiting
 	h.pushTestLastSent = time.Time{}
@@ -6286,6 +6484,7 @@ func TestHandler_PushTest_NoNotifier(t *testing.T) {
 }
 
 func TestHandler_PushTest_RateLimit(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	h.SetNotifier(&mockNotifierWithVAPID{vapidKey: "key"})
 
@@ -6309,6 +6508,7 @@ func TestHandler_PushTest_RateLimit(t *testing.T) {
 }
 
 func TestHandler_PushTest_SendFailure(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	h.SetNotifier(&mockNotifierWithVAPID{vapidKey: "key", sendPushErr: fmt.Errorf("push failed")})
 
@@ -6333,6 +6533,7 @@ func TestHandler_PushTest_SendFailure(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_CyclesBoth_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6359,6 +6560,7 @@ func TestHandler_CyclesBoth_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_CyclesBoth_NilStore(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithBoth()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -6372,6 +6574,7 @@ func TestHandler_CyclesBoth_NilStore(t *testing.T) {
 }
 
 func TestHandler_CyclesBoth_WithAllProviders(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6398,6 +6601,7 @@ func TestHandler_CyclesBoth_WithAllProviders(t *testing.T) {
 }
 
 func TestHandler_SummaryBoth_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6425,6 +6629,7 @@ func TestHandler_SummaryBoth_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_SummaryBoth_WithAllProviders(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6451,6 +6656,7 @@ func TestHandler_SummaryBoth_WithAllProviders(t *testing.T) {
 }
 
 func TestHandler_InsightsBoth_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6477,6 +6683,7 @@ func TestHandler_InsightsBoth_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_InsightsBoth_WithAllProviders(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6506,6 +6713,7 @@ func TestHandler_InsightsBoth_WithAllProviders(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Current_Copilot_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6532,6 +6740,7 @@ func TestHandler_Current_Copilot_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_Current_Copilot_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6591,6 +6800,7 @@ func TestHandler_Current_Copilot_WithData(t *testing.T) {
 }
 
 func TestCopilotUsageStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		pct       float64
 		unlimited bool
@@ -6618,6 +6828,7 @@ func TestCopilotUsageStatus(t *testing.T) {
 }
 
 func TestHandler_History_Copilot_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6634,6 +6845,7 @@ func TestHandler_History_Copilot_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_History_Copilot_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6667,6 +6879,7 @@ func TestHandler_History_Copilot_WithData(t *testing.T) {
 }
 
 func TestHandler_Cycles_Copilot_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6683,6 +6896,7 @@ func TestHandler_Cycles_Copilot_EmptyStore(t *testing.T) {
 }
 
 func TestCopilotCycleToMap(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	endTime := now.Add(1 * time.Hour)
 	resetDate := now.Add(24 * time.Hour)
@@ -6709,6 +6923,7 @@ func TestCopilotCycleToMap(t *testing.T) {
 }
 
 func TestCopilotCycleToMap_NilEnds(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycle := &store.CopilotResetCycle{
 		ID:         1,
@@ -6728,6 +6943,7 @@ func TestCopilotCycleToMap_NilEnds(t *testing.T) {
 }
 
 func TestHandler_Summary_Copilot_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6751,6 +6967,7 @@ func TestHandler_Summary_Copilot_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_Insights_Copilot_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6776,6 +6993,7 @@ func TestHandler_Insights_Copilot_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_Insights_Copilot_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6814,6 +7032,7 @@ func TestHandler_Insights_Copilot_WithData(t *testing.T) {
 }
 
 func TestCopilotInsightSeverity(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		pct      float64
 		expected string
@@ -6841,6 +7060,7 @@ func TestCopilotInsightSeverity(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestAntigravityUsageStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		pct      float64
 		expected string
@@ -6865,6 +7085,7 @@ func TestAntigravityUsageStatus(t *testing.T) {
 }
 
 func TestHandler_Current_Antigravity_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6894,6 +7115,7 @@ func TestHandler_Current_Antigravity_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_Current_Antigravity_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6936,6 +7158,7 @@ func TestHandler_Current_Antigravity_WithData(t *testing.T) {
 }
 
 func TestAntigravityCycleToMap(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	endTime := now.Add(1 * time.Hour)
 	resetTime := now.Add(3 * time.Hour)
@@ -6965,6 +7188,7 @@ func TestAntigravityCycleToMap(t *testing.T) {
 }
 
 func TestAntigravityCycleToMap_NilEnds(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cycle := &store.AntigravityResetCycle{
 		ID:         1,
@@ -6983,6 +7207,7 @@ func TestAntigravityCycleToMap_NilEnds(t *testing.T) {
 }
 
 func TestHandler_Cycles_Antigravity_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -6999,6 +7224,7 @@ func TestHandler_Cycles_Antigravity_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_Cycles_Antigravity_NoType(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7021,6 +7247,7 @@ func TestHandler_Cycles_Antigravity_NoType(t *testing.T) {
 }
 
 func TestHandler_Insights_Antigravity_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7037,6 +7264,7 @@ func TestHandler_Insights_Antigravity_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_Insights_Antigravity_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7070,6 +7298,7 @@ func TestHandler_Insights_Antigravity_WithData(t *testing.T) {
 }
 
 func TestTruncateName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		maxLen   int
@@ -7094,6 +7323,7 @@ func TestTruncateName(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_UpdateSettings_SMTP_InvalidPort(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7112,6 +7342,7 @@ func TestHandler_UpdateSettings_SMTP_InvalidPort(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_SMTP_InvalidProtocol(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7130,6 +7361,7 @@ func TestHandler_UpdateSettings_SMTP_InvalidProtocol(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_SMTP_AutoProtocol(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7153,6 +7385,7 @@ func TestHandler_UpdateSettings_SMTP_AutoProtocol(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_EmptyTimezone(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7174,6 +7407,7 @@ func TestHandler_UpdateSettings_EmptyTimezone(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_LoginPost_RateLimited(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7212,6 +7446,7 @@ func TestHandler_LoginPost_RateLimited(t *testing.T) {
 }
 
 func TestHandler_LoginPost_FailedAttemptRecorded(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7242,6 +7477,7 @@ func TestHandler_LoginPost_FailedAttemptRecorded(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Providers_WithVisibility(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7275,6 +7511,7 @@ func TestHandler_Providers_WithVisibility(t *testing.T) {
 }
 
 func TestHandler_Current_Both_RespectsTelemetryVisibility(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7305,6 +7542,7 @@ func TestHandler_Current_Both_RespectsTelemetryVisibility(t *testing.T) {
 }
 
 func TestHandler_History_Both_RespectsTelemetryVisibility(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7332,6 +7570,7 @@ func TestHandler_History_Both_RespectsTelemetryVisibility(t *testing.T) {
 }
 
 func TestHandler_Insights_Both_RespectsTelemetryVisibility(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7362,6 +7601,7 @@ func TestHandler_Insights_Both_RespectsTelemetryVisibility(t *testing.T) {
 }
 
 func TestHandler_Providers_NilConfig(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/providers", nil)
@@ -7374,6 +7614,7 @@ func TestHandler_Providers_NilConfig(t *testing.T) {
 }
 
 func TestHandler_Providers_WithRequestedProvider(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7401,6 +7642,7 @@ func TestHandler_Providers_WithRequestedProvider(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestGetHiddenInsightKeys_NilStore(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	hidden := h.getHiddenInsightKeys()
 	if len(hidden) != 0 {
@@ -7409,6 +7651,7 @@ func TestGetHiddenInsightKeys_NilStore(t *testing.T) {
 }
 
 func TestGetHiddenInsightKeys_WithCorrelations(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7429,6 +7672,7 @@ func TestGetHiddenInsightKeys_WithCorrelations(t *testing.T) {
 }
 
 func TestGetHiddenInsightKeys_EmptySetting(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7442,6 +7686,7 @@ func TestGetHiddenInsightKeys_EmptySetting(t *testing.T) {
 }
 
 func TestGetHiddenInsightKeys_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7461,6 +7706,7 @@ func TestGetHiddenInsightKeys_InvalidJSON(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestZaiToolCallsPercent_NoDetails(t *testing.T) {
+	t.Parallel()
 	snapshot := &api.ZaiSnapshot{TimeUsage: 100, TimeUsageDetails: ""}
 	result := zaiToolCallsPercent(snapshot)
 	if result != 0 {
@@ -7469,6 +7715,7 @@ func TestZaiToolCallsPercent_NoDetails(t *testing.T) {
 }
 
 func TestZaiToolCallsPercent_ZeroBudget(t *testing.T) {
+	t.Parallel()
 	snapshot := &api.ZaiSnapshot{TimeUsage: 0, TimeUsageDetails: `[{"name":"tool1","usage":50}]`}
 	result := zaiToolCallsPercent(snapshot)
 	if result != 0 {
@@ -7477,6 +7724,7 @@ func TestZaiToolCallsPercent_ZeroBudget(t *testing.T) {
 }
 
 func TestZaiToolCallsPercent_WithDetails(t *testing.T) {
+	t.Parallel()
 	snapshot := &api.ZaiSnapshot{
 		TimeUsage:        200,
 		TimeUsageDetails: `[{"name":"tool1","usage":50},{"name":"tool2","usage":100}]`,
@@ -7489,6 +7737,7 @@ func TestZaiToolCallsPercent_WithDetails(t *testing.T) {
 }
 
 func TestZaiToolCallsPercent_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	snapshot := &api.ZaiSnapshot{TimeUsage: 100, TimeUsageDetails: "not json"}
 	result := zaiToolCallsPercent(snapshot)
 	if result != 0 {
@@ -7501,6 +7750,7 @@ func TestZaiToolCallsPercent_InvalidJSON(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestCodexQuotaInsightLabel(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		expected string
@@ -7524,6 +7774,7 @@ func TestCodexQuotaInsightLabel(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_HistoryBoth_WithAllProviders(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7550,6 +7801,7 @@ func TestHandler_HistoryBoth_WithAllProviders(t *testing.T) {
 }
 
 func TestHandler_HistoryBoth_InvalidRange(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7570,6 +7822,7 @@ func TestHandler_HistoryBoth_InvalidRange(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_CycleOverview_Copilot_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7590,6 +7843,7 @@ func TestHandler_CycleOverview_Copilot_EmptyStore(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Insights_Synthetic_WithRichData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7628,6 +7882,7 @@ func TestHandler_Insights_Synthetic_WithRichData(t *testing.T) {
 }
 
 func TestHandler_Insights_Zai_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7658,6 +7913,7 @@ func TestHandler_Insights_Zai_WithData(t *testing.T) {
 }
 
 func TestHandler_Insights_Anthropic_WithTrackerData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7703,6 +7959,7 @@ func TestHandler_Insights_Anthropic_WithTrackerData(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Summary_Antigravity_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7731,6 +7988,7 @@ func TestHandler_Summary_Antigravity_EmptyStore(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_UpdateSettings_SMTP_ValidConfig(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7750,6 +8008,7 @@ func TestHandler_UpdateSettings_SMTP_ValidConfig(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_SMTP_InvalidFromAddress(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7768,6 +8027,7 @@ func TestHandler_UpdateSettings_SMTP_InvalidFromAddress(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_SMTP_InvalidToAddress(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7786,6 +8046,7 @@ func TestHandler_UpdateSettings_SMTP_InvalidToAddress(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_Notifications_PushChannel(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7808,6 +8069,7 @@ func TestHandler_UpdateSettings_Notifications_PushChannel(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Insights_Anthropic_ComputeRate(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7863,6 +8125,7 @@ func TestHandler_Insights_Anthropic_ComputeRate(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_History_Antigravity_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7879,6 +8142,7 @@ func TestHandler_History_Antigravity_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_History_Antigravity_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7922,6 +8186,7 @@ func TestHandler_History_Antigravity_WithData(t *testing.T) {
 }
 
 func TestHandler_History_Copilot_InvalidRange(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7938,6 +8203,7 @@ func TestHandler_History_Copilot_InvalidRange(t *testing.T) {
 }
 
 func TestHandler_History_Antigravity_InvalidRange(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7958,6 +8224,7 @@ func TestHandler_History_Antigravity_InvalidRange(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_BuildSyntheticInsights_WithCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -7989,6 +8256,7 @@ func TestHandler_BuildSyntheticInsights_WithCycles(t *testing.T) {
 }
 
 func TestHandler_BuildSyntheticInsights_HiddenKeys(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8023,6 +8291,7 @@ func TestHandler_BuildSyntheticInsights_HiddenKeys(t *testing.T) {
 }
 
 func TestHandler_BuildZaiInsights_WithRichData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8086,6 +8355,7 @@ func TestHandler_BuildZaiInsights_WithRichData(t *testing.T) {
 }
 
 func TestHandler_BuildZaiInsights_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8105,6 +8375,7 @@ func TestHandler_BuildZaiInsights_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_BuildAnthropicInsights_WithCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8139,6 +8410,7 @@ func TestHandler_BuildAnthropicInsights_WithCycles(t *testing.T) {
 }
 
 func TestComputeAnthropicRate_WithSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8174,6 +8446,7 @@ func TestComputeAnthropicRate_WithSnapshots(t *testing.T) {
 }
 
 func TestComputeAnthropicRate_IdleRate(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8209,6 +8482,7 @@ func TestComputeAnthropicRate_IdleRate(t *testing.T) {
 }
 
 func TestComputeAnthropicRate_NoData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8223,6 +8497,7 @@ func TestComputeAnthropicRate_NoData(t *testing.T) {
 }
 
 func TestComputeAnthropicRate_FallbackToTracker(t *testing.T) {
+	t.Parallel()
 	// No store snapshots, but has tracker summary
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithAnthropic())
 
@@ -8252,6 +8527,7 @@ func TestComputeAnthropicRate_FallbackToTracker(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Summary_Copilot_WithTrackerData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8281,6 +8557,7 @@ func TestHandler_Summary_Copilot_WithTrackerData(t *testing.T) {
 }
 
 func TestBuildCopilotSummaryResponse(t *testing.T) {
+	t.Parallel()
 	resetDate := time.Now().UTC().Add(24 * time.Hour)
 	summary := &tracker.CopilotSummary{
 		QuotaName:        "premium_interactions",
@@ -8317,6 +8594,7 @@ func TestBuildCopilotSummaryResponse(t *testing.T) {
 }
 
 func TestBuildCopilotSummaryResponse_NoResetDate(t *testing.T) {
+	t.Parallel()
 	summary := &tracker.CopilotSummary{
 		QuotaName: "test",
 	}
@@ -8334,6 +8612,7 @@ func TestBuildCopilotSummaryResponse_NoResetDate(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Cycles_Copilot_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8372,6 +8651,7 @@ func TestHandler_Cycles_Copilot_WithData(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestBuildAnthropicSummaryResponse(t *testing.T) {
+	t.Parallel()
 	resetsAt := time.Now().UTC().Add(3 * time.Hour)
 	summary := &tracker.AnthropicSummary{
 		QuotaName:       "five_hour",
@@ -8404,6 +8684,7 @@ func TestBuildAnthropicSummaryResponse(t *testing.T) {
 }
 
 func TestBuildAnthropicSummaryResponse_NoResetsAt(t *testing.T) {
+	t.Parallel()
 	summary := &tracker.AnthropicSummary{
 		QuotaName:   "daily",
 		CurrentUtil: 20.0,
@@ -8422,6 +8703,7 @@ func TestBuildAnthropicSummaryResponse_NoResetsAt(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_CycleOverview_Antigravity_EmptyStore(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8438,6 +8720,7 @@ func TestHandler_CycleOverview_Antigravity_EmptyStore(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_Copilot_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8470,6 +8753,7 @@ func TestHandler_CycleOverview_Copilot_WithData(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_UpdateSettings_SMTP_InvalidSMTPJSON(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8487,6 +8771,7 @@ func TestHandler_UpdateSettings_SMTP_InvalidSMTPJSON(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_InvalidTimezoneValue(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8504,6 +8789,7 @@ func TestHandler_UpdateSettings_InvalidTimezoneValue(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_InvalidHiddenInsightsValue(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8521,6 +8807,7 @@ func TestHandler_UpdateSettings_InvalidHiddenInsightsValue(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_NullHiddenInsights(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8542,6 +8829,7 @@ func TestHandler_UpdateSettings_NullHiddenInsights(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_HistoryBoth_WithSyntheticData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8581,6 +8869,7 @@ func TestHandler_HistoryBoth_WithSyntheticData(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_BuildCopilotInsights_WithQuotaData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8615,6 +8904,7 @@ func TestHandler_BuildCopilotInsights_WithQuotaData(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_BuildCodexInsights_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8650,6 +8940,7 @@ func TestHandler_BuildCodexInsights_WithData(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_BuildSyntheticInsights_WithCycleData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8715,6 +9006,7 @@ func TestHandler_BuildSyntheticInsights_WithCycleData(t *testing.T) {
 }
 
 func TestHandler_BuildSyntheticInsights_HighUtilization(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8757,6 +9049,7 @@ func TestHandler_BuildSyntheticInsights_HighUtilization(t *testing.T) {
 }
 
 func TestHandler_BuildSyntheticInsights_LowUtilization(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8793,6 +9086,7 @@ func TestHandler_BuildSyntheticInsights_LowUtilization(t *testing.T) {
 }
 
 func TestHandler_BuildSyntheticInsights_HiddenKeys_Coverage(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8836,6 +9130,7 @@ func TestHandler_BuildSyntheticInsights_HiddenKeys_Coverage(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_BuildAnthropicInsights_WithCycleData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8878,6 +9173,7 @@ func TestHandler_BuildAnthropicInsights_WithCycleData(t *testing.T) {
 }
 
 func TestHandler_BuildAnthropicInsights_NoData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8895,6 +9191,7 @@ func TestHandler_BuildAnthropicInsights_NoData(t *testing.T) {
 }
 
 func TestHandler_BuildAnthropicInsights_HiddenForecasts(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8929,6 +9226,7 @@ func TestHandler_BuildAnthropicInsights_HiddenForecasts(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_ChangePassword_Success_Coverage(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8950,6 +9248,7 @@ func TestHandler_ChangePassword_Success_Coverage(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_WrongCurrent(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8971,6 +9270,7 @@ func TestHandler_ChangePassword_WrongCurrent(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_ShortPassword(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -8992,6 +9292,7 @@ func TestHandler_ChangePassword_ShortPassword(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_EmptyFields(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9013,6 +9314,7 @@ func TestHandler_ChangePassword_EmptyFields(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_NoAuth(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -9029,6 +9331,7 @@ func TestHandler_ChangePassword_NoAuth(t *testing.T) {
 }
 
 func TestHandler_ChangePassword_MethodNotAllowed_Coverage(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -9047,6 +9350,7 @@ func TestHandler_ChangePassword_MethodNotAllowed_Coverage(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_CyclesSynthetic_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9078,6 +9382,7 @@ func TestHandler_CyclesSynthetic_WithData(t *testing.T) {
 }
 
 func TestHandler_CyclesSynthetic_InvalidType(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9095,6 +9400,7 @@ func TestHandler_CyclesSynthetic_InvalidType(t *testing.T) {
 }
 
 func TestHandler_CyclesZai_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9117,6 +9423,7 @@ func TestHandler_CyclesZai_WithData(t *testing.T) {
 }
 
 func TestHandler_CyclesZai_InvalidType(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9138,6 +9445,7 @@ func TestHandler_CyclesZai_InvalidType(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_BuildZaiSummaryMap_StoreFallback(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9176,6 +9484,7 @@ func TestHandler_BuildZaiSummaryMap_StoreFallback(t *testing.T) {
 }
 
 func TestHandler_BuildZaiCurrent_WithStoreData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9218,6 +9527,7 @@ func TestHandler_BuildZaiCurrent_WithStoreData(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_UpdateSettings_SMTPInvalidPort(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9240,6 +9550,7 @@ func TestHandler_UpdateSettings_SMTPInvalidPort(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_SMTPInvalidProtocol(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9262,6 +9573,7 @@ func TestHandler_UpdateSettings_SMTPInvalidProtocol(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_SMTPInvalidFromAddress(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9284,6 +9596,7 @@ func TestHandler_UpdateSettings_SMTPInvalidFromAddress(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_SMTPInvalidRecipient(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9306,6 +9619,7 @@ func TestHandler_UpdateSettings_SMTPInvalidRecipient(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_SMTPSaveWithPassword(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9334,6 +9648,7 @@ func TestHandler_UpdateSettings_SMTPSaveWithPassword(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_SMTPPreservePassword(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9371,6 +9686,7 @@ func TestHandler_UpdateSettings_SMTPPreservePassword(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_NotificationOverrides(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9391,6 +9707,7 @@ func TestHandler_UpdateSettings_NotificationOverrides(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_NotificationAbsoluteOverrides(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9411,6 +9728,7 @@ func TestHandler_UpdateSettings_NotificationAbsoluteOverrides(t *testing.T) {
 }
 
 func TestHandler_UpdateSettings_NotificationInvalidAbsoluteOverrides(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9431,6 +9749,7 @@ func TestHandler_UpdateSettings_NotificationInvalidAbsoluteOverrides(t *testing.
 }
 
 func TestHandler_UpdateSettings_NotificationInvalidPercentOverrides(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9451,6 +9770,7 @@ func TestHandler_UpdateSettings_NotificationInvalidPercentOverrides(t *testing.T
 }
 
 func TestHandler_UpdateSettings_StoreNotAvailable(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -9472,6 +9792,7 @@ func TestHandler_UpdateSettings_StoreNotAvailable(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestSessionStore_ValidateToken_Expired(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9496,6 +9817,7 @@ func TestSessionStore_ValidateToken_Expired(t *testing.T) {
 }
 
 func TestSessionStore_ValidateToken_FromDB(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9520,6 +9842,7 @@ func TestSessionStore_ValidateToken_FromDB(t *testing.T) {
 }
 
 func TestSessionStore_ValidateToken_ExpiredInDB(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9535,6 +9858,7 @@ func TestSessionStore_ValidateToken_ExpiredInDB(t *testing.T) {
 }
 
 func TestSessionStore_EvictExpiredTokens(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9568,6 +9892,7 @@ func TestSessionStore_EvictExpiredTokens(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestSessionAuthMiddleware_BasicAuth(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9591,6 +9916,7 @@ func TestSessionAuthMiddleware_BasicAuth(t *testing.T) {
 }
 
 func TestSessionAuthMiddleware_BasicAuth_WrongPassword(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9613,6 +9939,7 @@ func TestSessionAuthMiddleware_BasicAuth_WrongPassword(t *testing.T) {
 }
 
 func TestSessionAuthMiddleware_BasicAuth_WrongUsername(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9635,6 +9962,7 @@ func TestSessionAuthMiddleware_BasicAuth_WrongUsername(t *testing.T) {
 }
 
 func TestSessionAuthMiddleware_RedirectBrowserToLogin(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9660,6 +9988,7 @@ func TestSessionAuthMiddleware_RedirectBrowserToLogin(t *testing.T) {
 }
 
 func TestSessionAuthMiddleware_StaticBypass(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9682,6 +10011,7 @@ func TestSessionAuthMiddleware_StaticBypass(t *testing.T) {
 }
 
 func TestSessionAuthMiddleware_SessionCookie(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9715,6 +10045,7 @@ func TestSessionAuthMiddleware_SessionCookie(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_CheckUpdate_MethodNotAllowed_Coverage(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -9729,6 +10060,7 @@ func TestHandler_CheckUpdate_MethodNotAllowed_Coverage(t *testing.T) {
 }
 
 func TestHandler_ApplyUpdate_MethodNotAllowed_Coverage(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithSynthetic()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -9747,6 +10079,7 @@ func TestHandler_ApplyUpdate_MethodNotAllowed_Coverage(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_CycleOverview_Copilot(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9764,6 +10097,7 @@ func TestHandler_CycleOverview_Copilot(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_Antigravity(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9781,6 +10115,7 @@ func TestHandler_CycleOverview_Antigravity(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_WithLimit(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9798,6 +10133,7 @@ func TestHandler_CycleOverview_WithLimit(t *testing.T) {
 }
 
 func TestHandler_CycleOverview_WithLargeLimit(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9820,6 +10156,7 @@ func TestHandler_CycleOverview_WithLargeLimit(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_LoggingHistory_Copilot(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9837,6 +10174,7 @@ func TestHandler_LoggingHistory_Copilot(t *testing.T) {
 }
 
 func TestHandler_LoggingHistory_Codex(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9854,6 +10192,7 @@ func TestHandler_LoggingHistory_Codex(t *testing.T) {
 }
 
 func TestHandler_LoggingHistory_Antigravity(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9875,6 +10214,7 @@ func TestHandler_LoggingHistory_Antigravity(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestLoginRateLimiter_EvictStaleEntries_AllNonBlocked(t *testing.T) {
+	t.Parallel()
 	rl := NewLoginRateLimiter(100)
 
 	// Record failures for several IPs
@@ -9896,6 +10236,7 @@ func TestLoginRateLimiter_EvictStaleEntries_AllNonBlocked(t *testing.T) {
 }
 
 func TestLoginRateLimiter_Clear(t *testing.T) {
+	t.Parallel()
 	rl := NewLoginRateLimiter(100)
 
 	rl.RecordFailure("1.2.3.4")
@@ -9913,6 +10254,7 @@ func TestLoginRateLimiter_Clear(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestComputeAnthropicRate_ExhaustsBeforeReset(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -9962,6 +10304,7 @@ func TestComputeAnthropicRate_ExhaustsBeforeReset(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestPercentUsed(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		usage, limit float64
 		expected     float64
@@ -9986,6 +10329,7 @@ func TestPercentUsed(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestBuildZaiToolCallsResponse_CriticalStatus(t *testing.T) {
+	t.Parallel()
 	snapshot := &api.ZaiSnapshot{
 		TimeUsage:        100,
 		TimeCurrentValue: 90,
@@ -10001,6 +10345,7 @@ func TestBuildZaiToolCallsResponse_CriticalStatus(t *testing.T) {
 }
 
 func TestBuildZaiToolCallsResponse_WarningStatus(t *testing.T) {
+	t.Parallel()
 	snapshot := &api.ZaiSnapshot{
 		TimeUsage:        100,
 		TimeCurrentValue: 50,
@@ -10016,6 +10361,7 @@ func TestBuildZaiToolCallsResponse_WarningStatus(t *testing.T) {
 }
 
 func TestBuildZaiToolCallsResponse_DangerStatus(t *testing.T) {
+	t.Parallel()
 	snapshot := &api.ZaiSnapshot{
 		TimeUsage:        100,
 		TimeCurrentValue: 80,
@@ -10031,6 +10377,7 @@ func TestBuildZaiToolCallsResponse_DangerStatus(t *testing.T) {
 }
 
 func TestBuildZaiToolCallsResponse_EmptyDetails(t *testing.T) {
+	t.Parallel()
 	snapshot := &api.ZaiSnapshot{
 		TimeUsage:        100,
 		TimeCurrentValue: 50,
@@ -10049,6 +10396,7 @@ func TestBuildZaiToolCallsResponse_EmptyDetails(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_HistoryZai_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -10086,6 +10434,7 @@ func TestHandler_HistoryZai_WithData(t *testing.T) {
 }
 
 func TestHandler_HistoryAnthropic_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -10120,6 +10469,7 @@ func TestHandler_HistoryAnthropic_WithData(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_Sessions_WithData(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -10137,6 +10487,7 @@ func TestHandler_Sessions_WithData(t *testing.T) {
 }
 
 func TestHandler_Sessions_Both(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -10158,6 +10509,7 @@ func TestHandler_Sessions_Both(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestCodexPlanLabel(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input, expected string
 	}{
@@ -10180,6 +10532,7 @@ func TestCodexPlanLabel(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestBuildInsight_AllSeverities(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		current, limit float64
 		expectStatus   string
@@ -10208,6 +10561,7 @@ func TestBuildInsight_AllSeverities(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestGetProviderFromRequest_DefaultWithMultipleProviders(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -10230,6 +10584,7 @@ func TestGetProviderFromRequest_DefaultWithMultipleProviders(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestFormatDuration(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		dur    time.Duration
 		expect string
@@ -10254,6 +10609,7 @@ func TestFormatDuration(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestCompactNum_Coverage(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input  float64
 		expect string
@@ -10277,6 +10633,7 @@ func TestCompactNum_Coverage(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestTruncateName_Coverage(t *testing.T) {
+	t.Parallel()
 	short := "short"
 	if truncateName(short, 30) != short {
 		t.Errorf("expected short name to be unchanged")
@@ -10294,6 +10651,7 @@ func TestTruncateName_Coverage(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestHandler_BuildCopilotInsights_WithTracker(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -10328,6 +10686,7 @@ func TestHandler_BuildCopilotInsights_WithTracker(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════
 
 func TestGroupAnthropicBillingPeriods(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 
 	// Create cycles with decreasing peaks (no reset boundary)
@@ -10344,6 +10703,7 @@ func TestGroupAnthropicBillingPeriods(t *testing.T) {
 }
 
 func TestAnthropicBillingPeriodCount_Coverage(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 
 	cycles := []*store.AnthropicResetCycle{
@@ -10358,6 +10718,7 @@ func TestAnthropicBillingPeriodCount_Coverage(t *testing.T) {
 }
 
 func TestAnthropicBillingPeriodAvg(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 
 	cycles := []*store.AnthropicResetCycle{
@@ -10372,6 +10733,7 @@ func TestAnthropicBillingPeriodAvg(t *testing.T) {
 }
 
 func TestAnthropicBillingPeriodPeak_Coverage(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 
 	cycles := []*store.AnthropicResetCycle{
@@ -10386,6 +10748,7 @@ func TestAnthropicBillingPeriodPeak_Coverage(t *testing.T) {
 }
 
 func TestNormalizeAntigravityGroupBy(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		input  string
@@ -10424,6 +10787,7 @@ func TestNormalizeAntigravityGroupBy(t *testing.T) {
 }
 
 func TestPercentUsed_ClampBehavior(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		value        float64
@@ -10447,6 +10811,7 @@ func TestPercentUsed_ClampBehavior(t *testing.T) {
 }
 
 func TestCodexQuotaDisplayOrder(t *testing.T) {
+	t.Parallel()
 	if got := codexQuotaDisplayOrder("five_hour"); got != 0 {
 		t.Fatalf("codexQuotaDisplayOrder(five_hour) = %d, want 0", got)
 	}
@@ -10462,6 +10827,7 @@ func TestCodexQuotaDisplayOrder(t *testing.T) {
 }
 
 func TestHandler_LoggingHistoryRangeAndLimit(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, nil)
 
 	t.Run("defaults", func(t *testing.T) {
@@ -10516,6 +10882,7 @@ func TestHandler_LoggingHistoryRangeAndLimit(t *testing.T) {
 }
 
 func TestGetProviderFromRequest_ErrorsAndNormalization(t *testing.T) {
+	t.Parallel()
 	t.Run("nil config returns error", func(t *testing.T) {
 		h := NewHandler(nil, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/api/current?provider=synthetic", nil)
@@ -10568,6 +10935,7 @@ func TestGetProviderFromRequest_ErrorsAndNormalization(t *testing.T) {
 // ── Anthropic Promo Range Tests ──
 
 func TestActiveAnthropicPromo_DuringWindow(t *testing.T) {
+	t.Parallel()
 	// March 20, 2026 - mid-promo
 	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
 	promo := activeAnthropicPromo(now)
@@ -10580,6 +10948,7 @@ func TestActiveAnthropicPromo_DuringWindow(t *testing.T) {
 }
 
 func TestActiveAnthropicPromo_BeforeWindow(t *testing.T) {
+	t.Parallel()
 	// March 12, 2026 - before promo starts
 	now := time.Date(2026, 3, 12, 12, 0, 0, 0, time.UTC)
 	promo := activeAnthropicPromo(now)
@@ -10589,6 +10958,7 @@ func TestActiveAnthropicPromo_BeforeWindow(t *testing.T) {
 }
 
 func TestActiveAnthropicPromo_AfterWindow(t *testing.T) {
+	t.Parallel()
 	// March 28, 2026 - after promo ends
 	now := time.Date(2026, 3, 28, 8, 0, 0, 0, time.UTC)
 	promo := activeAnthropicPromo(now)
@@ -10598,6 +10968,7 @@ func TestActiveAnthropicPromo_AfterWindow(t *testing.T) {
 }
 
 func TestBuildAnthropicCurrent_IncludesPromo(t *testing.T) {
+	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	resp := h.buildAnthropicCurrent()
 	// buildAnthropicCurrent uses time.Now(), so we test activeAnthropicPromo directly
@@ -10616,6 +10987,7 @@ func TestBuildAnthropicCurrent_IncludesPromo(t *testing.T) {
 }
 
 func TestBuildAnthropicCurrent_ExcludesPromo(t *testing.T) {
+	t.Parallel()
 	// After promo window, no promo key should exist
 	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	promo := activeAnthropicPromo(now)

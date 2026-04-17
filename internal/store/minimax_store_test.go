@@ -41,6 +41,7 @@ func newTestMiniMaxSnapshot(capturedAt time.Time, usedM2, usedM25 int) *api.Mini
 }
 
 func TestMiniMaxStore_InsertAndQueryLatest(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -73,6 +74,7 @@ func TestMiniMaxStore_InsertAndQueryLatest(t *testing.T) {
 }
 
 func TestMiniMaxStore_QueryRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -111,6 +113,7 @@ func TestMiniMaxStore_QueryRange(t *testing.T) {
 }
 
 func TestMiniMaxStore_Cycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -173,6 +176,7 @@ func TestMiniMaxStore_Cycles(t *testing.T) {
 }
 
 func TestMiniMaxStore_UsageSeriesAndModelNames(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -211,6 +215,7 @@ func TestMiniMaxStore_UsageSeriesAndModelNames(t *testing.T) {
 }
 
 func TestMiniMaxStore_QueryCycleOverview(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -246,6 +251,7 @@ func TestMiniMaxStore_QueryCycleOverview(t *testing.T) {
 }
 
 func TestMiniMaxStore_AccountIsolation(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)

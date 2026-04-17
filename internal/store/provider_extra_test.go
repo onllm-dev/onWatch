@@ -10,6 +10,7 @@ import (
 // --- Codex extra tests ---
 
 func TestCodexStore_UpdateCodexCycleResetsAt(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -46,6 +47,7 @@ func TestCodexStore_UpdateCodexCycleResetsAt(t *testing.T) {
 }
 
 func TestCodexStore_UpdateCodexCycleResetsAt_Nil(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -78,6 +80,7 @@ func TestCodexStore_UpdateCodexCycleResetsAt_Nil(t *testing.T) {
 }
 
 func TestCodexStore_QueryCodexCyclesSince(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -118,6 +121,7 @@ func TestCodexStore_QueryCodexCyclesSince(t *testing.T) {
 }
 
 func TestCodexStore_QueryCodexCyclesSince_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -136,6 +140,7 @@ func TestCodexStore_QueryCodexCyclesSince_Empty(t *testing.T) {
 // --- Copilot extra tests ---
 
 func TestCopilotStore_QueryCopilotCycleOverview_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -152,6 +157,7 @@ func TestCopilotStore_QueryCopilotCycleOverview_NoCycles(t *testing.T) {
 }
 
 func TestCopilotStore_QueryCopilotCycleOverview_WithData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -209,6 +215,7 @@ func TestCopilotStore_QueryCopilotCycleOverview_WithData(t *testing.T) {
 }
 
 func TestCopilotStore_QueryCopilotCycleOverview_NoSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -242,6 +249,7 @@ func TestCopilotStore_QueryCopilotCycleOverview_NoSnapshots(t *testing.T) {
 // --- Z.ai extra tests ---
 
 func TestZaiStore_QueryZaiCycleOverview_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -258,6 +266,7 @@ func TestZaiStore_QueryZaiCycleOverview_NoCycles(t *testing.T) {
 }
 
 func TestZaiStore_QueryZaiCycleOverview_WithData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -322,6 +331,7 @@ func TestZaiStore_QueryZaiCycleOverview_WithData(t *testing.T) {
 }
 
 func TestZaiStore_QueryZaiCycleOverview_TimePeakCol(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -354,6 +364,7 @@ func TestZaiStore_QueryZaiCycleOverview_TimePeakCol(t *testing.T) {
 }
 
 func TestZaiStore_QueryZaiCyclesSince(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -394,6 +405,7 @@ func TestZaiStore_QueryZaiCyclesSince(t *testing.T) {
 }
 
 func TestZaiStore_QueryZaiCyclesSince_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -412,6 +424,7 @@ func TestZaiStore_QueryZaiCyclesSince_Empty(t *testing.T) {
 // --- Antigravity extra tests ---
 
 func TestAntigravityStore_QueryAntigravityUsageSeries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -455,6 +468,7 @@ func TestAntigravityStore_QueryAntigravityUsageSeries(t *testing.T) {
 }
 
 func TestAntigravityStore_QueryAntigravityUsageSeries_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -471,6 +485,7 @@ func TestAntigravityStore_QueryAntigravityUsageSeries_Empty(t *testing.T) {
 }
 
 func TestAntigravityStore_QueryAntigravityHistory(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -504,6 +519,7 @@ func TestAntigravityStore_QueryAntigravityHistory(t *testing.T) {
 }
 
 func TestAntigravityStore_QueryAllAntigravityModelIDs(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -552,6 +568,7 @@ func TestAntigravityStore_QueryAllAntigravityModelIDs(t *testing.T) {
 }
 
 func TestAntigravityStore_QueryAntigravityUsageSeries_Since(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)

@@ -21,6 +21,7 @@ func newTestCodexSnapshot(capturedAt time.Time, resetsAt *time.Time) *api.CodexS
 }
 
 func TestCodexStore_InsertAndQueryLatest(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -58,6 +59,7 @@ func TestCodexStore_InsertAndQueryLatest(t *testing.T) {
 }
 
 func TestCodexStore_QueryRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -99,6 +101,7 @@ func TestCodexStore_QueryRange(t *testing.T) {
 }
 
 func TestCodexStore_CyclesAndSeries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -163,6 +166,7 @@ func TestCodexStore_CyclesAndSeries(t *testing.T) {
 }
 
 func TestCodexStore_CycleOverviewAndQuotaNames(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -200,6 +204,7 @@ func TestCodexStore_CycleOverviewAndQuotaNames(t *testing.T) {
 }
 
 func TestCodexStore_QueryCodexCycleOverview_UsesAccountScopedSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -278,6 +283,7 @@ func TestCodexStore_QueryCodexCycleOverview_UsesAccountScopedSnapshots(t *testin
 }
 
 func TestCodexStore_QueryLatestCodex_ParseFailure(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -299,6 +305,7 @@ func TestCodexStore_QueryLatestCodex_ParseFailure(t *testing.T) {
 }
 
 func TestCodexStore_QueryCodexRange_ParseFailure(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)

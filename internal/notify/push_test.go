@@ -15,6 +15,7 @@ import (
 )
 
 func TestGenerateVAPIDKeys(t *testing.T) {
+	t.Parallel()
 	pub, priv, err := GenerateVAPIDKeys()
 	if err != nil {
 		t.Fatalf("GenerateVAPIDKeys() error: %v", err)
@@ -56,6 +57,7 @@ func TestGenerateVAPIDKeys(t *testing.T) {
 }
 
 func TestGenerateVAPIDKeys_Unique(t *testing.T) {
+	t.Parallel()
 	pub1, _, _ := GenerateVAPIDKeys()
 	pub2, _, _ := GenerateVAPIDKeys()
 	if pub1 == pub2 {
@@ -64,6 +66,7 @@ func TestGenerateVAPIDKeys_Unique(t *testing.T) {
 }
 
 func TestNewPushSender(t *testing.T) {
+	t.Parallel()
 	pub, priv, err := GenerateVAPIDKeys()
 	if err != nil {
 		t.Fatalf("GenerateVAPIDKeys: %v", err)
@@ -82,6 +85,7 @@ func TestNewPushSender(t *testing.T) {
 }
 
 func TestNewPushSender_InvalidKeys(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		pub  string
@@ -102,6 +106,7 @@ func TestNewPushSender_InvalidKeys(t *testing.T) {
 }
 
 func TestCreateVAPIDJWT(t *testing.T) {
+	t.Parallel()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
@@ -150,6 +155,7 @@ func splitJWT(jwt string) []string {
 }
 
 func TestExtractOrigin(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input string
 		want  string
@@ -167,6 +173,7 @@ func TestExtractOrigin(t *testing.T) {
 }
 
 func TestEncryptPayload(t *testing.T) {
+	t.Parallel()
 	// Generate a client key pair (simulating the browser)
 	clientPriv, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
@@ -206,6 +213,7 @@ func TestEncryptPayload(t *testing.T) {
 }
 
 func TestPushSender_Send(t *testing.T) {
+	t.Parallel()
 	var receivedRequests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedRequests.Add(1)
@@ -261,6 +269,7 @@ func TestPushSender_Send(t *testing.T) {
 }
 
 func TestPushSender_Send_ServerError(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusGone) // 410 = subscription expired
 	}))

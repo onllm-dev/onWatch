@@ -27,6 +27,7 @@ func newRawStoreForMigrationTests(t *testing.T, statements ...string) *Store {
 }
 
 func TestStore_MigrateSchema_ErrorsWithoutBaseTables(t *testing.T) {
+	t.Parallel()
 	s := newRawStoreForMigrationTests(t)
 
 	err := s.migrateSchema()
@@ -36,6 +37,7 @@ func TestStore_MigrateSchema_ErrorsWithoutBaseTables(t *testing.T) {
 }
 
 func TestStore_MigrateNotificationLogProviderScope_AlreadyMigrated(t *testing.T) {
+	t.Parallel()
 	s := newRawStoreForMigrationTests(t, `
 		CREATE TABLE notification_log (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,6 +64,7 @@ func TestStore_MigrateNotificationLogProviderScope_AlreadyMigrated(t *testing.T)
 }
 
 func TestStore_MigrateNotificationLogProviderScope_ErrorPaths(t *testing.T) {
+	t.Parallel()
 	t.Run("create v2 table failure", func(t *testing.T) {
 		s := newRawStoreForMigrationTests(t,
 			`CREATE TABLE notification_log (
@@ -96,6 +99,7 @@ func TestStore_MigrateNotificationLogProviderScope_ErrorPaths(t *testing.T) {
 }
 
 func TestStore_CreateTables_ErrorOnClosedDB(t *testing.T) {
+	t.Parallel()
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
@@ -112,6 +116,7 @@ func TestStore_CreateTables_ErrorOnClosedDB(t *testing.T) {
 }
 
 func TestStore_TableHasColumn_ErrorOnClosedDB(t *testing.T) {
+	t.Parallel()
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
@@ -128,6 +133,7 @@ func TestStore_TableHasColumn_ErrorOnClosedDB(t *testing.T) {
 }
 
 func TestStore_MigrateSchema_IdempotentOnCurrentSchema(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -149,6 +155,7 @@ func TestStore_MigrateSchema_IdempotentOnCurrentSchema(t *testing.T) {
 }
 
 func TestStore_MigrateSchema_ToleratesMissingOptionalTables(t *testing.T) {
+	t.Parallel()
 	s := newRawStoreForMigrationTests(t,
 		`CREATE TABLE quota_snapshots (id INTEGER PRIMARY KEY, provider TEXT NOT NULL DEFAULT 'synthetic')`,
 		`CREATE TABLE reset_cycles (id INTEGER PRIMARY KEY, provider TEXT NOT NULL DEFAULT 'synthetic')`,

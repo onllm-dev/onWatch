@@ -8,6 +8,7 @@ import (
 )
 
 func TestProviderAccountsLifecycleAndCodexAccountQueries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)

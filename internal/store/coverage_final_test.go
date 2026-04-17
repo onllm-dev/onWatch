@@ -10,6 +10,7 @@ import (
 // --- CodexCycleOverview with completed cycles + snapshots ---
 
 func TestCodexStore_QueryCodexCycleOverview_CompletedWithSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -73,6 +74,7 @@ func TestCodexStore_QueryCodexCycleOverview_CompletedWithSnapshots(t *testing.T)
 }
 
 func TestCodexStore_QueryCodexCycleOverview_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -89,6 +91,7 @@ func TestCodexStore_QueryCodexCycleOverview_NoCycles(t *testing.T) {
 }
 
 func TestCodexStore_QueryCodexCycleOverview_NoSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -120,6 +123,7 @@ func TestCodexStore_QueryCodexCycleOverview_NoSnapshots(t *testing.T) {
 }
 
 func TestCodexStore_QueryCodexCycleOverview_DefaultLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -138,6 +142,7 @@ func TestCodexStore_QueryCodexCycleOverview_DefaultLimit(t *testing.T) {
 // --- CopilotCycleOverview with active cycle ---
 
 func TestCopilotStore_QueryCopilotCycleOverview_ActiveCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -183,6 +188,7 @@ func TestCopilotStore_QueryCopilotCycleOverview_ActiveCycle(t *testing.T) {
 // --- QueryActiveCodexCycle with resetsAt ---
 
 func TestCodexStore_QueryActiveCodexCycle_WithResetsAt(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -213,6 +219,7 @@ func TestCodexStore_QueryActiveCodexCycle_WithResetsAt(t *testing.T) {
 }
 
 func TestCodexStore_QueryActiveCodexCycle_NoResetsAt(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -238,6 +245,7 @@ func TestCodexStore_QueryActiveCodexCycle_NoResetsAt(t *testing.T) {
 }
 
 func TestCodexStore_QueryActiveCodexCycle_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -256,6 +264,7 @@ func TestCodexStore_QueryActiveCodexCycle_Empty(t *testing.T) {
 // --- AntigravityCycleOverview merging ---
 
 func TestAntigravityStore_QueryAntigravityCycleOverview_MergeSameStartTime(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -320,6 +329,7 @@ func TestAntigravityStore_QueryAntigravityCycleOverview_MergeSameStartTime(t *te
 // --- AntigravityCycleOverview with different start times ---
 
 func TestAntigravityStore_QueryAntigravityCycleOverview_DifferentStartTimes(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -386,6 +396,7 @@ func TestAntigravityStore_QueryAntigravityCycleOverview_DifferentStartTimes(t *t
 // --- ZaiCycleOverview with active cycle ---
 
 func TestZaiStore_QueryZaiCycleOverview_ActiveCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -441,6 +452,7 @@ func TestZaiStore_QueryZaiCycleOverview_ActiveCycle(t *testing.T) {
 // --- ZaiCycleOverview with zero-usage pct ---
 
 func TestZaiStore_QueryZaiCycleOverview_ZeroUsage(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -502,6 +514,7 @@ func TestZaiStore_QueryZaiCycleOverview_ZeroUsage(t *testing.T) {
 // --- QuerySyntheticCycleOverview active cycle with default groupBy ---
 
 func TestStore_QuerySyntheticCycleOverview_DefaultGroupBy(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -544,6 +557,7 @@ func TestStore_QuerySyntheticCycleOverview_DefaultGroupBy(t *testing.T) {
 // --- CopilotCycleOverview with entitlement-based percent ---
 
 func TestCopilotStore_QueryCopilotCycleOverview_WithPercent(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -607,6 +621,7 @@ func TestCopilotStore_QueryCopilotCycleOverview_WithPercent(t *testing.T) {
 // --- Anthropic CycleOverview with start values (delta) ---
 
 func TestStore_QueryAnthropicCycleOverview_CrossQuotaDelta(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -685,6 +700,7 @@ func TestStore_QueryAnthropicCycleOverview_CrossQuotaDelta(t *testing.T) {
 // --- migrateNotificationLogProviderScope: full migration path ---
 
 func TestStore_MigrateNotificationLogProviderScope_OldSchema(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -743,6 +759,7 @@ func TestStore_MigrateNotificationLogProviderScope_OldSchema(t *testing.T) {
 // --- migrateAnthropicSessions: idle timeout + different quota count ---
 
 func TestStore_MigrateSessionsToUsageBased_AnthropicIdleTimeout(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/migrate_anthropic_idle.db"
 	s, err := New(tmpFile)
 	if err != nil {
@@ -815,6 +832,7 @@ func TestStore_MigrateSessionsToUsageBased_AnthropicIdleTimeout(t *testing.T) {
 }
 
 func TestStore_MigrateSessionsToUsageBased_AnthropicDifferentQuotaCount(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/migrate_anthropic_quotas.db"
 	s, err := New(tmpFile)
 	if err != nil {
@@ -883,6 +901,7 @@ func TestStore_MigrateSessionsToUsageBased_AnthropicDifferentQuotaCount(t *testi
 // --- AntigravityCycleOverview merge: earlier start + later end ---
 
 func TestAntigravityStore_QueryAntigravityCycleOverview_MergeEarlierStart(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -948,6 +967,7 @@ func TestAntigravityStore_QueryAntigravityCycleOverview_MergeEarlierStart(t *tes
 // --- AntigravityCycleOverview: active + closed cycles (sort branch) ---
 
 func TestAntigravityStore_QueryAntigravityCycleOverview_ActiveAndClosed(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1028,6 +1048,7 @@ func TestAntigravityStore_QueryAntigravityCycleOverview_ActiveAndClosed(t *testi
 // --- migrateSchema: exercise ALTER TABLE success paths ---
 
 func TestStore_MigrateSchema_AlterTableSuccess(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1167,6 +1188,7 @@ func closedStoreForTest(t *testing.T) *Store {
 }
 
 func TestClosedDB_CountBadCycles(t *testing.T) {
+	t.Parallel()
 	s := closedStoreForTest(t)
 	_, err := s.countBadCycles()
 	if err == nil {
@@ -1175,6 +1197,7 @@ func TestClosedDB_CountBadCycles(t *testing.T) {
 }
 
 func TestClosedDB_CountBadAnthropicCycles(t *testing.T) {
+	t.Parallel()
 	s := closedStoreForTest(t)
 	_, err := s.countBadAnthropicCycles()
 	if err == nil {
@@ -1183,6 +1206,7 @@ func TestClosedDB_CountBadAnthropicCycles(t *testing.T) {
 }
 
 func TestClosedDB_CountBadSyntheticCycles(t *testing.T) {
+	t.Parallel()
 	s := closedStoreForTest(t)
 	_, err := s.countBadSyntheticCycles()
 	if err == nil {
@@ -1191,6 +1215,7 @@ func TestClosedDB_CountBadSyntheticCycles(t *testing.T) {
 }
 
 func TestClosedDB_CountBadZaiCycles(t *testing.T) {
+	t.Parallel()
 	s := closedStoreForTest(t)
 	_, err := s.countBadZaiCycles()
 	if err == nil {
@@ -1199,6 +1224,7 @@ func TestClosedDB_CountBadZaiCycles(t *testing.T) {
 }
 
 func TestClosedDB_CountBadCopilotCycles(t *testing.T) {
+	t.Parallel()
 	s := closedStoreForTest(t)
 	_, err := s.countBadCopilotCycles()
 	if err == nil {
@@ -1207,6 +1233,7 @@ func TestClosedDB_CountBadCopilotCycles(t *testing.T) {
 }
 
 func TestClosedDB_RunCycleMigrationIfNeeded(t *testing.T) {
+	t.Parallel()
 	s := closedStoreForTest(t)
 	logger := testLogger()
 	_, err := s.RunCycleMigrationIfNeeded(logger)
@@ -1216,6 +1243,7 @@ func TestClosedDB_RunCycleMigrationIfNeeded(t *testing.T) {
 }
 
 func TestClosedDB_TableHasColumn(t *testing.T) {
+	t.Parallel()
 	s := closedStoreForTest(t)
 	_, err := s.tableHasColumn("sessions", "provider")
 	if err == nil {
@@ -1224,6 +1252,7 @@ func TestClosedDB_TableHasColumn(t *testing.T) {
 }
 
 func TestCodexStore_QueryCodexCycleOverview_ActiveWithSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)

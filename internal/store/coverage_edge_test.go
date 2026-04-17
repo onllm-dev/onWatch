@@ -28,6 +28,7 @@ func droppedTableStore(t *testing.T, tableToDrop string) *Store {
 // after the main snapshot query succeeds.
 
 func TestDroppedTable_QueryLatestAnthropic_QuotaValuesError(t *testing.T) {
+	t.Parallel()
 	s := droppedTableStore(t, "anthropic_quota_values")
 	defer s.Close()
 
@@ -47,6 +48,7 @@ func TestDroppedTable_QueryLatestAnthropic_QuotaValuesError(t *testing.T) {
 }
 
 func TestDroppedTable_QueryAnthropicRange_QuotaValuesError(t *testing.T) {
+	t.Parallel()
 	s := droppedTableStore(t, "anthropic_quota_values")
 	defer s.Close()
 
@@ -66,6 +68,7 @@ func TestDroppedTable_QueryAnthropicRange_QuotaValuesError(t *testing.T) {
 }
 
 func TestDroppedTable_QueryLatestCopilot_QuotaValuesError(t *testing.T) {
+	t.Parallel()
 	s := droppedTableStore(t, "copilot_quota_values")
 	defer s.Close()
 
@@ -84,6 +87,7 @@ func TestDroppedTable_QueryLatestCopilot_QuotaValuesError(t *testing.T) {
 }
 
 func TestDroppedTable_QueryCopilotRange_QuotaValuesError(t *testing.T) {
+	t.Parallel()
 	s := droppedTableStore(t, "copilot_quota_values")
 	defer s.Close()
 
@@ -103,6 +107,7 @@ func TestDroppedTable_QueryCopilotRange_QuotaValuesError(t *testing.T) {
 }
 
 func TestDroppedTable_QueryLatestCodex_QuotaValuesError(t *testing.T) {
+	t.Parallel()
 	s := droppedTableStore(t, "codex_quota_values")
 	defer s.Close()
 
@@ -121,6 +126,7 @@ func TestDroppedTable_QueryLatestCodex_QuotaValuesError(t *testing.T) {
 }
 
 func TestDroppedTable_QueryCodexRange_QuotaValuesError(t *testing.T) {
+	t.Parallel()
 	s := droppedTableStore(t, "codex_quota_values")
 	defer s.Close()
 
@@ -140,6 +146,7 @@ func TestDroppedTable_QueryCodexRange_QuotaValuesError(t *testing.T) {
 }
 
 func TestDroppedTable_QueryLatestAntigravity_ModelValuesError(t *testing.T) {
+	t.Parallel()
 	s := droppedTableStore(t, "antigravity_model_values")
 	defer s.Close()
 
@@ -158,6 +165,7 @@ func TestDroppedTable_QueryLatestAntigravity_ModelValuesError(t *testing.T) {
 }
 
 func TestDroppedTable_QueryAntigravityRange_ModelValuesError(t *testing.T) {
+	t.Parallel()
 	s := droppedTableStore(t, "antigravity_model_values")
 	defer s.Close()
 
@@ -177,6 +185,7 @@ func TestDroppedTable_QueryAntigravityRange_ModelValuesError(t *testing.T) {
 }
 
 func TestDroppedTable_QueryAntigravitySnapshotAtOrBefore_ModelValuesError(t *testing.T) {
+	t.Parallel()
 	s := droppedTableStore(t, "antigravity_model_values")
 	defer s.Close()
 
@@ -199,6 +208,7 @@ func TestDroppedTable_QueryAntigravitySnapshotAtOrBefore_ModelValuesError(t *tes
 // Insert data with invalid time formats to trigger parse errors.
 
 func TestCodexStore_QueryCodexCycleHistory_ParseError(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -222,6 +232,7 @@ func TestCodexStore_QueryCodexCycleHistory_ParseError(t *testing.T) {
 }
 
 func TestCodexStore_QueryCodexCyclesSince_ParseError(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -245,6 +256,7 @@ func TestCodexStore_QueryCodexCyclesSince_ParseError(t *testing.T) {
 }
 
 func TestCodexStore_QueryActiveCodexCycle_ParseErrorCycleStart(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -271,6 +283,7 @@ func TestCodexStore_QueryActiveCodexCycle_ParseErrorCycleStart(t *testing.T) {
 // then verify the migration runs correctly.
 
 func TestMigrateNotificationLogProviderScope(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir() + "/migrate_notif.db"
 
 	// Create DB with old schema (notification_log WITHOUT provider column)
@@ -359,6 +372,7 @@ func TestMigrateNotificationLogProviderScope(t *testing.T) {
 // --- Test Codex overview with cross-quota values ---
 
 func TestCodexStore_QueryCodexCycleOverview_WithCrossQuotas(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -408,6 +422,7 @@ func TestCodexStore_QueryCodexCycleOverview_WithCrossQuotas(t *testing.T) {
 // --- Test Antigravity overview: getAntigravityGroupedCrossQuotasAt fallback ---
 
 func TestAntigravityStore_getAntigravityGroupedCrossQuotasAt_Fallback(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -443,6 +458,7 @@ func TestAntigravityStore_getAntigravityGroupedCrossQuotasAt_Fallback(t *testing
 // --- Test CopilotCycleOverview with cross-quota data ---
 
 func TestCopilotStore_QueryCopilotCycleOverview_WithCrossQuotas(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -491,6 +507,7 @@ func TestCopilotStore_QueryCopilotCycleOverview_WithCrossQuotas(t *testing.T) {
 // --- Test Anthropic overview with cross-quota data ---
 
 func TestAnthropicStore_QueryAnthropicCycleOverview_WithCrossQuotas(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)

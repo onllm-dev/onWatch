@@ -12,6 +12,7 @@ import (
 )
 
 func TestMiniMaxHelperFunctions(t *testing.T) {
+	t.Parallel()
 	resetAt := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
 	quota := &api.MiniMaxModelQuota{
 		ModelName:   "MiniMax-M2",
@@ -67,6 +68,7 @@ func TestMiniMaxHelperFunctions(t *testing.T) {
 }
 
 func TestMiniMaxSamplesAndTrendHelpers(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
 	windowStart := base.Add(-time.Hour)
 	windowEnd := base.Add(4 * time.Hour)
@@ -114,6 +116,7 @@ func TestMiniMaxSamplesAndTrendHelpers(t *testing.T) {
 }
 
 func TestMiniMaxHandlersAndSummaryHelpers(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
