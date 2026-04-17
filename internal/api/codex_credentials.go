@@ -81,14 +81,23 @@ func DetectCodexCredentials(logger *slog.Logger) *CodexCredentials {
 				logger.Debug("Codex auth file parse failed", "path", authPath, "error", err)
 			} else {
 				idToken := strings.TrimSpace(auth.Tokens.IDToken)
-				expiresAt := ParseIDTokenExpiry(idToken)
+				accessToken := strings.TrimSpace(auth.Tokens.AccessToken)
+				// Use access_token expiry as the source of truth - it controls
+				// API access. id_token expires several days sooner, which would
+				// trigger spurious refreshes (and pause polling on refresh failure)
+				// even when the access_token is still valid for days.
+				expiresAt := ParseIDTokenExpiry(accessToken)
+				if expiresAt.IsZero() {
+					// Fall back to id_token if access_token can't be parsed.
+					expiresAt = ParseIDTokenExpiry(idToken)
+				}
 				var expiresIn time.Duration
 				if !expiresAt.IsZero() {
 					expiresIn = time.Until(expiresAt)
 				}
 
 				creds := &CodexCredentials{
-					AccessToken:  strings.TrimSpace(auth.Tokens.AccessToken),
+					AccessToken:  accessToken,
 					RefreshToken: strings.TrimSpace(auth.Tokens.RefreshToken),
 					IDToken:      idToken,
 					APIKey:       strings.TrimSpace(auth.OpenAIAPIKey),
