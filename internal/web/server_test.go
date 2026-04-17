@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
@@ -394,6 +395,21 @@ func TestServer_MetricsUsesBearerAuthWithoutDashboardRedirect(t *testing.T) {
 	}
 	defer s.Close()
 
+	// Seed one snapshot so the onwatch_agent_healthy series is emitted
+	// (post-#4, we omit series for providers that have never reported).
+	if _, err := s.InsertCopilotSnapshot(&api.CopilotSnapshot{
+		CapturedAt:  time.Now().UTC(),
+		CopilotPlan: "individual_pro",
+		Quotas: []api.CopilotQuota{{
+			Name:             "premium_interactions",
+			Entitlement:      100,
+			Remaining:        25,
+			PercentRemaining: 25,
+		}},
+	}); err != nil {
+		t.Fatalf("InsertCopilotSnapshot: %v", err)
+	}
+
 	cfg := &config.Config{PollInterval: time.Minute}
 	handler := NewHandler(s, nil, logger, nil, cfg)
 	passHash, _ := HashPassword("test")
@@ -431,7 +447,7 @@ func TestServer_MetricsUsesBearerAuthWithoutDashboardRedirect(t *testing.T) {
 		t.Fatalf("metrics content type = %q, want text/plain", ct)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "onwatch_auth_token_status") {
+	if !strings.Contains(string(body), "onwatch_agent_healthy") {
 		t.Fatalf("metrics body missing expected metric, body=%s", string(body))
 	}
 }

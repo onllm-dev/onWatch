@@ -108,9 +108,11 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 
 	// Prometheus metrics endpoint (public, with bearer token auth)
 	if handler.metrics != nil {
-	var metricsHandler http.Handler = http.HandlerFunc(handler.Metrics)
+		var metricsHandler http.Handler = http.HandlerFunc(handler.Metrics)
 		if metricsToken != "" {
 			metricsHandler = metricsAuthMiddleware(metricsToken, metricsHandler)
+		} else if logger != nil {
+			logger.Warn("metrics endpoint is unauthenticated; set ONWATCH_METRICS_TOKEN to restrict /metrics access")
 		}
 		mux.Handle(p("/metrics"), metricsHandler)
 	}

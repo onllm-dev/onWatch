@@ -766,9 +766,14 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 	return h
 }
 
-// SetVersion sets the version string for display in the dashboard.
+// SetVersion sets the version string for display in the dashboard and
+// also publishes onwatch_build_info{version=v,...} so scrapers can pin
+// alerts to a specific release.
 func (h *Handler) SetVersion(v string) {
 	h.version = v
+	if h.metrics != nil {
+		h.metrics.SetBuildInfo(v)
+	}
 }
 
 // SetAnthropicTracker sets the Anthropic tracker for usage summary enrichment.
@@ -5698,14 +5703,11 @@ func compactNum(v float64) string {
 	return fmt.Sprintf("%.0f", v)
 }
 
-// GetSettings returns current settings as JSON.
+// Metrics serves the Prometheus /metrics endpoint. It delegates to the shared
+// promhttp handler after refreshing values from the store; the promhttp
+// handler owns Content-Type negotiation and error reporting.
 func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
-	h.metrics.Scrape(h.store, h.config.PollInterval)
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	if err := h.metrics.WriteText(w); err != nil {
-		h.logger.Error("failed to write metrics", "error", err)
-		http.Error(w, "failed to collect metrics", http.StatusInternalServerError)
-	}
+	h.metrics.Handler(h.store, h.config.PollInterval).ServeHTTP(w, r)
 }
 
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/metrics"
 	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
@@ -22,6 +23,7 @@ type Agent struct {
 	sm           *SessionManager
 	notifier     *notify.NotificationEngine
 	pollingCheck func() bool
+	metrics      *metrics.Metrics
 }
 
 // SetPollingCheck sets a function that is called before each poll.
@@ -33,6 +35,12 @@ func (a *Agent) SetPollingCheck(fn func() bool) {
 // SetNotifier sets the notification engine for sending alerts.
 func (a *Agent) SetNotifier(n *notify.NotificationEngine) {
 	a.notifier = n
+}
+
+// SetMetrics wires the Prometheus metrics recorder for cycle counters.
+// Safe to omit; nil is a no-op.
+func (a *Agent) SetMetrics(m *metrics.Metrics) {
+	a.metrics = m
 }
 
 // New creates a new Agent with the given dependencies.
@@ -96,6 +104,7 @@ func (a *Agent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch quotas", "error", err)
+		a.metrics.RecordCycleFailed("synthetic", "", "fetch_failed")
 		return
 	}
 
@@ -110,7 +119,10 @@ func (a *Agent) poll(ctx context.Context) {
 	// Store snapshot (always do this, even if tracker fails)
 	if _, err := a.store.InsertSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert snapshot", "error", err)
+		a.metrics.RecordCycleFailed("synthetic", "", "store_failed")
+		return
 	}
+	a.metrics.RecordCycleCompleted("synthetic", "")
 
 	// Process with tracker (log error but don't stop)
 	if err := a.tracker.Process(snapshot); err != nil {

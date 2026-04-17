@@ -4,60 +4,88 @@ onWatch exposes a Prometheus-compatible `/metrics` endpoint so quota, credit, an
 
 > Status: Beta. Metric names and labels may evolve based on feedback before 1.0. Please open issues or PRs against `onllm-dev/onWatch` with suggestions.
 
-## Enabling the Endpoint
+## Migration notes (pre-1.0)
 
-The `/metrics` endpoint is always mounted. Authentication is optional and controlled by a single environment variable:
+If you deployed onWatch 2.11.40's beta metrics, the following changed in the 1.0 correctness pass. Update dashboards/alerts before upgrading.
+
+| Removed/renamed | Replacement |
+|---|---|
+| `onwatch_quota_time_until_reset_seconds` | `onwatch_quota_reset_timestamp_seconds` (absolute Unix seconds; compute remaining as `metric - time()`) |
+| `onwatch_auth_token_status` | `onwatch_agent_healthy` (honest name; same `1`/`0` semantics, measures poll freshness, **not** real OAuth validity) |
+| `account_id=""` | `account_id="default"` (sentinel for single-account providers) |
+| `onwatch_credits_balance{provider,account_id}` | `onwatch_credits_balance{provider,account_id,unit}` (unit disambiguates `usd`, `credits`, `prompt_credits`) |
+
+## Enabling the Endpoint
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `ONWATCH_METRICS_TOKEN` | Bearer token required on `/metrics` requests | unset (endpoint is open) |
+| `ONWATCH_METRICS_TOKEN` | Bearer token required on `/metrics` requests | unset (endpoint is open, logs a warning at startup) |
 
-- If `ONWATCH_METRICS_TOKEN` is **unset or empty**, `/metrics` responds without auth. This is the simplest setup for single-host or already-network-isolated deployments.
+- If `ONWATCH_METRICS_TOKEN` is unset, `/metrics` responds without auth and onWatch emits `WARN metrics endpoint is unauthenticated; set ONWATCH_METRICS_TOKEN to restrict /metrics access` at startup.
 - If set, Prometheus must send `Authorization: Bearer <token>` on every scrape.
-
-Unlike the dashboard (which uses HTTP Basic auth), the metrics endpoint has its own token so your scraper credentials stay separate from the admin credentials.
-
-### Example
 
 ```bash
 export ONWATCH_METRICS_TOKEN="$(openssl rand -hex 32)"
 ./onwatch --daemon
-```
-
-```bash
-# manual verification
 curl -H "Authorization: Bearer $ONWATCH_METRICS_TOKEN" http://localhost:8080/metrics
 ```
 
 ## Exposed Metrics
 
-All onWatch-specific metrics share a common label set where applicable: `provider`, `quota_type`, and `account_id`. Standard Go runtime and process collectors (`go_*`, `process_*`) are also registered.
+Standard Go runtime / process collectors (`go_*`, `process_*`) are also registered.
 
-| Metric | Type | Labels | Description |
-|---|---|---|---|
-| `onwatch_quota_utilization_percent` | Gauge | `provider`, `quota_type`, `account_id` | Current quota utilization as a percentage (0-100). |
-| `onwatch_quota_time_until_reset_seconds` | Gauge | `provider`, `quota_type`, `account_id` | Seconds until the quota resets (0 when already reset or unknown). |
-| `onwatch_credits_balance` | Gauge | `provider`, `account_id` | Remaining credit balance (Codex credits, Antigravity prompt credits, OpenRouter balance). |
-| `onwatch_auth_token_status` | Gauge | `provider`, `account_id` | `1` when the most recent poll succeeded within the stale threshold, `0` when stale or auth failure likely. Useful for "token expired" alerts. |
-| `onwatch_agent_last_cycle_age_seconds` | Gauge | `provider`, `account_id` | Seconds since the last successful poll cycle for the provider/account. |
+### Gauges
 
-### Label Semantics
+| Metric | Labels | Description |
+|---|---|---|
+| `onwatch_quota_utilization_percent` | `provider`, `quota_type`, `account_id` | Current quota utilization as a percentage (0-100). |
+| `onwatch_quota_reset_timestamp_seconds` | `provider`, `quota_type`, `account_id` | Unix timestamp (seconds) at which the quota next resets. Compute remaining: `metric - time()`. Series is omitted when no reset is scheduled. |
+| `onwatch_credits_balance` | `provider`, `account_id`, `unit` | Remaining credit balance. `unit` is `usd` (OpenRouter), `credits` (Codex), or `prompt_credits` (Antigravity). |
+| `onwatch_agent_healthy` | `provider`, `account_id` | `1` if the polling agent has recent successful data (within `2 * pollInterval`), `0` if stale. Reflects **poll freshness**, not real OAuth validity. Series is omitted until the provider has produced at least one snapshot, which prevents startup false-positives. |
+| `onwatch_agent_last_cycle_age_seconds` | `provider`, `account_id` | Seconds since the last successful poll cycle. Companion to `onwatch_agent_healthy`. |
+| `onwatch_build_info` | `version`, `go_version`, `commit` | Always `1`. Use for pinning alerts to a specific release. |
+| `onwatch_account_info` | `provider`, `account_id`, `account_name` | Join-metric (always `1`) mapping numeric `account_id` to human-readable `account_name`. See "Joining on account_name" below. |
+| `onwatch_api_integration_requests` | `integration` | Number of ingested API-integration usage events currently in the local DB, per integration. Not named `_total` because it's a DB snapshot, not an event-stream counter. |
+| `onwatch_api_integration_spend_usd` | `integration` | Cumulative USD spend tracked by API-integration ingestion (from the local DB). |
 
-- `provider` - one of `anthropic`, `codex`, `copilot`, `zai`, `minimax`, `antigravity`, `gemini`, `openrouter`.
-- `quota_type` - provider-specific quota identifier (e.g. `5h_limit`, model name, or `credits`/`tokens`/`time`).
-- `account_id` - numeric account ID for multi-account providers (Codex, MiniMax). Empty string for single-account providers.
+### Counters
 
-### Staleness Semantics
+Counters live outside the per-scrape reset path, so `rate()` / `increase()` queries work correctly.
 
-`onwatch_auth_token_status` and `onwatch_agent_last_cycle_age_seconds` are the canonical signals for "is onWatch still getting fresh data from the provider". The stale threshold is `2 * pollInterval`. Any cycle older than that flips the status to `0` - which usually indicates one of:
+| Metric | Labels | Description |
+|---|---|---|
+| `onwatch_cycles_completed_total` | `provider`, `account_id` | Successful poll cycles. Use `rate(...)` for polling activity. |
+| `onwatch_cycles_failed_total` | `provider`, `account_id`, `reason` | Failed poll cycles, labelled by reason. |
+| `onwatch_scrape_errors_total` | `provider`, `error_type` | Errors while refreshing `/metrics` from the local store. Alert on `rate(...)` to detect broken metric collection itself. |
 
-- OAuth/refresh token expired (the common Codex case).
-- Provider API is down or rate-limiting persistently.
-- onWatch was offline or backgrounded.
+> Note: in 2.11.40 only the built-in `synthetic` agent emits `cycles_completed_total` / `cycles_failed_total`. Per-provider wiring for the remaining 8 agents is a follow-up; alerts that depend on these counters should gate on `absent_over_time(onwatch_cycles_completed_total{provider="..."}[1h])`.
 
-Alert on `onwatch_auth_token_status == 0` for fast detection.
+### Label semantics
 
-## Example Prometheus Scrape Config
+- `provider` - `anthropic`, `codex`, `copilot`, `zai`, `minimax`, `antigravity`, `gemini`, `openrouter`, `api_integrations`.
+- `quota_type` - provider-specific quota identifier. For Gemini, Antigravity, and MiniMax this is the model ID (`gemini-2.5-pro`, etc.) so **cardinality grows as new models appear**; configure Prometheus retention accordingly.
+- `account_id` - numeric account ID for multi-account providers (Codex, MiniMax); `"default"` for single-account providers.
+- `account_name` - human-readable account name from `onwatch_account_info` (join-metric).
+- `unit` - on `onwatch_credits_balance` only: `usd` | `credits` | `prompt_credits`.
+
+## Example PromQL
+
+**Minutes until quota reset:**
+```promql
+(onwatch_quota_reset_timestamp_seconds - time()) / 60
+```
+
+**Join numeric account_id with account_name for Grafana:**
+```promql
+onwatch_quota_utilization_percent * on(provider, account_id) group_left(account_name) onwatch_account_info
+```
+
+**Scrape-error rate:**
+```promql
+rate(onwatch_scrape_errors_total[5m])
+```
+
+## Example Scrape Config
 
 ```yaml
 # prometheus.yml
@@ -72,56 +100,23 @@ scrape_configs:
       credentials_file: /etc/prometheus/onwatch_token
 ```
 
-Write the token to `/etc/prometheus/onwatch_token` and ensure it is mode `0600`.
-
-### Kubernetes (ServiceMonitor)
-
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: onwatch
-  namespace: monitoring
-spec:
-  selector:
-    matchLabels:
-      app: onwatch
-  endpoints:
-    - port: http
-      path: /metrics
-      interval: 60s
-      authorization:
-        type: Bearer
-        credentials:
-          name: onwatch-metrics
-          key: token
-```
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: onwatch-metrics
-  namespace: monitoring
-type: Opaque
-stringData:
-  token: "<same value as ONWATCH_METRICS_TOKEN>"
-```
-
-## Example Alertmanager Rules
+## Example Alert Rules
 
 ```yaml
 groups:
   - name: onwatch
     rules:
-      - alert: OnwatchProviderStale
-        expr: onwatch_auth_token_status == 0
+      # Suppress for 10m after process start to avoid startup false-positives.
+      - alert: OnwatchAgentStale
+        expr: |
+          (onwatch_agent_healthy == 0)
+          and on() (time() - process_start_time_seconds{job="onwatch"} > 600)
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "onWatch provider {{ $labels.provider }} has no fresh data"
-          description: "{{ $labels.provider }}/{{ $labels.account_id }} has not produced a successful poll cycle in over 2x the poll interval. Likely an expired token."
+          summary: "onWatch {{ $labels.provider }}/{{ $labels.account_id }} stale"
+          description: "No successful poll in over 2x the poll interval. Common cause: expired OAuth refresh token."
 
       - alert: OnwatchQuotaNearLimit
         expr: onwatch_quota_utilization_percent >= 90
@@ -136,25 +131,28 @@ groups:
         for: 1m
         labels:
           severity: critical
+
+      - alert: OnwatchMetricsCollectionBroken
+        expr: rate(onwatch_scrape_errors_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
         annotations:
-          summary: "{{ $labels.provider }} quota {{ $labels.quota_type }} exhausted"
+          summary: "onWatch cannot refresh metrics from its own store"
+
+      - alert: OnwatchQuotaResetMissed
+        # Fires if a reset timestamp in the past persists, suggesting the agent
+        # didn't pick up the new cycle.
+        expr: (onwatch_quota_reset_timestamp_seconds - time()) < -900
+        for: 10m
 ```
 
-## Grafana
+## Notes & limitations
 
-Any dashboard built on top of these gauges works - starting points:
-
-- **Utilization heatmap**: `onwatch_quota_utilization_percent` grouped by `provider` + `quota_type`.
-- **Time-to-reset countdown**: `onwatch_quota_time_until_reset_seconds` as a stat panel with `s` unit.
-- **Credit balance trend**: `onwatch_credits_balance` as a time series.
-- **Provider health matrix**: `onwatch_auth_token_status` as a state timeline.
-
-## Notes & Limitations
-
-- Metrics are regenerated on every scrape by querying the SQLite store. This keeps the gauges consistent with the dashboard and avoids double-counting but means scrape cost grows with the number of configured providers/accounts. At typical `scrape_interval` (30s-60s) this is negligible.
-- All values use `prometheus.GaugeVec.Reset()` per scrape - metrics for a provider disappear if the provider becomes entirely unconfigured.
-- The endpoint does not emit histograms or counters; all onWatch-specific series are gauges.
-- `account_id` is a numeric ID, not a human-readable name. Cross-reference with the dashboard's Accounts view.
+- Metrics are refreshed on every scrape from the SQLite store. At typical 30-60s scrape intervals the cost is negligible.
+- Most metrics are gauges that `Reset()` each scrape, so series for a provider disappear if it becomes unconfigured. Counters (`onwatch_cycles_*_total`, `onwatch_scrape_errors_total`) are preserved across scrapes.
+- `onwatch_agent_healthy` reflects poll freshness, not real OAuth validity. A transient network blip or onWatch restart will flip it to 0. For true OAuth-expiry alerting, watch logs or the `/api/*/health` dashboard endpoints.
+- `account_id` is a numeric ID. Use `onwatch_account_info` for Grafana panels that need human-readable labels.
 
 ## Related
 

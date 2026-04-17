@@ -94,7 +94,7 @@ func TestMetrics_ScrapeExportsUsedPercentagesAndNoMisleadingCounters(t *testing.
 	assertGaugeValue(t, families, "onwatch_quota_utilization_percent", map[string]string{
 		"provider":   "copilot",
 		"quota_type": "premium_interactions",
-		"account_id": "",
+		"account_id": "default",
 	}, 75)
 	assertGaugeValue(t, families, "onwatch_quota_utilization_percent", map[string]string{
 		"provider":   "codex",
@@ -104,31 +104,103 @@ func TestMetrics_ScrapeExportsUsedPercentagesAndNoMisleadingCounters(t *testing.
 	assertGaugeValue(t, families, "onwatch_quota_utilization_percent", map[string]string{
 		"provider":   "antigravity",
 		"quota_type": "model-a",
-		"account_id": "",
+		"account_id": "default",
 	}, 60)
 	assertGaugeValue(t, families, "onwatch_quota_utilization_percent", map[string]string{
 		"provider":   "gemini",
 		"quota_type": "gemini-2.5-pro",
-		"account_id": "",
+		"account_id": "default",
 	}, 20)
 	assertGaugeValue(t, families, "onwatch_quota_utilization_percent", map[string]string{
 		"provider":   "zai",
 		"quota_type": "tokens",
-		"account_id": "",
+		"account_id": "default",
 	}, 15)
 	assertGaugeValue(t, families, "onwatch_quota_utilization_percent", map[string]string{
 		"provider":   "zai",
 		"quota_type": "time",
-		"account_id": "",
+		"account_id": "default",
 	}, 25)
-	assertGaugeValue(t, families, "onwatch_quota_time_until_reset_seconds", map[string]string{
+
+	// #1: reset timestamps are absolute Unix seconds (not countdowns).
+	assertGaugeValue(t, families, "onwatch_quota_reset_timestamp_seconds", map[string]string{
+		"provider":   "antigravity",
+		"quota_type": "model-a",
+		"account_id": "default",
+	}, float64(futureReset.Unix()))
+
+	// #6: a reset time in the past no longer emits a 0 series - the series is absent.
+	if hasGaugeMetric(families, "onwatch_quota_reset_timestamp_seconds", map[string]string{
 		"provider":   "gemini",
 		"quota_type": "gemini-2.5-pro",
-		"account_id": "",
-	}, 0)
+		"account_id": "default",
+	}) {
+		// allowed only if it carries the actual past timestamp; we still want the series
+		// to exist at the real past value so users can see "it was N minutes ago".
+		assertGaugeValue(t, families, "onwatch_quota_reset_timestamp_seconds", map[string]string{
+			"provider":   "gemini",
+			"quota_type": "gemini-2.5-pro",
+			"account_id": "default",
+		}, float64(pastReset.Unix()))
+	}
 
+	// #2: agent_healthy replaces auth_token_status. Old metric must not exist.
+	assertMetricFamilyMissing(t, families, "onwatch_auth_token_status")
+	// #1: old countdown metric is gone.
+	assertMetricFamilyMissing(t, families, "onwatch_quota_time_until_reset_seconds")
+
+	// Counters added by later commits must not be exposed yet in this test's scope.
 	assertMetricFamilyMissing(t, families, "onwatch_cycle_completed_total")
 	assertMetricFamilyMissing(t, families, "onwatch_quota_snapshots_total")
+
+	// #9: build_info is always present, default version="unknown" before SetBuildInfo.
+	if !hasFamily(families, "onwatch_build_info") {
+		t.Fatal("onwatch_build_info family missing")
+	}
+}
+
+// TestMetrics_SetBuildInfoReplacesDefaultSeries verifies that the
+// {version="unknown"} series is replaced, not accumulated, when the app
+// announces its version at startup.
+func TestMetrics_SetBuildInfoReplacesDefaultSeries(t *testing.T) {
+	m := New()
+	m.SetBuildInfo("2.11.41")
+
+	families, err := m.Gather().Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+
+	found := 0
+	var version string
+	for _, f := range families {
+		if f.GetName() != "onwatch_build_info" {
+			continue
+		}
+		for _, metric := range f.GetMetric() {
+			found++
+			for _, lbl := range metric.GetLabel() {
+				if lbl.GetName() == "version" {
+					version = lbl.GetValue()
+				}
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("expected exactly one build_info series, got %d", found)
+	}
+	if version != "2.11.41" {
+		t.Fatalf("build_info version = %q, want 2.11.41", version)
+	}
+}
+
+func hasFamily(families []*dto.MetricFamily, name string) bool {
+	for _, f := range families {
+		if f.GetName() == name {
+			return true
+		}
+	}
+	return false
 }
 
 func TestMetrics_ScrapeResetsStaleSeriesBetweenScrapes(t *testing.T) {
@@ -161,7 +233,7 @@ func TestMetrics_ScrapeResetsStaleSeriesBetweenScrapes(t *testing.T) {
 	if !hasGaugeMetric(families, "onwatch_quota_utilization_percent", map[string]string{
 		"provider":   "copilot",
 		"quota_type": "premium_interactions",
-		"account_id": "",
+		"account_id": "default",
 	}) {
 		t.Fatal("expected copilot quota metric after first scrape")
 	}
@@ -182,7 +254,7 @@ func TestMetrics_ScrapeResetsStaleSeriesBetweenScrapes(t *testing.T) {
 	if hasGaugeMetric(families, "onwatch_quota_utilization_percent", map[string]string{
 		"provider":   "copilot",
 		"quota_type": "premium_interactions",
-		"account_id": "",
+		"account_id": "default",
 	}) {
 		t.Fatal("stale copilot quota metric persisted after later scrape")
 	}
