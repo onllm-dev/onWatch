@@ -98,6 +98,10 @@ func (s *Store) QueryLatestAnthropic() (*api.AnthropicSnapshot, error) {
 		if err := rows.Scan(&q.Name, &q.Utilization, &resetsAt); err != nil {
 			return nil, fmt.Errorf("failed to scan quota value: %w", err)
 		}
+		// Hide historical rows for experimental/unknown quota keys (pre-whitelist data).
+		if !api.IsKnownAnthropicQuota(q.Name) {
+			continue
+		}
 		if resetsAt.Valid && resetsAt.String != "" {
 			t, _ := time.Parse(time.RFC3339Nano, resetsAt.String)
 			q.ResetsAt = &t
@@ -162,6 +166,10 @@ func (s *Store) QueryAnthropicRange(start, end time.Time, limit ...int) ([]*api.
 			if err := qRows.Scan(&q.Name, &q.Utilization, &resetsAt); err != nil {
 				qRows.Close()
 				return nil, fmt.Errorf("failed to scan quota value: %w", err)
+			}
+			// Hide historical rows for experimental/unknown quota keys.
+			if !api.IsKnownAnthropicQuota(q.Name) {
+				continue
 			}
 			if resetsAt.Valid && resetsAt.String != "" {
 				t, _ := time.Parse(time.RFC3339Nano, resetsAt.String)
@@ -484,6 +492,10 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 				qRows.Close()
 				return nil, fmt.Errorf("store.QueryAnthropicCycleOverview: scan quota: %w", err)
 			}
+			// Hide experimental/unknown quota keys from cross-quota history.
+			if !api.IsKnownAnthropicQuota(entry.Name) {
+				continue
+			}
 			entry.Value = entry.Percent // utilization is already a percentage
 			entry.StartPercent = startValues[entry.Name]
 			entry.Delta = entry.Percent - entry.StartPercent
@@ -531,6 +543,10 @@ func (s *Store) QueryAnthropicLatestPerQuota() ([]AnthropicLatestQuota, error) {
 		if err := rows.Scan(&name, &utilization, &resetsAt, &capturedAt, &rawJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan latest quota: %w", err)
 		}
+		// Hide historical rows for experimental/unknown quota keys (pre-whitelist data).
+		if !api.IsKnownAnthropicQuota(name) {
+			continue
+		}
 		if seen[name] {
 			continue
 		}
@@ -570,6 +586,10 @@ func (s *Store) QueryAllAnthropicQuotaNames() ([]string, error) {
 		var name string
 		if err := rows.Scan(&name); err != nil {
 			return nil, fmt.Errorf("failed to scan quota name: %w", err)
+		}
+		// Hide experimental/unknown quota keys written before the whitelist existed.
+		if !api.IsKnownAnthropicQuota(name) {
+			continue
 		}
 		names = append(names, name)
 	}

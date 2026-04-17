@@ -3149,12 +3149,15 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 			anthType = "five_hour"
 		}
 		var anthCycles []map[string]interface{}
-		if active, err := h.store.QueryActiveAnthropicCycle(anthType); err == nil && active != nil {
-			anthCycles = append(anthCycles, anthropicCycleToMap(active))
-		}
-		if history, err := h.store.QueryAnthropicCycleHistory(anthType, 200); err == nil {
-			for _, c := range history {
-				anthCycles = append(anthCycles, anthropicCycleToMap(c))
+		// Reject stale/unknown quota keys; leave the list empty.
+		if api.IsKnownAnthropicQuota(anthType) {
+			if active, err := h.store.QueryActiveAnthropicCycle(anthType); err == nil && active != nil {
+				anthCycles = append(anthCycles, anthropicCycleToMap(active))
+			}
+			if history, err := h.store.QueryAnthropicCycleHistory(anthType, 200); err == nil {
+				for _, c := range history {
+					anthCycles = append(anthCycles, anthropicCycleToMap(c))
+				}
 			}
 		}
 		response["anthropic"] = anthCycles
@@ -4814,26 +4817,61 @@ type anthropicPromo struct {
 
 var anthropicPromos = []anthropicPromo{
 	{
-		ID:               "march-2026-offpeak-2x",
-		Title:            "Higher Limits Available",
-		Description:      "Off-peak hours get doubled 5-hour usage. Additional off-peak usage does not count toward weekly limits.",
-		StartsAt:         "2026-03-13T00:00:00-07:00",
-		EndsAt:           "2026-03-27T23:59:00-07:00",
+		ID:               "peak-hours-2026",
+		Title:            "Peak Hours",
+		Description:      "During peak hours (weekdays 5am-11am PT / 8am-2pm ET) you move through 5-hour session limits faster. Weekly limits are unchanged.",
+		StartsAt:         "2026-03-28T00:00:00-07:00",
+		EndsAt:           "",
 		PeakStartHourET:  8,
 		PeakEndHourET:    14,
 		PeakWeekdaysOnly: true,
 	},
 }
 
+// activeAnthropicPromo returns the promo entry currently in effect, or nil.
+// An empty EndsAt means the entry is ongoing (no end date).
 func activeAnthropicPromo(now time.Time) *anthropicPromo {
 	for i := range anthropicPromos {
-		start, _ := time.Parse(time.RFC3339, anthropicPromos[i].StartsAt)
-		end, _ := time.Parse(time.RFC3339, anthropicPromos[i].EndsAt)
-		if now.After(start) && now.Before(end) {
-			return &anthropicPromos[i]
+		start, err := time.Parse(time.RFC3339, anthropicPromos[i].StartsAt)
+		if err != nil {
+			continue
 		}
+		if now.Before(start) {
+			continue
+		}
+		if anthropicPromos[i].EndsAt != "" {
+			end, err := time.Parse(time.RFC3339, anthropicPromos[i].EndsAt)
+			if err != nil {
+				continue
+			}
+			if !now.Before(end) {
+				continue
+			}
+		}
+		return &anthropicPromos[i]
 	}
 	return nil
+}
+
+// isAnthropicPeakHours reports whether the given time falls inside the promo's
+// peak-hours window. Timezone for PeakStartHourET/PeakEndHourET is America/New_York.
+func isAnthropicPeakHours(p *anthropicPromo, now time.Time) bool {
+	if p == nil {
+		return false
+	}
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return false
+	}
+	et := now.In(loc)
+	if p.PeakWeekdaysOnly {
+		wd := et.Weekday()
+		if wd == time.Saturday || wd == time.Sunday {
+			return false
+		}
+	}
+	hour := et.Hour()
+	return hour >= p.PeakStartHourET && hour < p.PeakEndHourET
 }
 
 // ── Anthropic Provider Handlers ──
@@ -5078,6 +5116,11 @@ func (h *Handler) cyclesAnthropic(w http.ResponseWriter, r *http.Request) {
 	quotaName := r.URL.Query().Get("type")
 	if quotaName == "" {
 		quotaName = "five_hour"
+	}
+	// Reject stale/unknown quota keys (e.g. legacy seven_day_omelette links).
+	if !api.IsKnownAnthropicQuota(quotaName) {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
 	}
 
 	rangeDur := parseInsightsRange(r.URL.Query().Get("range"))

@@ -367,7 +367,7 @@ func TestAnthropicStore_QueryAnthropicRange_WithResetsAt(t *testing.T) {
 		RawJSON:    "{}",
 		Quotas: []api.AnthropicQuota{
 			{Name: "five_hour", Utilization: 0.3, ResetsAt: &resetTime},
-			{Name: "daily", Utilization: 0.1, ResetsAt: nil},
+			{Name: "seven_day_sonnet", Utilization: 0.1, ResetsAt: nil},
 		},
 	}
 
@@ -704,7 +704,7 @@ func TestAnthropicStore_QueryAllAnthropicQuotaNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAnthropicCycle: %v", err)
 	}
-	_, err = s.CreateAnthropicCycle("daily", now, &resetsAt)
+	_, err = s.CreateAnthropicCycle("seven_day_sonnet", now, &resetsAt)
 	if err != nil {
 		t.Fatalf("CreateAnthropicCycle: %v", err)
 	}
@@ -715,6 +715,84 @@ func TestAnthropicStore_QueryAllAnthropicQuotaNames(t *testing.T) {
 	}
 	if len(names) != 2 {
 		t.Fatalf("Expected 2 quota names, got %d", len(names))
+	}
+}
+
+// TestAnthropicStore_FiltersUnknownQuotaKeys asserts that historical rows for
+// experimental/unknown quota keys (e.g. seven_day_omelette) are filtered out
+// of every read path that feeds the dashboard and menubar.
+func TestAnthropicStore_FiltersUnknownQuotaKeys(t *testing.T) {
+	t.Parallel()
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New store: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	// Insert a snapshot whose quotas include a known key + an unknown one.
+	// We go through the raw DB because the public ingestion API already
+	// whitelists names via api.ActiveQuotaNames - the point of this test is
+	// to verify read-path behavior on legacy rows.
+	snapshotRes, err := s.db.Exec(
+		`INSERT INTO anthropic_snapshots (captured_at, raw_json, quota_count) VALUES (?, ?, ?)`,
+		now.Format(time.RFC3339Nano), `{}`, 2,
+	)
+	if err != nil {
+		t.Fatalf("insert snapshot: %v", err)
+	}
+	snapshotID, _ := snapshotRes.LastInsertId()
+	for _, q := range []struct {
+		name string
+		util float64
+	}{
+		{"five_hour", 42.0},
+		{"seven_day_omelette", 0.0},
+	} {
+		if _, err := s.db.Exec(
+			`INSERT INTO anthropic_quota_values (snapshot_id, quota_name, utilization) VALUES (?, ?, ?)`,
+			snapshotID, q.name, q.util,
+		); err != nil {
+			t.Fatalf("insert quota %s: %v", q.name, err)
+		}
+	}
+	// Also insert a reset cycle for the unknown key.
+	if _, err := s.db.Exec(
+		`INSERT INTO anthropic_reset_cycles (quota_name, cycle_start) VALUES (?, ?)`,
+		"seven_day_omelette", now.Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("insert cycle: %v", err)
+	}
+
+	// QueryLatestAnthropic: only known key should appear.
+	snap, err := s.QueryLatestAnthropic()
+	if err != nil {
+		t.Fatalf("QueryLatestAnthropic: %v", err)
+	}
+	if snap == nil || len(snap.Quotas) != 1 || snap.Quotas[0].Name != "five_hour" {
+		t.Fatalf("expected only five_hour, got %+v", snap)
+	}
+
+	// QueryAnthropicLatestPerQuota: same.
+	latest, err := s.QueryAnthropicLatestPerQuota()
+	if err != nil {
+		t.Fatalf("QueryAnthropicLatestPerQuota: %v", err)
+	}
+	for _, q := range latest {
+		if q.Name == "seven_day_omelette" {
+			t.Fatalf("unknown quota leaked: %+v", q)
+		}
+	}
+
+	// QueryAllAnthropicQuotaNames: reset-cycle entry must also be filtered.
+	names, err := s.QueryAllAnthropicQuotaNames()
+	if err != nil {
+		t.Fatalf("QueryAllAnthropicQuotaNames: %v", err)
+	}
+	for _, n := range names {
+		if n == "seven_day_omelette" {
+			t.Fatalf("unknown quota leaked from reset_cycles: %s", n)
+		}
 	}
 }
 

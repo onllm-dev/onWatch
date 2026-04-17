@@ -2143,7 +2143,7 @@
                         <div class="provider-copy">
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
-                            ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
+                            ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
                         </div>
                         <span class="provider-updated">${escapeHTML(compactUpdatedLabel(provider.updated_at))}</span>
                     </div>
@@ -2938,7 +2938,7 @@
             }
 
             function promoLabel(promo) {
-                const label = isPromoOffPeak(promo) ? "2x limits" : "Peak hours";
+                const label = isPromoOffPeak(promo) ? "Off-peak hours" : "Peak hours";
                 const countdown = formatPromoCountdown(promoMinutesUntilTransition(promo));
                 return countdown ? label + " till " + countdown : label;
             }

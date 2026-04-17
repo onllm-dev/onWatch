@@ -10932,38 +10932,92 @@ func TestGetProviderFromRequest_ErrorsAndNormalization(t *testing.T) {
 	})
 }
 
-// ── Anthropic Promo Range Tests ──
+// ── Anthropic Peak/Off-Peak Hours Tests ──
 
-func TestActiveAnthropicPromo_DuringWindow(t *testing.T) {
+func TestActiveAnthropicPromo_OngoingAfterStart(t *testing.T) {
 	t.Parallel()
-	// March 20, 2026 - mid-promo
-	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+	// Any date after the 2026-03-28 start should return the ongoing entry.
+	now := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
 	promo := activeAnthropicPromo(now)
 	if promo == nil {
-		t.Fatal("expected promo to be active during March 20, got nil")
+		t.Fatal("expected ongoing peak-hours entry, got nil")
 	}
-	if promo.ID != "march-2026-offpeak-2x" {
-		t.Fatalf("expected promo ID march-2026-offpeak-2x, got %s", promo.ID)
+	if promo.ID != "peak-hours-2026" {
+		t.Fatalf("expected peak-hours-2026, got %s", promo.ID)
 	}
-}
-
-func TestActiveAnthropicPromo_BeforeWindow(t *testing.T) {
-	t.Parallel()
-	// March 12, 2026 - before promo starts
-	now := time.Date(2026, 3, 12, 12, 0, 0, 0, time.UTC)
-	promo := activeAnthropicPromo(now)
-	if promo != nil {
-		t.Fatalf("expected nil before promo window, got %+v", promo)
+	if promo.EndsAt != "" {
+		t.Fatalf("expected ongoing entry (empty EndsAt), got %q", promo.EndsAt)
+	}
+	if promo.PeakStartHourET != 8 || promo.PeakEndHourET != 14 {
+		t.Fatalf("unexpected peak hours: %d-%d", promo.PeakStartHourET, promo.PeakEndHourET)
 	}
 }
 
-func TestActiveAnthropicPromo_AfterWindow(t *testing.T) {
+func TestActiveAnthropicPromo_BeforeStart(t *testing.T) {
 	t.Parallel()
-	// March 28, 2026 - after promo ends
-	now := time.Date(2026, 3, 28, 8, 0, 0, 0, time.UTC)
+	// March 1, 2026 - before ongoing entry starts (2026-03-28).
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	promo := activeAnthropicPromo(now)
 	if promo != nil {
-		t.Fatalf("expected nil after promo window, got %+v", promo)
+		t.Fatalf("expected nil before start, got %+v", promo)
+	}
+}
+
+func TestIsAnthropicPeakHours_WeekdayInsideWindow(t *testing.T) {
+	t.Parallel()
+	// Wed 2026-04-15, 10am ET = 14:00 UTC. Inside 8am-2pm ET window.
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tz db unavailable: %v", err)
+	}
+	now := time.Date(2026, 4, 15, 10, 0, 0, 0, loc)
+	promo := activeAnthropicPromo(now)
+	if promo == nil {
+		t.Fatal("expected active promo entry")
+	}
+	if !isAnthropicPeakHours(promo, now) {
+		t.Fatal("expected peak hours on Wed 10am ET")
+	}
+}
+
+func TestIsAnthropicPeakHours_WeekdayOutsideWindow(t *testing.T) {
+	t.Parallel()
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tz db unavailable: %v", err)
+	}
+	// Wed 2026-04-15 3pm ET - past the 2pm cutoff.
+	now := time.Date(2026, 4, 15, 15, 0, 0, 0, loc)
+	promo := activeAnthropicPromo(now)
+	if promo == nil {
+		t.Fatal("expected active promo entry")
+	}
+	if isAnthropicPeakHours(promo, now) {
+		t.Fatal("expected off-peak at Wed 3pm ET")
+	}
+}
+
+func TestIsAnthropicPeakHours_Weekend(t *testing.T) {
+	t.Parallel()
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tz db unavailable: %v", err)
+	}
+	// Saturday 2026-04-18 10am ET - weekday-only promo → off-peak.
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, loc)
+	promo := activeAnthropicPromo(now)
+	if promo == nil {
+		t.Fatal("expected active promo entry")
+	}
+	if isAnthropicPeakHours(promo, now) {
+		t.Fatal("expected off-peak on Saturday (weekday-only promo)")
+	}
+}
+
+func TestIsAnthropicPeakHours_NilSafe(t *testing.T) {
+	t.Parallel()
+	if isAnthropicPeakHours(nil, time.Now()) {
+		t.Fatal("expected false for nil promo")
 	}
 }
 
@@ -10971,27 +11025,13 @@ func TestBuildAnthropicCurrent_IncludesPromo(t *testing.T) {
 	t.Parallel()
 	h := NewHandler(nil, nil, nil, nil, createTestConfigWithSynthetic())
 	resp := h.buildAnthropicCurrent()
-	// buildAnthropicCurrent uses time.Now(), so we test activeAnthropicPromo directly
-	now := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
-	promo := activeAnthropicPromo(now)
-	if promo == nil {
-		t.Fatal("expected promo during window")
-	}
-	if promo.PeakStartHourET != 8 || promo.PeakEndHourET != 14 {
-		t.Fatalf("unexpected peak hours: %d-%d", promo.PeakStartHourET, promo.PeakEndHourET)
-	}
-	// Verify response structure is valid even without store
+	// Verify response structure is valid even without store.
 	if _, ok := resp["quotas"]; !ok {
 		t.Fatal("expected quotas key in response")
 	}
-}
-
-func TestBuildAnthropicCurrent_ExcludesPromo(t *testing.T) {
-	t.Parallel()
-	// After promo window, no promo key should exist
-	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
-	promo := activeAnthropicPromo(now)
-	if promo != nil {
-		t.Fatalf("expected no promo after window, got %+v", promo)
+	// The ongoing entry should always be attached (peak gating happens at the UI/menubar layer).
+	promo, ok := resp["promo"]
+	if !ok || promo == nil {
+		t.Fatal("expected promo key in response")
 	}
 }

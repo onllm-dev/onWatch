@@ -1095,10 +1095,13 @@ function promoMinutesUntilTransition(promo) {
     totalMin = (daysToAdd - 1) * 1440 + (24 - hour - 1) * 60 + (60 - min) + promo.peakStartHourET * 60;
   }
 
-  // Cap at promo end date if available
+  // Cap at promo end date if provided (empty string = ongoing, no cap).
   if (promo.endsAt) {
-    const promoEndMin = Math.floor((new Date(promo.endsAt) - now) / 60000);
-    if (promoEndMin > 0 && promoEndMin < totalMin) totalMin = promoEndMin;
+    const promoEnd = new Date(promo.endsAt);
+    if (!isNaN(promoEnd.getTime())) {
+      const promoEndMin = Math.floor((promoEnd - now) / 60000);
+      if (promoEndMin > 0 && promoEndMin < totalMin) totalMin = promoEndMin;
+    }
   }
 
   return Math.max(0, totalMin);
@@ -1120,10 +1123,12 @@ function formatPromoCountdown(minutes) {
   return minutes + 'm';
 }
 
-// Build the full promo label text with countdown
+// Build the full promo label text with countdown.
+// Renders "Peak hours till <countdown to peak end>" or "Off-peak hours till
+// <countdown to next peak start>" so users always know how long the current
+// state lasts.
 function promoLabelWithCountdown(promo) {
-  const isPeak = isAnthropicPeakHours(promo);
-  const label = isPeak ? 'Standard limits' : '2x limits';
+  const label = isAnthropicPeakHours(promo) ? 'Peak hours' : 'Off-peak hours';
   const mins = promoMinutesUntilTransition(promo);
   const countdown = formatPromoCountdown(mins);
   return countdown ? label + ' till ' + countdown : label;
@@ -1156,7 +1161,7 @@ function promoTagHTML() {
   const isPeak = isAnthropicPeakHours(_anthropicPromo);
   const cls = isPeak ? 'promo-peak' : 'promo-offpeak';
   const text = promoLabelWithCountdown(_anthropicPromo);
-  return `<a class="promo-tag-inline ${cls}" href="https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escapeHTML(_anthropicPromo.description)}">${text}</a>`;
+  return `<a class="promo-tag-inline ${cls}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escapeHTML(_anthropicPromo.description)}">${text}</a>`;
 }
 
 function renderAnthropicQuotaCards(quotas, containerId) {
