@@ -8,6 +8,7 @@ import (
 )
 
 func TestInsertAndQueryGeminiSnapshot(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -54,6 +55,7 @@ func TestInsertAndQueryGeminiSnapshot(t *testing.T) {
 }
 
 func TestGeminiResetCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -119,6 +121,7 @@ func TestGeminiResetCycles(t *testing.T) {
 }
 
 func TestQueryGeminiRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -161,6 +164,7 @@ func TestQueryGeminiRange(t *testing.T) {
 }
 
 func TestQueryAllGeminiModelIDs(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)

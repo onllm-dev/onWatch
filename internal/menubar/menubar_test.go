@@ -6,6 +6,7 @@ import (
 )
 
 func TestDefaultConfigUsesRepoDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 	if cfg.Port != 9211 {
 		t.Fatalf("expected port 9211, got %d", cfg.Port)
@@ -19,6 +20,7 @@ func TestDefaultConfigUsesRepoDefaults(t *testing.T) {
 }
 
 func TestSettingsNormalizeRepairsInvalidValues(t *testing.T) {
+	t.Parallel()
 	settings := (&Settings{
 		DefaultView:      "",
 		RefreshSeconds:   5,
@@ -72,6 +74,7 @@ func TestSettingsNormalizeRepairsInvalidValues(t *testing.T) {
 }
 
 func TestSettingsNormalizePreservesMinimalView(t *testing.T) {
+	t.Parallel()
 	settings := (&Settings{DefaultView: ViewMinimal}).Normalize()
 	if settings.DefaultView != ViewMinimal {
 		t.Fatalf("expected minimal view to be preserved, got %s", settings.DefaultView)
@@ -79,6 +82,7 @@ func TestSettingsNormalizePreservesMinimalView(t *testing.T) {
 }
 
 func TestInlineHTMLUsesRequestedView(t *testing.T) {
+	t.Parallel()
 	html, err := InlineHTML(ViewDetailed, DefaultSettings())
 	if err != nil {
 		t.Fatalf("InlineHTML returned error: %v", err)
@@ -89,5 +93,6 @@ func TestInlineHTMLUsesRequestedView(t *testing.T) {
 }
 
 func TestIsSupportedSmoke(t *testing.T) {
+	t.Parallel()
 	t.Logf("menubar supported: %v", IsSupported())
 }

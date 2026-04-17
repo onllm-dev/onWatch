@@ -59,6 +59,7 @@ func setupMiniMaxAgentTest(t *testing.T) (*MiniMaxAgent, *store.Store, *httptest
 }
 
 func TestMiniMaxAgent_SinglePoll(t *testing.T) {
+	t.Parallel()
 	ag, s, _ := setupMiniMaxAgentTest(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -81,6 +82,7 @@ func TestMiniMaxAgent_SinglePoll(t *testing.T) {
 }
 
 func TestMiniMaxAgent_PollingCheck(t *testing.T) {
+	t.Parallel()
 	ag, s, _ := setupMiniMaxAgentTest(t)
 	ag.SetPollingCheck(func() bool { return false })
 
@@ -101,6 +103,7 @@ func TestMiniMaxAgent_PollingCheck(t *testing.T) {
 }
 
 func TestMiniMaxAgent_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	ag, _, _ := setupMiniMaxAgentTest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -121,6 +124,7 @@ func TestMiniMaxAgent_ContextCancellation(t *testing.T) {
 }
 
 func TestMiniMaxAgent_SetNotifier(t *testing.T) {
+	t.Parallel()
 	ag, s, _ := setupMiniMaxAgentTest(t)
 
 	notifier := notify.New(s, slog.Default())

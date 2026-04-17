@@ -44,6 +44,7 @@ func setupCodexTest(t *testing.T) (*CodexAgent, *store.Store, *httptest.Server) 
 }
 
 func TestCodexAgent_SinglePoll(t *testing.T) {
+	t.Parallel()
 	ag, st, _ := setupCodexTest(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -69,6 +70,7 @@ func TestCodexAgent_SinglePoll(t *testing.T) {
 }
 
 func TestCodexAgent_PollingCheck(t *testing.T) {
+	t.Parallel()
 	ag, st, _ := setupCodexTest(t)
 	ag.SetPollingCheck(func() bool { return false })
 
@@ -89,6 +91,7 @@ func TestCodexAgent_PollingCheck(t *testing.T) {
 }
 
 func TestCodexAgent_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	ag, _, _ := setupCodexTest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -113,6 +116,7 @@ func TestCodexAgent_ContextCancellation(t *testing.T) {
 // proactive OAuth refresh failures (non-reused-token, e.g. HTTP 401) pause the agent
 // after maxCodexAuthFailures attempts, preventing infinite retry storms.
 func TestCodexAgent_ProactiveRefreshFailures_PausesAfterMax(t *testing.T) {
+	t.Parallel()
 	// API server: succeeds normally (the issue is the proactive refresh, not FetchUsage)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -166,6 +170,7 @@ func TestCodexAgent_ProactiveRefreshFailures_PausesAfterMax(t *testing.T) {
 // TestCodexAgent_ProactiveRefreshFailures_NotPausedBeforeMax verifies that a single
 // proactive refresh failure does not immediately pause the agent.
 func TestCodexAgent_ProactiveRefreshFailures_NotPausedBeforeMax(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":25,"reset_at":1766000000,"limit_window_seconds":18000}}}`)
@@ -208,6 +213,7 @@ func TestCodexAgent_ProactiveRefreshFailures_NotPausedBeforeMax(t *testing.T) {
 }
 
 func TestCodexAgent_AuthFailuresPauseUntilTokenChanges(t *testing.T) {
+	t.Parallel()
 	var currentToken atomic.Value
 	currentToken.Store("bad")
 

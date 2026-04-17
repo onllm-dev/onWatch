@@ -7,6 +7,7 @@ import (
 )
 
 func TestTrayIconsDimensions(t *testing.T) {
+	t.Parallel()
 	template, retina := trayIcons()
 
 	checkDim := func(data []byte, name string, expected int) {
@@ -25,6 +26,7 @@ func TestTrayIconsDimensions(t *testing.T) {
 }
 
 func TestTrayIconsPNGNotEmpty(t *testing.T) {
+	t.Parallel()
 	template, retina := trayIcons()
 	if len(template) == 0 {
 		t.Fatal("trayIcons() template is empty")
@@ -35,6 +37,7 @@ func TestTrayIconsPNGNotEmpty(t *testing.T) {
 }
 
 func TestTrayIconsPNGLen(t *testing.T) {
+	t.Parallel()
 	template, retina := trayIcons()
 	// Verify reasonable PNG header
 	if string(template[:8]) != "\x89PNG\r\n\x1a\n" {

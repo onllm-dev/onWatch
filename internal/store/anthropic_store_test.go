@@ -8,6 +8,7 @@ import (
 )
 
 func TestStore_AnthropicTablesExist(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -27,6 +28,7 @@ func TestStore_AnthropicTablesExist(t *testing.T) {
 }
 
 func TestStore_InsertAnthropicSnapshot(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -54,6 +56,7 @@ func TestStore_InsertAnthropicSnapshot(t *testing.T) {
 }
 
 func TestStore_QueryLatestAnthropic_EmptyDB(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -70,6 +73,7 @@ func TestStore_QueryLatestAnthropic_EmptyDB(t *testing.T) {
 }
 
 func TestStore_QueryLatestAnthropic_WithData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -122,6 +126,7 @@ func TestStore_QueryLatestAnthropic_WithData(t *testing.T) {
 }
 
 func TestStore_QueryAnthropicRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -163,6 +168,7 @@ func TestStore_QueryAnthropicRange(t *testing.T) {
 }
 
 func TestStore_QueryAnthropicRange_WithLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -203,6 +209,7 @@ func TestStore_QueryAnthropicRange_WithLimit(t *testing.T) {
 }
 
 func TestStore_CreateAnthropicCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -222,6 +229,7 @@ func TestStore_CreateAnthropicCycle(t *testing.T) {
 }
 
 func TestStore_CreateAnthropicCycle_NilResetsAt(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -240,6 +248,7 @@ func TestStore_CreateAnthropicCycle_NilResetsAt(t *testing.T) {
 }
 
 func TestStore_QueryActiveAnthropicCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -283,6 +292,7 @@ func TestStore_QueryActiveAnthropicCycle(t *testing.T) {
 }
 
 func TestStore_CloseAnthropicCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -314,6 +324,7 @@ func TestStore_CloseAnthropicCycle(t *testing.T) {
 }
 
 func TestStore_UpdateAnthropicCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -350,6 +361,7 @@ func TestStore_UpdateAnthropicCycle(t *testing.T) {
 }
 
 func TestStore_QueryAnthropicCycleHistory(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -400,6 +412,7 @@ func TestStore_QueryAnthropicCycleHistory(t *testing.T) {
 }
 
 func TestStore_QueryAnthropicCycleHistory_NoClosedCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -425,6 +438,7 @@ func TestStore_QueryAnthropicCycleHistory_NoClosedCycles(t *testing.T) {
 }
 
 func TestStore_QueryAnthropicUtilizationSeries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -498,6 +512,7 @@ func TestStore_QueryAnthropicUtilizationSeries(t *testing.T) {
 }
 
 func TestStore_QueryAnthropicCycleOverview_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -514,6 +529,7 @@ func TestStore_QueryAnthropicCycleOverview_NoCycles(t *testing.T) {
 }
 
 func TestStore_QueryAnthropicCycleOverview_WithData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -595,6 +611,7 @@ func TestStore_QueryAnthropicCycleOverview_WithData(t *testing.T) {
 }
 
 func TestStore_QueryAnthropicCycleOverview_NoSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -626,6 +643,7 @@ func TestStore_QueryAnthropicCycleOverview_NoSnapshots(t *testing.T) {
 }
 
 func TestStore_AnthropicForeignKeyConstraint(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -643,6 +661,7 @@ func TestStore_AnthropicForeignKeyConstraint(t *testing.T) {
 }
 
 func TestStore_QueryAnthropicCyclesSince(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -690,6 +709,7 @@ func TestStore_QueryAnthropicCyclesSince(t *testing.T) {
 }
 
 func TestStore_QueryAllAnthropicQuotaNames(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)

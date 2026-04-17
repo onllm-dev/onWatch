@@ -9,6 +9,7 @@ import (
 )
 
 func TestMockServer_DefaultSyntheticRoute(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithSyntheticKey("syn_test123"))
 	defer ms.Close()
 
@@ -37,6 +38,7 @@ func TestMockServer_DefaultSyntheticRoute(t *testing.T) {
 }
 
 func TestMockServer_SyntheticAuthRejectsInvalidKey(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithSyntheticKey("syn_correct"))
 	defer ms.Close()
 
@@ -55,6 +57,7 @@ func TestMockServer_SyntheticAuthRejectsInvalidKey(t *testing.T) {
 }
 
 func TestMockServer_DefaultZaiRoute(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithZaiKey("zai_test_key"))
 	defer ms.Close()
 
@@ -87,6 +90,7 @@ func TestMockServer_DefaultZaiRoute(t *testing.T) {
 }
 
 func TestMockServer_ZaiAuthRejectsInvalidKey(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithZaiKey("correct_key"))
 	defer ms.Close()
 
@@ -114,6 +118,7 @@ func TestMockServer_ZaiAuthRejectsInvalidKey(t *testing.T) {
 }
 
 func TestMockServer_DefaultAnthropicRoute(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithAnthropicToken("anth_token_123"))
 	defer ms.Close()
 
@@ -143,6 +148,7 @@ func TestMockServer_DefaultAnthropicRoute(t *testing.T) {
 }
 
 func TestMockServer_WithZaiAndAnthropicResponsesOptions(t *testing.T) {
+	t.Parallel()
 	customZai := `{"code":200,"msg":"custom-zai","success":true,"data":{"limits":[]}}`
 	customAnthropic := `{"five_hour":{"utilization":12.3}}`
 
@@ -187,6 +193,7 @@ func TestMockServer_WithZaiAndAnthropicResponsesOptions(t *testing.T) {
 }
 
 func TestMockServer_AnthropicAuthRejectsInvalidToken(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithAnthropicToken("correct_token"))
 	defer ms.Close()
 
@@ -206,6 +213,7 @@ func TestMockServer_AnthropicAuthRejectsInvalidToken(t *testing.T) {
 }
 
 func TestMockServer_ResponseSequenceCycles(t *testing.T) {
+	t.Parallel()
 	responses := SyntheticResponseSequence(3)
 	ms := NewMockServer(t,
 		WithSyntheticKey("syn_test"),
@@ -237,6 +245,7 @@ func TestMockServer_ResponseSequenceCycles(t *testing.T) {
 }
 
 func TestMockServer_SetErrorInjectsSyntheticError(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithSyntheticKey("syn_test"))
 	defer ms.Close()
 
@@ -257,6 +266,7 @@ func TestMockServer_SetErrorInjectsSyntheticError(t *testing.T) {
 }
 
 func TestMockServer_ClearErrors(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithSyntheticKey("syn_test"))
 	defer ms.Close()
 
@@ -278,6 +288,7 @@ func TestMockServer_ClearErrors(t *testing.T) {
 }
 
 func TestMockServer_RequestCount(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithSyntheticKey("syn_test"))
 	defer ms.Close()
 
@@ -304,6 +315,7 @@ func TestMockServer_RequestCount(t *testing.T) {
 }
 
 func TestMockServer_AdminScenarioEndpoint(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithSyntheticKey("syn_test"))
 	defer ms.Close()
 
@@ -327,6 +339,7 @@ func TestMockServer_AdminScenarioEndpoint(t *testing.T) {
 }
 
 func TestMockServer_AdminErrorEndpoint(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithSyntheticKey("syn_test"))
 	defer ms.Close()
 
@@ -358,6 +371,7 @@ func TestMockServer_AdminErrorEndpoint(t *testing.T) {
 }
 
 func TestMockServer_AdminRequestsEndpoint(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t,
 		WithSyntheticKey("syn_test"),
 		WithAnthropicToken("anth_tok"),
@@ -404,6 +418,7 @@ func TestMockServer_AdminRequestsEndpoint(t *testing.T) {
 }
 
 func TestMockServer_SetAnthropicToken(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithAnthropicToken("old_token"))
 	defer ms.Close()
 
@@ -437,6 +452,7 @@ func TestMockServer_SetAnthropicToken(t *testing.T) {
 }
 
 func TestMockServer_SetZaiError(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithZaiKey("zai_key"))
 	defer ms.Close()
 
@@ -457,6 +473,7 @@ func TestMockServer_SetZaiError(t *testing.T) {
 }
 
 func TestMockServer_SetAnthropicError(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithAnthropicToken("tok"))
 	defer ms.Close()
 
@@ -478,6 +495,7 @@ func TestMockServer_SetAnthropicError(t *testing.T) {
 }
 
 func TestMockServer_UnknownRouteReturns404(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t)
 	defer ms.Close()
 
@@ -493,6 +511,7 @@ func TestMockServer_UnknownRouteReturns404(t *testing.T) {
 }
 
 func TestMockServer_DefaultCopilotRoute(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithCopilotToken("ghp_test123"))
 	defer ms.Close()
 
@@ -524,6 +543,7 @@ func TestMockServer_DefaultCopilotRoute(t *testing.T) {
 }
 
 func TestMockServer_CopilotAuthRejectsInvalidToken(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithCopilotToken("ghp_correct"))
 	defer ms.Close()
 
@@ -542,6 +562,7 @@ func TestMockServer_CopilotAuthRejectsInvalidToken(t *testing.T) {
 }
 
 func TestMockServer_SetCopilotError(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithCopilotToken("ghp_tok"))
 	defer ms.Close()
 
@@ -562,6 +583,7 @@ func TestMockServer_SetCopilotError(t *testing.T) {
 }
 
 func TestMockServer_CopilotResponseSequence(t *testing.T) {
+	t.Parallel()
 	responses := CopilotResponseSequence(3)
 	ms := NewMockServer(t,
 		WithCopilotToken("ghp_test"),
@@ -594,6 +616,7 @@ func TestMockServer_CopilotResponseSequence(t *testing.T) {
 }
 
 func TestMockServer_CopilotAdminScenario(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithCopilotToken("ghp_test"))
 	defer ms.Close()
 
@@ -617,6 +640,7 @@ func TestMockServer_CopilotAdminScenario(t *testing.T) {
 }
 
 func TestMockServer_CopilotAdminError(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t, WithCopilotToken("ghp_test"))
 	defer ms.Close()
 
@@ -648,6 +672,7 @@ func TestMockServer_CopilotAdminError(t *testing.T) {
 }
 
 func TestMockServer_AllProvidersSimultaneously(t *testing.T) {
+	t.Parallel()
 	ms := NewMockServer(t,
 		WithSyntheticKey("syn_k"),
 		WithZaiKey("zai_k"),

@@ -21,6 +21,7 @@ func newTestCopilotSnapshot(capturedAt time.Time, resetDate *time.Time) *api.Cop
 }
 
 func TestCopilotStore_InsertAndQueryLatest(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -71,6 +72,7 @@ func TestCopilotStore_InsertAndQueryLatest(t *testing.T) {
 }
 
 func TestCopilotStore_QueryLatest_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -87,6 +89,7 @@ func TestCopilotStore_QueryLatest_Empty(t *testing.T) {
 }
 
 func TestCopilotStore_QueryRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -137,6 +140,7 @@ func TestCopilotStore_QueryRange(t *testing.T) {
 }
 
 func TestCopilotStore_Cycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -213,6 +217,7 @@ func TestCopilotStore_Cycles(t *testing.T) {
 }
 
 func TestCopilotStore_CyclesSince(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -245,6 +250,7 @@ func TestCopilotStore_CyclesSince(t *testing.T) {
 }
 
 func TestCopilotStore_UsageSeries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -280,6 +286,7 @@ func TestCopilotStore_UsageSeries(t *testing.T) {
 }
 
 func TestCopilotStore_QuotaNames(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)

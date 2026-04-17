@@ -3,6 +3,7 @@ package menubar
 import "testing"
 
 func TestTrayTitleDefaultIsEmptyUntilProviderSelectionIsResolved(t *testing.T) {
+	t.Parallel()
 	snapshot := &Snapshot{
 		Aggregate: Aggregate{
 			ProviderCount:  2,
@@ -20,6 +21,7 @@ func TestTrayTitleDefaultIsEmptyUntilProviderSelectionIsResolved(t *testing.T) {
 }
 
 func TestTrayTitleProviderSpecific(t *testing.T) {
+	t.Parallel()
 	snapshot := &Snapshot{
 		Aggregate: Aggregate{ProviderCount: 2, HighestPercent: 84},
 		Providers: []ProviderCard{
@@ -47,6 +49,7 @@ func TestTrayTitleProviderSpecific(t *testing.T) {
 }
 
 func TestTrayTitleCriticalCountAndIconOnly(t *testing.T) {
+	t.Parallel()
 	snapshot := &Snapshot{
 		Aggregate: Aggregate{
 			ProviderCount:  2,

@@ -6,6 +6,7 @@ import (
 )
 
 func TestMiniMaxStore_QueryMiniMaxCycleOverview_EmptyDefaultGroup(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -22,6 +23,7 @@ func TestMiniMaxStore_QueryMiniMaxCycleOverview_EmptyDefaultGroup(t *testing.T) 
 }
 
 func TestMiniMaxStore_QueryMiniMaxCycleOverview_ActiveHistorySortAndLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -85,6 +87,7 @@ func TestMiniMaxStore_QueryMiniMaxCycleOverview_ActiveHistorySortAndLimit(t *tes
 }
 
 func TestMiniMaxStore_MiniMaxCrossQuotasAt_FallbackToLatest(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)

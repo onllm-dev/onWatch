@@ -10,6 +10,7 @@ import (
 )
 
 func TestMiniMaxTracker_ProcessAndSummary_ErrorOnClosedStore(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -37,6 +38,7 @@ func TestMiniMaxTracker_ProcessAndSummary_ErrorOnClosedStore(t *testing.T) {
 }
 
 func TestMiniMaxTracker_Process_ResetByUsageDrop(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -96,6 +98,7 @@ func TestMiniMaxTracker_Process_ResetByUsageDrop(t *testing.T) {
 }
 
 func TestMiniMaxTracker_UsageSummary_ProjectionAndLatestFallback(t *testing.T) {
+	t.Parallel()
 	t.Run("projection clamps to total", func(t *testing.T) {
 		s, err := store.New(":memory:")
 		if err != nil {
@@ -184,6 +187,7 @@ func TestMiniMaxTracker_UsageSummary_ProjectionAndLatestFallback(t *testing.T) {
 }
 
 func TestMiniMaxTracker_processModel_HasLastValueWithoutModelCache(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)

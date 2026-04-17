@@ -8,6 +8,7 @@ import (
 )
 
 func TestQueryAntigravityModelIDsForGroup(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -54,6 +55,7 @@ func TestQueryAntigravityModelIDsForGroup(t *testing.T) {
 }
 
 func TestQueryAntigravityCycleOverview_GroupedCrossQuotas(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -160,6 +162,7 @@ func TestQueryAntigravityCycleOverview_GroupedCrossQuotas(t *testing.T) {
 }
 
 func TestStore_QueryAntigravityRange_WithLimitReturnsLatestChronological(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -196,6 +199,7 @@ func TestStore_QueryAntigravityRange_WithLimitReturnsLatestChronological(t *test
 }
 
 func TestQueryAntigravityCycleOverview_RejectsInvalidGroup(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -208,6 +212,7 @@ func TestQueryAntigravityCycleOverview_RejectsInvalidGroup(t *testing.T) {
 }
 
 func TestQueryAntigravityCycleOverview_CollapsesMultipleActiveCyclesToSingleRow(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
@@ -263,6 +268,7 @@ func TestQueryAntigravityCycleOverview_CollapsesMultipleActiveCyclesToSingleRow(
 }
 
 func TestCreateAntigravityCycle_RejectsSecondActiveCycleForSameModel(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)

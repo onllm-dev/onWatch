@@ -265,6 +265,7 @@ func newTestTLSConfig(t *testing.T, host string) (*tls.Config, *x509.CertPool) {
 }
 
 func TestNewSMTPMailer(t *testing.T) {
+	t.Parallel()
 	cfg := SMTPConfig{
 		Host:     "smtp.example.com",
 		Port:     587,
@@ -284,6 +285,7 @@ func TestNewSMTPMailer(t *testing.T) {
 }
 
 func TestSMTPMailer_Send_PlainSMTP(t *testing.T) {
+	t.Parallel()
 	var mailCount atomic.Int32
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
 		basicSMTPHandler(conn, &mailCount)
@@ -315,6 +317,7 @@ func TestSMTPMailer_Send_PlainSMTP(t *testing.T) {
 }
 
 func TestSMTPMailer_Send_MultipleRecipients(t *testing.T) {
+	t.Parallel()
 	var mailCount atomic.Int32
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
 		basicSMTPHandler(conn, &mailCount)
@@ -346,6 +349,7 @@ func TestSMTPMailer_Send_MultipleRecipients(t *testing.T) {
 }
 
 func TestSMTPMailer_Send_AuthFailure(t *testing.T) {
+	t.Parallel()
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		fmt.Fprintf(conn, "220 mock ESMTP\r\n")
@@ -390,6 +394,7 @@ func TestSMTPMailer_Send_AuthFailure(t *testing.T) {
 }
 
 func TestSMTPMailer_Send_ConnectionRefused(t *testing.T) {
+	t.Parallel()
 	cfg := SMTPConfig{
 		Host:     "127.0.0.1",
 		Port:     19999, // nothing listening here
@@ -409,6 +414,7 @@ func TestSMTPMailer_Send_ConnectionRefused(t *testing.T) {
 }
 
 func TestSMTPMailer_TestConnection_Success(t *testing.T) {
+	t.Parallel()
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		fmt.Fprintf(conn, "220 mock ESMTP\r\n")
@@ -471,6 +477,7 @@ func TestSMTPMailer_TestConnection_Success(t *testing.T) {
 }
 
 func TestShouldRetryWithNegotiatedSMTP(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -499,6 +506,7 @@ func TestShouldRetryWithNegotiatedSMTP(t *testing.T) {
 }
 
 func TestSMTPMailer_Send_AutoNegotiatesSTARTTLS(t *testing.T) {
+	t.Parallel()
 	var mailCount atomic.Int32
 	var tlsUsed atomic.Bool
 
@@ -533,6 +541,7 @@ func TestSMTPMailer_Send_AutoNegotiatesSTARTTLS(t *testing.T) {
 }
 
 func TestSMTPMailer_Send_ImplicitTLS(t *testing.T) {
+	t.Parallel()
 	var mailCount atomic.Int32
 
 	addr, roots, ln := mockImplicitTLSSMTPServer(t, &mailCount)
@@ -563,6 +572,7 @@ func TestSMTPMailer_Send_ImplicitTLS(t *testing.T) {
 }
 
 func TestSMTPMailer_Send_TLSFallsBackToNegotiatedSMTP(t *testing.T) {
+	t.Parallel()
 	var mailCount atomic.Int32
 	var tlsUsed atomic.Bool
 
@@ -594,6 +604,7 @@ func TestSMTPMailer_Send_TLSFallsBackToNegotiatedSMTP(t *testing.T) {
 }
 
 func TestSMTPMailer_Authenticate_NoneAllowsPlaintextRemoteAuth(t *testing.T) {
+	t.Parallel()
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		fmt.Fprintf(conn, "220 mock ESMTP\r\n")
@@ -640,6 +651,7 @@ func TestSMTPMailer_Authenticate_NoneAllowsPlaintextRemoteAuth(t *testing.T) {
 }
 
 func TestSMTPMailer_Authenticate_AutoRejectsPlaintextRemoteAuth(t *testing.T) {
+	t.Parallel()
 	addr, ln := mockSMTPServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		fmt.Fprintf(conn, "220 mock ESMTP\r\n")
@@ -685,6 +697,7 @@ func TestSMTPMailer_Authenticate_AutoRejectsPlaintextRemoteAuth(t *testing.T) {
 }
 
 func TestSMTPMailer_TestConnection_Failure(t *testing.T) {
+	t.Parallel()
 	cfg := SMTPConfig{
 		Host:     "127.0.0.1",
 		Port:     19998,
@@ -702,6 +715,7 @@ func TestSMTPMailer_TestConnection_Failure(t *testing.T) {
 }
 
 func TestSMTPMailer_Send_VerifyHeaders(t *testing.T) {
+	t.Parallel()
 	var receivedData string
 	var mu sync.Mutex
 

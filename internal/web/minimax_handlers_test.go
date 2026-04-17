@@ -69,6 +69,7 @@ func sharedMiniMaxSnapshotWithWindow(capturedAt time.Time, used int, windowStart
 }
 
 func TestBuildMiniMaxCurrent_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -114,6 +115,7 @@ func TestBuildMiniMaxCurrent_SharedQuota(t *testing.T) {
 }
 
 func TestSessionsMiniMax_SharedQuotaFromSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -175,6 +177,7 @@ func TestSessionsMiniMax_SharedQuotaFromSnapshots(t *testing.T) {
 }
 
 func TestHistoryMiniMax_SharedQuotaSeries(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -212,6 +215,7 @@ func TestHistoryMiniMax_SharedQuotaSeries(t *testing.T) {
 }
 
 func TestBuildMiniMaxInsights_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -266,6 +270,7 @@ func TestBuildMiniMaxInsights_SharedQuota(t *testing.T) {
 }
 
 func TestBuildMiniMaxSummaryMap_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -313,6 +318,7 @@ func TestBuildMiniMaxSummaryMap_SharedQuota(t *testing.T) {
 }
 
 func TestLoggingHistoryMiniMax_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -358,6 +364,7 @@ func TestLoggingHistoryMiniMax_SharedQuota(t *testing.T) {
 }
 
 func TestCycleOverviewMiniMax_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -412,6 +419,7 @@ func TestCycleOverviewMiniMax_SharedQuota(t *testing.T) {
 }
 
 func TestHistoryBoth_MiniMaxSharedQuotaSeries(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -454,6 +462,7 @@ func TestHistoryBoth_MiniMaxSharedQuotaSeries(t *testing.T) {
 // ── Account CRUD Handler Tests ──
 
 func TestMiniMaxAccounts_ListEmpty(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -485,6 +494,7 @@ func TestMiniMaxAccounts_ListEmpty(t *testing.T) {
 }
 
 func TestMiniMaxAccounts_CreateAndList(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -533,6 +543,7 @@ func TestMiniMaxAccounts_CreateAndList(t *testing.T) {
 }
 
 func TestMiniMaxAccounts_Update(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -584,6 +595,7 @@ func TestMiniMaxAccounts_Update(t *testing.T) {
 }
 
 func TestMiniMaxAccounts_Delete(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -630,6 +642,7 @@ func TestMiniMaxAccounts_Delete(t *testing.T) {
 }
 
 func TestMiniMaxAccounts_ValidationErrors(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -673,6 +686,7 @@ func TestMiniMaxAccounts_ValidationErrors(t *testing.T) {
 }
 
 func TestMiniMaxAccountsUsage_MultiAccount(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)

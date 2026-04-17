@@ -46,6 +46,7 @@ func anthropicResponse(fiveHour, sevenDay float64) string {
 // TestAnthropicAgent_Run_PollsImmediately verifies the first poll happens immediately on startup,
 // not after waiting for the interval.
 func TestAnthropicAgent_Run_PollsImmediately(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
@@ -90,6 +91,7 @@ func TestAnthropicAgent_Run_PollsImmediately(t *testing.T) {
 
 // TestAnthropicAgent_Run_PollsAtInterval verifies subsequent polls happen at the configured interval.
 func TestAnthropicAgent_Run_PollsAtInterval(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
@@ -143,6 +145,7 @@ func TestAnthropicAgent_Run_PollsAtInterval(t *testing.T) {
 // TestAnthropicAgent_Run_TokenRefresh_BeforeEachPoll verifies that TokenRefreshFunc
 // is called before every poll cycle.
 func TestAnthropicAgent_Run_TokenRefresh_BeforeEachPoll(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
@@ -192,6 +195,7 @@ func TestAnthropicAgent_Run_TokenRefresh_BeforeEachPoll(t *testing.T) {
 // TestAnthropicAgent_Run_TokenRefresh_UpdatesClient verifies that when the token changes,
 // SetToken is called on the client with the new token.
 func TestAnthropicAgent_Run_TokenRefresh_UpdatesClient(t *testing.T) {
+	t.Parallel()
 	var requestCount atomic.Int32
 	var lastAuthHeader atomic.Value
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -259,6 +263,7 @@ func TestAnthropicAgent_Run_TokenRefresh_UpdatesClient(t *testing.T) {
 // TestAnthropicAgent_Run_401Retry_Success verifies that on a 401 response, the agent
 // re-reads the token via TokenRefreshFunc and retries the request successfully.
 func TestAnthropicAgent_Run_401Retry_Success(t *testing.T) {
+	t.Parallel()
 	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := requestCount.Add(1)
@@ -328,6 +333,7 @@ func TestAnthropicAgent_Run_401Retry_Success(t *testing.T) {
 // TestAnthropicAgent_Run_401Retry_NoRefreshFunc verifies that a 401 without a
 // TokenRefreshFunc logs the error and continues polling.
 func TestAnthropicAgent_Run_401Retry_NoRefreshFunc(t *testing.T) {
+	t.Parallel()
 	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := requestCount.Add(1)
@@ -388,6 +394,7 @@ func TestAnthropicAgent_Run_401Retry_NoRefreshFunc(t *testing.T) {
 // TestAnthropicAgent_Run_ContextCancel_StopsCleanly verifies that cancelling the
 // context causes Run() to return nil promptly.
 func TestAnthropicAgent_Run_ContextCancel_StopsCleanly(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(anthropicResponse(45.2, 12.8)))
@@ -433,6 +440,7 @@ func TestAnthropicAgent_Run_ContextCancel_StopsCleanly(t *testing.T) {
 // TestAnthropicAgent_Run_StoresSnapshot verifies that each successful poll persists
 // a snapshot to the database.
 func TestAnthropicAgent_Run_StoresSnapshot(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(anthropicResponse(45.2, 12.8)))

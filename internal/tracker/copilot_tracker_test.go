@@ -20,6 +20,7 @@ func newTestCopilotStore(t *testing.T) *store.Store {
 }
 
 func TestCopilotTracker_Process_FirstSnapshot(t *testing.T) {
+	t.Parallel()
 	s := newTestCopilotStore(t)
 	tr := NewCopilotTracker(s, slog.Default())
 
@@ -51,6 +52,7 @@ func TestCopilotTracker_Process_FirstSnapshot(t *testing.T) {
 }
 
 func TestCopilotTracker_Process_UsageIncrease(t *testing.T) {
+	t.Parallel()
 	s := newTestCopilotStore(t)
 	tr := NewCopilotTracker(s, slog.Default())
 
@@ -93,6 +95,7 @@ func TestCopilotTracker_Process_UsageIncrease(t *testing.T) {
 }
 
 func TestCopilotTracker_Process_ResetDetection(t *testing.T) {
+	t.Parallel()
 	s := newTestCopilotStore(t)
 	tr := NewCopilotTracker(s, slog.Default())
 
@@ -148,6 +151,7 @@ func TestCopilotTracker_Process_ResetDetection(t *testing.T) {
 }
 
 func TestCopilotTracker_Process_MultipleQuotas(t *testing.T) {
+	t.Parallel()
 	s := newTestCopilotStore(t)
 	tr := NewCopilotTracker(s, slog.Default())
 
@@ -180,6 +184,7 @@ func TestCopilotTracker_Process_MultipleQuotas(t *testing.T) {
 }
 
 func TestCopilotTracker_UsageSummary(t *testing.T) {
+	t.Parallel()
 	s := newTestCopilotStore(t)
 	tr := NewCopilotTracker(s, slog.Default())
 
@@ -222,6 +227,7 @@ func TestCopilotTracker_UsageSummary(t *testing.T) {
 }
 
 func TestCopilotTracker_UsageSummary_Empty(t *testing.T) {
+	t.Parallel()
 	s := newTestCopilotStore(t)
 	tr := NewCopilotTracker(s, slog.Default())
 
@@ -238,6 +244,7 @@ func TestCopilotTracker_UsageSummary_Empty(t *testing.T) {
 }
 
 func TestCopilotTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelta(t *testing.T) {
+	t.Parallel()
 	s := newTestCopilotStore(t)
 	tr := NewCopilotTracker(s, slog.Default())
 
@@ -268,6 +275,7 @@ func TestCopilotTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelt
 }
 
 func TestCopilotTracker_UsageSummary_UsesSnapshotResetDateFallback(t *testing.T) {
+	t.Parallel()
 	s := newTestCopilotStore(t)
 	tr := NewCopilotTracker(s, slog.Default())
 
@@ -311,6 +319,7 @@ func TestCopilotTracker_UsageSummary_UsesSnapshotResetDateFallback(t *testing.T)
 }
 
 func TestCopilotTracker_UsageSummary_CalculatesRateAndClampsProjection(t *testing.T) {
+	t.Parallel()
 	s := newTestCopilotStore(t)
 	tr := NewCopilotTracker(s, slog.Default())
 

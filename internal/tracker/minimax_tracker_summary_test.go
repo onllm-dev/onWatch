@@ -20,6 +20,7 @@ func insertAndProcessMiniMaxSnapshot(t *testing.T, s *store.Store, tr *MiniMaxTr
 }
 
 func TestMiniMaxTracker_UsageSummary(t *testing.T) {
+	t.Parallel()
 	s := newTestMiniMaxStore(t)
 	tr := NewMiniMaxTracker(s, nil)
 	if tr.logger == nil {
@@ -75,6 +76,7 @@ func TestMiniMaxTracker_UsageSummary(t *testing.T) {
 }
 
 func TestMiniMaxTracker_UsageSummary_NoDataAndEmptyModel(t *testing.T) {
+	t.Parallel()
 	s := newTestMiniMaxStore(t)
 	tr := NewMiniMaxTracker(s, slog.Default())
 

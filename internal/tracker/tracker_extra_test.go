@@ -17,6 +17,7 @@ import (
 // time-based reset path (capturedAt > RenewsAt+2min) when hasLastValues=true,
 // including the positive delta accumulation branch before closing the cycle.
 func TestTracker_Process_TimeBasedReset_WithHasLastValues(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -84,6 +85,7 @@ func TestTracker_Process_TimeBasedReset_WithHasLastValues(t *testing.T) {
 // api-based reset path (renewsAt hour changed) when hasLastValues=true and
 // delta is positive so it gets accumulated before closing.
 func TestTracker_Process_APIBasedReset_WithHasLastValues_PositiveDelta(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -145,6 +147,7 @@ func TestTracker_Process_APIBasedReset_WithHasLastValues_PositiveDelta(t *testin
 // no store is available (simulate by passing a nil store to trigger panic –
 // instead, use a closed store).
 func TestTracker_Process_ClosedStore_ReturnsError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -171,6 +174,7 @@ func TestTracker_Process_ClosedStore_ReturnsError(t *testing.T) {
 // TestAnthropicTracker_ProcessQuota_TimeBasedReset exercises the time-based
 // reset detection branch (cycle.ResetsAt != nil && capturedAt > ResetsAt+2min).
 func TestAnthropicTracker_ProcessQuota_TimeBasedReset(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -221,6 +225,7 @@ func TestAnthropicTracker_ProcessQuota_TimeBasedReset(t *testing.T) {
 // TestAnthropicTracker_ProcessQuota_NilResetsAt_FirstSnapshot exercises the
 // nil ResetsAt case when creating first cycle.
 func TestAnthropicTracker_ProcessQuota_NilResetsAt_FirstSnapshot(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -256,6 +261,7 @@ func TestAnthropicTracker_ProcessQuota_NilResetsAt_FirstSnapshot(t *testing.T) {
 // "new ResetsAt appeared" api-based reset branch (quota.ResetsAt != nil &&
 // cycle.ResetsAt == nil).
 func TestAnthropicTracker_ProcessQuota_NilResetsAt_ThenResetsAtAppears(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -292,6 +298,7 @@ func TestAnthropicTracker_ProcessQuota_NilResetsAt_ThenResetsAtAppears(t *testin
 // the branch inside the same-cycle update where hasLast=true but the specific
 // quota is not yet in lastValues map (first time seeing quota after restart).
 func TestAnthropicTracker_ProcessQuota_NewQuotaSeenAfterOtherQuotaProcessed(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -353,6 +360,7 @@ func TestAnthropicTracker_ProcessQuota_NewQuotaSeenAfterOtherQuotaProcessed(t *t
 
 // TestNewCodexTracker_NilLogger verifies nil logger is handled gracefully.
 func TestNewCodexTracker_NilLogger(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -370,6 +378,7 @@ func TestNewCodexTracker_NilLogger(t *testing.T) {
 
 // TestNewCopilotTracker_NilLogger verifies nil logger is handled gracefully.
 func TestNewCopilotTracker_NilLogger(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -387,6 +396,7 @@ func TestNewCopilotTracker_NilLogger(t *testing.T) {
 
 // TestNewCodexTracker_WithLogger verifies explicit logger is kept.
 func TestNewCodexTracker_WithLogger(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -402,6 +412,7 @@ func TestNewCodexTracker_WithLogger(t *testing.T) {
 
 // TestNewCopilotTracker_WithLogger verifies explicit logger is kept.
 func TestNewCopilotTracker_WithLogger(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -422,6 +433,7 @@ func TestNewCopilotTracker_WithLogger(t *testing.T) {
 // TestCodexTracker_processQuota_ResetViaUtilizationDrop exercises the branch:
 // diff > codexResetShiftThreshold && hasLast && currentUtil+2 < lastUtil
 func TestCodexTracker_processQuota_ResetViaUtilizationDrop(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -468,6 +480,7 @@ func TestCodexTracker_processQuota_ResetViaUtilizationDrop(t *testing.T) {
 // TestCodexTracker_processQuota_LargeShift_NoUtilDrop_NoReset exercises the
 // branch: diff > codexResetShiftThreshold but currentUtil+2 >= lastUtil, so NO reset.
 func TestCodexTracker_processQuota_LargeShift_NoUtilDrop_NoReset(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -518,6 +531,7 @@ func TestCodexTracker_processQuota_LargeShift_NoUtilDrop_NoReset(t *testing.T) {
 // TestCodexTracker_UsageSummary_ActiveCycleWithRate exercises the rate &
 // projected util path inside UsageSummary when the cycle is old enough.
 func TestCodexTracker_UsageSummary_ActiveCycleWithRate(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -559,6 +573,7 @@ func TestCodexTracker_UsageSummary_ActiveCycleWithRate(t *testing.T) {
 
 // TestCodexTracker_UsageSummary_NoCycles verifies clean state.
 func TestCodexTracker_UsageSummary_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -588,6 +603,7 @@ func TestCodexTracker_UsageSummary_NoCycles(t *testing.T) {
 // TestCopilotTracker_processQuota_TimeBasedReset exercises the time-based reset
 // path: cycle.ResetDate != nil && capturedAt after ResetDate && remaining increased.
 func TestCopilotTracker_processQuota_TimeBasedReset(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -630,6 +646,7 @@ func TestCopilotTracker_processQuota_TimeBasedReset(t *testing.T) {
 
 // TestCopilotTracker_Process_NilResetDate tests Process when snapshot.ResetDate is nil.
 func TestCopilotTracker_Process_NilResetDate(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -664,6 +681,7 @@ func TestCopilotTracker_Process_NilResetDate(t *testing.T) {
 // TestZaiTracker_processTokensQuota_TimeBasedReset exercises the time-based
 // reset path for tokens (cycle.NextReset != nil && capturedAt > NextReset+2min).
 func TestZaiTracker_processTokensQuota_TimeBasedReset(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -705,6 +723,7 @@ func TestZaiTracker_processTokensQuota_TimeBasedReset(t *testing.T) {
 // TestZaiTracker_processTokensQuota_APIBasedReset_NewResetAppeared exercises
 // the "new NextReset appeared" branch (snapshot has NextReset, cycle had nil).
 func TestZaiTracker_processTokensQuota_APIBasedReset_NewResetAppeared(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -739,6 +758,7 @@ func TestZaiTracker_processTokensQuota_APIBasedReset_NewResetAppeared(t *testing
 // TestZaiTracker_Process_ClosedStore_ReturnsError verifies error propagation
 // from processTokensQuota.
 func TestZaiTracker_Process_ClosedStore_ReturnsError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -759,6 +779,7 @@ func TestZaiTracker_Process_ClosedStore_ReturnsError(t *testing.T) {
 // TestZaiTracker_processTimeQuota_ZeroLastValue verifies that when lastTimeValue
 // is 0, no reset is detected (avoids divide-by-zero / false positive).
 func TestZaiTracker_processTimeQuota_ZeroLastValue(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -793,6 +814,7 @@ func TestZaiTracker_processTimeQuota_ZeroLastValue(t *testing.T) {
 // TestZaiTracker_processTimeQuota_ResetCallback verifies the onReset callback
 // is called when a time-quota reset is detected.
 func TestZaiTracker_processTimeQuota_ResetCallback(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -827,6 +849,7 @@ func TestZaiTracker_processTimeQuota_ResetCallback(t *testing.T) {
 // exercises the "first snapshot after restart, existing cycle in DB" path
 // in processTimeQuota (no hasLastValues, update peak if higher).
 func TestZaiTracker_processTimeQuota_ExistingCycleAfterRestart_UpdatesPeak(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -874,6 +897,7 @@ func TestZaiTracker_processTimeQuota_ExistingCycleAfterRestart_UpdatesPeak(t *te
 // TestZaiTracker_UsageSummary_ActiveCycleWithRate exercises the rate calculation
 // path when there is an active cycle and a recent snapshot.
 func TestZaiTracker_UsageSummary_ActiveCycleWithRate(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -916,6 +940,7 @@ func TestZaiTracker_UsageSummary_ActiveCycleWithRate(t *testing.T) {
 // TestZaiTracker_UsageSummary_TimeQuotaActive exercises the "time" branch in
 // UsageSummary and the RenewsAt fallback from TokensNextResetTime.
 func TestZaiTracker_UsageSummary_TimeQuotaActive(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -954,6 +979,7 @@ func TestZaiTracker_UsageSummary_TimeQuotaActive(t *testing.T) {
 
 // TestZaiTracker_UsageSummary_WithCompletedCycles tests history aggregation.
 func TestZaiTracker_UsageSummary_WithCompletedCycles(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -994,6 +1020,7 @@ func TestZaiTracker_UsageSummary_WithCompletedCycles(t *testing.T) {
 // TestZaiTracker_UsageSummary_TokensRenewsAtFallback exercises the branch
 // where RenewsAt is nil in the active cycle but set in the latest snapshot.
 func TestZaiTracker_UsageSummary_TokensRenewsAtFallback(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1034,6 +1061,7 @@ func TestZaiTracker_UsageSummary_TokensRenewsAtFallback(t *testing.T) {
 // TestCodexTracker_UsageSummary_WithHistory exercises the completed cycles
 // aggregation path (history > 0) and verifies TrackingSince, AvgPerCycle, etc.
 func TestCodexTracker_UsageSummary_WithHistory(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1093,6 +1121,7 @@ func TestCodexTracker_UsageSummary_WithHistory(t *testing.T) {
 // TestCodexTracker_UsageSummary_ActiveCycleNoReset exercises UsageSummary
 // when there is an active cycle but ResetsAt is nil, and no snapshot available.
 func TestCodexTracker_UsageSummary_ActiveCycleNoLatestSnapshot(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1133,6 +1162,7 @@ func TestCodexTracker_UsageSummary_ActiveCycleNoLatestSnapshot(t *testing.T) {
 // TestCopilotTracker_UsageSummary_WithHistory exercises the completed cycles
 // aggregation path (history > 0) for CopilotTracker.
 func TestCopilotTracker_UsageSummary_WithHistory(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1195,6 +1225,7 @@ func TestCopilotTracker_UsageSummary_WithHistory(t *testing.T) {
 // TestCopilotTracker_UsageSummary_ActiveCycleNoLatestSnapshot exercises the
 // active-cycle path when no snapshot is in the store (latest = nil).
 func TestCopilotTracker_UsageSummary_ActiveCycleNoLatestSnapshot(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1249,6 +1280,7 @@ func TestCopilotTracker_UsageSummary_ActiveCycleNoLatestSnapshot(t *testing.T) {
 // A more targeted approach: call processQuota directly for "search" with a
 // closed store to hit the search error path.
 func TestTracker_Process_DirectSearchError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1273,6 +1305,7 @@ func TestTracker_Process_DirectSearchError(t *testing.T) {
 // TestTracker_Process_ToolcallError similarly tests processQuota for "toolcall"
 // with a closed store.
 func TestTracker_Process_DirectToolcallError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1297,6 +1330,7 @@ func TestTracker_Process_DirectToolcallError(t *testing.T) {
 // TestAnthropicTracker_Process_Error exercises the error return path from Process
 // when the store is closed.
 func TestAnthropicTracker_Process_Error(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1322,6 +1356,7 @@ func TestAnthropicTracker_Process_Error(t *testing.T) {
 // quota name is NOT in lastValues map. This happens when a new quota appears
 // after at least one other quota has been processed.
 func TestCopilotTracker_processQuota_HasLastButNoLastForQuota(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1394,6 +1429,7 @@ func TestCopilotTracker_processQuota_HasLastButNoLastForQuota(t *testing.T) {
 
 // TestAntigravityTracker_Process_Error tests error propagation from Process.
 func TestAntigravityTracker_Process_Error(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1413,6 +1449,7 @@ func TestAntigravityTracker_Process_Error(t *testing.T) {
 
 // TestCodexTracker_Process_Error tests error propagation from Process.
 func TestCodexTracker_Process_Error(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1434,6 +1471,7 @@ func TestCodexTracker_Process_Error(t *testing.T) {
 
 // TestCopilotTracker_Process_Error tests error propagation from Process.
 func TestCopilotTracker_Process_Error(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1457,6 +1495,7 @@ func TestCopilotTracker_Process_Error(t *testing.T) {
 // TestZaiTracker_processTimeQuota_ClosedStore_ReturnsError calls processTimeQuota
 // directly with a closed store.
 func TestZaiTracker_processTimeQuota_ClosedStore_ReturnsError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1474,6 +1513,7 @@ func TestZaiTracker_processTimeQuota_ClosedStore_ReturnsError(t *testing.T) {
 // TestZaiTracker_processTokensQuota_ClosedStore_ReturnsError calls processTokensQuota
 // directly with a closed store.
 func TestZaiTracker_processTokensQuota_ClosedStore_ReturnsError(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1496,6 +1536,7 @@ func TestZaiTracker_processTokensQuota_ClosedStore_ReturnsError(t *testing.T) {
 // "first snapshot after restart" path where currentValue <= cycle.PeakValue
 // (no update needed).
 func TestZaiTracker_processTimeQuota_ExistingCycle_PeakNotUpdated(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1540,6 +1581,7 @@ func TestZaiTracker_processTimeQuota_ExistingCycle_PeakNotUpdated(t *testing.T) 
 // TestZaiTracker_processTokensQuota_ExistingCycleAfterRestart_PeakUpdated exercises
 // the "first snapshot after restart" path where currentValue > cycle.PeakValue.
 func TestZaiTracker_processTokensQuota_ExistingCycleAfterRestart_PeakUpdated(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1579,6 +1621,7 @@ func TestZaiTracker_processTokensQuota_ExistingCycleAfterRestart_PeakUpdated(t *
 // TestZaiTracker_processTokensQuota_ExistingCycleAfterRestart_PeakNotUpdated exercises
 // the "first snapshot after restart" path where currentValue <= cycle.PeakValue.
 func TestZaiTracker_processTokensQuota_ExistingCycleAfterRestart_PeakNotUpdated(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1618,6 +1661,7 @@ func TestZaiTracker_processTokensQuota_ExistingCycleAfterRestart_PeakNotUpdated(
 // TestAnthropicTracker_UsageSummary_WithRateAndProjection exercises the rate
 // and projection calculation when enough time has passed and delta > 0.
 func TestAnthropicTracker_UsageSummary_WithRateAndProjection(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1661,6 +1705,7 @@ func TestAnthropicTracker_UsageSummary_WithRateAndProjection(t *testing.T) {
 // TestAnthropicTracker_UsageSummary_ActiveCycleNilResetsAt exercises the branch
 // where activeCycle.ResetsAt is nil (no TimeUntilReset set from cycle).
 func TestAnthropicTracker_UsageSummary_ActiveCycleNilResetsAt(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1705,6 +1750,7 @@ func TestAnthropicTracker_UsageSummary_ActiveCycleNilResetsAt(t *testing.T) {
 // TestTracker_UsageSummary_ActiveCycle_Toolcall exercises the "toolcall" branch
 // in UsageSummary's switch statement.
 func TestTracker_UsageSummary_ActiveCycle_Toolcall(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1751,6 +1797,7 @@ func TestTracker_UsageSummary_ActiveCycle_Toolcall(t *testing.T) {
 // TestCodexTracker_processQuota_NilCycleResetAt_QuotaHasResetAt exercises the
 // branch where the active cycle has nil ResetsAt but the new quota has one.
 func TestCodexTracker_processQuota_NilCycleResetAt_QuotaHasResetAt(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1795,6 +1842,7 @@ func TestCodexTracker_processQuota_NilCycleResetAt_QuotaHasResetAt(t *testing.T)
 // TestAntigravityTracker_processModel_ExistingCycle_PeakNotUpdated exercises
 // the "first snapshot after restart" path where currentUsage <= cycle.PeakUsage.
 func TestAntigravityTracker_processModel_ExistingCycle_PeakNotUpdated(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1831,6 +1879,7 @@ func TestAntigravityTracker_processModel_ExistingCycle_PeakNotUpdated(t *testing
 // TestAntigravityTracker_processModel_HasLastButNoLastForThisModel exercises
 // the "hasLastValues=true but this specific model not in lastFractions" branch.
 func TestAntigravityTracker_processModel_HasLastButNoLastForThisModel(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1889,6 +1938,7 @@ func TestAntigravityTracker_processModel_HasLastButNoLastForThisModel(t *testing
 // TestAntigravityTracker_processModel_HasLastButNoLastForThisModel_NotHigher exercises
 // the "hasLastValues=true, quota not in lastFractions, currentUsage <= cycle.PeakUsage" branch.
 func TestAntigravityTracker_processModel_HasLast_NewModel_NotHigherThanPeak(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -1942,6 +1992,7 @@ func TestAntigravityTracker_processModel_HasLast_NewModel_NotHigherThanPeak(t *t
 // TestCopilotTracker_processQuota_HasLast_NoLastForQuota_PeakNotHigher exercises
 // the branch: hasLastValues=true, quota not in lastValues, currentUsed <= cycle.PeakUsed.
 func TestCopilotTracker_processQuota_HasLast_NewQuota_PeakNotHigher(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2001,6 +2052,7 @@ func TestCopilotTracker_processQuota_HasLast_NewQuota_PeakNotHigher(t *testing.T
 // TestTracker_processQuota_ExistingCycle_RestartPath_PeakNotHigher exercises
 // the !hasLastValues branch where existing cycle peak >= current requests.
 func TestTracker_processQuota_ExistingCycle_RestartPath_PeakNotHigher(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2041,6 +2093,7 @@ func TestTracker_processQuota_ExistingCycle_RestartPath_PeakNotHigher(t *testing
 // `summary.TimeUntilReset < 0` branch when the active cycle's ResetTime
 // is in the past.
 func TestAntigravityTracker_UsageSummary_CycleResetTimeInPast(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2079,6 +2132,7 @@ func TestAntigravityTracker_UsageSummary_CycleResetTimeInPast(t *testing.T) {
 // `if diff < 0 { diff = -diff }` branch where the new ResetsAt is BEFORE
 // the stored one (backward shift).
 func TestAnthropicTracker_processQuota_ResetsAtWentBackward(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2116,6 +2170,7 @@ func TestAnthropicTracker_processQuota_ResetsAtWentBackward(t *testing.T) {
 // TestAnthropicTracker_processQuota_ResetsAtWentBackwardBig exercises the diff < 0
 // case where the backward shift is large (> 10 min), triggering a reset.
 func TestAnthropicTracker_processQuota_ResetsAtWentBackwardBig(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2156,6 +2211,7 @@ func TestAnthropicTracker_processQuota_ResetsAtWentBackwardBig(t *testing.T) {
 // `if diff < 0 { diff = -diff }` branch where the model's ResetTime
 // goes backward (which is a large shift → reset).
 func TestAntigravityTracker_processModel_ResetTimeWentBackward(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2200,6 +2256,7 @@ func TestAntigravityTracker_processModel_ResetTimeWentBackward(t *testing.T) {
 // `!hasLast → else { if currentUtil > cycle.PeakUtilization }` branch where
 // the current utilization is NOT higher than the existing peak.
 func TestAnthropicTracker_processQuota_NotHasLast_PeakNotUpdated(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2241,6 +2298,7 @@ func TestAnthropicTracker_processQuota_NotHasLast_PeakNotUpdated(t *testing.T) {
 // TestCodexTracker_processQuota_TimeBasedReset exercises the time-based reset
 // path in codex (cycle.ResetsAt != nil && capturedAt.After(cycle.ResetsAt.Add(2min))).
 func TestCodexTracker_processQuota_TimeBasedReset(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2283,6 +2341,7 @@ func TestCodexTracker_processQuota_TimeBasedReset(t *testing.T) {
 // TestCodexTracker_processQuota_TimeBasedReset_WithHasLast_PositiveDelta exercises
 // the time-based reset path when hasLast=true and delta > 0 and util > peak.
 func TestCodexTracker_processQuota_TimeBasedReset_WithHasLast_PositiveDelta(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2338,6 +2397,7 @@ func TestCodexTracker_processQuota_TimeBasedReset_WithHasLast_PositiveDelta(t *t
 // TestAnthropicTracker_UsageSummary_ProjectedUtilClamped exercises the
 // `if projected > 100 { projected = 100 }` branch.
 func TestAnthropicTracker_UsageSummary_ProjectedUtilClamped(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2382,6 +2442,7 @@ func TestAnthropicTracker_UsageSummary_ProjectedUtilClamped(t *testing.T) {
 // TestTracker_UsageSummary_SubscriptionWithSnapshot exercises the "subscription"
 // case in the switch statement inside UsageSummary when there's a stored snapshot.
 func TestTracker_UsageSummary_SubscriptionWithSnapshot(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2429,6 +2490,7 @@ func TestTracker_UsageSummary_SubscriptionWithSnapshot(t *testing.T) {
 // TestCopilotTracker_processQuota_HasLast_NewQuota_PeakHigher exercises:
 // hasLastValues=true, quota NOT in lastValues, currentUsed > cycle.PeakUsed
 func TestCopilotTracker_processQuota_HasLast_NewQuota_PeakHigher(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2493,6 +2555,7 @@ func TestCopilotTracker_processQuota_HasLast_NewQuota_PeakHigher(t *testing.T) {
 // TestAntigravityTracker_processModel_HasLast_ExistingModel_NewCycleWithLowPeak exercises
 // hasLastValues=true && !ok for lastFractions with high current usage > cycle peak.
 func TestAntigravityTracker_processModel_HasLast_ExistingModel_HigherThanPeak(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2546,6 +2609,7 @@ func TestAntigravityTracker_processModel_HasLast_ExistingModel_HigherThanPeak(t 
 // TestAnthropicTracker_processQuota_HasLast_NewQuota_NotHigherThanPeak exercises:
 // hasLast=true, quota NOT in lastValues map, currentUtil <= cycle.PeakUtilization
 func TestAnthropicTracker_processQuota_HasLast_NewQuota_NotHigherThanPeak(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2598,6 +2662,7 @@ func TestAnthropicTracker_processQuota_HasLast_NewQuota_NotHigherThanPeak(t *tes
 // TestCodexTracker_UsageSummary_ActiveCycleNilResetsAt_SnapshotHasIt exercises
 // the `if summary.ResetsAt == nil && q.ResetsAt != nil` branch in UsageSummary.
 func TestCodexTracker_UsageSummary_ActiveCycleNilResetsAt_SnapshotHasIt(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2647,6 +2712,7 @@ func TestCodexTracker_UsageSummary_ActiveCycleNilResetsAt_SnapshotHasIt(t *testi
 // TestAnthropicTracker_processQuota_HasLast_ExistingCycle_NewQuota_HigherThanPeak exercises:
 // hasLast=true, quota not in lastValues, active cycle EXISTS in DB, currentUtil > cycle.PeakUtilization
 func TestAnthropicTracker_processQuota_HasLast_ExistingCycle_NewQuota_HigherThanPeak(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2697,6 +2763,7 @@ func TestAnthropicTracker_processQuota_HasLast_ExistingCycle_NewQuota_HigherThan
 // hasLast=false (fresh tracker), active cycle EXISTS in DB, currentUtil > cycle.PeakUtilization
 // (lines 213-215)
 func TestAnthropicTracker_processQuota_NotHasLast_ExistingCycle_HigherThanPeak(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -2738,6 +2805,7 @@ func TestAnthropicTracker_processQuota_NotHasLast_ExistingCycle_HigherThanPeak(t
 // TestAnthropicTracker_UsageSummary_SnapshotResetsAtFallback exercises the
 // `if summary.ResetsAt == nil && q.ResetsAt != nil` branch in UsageSummary.
 func TestAnthropicTracker_UsageSummary_SnapshotResetsAtFallback(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)

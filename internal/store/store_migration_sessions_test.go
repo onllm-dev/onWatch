@@ -7,6 +7,7 @@ import (
 )
 
 func TestStore_MigrateSessionsToUsageBased_DoneFlagShortCircuits(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -34,6 +35,7 @@ func TestStore_MigrateSessionsToUsageBased_DoneFlagShortCircuits(t *testing.T) {
 }
 
 func TestStore_MigrateSessionsToUsageBased_ProviderMigrationErrors(t *testing.T) {
+	t.Parallel()
 	t.Run("synthetic migration error", func(t *testing.T) {
 		s, err := New(":memory:")
 		if err != nil {
@@ -87,6 +89,7 @@ func TestStore_MigrateSessionsToUsageBased_ProviderMigrationErrors(t *testing.T)
 }
 
 func TestStore_MigrateProviderSessions_ClosedDB(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 
 	if err := s.migrateSyntheticSessions(5 * time.Minute); err == nil {

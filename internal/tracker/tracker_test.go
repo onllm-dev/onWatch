@@ -9,6 +9,7 @@ import (
 )
 
 func TestTracker_FirstSnapshot_CreatesThreeCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -38,6 +39,7 @@ func TestTracker_FirstSnapshot_CreatesThreeCycles(t *testing.T) {
 }
 
 func TestTracker_NormalIncrement_UpdatesDelta(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -79,6 +81,7 @@ func TestTracker_NormalIncrement_UpdatesDelta(t *testing.T) {
 }
 
 func TestTracker_DetectsSubscriptionReset(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -129,6 +132,7 @@ func TestTracker_DetectsSubscriptionReset(t *testing.T) {
 }
 
 func TestTracker_DetectsSearchReset(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -171,6 +175,7 @@ func TestTracker_DetectsSearchReset(t *testing.T) {
 }
 
 func TestTracker_RequestsDropToZero(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -207,6 +212,7 @@ func TestTracker_RequestsDropToZero(t *testing.T) {
 }
 
 func TestTracker_PeakTracking(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -236,6 +242,7 @@ func TestTracker_PeakTracking(t *testing.T) {
 }
 
 func TestTracker_UsageSummary_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -255,6 +262,7 @@ func TestTracker_UsageSummary_NoCycles(t *testing.T) {
 }
 
 func TestTracker_UsageSummary_SingleCycle(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -299,6 +307,7 @@ func TestTracker_UsageSummary_SingleCycle(t *testing.T) {
 }
 
 func TestTracker_UsageSummary_MultipleCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -365,6 +374,7 @@ func TestTracker_UsageSummary_MultipleCycles(t *testing.T) {
 }
 
 func TestTracker_SetOnReset_Called(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -398,6 +408,7 @@ func TestTracker_SetOnReset_Called(t *testing.T) {
 }
 
 func TestTracker_TimeBasedResetDetection(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -428,6 +439,7 @@ func TestTracker_TimeBasedResetDetection(t *testing.T) {
 }
 
 func TestTracker_MinuteLevelJitter_IgnoredAsNonReset(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -480,6 +492,7 @@ func TestTracker_MinuteLevelJitter_IgnoredAsNonReset(t *testing.T) {
 }
 
 func TestTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelta(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -516,6 +529,7 @@ func TestTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelta(t *te
 }
 
 func TestTracker_UsageSummary_SearchAndToolcallUseLatestSnapshotValues(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 

@@ -19,6 +19,7 @@ func newTestGeminiStore(t *testing.T) *store.Store {
 }
 
 func TestGeminiTracker_Process(t *testing.T) {
+	t.Parallel()
 	s := newTestGeminiStore(t)
 	tr := NewGeminiTracker(s, nil)
 
@@ -56,6 +57,7 @@ func TestGeminiTracker_Process(t *testing.T) {
 }
 
 func TestGeminiTracker_ResetDetection(t *testing.T) {
+	t.Parallel()
 	s := newTestGeminiStore(t)
 	tr := NewGeminiTracker(s, nil)
 
@@ -106,6 +108,7 @@ func TestGeminiTracker_ResetDetection(t *testing.T) {
 }
 
 func TestGeminiTracker_UsageSummary(t *testing.T) {
+	t.Parallel()
 	s := newTestGeminiStore(t)
 	tr := NewGeminiTracker(s, nil)
 

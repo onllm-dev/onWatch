@@ -6,6 +6,7 @@ import (
 )
 
 func TestClosedDB_MiniMaxStoreFunctions(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC().Truncate(time.Second)
 

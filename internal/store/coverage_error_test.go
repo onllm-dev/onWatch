@@ -23,6 +23,7 @@ func closedStore(t *testing.T) *Store {
 // --- store.go error paths ---
 
 func TestClosedDB_InsertSnapshot(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	_, err := s.InsertSnapshot(&api.Snapshot{
@@ -37,6 +38,7 @@ func TestClosedDB_InsertSnapshot(t *testing.T) {
 }
 
 func TestClosedDB_QueryLatest(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryLatest()
 	if err == nil {
@@ -45,6 +47,7 @@ func TestClosedDB_QueryLatest(t *testing.T) {
 }
 
 func TestClosedDB_QueryRange(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	_, err := s.QueryRange(now.Add(-time.Hour), now)
@@ -54,6 +57,7 @@ func TestClosedDB_QueryRange(t *testing.T) {
 }
 
 func TestClosedDB_CreateSession(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.CreateSession("s1", time.Now().UTC(), 60, "synthetic")
 	if err == nil {
@@ -62,6 +66,7 @@ func TestClosedDB_CreateSession(t *testing.T) {
 }
 
 func TestClosedDB_CloseOrphanedSessions(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.CloseOrphanedSessions()
 	if err == nil {
@@ -70,6 +75,7 @@ func TestClosedDB_CloseOrphanedSessions(t *testing.T) {
 }
 
 func TestClosedDB_CloseSession(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.CloseSession("s1", time.Now().UTC())
 	if err == nil {
@@ -78,6 +84,7 @@ func TestClosedDB_CloseSession(t *testing.T) {
 }
 
 func TestClosedDB_UpdateSessionMaxRequests(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.UpdateSessionMaxRequests("s1", 1.0, 1.0, 1.0)
 	if err == nil {
@@ -86,6 +93,7 @@ func TestClosedDB_UpdateSessionMaxRequests(t *testing.T) {
 }
 
 func TestClosedDB_IncrementSnapshotCount(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.IncrementSnapshotCount("s1")
 	if err == nil {
@@ -94,6 +102,7 @@ func TestClosedDB_IncrementSnapshotCount(t *testing.T) {
 }
 
 func TestClosedDB_QueryActiveSession(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryActiveSession()
 	if err == nil {
@@ -102,6 +111,7 @@ func TestClosedDB_QueryActiveSession(t *testing.T) {
 }
 
 func TestClosedDB_QuerySessionHistory(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QuerySessionHistory("synthetic")
 	if err == nil {
@@ -110,6 +120,7 @@ func TestClosedDB_QuerySessionHistory(t *testing.T) {
 }
 
 func TestClosedDB_CreateCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.CreateCycle("sub", time.Now().UTC(), time.Now().UTC())
 	if err == nil {
@@ -118,6 +129,7 @@ func TestClosedDB_CreateCycle(t *testing.T) {
 }
 
 func TestClosedDB_CloseCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.CloseCycle("sub", time.Now().UTC(), 0.5, 0.1)
 	if err == nil {
@@ -126,6 +138,7 @@ func TestClosedDB_CloseCycle(t *testing.T) {
 }
 
 func TestClosedDB_UpdateCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.UpdateCycle("sub", 0.5, 0.1)
 	if err == nil {
@@ -134,6 +147,7 @@ func TestClosedDB_UpdateCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryActiveCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryActiveCycle("sub")
 	if err == nil {
@@ -142,6 +156,7 @@ func TestClosedDB_QueryActiveCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryCycleHistory(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCycleHistory("sub")
 	if err == nil {
@@ -150,6 +165,7 @@ func TestClosedDB_QueryCycleHistory(t *testing.T) {
 }
 
 func TestClosedDB_QueryCyclesSince(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCyclesSince("sub", time.Now().UTC())
 	if err == nil {
@@ -158,6 +174,7 @@ func TestClosedDB_QueryCyclesSince(t *testing.T) {
 }
 
 func TestClosedDB_GetSetting(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.GetSetting("key")
 	if err == nil {
@@ -166,6 +183,7 @@ func TestClosedDB_GetSetting(t *testing.T) {
 }
 
 func TestClosedDB_SetSetting(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.SetSetting("key", "val")
 	if err == nil {
@@ -174,6 +192,7 @@ func TestClosedDB_SetSetting(t *testing.T) {
 }
 
 func TestClosedDB_SaveAuthToken(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.SaveAuthToken("token", time.Now().UTC())
 	if err == nil {
@@ -182,6 +201,7 @@ func TestClosedDB_SaveAuthToken(t *testing.T) {
 }
 
 func TestClosedDB_GetAuthTokenExpiry(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, _, err := s.GetAuthTokenExpiry("token")
 	if err == nil {
@@ -190,6 +210,7 @@ func TestClosedDB_GetAuthTokenExpiry(t *testing.T) {
 }
 
 func TestClosedDB_DeleteAuthToken(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.DeleteAuthToken("token")
 	if err == nil {
@@ -198,6 +219,7 @@ func TestClosedDB_DeleteAuthToken(t *testing.T) {
 }
 
 func TestClosedDB_CleanExpiredAuthTokens(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.CleanExpiredAuthTokens()
 	if err == nil {
@@ -206,6 +228,7 @@ func TestClosedDB_CleanExpiredAuthTokens(t *testing.T) {
 }
 
 func TestClosedDB_GetUser(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.GetUser("admin")
 	if err == nil {
@@ -214,6 +237,7 @@ func TestClosedDB_GetUser(t *testing.T) {
 }
 
 func TestClosedDB_UpsertUser(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.UpsertUser("admin", "hash")
 	if err == nil {
@@ -222,6 +246,7 @@ func TestClosedDB_UpsertUser(t *testing.T) {
 }
 
 func TestClosedDB_DeleteAllAuthTokens(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.DeleteAllAuthTokens()
 	if err == nil {
@@ -230,6 +255,7 @@ func TestClosedDB_DeleteAllAuthTokens(t *testing.T) {
 }
 
 func TestClosedDB_UpsertNotificationLog(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.UpsertNotificationLog("anthropic", "five_hour", "threshold", 0.8)
 	if err == nil {
@@ -238,6 +264,7 @@ func TestClosedDB_UpsertNotificationLog(t *testing.T) {
 }
 
 func TestClosedDB_GetLastNotification(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, _, err := s.GetLastNotification("anthropic", "five_hour", "threshold")
 	if err == nil {
@@ -246,6 +273,7 @@ func TestClosedDB_GetLastNotification(t *testing.T) {
 }
 
 func TestClosedDB_ClearNotificationLog(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.ClearNotificationLog("anthropic", "five_hour")
 	if err == nil {
@@ -254,6 +282,7 @@ func TestClosedDB_ClearNotificationLog(t *testing.T) {
 }
 
 func TestClosedDB_SavePushSubscription(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.SavePushSubscription("https://push.example.com", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAAAAA=")
 	if err == nil {
@@ -262,6 +291,7 @@ func TestClosedDB_SavePushSubscription(t *testing.T) {
 }
 
 func TestClosedDB_DeletePushSubscription(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.DeletePushSubscription("https://push.example.com")
 	if err == nil {
@@ -270,6 +300,7 @@ func TestClosedDB_DeletePushSubscription(t *testing.T) {
 }
 
 func TestClosedDB_GetPushSubscriptions(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.GetPushSubscriptions()
 	if err == nil {
@@ -280,6 +311,7 @@ func TestClosedDB_GetPushSubscriptions(t *testing.T) {
 // --- Anthropic error paths ---
 
 func TestClosedDB_InsertAnthropicSnapshot(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.InsertAnthropicSnapshot(&api.AnthropicSnapshot{
 		CapturedAt: time.Now().UTC(),
@@ -291,6 +323,7 @@ func TestClosedDB_InsertAnthropicSnapshot(t *testing.T) {
 }
 
 func TestClosedDB_QueryLatestAnthropic(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryLatestAnthropic()
 	if err == nil {
@@ -299,6 +332,7 @@ func TestClosedDB_QueryLatestAnthropic(t *testing.T) {
 }
 
 func TestClosedDB_QueryAnthropicRange(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	_, err := s.QueryAnthropicRange(now.Add(-time.Hour), now)
@@ -308,6 +342,7 @@ func TestClosedDB_QueryAnthropicRange(t *testing.T) {
 }
 
 func TestClosedDB_CreateAnthropicCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.CreateAnthropicCycle("five_hour", time.Now().UTC(), nil)
 	if err == nil {
@@ -316,6 +351,7 @@ func TestClosedDB_CreateAnthropicCycle(t *testing.T) {
 }
 
 func TestClosedDB_CloseAnthropicCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.CloseAnthropicCycle("five_hour", time.Now().UTC(), 0.5, 0.1)
 	if err == nil {
@@ -324,6 +360,7 @@ func TestClosedDB_CloseAnthropicCycle(t *testing.T) {
 }
 
 func TestClosedDB_UpdateAnthropicCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.UpdateAnthropicCycle("five_hour", 0.5, 0.1)
 	if err == nil {
@@ -332,6 +369,7 @@ func TestClosedDB_UpdateAnthropicCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryActiveAnthropicCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryActiveAnthropicCycle("five_hour")
 	if err == nil {
@@ -340,6 +378,7 @@ func TestClosedDB_QueryActiveAnthropicCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryAnthropicCycleHistory(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAnthropicCycleHistory("five_hour")
 	if err == nil {
@@ -348,6 +387,7 @@ func TestClosedDB_QueryAnthropicCycleHistory(t *testing.T) {
 }
 
 func TestClosedDB_QueryAnthropicCyclesSince(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAnthropicCyclesSince("five_hour", time.Now().UTC())
 	if err == nil {
@@ -356,6 +396,7 @@ func TestClosedDB_QueryAnthropicCyclesSince(t *testing.T) {
 }
 
 func TestClosedDB_QueryAnthropicUtilizationSeries(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAnthropicUtilizationSeries("five_hour", time.Now().UTC())
 	if err == nil {
@@ -364,6 +405,7 @@ func TestClosedDB_QueryAnthropicUtilizationSeries(t *testing.T) {
 }
 
 func TestClosedDB_QueryAnthropicCycleOverview(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAnthropicCycleOverview("sub", 10)
 	if err == nil {
@@ -372,6 +414,7 @@ func TestClosedDB_QueryAnthropicCycleOverview(t *testing.T) {
 }
 
 func TestClosedDB_QueryAllAnthropicQuotaNames(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAllAnthropicQuotaNames()
 	if err == nil {
@@ -382,6 +425,7 @@ func TestClosedDB_QueryAllAnthropicQuotaNames(t *testing.T) {
 // --- Codex error paths ---
 
 func TestClosedDB_InsertCodexSnapshot(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.InsertCodexSnapshot(&api.CodexSnapshot{
 		CapturedAt: time.Now().UTC(),
@@ -393,6 +437,7 @@ func TestClosedDB_InsertCodexSnapshot(t *testing.T) {
 }
 
 func TestClosedDB_QueryLatestCodex(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryLatestCodex(DefaultCodexAccountID)
 	if err == nil {
@@ -401,6 +446,7 @@ func TestClosedDB_QueryLatestCodex(t *testing.T) {
 }
 
 func TestClosedDB_QueryCodexRange(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	_, err := s.QueryCodexRange(DefaultCodexAccountID, now.Add(-time.Hour), now)
@@ -410,6 +456,7 @@ func TestClosedDB_QueryCodexRange(t *testing.T) {
 }
 
 func TestClosedDB_CreateCodexCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.CreateCodexCycle(DefaultCodexAccountID, "five_hour", time.Now().UTC(), nil)
 	if err == nil {
@@ -418,6 +465,7 @@ func TestClosedDB_CreateCodexCycle(t *testing.T) {
 }
 
 func TestClosedDB_CloseCodexCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.CloseCodexCycle(DefaultCodexAccountID, "five_hour", time.Now().UTC(), 0.5, 0.1)
 	if err == nil {
@@ -426,6 +474,7 @@ func TestClosedDB_CloseCodexCycle(t *testing.T) {
 }
 
 func TestClosedDB_UpdateCodexCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.UpdateCodexCycle(DefaultCodexAccountID, "five_hour", 0.5, 0.1)
 	if err == nil {
@@ -434,6 +483,7 @@ func TestClosedDB_UpdateCodexCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryActiveCodexCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryActiveCodexCycle(DefaultCodexAccountID, "five_hour")
 	if err == nil {
@@ -442,6 +492,7 @@ func TestClosedDB_QueryActiveCodexCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryCodexCycleHistory(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCodexCycleHistory(DefaultCodexAccountID, "five_hour")
 	if err == nil {
@@ -450,6 +501,7 @@ func TestClosedDB_QueryCodexCycleHistory(t *testing.T) {
 }
 
 func TestClosedDB_QueryCodexCyclesSince(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCodexCyclesSince(DefaultCodexAccountID, "five_hour", time.Now().UTC())
 	if err == nil {
@@ -458,6 +510,7 @@ func TestClosedDB_QueryCodexCyclesSince(t *testing.T) {
 }
 
 func TestClosedDB_QueryCodexUtilizationSeries(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCodexUtilizationSeries(DefaultCodexAccountID, "five_hour", time.Now().UTC())
 	if err == nil {
@@ -466,6 +519,7 @@ func TestClosedDB_QueryCodexUtilizationSeries(t *testing.T) {
 }
 
 func TestClosedDB_QueryCodexCycleOverview(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCodexCycleOverview(DefaultCodexAccountID, "sub", 10)
 	if err == nil {
@@ -474,6 +528,7 @@ func TestClosedDB_QueryCodexCycleOverview(t *testing.T) {
 }
 
 func TestClosedDB_QueryAllCodexQuotaNames(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAllCodexQuotaNames()
 	if err == nil {
@@ -482,6 +537,7 @@ func TestClosedDB_QueryAllCodexQuotaNames(t *testing.T) {
 }
 
 func TestClosedDB_UpdateCodexCycleResetsAt(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	err := s.UpdateCodexCycleResetsAt(DefaultCodexAccountID, "five_hour", &now)
@@ -493,6 +549,7 @@ func TestClosedDB_UpdateCodexCycleResetsAt(t *testing.T) {
 // --- Copilot error paths ---
 
 func TestClosedDB_InsertCopilotSnapshot(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.InsertCopilotSnapshot(&api.CopilotSnapshot{
 		CapturedAt: time.Now().UTC(),
@@ -504,6 +561,7 @@ func TestClosedDB_InsertCopilotSnapshot(t *testing.T) {
 }
 
 func TestClosedDB_QueryLatestCopilot(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryLatestCopilot()
 	if err == nil {
@@ -512,6 +570,7 @@ func TestClosedDB_QueryLatestCopilot(t *testing.T) {
 }
 
 func TestClosedDB_QueryCopilotRange(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	_, err := s.QueryCopilotRange(now.Add(-time.Hour), now)
@@ -521,6 +580,7 @@ func TestClosedDB_QueryCopilotRange(t *testing.T) {
 }
 
 func TestClosedDB_CreateCopilotCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.CreateCopilotCycle("premium_interactions", time.Now().UTC(), nil)
 	if err == nil {
@@ -529,6 +589,7 @@ func TestClosedDB_CreateCopilotCycle(t *testing.T) {
 }
 
 func TestClosedDB_CloseCopilotCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.CloseCopilotCycle("premium_interactions", time.Now().UTC(), 500, 100)
 	if err == nil {
@@ -537,6 +598,7 @@ func TestClosedDB_CloseCopilotCycle(t *testing.T) {
 }
 
 func TestClosedDB_UpdateCopilotCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.UpdateCopilotCycle("premium_interactions", 500, 100)
 	if err == nil {
@@ -545,6 +607,7 @@ func TestClosedDB_UpdateCopilotCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryActiveCopilotCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryActiveCopilotCycle("premium_interactions")
 	if err == nil {
@@ -553,6 +616,7 @@ func TestClosedDB_QueryActiveCopilotCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryCopilotCycleHistory(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCopilotCycleHistory("premium_interactions")
 	if err == nil {
@@ -561,6 +625,7 @@ func TestClosedDB_QueryCopilotCycleHistory(t *testing.T) {
 }
 
 func TestClosedDB_QueryCopilotCyclesSince(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCopilotCyclesSince("premium_interactions", time.Now().UTC())
 	if err == nil {
@@ -569,6 +634,7 @@ func TestClosedDB_QueryCopilotCyclesSince(t *testing.T) {
 }
 
 func TestClosedDB_QueryCopilotUsageSeries(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCopilotUsageSeries("premium_interactions", time.Now().UTC())
 	if err == nil {
@@ -577,6 +643,7 @@ func TestClosedDB_QueryCopilotUsageSeries(t *testing.T) {
 }
 
 func TestClosedDB_QueryCopilotCycleOverview(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryCopilotCycleOverview("sub", 10)
 	if err == nil {
@@ -585,6 +652,7 @@ func TestClosedDB_QueryCopilotCycleOverview(t *testing.T) {
 }
 
 func TestClosedDB_QueryAllCopilotQuotaNames(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAllCopilotQuotaNames()
 	if err == nil {
@@ -595,6 +663,7 @@ func TestClosedDB_QueryAllCopilotQuotaNames(t *testing.T) {
 // --- Zai error paths ---
 
 func TestClosedDB_InsertZaiSnapshot(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.InsertZaiSnapshot(&api.ZaiSnapshot{
 		CapturedAt: time.Now().UTC(),
@@ -605,6 +674,7 @@ func TestClosedDB_InsertZaiSnapshot(t *testing.T) {
 }
 
 func TestClosedDB_QueryLatestZai(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryLatestZai()
 	if err == nil {
@@ -613,6 +683,7 @@ func TestClosedDB_QueryLatestZai(t *testing.T) {
 }
 
 func TestClosedDB_QueryZaiRange(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	_, err := s.QueryZaiRange(now.Add(-time.Hour), now)
@@ -622,6 +693,7 @@ func TestClosedDB_QueryZaiRange(t *testing.T) {
 }
 
 func TestClosedDB_CreateZaiCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.CreateZaiCycle("tokens", time.Now().UTC(), nil)
 	if err == nil {
@@ -630,6 +702,7 @@ func TestClosedDB_CreateZaiCycle(t *testing.T) {
 }
 
 func TestClosedDB_CloseZaiCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.CloseZaiCycle("tokens", time.Now().UTC(), 500000, 200000)
 	if err == nil {
@@ -638,6 +711,7 @@ func TestClosedDB_CloseZaiCycle(t *testing.T) {
 }
 
 func TestClosedDB_UpdateZaiCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.UpdateZaiCycle("tokens", 500000, 200000)
 	if err == nil {
@@ -646,6 +720,7 @@ func TestClosedDB_UpdateZaiCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryActiveZaiCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryActiveZaiCycle("tokens")
 	if err == nil {
@@ -654,6 +729,7 @@ func TestClosedDB_QueryActiveZaiCycle(t *testing.T) {
 }
 
 func TestClosedDB_InsertZaiHourlyUsage(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.InsertZaiHourlyUsage("2026-03-04 12:00", 10, 500, 2, 3, 1)
 	if err == nil {
@@ -662,6 +738,7 @@ func TestClosedDB_InsertZaiHourlyUsage(t *testing.T) {
 }
 
 func TestClosedDB_QueryZaiHourlyUsage(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	_, err := s.QueryZaiHourlyUsage(now.Add(-time.Hour), now)
@@ -671,6 +748,7 @@ func TestClosedDB_QueryZaiHourlyUsage(t *testing.T) {
 }
 
 func TestClosedDB_QueryZaiCycleHistory(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryZaiCycleHistory("tokens")
 	if err == nil {
@@ -679,6 +757,7 @@ func TestClosedDB_QueryZaiCycleHistory(t *testing.T) {
 }
 
 func TestClosedDB_QueryZaiCycleOverview(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryZaiCycleOverview("tokens", 10)
 	if err == nil {
@@ -687,6 +766,7 @@ func TestClosedDB_QueryZaiCycleOverview(t *testing.T) {
 }
 
 func TestClosedDB_QueryZaiCyclesSince(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryZaiCyclesSince("tokens", time.Now().UTC())
 	if err == nil {
@@ -697,6 +777,7 @@ func TestClosedDB_QueryZaiCyclesSince(t *testing.T) {
 // --- Antigravity error paths ---
 
 func TestClosedDB_InsertAntigravitySnapshot(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.InsertAntigravitySnapshot(&api.AntigravitySnapshot{
 		CapturedAt: time.Now().UTC(),
@@ -708,6 +789,7 @@ func TestClosedDB_InsertAntigravitySnapshot(t *testing.T) {
 }
 
 func TestClosedDB_QueryLatestAntigravity(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryLatestAntigravity()
 	if err == nil {
@@ -716,6 +798,7 @@ func TestClosedDB_QueryLatestAntigravity(t *testing.T) {
 }
 
 func TestClosedDB_QueryAntigravityRange(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	_, err := s.QueryAntigravityRange(now.Add(-time.Hour), now)
@@ -725,6 +808,7 @@ func TestClosedDB_QueryAntigravityRange(t *testing.T) {
 }
 
 func TestClosedDB_CreateAntigravityCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.CreateAntigravityCycle("model-a", time.Now().UTC(), nil)
 	if err == nil {
@@ -733,6 +817,7 @@ func TestClosedDB_CreateAntigravityCycle(t *testing.T) {
 }
 
 func TestClosedDB_CloseAntigravityCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.CloseAntigravityCycle("model-a", time.Now().UTC(), 0.5, 0.1)
 	if err == nil {
@@ -741,6 +826,7 @@ func TestClosedDB_CloseAntigravityCycle(t *testing.T) {
 }
 
 func TestClosedDB_UpdateAntigravityCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.UpdateAntigravityCycle("model-a", 0.5, 0.1)
 	if err == nil {
@@ -749,6 +835,7 @@ func TestClosedDB_UpdateAntigravityCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryActiveAntigravityCycle(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryActiveAntigravityCycle("model-a")
 	if err == nil {
@@ -757,6 +844,7 @@ func TestClosedDB_QueryActiveAntigravityCycle(t *testing.T) {
 }
 
 func TestClosedDB_QueryAntigravityCycleHistory(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAntigravityCycleHistory("model-a")
 	if err == nil {
@@ -765,6 +853,7 @@ func TestClosedDB_QueryAntigravityCycleHistory(t *testing.T) {
 }
 
 func TestClosedDB_QueryAntigravityUsageSeries(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAntigravityUsageSeries("model-a", time.Now().UTC())
 	if err == nil {
@@ -773,6 +862,7 @@ func TestClosedDB_QueryAntigravityUsageSeries(t *testing.T) {
 }
 
 func TestClosedDB_QueryAntigravityCycleOverview(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAntigravityCycleOverview("model-a", 10)
 	if err == nil {
@@ -781,6 +871,7 @@ func TestClosedDB_QueryAntigravityCycleOverview(t *testing.T) {
 }
 
 func TestClosedDB_QueryAllAntigravityModelIDs(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAllAntigravityModelIDs()
 	if err == nil {
@@ -789,6 +880,7 @@ func TestClosedDB_QueryAllAntigravityModelIDs(t *testing.T) {
 }
 
 func TestClosedDB_QueryAntigravityModelIDsForGroup(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAntigravityModelIDsForGroup("group-a")
 	if err == nil {
@@ -797,6 +889,7 @@ func TestClosedDB_QueryAntigravityModelIDsForGroup(t *testing.T) {
 }
 
 func TestClosedDB_QueryAntigravitySnapshotAtOrBefore(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QueryAntigravitySnapshotAtOrBefore(time.Now().UTC())
 	if err == nil {
@@ -807,6 +900,7 @@ func TestClosedDB_QueryAntigravitySnapshotAtOrBefore(t *testing.T) {
 // --- Synthetic CycleOverview ---
 
 func TestClosedDB_QuerySyntheticCycleOverview(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	_, err := s.QuerySyntheticCycleOverview("sub", 10)
 	if err == nil {
@@ -817,6 +911,7 @@ func TestClosedDB_QuerySyntheticCycleOverview(t *testing.T) {
 // --- Migration error paths ---
 
 func TestClosedDB_MigrateSessionsToUsageBased(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	err := s.MigrateSessionsToUsageBased(30 * time.Minute)
 	if err == nil {
@@ -825,6 +920,7 @@ func TestClosedDB_MigrateSessionsToUsageBased(t *testing.T) {
 }
 
 func TestClosedDB_QueryAntigravityHistory(t *testing.T) {
+	t.Parallel()
 	s := closedStore(t)
 	now := time.Now().UTC()
 	_, err := s.QueryAntigravityHistory(now.Add(-time.Hour), now)

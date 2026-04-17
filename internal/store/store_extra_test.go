@@ -11,6 +11,7 @@ import (
 // --- UpdateCycle ---
 
 func TestStore_UpdateCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -46,6 +47,7 @@ func TestStore_UpdateCycle(t *testing.T) {
 // --- DeleteAuthToken ---
 
 func TestStore_DeleteAuthToken(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -84,6 +86,7 @@ func TestStore_DeleteAuthToken(t *testing.T) {
 }
 
 func TestStore_DeleteAuthToken_NonExistent(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -100,6 +103,7 @@ func TestStore_DeleteAuthToken_NonExistent(t *testing.T) {
 // --- Push Subscriptions ---
 
 func TestStore_SavePushSubscription_RoundTrip(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -149,6 +153,7 @@ func TestStore_SavePushSubscription_RoundTrip(t *testing.T) {
 }
 
 func TestStore_SavePushSubscription_InvalidEndpoint(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -162,6 +167,7 @@ func TestStore_SavePushSubscription_InvalidEndpoint(t *testing.T) {
 }
 
 func TestStore_SavePushSubscription_InvalidP256dh(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -181,6 +187,7 @@ func TestStore_SavePushSubscription_InvalidP256dh(t *testing.T) {
 }
 
 func TestStore_SavePushSubscription_InvalidAuth(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -201,6 +208,7 @@ func TestStore_SavePushSubscription_InvalidAuth(t *testing.T) {
 }
 
 func TestStore_SavePushSubscription_Upsert(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -246,6 +254,7 @@ func TestStore_SavePushSubscription_Upsert(t *testing.T) {
 }
 
 func TestStore_DeletePushSubscription(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -279,6 +288,7 @@ func TestStore_DeletePushSubscription(t *testing.T) {
 }
 
 func TestStore_GetPushSubscriptions_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -297,6 +307,7 @@ func TestStore_GetPushSubscriptions_Empty(t *testing.T) {
 // --- MigrateSessionsToUsageBased ---
 
 func TestStore_MigrateSessionsToUsageBased_Empty(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/migrate_empty.db"
 	s, err := New(tmpFile)
 	if err != nil {
@@ -320,6 +331,7 @@ func TestStore_MigrateSessionsToUsageBased_Empty(t *testing.T) {
 }
 
 func TestStore_MigrateSessionsToUsageBased_AlreadyDone(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/migrate_done.db"
 	s, err := New(tmpFile)
 	if err != nil {
@@ -339,6 +351,7 @@ func TestStore_MigrateSessionsToUsageBased_AlreadyDone(t *testing.T) {
 }
 
 func TestStore_MigrateSessionsToUsageBased_WithSyntheticData(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/migrate_synthetic.db"
 	s, err := New(tmpFile)
 	if err != nil {
@@ -378,6 +391,7 @@ func TestStore_MigrateSessionsToUsageBased_WithSyntheticData(t *testing.T) {
 }
 
 func TestStore_MigrateSessionsToUsageBased_WithZaiData(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/migrate_zai.db"
 	s, err := New(tmpFile)
 	if err != nil {
@@ -427,6 +441,7 @@ func TestStore_MigrateSessionsToUsageBased_WithZaiData(t *testing.T) {
 }
 
 func TestStore_MigrateSessionsToUsageBased_WithAnthropicData(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/migrate_anthropic.db"
 	s, err := New(tmpFile)
 	if err != nil {
@@ -467,6 +482,7 @@ func TestStore_MigrateSessionsToUsageBased_WithAnthropicData(t *testing.T) {
 }
 
 func TestStore_MigrateSessionsToUsageBased_IdleTimeout(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/migrate_idle.db"
 	s, err := New(tmpFile)
 	if err != nil {

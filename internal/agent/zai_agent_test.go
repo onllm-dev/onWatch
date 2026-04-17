@@ -66,6 +66,7 @@ func zaiAuthErrorBody() string {
 // TestZaiAgent_Run_PollsAndStoresSnapshot verifies that the Z.ai agent polls the API
 // and persists a snapshot to the database.
 func TestZaiAgent_Run_PollsAndStoresSnapshot(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
@@ -135,6 +136,7 @@ func TestZaiAgent_Run_PollsAndStoresSnapshot(t *testing.T) {
 // TestZaiAgent_Run_AuthError_ContinuesPolling verifies that a Z.ai body-level 401 error
 // (HTTP 200 with code 401 in body) does not crash the agent, and it continues polling.
 func TestZaiAgent_Run_AuthError_ContinuesPolling(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := callCount.Add(1)
@@ -198,6 +200,7 @@ func TestZaiAgent_Run_AuthError_ContinuesPolling(t *testing.T) {
 // TestZaiAgent_Run_NotifierCalled verifies that NotificationEngine.Check() is called
 // when the Z.ai agent processes a successful poll with quota data.
 func TestZaiAgent_Run_NotifierCalled(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// High usage to trigger notification thresholds
@@ -257,6 +260,7 @@ func TestZaiAgent_Run_NotifierCalled(t *testing.T) {
 // TestZaiAgent_Run_SessionManagerReportsPoll verifies that the SessionManager receives
 // poll values from the Z.ai agent for usage-based session detection.
 func TestZaiAgent_Run_SessionManagerReportsPoll(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := callCount.Add(1)

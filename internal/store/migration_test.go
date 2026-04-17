@@ -14,6 +14,7 @@ func testLogger() *slog.Logger {
 }
 
 func TestStore_RunCycleMigrationIfNeeded_NoBadCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -41,6 +42,7 @@ func TestStore_RunCycleMigrationIfNeeded_NoBadCycles(t *testing.T) {
 }
 
 func TestStore_RunCycleMigrationIfNeeded_AlreadyCompleted(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -64,6 +66,7 @@ func TestStore_RunCycleMigrationIfNeeded_AlreadyCompleted(t *testing.T) {
 }
 
 func TestStore_RunCycleMigrationIfNeeded_WithBadAnthropicCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -125,6 +128,7 @@ func TestStore_RunCycleMigrationIfNeeded_WithBadAnthropicCycles(t *testing.T) {
 }
 
 func TestStore_CountBadCycles_AllZero(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -141,6 +145,7 @@ func TestStore_CountBadCycles_AllZero(t *testing.T) {
 }
 
 func TestStore_CountBadAnthropicCycles_NoBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -169,6 +174,7 @@ func TestStore_CountBadAnthropicCycles_NoBad(t *testing.T) {
 }
 
 func TestStore_CountBadAnthropicCycles_BadFiveHour(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -197,6 +203,7 @@ func TestStore_CountBadAnthropicCycles_BadFiveHour(t *testing.T) {
 }
 
 func TestStore_CountBadAnthropicCycles_BadSevenDay(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -225,6 +232,7 @@ func TestStore_CountBadAnthropicCycles_BadSevenDay(t *testing.T) {
 }
 
 func TestStore_CountBadSyntheticCycles_NoBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -241,6 +249,7 @@ func TestStore_CountBadSyntheticCycles_NoBad(t *testing.T) {
 }
 
 func TestStore_CountBadSyntheticCycles_BadSearchCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -268,6 +277,7 @@ func TestStore_CountBadSyntheticCycles_BadSearchCycle(t *testing.T) {
 }
 
 func TestStore_CountBadZaiCycles_NoBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -284,6 +294,7 @@ func TestStore_CountBadZaiCycles_NoBad(t *testing.T) {
 }
 
 func TestStore_CountBadZaiCycles_BadTokensCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -316,6 +327,7 @@ func TestStore_CountBadZaiCycles_BadTokensCycle(t *testing.T) {
 }
 
 func TestStore_CountBadCopilotCycles_NoBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -332,6 +344,7 @@ func TestStore_CountBadCopilotCycles_NoBad(t *testing.T) {
 }
 
 func TestStore_CountBadCopilotCycles_BadCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -361,6 +374,7 @@ func TestStore_CountBadCopilotCycles_BadCycle(t *testing.T) {
 }
 
 func TestStore_FixBadCycles_NoBadCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -379,6 +393,7 @@ func TestStore_FixBadCycles_NoBadCycles(t *testing.T) {
 }
 
 func TestStore_FixBadSyntheticCycles_NoBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -397,6 +412,7 @@ func TestStore_FixBadSyntheticCycles_NoBad(t *testing.T) {
 }
 
 func TestStore_FixBadSyntheticCycles_WithBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -427,6 +443,7 @@ func TestStore_FixBadSyntheticCycles_WithBad(t *testing.T) {
 }
 
 func TestStore_FixBadZaiCycles_NoBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -445,6 +462,7 @@ func TestStore_FixBadZaiCycles_NoBad(t *testing.T) {
 }
 
 func TestStore_FixBadZaiCycles_WithBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -478,6 +496,7 @@ func TestStore_FixBadZaiCycles_WithBad(t *testing.T) {
 }
 
 func TestStore_FixBadCopilotCycles_NoBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -496,6 +515,7 @@ func TestStore_FixBadCopilotCycles_NoBad(t *testing.T) {
 }
 
 func TestStore_FixBadCopilotCycles_WithBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -528,6 +548,7 @@ func TestStore_FixBadCopilotCycles_WithBad(t *testing.T) {
 }
 
 func TestStore_FixBadAnthropicCycles_NoBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -546,6 +567,7 @@ func TestStore_FixBadAnthropicCycles_NoBad(t *testing.T) {
 }
 
 func TestStore_GetAnthropicQuotasWithBadCycles_None(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -562,6 +584,7 @@ func TestStore_GetAnthropicQuotasWithBadCycles_None(t *testing.T) {
 }
 
 func TestStore_GetAnthropicQuotasWithBadCycles_WithBad(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -592,6 +615,7 @@ func TestStore_GetAnthropicQuotasWithBadCycles_WithBad(t *testing.T) {
 }
 
 func TestStore_GetBadAnthropicCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -622,6 +646,7 @@ func TestStore_GetBadAnthropicCycles(t *testing.T) {
 }
 
 func TestStore_GetBadAnthropicCycles_SevenDayVariant(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -649,6 +674,7 @@ func TestStore_GetBadAnthropicCycles_SevenDayVariant(t *testing.T) {
 }
 
 func TestStore_GetBadAnthropicCycles_MonthlyLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -676,6 +702,7 @@ func TestStore_GetBadAnthropicCycles_MonthlyLimit(t *testing.T) {
 }
 
 func TestStore_GetBadAnthropicCycles_DefaultQuota(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -706,6 +733,7 @@ func TestStore_GetBadAnthropicCycles_DefaultQuota(t *testing.T) {
 }
 
 func TestStore_FixAnthropicQuotaCycles_NoSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -742,6 +770,7 @@ func TestStore_FixAnthropicQuotaCycles_NoSnapshots(t *testing.T) {
 }
 
 func TestStore_RecalculateAnthropicCycle_NotEnoughSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -790,6 +819,7 @@ func TestStore_RecalculateAnthropicCycle_NotEnoughSnapshots(t *testing.T) {
 }
 
 func TestStore_RecalculateAnthropicCycle_NoBoundaries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -834,6 +864,7 @@ func TestStore_RecalculateAnthropicCycle_NoBoundaries(t *testing.T) {
 }
 
 func TestStore_GetAnthropicSnapshotsInRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -873,6 +904,7 @@ func TestStore_GetAnthropicSnapshotsInRange(t *testing.T) {
 }
 
 func TestStore_GetAnthropicSnapshotsInRange_NilResetsAt(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -908,6 +940,7 @@ func TestStore_GetAnthropicSnapshotsInRange_NilResetsAt(t *testing.T) {
 // --- Pure function tests ---
 
 func TestFindResetBoundaries_Empty(t *testing.T) {
+	t.Parallel()
 	boundaries := findResetBoundaries(nil)
 	if len(boundaries) != 0 {
 		t.Errorf("Expected 0 boundaries for nil input, got %d", len(boundaries))
@@ -920,6 +953,7 @@ func TestFindResetBoundaries_Empty(t *testing.T) {
 }
 
 func TestFindResetBoundaries_SingleSnapshot(t *testing.T) {
+	t.Parallel()
 	boundaries := findResetBoundaries([]snapshotPoint{
 		{CapturedAt: time.Now(), Utilization: 10},
 	})
@@ -929,6 +963,7 @@ func TestFindResetBoundaries_SingleSnapshot(t *testing.T) {
 }
 
 func TestFindResetBoundaries_ResetsAtChanged(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	r1 := base.Add(5 * time.Hour)
 	r2 := base.Add(10 * time.Hour) // Different by 5 hours > 10 min threshold
@@ -950,6 +985,7 @@ func TestFindResetBoundaries_ResetsAtChanged(t *testing.T) {
 }
 
 func TestFindResetBoundaries_ResetsAtAppeared(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	r1 := base.Add(5 * time.Hour)
 
@@ -965,6 +1001,7 @@ func TestFindResetBoundaries_ResetsAtAppeared(t *testing.T) {
 }
 
 func TestFindResetBoundaries_ResetsAtDisappeared(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	r1 := base.Add(5 * time.Hour)
 
@@ -980,6 +1017,7 @@ func TestFindResetBoundaries_ResetsAtDisappeared(t *testing.T) {
 }
 
 func TestFindResetBoundaries_UtilizationDrop(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	snapshots := []snapshotPoint{
@@ -994,6 +1032,7 @@ func TestFindResetBoundaries_UtilizationDrop(t *testing.T) {
 }
 
 func TestFindResetBoundaries_TimeGapWithDrop(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	snapshots := []snapshotPoint{
@@ -1008,6 +1047,7 @@ func TestFindResetBoundaries_TimeGapWithDrop(t *testing.T) {
 }
 
 func TestFindResetBoundaries_NoChange(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	r1 := base.Add(5 * time.Hour)
 
@@ -1024,6 +1064,7 @@ func TestFindResetBoundaries_NoChange(t *testing.T) {
 }
 
 func TestFilterSnapshotsByRange(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	snapshots := []snapshotPoint{
@@ -1041,6 +1082,7 @@ func TestFilterSnapshotsByRange(t *testing.T) {
 }
 
 func TestFilterSnapshotsByRange_IncludesStart(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	snapshots := []snapshotPoint{
@@ -1056,6 +1098,7 @@ func TestFilterSnapshotsByRange_IncludesStart(t *testing.T) {
 }
 
 func TestFilterSnapshotsByRange_ExcludesEnd(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	snapshots := []snapshotPoint{
@@ -1071,6 +1114,7 @@ func TestFilterSnapshotsByRange_ExcludesEnd(t *testing.T) {
 }
 
 func TestCalculateCycleStats_Empty(t *testing.T) {
+	t.Parallel()
 	peak, delta := calculateCycleStats(nil)
 	if peak != 0 || delta != 0 {
 		t.Errorf("Expected (0, 0) for empty input, got (%v, %v)", peak, delta)
@@ -1078,6 +1122,7 @@ func TestCalculateCycleStats_Empty(t *testing.T) {
 }
 
 func TestCalculateCycleStats_SingleSnapshot(t *testing.T) {
+	t.Parallel()
 	snapshots := []snapshotPoint{
 		{Utilization: 42},
 	}
@@ -1091,6 +1136,7 @@ func TestCalculateCycleStats_SingleSnapshot(t *testing.T) {
 }
 
 func TestCalculateCycleStats_MultipleSnapshots(t *testing.T) {
+	t.Parallel()
 	snapshots := []snapshotPoint{
 		{Utilization: 10},
 		{Utilization: 30},
@@ -1108,6 +1154,7 @@ func TestCalculateCycleStats_MultipleSnapshots(t *testing.T) {
 }
 
 func TestStore_CountBadCycles_Combined(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)

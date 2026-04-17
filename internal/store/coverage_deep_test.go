@@ -10,6 +10,7 @@ import (
 // --- Copilot cycle CRUD ---
 
 func TestCopilotStore_CreateCloseCopilotCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -59,6 +60,7 @@ func TestCopilotStore_CreateCloseCopilotCycle(t *testing.T) {
 }
 
 func TestCopilotStore_CreateCopilotCycle_NilResetDate(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -78,6 +80,7 @@ func TestCopilotStore_CreateCopilotCycle_NilResetDate(t *testing.T) {
 // --- Codex cycle CRUD ---
 
 func TestCodexStore_CreateCloseCodexCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -121,6 +124,7 @@ func TestCodexStore_CreateCloseCodexCycle(t *testing.T) {
 }
 
 func TestCodexStore_CreateCodexCycle_NilResetsAt(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -140,6 +144,7 @@ func TestCodexStore_CreateCodexCycle_NilResetsAt(t *testing.T) {
 // --- Antigravity cycle CRUD ---
 
 func TestAntigravityStore_CreateCloseAntigravityCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -180,6 +185,7 @@ func TestAntigravityStore_CreateCloseAntigravityCycle(t *testing.T) {
 }
 
 func TestAntigravityStore_CreateAntigravityCycle_NilResetTime(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -199,6 +205,7 @@ func TestAntigravityStore_CreateAntigravityCycle_NilResetTime(t *testing.T) {
 // --- Antigravity snapshot with full model data ---
 
 func TestAntigravityStore_InsertWithModels_QueryLatest(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -290,6 +297,7 @@ func TestAntigravityStore_InsertWithModels_QueryLatest(t *testing.T) {
 // --- Antigravity Range with models ---
 
 func TestAntigravityStore_QueryAntigravityRange_WithModels(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -345,6 +353,7 @@ func TestAntigravityStore_QueryAntigravityRange_WithModels(t *testing.T) {
 // --- Anthropic Range with resetsAt on quotas ---
 
 func TestAnthropicStore_QueryAnthropicRange_WithResetsAt(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -395,6 +404,7 @@ func TestAnthropicStore_QueryAnthropicRange_WithResetsAt(t *testing.T) {
 // --- Copilot snapshot with resetDate and quotas ---
 
 func TestCopilotStore_InsertWithQuotas_QueryRange_WithLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -457,6 +467,7 @@ func TestCopilotStore_InsertWithQuotas_QueryRange_WithLimit(t *testing.T) {
 // --- Codex snapshot with full quota data, QueryRange with limit ---
 
 func TestCodexStore_InsertWithQuotas_QueryRange_WithLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -529,6 +540,7 @@ func TestCodexStore_InsertWithQuotas_QueryRange_WithLimit(t *testing.T) {
 // --- Zai Range with limit ---
 
 func TestZaiStore_QueryZaiRange_WithLimit_Models(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -581,6 +593,7 @@ func TestZaiStore_QueryZaiRange_WithLimit_Models(t *testing.T) {
 // --- Session operations ---
 
 func TestStore_SessionCRUD(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -637,6 +650,7 @@ func TestStore_SessionCRUD(t *testing.T) {
 }
 
 func TestStore_CloseOrphanedSessions_Multiple(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -676,6 +690,7 @@ func TestStore_CloseOrphanedSessions_Multiple(t *testing.T) {
 // --- Quota name queries ---
 
 func TestAnthropicStore_QueryAllAnthropicQuotaNames(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -704,6 +719,7 @@ func TestAnthropicStore_QueryAllAnthropicQuotaNames(t *testing.T) {
 }
 
 func TestCopilotStore_QueryAllCopilotQuotaNames(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -735,6 +751,7 @@ func TestCopilotStore_QueryAllCopilotQuotaNames(t *testing.T) {
 }
 
 func TestCodexStore_QueryAllCodexQuotaNames(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -770,6 +787,7 @@ func TestCodexStore_QueryAllCodexQuotaNames(t *testing.T) {
 // --- Antigravity ModelIDs for group and SnapshotAtOrBefore ---
 
 func TestAntigravityStore_QueryAntigravitySnapshotAtOrBefore(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -832,6 +850,7 @@ func TestAntigravityStore_QueryAntigravitySnapshotAtOrBefore(t *testing.T) {
 }
 
 func TestAntigravityStore_QueryAntigravityModelIDsForGroup(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -865,6 +884,7 @@ func TestAntigravityStore_QueryAntigravityModelIDsForGroup(t *testing.T) {
 // --- Codex cycle history with limit ---
 
 func TestCodexStore_QueryCodexCycleHistory_WithLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -899,6 +919,7 @@ func TestCodexStore_QueryCodexCycleHistory_WithLimit(t *testing.T) {
 // --- Copilot cycle history ---
 
 func TestCopilotStore_QueryCopilotCycleHistory(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -929,6 +950,7 @@ func TestCopilotStore_QueryCopilotCycleHistory(t *testing.T) {
 // --- Antigravity cycle history ---
 
 func TestAntigravityStore_QueryAntigravityCycleHistory(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -959,6 +981,7 @@ func TestAntigravityStore_QueryAntigravityCycleHistory(t *testing.T) {
 // --- Anthropic UtilizationSeries ---
 
 func TestAnthropicStore_QueryAnthropicUtilizationSeries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1001,6 +1024,7 @@ func TestAnthropicStore_QueryAnthropicUtilizationSeries(t *testing.T) {
 // --- Copilot UtilizationSeries ---
 
 func TestCopilotStore_QueryCopilotUsageSeries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1035,6 +1059,7 @@ func TestCopilotStore_QueryCopilotUsageSeries(t *testing.T) {
 // --- Codex UtilizationSeries ---
 
 func TestCodexStore_QueryCodexUtilizationSeries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1071,6 +1096,7 @@ func TestCodexStore_QueryCodexUtilizationSeries(t *testing.T) {
 // --- Zai cycle CRUD ---
 
 func TestZaiStore_CreateCloseZaiCycle_NilNextReset(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1100,6 +1126,7 @@ func TestZaiStore_CreateCloseZaiCycle_NilNextReset(t *testing.T) {
 // --- Zai hourly usage ---
 
 func TestZaiStore_InsertZaiHourlyUsage(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1126,6 +1153,7 @@ func TestZaiStore_InsertZaiHourlyUsage(t *testing.T) {
 // --- DeleteAllAuthTokens ---
 
 func TestStore_DeleteAllAuthTokens_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1141,6 +1169,7 @@ func TestStore_DeleteAllAuthTokens_Empty(t *testing.T) {
 // --- CleanExpiredAuthTokens ---
 
 func TestStore_CleanExpiredAuthTokens_WithData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1179,6 +1208,7 @@ func TestStore_CleanExpiredAuthTokens_WithData(t *testing.T) {
 // --- Settings ---
 
 func TestStore_GetSetSetting(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1224,6 +1254,7 @@ func TestStore_GetSetSetting(t *testing.T) {
 // --- User operations ---
 
 func TestStore_UpsertGetUser(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1271,6 +1302,7 @@ func TestStore_UpsertGetUser(t *testing.T) {
 // --- GetLastNotification ---
 
 func TestStore_GetLastNotification(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1308,6 +1340,7 @@ func TestStore_GetLastNotification(t *testing.T) {
 // --- Anthropic CyclesSince ---
 
 func TestAnthropicStore_QueryAnthropicCyclesSince(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1352,6 +1385,7 @@ func TestAnthropicStore_QueryAnthropicCyclesSince(t *testing.T) {
 // --- Copilot CyclesSince ---
 
 func TestCopilotStore_QueryCopilotCyclesSince(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1385,6 +1419,7 @@ func TestCopilotStore_QueryCopilotCyclesSince(t *testing.T) {
 // --- Anthropic CycleHistory ---
 
 func TestAnthropicStore_QueryAnthropicCycleHistory_WithData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1429,6 +1464,7 @@ func TestAnthropicStore_QueryAnthropicCycleHistory_WithData(t *testing.T) {
 // --- Antigravity CycleHistory with limit ---
 
 func TestAntigravityStore_QueryAntigravityCycleHistory_WithLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1462,6 +1498,7 @@ func TestAntigravityStore_QueryAntigravityCycleHistory_WithLimit(t *testing.T) {
 // --- Copilot CycleHistory with limit ---
 
 func TestCopilotStore_QueryCopilotCycleHistory_WithLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1494,6 +1531,7 @@ func TestCopilotStore_QueryCopilotCycleHistory_WithLimit(t *testing.T) {
 // --- QueryLatestCodex with full data ---
 
 func TestCodexStore_QueryLatestCodex_FullData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1556,6 +1594,7 @@ func TestCodexStore_QueryLatestCodex_FullData(t *testing.T) {
 // --- QueryLatestCopilot with full data ---
 
 func TestCopilotStore_QueryLatestCopilot_FullData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1612,6 +1651,7 @@ func TestCopilotStore_QueryLatestCopilot_FullData(t *testing.T) {
 // --- Zai with tokensNextReset, QueryLatest ---
 
 func TestZaiStore_QueryLatestZai_FullData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1664,6 +1704,7 @@ func TestZaiStore_QueryLatestZai_FullData(t *testing.T) {
 // --- Zai CycleHistory ---
 
 func TestZaiStore_QueryZaiCycleHistory_WithLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1697,6 +1738,7 @@ func TestZaiStore_QueryZaiCycleHistory_WithLimit(t *testing.T) {
 // --- Antigravity UsageSeries ---
 
 func TestAntigravityStore_QueryAntigravityUsageSeries_FullData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1736,6 +1778,7 @@ func TestAntigravityStore_QueryAntigravityUsageSeries_FullData(t *testing.T) {
 // --- Codex CyclesSince ---
 
 func TestCodexStore_QueryCodexCyclesSince_WithData(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1770,6 +1813,7 @@ func TestCodexStore_QueryCodexCyclesSince_WithData(t *testing.T) {
 // --- Zai CyclesSince ---
 
 func TestZaiStore_QueryZaiCyclesSince_FullHistory(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -1803,6 +1847,7 @@ func TestZaiStore_QueryZaiCyclesSince_FullHistory(t *testing.T) {
 // --- Antigravity CyclesSince ---
 
 func TestAntigravityStore_QueryAntigravityCyclesSince(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)

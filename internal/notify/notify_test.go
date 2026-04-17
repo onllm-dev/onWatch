@@ -75,6 +75,7 @@ func setupSMTPAndMailer(t *testing.T, s *store.Store, engine *NotificationEngine
 }
 
 func TestNew_ReturnsEngine(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -85,6 +86,7 @@ func TestNew_ReturnsEngine(t *testing.T) {
 }
 
 func TestNotificationEngine_Reload_Defaults(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -115,6 +117,7 @@ func TestNotificationEngine_Reload_Defaults(t *testing.T) {
 }
 
 func TestNotificationEngine_Reload_CustomValues(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -174,6 +177,7 @@ func TestNotificationEngine_Reload_CustomValues(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_WarningThreshold(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -209,6 +213,7 @@ func TestNotificationEngine_Check_WarningThreshold(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_CriticalThreshold(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -240,6 +245,7 @@ func TestNotificationEngine_Check_CriticalThreshold(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_BelowThreshold_NoNotification(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -263,6 +269,7 @@ func TestNotificationEngine_Check_BelowThreshold_NoNotification(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_CooldownEnforced(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -296,6 +303,7 @@ func TestNotificationEngine_Check_CooldownEnforced(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_DedupIsProviderScoped(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -343,6 +351,7 @@ func TestNotificationEngine_Check_DedupIsProviderScoped(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_PerQuotaOverride(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -386,6 +395,7 @@ func TestNotificationEngine_Check_PerQuotaOverride(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_DisabledType_NoNotification(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -418,6 +428,7 @@ func TestNotificationEngine_Check_DisabledType_NoNotification(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_NoMailer_SilentSkip(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -440,6 +451,7 @@ func TestNotificationEngine_Check_NoMailer_SilentSkip(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_ResetNotification(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -477,6 +489,7 @@ func TestNotificationEngine_Check_ResetNotification(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_ResetClearsOnlyCurrentProvider(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -532,6 +545,7 @@ func TestNotificationEngine_Check_ResetClearsOnlyCurrentProvider(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_ResetDisabled_NoNotification(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -556,6 +570,7 @@ func TestNotificationEngine_Check_ResetDisabled_NoNotification(t *testing.T) {
 }
 
 func TestNotificationEngine_ConfigureSMTP_NoSettings(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -569,6 +584,7 @@ func TestNotificationEngine_ConfigureSMTP_NoSettings(t *testing.T) {
 }
 
 func TestNotificationEngine_ConfigureSMTP_WithEncryptedPassword(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -674,6 +690,7 @@ func TestNotificationEngine_ConfigureSMTP_WithEncryptedPassword(t *testing.T) {
 }
 
 func TestNotificationEngine_SetEncryptionKey(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -714,6 +731,7 @@ func TestNotificationEngine_SetEncryptionKey(t *testing.T) {
 }
 
 func TestNotificationEngine_ConfigureSMTP_LegacyEncryptedPasswordMigratesToCurrentKey(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -789,6 +807,7 @@ func TestNotificationEngine_ConfigureSMTP_LegacyEncryptedPasswordMigratesToCurre
 }
 
 func TestNotificationEngine_ConfigureSMTP_CurrentKeyEncryptedPasswordDoesNotRewrite(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -853,6 +872,7 @@ func TestNotificationEngine_ConfigureSMTP_CurrentKeyEncryptedPasswordDoesNotRewr
 }
 
 func TestNotificationEngine_ConfigurePush(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -892,6 +912,7 @@ func TestNotificationEngine_ConfigurePush(t *testing.T) {
 }
 
 func TestNotificationEngine_GetVAPIDPublicKey_Empty(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -903,6 +924,7 @@ func TestNotificationEngine_GetVAPIDPublicKey_Empty(t *testing.T) {
 }
 
 func TestNotificationEngine_SendTestPush_NotConfigured(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -918,6 +940,7 @@ func TestNotificationEngine_SendTestPush_NotConfigured(t *testing.T) {
 }
 
 func TestNotificationEngine_SendTestPush_NoSubscriptions(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -938,6 +961,7 @@ func TestNotificationEngine_SendTestPush_NoSubscriptions(t *testing.T) {
 }
 
 func TestNotificationEngine_SendTestEmail_NotConfigured(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -953,6 +977,7 @@ func TestNotificationEngine_SendTestEmail_NotConfigured(t *testing.T) {
 }
 
 func TestNotificationEngine_SendTestEmail_Success(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -972,6 +997,7 @@ func TestNotificationEngine_SendTestEmail_Success(t *testing.T) {
 }
 
 func TestNotificationEngine_Reload_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -985,6 +1011,7 @@ func TestNotificationEngine_Reload_InvalidJSON(t *testing.T) {
 }
 
 func TestNotificationEngine_Reload_WithChannels(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1012,6 +1039,7 @@ func TestNotificationEngine_Reload_WithChannels(t *testing.T) {
 }
 
 func TestNotificationEngine_Reload_EmptyOverrideQuotaKey(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1049,6 +1077,7 @@ func TestNotificationEngine_Reload_EmptyOverrideQuotaKey(t *testing.T) {
 }
 
 func TestNormalizeNotificationProvider(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input string
 		want  string
@@ -1068,6 +1097,7 @@ func TestNormalizeNotificationProvider(t *testing.T) {
 }
 
 func TestTitleCase(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input string
 		want  string
@@ -1086,6 +1116,7 @@ func TestTitleCase(t *testing.T) {
 }
 
 func TestBuildSubject(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1134,6 +1165,7 @@ func TestBuildSubject(t *testing.T) {
 }
 
 func TestBuildBody(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1167,6 +1199,7 @@ func TestBuildBody(t *testing.T) {
 }
 
 func TestBuildBody_NoLimit(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1185,6 +1218,7 @@ func TestBuildBody_NoLimit(t *testing.T) {
 }
 
 func TestNotificationEngine_ConfigureSMTP_EmptyHost(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1214,6 +1248,7 @@ func TestNotificationEngine_ConfigureSMTP_EmptyHost(t *testing.T) {
 }
 
 func TestNotificationEngine_ConfigureSMTP_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1227,6 +1262,7 @@ func TestNotificationEngine_ConfigureSMTP_InvalidJSON(t *testing.T) {
 }
 
 func TestNotificationEngine_ConfigureSMTP_MultipleRecipients(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1250,6 +1286,7 @@ func TestNotificationEngine_ConfigureSMTP_MultipleRecipients(t *testing.T) {
 }
 
 func TestNotificationEngine_ConfigureSMTP_DefaultPort(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1273,6 +1310,7 @@ func TestNotificationEngine_ConfigureSMTP_DefaultPort(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_AbsoluteOverride(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1316,6 +1354,7 @@ func TestNotificationEngine_Check_AbsoluteOverride(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_LegacyOverride(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1368,6 +1407,7 @@ func TestNotificationEngine_Check_LegacyOverride(t *testing.T) {
 }
 
 func TestNotificationEngine_Check_LegacyAbsoluteOverride(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	defer s.Close()
 
@@ -1396,6 +1436,7 @@ func TestNotificationEngine_Check_LegacyAbsoluteOverride(t *testing.T) {
 }
 
 func TestNotificationOverrideKey(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		provider string
 		quotaKey string

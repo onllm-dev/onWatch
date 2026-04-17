@@ -8,6 +8,7 @@ import (
 )
 
 func TestStoreMenubarSettingsRoundTrip(t *testing.T) {
+	t.Parallel()
 	dbPath := filepath.Join(t.TempDir(), "onwatch.db")
 
 	s, err := New(dbPath)
@@ -82,6 +83,7 @@ func TestStoreMenubarSettingsRoundTrip(t *testing.T) {
 }
 
 func TestStoreMenubarSettingsDefaults(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)

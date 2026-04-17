@@ -81,6 +81,7 @@ func setupTest(t *testing.T) (*Agent, *store.Store, *httptest.Server, *bytes.Buf
 
 // TestAgent_PollsAtInterval verifies the API is called N times in N*interval duration
 func TestAgent_PollsAtInterval(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
@@ -135,6 +136,7 @@ func TestAgent_PollsAtInterval(t *testing.T) {
 
 // TestAgent_StoresEverySnapshot verifies DB has N rows after N polls
 func TestAgent_StoresEverySnapshot(t *testing.T) {
+	t.Parallel()
 	var pollCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pollCount.Add(1)
@@ -170,6 +172,7 @@ func TestAgent_StoresEverySnapshot(t *testing.T) {
 
 // TestAgent_ProcessesWithTracker verifies Tracker.Process is called for each snapshot
 func TestAgent_ProcessesWithTracker(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := testResponse()
 		w.Header().Set("Content-Type", "application/json")
@@ -208,6 +211,7 @@ func TestAgent_ProcessesWithTracker(t *testing.T) {
 
 // TestAgent_APIError_Continues verifies agent logs and continues on API error
 func TestAgent_APIError_Continues(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := callCount.Add(1)
@@ -246,6 +250,7 @@ func TestAgent_APIError_Continues(t *testing.T) {
 
 // TestAgent_StoreError_Continues verifies agent logs and continues on store error
 func TestAgent_StoreError_Continues(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
@@ -280,6 +285,7 @@ func TestAgent_StoreError_Continues(t *testing.T) {
 
 // TestAgent_TrackerError_StillStoresSnapshot verifies snapshot is saved even if tracker fails
 func TestAgent_TrackerError_StillStoresSnapshot(t *testing.T) {
+	t.Parallel()
 	var pollCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pollCount.Add(1)
@@ -328,6 +334,7 @@ func TestAgent_TrackerError_StillStoresSnapshot(t *testing.T) {
 
 // TestAgent_GracefulShutdown verifies context cancel causes Run() to return nil within 1s
 func TestAgent_GracefulShutdown(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(5 * time.Millisecond) // Small delay
 		resp := testResponse()
@@ -372,6 +379,7 @@ func TestAgent_GracefulShutdown(t *testing.T) {
 
 // TestAgent_GracefulShutdown_MidPoll verifies clean exit when cancelled during HTTP request
 func TestAgent_GracefulShutdown_MidPoll(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Long delay to simulate in-flight request
 		select {
@@ -420,6 +428,7 @@ func TestAgent_GracefulShutdown_MidPoll(t *testing.T) {
 
 // TestAgent_FirstPollImmediate verifies first poll happens immediately, not after interval
 func TestAgent_FirstPollImmediate(t *testing.T) {
+	t.Parallel()
 	var callCount atomic.Int32
 	var mu sync.Mutex
 	callTimes := make([]time.Time, 0)
@@ -472,6 +481,7 @@ func TestAgent_FirstPollImmediate(t *testing.T) {
 
 // TestAgent_LogsEachPoll verifies structured log entry per poll with key metrics
 func TestAgent_LogsEachPoll(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := testResponse()
 		w.Header().Set("Content-Type", "application/json")

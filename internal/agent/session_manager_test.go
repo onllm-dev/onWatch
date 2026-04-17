@@ -22,6 +22,7 @@ func newTestSessionManager(t *testing.T, idleTimeout time.Duration) (*SessionMan
 }
 
 func TestSessionManager_NoSessionWithoutUsageChange(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	// Report same values twice - no change, no session should be created
@@ -35,6 +36,7 @@ func TestSessionManager_NoSessionWithoutUsageChange(t *testing.T) {
 }
 
 func TestSessionManager_CreatesSessionOnUsageChange(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	// First poll: baseline
@@ -52,6 +54,7 @@ func TestSessionManager_CreatesSessionOnUsageChange(t *testing.T) {
 }
 
 func TestSessionManager_SessionStaysOpenDuringActivity(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	sm.ReportPoll([]float64{100, 50, 500})
@@ -68,6 +71,7 @@ func TestSessionManager_SessionStaysOpenDuringActivity(t *testing.T) {
 }
 
 func TestSessionManager_ClosesSessionAfterIdleTimeout(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 100*time.Millisecond)
 
 	sm.ReportPoll([]float64{100, 50, 500})
@@ -89,6 +93,7 @@ func TestSessionManager_ClosesSessionAfterIdleTimeout(t *testing.T) {
 }
 
 func TestSessionManager_NewSessionAfterIdleGap(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 100*time.Millisecond)
 
 	sm.ReportPoll([]float64{100, 50, 500})
@@ -116,6 +121,7 @@ func TestSessionManager_NewSessionAfterIdleGap(t *testing.T) {
 }
 
 func TestSessionManager_CloseClosesActiveSession(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	sm.ReportPoll([]float64{100, 50, 500})
@@ -133,6 +139,7 @@ func TestSessionManager_CloseClosesActiveSession(t *testing.T) {
 }
 
 func TestSessionManager_CloseNoopWithoutActiveSession(t *testing.T) {
+	t.Parallel()
 	sm, _ := newTestSessionManager(t, 10*time.Second)
 
 	// Close without any session - should not panic
@@ -140,6 +147,7 @@ func TestSessionManager_CloseNoopWithoutActiveSession(t *testing.T) {
 }
 
 func TestSessionManager_FirstPollNeverCreatesSession(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	// Only one poll - establishes baseline, no session
@@ -152,6 +160,7 @@ func TestSessionManager_FirstPollNeverCreatesSession(t *testing.T) {
 }
 
 func TestSessionManager_SliceLengthChange_IsUsageChange(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	sm.ReportPoll([]float64{10, 20})
@@ -164,6 +173,7 @@ func TestSessionManager_SliceLengthChange_IsUsageChange(t *testing.T) {
 }
 
 func TestSessionManager_UpdatesSnapshotCount(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	sm.ReportPoll([]float64{100, 50, 500})
@@ -181,6 +191,7 @@ func TestSessionManager_UpdatesSnapshotCount(t *testing.T) {
 }
 
 func TestSessionManager_UpdatesMaxRequests(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	sm.ReportPoll([]float64{100, 50, 500})
@@ -206,6 +217,7 @@ func TestSessionManager_UpdatesMaxRequests(t *testing.T) {
 }
 
 func TestSessionManager_RecordsStartValues(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	// First poll: baseline (100, 50, 500)
@@ -231,6 +243,7 @@ func TestSessionManager_RecordsStartValues(t *testing.T) {
 }
 
 func TestSessionManager_InactivePolls_IncrementSnapshotInWindow(t *testing.T) {
+	t.Parallel()
 	sm, str := newTestSessionManager(t, 10*time.Second)
 
 	sm.ReportPoll([]float64{100, 50, 500})

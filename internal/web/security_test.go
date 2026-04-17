@@ -31,6 +31,7 @@ func (l *testLogger) Info(msg string, args ...any) {
 // --- RateLimiter tests ---
 
 func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
+	t.Parallel()
 	rl := NewRateLimiter(5, time.Minute)
 
 	// 4 requests (N-1) should all be allowed
@@ -42,6 +43,7 @@ func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
 }
 
 func TestRateLimiter_BlocksAtLimit(t *testing.T) {
+	t.Parallel()
 	rl := NewRateLimiter(3, time.Minute)
 
 	// Exhaust the limit
@@ -58,6 +60,7 @@ func TestRateLimiter_BlocksAtLimit(t *testing.T) {
 }
 
 func TestRateLimiter_ResetsAfterWindow(t *testing.T) {
+	t.Parallel()
 	// Use a very short window so test doesn't sleep long
 	rl := NewRateLimiter(2, 50*time.Millisecond)
 
@@ -78,6 +81,7 @@ func TestRateLimiter_ResetsAfterWindow(t *testing.T) {
 }
 
 func TestRateLimiter_GetRemaining(t *testing.T) {
+	t.Parallel()
 	rl := NewRateLimiter(5, time.Minute)
 
 	// Unknown IP should have full remaining
@@ -106,6 +110,7 @@ func TestRateLimiter_GetRemaining(t *testing.T) {
 }
 
 func TestRateLimiter_GetRemaining_AfterWindowExpiry(t *testing.T) {
+	t.Parallel()
 	rl := NewRateLimiter(3, 50*time.Millisecond)
 
 	rl.Allow("10.0.0.1")
@@ -122,6 +127,7 @@ func TestRateLimiter_GetRemaining_AfterWindowExpiry(t *testing.T) {
 }
 
 func TestRateLimiter_IndependentIPs(t *testing.T) {
+	t.Parallel()
 	rl := NewRateLimiter(2, time.Minute)
 
 	// Exhaust limit for IP A
@@ -138,6 +144,7 @@ func TestRateLimiter_IndependentIPs(t *testing.T) {
 }
 
 func TestRateLimiter_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	rl := NewRateLimiter(100, time.Minute)
 
 	var wg sync.WaitGroup
@@ -160,6 +167,7 @@ func TestRateLimiter_ConcurrentAccess(t *testing.T) {
 // --- RateLimitMiddleware tests ---
 
 func TestRateLimitMiddleware_Returns429(t *testing.T) {
+	t.Parallel()
 	logger := &testLogger{}
 	rl := NewRateLimiter(2, time.Minute)
 	middleware := RateLimitMiddleware(rl, logger)
@@ -219,6 +227,7 @@ func TestRateLimitMiddleware_Returns429(t *testing.T) {
 }
 
 func TestRateLimitMiddleware_AllowsUnderLimit(t *testing.T) {
+	t.Parallel()
 	logger := &testLogger{}
 	rl := NewRateLimiter(10, time.Minute)
 	middleware := RateLimitMiddleware(rl, logger)
@@ -242,6 +251,7 @@ func TestRateLimitMiddleware_AllowsUnderLimit(t *testing.T) {
 }
 
 func TestRateLimitMiddleware_LogsWarning(t *testing.T) {
+	t.Parallel()
 	logger := &testLogger{}
 	rl := NewRateLimiter(1, time.Minute)
 	middleware := RateLimitMiddleware(rl, logger)
@@ -283,6 +293,7 @@ func TestRateLimitMiddleware_LogsWarning(t *testing.T) {
 // --- IPWhitelistMiddleware tests ---
 
 func TestIPWhitelist_AllowsCIDR(t *testing.T) {
+	t.Parallel()
 	logger := &testLogger{}
 	wl := NewIPWhitelistMiddleware([]string{"192.168.1.0/24"}, logger)
 
@@ -305,6 +316,7 @@ func TestIPWhitelist_AllowsCIDR(t *testing.T) {
 }
 
 func TestIPWhitelist_AllowsSingleIP(t *testing.T) {
+	t.Parallel()
 	logger := &testLogger{}
 	wl := NewIPWhitelistMiddleware([]string{"10.0.0.5"}, logger)
 
@@ -324,6 +336,7 @@ func TestIPWhitelist_AllowsSingleIP(t *testing.T) {
 }
 
 func TestIPWhitelist_BlocksUnlisted(t *testing.T) {
+	t.Parallel()
 	logger := &testLogger{}
 	wl := NewIPWhitelistMiddleware([]string{"192.168.1.0/24"}, logger)
 
@@ -343,6 +356,7 @@ func TestIPWhitelist_BlocksUnlisted(t *testing.T) {
 }
 
 func TestIPWhitelist_EmptyList_AllowsAll(t *testing.T) {
+	t.Parallel()
 	logger := &testLogger{}
 	wl := NewIPWhitelistMiddleware([]string{}, logger)
 
@@ -365,6 +379,7 @@ func TestIPWhitelist_EmptyList_AllowsAll(t *testing.T) {
 }
 
 func TestIPWhitelist_MultipleCIDRs(t *testing.T) {
+	t.Parallel()
 	logger := &testLogger{}
 	wl := NewIPWhitelistMiddleware([]string{"192.168.1.0/24", "10.0.0.0/8"}, logger)
 
@@ -397,6 +412,7 @@ func TestIPWhitelist_MultipleCIDRs(t *testing.T) {
 }
 
 func TestIPWhitelist_InvalidIP(t *testing.T) {
+	t.Parallel()
 	logger := &testLogger{}
 	wl := NewIPWhitelistMiddleware([]string{"192.168.1.0/24"}, logger)
 
@@ -419,6 +435,7 @@ func TestIPWhitelist_InvalidIP(t *testing.T) {
 // --- getClientIP tests ---
 
 func TestGetClientIP_XForwardedFor(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.50, 70.41.3.18, 150.172.238.178")
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -430,6 +447,7 @@ func TestGetClientIP_XForwardedFor(t *testing.T) {
 }
 
 func TestGetClientIP_XForwardedFor_SingleIP(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.50")
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -441,6 +459,7 @@ func TestGetClientIP_XForwardedFor_SingleIP(t *testing.T) {
 }
 
 func TestGetClientIP_XRealIP(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Real-Ip", "198.51.100.25")
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -452,6 +471,7 @@ func TestGetClientIP_XRealIP(t *testing.T) {
 }
 
 func TestGetClientIP_RemoteAddr(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "192.168.1.1:54321"
 
@@ -462,6 +482,7 @@ func TestGetClientIP_RemoteAddr(t *testing.T) {
 }
 
 func TestGetClientIP_RemoteAddrWithoutPort(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "192.168.1.1" // no port
 
@@ -472,6 +493,7 @@ func TestGetClientIP_RemoteAddrWithoutPort(t *testing.T) {
 }
 
 func TestGetClientIP_XForwardedFor_Precedence(t *testing.T) {
+	t.Parallel()
 	// XFF takes precedence over X-Real-Ip
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.50")
@@ -487,6 +509,7 @@ func TestGetClientIP_XForwardedFor_Precedence(t *testing.T) {
 // --- isEncryptedValue tests ---
 
 func TestIsEncryptedValue(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		value string
@@ -567,6 +590,7 @@ func TestIsEncryptedValue(t *testing.T) {
 // --- formatDurationSeconds tests ---
 
 func TestFormatDurationSeconds(t *testing.T) {
+	t.Parallel()
 	// This function converts a duration to a string for the Retry-After header.
 	// It uses rune conversion of the seconds value, so it produces
 	// a single character representing the ASCII value of the seconds count.

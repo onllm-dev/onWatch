@@ -60,6 +60,7 @@ func createMiniMaxTestAccount(t *testing.T, s *store.Store, name, apiKey, region
 }
 
 func TestNewMiniMaxAgentManager_Defaults(t *testing.T) {
+	t.Parallel()
 	s, tr, _ := setupMiniMaxManagerTest(t)
 
 	mgr := NewMiniMaxAgentManager(s, tr, 30*time.Second, nil)
@@ -75,6 +76,7 @@ func TestNewMiniMaxAgentManager_Defaults(t *testing.T) {
 }
 
 func TestMiniMaxAgentManager_SettersWork(t *testing.T) {
+	t.Parallel()
 	s, tr, _ := setupMiniMaxManagerTest(t)
 	mgr := NewMiniMaxAgentManager(s, tr, 30*time.Second, nil)
 
@@ -95,6 +97,7 @@ func TestMiniMaxAgentManager_SettersWork(t *testing.T) {
 }
 
 func TestMiniMaxAgentManager_SkipsEmptyAPIKey(t *testing.T) {
+	t.Parallel()
 	s, tr, _ := setupMiniMaxManagerTest(t)
 
 	// Create account without API key
@@ -123,6 +126,7 @@ func TestMiniMaxAgentManager_SkipsEmptyAPIKey(t *testing.T) {
 }
 
 func TestMiniMaxAgentManager_LoadAndStartAccounts(t *testing.T) {
+	t.Parallel()
 	s, tr, server := setupMiniMaxManagerTest(t)
 
 	createMiniMaxTestAccount(t, s, "work", "sk_work", "global")
@@ -153,6 +157,7 @@ func TestMiniMaxAgentManager_LoadAndStartAccounts(t *testing.T) {
 }
 
 func TestMiniMaxAgentManager_RunAndStop(t *testing.T) {
+	t.Parallel()
 	s, tr, _ := setupMiniMaxManagerTest(t)
 
 	createMiniMaxTestAccount(t, s, "test", "sk_test", "global")
@@ -184,6 +189,7 @@ func TestMiniMaxAgentManager_RunAndStop(t *testing.T) {
 }
 
 func TestMiniMaxAgentManager_Reload(t *testing.T) {
+	t.Parallel()
 	s, tr, _ := setupMiniMaxManagerTest(t)
 
 	createMiniMaxTestAccount(t, s, "initial", "sk_initial", "global")
@@ -208,6 +214,7 @@ func TestMiniMaxAgentManager_Reload(t *testing.T) {
 }
 
 func TestMiniMaxAgentManager_ReloadSkipsWhenContextDone(t *testing.T) {
+	t.Parallel()
 	s, tr, _ := setupMiniMaxManagerTest(t)
 
 	mgr := NewMiniMaxAgentManager(s, tr, 5*time.Second, slog.Default())
@@ -217,6 +224,7 @@ func TestMiniMaxAgentManager_ReloadSkipsWhenContextDone(t *testing.T) {
 }
 
 func TestMiniMaxAgentManager_PerAccountPollingCheck(t *testing.T) {
+	t.Parallel()
 	s, tr, _ := setupMiniMaxManagerTest(t)
 
 	id1 := createMiniMaxTestAccount(t, s, "enabled", "sk_enabled", "global")
@@ -242,6 +250,7 @@ func TestMiniMaxAgentManager_PerAccountPollingCheck(t *testing.T) {
 }
 
 func TestMiniMaxAgentManager_StopAllWaitsForGoroutines(t *testing.T) {
+	t.Parallel()
 	s, tr, _ := setupMiniMaxManagerTest(t)
 
 	createMiniMaxTestAccount(t, s, "test", "sk_test", "global")
@@ -264,6 +273,7 @@ func TestMiniMaxAgentManager_StopAllWaitsForGoroutines(t *testing.T) {
 }
 
 func TestMinimaxBaseURL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		region string
 		want   string
@@ -282,6 +292,7 @@ func TestMinimaxBaseURL(t *testing.T) {
 }
 
 func TestParseMinimaxAccountMeta(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		raw    string
 		key    string

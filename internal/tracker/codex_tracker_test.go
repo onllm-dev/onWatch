@@ -20,6 +20,7 @@ func newTestCodexStore(t *testing.T) *store.Store {
 }
 
 func TestCodexTracker_Process_FirstSnapshot(t *testing.T) {
+	t.Parallel()
 	s := newTestCodexStore(t)
 	tr := NewCodexTracker(s, slog.Default())
 
@@ -49,6 +50,7 @@ func TestCodexTracker_Process_FirstSnapshot(t *testing.T) {
 }
 
 func TestCodexTracker_Process_UsageIncrease(t *testing.T) {
+	t.Parallel()
 	s := newTestCodexStore(t)
 	tr := NewCodexTracker(s, slog.Default())
 
@@ -91,6 +93,7 @@ func TestCodexTracker_Process_UsageIncrease(t *testing.T) {
 }
 
 func TestCodexTracker_Process_ResetDetection(t *testing.T) {
+	t.Parallel()
 	s := newTestCodexStore(t)
 	tr := NewCodexTracker(s, slog.Default())
 
@@ -148,6 +151,7 @@ func TestCodexTracker_Process_ResetDetection(t *testing.T) {
 }
 
 func TestCodexTracker_Process_ResetTimestampDrift_DoesNotReset(t *testing.T) {
+	t.Parallel()
 	s := newTestCodexStore(t)
 	tr := NewCodexTracker(s, slog.Default())
 
@@ -213,6 +217,7 @@ func TestCodexTracker_Process_ResetTimestampDrift_DoesNotReset(t *testing.T) {
 }
 
 func TestCodexTracker_UsageSummary(t *testing.T) {
+	t.Parallel()
 	s := newTestCodexStore(t)
 	tr := NewCodexTracker(s, slog.Default())
 
@@ -249,6 +254,7 @@ func TestCodexTracker_UsageSummary(t *testing.T) {
 }
 
 func TestCodexTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelta(t *testing.T) {
+	t.Parallel()
 	s := newTestCodexStore(t)
 	tr := NewCodexTracker(s, slog.Default())
 
@@ -279,6 +285,7 @@ func TestCodexTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelta(
 }
 
 func TestCodexTracker_UsageSummary_UsesCycleResetWhenLatestQuotaMissing(t *testing.T) {
+	t.Parallel()
 	s := newTestCodexStore(t)
 	tr := NewCodexTracker(s, slog.Default())
 
@@ -325,6 +332,7 @@ func TestCodexTracker_UsageSummary_UsesCycleResetWhenLatestQuotaMissing(t *testi
 }
 
 func TestCodexTracker_UsageSummary_CalculatesRateAndClampsProjectedUtil(t *testing.T) {
+	t.Parallel()
 	s := newTestCodexStore(t)
 	tr := NewCodexTracker(s, slog.Default())
 

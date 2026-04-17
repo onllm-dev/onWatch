@@ -38,6 +38,7 @@ func miniMaxTrackerSnapshot(capturedAt time.Time, resetAt *time.Time, used int) 
 }
 
 func TestMiniMaxTracker_Process(t *testing.T) {
+	t.Parallel()
 	s := newTestMiniMaxStore(t)
 	tr := NewMiniMaxTracker(s, slog.Default())
 
@@ -62,6 +63,7 @@ func TestMiniMaxTracker_Process(t *testing.T) {
 }
 
 func TestMiniMaxTracker_ResetDetection(t *testing.T) {
+	t.Parallel()
 	s := newTestMiniMaxStore(t)
 	tr := NewMiniMaxTracker(s, slog.Default())
 
@@ -106,6 +108,7 @@ func TestMiniMaxTracker_ResetDetection(t *testing.T) {
 }
 
 func TestMiniMaxTracker_CycleManagement(t *testing.T) {
+	t.Parallel()
 	s := newTestMiniMaxStore(t)
 	tr := NewMiniMaxTracker(s, slog.Default())
 

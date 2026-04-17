@@ -70,6 +70,7 @@ func setupCopilotTest(t *testing.T) (*CopilotAgent, *store.Store, *httptest.Serv
 }
 
 func TestCopilotAgent_SinglePoll(t *testing.T) {
+	t.Parallel()
 	ag, str, _ := setupCopilotTest(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -98,6 +99,7 @@ func TestCopilotAgent_SinglePoll(t *testing.T) {
 }
 
 func TestCopilotAgent_PollingCheck(t *testing.T) {
+	t.Parallel()
 	ag, str, _ := setupCopilotTest(t)
 
 	// Disable polling
@@ -121,6 +123,7 @@ func TestCopilotAgent_PollingCheck(t *testing.T) {
 }
 
 func TestCopilotAgent_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	ag, _, _ := setupCopilotTest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())

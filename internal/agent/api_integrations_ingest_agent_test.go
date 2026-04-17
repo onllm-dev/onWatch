@@ -21,6 +21,7 @@ func newBufferedJSONLogger() (*slog.Logger, *bytes.Buffer) {
 }
 
 func TestAPIIntegrationsIngestAgent_ScanFile_PartialLineAndCompletion(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -68,6 +69,7 @@ func TestAPIIntegrationsIngestAgent_ScanFile_PartialLineAndCompletion(t *testing
 }
 
 func TestAPIIntegrationsIngestAgent_ScanFile_PartialLineCap(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -121,6 +123,7 @@ func TestAPIIntegrationsIngestAgent_ScanFile_PartialLineCap(t *testing.T) {
 }
 
 func TestAPIIntegrationsIngestAgent_ScanFile_DropsOversizedPersistedPartialLine(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -177,6 +180,7 @@ func TestAPIIntegrationsIngestAgent_ScanFile_DropsOversizedPersistedPartialLine(
 }
 
 func TestAPIIntegrationsIngestAgent_ScanFile_InvalidLineCreatesAlert(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -213,6 +217,7 @@ func TestAPIIntegrationsIngestAgent_ScanFile_InvalidLineCreatesAlert(t *testing.
 }
 
 func TestAPIIntegrationsIngestAgent_ScanFile_InvalidLineAlertCap(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -262,6 +267,7 @@ func TestAPIIntegrationsIngestAgent_ScanFile_InvalidLineAlertCap(t *testing.T) {
 }
 
 func TestAPIIntegrationsIngestAgent_Scan_InvalidLineAlertCap_IsPerFile(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -310,6 +316,7 @@ func TestAPIIntegrationsIngestAgent_Scan_InvalidLineAlertCap_IsPerFile(t *testin
 }
 
 func TestAPIIntegrationsIngestAgent_ScanFile_DedupAndTruncation(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -355,6 +362,7 @@ func TestAPIIntegrationsIngestAgent_ScanFile_DedupAndTruncation(t *testing.T) {
 }
 
 func TestAPIIntegrationsIngestAgent_Run_ProcessesMultipleFiles(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -394,6 +402,7 @@ func TestAPIIntegrationsIngestAgent_Run_ProcessesMultipleFiles(t *testing.T) {
 }
 
 func TestAPIIntegrationsIngestAgent_Scan_FileCap_RotatesAcrossCycles(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -474,6 +483,7 @@ func TestAPIIntegrationsIngestAgent_Scan_FileCap_RotatesAcrossCycles(t *testing.
 }
 
 func TestAPIIntegrationsIngestAgent_Scan_PrunesExpiredDatabaseRows(t *testing.T) {
+	t.Parallel()
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)

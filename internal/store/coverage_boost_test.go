@@ -10,6 +10,7 @@ import (
 // --- recalculateAnthropicCycle with boundaries ---
 
 func TestStore_RecalculateAnthropicCycle_WithBoundaries(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -91,6 +92,7 @@ func TestStore_RecalculateAnthropicCycle_WithBoundaries(t *testing.T) {
 // --- QueryAntigravityCycleOverview with data ---
 
 func TestAntigravityStore_QueryAntigravityCycleOverview_InvalidGroup(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -104,6 +106,7 @@ func TestAntigravityStore_QueryAntigravityCycleOverview_InvalidGroup(t *testing.
 }
 
 func TestAntigravityStore_QueryAntigravityCycleOverview_EmptyGroup(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -121,6 +124,7 @@ func TestAntigravityStore_QueryAntigravityCycleOverview_EmptyGroup(t *testing.T)
 }
 
 func TestAntigravityStore_QueryAntigravityCycleOverview_WithCycles(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -180,6 +184,7 @@ func TestAntigravityStore_QueryAntigravityCycleOverview_WithCycles(t *testing.T)
 }
 
 func TestAntigravityStore_QueryAntigravityCycleOverview_WithActiveCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -231,6 +236,7 @@ func TestAntigravityStore_QueryAntigravityCycleOverview_WithActiveCycle(t *testi
 // --- Copilot CycleOverview with default limit ---
 
 func TestCopilotStore_QueryCopilotCycleOverview_DefaultLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -250,6 +256,7 @@ func TestCopilotStore_QueryCopilotCycleOverview_DefaultLimit(t *testing.T) {
 // --- Z.ai CycleOverview with default groupBy ---
 
 func TestZaiStore_QueryZaiCycleOverview_DefaultGroupBy(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -269,6 +276,7 @@ func TestZaiStore_QueryZaiCycleOverview_DefaultGroupBy(t *testing.T) {
 // --- SyntheticCycleOverview with different peakCol values ---
 
 func TestStore_QuerySyntheticCycleOverview_SearchGroupBy(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -312,6 +320,7 @@ func TestStore_QuerySyntheticCycleOverview_SearchGroupBy(t *testing.T) {
 }
 
 func TestStore_QuerySyntheticCycleOverview_ToolcallGroupBy(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -341,6 +350,7 @@ func TestStore_QuerySyntheticCycleOverview_ToolcallGroupBy(t *testing.T) {
 // --- migrateAnthropicSessions with idle gap ---
 
 func TestStore_MigrateAnthropicSessions_IdleGap(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/migrate_anthropic_idle.db"
 	s, err := New(tmpFile)
 	if err != nil {
@@ -413,6 +423,7 @@ func TestStore_MigrateAnthropicSessions_IdleGap(t *testing.T) {
 // --- QueryCycleHistory with limit ---
 
 func TestStore_QueryCycleHistory_WithLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -455,6 +466,7 @@ func TestStore_QueryCycleHistory_WithLimit(t *testing.T) {
 // --- QuerySyntheticCycleOverview with active cycle ---
 
 func TestStore_QuerySyntheticCycleOverview_WithActiveCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -496,6 +508,7 @@ func TestStore_QuerySyntheticCycleOverview_WithActiveCycle(t *testing.T) {
 // --- QueryAnthropicCycleOverview with active cycle ---
 
 func TestStore_QueryAnthropicCycleOverview_WithActiveCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -543,6 +556,7 @@ func TestStore_QueryAnthropicCycleOverview_WithActiveCycle(t *testing.T) {
 // --- QueryAnthropicCycleOverview default limit ---
 
 func TestStore_QueryAnthropicCycleOverview_DefaultLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -561,6 +575,7 @@ func TestStore_QueryAnthropicCycleOverview_DefaultLimit(t *testing.T) {
 // --- SyntheticCycleOverview default limit ---
 
 func TestStore_QuerySyntheticCycleOverview_DefaultLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -579,6 +594,7 @@ func TestStore_QuerySyntheticCycleOverview_DefaultLimit(t *testing.T) {
 // --- ZaiCycleOverview with zero limit ---
 
 func TestZaiStore_QueryZaiCycleOverview_ZeroLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -597,6 +613,7 @@ func TestZaiStore_QueryZaiCycleOverview_ZeroLimit(t *testing.T) {
 // --- QuerySyntheticCycleOverview percent with zero limit ---
 
 func TestStore_QuerySyntheticCycleOverview_ZeroLimit(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -644,6 +661,7 @@ func TestStore_QuerySyntheticCycleOverview_ZeroLimit(t *testing.T) {
 // --- Notification log with empty provider ---
 
 func TestStore_UpsertNotificationLog_EmptyProvider(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -669,6 +687,7 @@ func TestStore_UpsertNotificationLog_EmptyProvider(t *testing.T) {
 }
 
 func TestStore_ClearNotificationLog_EmptyProvider(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -697,6 +716,7 @@ func TestStore_ClearNotificationLog_EmptyProvider(t *testing.T) {
 // --- QuerySessionHistory no filter ---
 
 func TestStore_QuerySessionHistory_AllProviders(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -726,6 +746,7 @@ func TestStore_QuerySessionHistory_AllProviders(t *testing.T) {
 // --- CreateSession with empty provider ---
 
 func TestStore_CreateSession_EmptyProvider(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)

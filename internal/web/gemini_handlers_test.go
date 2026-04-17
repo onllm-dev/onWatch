@@ -80,6 +80,7 @@ func insertTestGeminiData(t *testing.T, s *store.Store) {
 // TestGeminiCurrent_ViaRouter verifies GET /api/current?provider=gemini returns
 // quotas array with model data through the exported Current handler.
 func TestGeminiCurrent_ViaRouter(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -147,6 +148,7 @@ func TestGeminiCurrent_ViaRouter(t *testing.T) {
 // TestGeminiHistory_ViaRouter verifies GET /api/history?provider=gemini&range=1h returns
 // a flat array through the exported History handler.
 func TestGeminiHistory_ViaRouter(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -205,6 +207,7 @@ func TestGeminiHistory_ViaRouter(t *testing.T) {
 // TestGeminiCycles_ViaRouter verifies GET /api/cycles?provider=gemini returns
 // session history with quotaNames and per-family usage columns.
 func TestGeminiCycles_ViaRouter(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -264,6 +267,7 @@ func TestGeminiCycles_ViaRouter(t *testing.T) {
 // TestGeminiSummary_ViaRouter verifies GET /api/summary?provider=gemini returns
 // summary response through the exported Summary handler.
 func TestGeminiSummary_ViaRouter(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -304,6 +308,7 @@ func TestGeminiSummary_ViaRouter(t *testing.T) {
 // TestGeminiInsights_ViaRouter verifies GET /api/insights?provider=gemini&range=7d returns
 // empty stats/insights through the exported Insights handler.
 func TestGeminiInsights_ViaRouter(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -349,6 +354,7 @@ func TestGeminiInsights_ViaRouter(t *testing.T) {
 // TestGeminiCycleOverview_ViaRouter verifies GET /api/cycle-overview?provider=gemini
 // returns empty data since cycle overview is disabled for Gemini.
 func TestGeminiCycleOverview_ViaRouter(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -386,6 +392,7 @@ func TestGeminiCycleOverview_ViaRouter(t *testing.T) {
 // TestGeminiLoggingHistory_ViaRouter verifies GET /api/logging-history?provider=gemini&range=1
 // returns provider/quotaNames/logs through the exported LoggingHistory handler.
 func TestGeminiLoggingHistory_ViaRouter(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -458,6 +465,7 @@ func TestGeminiLoggingHistory_ViaRouter(t *testing.T) {
 // TestBothCurrent_IncludesGemini verifies GET /api/current?provider=both includes Gemini
 // in the combined response when Gemini is configured.
 func TestBothCurrent_IncludesGemini(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -501,6 +509,7 @@ func TestBothCurrent_IncludesGemini(t *testing.T) {
 // TestBothHistory_IncludesGemini verifies GET /api/history?provider=both&range=1h includes
 // Gemini as a non-empty array in the combined response.
 func TestBothHistory_IncludesGemini(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -544,6 +553,7 @@ func TestBothHistory_IncludesGemini(t *testing.T) {
 // TestBothInsights_IncludesGemini verifies GET /api/insights?provider=both&range=7d includes
 // Gemini with empty stats/insights in the combined response.
 func TestBothInsights_IncludesGemini(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -588,6 +598,7 @@ func TestBothInsights_IncludesGemini(t *testing.T) {
 // TestBothCycles_IncludesGemini verifies GET /api/cycles?provider=both includes Gemini
 // in the combined response.
 func TestBothCycles_IncludesGemini(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -626,6 +637,7 @@ func TestBothCycles_IncludesGemini(t *testing.T) {
 // in the combined response. Note: summaryBoth requires geminiTracker != nil,
 // so without setting it, the Gemini key should be absent.
 func TestBothSummary_IncludesGemini(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -663,6 +675,7 @@ func TestBothSummary_IncludesGemini(t *testing.T) {
 // TestBothCycleOverview_IncludesGemini verifies GET /api/cycle-overview?provider=both includes
 // Gemini in the combined response (even if empty since cycle overview is disabled for Gemini).
 func TestBothCycleOverview_IncludesGemini(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -699,6 +712,7 @@ func TestBothCycleOverview_IncludesGemini(t *testing.T) {
 
 // TestGeminiCurrent_ViaRouter_NilStore verifies Current returns empty quotas when store is nil.
 func TestGeminiCurrent_ViaRouter_NilStore(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithGemini()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -726,6 +740,7 @@ func TestGeminiCurrent_ViaRouter_NilStore(t *testing.T) {
 
 // TestGeminiHistory_ViaRouter_NilStore verifies History returns empty flat array when store is nil.
 func TestGeminiHistory_ViaRouter_NilStore(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithGemini()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -748,6 +763,7 @@ func TestGeminiHistory_ViaRouter_NilStore(t *testing.T) {
 
 // TestGeminiCycles_ViaRouter_NoData verifies Cycles returns empty cycles with no data.
 func TestGeminiCycles_ViaRouter_NoData(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -781,6 +797,7 @@ func TestGeminiCycles_ViaRouter_NoData(t *testing.T) {
 
 // TestGeminiCycleOverview_ViaRouter_NilStore verifies CycleOverview returns empty data when store is nil.
 func TestGeminiCycleOverview_ViaRouter_NilStore(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithGemini()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -808,6 +825,7 @@ func TestGeminiCycleOverview_ViaRouter_NilStore(t *testing.T) {
 
 // TestGeminiLoggingHistory_ViaRouter_NilStore verifies LoggingHistory returns empty logs when store is nil.
 func TestGeminiLoggingHistory_ViaRouter_NilStore(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithGemini()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
@@ -835,6 +853,7 @@ func TestGeminiLoggingHistory_ViaRouter_NilStore(t *testing.T) {
 
 // TestGeminiInsights_ViaRouter_NilStore verifies Insights returns empty stats/insights when store is nil.
 func TestGeminiInsights_ViaRouter_NilStore(t *testing.T) {
+	t.Parallel()
 	cfg := createTestConfigWithGemini()
 	h := NewHandler(nil, nil, nil, nil, cfg)
 
