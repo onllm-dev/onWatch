@@ -3,7 +3,7 @@
 **Free, open-source AI API quota monitoring for developers.**
 
 Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), [Gemini CLI](docs/GEMINI_SETUP.md), and Antigravity in one place.
-See history, get alerts, and open a local web dashboard before you hit throttling or run over budget.
+See history, get alerts, and open a local web dashboard before you hit throttling or run over budget. Additionally, you can ingest local telemetry from your own API-driven workflows with API Integrations, keeping track of token use and spending across multiple providers.
 
 **Links:** [Website](https://onwatch.onllm.dev) | [Buy Me a Coffee](https://buymeacoffee.com/prakersh)
 
@@ -125,6 +125,7 @@ Provider setup guides:
 - [Copilot Setup Guide](docs/COPILOT_SETUP.md)
 - [MiniMax Setup Guide](docs/MINIMAX_SETUP.md)
 - [Antigravity Setup Guide](docs/ANTIGRAVITY_SETUP.md)
+- [API Integration Setup Guide](docs/API_INTEGRATIONS_SETUP.md)
 
 ### Run
 
@@ -165,6 +166,7 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **MiniMax Coding Plan** -- Shared quota pool tracking for M2, M2.1, and M2.5 models with 5-hour rolling window reset cycles and **multi-account support** for tracking multiple MiniMax subscriptions via the dashboard UI
 - **Gemini CLI (Beta)** -- Per-model quota tracking for Gemini 2.5/3.x Pro, Flash, and Flash Lite models with 24-hour reset cycles
 - **Antigravity** -- Multi-model quota cards (Claude, Gemini, GPT) with grouped quota pools, logging history, and cycle overview
+- **API Integrations** -- Local JSONL ingestion for custom API-driven workflows and automations. Track per-integration token volume, request counts, recent activity, costs, trends, and accumulated usage across separate API keys and providers.
 - **All** -- Side-by-side view of all configured providers
 - **Prometheus metrics endpoint (Beta)** -- Exposes `/metrics` for Prometheus/Grafana/Alertmanager integrations, with optional bearer token protection via `ONWATCH_METRICS_TOKEN`
 - **PWA installable** -- Install onWatch from your browser for a native app experience (Beta)
@@ -173,6 +175,8 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 
 **Time-series chart** -- Chart.js area chart showing all quotas as % of limit. Time ranges: 1h, 6h, 24h, 7d, 30d.
 
+**API Integrations chart** -- Dedicated telemetry view for custom API-driven scripts. Switch between tokens per request, request counts, accumulated token use, and cost where available.
+
 **Insights** -- Burn rate forecasting, billing-period averages, usage variance, trend detection, and cross-quota ratio analysis (e.g., "1% weekly ~ 24% of 5-hr sprint"). Provider-specific: tokens-per-call efficiency and per-tool breakdowns for Z.ai.
 
 **Cycle Overview** -- Cross-quota correlation table showing all quota values at peak usage points within each billing period. Helps identify which quotas spike together.
@@ -180,6 +184,8 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 **Sessions** -- Every agent run creates a session that tracks peak consumption, letting you compare usage across work periods.
 
 **Settings** -- Dedicated settings page (`/settings`) with tabs for general preferences, provider controls, notification thresholds, and SMTP email configuration.
+
+**Custom API Integrations setup** -- Use a small wrapper around your own API calls to append normalised JSONL events into `~/.onwatch/api-integrations/`, then open the API Integrations tab to monitor cumulative and recent usage. Full setup instructions live in [docs/API_INTEGRATIONS_SETUP.md](docs/API_INTEGRATIONS_SETUP.md).
 
 **Menubar (macOS, Beta)** -- The macOS build includes a menubar companion with two preset views:
 
@@ -324,6 +330,9 @@ Additional environment variables:
 | `ONWATCH_ADMIN_PASS`     | Initial dashboard password (default: `changeme`)       |
 | `ONWATCH_LOG_LEVEL`      | Log level: debug, info, warn, error                    |
 | `ONWATCH_HOST`           | Bind address (default: `0.0.0.0`)                      |
+| `ONWATCH_API_INTEGRATIONS_ENABLED` | Enable or disable API Integrations ingestion (default: `true`) |
+| `ONWATCH_API_INTEGRATIONS_DIR`     | Directory onWatch tails for API Integrations JSONL events |
+| `ONWATCH_API_INTEGRATIONS_RETENTION` | How long API Integrations rows are kept in SQLite (default: `1440h` = 60 days, `0` disables pruning) |
 
 CLI flags override environment variables.
 
@@ -351,6 +360,9 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
 | `/api/insights`                 | GET         | Usage insights                                 |
 | `/api/providers`                | GET         | Available providers                            |
 | `/api/settings`                 | GET/PUT     | User settings (notifications, SMTP, providers, menubar) |
+| `/api/api-integrations/current` | GET         | Current aggregated usage by API integration    |
+| `/api/api-integrations/history` | GET         | Chart-ready API integration history, `?range=` |
+| `/api/api-integrations/health`  | GET         | API integration ingest health and file state   |
 | `/api/settings/smtp/test`       | POST        | Send test email via configured SMTP            |
 | `/api/password`                 | PUT         | Change password                                |
 | `/api/push/vapid`               | GET         | Get VAPID public key for push subscription     |

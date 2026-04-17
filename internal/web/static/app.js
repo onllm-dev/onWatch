@@ -48,6 +48,8 @@ async function authFetch(url, options) {
 function getCurrentProvider() {
   const bothView = document.getElementById('both-view') || document.getElementById('all-providers-container');
   if (bothView) return 'both';
+  const apiIntegrationsDashboard = document.getElementById('api-integrations-dashboard');
+  if (apiIntegrationsDashboard) return 'api-integrations';
   const anthropicGrid = document.getElementById('quota-grid-anthropic');
   if (anthropicGrid) return 'anthropic';
   const copilotGrid = document.getElementById('quota-grid-copilot');
@@ -81,7 +83,7 @@ function providerParam() {
 }
 
 function shouldShowHistoryTables(provider = getCurrentProvider()) {
-  return provider !== 'both';
+  return provider !== 'both' && provider !== 'api-integrations';
 }
 
 function getBothViewProviders() {
@@ -161,6 +163,12 @@ const State = {
   cyclesRequestSeq: 0,
   sessionsRequestSeq: 0,
   overviewRequestSeq: 0,
+  apiIntegrationsCurrent: null,
+  apiIntegrationsHistory: null,
+  apiIntegrationsHealth: null,
+  apiIntegrationsVisibility: { dashboard: true },
+  apiIntegrationsSelectedMetric: 'tokenPerCall',
+  apiIntegrationsActiveWindow: '8d',
 };
 
 // ── Persistence ──
@@ -540,6 +548,11 @@ async function loadHiddenInsights() {
       } else {
         State.providerVisibility = {};
       }
+      if (data.api_integrations_visibility && typeof data.api_integrations_visibility === 'object') {
+        State.apiIntegrationsVisibility = data.api_integrations_visibility;
+      } else {
+        State.apiIntegrationsVisibility = { dashboard: true };
+      }
 
       if (getCurrentProvider() === 'both' && (State.allProvidersCurrent || State.allProvidersInsights || State.allProvidersHistory)) {
         renderAllProvidersView();
@@ -595,6 +608,75 @@ function saveDefaultProvider(provider) {
     localStorage.setItem('onwatch-default-provider', provider);
   } catch (e) {
     // silent
+  }
+}
+
+const apiIntegrationsMetricOptions = new Set([
+  'tokenPerCall',
+  'requestCount',
+  'accumulatedTokens',
+  'totalCostUsd',
+  'totalTokens',
+]);
+
+function normalizeAPIIntegrationsMetric(metric) {
+  const value = String(metric || '').trim();
+  return apiIntegrationsMetricOptions.has(value) ? value : 'tokenPerCall';
+}
+
+function loadAPIIntegrationsPreferences() {
+  try {
+    const metric = localStorage.getItem('onwatch-api-integrations-metric');
+    State.apiIntegrationsSelectedMetric = normalizeAPIIntegrationsMetric(metric);
+    const activeWindow = localStorage.getItem('onwatch-api-integrations-active-window');
+    if (activeWindow) {
+      State.apiIntegrationsActiveWindow = activeWindow;
+    }
+  } catch (e) {
+    // silent
+  }
+}
+
+function saveAPIIntegrationsMetric(metric) {
+  try {
+    localStorage.setItem('onwatch-api-integrations-metric', normalizeAPIIntegrationsMetric(metric));
+  } catch (e) {
+    // silent
+  }
+}
+
+function saveAPIIntegrationsActiveWindow(value) {
+  try {
+    localStorage.setItem('onwatch-api-integrations-active-window', value);
+  } catch (e) {
+    // silent
+  }
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size >= 10 || unit === 0 ? Math.round(size) : size.toFixed(1)} ${units[unit]}`;
+}
+
+function parseAPIIntegrationsWindow(value = State.apiIntegrationsActiveWindow) {
+  switch (value) {
+    case '24h':
+      return 24 * 60 * 60 * 1000;
+    case '3d':
+      return 3 * 24 * 60 * 60 * 1000;
+    case '30d':
+      return 30 * 24 * 60 * 60 * 1000;
+    case '8d':
+    default:
+      return 8 * 24 * 60 * 60 * 1000;
   }
 }
 
@@ -2636,6 +2718,15 @@ function formatNumber(num) {
   return num.toLocaleString('en-US', { maximumFractionDigits: 1 });
 }
 
+function formatCurrencyUSD(num) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: num < 1 ? 4 : 2,
+    maximumFractionDigits: num < 1 ? 4 : 2
+  }).format(num || 0);
+}
+
 function formatDateTime(isoString) {
   const d = new Date(isoString);
   const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
@@ -3103,9 +3194,49 @@ async function fetchCurrent() {
   State.currentRequestSeq = requestSeq;
 
   try {
+    if (requestProvider === 'api-integrations') {
+      const [currentRes, healthRes] = await Promise.all([
+        authFetch(`${API_BASE}/api/api-integrations/current`),
+        authFetch(`${API_BASE}/api/api-integrations/health`)
+      ]);
+      if (!currentRes.ok || !healthRes.ok) throw new Error('Failed to fetch API integrations');
+      const [currentData, healthData] = await Promise.all([currentRes.json(), healthRes.json()]);
+
+      requestAnimationFrame(() => {
+        if (State.currentRequestSeq !== requestSeq) return;
+        if (getCurrentProvider() !== requestProvider) return;
+        State.apiIntegrationsCurrent = currentData;
+        State.apiIntegrationsHealth = healthData;
+        renderAPIIntegrationsCards();
+        renderAPIIntegrationsHealth();
+        renderAPIIntegrationsInsights();
+
+        const lastUpdated = document.getElementById('last-updated');
+        if (lastUpdated) lastUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        const statusDot = document.getElementById('status-dot');
+        if (statusDot) statusDot.classList.remove('stale');
+      });
+      return;
+    }
+
     const res = await authFetch(`${API_BASE}/api/current?${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch');
     const data = await res.json();
+
+    let apiIntegrationsCurrentData = null;
+    let apiIntegrationsHealthData = null;
+    if (requestProvider === 'both' && State.apiIntegrationsVisibility?.dashboard !== false) {
+      try {
+        const [apiIntegrationsCurrentRes, apiIntegrationsHealthRes] = await Promise.all([
+          authFetch(`${API_BASE}/api/api-integrations/current`),
+          authFetch(`${API_BASE}/api/api-integrations/health`)
+        ]);
+        if (apiIntegrationsCurrentRes.ok) apiIntegrationsCurrentData = await apiIntegrationsCurrentRes.json();
+        if (apiIntegrationsHealthRes.ok) apiIntegrationsHealthData = await apiIntegrationsHealthRes.json();
+      } catch (e) {
+        // silent - API integrations summary should not break all-provider current load
+      }
+    }
 
     requestAnimationFrame(() => {
       if (State.currentRequestSeq !== requestSeq) return;
@@ -3114,6 +3245,11 @@ async function fetchCurrent() {
 
       const provider = requestProvider;
       if (provider === 'both') {
+        if (apiIntegrationsCurrentData || apiIntegrationsHealthData) {
+          data.apiIntegrations = { current: apiIntegrationsCurrentData || {}, health: apiIntegrationsHealthData || null };
+          State.apiIntegrationsCurrent = apiIntegrationsCurrentData || {};
+          State.apiIntegrationsHealth = apiIntegrationsHealthData || null;
+        }
         State.allProvidersCurrent = data;
         renderAllProvidersView();
       } else if (provider === 'copilot') {
@@ -3348,6 +3484,10 @@ const insightIcons = {
 
 async function fetchDeepInsights() {
   const provider = getCurrentProvider();
+  if (provider === 'api-integrations') {
+    renderAPIIntegrationsInsights();
+    return;
+  }
   const requestProvider = provider;
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
   const requestRange = State.insightsRange;
@@ -3414,6 +3554,147 @@ async function fetchDeepInsights() {
     if (statsEl) statsEl.innerHTML = '';
     cardsEl.innerHTML = '<p class="insight-text">Unable to load insights.</p>';
   }
+}
+
+function ensureAPIIntegrationsInsightsControls() {
+  const header = document.querySelector('#api-integrations-recent-insights-panel .section-header');
+  if (!header || header.querySelector('.api-integrations-insights-controls')) return;
+
+  const controls = document.createElement('div');
+  controls.className = 'api-integrations-insights-controls';
+  controls.innerHTML = `
+    <span class="api-integrations-insights-controls-label">Active Window</span>
+    <select class="page-size-select" id="api-integrations-active-window-select" aria-label="Active API integrations window">
+      <option value="24h">24h</option>
+      <option value="3d">3d</option>
+      <option value="8d">8d</option>
+      <option value="30d">30d</option>
+    </select>
+  `;
+  const select = controls.querySelector('#api-integrations-active-window-select');
+  if (select) {
+    select.value = State.apiIntegrationsActiveWindow || '8d';
+    select.addEventListener('change', () => {
+      State.apiIntegrationsActiveWindow = select.value || '8d';
+      saveAPIIntegrationsActiveWindow(State.apiIntegrationsActiveWindow);
+      renderAPIIntegrationsInsights();
+    });
+  }
+  header.appendChild(controls);
+}
+
+function renderAPIIntegrationsInsights() {
+  const allTimeEl = document.getElementById('api-integrations-all-time-stats');
+  const recentEl = document.getElementById('api-integrations-recent-stats');
+  if (!allTimeEl || !recentEl || getCurrentProvider() !== 'api-integrations') return;
+
+  ensureAPIIntegrationsInsightsControls();
+
+  const entries = getAPIIntegrationEntries();
+  const history = State.apiIntegrationsHistory || {};
+  if (entries.length === 0) {
+    allTimeEl.innerHTML = '<p class="insight-text">Run your integrations to populate all-time totals here.</p>';
+    recentEl.innerHTML = '<p class="insight-text">Recent activity appears here after data is ingested.</p>';
+    return;
+  }
+
+  const now = Date.now();
+  const activeWindowMs = parseAPIIntegrationsWindow();
+  const activeThreshold = now - activeWindowMs;
+
+  const totals = entries.reduce((acc, entry) => {
+    acc.inputTokens += Number(entry.promptTokens || 0);
+    acc.outputTokens += Number(entry.completionTokens || 0);
+    acc.totalTokens += Number(entry.totalTokens || 0);
+    acc.requestCount += Number(entry.requestCount || 0);
+    const lastCapturedAt = entry.lastCapturedAt ? Date.parse(entry.lastCapturedAt) : NaN;
+    if (Number.isFinite(lastCapturedAt) && lastCapturedAt >= activeThreshold) {
+      acc.activeIntegrations += 1;
+    }
+    return acc;
+  }, {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    requestCount: 0,
+    activeIntegrations: 0,
+  });
+
+  let recentInputTokens = 0;
+  let recentOutputTokens = 0;
+  let recentRequestCount = 0;
+  let recentWindowTokens = 0;
+  let firstHalfTokens = 0;
+  let secondHalfTokens = 0;
+  let busiestRecentIntegration = null;
+  let busiestRecentTokens = -1;
+  Object.entries(history).forEach(([integrationName, rows]) => {
+    const typedRows = Array.isArray(rows) ? rows : [];
+    if (typedRows.length === 0) return;
+    const halfIndex = Math.ceil(typedRows.length / 2);
+    let integrationRecentTokens = 0;
+    typedRows.forEach((row, index) => {
+      const value = Number(row.totalTokens || 0);
+      const inputValue = Number(row.promptTokens || 0);
+      const outputValue = Number(row.completionTokens || 0);
+      const requestValue = Number(row.requestCount || 0);
+      recentWindowTokens += value;
+      recentInputTokens += inputValue;
+      recentOutputTokens += outputValue;
+      recentRequestCount += requestValue;
+      integrationRecentTokens += value;
+      if (index < halfIndex) {
+        firstHalfTokens += value;
+      } else {
+        secondHalfTokens += value;
+      }
+    });
+    if (integrationRecentTokens > busiestRecentTokens) {
+      busiestRecentTokens = integrationRecentTokens;
+      busiestRecentIntegration = integrationName;
+    }
+  });
+
+  const totalProviders = new Set(entries.flatMap((entry) =>
+    (Array.isArray(entry.providers) ? entry.providers : []).map((provider) => provider.provider).filter(Boolean)
+  ));
+  const avgTokensPerCall = totals.requestCount > 0 ? totals.totalTokens / totals.requestCount : 0;
+  const trendDelta = secondHalfTokens - firstHalfTokens;
+  const trendPct = firstHalfTokens > 0 ? (trendDelta / firstHalfTokens) * 100 : 0;
+  const recentAvgTokensPerCall = recentRequestCount > 0 ? recentWindowTokens / recentRequestCount : 0;
+
+  allTimeEl.innerHTML = [
+    { label: 'Tracked Integrations', value: formatNumber(entries.length), sublabel: 'Integrations seen since records started' },
+    { label: 'Providers', value: formatNumber(totalProviders.size), sublabel: 'Distinct providers across all integrations' },
+    { label: 'Total Tokens', value: formatNumber(totals.totalTokens), sublabel: 'Accumulated token volume' },
+    { label: 'Input Tokens', value: formatNumber(totals.inputTokens), sublabel: 'Prompt-side tokens across all time' },
+    { label: 'Output Tokens', value: formatNumber(totals.outputTokens), sublabel: 'Completion-side tokens across all time' },
+    { label: 'API Calls', value: formatNumber(totals.requestCount), sublabel: 'Recorded requests since this dataset started' },
+    { label: 'Average Tokens per Call', value: avgTokensPerCall > 0 ? formatNumber(avgTokensPerCall.toFixed(1)) : '0.0', sublabel: 'Average request size across all recorded calls' },
+  ].map((stat) => `
+    <div class="insight-stat">
+      <div class="insight-stat-value">${stat.value}</div>
+      <div class="insight-stat-label">${stat.label}</div>
+      <div class="insight-stat-sublabel">${stat.sublabel}</div>
+    </div>
+  `).join('');
+
+  recentEl.innerHTML = [
+    { label: `Active Integrations (${State.apiIntegrationsActiveWindow})`, value: formatNumber(totals.activeIntegrations), sublabel: 'Integrations used inside the active window' },
+    { label: 'Tokens in Visible Range', value: formatNumber(recentWindowTokens), sublabel: 'Total token volume in the selected chart range' },
+    { label: 'Input Tokens in Range', value: formatNumber(recentInputTokens), sublabel: 'Prompt-side tokens in the selected range' },
+    { label: 'Output Tokens in Range', value: formatNumber(recentOutputTokens), sublabel: 'Completion-side tokens in the selected range' },
+    { label: 'API Calls in Range', value: formatNumber(recentRequestCount), sublabel: 'Recorded requests in the selected chart range' },
+    { label: 'Usage Change vs Earlier Half', value: `${trendDelta >= 0 ? '+' : '-'}${Math.abs(trendPct).toFixed(1)}%`, sublabel: `Compared with the earlier half of the visible window (${trendDelta >= 0 ? 'up' : 'down'} ${formatNumber(Math.abs(trendDelta))} tokens)` },
+    { label: 'Average Tokens per Call in Range', value: recentAvgTokensPerCall > 0 ? formatNumber(recentAvgTokensPerCall.toFixed(1)) : '0.0', sublabel: 'Average request size inside the visible window' },
+    { label: 'Busiest Integration in Range', value: busiestRecentIntegration ? escapeHTML(busiestRecentIntegration) : '--', sublabel: busiestRecentTokens > 0 ? `${formatNumber(busiestRecentTokens)} tokens in the selected range` : 'Waiting for more recent activity' },
+  ].map((stat) => `
+    <div class="insight-stat">
+      <div class="insight-stat-value">${stat.value}</div>
+      <div class="insight-stat-label">${stat.label}</div>
+      <div class="insight-stat-sublabel">${stat.sublabel}</div>
+    </div>
+  `).join('');
 }
 
 function renderInsightsRangePills() {
@@ -3642,13 +3923,15 @@ const crosshairPlugin = {
 
 // ── Chart Init & Update ──
 
-function computeYMax(datasets, chart) {
+function computeYMax(datasets, chart, options = {}) {
   // Filter out hidden datasets - check both ds.hidden and chart metadata visibility
   const visibleDatasets = datasets.filter((ds, i) => {
     if (ds.hidden) return false;
     if (chart && chart.getDatasetMeta(i).hidden) return false;
     return ds.data && ds.data.length > 0;
   });
+
+  const cap = options.cap === false ? Number.POSITIVE_INFINITY : 100;
 
   // If no visible datasets, return default 10%
   if (visibleDatasets.length === 0) return 10;
@@ -3669,7 +3952,7 @@ function computeYMax(datasets, chart) {
   // Add 30% headroom above the max value for better visualization
   // Round up to nearest 5 for cleaner axis labels
   const paddedMax = maxVal * 1.3;
-  const yMax = Math.min(Math.max(Math.ceil(paddedMax / 5) * 5, 10), 100);
+  const yMax = Math.min(Math.max(Math.ceil(paddedMax / 5) * 5, 10), cap);
 
   return yMax;
 }
@@ -3686,7 +3969,9 @@ function initChart() {
   // Map dataset indices to quota types for visibility toggle
   const provider = getCurrentProvider();
   let defaultDatasets;
-  if (provider === 'antigravity') {
+  if (provider === 'api-integrations') {
+    defaultDatasets = [];
+  } else if (provider === 'antigravity') {
     defaultDatasets = []; // Antigravity datasets are dynamic - populated when history data arrives
   } else if (provider === 'minimax') {
     defaultDatasets = []; // MiniMax datasets are dynamic - populated when history data arrives
@@ -3715,8 +4000,11 @@ function initChart() {
       ? []
     : provider === 'openrouter'
       ? []
+    : provider === 'api-integrations'
+      ? []
     : ['subscription', 'search', 'toolCalls'];
 
+  const isAPIIntegrations = provider === 'api-integrations';
   State.chart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -3756,6 +4044,17 @@ function initChart() {
           usePointStyle: true,
           callbacks: {
             label: function(ctx) {
+              if (ctx.parsed.y == null) return null;
+              if (isAPIIntegrations) {
+                const metric = State.apiIntegrationsSelectedMetric || 'tokenPerCall';
+                if (metric === 'totalCostUsd') {
+                  return `${ctx.dataset.label}: ${formatCurrencyUSD(Number(ctx.parsed.y || 0))}`;
+                }
+                if (metric === 'tokenPerCall') {
+                  return `${ctx.dataset.label}: ${formatNumber(Number(ctx.parsed.y || 0).toFixed(1))} tokens/call`;
+                }
+                return `${ctx.dataset.label}: ${formatNumber(Number(ctx.parsed.y || 0))}`;
+              }
               return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`;
             }
           }
@@ -3768,13 +4067,36 @@ function initChart() {
           grid: { color: colors.grid, drawBorder: false },
           ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' }
         },
-        y: { grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, callback: v => v + '%' }, min: 0, max: State.chartYMax }
+        y: {
+          grid: { color: colors.grid, drawBorder: false },
+          ticks: {
+            color: colors.text,
+            callback: v => isAPIIntegrations
+              ? ((State.apiIntegrationsSelectedMetric || 'tokenPerCall') === 'totalCostUsd'
+                ? formatCurrencyUSD(Number(v || 0))
+                : ((State.apiIntegrationsSelectedMetric || 'tokenPerCall') === 'tokenPerCall'
+                  ? formatNumber(Number(v || 0).toFixed(1))
+                  : formatNumber(Number(v || 0))))
+              : v + '%'
+          },
+          title: {
+            display: isAPIIntegrations,
+            text: isAPIIntegrations ? 'Tokens per Call' : '',
+            color: colors.text,
+          },
+          min: 0,
+          max: State.chartYMax
+        }
       }
     }
   });
 }
 
 function updateChartTheme() {
+  if (getCurrentProvider() === 'api-integrations') {
+    fetchHistory(State.currentRange || '6h');
+    return;
+  }
   if (getCurrentProvider() === 'both') {
     // Re-render both-mode provider cards so Chart.js picks up updated theme tokens.
     if (State.allProvidersCurrent || State.allProvidersInsights || State.allProvidersHistory) {
@@ -3824,9 +4146,36 @@ async function fetchHistory(range) {
   State.historyRequestSeq = requestSeq;
 
   try {
+    if (requestProvider === 'api-integrations') {
+      const res = await authFetch(`${API_BASE}/api/api-integrations/history?range=${range}`);
+      if (!res.ok) throw new Error('Failed to fetch API integrations history');
+      const data = await res.json();
+
+      if (State.historyRequestSeq !== requestSeq) return;
+      if (getCurrentProvider() !== requestProvider) return;
+      if (State.currentRange !== requestRange) return;
+
+      State.apiIntegrationsHistory = data;
+      renderAPIIntegrationsChart(range);
+      renderAPIIntegrationsInsights();
+      return;
+    }
+
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&${providerParam()}`);
     if (!res.ok) throw new Error('Failed to fetch history');
     const data = await res.json();
+
+    let apiIntegrationsHistoryData = null;
+    if (requestProvider === 'both' && State.apiIntegrationsVisibility?.dashboard !== false) {
+      try {
+        const apiIntegrationsRes = await authFetch(`${API_BASE}/api/api-integrations/history?range=${range}`);
+        if (apiIntegrationsRes.ok) {
+          apiIntegrationsHistoryData = await apiIntegrationsRes.json();
+        }
+      } catch (e) {
+        // silent - API integrations summary should not break all-provider history load
+      }
+    }
 
     if (State.historyRequestSeq !== requestSeq) return;
     if (getCurrentProvider() !== requestProvider) return;
@@ -3836,6 +4185,10 @@ async function fetchHistory(range) {
     const provider = requestProvider;
 
     if (provider === 'both') {
+      if (apiIntegrationsHistoryData) {
+        data.apiIntegrations = apiIntegrationsHistoryData;
+        State.apiIntegrationsHistory = apiIntegrationsHistoryData;
+      }
       State.allProvidersHistory = data;
       renderAllProvidersView();
       return;
@@ -4155,6 +4508,7 @@ const bothProviderNames = {
   antigravity: 'Antigravity',
   minimax: 'MiniMax',
   gemini: 'Gemini',
+  'api-integrations': 'API Integrations',
 };
 
 function escapeHTML(value) {
@@ -4345,6 +4699,28 @@ function buildAllProviderEntries() {
   const entries = [];
 
   const addProviderEntry = (provider) => {
+    if (provider === 'api-integrations') {
+      const payload = current.apiIntegrations;
+      if (!payload || State.apiIntegrationsVisibility?.dashboard === false) return;
+      const summaryCurrent = payload.current && typeof payload.current === 'object' ? payload.current : {};
+      const integrationEntries = Object.entries(summaryCurrent);
+      const summary = integrationEntries.reduce((acc, [, integration]) => {
+        acc.integrationCount++;
+        acc.requestCount += Number(integration.requestCount || 0);
+        acc.totalTokens += Number(integration.totalTokens || 0);
+        return acc;
+      }, { integrationCount: 0, requestCount: 0, totalTokens: 0 });
+      entries.push({
+        provider: 'api-integrations',
+        cardKey: sanitizeProviderCardKey('api-integrations-summary'),
+        title: 'API Integrations',
+        summary,
+        health: payload.health || null,
+        summaryOnly: true,
+      });
+      return;
+    }
+
     if (provider === 'codex') {
       const currentAccounts = Array.isArray(current.codexAccounts)
         ? current.codexAccounts
@@ -4521,6 +4897,32 @@ function compactInsightText(text, maxLength = 84) {
   return `${candidate.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
+function renderAPIIntegrationsSummaryCard(entry, collapsed) {
+  const summary = entry.summary || {};
+  const statusMeta = getAPIIntegrationsStatusMeta(entry.health);
+  return `<section class="provider-card ${collapsed ? 'collapsed' : ''} api-integrations-summary-card" data-card-key="${entry.cardKey}" data-provider="api-integrations" data-api-integrations-link="true">
+    <header class="provider-card-header">
+      <div class="provider-card-title">
+        <span>${escapeHTML(entry.title)}</span>
+        <span class="provider-card-badge">${statusMeta.label}</span>
+      </div>
+      <button class="provider-card-collapse-btn" type="button" data-card-key="${entry.cardKey}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${escapeHTML(entry.title)}">
+        <svg class="provider-card-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="m9 6 6 6-6 6"/>
+        </svg>
+      </button>
+    </header>
+    <div class="provider-card-body">
+      <div class="api-integrations-summary-grid">
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Tracked Integrations:</span><span class="api-integrations-stat-value">${formatNumber(Number(summary.integrationCount || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Requests:</span><span class="api-integrations-stat-value">${formatNumber(Number(summary.requestCount || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Tokens:</span><span class="api-integrations-stat-value">${formatNumber(Number(summary.totalTokens || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Status:</span><span class="status-badge" data-status="${statusMeta.badgeStatus}">${statusMeta.label}</span></div>
+      </div>
+    </div>
+  </section>`;
+}
+
 function getSingleViewInsightStats(provider, stats) {
   if (provider !== 'minimax' && provider !== 'gemini') return stats;
   return sortItemsByPreference(
@@ -4586,6 +4988,257 @@ function renderProviderInsightsHTML(provider, payload) {
 
   if (items.length === 0) return '';
   return items.join('');
+}
+
+const apiIntegrationsChartColorFallback = [
+  { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+  { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
+  { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' },
+  { border: '#EF4444', bg: 'rgba(239, 68, 68, 0.06)' },
+  { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' },
+  { border: '#10B981', bg: 'rgba(16, 185, 129, 0.06)' },
+];
+
+function getAPIIntegrationEntries(current = State.apiIntegrationsCurrent) {
+  if (!current || typeof current !== 'object') return [];
+  return Object.entries(current)
+    .map(([integration, payload]) => ({ integration, ...(payload || {}) }))
+    .sort((a, b) => {
+      const totalDiff = Number(b.totalTokens || 0) - Number(a.totalTokens || 0);
+      if (totalDiff !== 0) return totalDiff;
+      return String(a.integration || '').localeCompare(String(b.integration || ''));
+    });
+}
+
+function getAPIIntegrationsHealthStatus(health = State.apiIntegrationsHealth) {
+  if (!health || health.enabled === false) return 'disabled';
+  if (Array.isArray(health.alerts) && health.alerts.length > 0) return 'alert';
+  if (health.running) return 'running';
+  return 'idle';
+}
+
+function getAPIIntegrationsStatusMeta(health = State.apiIntegrationsHealth) {
+  const status = getAPIIntegrationsHealthStatus(health);
+  if (status === 'disabled') return { label: 'Disabled', badgeStatus: 'critical' };
+  if (status === 'alert') return { label: 'Alert', badgeStatus: 'warning' };
+  if (status === 'running') return { label: 'Running', badgeStatus: 'healthy' };
+  return { label: 'Idle', badgeStatus: 'danger' };
+}
+
+function renderAPIIntegrationsCards() {
+  const container = document.getElementById('api-integrations-grid');
+  if (!container) return;
+
+  const entries = getAPIIntegrationEntries();
+  if (entries.length === 0) {
+    container.innerHTML = '<p class="insight-text">No API integration usage yet.</p>';
+    return;
+  }
+
+  container.innerHTML = entries.map((entry) => {
+    const providers = Array.isArray(entry.providers) ? entry.providers : [];
+    const providerNames = providers.map(p => p.provider).filter(Boolean);
+    const providerSummary = providerNames.length > 2
+      ? `${providerNames.slice(0, 2).join(', ')} +${providerNames.length - 2}`
+      : providerNames.join(', ');
+    const promptTokens = Number(entry.promptTokens || 0);
+    const completionTokens = Number(entry.completionTokens || 0);
+    return `<article class="quota-card api-integrations-card">
+      <header class="card-header">
+        <div class="quota-title-block">
+          <h2 class="quota-title">${escapeHTML(entry.integration)}</h2>
+          <div class="api-integrations-header-meta">
+            <span class="api-integrations-provider-pill"><strong>Providers:</strong> ${escapeHTML(providerSummary || 'No providers yet')}</span>
+          </div>
+        </div>
+        <span class="countdown">${entry.lastCapturedAt ? escapeHTML(formatDateTime(entry.lastCapturedAt)) : '--'}</span>
+      </header>
+      <div class="api-integrations-card-stats">
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Requests: </span><span class="api-integrations-stat-value">${formatNumber(Number(entry.requestCount || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Total Tokens: </span><span class="api-integrations-stat-value">${formatNumber(Number(entry.totalTokens || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Input / Output: </span><span class="api-integrations-stat-value">${formatNumber(promptTokens)} / ${formatNumber(completionTokens)}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Cost (where available): </span><span class="api-integrations-stat-value">${entry.totalCostUsd != null ? formatCurrencyUSD(Number(entry.totalCostUsd || 0)) : '--'}</span></div>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+function renderAPIIntegrationsHealth() {
+  const summaryEl = document.getElementById('api-integrations-health-summary');
+  const alertsEl = document.getElementById('api-integrations-health-alerts');
+  const tbody = document.getElementById('api-integrations-health-tbody');
+  if (!summaryEl || !alertsEl || !tbody) return;
+
+  const health = State.apiIntegrationsHealth;
+  if (!health) {
+    summaryEl.innerHTML = '<p class="insight-text">Loading API integrations health...</p>';
+    alertsEl.innerHTML = '';
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No API integration ingest state yet.</td></tr>';
+    return;
+  }
+
+  const statusMeta = getAPIIntegrationsStatusMeta(health);
+  summaryEl.innerHTML = `
+    <div class="api-integrations-health-grid">
+      <div class="api-integrations-health-item"><span class="api-integrations-health-label">Status: </span><span class="status-badge" data-status="${statusMeta.badgeStatus}">${statusMeta.label}</span></div>
+      <div class="api-integrations-health-item"><span class="api-integrations-health-label">Tracked Files: </span><span class="api-integrations-health-value">${formatNumber((Array.isArray(health.files) ? health.files : []).length)}</span></div>
+      <div class="api-integrations-health-item"><span class="api-integrations-health-label">Alerts: </span><span class="api-integrations-health-value">${formatNumber((Array.isArray(health.alerts) ? health.alerts : []).length)}</span></div>
+    </div>
+    <div class="api-integrations-health-copy">
+      <p><strong>Rotating files:</strong> Move or rename the active <code>.jsonl</code> file, then let your script create a new one. That starts a fresh source log for new events. Historical charts remain in the database until you clear or replace the stored onWatch data.</p>
+    </div>
+  `;
+
+  const alerts = Array.isArray(health.alerts) ? health.alerts : [];
+  alertsEl.innerHTML = alerts.length > 0
+    ? alerts.slice(0, 3).map((alert) => `
+      <article class="insight-card provider-mini-insight severity-${escapeHTML(alert.severity || 'warning')}">
+        <div class="insight-card-header">
+          <span class="insight-card-title">${escapeHTML(alert.title || 'Alert')}</span>
+        </div>
+        <div class="provider-mini-insight-note">${escapeHTML(alert.message || '')}</div>
+      </article>
+    `).join('')
+    : '';
+
+  const files = Array.isArray(health.files) ? health.files : [];
+  if (files.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No API integration ingest state yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = files.map((file) => `
+    <tr>
+      <td>${escapeHTML(file.sourcePath || '--')}</td>
+      <td>${formatBytes(Number(file.fileSize || 0))}</td>
+      <td>${file.lastCapturedAt ? escapeHTML(formatDateTime(file.lastCapturedAt)) : '--'}</td>
+    </tr>
+  `).join('');
+}
+
+function buildAPIIntegrationsChartDatasets(historyRows, range, metric) {
+  const integrationNames = Object.keys(historyRows || {}).sort((a, b) => {
+    const aTotal = (historyRows[a] || []).reduce((sum, row) => sum + Number(row.totalTokens || 0), 0);
+    const bTotal = (historyRows[b] || []).reduce((sum, row) => sum + Number(row.totalTokens || 0), 0);
+    if (bTotal !== aTotal) return bTotal - aTotal;
+    return a.localeCompare(b);
+  });
+
+  let colorIndex = 0;
+  return integrationNames.reduce((datasets, integrationName) => {
+    const rows = Array.isArray(historyRows[integrationName]) ? historyRows[integrationName] : [];
+    if (metric === 'totalCostUsd' && !rows.some((row) => row.totalCostUsd != null)) {
+      return datasets;
+    }
+    const integrationTotalTokens = Number(State.apiIntegrationsCurrent?.[integrationName]?.totalTokens || 0);
+    const visibleTotalTokens = rows.reduce((sum, row) => sum + Number(row.totalTokens || 0), 0);
+    const accumulatedBaseline = Math.max(0, integrationTotalTokens - visibleTotalTokens);
+    const color = apiIntegrationsChartColorFallback[colorIndex++ % apiIntegrationsChartColorFallback.length];
+    let runningTotal = accumulatedBaseline;
+    const rawData = rows.map((row) => {
+      let value = 0;
+      if (metric === 'tokenPerCall') {
+        const requestCount = Number(row.requestCount || 0);
+        value = requestCount > 0 ? Number(row.totalTokens || 0) / requestCount : 0;
+      } else if (metric === 'accumulatedTokens') {
+        runningTotal += Number(row.totalTokens || 0);
+        value = runningTotal;
+      } else {
+        value = Number(row[metric] || 0);
+      }
+      return {
+        x: new Date(row.capturedAt),
+        y: value,
+      };
+    });
+    const processed = processDataWithGaps(rawData, range);
+    datasets.push({
+      label: integrationName,
+      data: processed.data,
+      borderColor: color.border,
+      backgroundColor: color.bg,
+      fill: true,
+      tension: 0.4,
+      borderWidth: 2,
+      pointRadius: processed.pointRadii,
+      pointHoverRadius: 4,
+      spanGaps: true,
+      segment: getSegmentStyle(processed.gapSegments, color.border),
+    });
+    return datasets;
+  }, []);
+}
+
+function renderAPIIntegrationsChart(range = State.currentRange || '6h') {
+  if (!State.chart) initChart();
+  if (!State.chart) return;
+
+  const metric = normalizeAPIIntegrationsMetric(State.apiIntegrationsSelectedMetric);
+  State.apiIntegrationsSelectedMetric = metric;
+  const datasets = buildAPIIntegrationsChartDatasets(State.apiIntegrationsHistory || {}, range, metric);
+  State.chart.data.datasets = datasets;
+  updateTimeScale(State.chart, range);
+  State.chartYMax = computeYMax(State.chart.data.datasets, State.chart, { cap: false });
+  State.chart.options.scales.y.max = State.chartYMax;
+  const yAxisTitles = {
+    tokenPerCall: 'Tokens per Call',
+    requestCount: 'API Calls',
+    accumulatedTokens: 'Accumulated Tokens',
+    totalCostUsd: 'Cost (USD)',
+  };
+  const chartConfig = State.chart.config.options || {};
+  const configScales = chartConfig.scales || {};
+  const currentYScale = configScales.y || {};
+  const currentYTitle = currentYScale.title || {};
+  const currentYTicks = currentYScale.ticks || {};
+  const configPlugins = chartConfig.plugins || {};
+  const currentTooltip = configPlugins.tooltip || {};
+  const currentTooltipCallbacks = currentTooltip.callbacks || {};
+
+  const tickFormatter = (value) => {
+    if (metric === 'totalCostUsd') return formatCurrencyUSD(Number(value || 0));
+    if (metric === 'tokenPerCall') return formatNumber(Number(value || 0).toFixed(1));
+    return formatNumber(Number(value || 0));
+  };
+  const tooltipLabelFormatter = (ctx) => {
+    if (ctx.parsed.y == null) return null;
+    if (metric === 'totalCostUsd') {
+      return `${ctx.dataset.label}: ${formatCurrencyUSD(Number(ctx.parsed.y || 0))}`;
+    }
+    if (metric === 'tokenPerCall') {
+      return `${ctx.dataset.label}: ${formatNumber(Number(ctx.parsed.y || 0).toFixed(1))} tokens/call`;
+    }
+    return `${ctx.dataset.label}: ${formatNumber(Number(ctx.parsed.y || 0))}`;
+  };
+
+  State.chart.config.options.scales = {
+    ...configScales,
+    y: {
+      ...currentYScale,
+      max: State.chartYMax,
+      title: {
+        ...currentYTitle,
+        display: true,
+        text: yAxisTitles[metric] || 'Value',
+      },
+      ticks: {
+        ...currentYTicks,
+        callback: tickFormatter,
+      },
+    },
+  };
+
+  State.chart.config.options.plugins = {
+    ...configPlugins,
+    tooltip: {
+      ...currentTooltip,
+      callbacks: {
+        ...currentTooltipCallbacks,
+        label: tooltipLabelFormatter,
+      },
+    },
+  };
+
+  State.chart.update();
 }
 
 function buildFixedDatasetsForRows(rows, range, configs) {
@@ -4722,6 +5375,9 @@ function renderAllProvidersView() {
       : `<div class="provider-chart provider-chart-empty">
           <p class="insight-text">Collecting data...</p>
         </div>`;
+    if (entry.summaryOnly) {
+      return renderAPIIntegrationsSummaryCard(entry, collapsed);
+    }
     return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
       <header class="provider-card-header">
         <div class="provider-card-title">
@@ -4757,6 +5413,14 @@ function renderAllProvidersView() {
       btn.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${title}`);
       collapsedState[cardKey] = collapsed;
       saveProviderCardCollapseState(collapsedState);
+    });
+  });
+
+  container.querySelectorAll('.provider-card[data-api-integrations-link="true"]').forEach((card) => {
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('.provider-card-collapse-btn')) return;
+      saveDefaultProvider('api-integrations');
+      window.location.href = '/?provider=api-integrations';
     });
   });
 
@@ -6301,6 +6965,23 @@ function setupRangeSelector() {
   });
 }
 
+function setupAPIIntegrationsMetricSelector() {
+  const select = document.getElementById('api-integrations-metric-select');
+  if (!select) return;
+  const metric = normalizeAPIIntegrationsMetric(State.apiIntegrationsSelectedMetric);
+  State.apiIntegrationsSelectedMetric = metric;
+  if (![...select.options].some((option) => option.value === metric)) {
+    select.value = 'tokenPerCall';
+  } else {
+    select.value = metric;
+  }
+  select.addEventListener('change', () => {
+    State.apiIntegrationsSelectedMetric = normalizeAPIIntegrationsMetric(select.value);
+    saveAPIIntegrationsMetric(State.apiIntegrationsSelectedMetric);
+    renderAPIIntegrationsChart(State.currentRange || '6h');
+  });
+}
+
 function setupCycleFilters() {
   // Range pills
   const rangePills = document.getElementById('cycle-range-pills');
@@ -7142,6 +7823,7 @@ async function loadSettings() {
 
     // Provider settings - store in State for modal use
     State.providerSettings = data.provider_settings || {};
+    State.apiIntegrationsVisibility = data.api_integrations_visibility || { dashboard: true };
 
     // Provider visibility + dynamic provider status
     await populateProviderToggles(data.provider_visibility || {});
@@ -7381,6 +8063,17 @@ async function populateProviderToggles(visibility) {
     ];
   }
 
+  let apiIntegrationsHealth = null;
+  try {
+    const res = await authFetch(`${API_BASE}/api/api-integrations/health`);
+    if (res.ok) {
+      apiIntegrationsHealth = await res.json();
+      State.apiIntegrationsHealth = apiIntegrationsHealth;
+    }
+  } catch (e) {
+    // silent - API integrations health should not block provider toggles
+  }
+
   const providerByKey = new Map(providers.map(p => [p.key, p]));
   const codexStatus = providerByKey.get('codex') || null;
   const minimaxStatus = providerByKey.get('minimax') || null;
@@ -7485,6 +8178,8 @@ async function populateProviderToggles(visibility) {
       isPolling: !!fallbackMinimax.isPolling
     }));
   }
+
+  container.appendChild(createAPIIntegrationsToggleRow(State.apiIntegrationsVisibility || { dashboard: true }, apiIntegrationsHealth));
 }
 
 async function fetchMenubarProviders() {
@@ -7811,6 +8506,57 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
       await openProviderSettingsModal(gearBtn.dataset.providerKey);
     });
   }
+
+  return row;
+}
+
+function createAPIIntegrationsToggleRow(visibility, health) {
+  const row = document.createElement('div');
+  row.className = 'settings-toggle-row settings-toggle-row-dual';
+  const statusMeta = getAPIIntegrationsStatusMeta(health);
+  row.innerHTML = `
+    <div class="settings-toggle-info">
+      <div class="settings-toggle-label">API Integrations <span class="badge">${statusMeta.label}</span></div>
+      <div class="settings-toggle-sublabel">Local JSONL API telemetry tracking for your own automated integrations.</div>
+    </div>
+    <div class="settings-toggle-group">
+      <div class="settings-toggle-item">
+        <div class="settings-toggle-item-label">Dashboard</div>
+        <div class="settings-toggle-item-hint">Show as a dedicated dashboard tab</div>
+        <label class="settings-toggle" title="Dashboard">
+          <input type="checkbox" data-provider="api-integrations" data-role="api-integrations-dashboard" ${(visibility?.dashboard ?? true) ? 'checked' : ''}>
+          <span class="settings-toggle-track"></span>
+        </label>
+      </div>
+    </div>
+  `;
+
+  row.querySelector('input[type="checkbox"]')?.addEventListener('change', async (event) => {
+    const input = event.target;
+    const enabled = input.checked;
+    const feedback = document.getElementById('settings-feedback');
+    input.disabled = true;
+    try {
+      const res = await authFetch(`${API_BASE}/api/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_integrations_visibility: { dashboard: enabled } }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        input.checked = !enabled;
+        showSettingsFeedback(feedback, data.error || 'Failed to update API Integrations visibility.', 'error');
+        return;
+      }
+      State.apiIntegrationsVisibility = data.api_integrations_visibility || { dashboard: enabled };
+      showSettingsFeedback(feedback, `API Integrations dashboard ${enabled ? 'enabled' : 'disabled'}. Reload dashboard to apply tab visibility changes.`, 'success');
+    } catch (e) {
+      input.checked = !enabled;
+      showSettingsFeedback(feedback, 'API Integrations visibility update failed.', 'error');
+    } finally {
+      input.disabled = false;
+    }
+  });
 
   return row;
 }
@@ -8382,11 +9128,16 @@ function gatherSettings() {
     toggles.forEach(t => {
       const prov = t.dataset.provider;
       const role = t.dataset.role;
+      if (prov === 'api-integrations' || role === 'api-integrations-dashboard') return;
       if (!vis[prov]) vis[prov] = {};
       vis[prov][role] = t.checked;
     });
     settings.provider_visibility = vis;
   }
+
+  settings.api_integrations_visibility = {
+    dashboard: State.apiIntegrationsVisibility?.dashboard !== false,
+  };
 
   // Timezone
   const tzSelect = document.getElementById('settings-timezone');
@@ -8456,6 +9207,8 @@ function setupSettingsSave() {
       if (!resp.ok) {
         showSettingsFeedback(feedback, data.error || 'Failed to save settings.', 'error');
       } else {
+        if (data.provider_visibility) State.providerVisibility = data.provider_visibility;
+        if (data.api_integrations_visibility) State.apiIntegrationsVisibility = data.api_integrations_visibility;
         showSettingsFeedback(feedback, 'Settings saved successfully.', 'success');
       }
     } catch (e) {
@@ -9158,12 +9911,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateMiniMaxAccountTabsVisibility();
   }
   initMiniMaxAccountTabs();
+  loadAPIIntegrationsPreferences();
 
   initTheme();
   initLayoutToggle();
   initTimezoneBadge();
   setupProviderSelector();
   setupRangeSelector();
+  setupAPIIntegrationsMetricSelector();
   setupCycleFilters();
   setupPasswordToggle();
   setupTableControls();

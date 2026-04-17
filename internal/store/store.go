@@ -70,6 +70,9 @@ type CrossQuotaEntry struct {
 	Delta        float64 // Percent - StartPercent
 }
 
+// ErrDuplicateAPIIntegrationUsageEvent indicates an API integrations telemetry event already exists.
+var ErrDuplicateAPIIntegrationUsageEvent = errors.New("store: duplicate API integration usage event")
+
 func preflightDatabasePath(dbPath string) error {
 	trimmed := strings.TrimSpace(dbPath)
 	if trimmed == "" {
@@ -623,6 +626,41 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_openrouter_snapshots_captured ON openrouter_snapshots(captured_at);
 		CREATE INDEX IF NOT EXISTS idx_openrouter_cycles_type_start ON openrouter_reset_cycles(quota_type, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_openrouter_cycles_type_active ON openrouter_reset_cycles(quota_type, cycle_end) WHERE cycle_end IS NULL;
+
+		-- API integrations telemetry ingestion tables
+		CREATE TABLE IF NOT EXISTS api_integration_usage_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			integration_name TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			account_name TEXT NOT NULL DEFAULT 'default',
+			model TEXT NOT NULL,
+			request_id TEXT NOT NULL DEFAULT '',
+			prompt_tokens INTEGER NOT NULL,
+			completion_tokens INTEGER NOT NULL,
+			total_tokens INTEGER NOT NULL,
+			cost_usd REAL,
+			latency_ms INTEGER,
+			metadata_json TEXT NOT NULL DEFAULT '',
+			source_path TEXT NOT NULL,
+			fingerprint TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_api_integration_usage_events_fingerprint ON api_integration_usage_events(fingerprint);
+		CREATE INDEX IF NOT EXISTS idx_api_integration_usage_events_captured ON api_integration_usage_events(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_api_integration_usage_events_integration_provider ON api_integration_usage_events(integration_name, provider, captured_at);
+		CREATE INDEX IF NOT EXISTS idx_api_integration_usage_events_provider_model ON api_integration_usage_events(provider, model, captured_at);
+		CREATE INDEX IF NOT EXISTS idx_api_integration_usage_events_source ON api_integration_usage_events(source_path);
+
+		CREATE TABLE IF NOT EXISTS api_integration_ingest_state (
+			source_path TEXT PRIMARY KEY,
+			offset_bytes INTEGER NOT NULL DEFAULT 0,
+			file_size INTEGER NOT NULL DEFAULT 0,
+			file_mod_time TEXT,
+			partial_line TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL
+		);
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {
@@ -884,6 +922,19 @@ func (s *Store) migrateSchema() error {
 				!strings.Contains(err.Error(), "no such table") {
 				return fmt.Errorf("failed to add weekly column to minimax_model_values: %w", err)
 			}
+		}
+	}
+
+	// Drop raw_line column from api_integration_usage_events - no longer stored.
+	// Ignore "no such column" (new DB or already migrated) and "no such table"
+	// (migrateSchema called directly on a partial DB in tests, or pre-api-integrations DB).
+	// TODO: remove this migration after all users have upgraded past the version that
+	// introduced raw_line (feat/api-integrations). Just to keep pulls clean for the limited
+	// number of users who are using this fork.
+	if _, err := s.db.Exec(`ALTER TABLE api_integration_usage_events DROP COLUMN raw_line`); err != nil {
+		if !strings.Contains(err.Error(), "no such column") &&
+			!strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to drop raw_line from api_integration_usage_events: %w", err)
 		}
 	}
 

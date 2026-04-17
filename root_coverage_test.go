@@ -584,18 +584,34 @@ func startOnwatchNCListener(t *testing.T, port int) *exec.Cmd {
 		}
 	})
 
+	// Wait until the port is connectable.
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := net.DialTimeout("tcp", addr, 100*time.Millisecond); err != nil {
+		t.Skip("nc listener did not open port in time")
+		return nil
+	}
+
+	// Also wait until lsof can see the process - lsof can lag a few ms behind a
+	// freshly opened socket, causing the port-detection path in runStatus to miss it.
+	lsofDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(lsofDeadline) {
+		out, _ := exec.Command("lsof", "-ti", fmt.Sprintf("tcp:%d", port)).Output()
+		if len(strings.TrimSpace(string(out))) > 0 {
 			return cmd
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	t.Skip("nc listener did not open port in time")
+	t.Skip("lsof did not detect nc listener in time")
 	return nil
 }
 

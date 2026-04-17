@@ -12,7 +12,7 @@
             {{range .Providers}}
             <button class="provider-tab {{if eq . $.CurrentProvider}}active{{end}}"
                     data-provider="{{.}}" role="tab" aria-selected="{{if eq . $.CurrentProvider}}true{{else}}false{{end}}">
-                {{if eq . "synthetic"}}Synthetic{{else if eq . "zai"}}Z.ai{{else if eq . "anthropic"}}Anthropic{{else if eq . "copilot"}}Copilot{{else if eq . "codex"}}Codex{{else if eq . "antigravity"}}Antigravity{{else if eq . "minimax"}}MiniMax{{else if eq . "gemini"}}Gemini{{else if eq . "both"}}All{{else}}{{.}}{{end}}
+                {{if eq . "synthetic"}}Synthetic{{else if eq . "zai"}}Z.ai{{else if eq . "anthropic"}}Anthropic{{else if eq . "copilot"}}Copilot{{else if eq . "codex"}}Codex{{else if eq . "antigravity"}}Antigravity{{else if eq . "minimax"}}MiniMax{{else if eq . "gemini"}}Gemini{{else if eq . "api-integrations"}}API Integrations{{else if eq . "both"}}All{{else}}{{.}}{{end}}
             </button>
             {{end}}
         </div>
@@ -117,6 +117,10 @@
         {{else if eq .CurrentProvider "gemini"}}
         <!-- Gemini quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-gemini" data-provider="gemini"></div>
+        {{else if eq .CurrentProvider "api-integrations"}}
+        <div class="api-integrations-dashboard" id="api-integrations-dashboard" data-provider="api-integrations">
+            <div class="quota-grid" id="api-integrations-grid"></div>
+        </div>
         {{else}}
         <div class="quota-grid" id="quota-grid" data-provider="{{.CurrentProvider}}">
             {{if eq .CurrentProvider "zai"}}
@@ -309,7 +313,39 @@
         </div>
         {{end}}
 
-        {{if ne .CurrentProvider "both"}}
+        {{if eq .CurrentProvider "api-integrations"}}
+        <div class="api-integrations-insights-panels">
+            <section class="insights-panel" id="api-integrations-all-time-insights-panel">
+                <header class="section-header">
+                    <h3 class="section-title">
+                        <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 16v-4M12 8h.01"/>
+                        </svg>
+                        All Time Statistics
+                    </h3>
+                </header>
+                <div class="insights-stats" id="api-integrations-all-time-stats">
+                    <p class="insight-text">Loading statistics...</p>
+                </div>
+            </section>
+
+            <section class="insights-panel" id="api-integrations-recent-insights-panel">
+                <header class="section-header">
+                    <h3 class="section-title">
+                        <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 12h18"/>
+                            <path d="M12 3v18"/>
+                        </svg>
+                        Recent Usage Insights
+                    </h3>
+                </header>
+                <div class="insights-stats" id="api-integrations-recent-stats">
+                    <p class="insight-text">Loading statistics...</p>
+                </div>
+            </section>
+        </div>
+        {{else if ne .CurrentProvider "both"}}
         <section class="insights-panel">
             <header class="section-header">
                 <h3 class="section-title">
@@ -325,7 +361,9 @@
                 <p class="insight-text">Loading insights...</p>
             </div>
         </section>
+        {{end}}
 
+        {{if ne .CurrentProvider "both"}}
         <section class="chart-section">
             <header class="section-header">
                 <h3 class="section-title">
@@ -333,14 +371,24 @@
                         <path d="M3 3v18h18"/>
                         <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
                     </svg>
-                    Usage Graphs
+                    {{if eq .CurrentProvider "api-integrations"}}API Integration Usage{{else}}Usage Graphs{{end}}
                 </h3>
-                <div class="range-selector" role="group" aria-label="Time range">
-                    <button class="range-btn" data-range="1h">1h</button>
-                    <button class="range-btn active" data-range="6h">6h</button>
-                    <button class="range-btn" data-range="24h">24h</button>
-                    <button class="range-btn" data-range="7d">7d</button>
-                    <button class="range-btn" data-range="30d">30d</button>
+                <div class="chart-controls">
+                    {{if eq .CurrentProvider "api-integrations"}}
+                    <select class="page-size-select" id="api-integrations-metric-select" aria-label="API integrations chart metric">
+                        <option value="tokenPerCall">Tokens per Request</option>
+                        <option value="requestCount">Requests</option>
+                        <option value="accumulatedTokens">Accumulated Token Use</option>
+                        <option value="totalCostUsd">Cost (where available)</option>
+                    </select>
+                    {{end}}
+                    <div class="range-selector" role="group" aria-label="Time range">
+                        <button class="range-btn" data-range="1h">1h</button>
+                        <button class="range-btn active" data-range="6h">6h</button>
+                        <button class="range-btn" data-range="24h">24h</button>
+                        <button class="range-btn" data-range="7d">7d</button>
+                        <button class="range-btn" data-range="30d">30d</button>
+                    </div>
                 </div>
             </header>
             <div class="chart-container">
@@ -349,7 +397,81 @@
         </section>
         {{end}}
 
-        {{if ne .CurrentProvider "both"}}
+        {{if eq .CurrentProvider "api-integrations"}}
+        <section class="sessions-section api-integrations-health-section" id="api-integrations-health-section">
+            <header class="section-header">
+                <h3 class="section-title">
+                    <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2v20M2 12h20"/>
+                    </svg>
+                    Ingest Health
+                </h3>
+            </header>
+            <div class="api-integrations-health-summary" id="api-integrations-health-summary">
+                <p class="insight-text">Loading API integrations health...</p>
+            </div>
+            <div class="api-integrations-health-alerts" id="api-integrations-health-alerts"></div>
+            <div class="table-wrapper">
+                <table class="data-table" id="api-integrations-health-table">
+                    <thead>
+                        <tr>
+                            <th>Source File</th>
+                            <th>File Size</th>
+                            <th>Last Event</th>
+                        </tr>
+                    </thead>
+                    <tbody id="api-integrations-health-tbody">
+                        <tr><td colspan="3" class="empty-state">No API integration ingest state yet.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="insights-panel api-integrations-setup-section" id="api-integrations-setup-section">
+            <header class="section-header">
+                <h3 class="section-title">
+                    <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    </svg>
+                    Setup Guide
+                </h3>
+            </header>
+            <div class="provider-insights-box">
+                <div class="insights-cards">
+                    <article class="insight-card severity-info expanded">
+                        <div class="insight-card-header">
+                            <span class="insight-card-title">How Custom API Integrations Work</span>
+                            <span class="insight-card-values"><span class="insight-card-metric">JSONL + Tail</span></span>
+                        </div>
+                        <div class="insight-card-detail" style="max-height:none;opacity:1;margin-top:8px;padding-top:8px;">
+                            <div class="insight-card-desc">Your script makes a normal provider API call, extracts usage from the response, and appends one normalized JSON line into <code>~/.onwatch/api-integrations/</code>.<br> onWatch tails those files and stores the telemetry in SQLite.</div>
+                        </div>
+                    </article>
+                    <article class="insight-card severity-info expanded">
+                        <div class="insight-card-header">
+                            <span class="insight-card-title">Quick Start</span>
+                            <span class="insight-card-values"><span class="insight-card-metric">4 Steps</span></span>
+                        </div>
+                        <div class="insight-card-detail" style="max-height:none;opacity:1;margin-top:8px;padding-top:8px;">
+                            <div class="insight-card-desc">1. Add a wrapper function around your API call. <br> 2. Write events into <code>~/.onwatch/api-integrations/</code>.<br> 3. Keep onWatch running.<br> 4. Verify ingestion in the health panel and the chart above.</div>
+                        </div>
+                    </article>
+                    <article class="insight-card severity-info expanded">
+                        <div class="insight-card-header">
+                            <span class="insight-card-title">Reference Paths</span>
+                            <span class="insight-card-values"><span class="insight-card-metric">Docs</span></span>
+                        </div>
+                        <div class="insight-card-detail" style="max-height:none;opacity:1;margin-top:8px;padding-top:8px;">
+                            <div class="insight-card-desc">Setup doc: <code>docs/API_INTEGRATIONS_SETUP.md</code>.<br> Wrapper found in: <code>examples/api_integrations/</code>.<br> Supported .py examples include:<br>Anthropic, OpenAI, Mistral, OpenRouter, and Gemini.</div>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </section>
+        {{end}}
+
+        {{if and (ne .CurrentProvider "both") (ne .CurrentProvider "api-integrations")}}
         <section class="sessions-section" id="sessions-section">
             <header class="section-header">
                 <h3 class="section-title">
