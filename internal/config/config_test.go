@@ -187,6 +187,37 @@ func TestConfig_DefaultValues(t *testing.T) {
 	if cfg.LogLevel != "info" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
 	}
+	if cfg.APIIntegrationsRetention != 60*24*time.Hour {
+		t.Errorf("APIIntegrationsRetention = %v, want %v", cfg.APIIntegrationsRetention, 60*24*time.Hour)
+	}
+}
+
+func TestConfig_APIIntegrationsRetention_LoadsFromEnv(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("ONWATCH_API_INTEGRATIONS_RETENTION", "168h")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.APIIntegrationsRetention != 168*time.Hour {
+		t.Errorf("APIIntegrationsRetention = %v, want %v", cfg.APIIntegrationsRetention, 168*time.Hour)
+	}
+}
+
+func TestConfig_APIIntegrationsRetention_Disabled(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("ONWATCH_API_INTEGRATIONS_RETENTION", "0")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.APIIntegrationsRetention != 0 {
+		t.Errorf("APIIntegrationsRetention = %v, want 0", cfg.APIIntegrationsRetention)
+	}
 }
 
 func TestConfig_OnlySyntheticProvider(t *testing.T) {

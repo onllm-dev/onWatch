@@ -96,6 +96,9 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	})
 	mux.HandleFunc(p("/api/minimax/accounts"), handler.MiniMaxAccounts)
 	mux.HandleFunc(p("/api/minimax/accounts/usage"), handler.MiniMaxAccountsUsage)
+	mux.HandleFunc(p("/api/api-integrations/current"), handler.APIIntegrationsCurrent)
+	mux.HandleFunc(p("/api/api-integrations/history"), handler.APIIntegrationsHistory)
+	mux.HandleFunc(p("/api/api-integrations/health"), handler.APIIntegrationsHealth)
 
 	// System alerts (in-dashboard notifications)
 	mux.HandleFunc(p("/api/alerts"), handler.SystemAlerts)

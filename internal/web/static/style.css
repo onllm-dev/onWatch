@@ -723,6 +723,162 @@ button, input, select { font-family: inherit; }
   font-size: 12px;
 }
 
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.api-integrations-insights-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--layout-gap);
+}
+
+.api-integrations-card {
+  cursor: default;
+  animation: none;
+  opacity: 1;
+}
+
+.api-integrations-card:hover {
+  transform: none;
+}
+
+.api-integrations-card-stats,
+.api-integrations-summary-grid,
+.api-integrations-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.api-integrations-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.api-integrations-provider-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-teal) 10%, var(--surface-card-alt));
+  border: 1px solid color-mix(in srgb, var(--accent-teal) 18%, var(--border-light));
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.api-integrations-provider-pill strong {
+  color: var(--text-primary);
+}
+
+.api-integrations-stat,
+.api-integrations-health-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--surface-card-alt);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.api-integrations-stat-label,
+.api-integrations-health-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.api-integrations-stat-value,
+.api-integrations-health-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.api-integrations-health-summary {
+  margin-bottom: 16px;
+}
+
+.api-integrations-health-alerts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.api-integrations-health-copy {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.api-integrations-health-copy p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.api-integrations-health-copy code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.api-integrations-insights-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.api-integrations-insights-controls-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.api-integrations-insight-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+.api-integrations-insight-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.api-integrations-insight-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.api-integrations-insight-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.api-integrations-summary-card {
+  cursor: pointer;
+}
+
 /* Both View - Multi-Column Layout */
 .both-view {
   display: grid;
@@ -2166,6 +2322,7 @@ button, input, select { font-family: inherit; }
   .provider-card-header { padding: 14px 16px; }
   .provider-card-body { padding: 16px; }
   .provider-kpis { grid-template-columns: 1fr; }
+  .api-integrations-card-stats, .api-integrations-summary-grid, .api-integrations-health-grid { grid-template-columns: 1fr; }
   .provider-chart canvas { height: 170px !important; max-height: 170px; }
   .quota-card { padding: 18px; }
   .range-selector { width: 100%; }
@@ -2181,6 +2338,7 @@ button, input, select { font-family: inherit; }
   .filter-pill { flex: 1; text-align: center; padding: 5px 6px; font-size: 11px; }
   .insights-stats { grid-template-columns: repeat(2, 1fr); }
   .insights-cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .api-integrations-insights-panels { grid-template-columns: 1fr; }
   .welcome-title { font-size: 22px; }
   .both-view { grid-template-columns: 1fr; gap: 16px; }
   .chart-container.both-charts { grid-template-columns: 1fr; }
@@ -2197,6 +2355,7 @@ button, input, select { font-family: inherit; }
   .provider-card-body { padding: 14px; }
   .provider-card-title { font-size: 14px; }
   .provider-card-badge { font-size: 10px; }
+  .chart-controls { width: 100%; }
   .provider-chart canvas { height: 160px !important; max-height: 160px; }
   .quota-card { padding: 16px; border-radius: var(--radius-md); }
   .usage-percent { font-size: 26px; }
