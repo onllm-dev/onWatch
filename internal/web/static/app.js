@@ -66,6 +66,8 @@ function getCurrentProvider() {
   if (openrouterGrid) return 'openrouter';
   const geminiGrid = document.getElementById('quota-grid-gemini');
   if (geminiGrid) return 'gemini';
+  const cursorGrid = document.getElementById('quota-grid-cursor');
+  if (cursorGrid) return 'cursor';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -82,8 +84,20 @@ function providerParam() {
   return param;
 }
 
-function shouldShowHistoryTables(provider = getCurrentProvider()) {
+function shouldShowSessionsTable(provider = getCurrentProvider()) {
+  return provider !== 'both' && provider !== 'cursor' && provider !== 'api-integrations';
+}
+
+function shouldShowCyclesTable(provider = getCurrentProvider()) {
   return provider !== 'both' && provider !== 'api-integrations';
+}
+
+function shouldShowOverviewTable(provider = getCurrentProvider()) {
+  return provider !== 'both' && provider !== 'gemini' && provider !== 'api-integrations';
+}
+
+function shouldShowHistoryTables(provider = getCurrentProvider()) {
+  return shouldShowSessionsTable(provider) || shouldShowCyclesTable(provider) || shouldShowOverviewTable(provider);
 }
 
 function getBothViewProviders() {
@@ -325,9 +339,9 @@ function refreshAll() {
   const refreshBtn = document.getElementById('refresh-btn');
   if (refreshBtn) refreshBtn.classList.add('spinning');
   const tasks = [fetchCurrent(), fetchDeepInsights(), fetchHistory()];
-  if (shouldShowHistoryTables()) {
-    tasks.push(fetchCycles(), fetchSessions(), fetchCycleOverview());
-  }
+  if (shouldShowCyclesTable()) tasks.push(fetchCycles());
+  if (shouldShowSessionsTable()) tasks.push(fetchSessions());
+  if (shouldShowOverviewTable()) tasks.push(fetchCycleOverview());
   Promise.all(tasks).finally(() => {
     if (refreshBtn) setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
   });
@@ -823,10 +837,12 @@ function codexVisibleQuotaNames(planType) {
 
 const anthropicQuotaOrder = ['five_hour', 'seven_day', 'seven_day_sonnet', 'monthly_limit', 'extra_usage'];
 const codexQuotaOrder = ['five_hour', 'seven_day', 'code_review'];
+const cursorQuotaOrder = ['total_usage', 'auto_usage', 'api_usage', 'credits', 'on_demand'];
 
 function quotaOrderForProvider(provider) {
   if (provider === 'anthropic') return anthropicQuotaOrder;
   if (provider === 'codex') return codexQuotaOrder;
+  if (provider === 'cursor') return cursorQuotaOrder;
   return [];
 }
 
@@ -949,11 +965,35 @@ const geminiDisplayNames = {
   'flash_lite': 'Gemini Flash Lite',
 };
 
+const cursorDisplayNames = {
+  'total_usage': 'Total Usage',
+  'auto_usage': 'Auto + Composer',
+  'api_usage': 'API Usage',
+  'credits': 'Credits',
+  'on_demand': 'On-Demand',
+};
+
 const geminiChartColorMap = {
   'pro': { border: '#4285F4', bg: 'rgba(66, 133, 244, 0.08)' },
   'flash': { border: '#34A853', bg: 'rgba(52, 168, 83, 0.08)' },
   'flash_lite': { border: '#FBBC04', bg: 'rgba(251, 188, 4, 0.08)' },
 };
+
+const cursorChartColorMap = {
+  'total_usage': { border: '#6366f1', bg: 'rgba(99, 102, 241, 0.08)' },
+  'auto_usage': { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)' },
+  'api_usage': { border: '#a78bfa', bg: 'rgba(167, 139, 250, 0.08)' },
+  'credits': { border: '#10b981', bg: 'rgba(16, 185, 129, 0.08)' },
+  'on_demand': { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)' },
+};
+const cursorChartColorFallback = [
+  { border: '#6366f1', bg: 'rgba(99, 102, 241, 0.08)' },
+  { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)' },
+  { border: '#a78bfa', bg: 'rgba(167, 139, 250, 0.08)' },
+  { border: '#10b981', bg: 'rgba(16, 185, 129, 0.08)' },
+  { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)' },
+  { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)' },
+];
 
 const geminiChartColorFallback = [
   { border: '#4285F4', bg: 'rgba(66, 133, 244, 0.08)' },
@@ -1003,7 +1043,14 @@ const renewalCategories = {
   openrouter: [
     { label: 'Credits', groupBy: 'credits' }
   ],
-  gemini: []
+  gemini: [],
+  cursor: [
+    { label: 'Total Usage', groupBy: 'total_usage' },
+    { label: 'Auto + Composer', groupBy: 'auto_usage' },
+    { label: 'API Usage', groupBy: 'api_usage' },
+    { label: 'Credits', groupBy: 'credits' },
+    { label: 'On-Demand', groupBy: 'on_demand' }
+  ]
 };
 
 const overviewQuotaDisplayNames = {
@@ -1024,7 +1071,11 @@ const overviewQuotaDisplayNames = {
   antigravity_claude_gpt: 'Claude + GPT Quota',
   antigravity_gemini_pro: 'Gemini Pro Quota',
   antigravity_gemini_flash: 'Gemini Flash Quota',
-  credits: 'Credits'
+  credits: 'Credits',
+  total_usage: 'Total Usage',
+  auto_usage: 'Auto + Composer',
+  api_usage: 'API Usage',
+  on_demand: 'On-Demand'
 };
 
 // Provider-specific display name overrides
@@ -2044,6 +2095,18 @@ function renderGeminiQuotaCards(quotas, containerId) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); }
     });
   });
+}
+
+function renderCursorQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  if (!Array.isArray(quotas) || quotas.length === 0) {
+    container.innerHTML = '<p class="empty-state">No Cursor data available</p>';
+    return;
+  }
+
+  container.innerHTML = renderProviderKPIHTML(normalizeBothQuotas('cursor', { quotas }));
 }
 
 function updateGeminiCard(q) {
@@ -3312,6 +3375,10 @@ async function fetchCurrent() {
           }
           data.quotas.forEach(q => updateGeminiCard(q));
         }
+      } else if (provider === 'cursor') {
+        if (data.quotas) {
+          renderCursorQuotaCards(data.quotas || [], 'quota-grid-cursor');
+        }
       } else if (provider === 'openrouter') {
         if (data.credits) {
           const container = document.getElementById('quota-grid-openrouter');
@@ -3537,12 +3604,23 @@ async function fetchDeepInsights() {
       // Render stats
       if (statsEl) {
         statsEl.innerHTML = allStats.length > 0 ? allStats.map(s =>
-          `<div class="insight-stat">
-            <div class="insight-stat-value">${s.value}</div>
-            <div class="insight-stat-label">${s.label}</div>
-            ${s.sublabel ? `<div class="insight-stat-sublabel">${s.sublabel}</div>` : ''}
-          </div>`
+          (s.metric || s.severity || s.desc)
+            ? buildEnrichedStatHTML(s)
+            : `<div class="insight-stat">
+                <div class="insight-stat-value">${escapeHTML(s.value)}</div>
+                <div class="insight-stat-label">${escapeHTML(s.label)}</div>
+                ${s.sublabel ? `<div class="insight-stat-sublabel">${escapeHTML(s.sublabel)}</div>` : ''}
+              </div>`
         ).join('') : '';
+        statsEl.querySelectorAll('.insight-card').forEach(card => {
+          attachInsightCardEvents(card, statsEl);
+        });
+        statsEl.querySelectorAll('.insight-eye-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleInsightVisibility(btn.dataset.key);
+          });
+        });
       }
 
       // Render insight cards
@@ -3812,6 +3890,28 @@ function renderBothInsights(data, statsEl, cardsEl) {
   });
 }
 
+function buildEnrichedStatHTML(s) {
+  const icon = insightIcons[s.severity] || insightIcons.info;
+  const hideBtn = s.key ? `<button class="insight-eye-btn" data-key="${s.key}" aria-label="Hide this insight" title="Hide this insight">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>` : '';
+  const chevron = s.desc ? `<svg class="insight-card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>` : '';
+  const displayMetric = s.metric || s.value || '--';
+  return `<div class="insight-card severity-${s.severity || 'info'}" data-key="${s.key || ''}" role="button" tabindex="0">
+    <div class="insight-card-header">
+      <svg class="insight-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+      <span class="insight-card-title">${escapeHTML(s.label)}</span>
+      <span class="insight-card-values">
+        <span class="insight-card-metric">${escapeHTML(displayMetric)}</span>
+        ${s.sublabel ? `<span class="insight-card-sublabel">${escapeHTML(s.sublabel)}</span>` : ''}
+      </span>
+      ${hideBtn}
+      ${chevron}
+    </div>
+    ${s.desc ? `<div class="insight-card-detail"><div class="insight-card-desc">${escapeHTML(s.desc)}</div></div>` : ''}
+  </div>`;
+}
+
 function buildInsightCardsHTML(insights) {
   if (insights.length === 0) return '<p class="insight-text">Keep tracking to see deep analytics.</p>';
   return insights.map((i, idx) => {
@@ -3982,6 +4082,8 @@ function initChart() {
     defaultDatasets = []; // MiniMax datasets are dynamic - populated when history data arrives
   } else if (provider === 'gemini') {
     defaultDatasets = []; // Gemini datasets are dynamic - populated when history data arrives
+  } else if (provider === 'cursor') {
+    defaultDatasets = []; // Cursor datasets are dynamic - populated when history data arrives
   } else if (provider === 'openrouter') {
     defaultDatasets = []; // OpenRouter datasets are dynamic - populated when history data arrives
   } else if (provider === 'zai') {
@@ -4002,6 +4104,8 @@ function initChart() {
     : provider === 'minimax'
       ? []
     : provider === 'gemini'
+      ? []
+    : provider === 'cursor'
       ? []
     : provider === 'openrouter'
       ? []
@@ -4312,6 +4416,44 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'cursor') {
+      const quotaKeys = new Set();
+      historyRows.forEach(d => {
+        if (Array.isArray(d.quotas)) d.quotas.forEach(q => quotaKeys.add(q.name));
+      });
+      const sortedKeys = sortQuotaKeysForProvider(quotaKeys, 'cursor');
+      let fallbackIdx = 0;
+      const datasets = [];
+      sortedKeys.forEach((key) => {
+        const color = cursorChartColorMap[key] || cursorChartColorFallback[fallbackIdx++ % cursorChartColorFallback.length];
+        const rawData = historyRows.map(d => {
+          const q = Array.isArray(d.quotas) ? d.quotas.find(quota => quota.name === key) : null;
+          return { x: new Date(d.capturedAt), y: q ? (q.utilization || 0) : 0 };
+        });
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        datasets.push({
+          label: cursorDisplayNames[key] || key,
+          data: data,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: pointRadii,
+          pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key),
+          spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
+        });
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
     if (provider === 'minimax') {
       const quotaKeys = new Set();
       historyRows.forEach(d => {
@@ -4513,6 +4655,7 @@ const bothProviderNames = {
   antigravity: 'Antigravity',
   minimax: 'MiniMax',
   gemini: 'Gemini',
+  cursor: 'Cursor',
   'api-integrations': 'API Integrations',
 };
 
@@ -4816,7 +4959,11 @@ function buildAllProviderEntries() {
       provider,
       cardKey: sanitizeProviderCardKey(provider),
       title: bothProviderNames[provider] || toTitleCase(provider),
-      badge: provider === 'copilot' ? 'Beta' : toTitleCase(payload.planType || ''),
+      badge: provider === 'copilot'
+        ? 'Beta'
+        : (provider === 'cursor'
+          ? (payload.planName || toTitleCase(payload.accountType || ''))
+          : toTitleCase(payload.planType || '')),
       promoHtml: provider === 'anthropic' && payload.promo ? promoTagHTML() : '',
       planType: payload.planType || '',
       quotas: normalizeBothQuotas(provider, payload),
@@ -4929,28 +5076,39 @@ function renderAPIIntegrationsSummaryCard(entry, collapsed) {
 }
 
 function getSingleViewInsightStats(provider, stats) {
-  if (provider !== 'minimax' && provider !== 'gemini') return stats;
+  if (provider !== 'minimax' && provider !== 'gemini' && provider !== 'cursor') return stats;
+  const preferred = provider === 'cursor'
+    ? ['Plan', 'Total Usage Burn Rate', 'Auto + Composer Burn Rate', 'API Usage Burn Rate']
+    : ['Current Usage', 'Burn Rate', 'Resets In'];
   return sortItemsByPreference(
     stats.filter((stat) => stat && stat.label !== 'Current Status'),
-    ['Current Usage', 'Burn Rate', 'Resets In'],
+    preferred,
     (stat) => stat.label
   );
 }
 
 function getSingleViewInsightCards(provider, insights) {
-  if (provider !== 'minimax' && provider !== 'gemini' && provider !== 'openrouter') return insights;
-  const filtered = insights.filter((insight) => !['shared_status', 'burn_rate'].includes(insight.key));
+  if (provider !== 'minimax' && provider !== 'gemini' && provider !== 'openrouter' && provider !== 'cursor') return insights;
+  const filtered = provider === 'cursor'
+    ? insights.filter((insight) => !insight.key || !insight.key.startsWith('forecast_'))
+    : insights.filter((insight) => !['shared_status', 'burn_rate'].includes(insight.key));
+  const preferred = provider === 'cursor'
+    ? []
+    : ['trend', 'efficiency', 'burn_rate', 'shared_status'];
   return sortItemsByPreference(
-    filtered.length > 0 ? filtered : insights,
-    ['trend', 'efficiency', 'burn_rate', 'shared_status'],
+    filtered.length > 0 ? filtered : (provider === 'cursor' ? [] : insights),
+    preferred,
     (insight) => insight.key
   );
 }
 
 function getCompactProviderStats(provider, stats) {
-  const preferred = provider === 'minimax' || provider === 'gemini' || provider === 'openrouter'
-    ? ['Burn Rate', 'Current Usage', 'Resets In', 'Current Status']
-    : [];
+  let preferred = [];
+  if (provider === 'cursor') {
+    preferred = ['Plan', 'Total Usage Burn Rate', 'Auto + Composer Burn Rate', 'API Usage Burn Rate'];
+  } else if (provider === 'minimax' || provider === 'gemini' || provider === 'openrouter') {
+    preferred = ['Burn Rate', 'Current Usage', 'Resets In', 'Current Status'];
+  }
   const ordered = preferred.length > 0
     ? sortItemsByPreference(stats, preferred, (stat) => stat.label)
     : stats;
@@ -4958,9 +5116,12 @@ function getCompactProviderStats(provider, stats) {
 }
 
 function getCompactProviderInsights(provider, insights) {
-  const ordered = provider === 'minimax' || provider === 'gemini' || provider === 'openrouter'
-    ? sortItemsByPreference(insights, ['efficiency', 'trend', 'burn_rate', 'shared_status'], (insight) => insight.key)
-    : insights;
+  let ordered = insights;
+  if (provider === 'cursor') {
+    ordered = sortItemsByPreference(insights, ['forecast_total_usage', 'forecast_auto_usage', 'forecast_api_usage'], (insight) => insight.key);
+  } else if (provider === 'minimax' || provider === 'gemini' || provider === 'openrouter') {
+    ordered = sortItemsByPreference(insights, ['efficiency', 'trend', 'burn_rate', 'shared_status'], (insight) => insight.key);
+  }
   const urgent = ordered.filter((insight) => ['warning', 'negative'].includes(insight.severity));
   return urgent.slice(0, 1);
 }
@@ -4971,10 +5132,12 @@ function renderProviderInsightsHTML(provider, payload) {
   const items = [];
 
   stats.forEach((stat) => {
-    items.push(`<article class="insight-card provider-mini-insight severity-info">
+    const displayValue = stat.metric || stat.value || '--';
+    const severity = (stat.metric && stat.severity) ? stat.severity : 'info';
+    items.push(`<article class="insight-card provider-mini-insight severity-${severity}">
       <div class="insight-card-header">
         <span class="insight-card-title">${escapeHTML(stat.label || 'Metric')}</span>
-        <span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(stat.value || '--')}</span></span>
+        <span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(displayValue)}</span></span>
       </div>
       ${stat.sublabel ? `<div class="provider-mini-insight-note">${escapeHTML(compactInsightText(stat.sublabel, 48))}</div>` : ''}
     </article>`);
@@ -5333,6 +5496,17 @@ function buildProviderCardDatasets(provider, rows, range) {
   if (provider === 'gemini') {
     return buildDynamicDatasetsForRows(rows, range, geminiDisplayNames, geminiChartColorMap, geminiChartColorFallback, 'gemini');
   }
+  if (provider === 'cursor') {
+    const normalizedRows = rows.map((row) => {
+      if (!Array.isArray(row.quotas)) return row;
+      const entry = { capturedAt: row.capturedAt };
+      row.quotas.forEach((quota) => {
+        entry[quota.name] = quota.utilization || 0;
+      });
+      return entry;
+    });
+    return buildDynamicDatasetsForRows(normalizedRows, range, cursorDisplayNames, cursorChartColorMap, cursorChartColorFallback, 'cursor');
+  }
   if (provider === 'openrouter') {
     const orDisplayNames = { usage: 'Total Usage', usageDaily: 'Daily Usage', percent: 'Usage %' };
     const orColors = {
@@ -5495,6 +5669,9 @@ function updateBothCharts(data, range = '6h') {
   if (activeProviders.has('gemini') && Array.isArray(data.gemini) && data.gemini.length > 0) {
     slots.push({ id: 'gemini', label: 'Gemini', provider: 'gemini', rows: data.gemini });
   }
+  if (activeProviders.has('cursor') && Array.isArray(data.cursor) && data.cursor.length > 0) {
+    slots.push({ id: 'cursor', label: 'Cursor', provider: 'cursor', rows: data.cursor });
+  }
   if (activeProviders.has('codex')) {
     if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
       data.codexAccounts.forEach((account, idx) => {
@@ -5610,6 +5787,16 @@ function updateBothCharts(data, range = '6h') {
       datasets = createDynamicDatasets(slot.rows, minimaxDisplayNames, minimaxChartColorMap, minimaxChartColorFallback, 'minimax');
     } else if (slot.provider === 'gemini') {
       datasets = createDynamicDatasets(slot.rows, geminiDisplayNames, geminiChartColorMap, geminiChartColorFallback, 'gemini');
+    } else if (slot.provider === 'cursor') {
+      const normalizedRows = slot.rows.map((row) => {
+        if (!Array.isArray(row.quotas)) return row;
+        const entry = { capturedAt: row.capturedAt };
+        row.quotas.forEach((quota) => {
+          entry[quota.name] = quota.utilization || 0;
+        });
+        return entry;
+      });
+      datasets = createDynamicDatasets(normalizedRows, cursorDisplayNames, cursorChartColorMap, cursorChartColorFallback, 'cursor');
     } else if (slot.provider === 'openrouter') {
       const orDN = { usage: 'Total Usage', usageDaily: 'Daily Usage', percent: 'Usage %' };
       const orCM = { usage: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' }, usageDaily: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' }, percent: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' } };
@@ -5753,14 +5940,14 @@ function updateTimeScale(chart, range) {
 // ── Cycles Table (client-side search/sort/paginate) ──
 
 async function fetchCycles() {
-  if (!shouldShowHistoryTables()) return;
+  if (!shouldShowCyclesTable()) return;
   const requestProvider = getCurrentProvider();
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
   const requestRange = State.cyclesRange;
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor']);
 
   if (loggingHistoryProviders.has(provider)) {
     // Convert range from ms to days (min 1, max 30)
@@ -5908,7 +6095,7 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor';
   const deltaUsesPercent = usePercent && provider !== 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
 
@@ -6037,7 +6224,9 @@ function renderCyclesTable() {
   const colCount = isLoggingHistory ? (2 + quotaNames.length) : (5 + quotaNames.length);
 
   if (pageData.length === 0) {
-    const emptyMsg = isLoggingHistory ? 'No logging data in this range.' : 'No polling data in this range.';
+    const emptyMsg = isLoggingHistory
+      ? (provider === 'cursor' ? 'No Cursor usage samples in this range.' : 'No logging data in this range.')
+      : (provider === 'cursor' ? 'No Cursor billing-cycle samples in this range.' : 'No polling data in this range.');
     tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">${emptyMsg}</td></tr>`;
   } else {
     tbody.innerHTML = pageData.map(row => {
@@ -6131,7 +6320,7 @@ function renderCyclesTable() {
 // ── Sessions Table (client-side search/sort/paginate + expandable rows) ──
 
 async function fetchSessions() {
-  if (!shouldShowHistoryTables()) return;
+  if (!shouldShowSessionsTable()) return;
   const requestProvider = getCurrentProvider();
   // Hide sessions section for providers without session tracking.
   const sessionsEl = document.getElementById('sessions-section');
@@ -7096,7 +7285,8 @@ function getOverviewCategories() {
       ...(renewalCategories.antigravity || []),
       ...(renewalCategories.minimax || []),
       ...(renewalCategories.openrouter || []),
-      ...(renewalCategories.gemini || [])
+      ...(renewalCategories.gemini || []),
+      ...(renewalCategories.cursor || [])
     ];
   }
   if (provider === 'codex') {
@@ -7172,7 +7362,7 @@ function truncateLabel(str, maxLen) {
 }
 
 async function fetchCycleOverview() {
-  if (!shouldShowHistoryTables()) return;
+  if (!shouldShowOverviewTable()) return;
   const provider = getCurrentProvider();
   const requestProvider = provider;
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
@@ -7228,7 +7418,7 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
 
   // Build dynamic header
@@ -7309,7 +7499,10 @@ function renderOverviewTable() {
 
   if (pageData.length === 0) {
     const colCount = 5 + quotaNames.length;
-    tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">No completed cycles found for this period.</td></tr>`;
+    const emptyMsg = overviewProv === 'cursor'
+      ? 'No completed monthly billing cycles found for this quota yet.'
+      : 'No completed cycles found for this period.';
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">${emptyMsg}</td></tr>`;
   } else {
     tbody.innerHTML = pageData.map(row => {
       const start = row.cycleStart || null;
@@ -7507,9 +7700,9 @@ function setupHeaderActions() {
     refreshBtn.addEventListener('click', () => {
       refreshBtn.classList.add('spinning');
       const tasks = [fetchCurrent(), fetchDeepInsights(), fetchHistory()];
-      if (shouldShowHistoryTables()) {
-        tasks.push(fetchCycles(), fetchSessions(), fetchCycleOverview());
-      }
+      if (shouldShowCyclesTable()) tasks.push(fetchCycles());
+      if (shouldShowSessionsTable()) tasks.push(fetchSessions());
+      if (shouldShowOverviewTable()) tasks.push(fetchCycleOverview());
       Promise.all(tasks).finally(() => {
         setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
       });
@@ -7554,11 +7747,9 @@ function startAutoRefresh() {
     // Always refresh above-fold data
     fetchCurrent(); fetchDeepInsights(); fetchHistory();
     // Only refresh below-fold sections that have been loaded
-    if (shouldShowHistoryTables()) {
-      if (_lazyLoaded.has('.cycles-section')) fetchCycles();
-      if (_lazyLoaded.has('.cycle-overview-section')) fetchCycleOverview();
-      if (_lazyLoaded.has('.sessions-section')) fetchSessions();
-    }
+    if (shouldShowCyclesTable() && _lazyLoaded.has('.cycles-section')) fetchCycles();
+    if (shouldShowOverviewTable() && _lazyLoaded.has('.cycle-overview-section')) fetchCycleOverview();
+    if (shouldShowSessionsTable() && _lazyLoaded.has('.sessions-section')) fetchSessions();
   }, REFRESH_INTERVAL);
 }
 
@@ -9650,6 +9841,7 @@ function addOverrideRow(quotaKey, provider, warning, critical, isAbsolute, disab
       <option value="minimax" ${provider === 'minimax' ? 'selected' : ''}>MiniMax</option>
       <option value="antigravity" ${provider === 'antigravity' ? 'selected' : ''}>Antigravity</option>
       <option value="gemini" ${provider === 'gemini' ? 'selected' : ''}>Gemini</option>
+      <option value="cursor" ${provider === 'cursor' ? 'selected' : ''}>Cursor</option>
       <option value="openrouter" ${provider === 'openrouter' ? 'selected' : ''}>OpenRouter</option>
       <option value="synthetic" ${provider === 'synthetic' ? 'selected' : ''}>Synthetic</option>
       <option value="zai" ${provider === 'zai' ? 'selected' : ''}>Z.ai</option>
@@ -9946,13 +10138,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Preload providers whose history tables should appear immediately.
     const activeProvider = getCurrentProvider();
-    const eagerHistoryProviders = new Set(['antigravity', 'minimax', 'gemini']);
-    if (eagerHistoryProviders.has(activeProvider) && shouldShowHistoryTables(activeProvider)) {
-      _lazyLoaded.add('.cycles-section');
-      _lazyLoaded.add('.sessions-section');
-      fetchCycles();
-      fetchSessions();
-      if (activeProvider !== 'gemini') {
+    const eagerHistoryProviders = new Set(['antigravity', 'minimax', 'gemini', 'cursor']);
+    if (eagerHistoryProviders.has(activeProvider)) {
+      if (shouldShowCyclesTable(activeProvider)) {
+        _lazyLoaded.add('.cycles-section');
+        fetchCycles();
+      }
+      if (shouldShowSessionsTable(activeProvider)) {
+        _lazyLoaded.add('.sessions-section');
+        fetchSessions();
+      }
+      if (shouldShowOverviewTable(activeProvider)) {
         _lazyLoaded.add('.cycle-overview-section');
         fetchCycleOverview();
       }
@@ -9965,11 +10161,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Below-fold: lazy-load when sections scroll into view
-    if (shouldShowHistoryTables(activeProvider)) {
+    if (shouldShowCyclesTable(activeProvider)) {
       lazyLoadOnVisible('.cycles-section', () => fetchCycles());
-      if (activeProvider !== 'gemini') {
-        lazyLoadOnVisible('.cycle-overview-section', () => fetchCycleOverview());
-      }
+    }
+    if (shouldShowOverviewTable(activeProvider)) {
+      lazyLoadOnVisible('.cycle-overview-section', () => fetchCycleOverview());
+    }
+    if (shouldShowSessionsTable(activeProvider)) {
       lazyLoadOnVisible('.sessions-section', () => fetchSessions());
     }
 

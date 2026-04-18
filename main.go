@@ -557,6 +557,13 @@ func run() error {
 		}
 	}
 
+	if cfg.CursorToken == "" {
+		if token := api.DetectCursorToken(preflightLogger); token != "" {
+			cfg.CursorToken = token
+			cfg.CursorAutoToken = true
+		}
+	}
+
 	// Daemonize: if not in debug mode, not already the daemon child, and NOT in Docker, fork
 	// Docker containers should always run in foreground mode (logs to stdout)
 	if !cfg.DebugMode && !isDaemonChild && !cfg.IsDockerEnvironment() {
@@ -806,6 +813,12 @@ func run() error {
 		}
 	}
 
+	var cursorClient *api.CursorClient
+	if cfg.HasProvider("cursor") {
+		cursorClient = api.NewCursorClient(cfg.CursorToken, logger)
+		logger.Info("Cursor API client configured")
+	}
+
 	// Create components
 	tr := tracker.New(db, logger)
 
@@ -967,6 +980,11 @@ func run() error {
 		geminiTr = tracker.NewGeminiTracker(db, logger)
 	}
 
+	var cursorTr *tracker.CursorTracker
+	if cfg.HasProvider("cursor") {
+		cursorTr = tracker.NewCursorTracker(db, logger)
+	}
+
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
 		antigravitySm := agent.NewSessionManager(db, "antigravity", idleTimeout, logger)
@@ -1010,6 +1028,21 @@ func run() error {
 		geminiAg.SetClientCredentials(api.DetectGeminiClientCredentials())
 	}
 
+	var cursorAg *agent.CursorAgent
+	if cursorClient != nil {
+		cursorSm := agent.NewSessionManager(db, "cursor", idleTimeout, logger)
+		cursorAg = agent.NewCursorAgent(cursorClient, db, cursorTr, cfg.PollInterval, logger, cursorSm)
+		cursorAg.SetTokenRefresh(func() string {
+			return api.DetectCursorToken(logger)
+		})
+		cursorAg.SetCredentialsRefresh(func() *api.CursorCredentials {
+			return api.DetectCursorCredentials(logger)
+		})
+		cursorAg.SetTokenSave(func(accessToken, refreshToken string) error {
+			return api.WriteCursorCredentials(accessToken, refreshToken)
+		})
+	}
+
 	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
 	if cfg.APIIntegrationsEnabled {
 		apiIntegrationsAg = agent.NewAPIIntegrationsIngestAgent(db, cfg.APIIntegrationsDir, cfg.APIIntegrationsRetention, logger)
@@ -1050,6 +1083,9 @@ func run() error {
 	}
 	if geminiAg != nil {
 		geminiAg.SetNotifier(notifier)
+	}
+	if cursorAg != nil {
+		cursorAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -1152,6 +1188,9 @@ func run() error {
 	if geminiAg != nil {
 		geminiAg.SetPollingCheck(func() bool { return isPollingEnabled("gemini") })
 	}
+	if cursorAg != nil {
+		cursorAg.SetPollingCheck(func() bool { return isPollingEnabled("cursor") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -1197,6 +1236,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "gemini", QuotaKey: modelID, ResetOccurred: true})
 		})
 	}
+	if cursorTr != nil {
+		cursorTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "cursor", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -1221,6 +1265,9 @@ func run() error {
 	}
 	if geminiTr != nil {
 		handler.SetGeminiTracker(geminiTr)
+	}
+	if cursorTr != nil {
+		handler.SetCursorTracker(cursorTr)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -1250,6 +1297,10 @@ func run() error {
 	if geminiAg != nil {
 		agentMgr.RegisterFactory("gemini", func() (agent.AgentRunner, error) { return geminiAg, nil })
 	}
+	if cursorAg != nil {
+		agentMgr.RegisterFactory("cursor", func() (agent.AgentRunner, error) { return cursorAg, nil })
+	}
+
 	if apiIntegrationsAg != nil {
 		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
 	}
@@ -1275,7 +1326,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}

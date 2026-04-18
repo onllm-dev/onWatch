@@ -204,7 +204,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	normalized := settings.Normalize()
 
 	visibility := h.providerVisibilityMap()
-	providers := make([]menubar.ProviderCard, 0, 8)
+	providers := make([]menubar.ProviderCard, 0, 10)
 	latest := time.Time{}
 
 	if h.config != nil && h.config.HasProvider("synthetic") && h.providerDashboardVisible("synthetic", visibility) {
@@ -321,6 +321,15 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	if h.config != nil && h.config.HasProvider("gemini") && h.providerDashboardVisible("gemini", visibility) {
 		payload := h.buildGeminiCurrent()
 		if card := normalizeProviderCard("gemini", "Gemini", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			providers = append(providers, *card)
+			if captured := parseCapturedAt(payload); captured.After(latest) {
+				latest = captured
+			}
+		}
+	}
+	if h.config != nil && h.config.HasProvider("cursor") && h.providerDashboardVisible("cursor", visibility) {
+		payload := h.buildCursorCurrent()
+		if card := normalizeProviderCard("cursor", "Cursor", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
