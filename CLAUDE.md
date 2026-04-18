@@ -1,10 +1,10 @@
 # onWatch
 
-Go CLI for AI quota tracking. Polls 8 providers → SQLite → Material Design 3 dashboard.
+Go CLI for AI quota tracking. Polls 9 providers → SQLite → Material Design 3 dashboard.
 
 ## Task
 
-Background daemon (<50MB RAM) tracking: Anthropic, Synthetic, Z.ai, Copilot, Codex, MiniMax, Antigravity, Gemini.
+Background daemon (<50MB RAM) tracking: Anthropic, Synthetic, Z.ai, Copilot, Codex, MiniMax, Antigravity, Gemini, Cursor.
 
 ## Code Map
 
@@ -64,11 +64,19 @@ go test -race ./... && go vet ./...   # Pre-commit (mandatory)
 5. Add to `internal/web/handlers.go` endpoints
 6. Update dashboard JS in `internal/web/static/app.js`
 
-**API Docs:** See `docs/` for provider-specific setup (COPILOT_SETUP.md, CODEX_SETUP.md, ANTIGRAVITY_SETUP.md, GEMINI_SETUP.md)
+**API Docs:** See `docs/` for provider-specific setup (COPILOT_SETUP.md, CODEX_SETUP.md, ANTIGRAVITY_SETUP.md, GEMINI_SETUP.md, CURSOR_SETUP.md)
 
 **Containers:** `IsDockerEnvironment()` in `config.go` detects Docker/K8s. Containers run foreground only.
 
-**Release:** `./app.sh --release` → cross-compile 5 platforms → include all binaries in GitHub release.
+**Release process (all 3 steps required):**
+1. Update version in all 3 places:
+   - `VERSION` file (the single source of truth, e.g. `2.11.42`)
+   - `README.md` version badge text (`Version-v2.11.42`)
+   - `README.md` version badge link (`/releases/tag/v2.11.42`)
+2. Commit, push to main, and create a git tag (`git tag v2.11.42 && git push origin main --tags`)
+3. Trigger the GitHub Actions release workflow: `gh workflow run release.yml -f tag=v2.11.42`
+   - Do NOT use `gh release create` - the workflow handles release creation, cross-compilation (5 platforms), and binary uploads
+   - Do NOT run `./app.sh --release` locally - the release must happen through the GitHub Actions pipeline
 
 **Anthropic Rate Limit Bypass:** Anthropic's usage API has aggressive rate limits (~5 requests per token, then 429 for ~5 min). onWatch bypasses this by refreshing the OAuth token when rate limited - each new access token gets a fresh rate limit window. Implementation details:
 - `internal/agent/anthropic_agent.go`: Detects 429, calls `RefreshAnthropicToken`, saves new tokens, retries
