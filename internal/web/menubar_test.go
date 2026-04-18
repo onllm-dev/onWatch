@@ -159,6 +159,48 @@ func TestMenubarTestEndpointPreservesMinimalView(t *testing.T) {
 	}
 }
 
+func TestMenubarSummaryIncludesCursorWhenEnabled(t *testing.T) {
+	t.Setenv("ONWATCH_TEST_MODE", "1")
+
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Now().UTC()
+	resetTime := now.Add(2 * time.Hour)
+	insertTestCursorSnapshot(t, s, now, api.CursorAccountIndividual, "Pro", []api.CursorQuota{
+		{Name: "total_usage", Used: 50, Limit: 100, Utilization: 50, Format: api.CursorFormatPercent, ResetsAt: &resetTime},
+	})
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCursor())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	rr := httptest.NewRecorder()
+
+	h.MenubarSummary(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var snapshot menubar.Snapshot
+	if err := json.Unmarshal(rr.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	var found bool
+	for _, p := range snapshot.Providers {
+		if p.ID == "cursor" && p.BaseProvider == "cursor" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected cursor provider card, got: %#v", snapshot.Providers)
+	}
+}
+
 func TestMenubarSummaryUsesConfiguredThresholds(t *testing.T) {
 	t.Setenv("ONWATCH_TEST_MODE", "1")
 

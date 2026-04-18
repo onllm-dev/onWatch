@@ -38,9 +38,9 @@ type Config struct {
 	CopilotToken string // COPILOT_TOKEN (GitHub PAT with copilot scope)
 
 	// Codex provider configuration
-	CodexToken        string // CODEX_TOKEN or auto-detected
-	CodexAutoToken    bool   // true if token was auto-detected
-	CodexHasProfiles  bool   // true if saved profiles exist (enables bootstrap without token)
+	CodexToken         string // CODEX_TOKEN or auto-detected
+	CodexAutoToken     bool   // true if token was auto-detected
+	CodexHasProfiles   bool   // true if saved profiles exist (enables bootstrap without token)
 	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage"
 
 	// Antigravity provider configuration (auto-detected from local process)
@@ -60,6 +60,10 @@ type Config struct {
 	GeminiAutoToken    bool   // true if token was auto-detected
 	GeminiRefreshToken string // GEMINI_REFRESH_TOKEN (for Docker/headless)
 	GeminiAccessToken  string // GEMINI_ACCESS_TOKEN (for Docker/headless)
+
+	// Cursor provider configuration (auto-detected from Cursor Desktop SQLite or keychain)
+	CursorToken     string // CURSOR_TOKEN or auto-detected
+	CursorAutoToken bool   // true if token was auto-detected
 
 	// Custom API Integrations telemetry ingestion
 	APIIntegrationsEnabled   bool          // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
@@ -109,9 +113,9 @@ func expandTilde(path string) string {
 
 // flagValues holds parsed CLI flags.
 type flagValues struct {
-	interval int
-	port     int
-	db       string
+	interval    int
+	port        int
+	db          string
 	debug       bool
 	debugStdout bool
 	test        bool
@@ -185,6 +189,7 @@ var onwatchEnvKeys = []string{
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
+	"CURSOR_TOKEN",
 	"GEMINI_ENABLED",
 	"GEMINI_REFRESH_TOKEN",
 	"GEMINI_ACCESS_TOKEN",
@@ -302,6 +307,9 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 		cfg.GeminiEnabled = true
 	}
 	// File-based auto-detection is done later in main.go
+
+	// Cursor provider (auto-detected from Cursor Desktop SQLite or keychain)
+	cfg.CursorToken = strings.TrimSpace(os.Getenv("CURSOR_TOKEN"))
 
 	// Custom API Integrations telemetry ingestion
 	cfg.APIIntegrationsDir = strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_DIR"))
@@ -508,6 +516,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.GeminiEnabled {
 		providers = append(providers, "gemini")
 	}
+	if c.CursorToken != "" {
+		providers = append(providers, "cursor")
+	}
 	return providers
 }
 
@@ -532,6 +543,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.OpenRouterAPIKey != ""
 	case "gemini":
 		return c.GeminiEnabled
+	case "cursor":
+		return c.CursorToken != ""
 	}
 	return false
 }
@@ -564,6 +577,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.GeminiEnabled {
+		count++
+	}
+	if c.CursorToken != "" {
 		count++
 	}
 	return count > 1
@@ -608,6 +624,13 @@ func (c *Config) String() string {
 	fmt.Fprintf(&sb, "  APIIntegrationsEnabled: %v,\n", c.APIIntegrationsEnabled)
 	fmt.Fprintf(&sb, "  APIIntegrationsDir: %s,\n", c.APIIntegrationsDir)
 	fmt.Fprintf(&sb, "  APIIntegrationsRetention: %v,\n", c.APIIntegrationsRetention)
+
+	// Redact Cursor token
+	cursorDisplay := redactAPIKey(c.CursorToken, "")
+	fmt.Fprintf(&sb, "  CursorToken: %s,\n", cursorDisplay)
+	if c.CursorAutoToken {
+		fmt.Fprintf(&sb, "  CursorAutoToken: true,\n")
+	}
 
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)
 	fmt.Fprintf(&sb, "  SessionIdleTimeout: %v,\n", c.SessionIdleTimeout)
