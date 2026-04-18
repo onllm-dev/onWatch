@@ -2,7 +2,7 @@
 
 **Free, open-source AI API quota monitoring for developers.**
 
-Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), [Gemini CLI](docs/GEMINI_SETUP.md), and Antigravity in one place.
+Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), [Gemini CLI](docs/GEMINI_SETUP.md), [Cursor](docs/CURSOR_SETUP.md), and Antigravity in one place.
 See history, get alerts, and open a local web dashboard before you hit throttling or run over budget. Additionally, you can ingest local telemetry from your own API-driven workflows with API Integrations, keeping track of token use and spending across multiple providers.
 
 **Links:** [Website](https://onwatch.onllm.dev) | [Buy Me a Coffee](https://buymeacoffee.com/prakersh)
@@ -18,14 +18,14 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 
 **Compatibility & Docs**
 
-[![Version](https://img.shields.io/badge/Version-v2.11.40-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.40)
+[![Version](https://img.shields.io/badge/Version-v2.11.42-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.42)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
 
-onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session view that developers actually need. It runs as a lightweight background agent (<50 MB RAM with all eight providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
+onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session view that developers actually need. It runs as a lightweight background agent (<50 MB RAM with all nine providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
 
-It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Antigravity**, and others.
+It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Antigravity**, and others.
 
 **Zero telemetry. Single binary. All data stays on your machine.**
 
@@ -125,6 +125,7 @@ Provider setup guides:
 - [Copilot Setup Guide](docs/COPILOT_SETUP.md)
 - [MiniMax Setup Guide](docs/MINIMAX_SETUP.md)
 - [Antigravity Setup Guide](docs/ANTIGRAVITY_SETUP.md)
+- [Cursor Setup Guide](docs/CURSOR_SETUP.md)
 - [API Integration Setup Guide](docs/API_INTEGRATIONS_SETUP.md)
 
 ### Run
@@ -166,6 +167,7 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **MiniMax Coding Plan** -- Shared quota pool tracking for M2, M2.1, and M2.5 models with 5-hour rolling window reset cycles and **multi-account support** for tracking multiple MiniMax subscriptions via the dashboard UI
 - **Gemini CLI (Beta)** -- Per-model quota tracking for Gemini 2.5/3.x Pro, Flash, and Flash Lite models with 24-hour reset cycles
 - **Antigravity** -- Multi-model quota cards (Claude, Gemini, GPT) with grouped quota pools, logging history, and cycle overview
+- **Cursor** -- Individual, Team, and Enterprise account tracking with auto-detected credentials from Cursor Desktop SQLite or macOS Keychain/Linux keyring, OAuth token auto-refresh, burn rate forecasts, and on-demand spend tracking
 - **API Integrations** -- Local JSONL ingestion for custom API-driven workflows and automations. Track per-integration token volume, request counts, recent activity, costs, trends, and accumulated usage across separate API keys and providers.
 - **All** -- Side-by-side view of all configured providers
 - **Prometheus metrics endpoint (Beta)** -- Exposes `/metrics` for Prometheus/Grafana/Alertmanager integrations, with optional bearer token protection via `ONWATCH_METRICS_TOKEN`
@@ -254,15 +256,15 @@ Set `OPENROUTER_API_KEY` in your `.env` with your OpenRouter API key. Get one fr
 
 ### Does onWatch work with Cline, Roo Code, Kilo Code, or Claude Code?
 
-Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, OpenRouter, Gemini CLI, or Antigravity), not the coding tool. Any tool that uses a Synthetic, Z.ai, Anthropic, Codex, Copilot, MiniMax, OpenRouter, Gemini CLI, or Antigravity API key -- including Cline, Roo Code, Kilo Code, Claude Code, Codex CLI, Cursor, GitHub Copilot, MiniMax Coding Plan, OpenRouter, Gemini CLI, Antigravity, and others -- will have its usage tracked automatically.
+Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, OpenRouter, Gemini CLI, Cursor, or Antigravity), not the coding tool. Any tool that uses a Synthetic, Z.ai, Anthropic, Codex, Copilot, MiniMax, OpenRouter, Gemini CLI, Cursor, or Antigravity API key -- including Cline, Roo Code, Kilo Code, Claude Code, Codex CLI, Cursor, GitHub Copilot, MiniMax Coding Plan, OpenRouter, Gemini CLI, Antigravity, and others -- will have its usage tracked automatically.
 
 ### Does onWatch send any data to external servers?
 
-No. Zero telemetry. All data stays in a local SQLite file. The only outbound calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, and Antigravity quota APIs you configure (Antigravity connects to localhost only). Fully auditable on [GitHub](https://github.com/onllm-dev/onwatch) (GPL-3.0).
+No. Zero telemetry. All data stays in a local SQLite file. The only outbound calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, and Antigravity quota APIs you configure (Antigravity connects to localhost only). Fully auditable on [GitHub](https://github.com/onllm-dev/onwatch) (GPL-3.0).
 
 ### How much memory does onWatch use?
 
-<50 MB under all conditions (typically ~34 MB idle, ~43 MB under heavy load). Measured with all eight agents (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Antigravity) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed benchmarks.
+<50 MB under all conditions (typically ~34 MB idle, ~43 MB under heavy load). Measured with all nine agents (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, Antigravity) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed benchmarks.
 
 ---
 
@@ -319,6 +321,7 @@ Additional environment variables:
 | `GEMINI_ACCESS_TOKEN`    | Gemini OAuth access token (for Docker/headless)          |
 | `GEMINI_CLIENT_ID`       | Custom OAuth client ID (optional, has defaults)          |
 | `GEMINI_CLIENT_SECRET`   | Custom OAuth client secret (optional, has defaults)      |
+| `CURSOR_TOKEN`           | Cursor access token (auto-detected from Cursor Desktop)|
 | `ANTIGRAVITY_ENABLED`    | Enable Antigravity provider (auto-detects local server)|
 | `ANTIGRAVITY_BASE_URL`   | Antigravity base URL (for Docker/manual config)        |
 | `ANTIGRAVITY_CSRF_TOKEN` | Antigravity CSRF token (for Docker/manual config)      |
@@ -340,7 +343,7 @@ CLI flags override environment variables.
 
 ## API Endpoints
 
-All endpoints require authentication (session cookie or Basic Auth). Append `?provider=synthetic|zai|anthropic|codex|copilot|minimax|gemini|antigravity|both` to select the provider.
+All endpoints require authentication (session cookie or Basic Auth). Append `?provider=synthetic|zai|anthropic|codex|copilot|minimax|gemini|cursor|antigravity|both` to select the provider.
 
 | Endpoint                        | Method      | Description                                    |
 | ------------------------------- | ----------- | ---------------------------------------------- |
