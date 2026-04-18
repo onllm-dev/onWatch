@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -319,4 +320,79 @@ func ParseMiniMaxResponse(data []byte) (*MiniMaxRemainsResponse, error) {
 // MiniMaxDisplayName returns a human-readable model label.
 func MiniMaxDisplayName(key string) string {
 	return key
+}
+
+// MiniMaxQuotaGroup represents models sharing the same quota pool.
+type MiniMaxQuotaGroup struct {
+	Quota      MiniMaxModelQuota // Representative quota values
+	ModelNames []string          // All model names in this group
+}
+
+// GroupByPool groups models that share the same quota pool based on matching
+// total, used, remain, and reset time. Returns one group per distinct pool.
+func (s *MiniMaxSnapshot) GroupByPool() []MiniMaxQuotaGroup {
+	if s == nil || len(s.Models) == 0 {
+		return nil
+	}
+
+	type poolKey struct {
+		total   int
+		used    int
+		remain  int
+		resetAt int64
+	}
+
+	keyFor := func(m MiniMaxModelQuota) poolKey {
+		var ra int64
+		if m.ResetAt != nil {
+			ra = m.ResetAt.Unix()
+		}
+		return poolKey{total: m.Total, used: m.Used, remain: m.Remain, resetAt: ra}
+	}
+
+	var keys []poolKey
+	groups := make(map[poolKey]*MiniMaxQuotaGroup)
+
+	for _, m := range s.Models {
+		if m.Total == 0 && m.Used == 0 {
+			continue
+		}
+		k := keyFor(m)
+		if g, ok := groups[k]; ok {
+			g.ModelNames = append(g.ModelNames, m.ModelName)
+		} else {
+			keys = append(keys, k)
+			groups[k] = &MiniMaxQuotaGroup{
+				Quota:      m,
+				ModelNames: []string{m.ModelName},
+			}
+		}
+	}
+
+	result := make([]MiniMaxQuotaGroup, 0, len(keys))
+	for _, k := range keys {
+		g := groups[k]
+		sort.Strings(g.ModelNames)
+		result = append(result, *g)
+	}
+	return result
+}
+
+// MiniMaxGroupDisplayName returns a purpose-based label for a group of models
+// sharing the same quota pool.
+func MiniMaxGroupDisplayName(models []string) string {
+	for _, m := range models {
+		low := strings.ToLower(m)
+		switch {
+		case strings.HasPrefix(low, "minimax-m"), strings.HasPrefix(low, "coding-plan"):
+			return "Coding"
+		case strings.Contains(low, "image"):
+			return "Image"
+		case strings.Contains(low, "music"), strings.Contains(low, "lyrics"):
+			return "Music"
+		case strings.Contains(low, "speech"):
+			return "Speech"
+		}
+	}
+	return models[0]
 }

@@ -1,6 +1,6 @@
 # Screenshots
 
-Dashboard screenshots captured from a live onWatch v2.11.0 instance with real Anthropic, Synthetic, Z.ai, Codex, GitHub Copilot (Beta), and Antigravity data. Each screenshot shows the top half of the dashboard (quota cards, usage insights, charts, and cycle history).
+Dashboard screenshots captured from live onWatch instances showing provider dashboards, API Integrations telemetry, and the macOS menubar companion. Each screenshot focuses on the top half of the dashboard or the relevant primary UI surface.
 
 ## Anthropic Provider
 
@@ -44,11 +44,18 @@ Dashboard screenshots captured from a live onWatch v2.11.0 instance with real An
 | `antigravity-light.png` | Antigravity dashboard in light mode. Shows grouped quota cards for Claude+GPT and Gemini models with logging history and cycle overview. |
 | `antigravity-dark.png` | Antigravity dashboard in dark mode. Features model-specific colors (coral for Claude, green for Gemini). |
 
+## API Integrations
+
+| File | Description |
+|------|-------------|
+| `api-integration-light.png` | API Integrations dashboard in light mode. Shows per-integration cards, all-time and recent usage insights, the shared usage chart, and ingest health for locally tailed JSONL telemetry. |
+| `api-integration-dark.png` | API Integrations dashboard in dark mode. Same layout with the API Integrations chart and health panels adapted for dark theme. |
+
 ## All Providers View
 
 | File | Description |
 |------|-------------|
-| `all-light.png` | All Providers view in light mode. Anthropic, Synthetic, Z.ai, Codex, GitHub Copilot (Beta), and Antigravity quotas side-by-side with combined insights. |
+| `all-light.png` | All Providers view in light mode. Anthropic, Synthetic, Z.ai, Codex, GitHub Copilot (Beta), Antigravity, and the API Integrations summary card side-by-side with combined insights. |
 | `all-dark.png` | All Providers view in dark mode. |
 
 ## Menubar Companion (macOS, Beta)

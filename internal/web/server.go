@@ -3,6 +3,7 @@ package web
 import (
 	"compress/gzip"
 	"context"
+	"crypto/subtle"
 	"embed"
 	"io"
 	"io/fs"
@@ -32,7 +33,8 @@ type Server struct {
 // NewServer creates a new Server instance.
 // passwordHash should be a SHA-256 hex hash of the admin password.
 // basePath is the URL prefix for subdirectory hosting (e.g. "/onwatch"), empty for root.
-func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwordHash, host, basePath string) *Server {
+// metricsToken is the bearer token for /metrics endpoint (can be empty to disable auth).
+func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwordHash, host, basePath, metricsToken string) *Server {
 	if port == 0 {
 		port = 9211 // default port
 	}
@@ -94,12 +96,26 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	})
 	mux.HandleFunc(p("/api/minimax/accounts"), handler.MiniMaxAccounts)
 	mux.HandleFunc(p("/api/minimax/accounts/usage"), handler.MiniMaxAccountsUsage)
+	mux.HandleFunc(p("/api/api-integrations/current"), handler.APIIntegrationsCurrent)
+	mux.HandleFunc(p("/api/api-integrations/history"), handler.APIIntegrationsHistory)
+	mux.HandleFunc(p("/api/api-integrations/health"), handler.APIIntegrationsHealth)
 
 	// System alerts (in-dashboard notifications)
 	mux.HandleFunc(p("/api/alerts"), handler.SystemAlerts)
 	mux.HandleFunc(p("/api/alerts/dismiss"), handler.DismissAlert)
 	mux.HandleFunc(p("/api/alerts/dismiss-all"), handler.DismissAllAlerts)
 	mux.HandleFunc(p("/api/alerts/simulate"), handler.SimulateAlert)
+
+	// Prometheus metrics endpoint (public, with bearer token auth)
+	if handler.metrics != nil {
+		var metricsHandler http.Handler = http.HandlerFunc(handler.Metrics)
+		if metricsToken != "" {
+			metricsHandler = metricsAuthMiddleware(metricsToken, metricsHandler)
+		} else if logger != nil {
+			logger.Warn("metrics endpoint is unauthenticated; set ONWATCH_METRICS_TOKEN to restrict /metrics access")
+		}
+		mux.Handle(p("/metrics"), metricsHandler)
+	}
 
 	// Service worker (served with base path scope)
 	mux.HandleFunc(p("/sw.js"), func(w http.ResponseWriter, r *http.Request) {
@@ -274,6 +290,23 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 func (s *Server) Start() error {
 	s.logger.Info("starting web server", "addr", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
+}
+
+// metricsAuthMiddleware requires a bearer token on /metrics endpoint.
+func metricsAuthMiddleware(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		provided := auth[7:]
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Shutdown gracefully shuts down the server

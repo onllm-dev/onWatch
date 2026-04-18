@@ -24,6 +24,7 @@ func newTestGeminiStore(t *testing.T) *store.Store {
 }
 
 func TestGeminiAgent_Poll(t *testing.T) {
+	t.Parallel()
 	quotaResp := api.GeminiQuotaResponse{
 		Quotas: []api.GeminiQuotaBucket{
 			{RemainingFraction: 0.993, ResetTime: "2026-03-18T10:00:00Z", ModelID: "gemini-2.5-flash"},
@@ -78,6 +79,7 @@ func TestGeminiAgent_Poll(t *testing.T) {
 }
 
 func TestGeminiAgent_AuthFailurePause(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
@@ -109,6 +111,7 @@ func TestGeminiAgent_AuthFailurePause(t *testing.T) {
 }
 
 func TestGeminiAgent_SetNotifier(t *testing.T) {
+	t.Parallel()
 	agent := NewGeminiAgent(nil, nil, nil, time.Second, nil, nil)
 	// Should not panic
 	agent.SetNotifier(nil)
@@ -118,6 +121,7 @@ func TestGeminiAgent_SetNotifier(t *testing.T) {
 // TestGeminiAgent_TokenPersistenceOnRefresh verifies that after an OAuth token refresh,
 // tokens are persisted to the DB so they survive container restarts.
 func TestGeminiAgent_TokenPersistenceOnRefresh(t *testing.T) {
+	t.Parallel()
 	refreshedAccessToken := "refreshed-access-token-xyz"
 	originalRefreshToken := "original-refresh-token-abc"
 	quotaCallCount := 0

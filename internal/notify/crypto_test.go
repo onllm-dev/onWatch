@@ -7,6 +7,7 @@ import (
 )
 
 func TestGenerateEncryptionKey_Length(t *testing.T) {
+	t.Parallel()
 	key, err := GenerateEncryptionKey()
 	if err != nil {
 		t.Fatalf("GenerateEncryptionKey failed: %v", err)
@@ -28,6 +29,7 @@ func TestGenerateEncryptionKey_Length(t *testing.T) {
 }
 
 func TestGenerateEncryptionKey_Unique(t *testing.T) {
+	t.Parallel()
 	keys := make(map[string]bool)
 	for i := 0; i < 10; i++ {
 		key, err := GenerateEncryptionKey()
@@ -42,6 +44,7 @@ func TestGenerateEncryptionKey_Unique(t *testing.T) {
 }
 
 func TestEncryptDecrypt_RoundTrip(t *testing.T) {
+	t.Parallel()
 	key, err := GenerateEncryptionKey()
 	if err != nil {
 		t.Fatalf("GenerateEncryptionKey failed: %v", err)
@@ -82,6 +85,7 @@ func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 }
 
 func TestEncrypt_DifferentCiphertexts(t *testing.T) {
+	t.Parallel()
 	key, err := GenerateEncryptionKey()
 	if err != nil {
 		t.Fatalf("GenerateEncryptionKey failed: %v", err)
@@ -111,6 +115,7 @@ func TestEncrypt_DifferentCiphertexts(t *testing.T) {
 }
 
 func TestDecrypt_WrongKey(t *testing.T) {
+	t.Parallel()
 	key1, _ := GenerateEncryptionKey()
 	key2, _ := GenerateEncryptionKey()
 
@@ -126,6 +131,7 @@ func TestDecrypt_WrongKey(t *testing.T) {
 }
 
 func TestDecrypt_InvalidCiphertext(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateEncryptionKey()
 
 	tests := []struct {
@@ -149,6 +155,7 @@ func TestDecrypt_InvalidCiphertext(t *testing.T) {
 }
 
 func TestEncrypt_InvalidKey(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		key  string
@@ -170,6 +177,7 @@ func TestEncrypt_InvalidKey(t *testing.T) {
 }
 
 func TestDecrypt_InvalidKey(t *testing.T) {
+	t.Parallel()
 	// First encrypt with a valid key
 	validKey, _ := GenerateEncryptionKey()
 	ciphertext, _ := Encrypt("test", validKey)
@@ -194,6 +202,7 @@ func TestDecrypt_InvalidKey(t *testing.T) {
 }
 
 func TestEncryptForStorage_RoundTrip(t *testing.T) {
+	t.Parallel()
 	key, err := GenerateEncryptionKey()
 	if err != nil {
 		t.Fatalf("GenerateEncryptionKey failed: %v", err)
@@ -221,6 +230,7 @@ func TestEncryptForStorage_RoundTrip(t *testing.T) {
 }
 
 func TestDecryptFromStorage_PlaintextPassthrough(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateEncryptionKey()
 
 	// Value without "enc:" prefix should be returned as-is
@@ -235,6 +245,7 @@ func TestDecryptFromStorage_PlaintextPassthrough(t *testing.T) {
 }
 
 func TestDecryptFromStorage_EmptyString(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateEncryptionKey()
 
 	result, err := DecryptFromStorage("", key)
@@ -247,6 +258,7 @@ func TestDecryptFromStorage_EmptyString(t *testing.T) {
 }
 
 func TestIsEncryptedValue(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		value string
@@ -268,6 +280,7 @@ func TestIsEncryptedValue(t *testing.T) {
 }
 
 func TestEncryptForStorage_InvalidKey(t *testing.T) {
+	t.Parallel()
 	_, err := EncryptForStorage("test", "bad-key")
 	if err == nil {
 		t.Error("Expected error for invalid key")
@@ -275,6 +288,7 @@ func TestEncryptForStorage_InvalidKey(t *testing.T) {
 }
 
 func TestDecryptFromStorage_InvalidEncrypted(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateEncryptionKey()
 
 	// Has the prefix but not valid ciphertext
@@ -285,6 +299,7 @@ func TestDecryptFromStorage_InvalidEncrypted(t *testing.T) {
 }
 
 func TestEncryptDecrypt_WithAAD(t *testing.T) {
+	t.Parallel()
 	key, err := GenerateEncryptionKey()
 	if err != nil {
 		t.Fatalf("GenerateEncryptionKey failed: %v", err)

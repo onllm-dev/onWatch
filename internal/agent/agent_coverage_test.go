@@ -41,6 +41,7 @@ func waitUntil(t *testing.T, timeout time.Duration, condition func() bool, descr
 }
 
 func TestConstructors_DefaultLogger_WhenNil(t *testing.T) {
+	t.Parallel()
 	str, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -81,6 +82,7 @@ func TestConstructors_DefaultLogger_WhenNil(t *testing.T) {
 }
 
 func TestAgent_SetPollingCheck_DisablesPolling(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := testResponse()
 		w.Header().Set("Content-Type", "application/json")
@@ -121,6 +123,7 @@ func TestAgent_SetPollingCheck_DisablesPolling(t *testing.T) {
 }
 
 func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
+	t.Parallel()
 	requestReceived := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -208,6 +211,7 @@ func TestAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 }
 
 func TestAnthropicAgent_SetPollingCheck_DisablesPolling(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(anthropicResponse(45.2, 12.8)))
@@ -244,6 +248,7 @@ func TestAnthropicAgent_SetPollingCheck_DisablesPolling(t *testing.T) {
 }
 
 func TestAnthropicAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(anthropicResponse(85.0, 30.0)))
@@ -286,6 +291,7 @@ func TestAnthropicAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 }
 
 func TestAnthropicAgent_SetCredentialsRefresh(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(anthropicResponse(45.2, 12.8)))
@@ -337,6 +343,7 @@ func TestAnthropicAgent_SetCredentialsRefresh(t *testing.T) {
 }
 
 func TestCopilotAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
+	t.Parallel()
 	ag, st, _ := setupCopilotTest(t)
 
 	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
@@ -364,6 +371,7 @@ func TestCopilotAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 }
 
 func TestCodexAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
+	t.Parallel()
 	ag, st, _ := setupCodexTest(t)
 
 	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
@@ -391,6 +399,7 @@ func TestCodexAgent_SetNotifier_NotifierCalledDuringPoll(t *testing.T) {
 }
 
 func TestZaiAgent_SetPollingCheck_DisablesPolling(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(zaiResponse(200000000, 50000000, 1000, 19)))
@@ -427,6 +436,7 @@ func TestZaiAgent_SetPollingCheck_DisablesPolling(t *testing.T) {
 }
 
 func TestCodexAgent_SetCredentialsRefresh(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":45.2,"reset_at":1766000000,"limit_window_seconds":18000}}}`))

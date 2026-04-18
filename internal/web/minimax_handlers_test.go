@@ -69,6 +69,7 @@ func sharedMiniMaxSnapshotWithWindow(capturedAt time.Time, used int, windowStart
 }
 
 func TestBuildMiniMaxCurrent_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -105,7 +106,7 @@ func TestBuildMiniMaxCurrent_SharedQuota(t *testing.T) {
 		t.Fatalf("quotas=%d, want 1", len(resp.Quotas))
 	}
 	quota := resp.Quotas[0]
-	if quota.Name != "MiniMax Coding Plan" || quota.DisplayName != "MiniMax Coding Plan" {
+	if quota.Name != "Coding" || quota.DisplayName != "Coding" {
 		t.Fatalf("unexpected merged quota identity: %+v", quota)
 	}
 	if quota.Used != 1 || quota.Remaining != 1499 || quota.Total != 1500 {
@@ -114,6 +115,7 @@ func TestBuildMiniMaxCurrent_SharedQuota(t *testing.T) {
 }
 
 func TestSessionsMiniMax_SharedQuotaFromSnapshots(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -175,6 +177,7 @@ func TestSessionsMiniMax_SharedQuotaFromSnapshots(t *testing.T) {
 }
 
 func TestHistoryMiniMax_SharedQuotaSeries(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -202,7 +205,7 @@ func TestHistoryMiniMax_SharedQuotaSeries(t *testing.T) {
 		t.Fatal("expected history rows")
 	}
 	for _, row := range rows {
-		if _, ok := row["MiniMax Coding Plan"]; !ok {
+		if _, ok := row["Coding"]; !ok {
 			t.Fatalf("expected merged series key in row: %v", row)
 		}
 		if _, ok := row["MiniMax-M2"]; ok {
@@ -212,6 +215,7 @@ func TestHistoryMiniMax_SharedQuotaSeries(t *testing.T) {
 }
 
 func TestBuildMiniMaxInsights_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -247,7 +251,7 @@ func TestBuildMiniMaxInsights_SharedQuota(t *testing.T) {
 		switch insight.Key {
 		case "shared_status":
 			foundStatus = true
-			if insight.Title != "MiniMax Coding Plan: Healthy" {
+			if insight.Title != "Coding: Healthy" {
 				t.Fatalf("insight.Title=%q", insight.Title)
 			}
 			if insight.Metric == "" || insight.Desc == "" {
@@ -266,6 +270,7 @@ func TestBuildMiniMaxInsights_SharedQuota(t *testing.T) {
 }
 
 func TestBuildMiniMaxSummaryMap_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -304,7 +309,7 @@ func TestBuildMiniMaxSummaryMap_SharedQuota(t *testing.T) {
 	if err := json.Unmarshal(body, &summary); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if summary.ModelName != "MiniMax Coding Plan" || summary.DisplayName != "MiniMax Coding Plan" {
+	if summary.ModelName != "Coding" || summary.DisplayName != "Coding" {
 		t.Fatalf("unexpected summary identity: %+v", summary)
 	}
 	if summary.CurrentUsed != 1 || summary.CurrentRemain != 1499 {
@@ -313,6 +318,7 @@ func TestBuildMiniMaxSummaryMap_SharedQuota(t *testing.T) {
 }
 
 func TestLoggingHistoryMiniMax_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -346,18 +352,19 @@ func TestLoggingHistoryMiniMax_SharedQuota(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if len(resp.QuotaNames) != 1 || resp.QuotaNames[0] != "coding_plan" {
+	if len(resp.QuotaNames) != 1 || resp.QuotaNames[0] != "Coding" {
 		t.Fatalf("unexpected quota names: %+v", resp.QuotaNames)
 	}
 	if len(resp.Logs) == 0 || len(resp.Logs[0].CrossQuotas) != 1 {
 		t.Fatalf("expected merged MiniMax log rows, got %+v", resp.Logs)
 	}
-	if resp.Logs[0].CrossQuotas[0].Name != "coding_plan" {
+	if resp.Logs[0].CrossQuotas[0].Name != "Coding" {
 		t.Fatalf("unexpected merged quota name: %+v", resp.Logs[0].CrossQuotas[0])
 	}
 }
 
 func TestCycleOverviewMiniMax_SharedQuota(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -400,18 +407,19 @@ func TestCycleOverviewMiniMax_SharedQuota(t *testing.T) {
 	if resp.GroupBy != "coding_plan" {
 		t.Fatalf("groupBy=%q, want coding_plan", resp.GroupBy)
 	}
-	if len(resp.QuotaNames) != 1 || resp.QuotaNames[0] != "coding_plan" {
+	if len(resp.QuotaNames) != 1 || resp.QuotaNames[0] != "Coding" {
 		t.Fatalf("unexpected quota names: %+v", resp.QuotaNames)
 	}
 	if len(resp.Cycles) == 0 || resp.Cycles[0].QuotaType != "coding_plan" {
 		t.Fatalf("expected merged cycle rows, got %+v", resp.Cycles)
 	}
-	if len(resp.Cycles[0].CrossQuotas) != 1 || resp.Cycles[0].CrossQuotas[0].Name != "coding_plan" {
+	if len(resp.Cycles[0].CrossQuotas) != 1 || resp.Cycles[0].CrossQuotas[0].Name != "Coding" {
 		t.Fatalf("expected merged cross quota entry, got %+v", resp.Cycles[0].CrossQuotas)
 	}
 }
 
 func TestHistoryBoth_MiniMaxSharedQuotaSeries(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -442,7 +450,7 @@ func TestHistoryBoth_MiniMaxSharedQuotaSeries(t *testing.T) {
 		t.Fatal("expected combined MiniMax history")
 	}
 	for _, row := range resp.MiniMax {
-		if _, ok := row["MiniMax Coding Plan"]; !ok {
+		if _, ok := row["Coding"]; !ok {
 			t.Fatalf("expected merged coding-plan key in combined history row: %v", row)
 		}
 		if _, ok := row["MiniMax-M2"]; ok {
@@ -454,6 +462,7 @@ func TestHistoryBoth_MiniMaxSharedQuotaSeries(t *testing.T) {
 // ── Account CRUD Handler Tests ──
 
 func TestMiniMaxAccounts_ListEmpty(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -485,6 +494,7 @@ func TestMiniMaxAccounts_ListEmpty(t *testing.T) {
 }
 
 func TestMiniMaxAccounts_CreateAndList(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -533,6 +543,7 @@ func TestMiniMaxAccounts_CreateAndList(t *testing.T) {
 }
 
 func TestMiniMaxAccounts_Update(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -584,6 +595,7 @@ func TestMiniMaxAccounts_Update(t *testing.T) {
 }
 
 func TestMiniMaxAccounts_Delete(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -630,6 +642,7 @@ func TestMiniMaxAccounts_Delete(t *testing.T) {
 }
 
 func TestMiniMaxAccounts_ValidationErrors(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -673,6 +686,7 @@ func TestMiniMaxAccounts_ValidationErrors(t *testing.T) {
 }
 
 func TestMiniMaxAccountsUsage_MultiAccount(t *testing.T) {
+	t.Parallel()
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)

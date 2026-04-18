@@ -53,6 +53,7 @@ func setTestEncryptionSalt(t *testing.T, salt []byte) {
 }
 
 func TestSetAndGetEncryptionSalt(t *testing.T) {
+	t.Parallel()
 	setTestEncryptionSalt(t, []byte("abcdefghijklmnop"))
 
 	got := GetEncryptionSalt()
@@ -62,6 +63,7 @@ func TestSetAndGetEncryptionSalt(t *testing.T) {
 }
 
 func TestGenerateEncryptionSalt_BasicBehavior(t *testing.T) {
+	t.Parallel()
 	salt, err := GenerateEncryptionSalt()
 	if err != nil {
 		t.Fatalf("GenerateEncryptionSalt() error = %v", err)
@@ -72,6 +74,7 @@ func TestGenerateEncryptionSalt_BasicBehavior(t *testing.T) {
 }
 
 func TestDeriveEncryptionKey_WithExplicitSalt(t *testing.T) {
+	t.Parallel()
 	setTestEncryptionSalt(t, []byte("different-package-salt"))
 
 	explicitSalt := []byte("1234567890abcdef")
@@ -94,6 +97,7 @@ func TestDeriveEncryptionKey_WithExplicitSalt(t *testing.T) {
 }
 
 func TestDeriveEncryptionKey_WithNilSalt_UsesPackageSalt(t *testing.T) {
+	t.Parallel()
 	salt := []byte("abcdefghijklmnop")
 	setTestEncryptionSalt(t, salt)
 
@@ -107,6 +111,7 @@ func TestDeriveEncryptionKey_WithNilSalt_UsesPackageSalt(t *testing.T) {
 }
 
 func TestDeriveEncryptionKey_LegacyFallback_RawSHA256Hash(t *testing.T) {
+	t.Parallel()
 	setTestEncryptionSalt(t, nil)
 
 	passwordHash := "not-a-64-char-hash"
@@ -120,6 +125,7 @@ func TestDeriveEncryptionKey_LegacyFallback_RawSHA256Hash(t *testing.T) {
 }
 
 func TestDeriveEncryptionKey_LegacyFallback_Already64Chars(t *testing.T) {
+	t.Parallel()
 	setTestEncryptionSalt(t, nil)
 
 	passwordHash := strings.Repeat("a", 64)
@@ -130,6 +136,7 @@ func TestDeriveEncryptionKey_LegacyFallback_Already64Chars(t *testing.T) {
 }
 
 func TestIsEncryptedValue_Wrapper(t *testing.T) {
+	t.Parallel()
 	if !IsEncryptedValue("enc:abc") {
 		t.Fatal("IsEncryptedValue() should return true for notify encrypted prefix")
 	}
@@ -139,6 +146,7 @@ func TestIsEncryptedValue_Wrapper(t *testing.T) {
 }
 
 func TestReEncryptAllData_SameKeySkips(t *testing.T) {
+	t.Parallel()
 	setTestEncryptionSalt(t, []byte("abcdefghijklmnop"))
 	store := newMemorySettingStore()
 	store.settings["smtp"] = `{"password":"plain"}`
@@ -153,6 +161,7 @@ func TestReEncryptAllData_SameKeySkips(t *testing.T) {
 }
 
 func TestReEncryptAllData_CollectsSMTPError(t *testing.T) {
+	t.Parallel()
 	setTestEncryptionSalt(t, []byte("abcdefghijklmnop"))
 	store := newMemorySettingStore()
 	store.settings["smtp"] = "not-json"
@@ -168,6 +177,7 @@ func TestReEncryptAllData_CollectsSMTPError(t *testing.T) {
 }
 
 func TestReEncryptAllData_Success(t *testing.T) {
+	t.Parallel()
 	setTestEncryptionSalt(t, []byte("abcdefghijklmnop"))
 	store := newMemorySettingStore()
 
@@ -198,6 +208,7 @@ func TestReEncryptAllData_Success(t *testing.T) {
 }
 
 func TestReEncryptSMTPPassword_Branches(t *testing.T) {
+	t.Parallel()
 	setTestEncryptionSalt(t, []byte("abcdefghijklmnop"))
 	oldKey := DeriveEncryptionKey("old-hash", nil)
 	newKey := DeriveEncryptionKey("new-hash", nil)

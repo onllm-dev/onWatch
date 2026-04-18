@@ -26,6 +26,7 @@ func makeModel(id, label string, remaining float64, resetTime *time.Time) api.An
 }
 
 func TestAntigravityTracker_FirstSnapshot_CreatesCycle(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -50,6 +51,7 @@ func TestAntigravityTracker_FirstSnapshot_CreatesCycle(t *testing.T) {
 }
 
 func TestAntigravityTracker_UsageIncrement_UpdatesDelta(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -83,6 +85,7 @@ func TestAntigravityTracker_UsageIncrement_UpdatesDelta(t *testing.T) {
 }
 
 func TestAntigravityTracker_DetectsReset_ResetTimeChanged(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -120,6 +123,7 @@ func TestAntigravityTracker_DetectsReset_ResetTimeChanged(t *testing.T) {
 }
 
 func TestAntigravityTracker_DetectsReset_FractionIncreased(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -149,6 +153,7 @@ func TestAntigravityTracker_DetectsReset_FractionIncreased(t *testing.T) {
 }
 
 func TestAntigravityTracker_DetectsReset_TimeBasedResetTimePassed(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -178,6 +183,7 @@ func TestAntigravityTracker_DetectsReset_TimeBasedResetTimePassed(t *testing.T) 
 }
 
 func TestAntigravityTracker_MultipleModels_IndependentCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -215,6 +221,7 @@ func TestAntigravityTracker_MultipleModels_IndependentCycles(t *testing.T) {
 }
 
 func TestAntigravityTracker_EmptyModelID_Skipped(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -231,6 +238,7 @@ func TestAntigravityTracker_EmptyModelID_Skipped(t *testing.T) {
 }
 
 func TestAntigravityTracker_SetOnReset_Called(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -261,6 +269,7 @@ func TestAntigravityTracker_SetOnReset_Called(t *testing.T) {
 }
 
 func TestAntigravityTracker_PeakTracking(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -287,6 +296,7 @@ func TestAntigravityTracker_PeakTracking(t *testing.T) {
 }
 
 func TestAntigravityTracker_UsageSummary_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -306,6 +316,7 @@ func TestAntigravityTracker_UsageSummary_NoCycles(t *testing.T) {
 }
 
 func TestAntigravityTracker_UsageSummary_WithCompletedCycle(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -348,6 +359,7 @@ func TestAntigravityTracker_UsageSummary_WithCompletedCycle(t *testing.T) {
 }
 
 func TestAntigravityTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithoutDelta(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -380,6 +392,7 @@ func TestAntigravityTracker_Process_ExistingCycleAfterRestart_UpdatesPeakWithout
 }
 
 func TestAntigravityTracker_UsageSummary_UsesSnapshotResetFallbackAndCapsNegativeDuration(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -420,6 +433,7 @@ func TestAntigravityTracker_UsageSummary_UsesSnapshotResetFallbackAndCapsNegativ
 }
 
 func TestAntigravityTracker_UsageSummary_CalculatesRateAndClampsProjection(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 

@@ -42,6 +42,7 @@ func runOnMainThread(t *testing.T, fn func()) {
 }
 
 func TestNewMenubarPopoverLifecycle(t *testing.T) {
+	t.Parallel()
 	var (
 		popover menubarPopover
 		err     error

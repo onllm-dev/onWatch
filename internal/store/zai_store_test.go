@@ -8,6 +8,7 @@ import (
 )
 
 func TestZaiStore_InsertAndQuerySnapshot(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -67,6 +68,7 @@ func TestZaiStore_InsertAndQuerySnapshot(t *testing.T) {
 }
 
 func TestZaiStore_QueryLatestZai_EmptyDB(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -83,6 +85,7 @@ func TestZaiStore_QueryLatestZai_EmptyDB(t *testing.T) {
 }
 
 func TestZaiStore_QueryZaiRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -124,6 +127,7 @@ func TestZaiStore_QueryZaiRange(t *testing.T) {
 }
 
 func TestZaiStore_QueryZaiRange_Empty(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -161,6 +165,7 @@ func TestZaiStore_QueryZaiRange_Empty(t *testing.T) {
 }
 
 func TestZaiStore_QueryZaiRange_WithLimitReturnsLatestChronological(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -206,6 +211,7 @@ func TestZaiStore_QueryZaiRange_WithLimitReturnsLatestChronological(t *testing.T
 }
 
 func TestZaiStore_CreateAndCloseCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -274,6 +280,7 @@ func TestZaiStore_CreateAndCloseCycle(t *testing.T) {
 }
 
 func TestZaiStore_CreateCycleWithNextReset(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -306,6 +313,7 @@ func TestZaiStore_CreateCycleWithNextReset(t *testing.T) {
 }
 
 func TestZaiStore_UpdateCycle(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -350,6 +358,7 @@ func TestZaiStore_UpdateCycle(t *testing.T) {
 }
 
 func TestZaiStore_InsertAndQueryHourlyUsage(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -394,6 +403,7 @@ func TestZaiStore_InsertAndQueryHourlyUsage(t *testing.T) {
 }
 
 func TestZaiStore_UpdateHourlyUsage(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -432,6 +442,7 @@ func TestZaiStore_UpdateHourlyUsage(t *testing.T) {
 }
 
 func TestZaiStore_QueryHourlyUsageRange(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -467,6 +478,7 @@ func TestZaiStore_QueryHourlyUsageRange(t *testing.T) {
 }
 
 func TestZaiStore_SnapshotWithoutReset(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
@@ -510,6 +522,7 @@ func TestZaiStore_SnapshotWithoutReset(t *testing.T) {
 }
 
 func TestZaiStore_MultipleSnapshots(t *testing.T) {
+	t.Parallel()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)

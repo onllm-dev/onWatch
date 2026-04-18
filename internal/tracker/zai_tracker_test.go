@@ -30,6 +30,7 @@ func makeZaiSnapshot(capturedAt time.Time, tokensValue float64, timeValue float6
 }
 
 func TestZaiTracker_FirstSnapshot_CreatesTwoCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -55,6 +56,7 @@ func TestZaiTracker_FirstSnapshot_CreatesTwoCycles(t *testing.T) {
 }
 
 func TestZaiTracker_TokensIncrement_UpdatesDelta(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -83,6 +85,7 @@ func TestZaiTracker_TokensIncrement_UpdatesDelta(t *testing.T) {
 }
 
 func TestZaiTracker_DetectsTokensReset(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -116,6 +119,7 @@ func TestZaiTracker_DetectsTokensReset(t *testing.T) {
 }
 
 func TestZaiTracker_DetectsTimeReset_ValueDrop(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -148,6 +152,7 @@ func TestZaiTracker_DetectsTimeReset_ValueDrop(t *testing.T) {
 }
 
 func TestZaiTracker_NegativeDelta_Ignored(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -175,6 +180,7 @@ func TestZaiTracker_NegativeDelta_Ignored(t *testing.T) {
 }
 
 func TestZaiTracker_PeakTracking(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -196,6 +202,7 @@ func TestZaiTracker_PeakTracking(t *testing.T) {
 }
 
 func TestZaiTracker_SetOnReset_Called(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -222,6 +229,7 @@ func TestZaiTracker_SetOnReset_Called(t *testing.T) {
 }
 
 func TestZaiTracker_UsageSummary_NoCycles(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 
@@ -241,6 +249,7 @@ func TestZaiTracker_UsageSummary_NoCycles(t *testing.T) {
 }
 
 func TestZaiTracker_UsageSummary_WithCompletedCycle(t *testing.T) {
+	t.Parallel()
 	s, _ := store.New(":memory:")
 	defer s.Close()
 

@@ -6,6 +6,7 @@ import (
 )
 
 func TestDiscardLogger_ReturnsLogger(t *testing.T) {
+	t.Parallel()
 	logger := DiscardLogger()
 	if logger == nil {
 		t.Fatal("expected non-nil logger")
@@ -14,6 +15,7 @@ func TestDiscardLogger_ReturnsLogger(t *testing.T) {
 }
 
 func TestInMemoryStore_CreatesEmptyQueryableStore(t *testing.T) {
+	t.Parallel()
 	s := InMemoryStore(t)
 	latest, err := s.QueryLatest()
 	if err != nil {
@@ -25,6 +27,7 @@ func TestInMemoryStore_CreatesEmptyQueryableStore(t *testing.T) {
 }
 
 func TestInMemoryStoreWithSnapshots_PopulatesAllProviders(t *testing.T) {
+	t.Parallel()
 	s := InMemoryStoreWithSnapshots(t, 3, 2, 2, 2)
 
 	now := time.Now().UTC()
@@ -80,6 +83,7 @@ func TestInMemoryStoreWithSnapshots_PopulatesAllProviders(t *testing.T) {
 }
 
 func TestInMemoryStoreWithSnapshots_AllowsOmittingOptionalCopilotSnapshots(t *testing.T) {
+	t.Parallel()
 	s := InMemoryStoreWithSnapshots(t, 1, 1, 1)
 
 	start := time.Now().UTC().Add(-10 * time.Minute)
@@ -94,6 +98,7 @@ func TestInMemoryStoreWithSnapshots_AllowsOmittingOptionalCopilotSnapshots(t *te
 }
 
 func TestTestConfig_UsesBaseURLAndTestingDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := TestConfig("http://example.test")
 
 	if cfg.ZaiBaseURL != "http://example.test" {
@@ -108,6 +113,7 @@ func TestTestConfig_UsesBaseURLAndTestingDefaults(t *testing.T) {
 }
 
 func TestTestHandler_ReturnsConfiguredHandlerAndStore(t *testing.T) {
+	t.Parallel()
 	h, s := TestHandler(t)
 	if h == nil {
 		t.Fatal("expected handler")

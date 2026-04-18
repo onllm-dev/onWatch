@@ -1043,6 +1043,11 @@ func run() error {
 		})
 	}
 
+	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
+	if cfg.APIIntegrationsEnabled {
+		apiIntegrationsAg = agent.NewAPIIntegrationsIngestAgent(db, cfg.APIIntegrationsDir, cfg.APIIntegrationsRetention, logger)
+	}
+
 	// Create notification engine
 	notifier := notify.New(db, logger)
 	notifier.SetEncryptionKey(deriveEncryptionKey(cfg.AdminPassHash))
@@ -1295,6 +1300,10 @@ func run() error {
 	if cursorAg != nil {
 		agentMgr.RegisterFactory("cursor", func() (agent.AgentRunner, error) { return cursorAg, nil })
 	}
+
+	if apiIntegrationsAg != nil {
+		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
+	}
 	handler.SetAgentManager(agentMgr)
 	if minimaxMgr != nil {
 		handler.SetMiniMaxAgentManager(minimaxMgr)
@@ -1306,7 +1315,7 @@ func run() error {
 	loginRateLimiter := web.NewLoginRateLimiter(1000)
 	handler.SetRateLimiter(loginRateLimiter)
 
-	server := web.NewServer(cfg.Port, handler, logger, cfg.AdminUser, cfg.AdminPassHash, cfg.Host, cfg.BasePath)
+	server := web.NewServer(cfg.Port, handler, logger, cfg.AdminUser, cfg.AdminPassHash, cfg.Host, cfg.BasePath, cfg.MetricsToken)
 
 	// Setup signal handling
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1324,6 +1333,11 @@ func run() error {
 		if err := agentMgr.Start(providerKey); err == nil {
 			startedAny = true
 			continue
+		}
+	}
+	if apiIntegrationsAg != nil {
+		if err := agentMgr.Start("api_integrations"); err == nil {
+			startedAny = true
 		}
 	}
 	if !startedAny {

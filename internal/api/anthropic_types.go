@@ -52,8 +52,20 @@ func AnthropicDisplayName(key string) string {
 	return key
 }
 
+// IsKnownAnthropicQuota reports whether the given quota key is in the whitelist.
+// Used by both the write path (to filter out experimental keys before storage)
+// and read paths (to hide historical rows written before the whitelist existed).
+func IsKnownAnthropicQuota(key string) bool {
+	_, ok := anthropicDisplayNames[key]
+	return ok
+}
+
 // ActiveQuotaNames returns sorted names of quotas that are active (non-null utilization,
 // and not disabled via is_enabled=false). extra_usage with is_enabled=false is skipped.
+// Unknown/experimental quota keys returned by the Anthropic API (e.g.
+// seven_day_omelette, omelette_promotional, iguana_necktie, seven_day_cowork,
+// seven_day_oauth_apps) are filtered out so they never reach storage or the UI.
+// To support a new quota, add it to anthropicDisplayNames above.
 func (r AnthropicQuotaResponse) ActiveQuotaNames() []string {
 	var names []string
 	for key, entry := range r {
@@ -62,6 +74,10 @@ func (r AnthropicQuotaResponse) ActiveQuotaNames() []string {
 		}
 		// Skip disabled quotas (e.g., extra_usage with is_enabled=false)
 		if entry.IsEnabled != nil && !*entry.IsEnabled {
+			continue
+		}
+		// Whitelist known quota keys; skip experimental/unknown keys.
+		if _, ok := anthropicDisplayNames[key]; !ok {
 			continue
 		}
 		names = append(names, key)

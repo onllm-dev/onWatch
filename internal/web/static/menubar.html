@@ -405,21 +405,22 @@
         }
 
         .promo-tag.promo-offpeak {
-            background: rgba(13, 148, 136, 0.15);
-            color: #0D9488;
+            background: transparent;
+            color: var(--text-muted);
+            padding: 0 4px;
         }
 
         .promo-tag.promo-offpeak:hover {
-            background: rgba(13, 148, 136, 0.25);
+            color: var(--text-primary);
         }
 
         .promo-tag.promo-peak {
-            background: rgba(245, 158, 11, 0.15);
-            color: #F59E0B;
+            background: rgba(239, 68, 68, 0.15);
+            color: #EF4444;
         }
 
         .promo-tag.promo-peak:hover {
-            background: rgba(245, 158, 11, 0.25);
+            background: rgba(239, 68, 68, 0.25);
         }
 
         .provider-updated {
@@ -2143,7 +2144,7 @@
                         <div class="provider-copy">
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
-                            ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
+                            ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
                         </div>
                         <span class="provider-updated">${escapeHTML(compactUpdatedLabel(provider.updated_at))}</span>
                     </div>
@@ -2743,29 +2744,29 @@
                 if (source.includes("gemini pro")) {
                     return "Pro";
                 }
-                if (source.includes("weekly all") || source.includes("weekly_minimax coding")) {
-                    return "Wkly All";
+                if (source.includes("wkly coding") || source.includes("wkly_coding") || source.includes("weekly_minimax coding") || source.includes("weekly all")) {
+                    return "Wkly Coding";
                 }
-                if (source.includes("weekly minimax-m") || source.includes("weekly_minimax-m")) {
-                    return "Wkly M*";
+                if (source.includes("wkly image") || source.includes("wkly_image") || source.includes("weekly_image") || source.includes("weekly image")) {
+                    return "Wkly Image";
                 }
-                if (source.includes("weekly image") || source.includes("weekly_image")) {
-                    return "Wkly Img";
+                if (source.includes("wkly music") || source.includes("wkly_music") || source.includes("weekly_music") || source.includes("weekly music")) {
+                    return "Wkly Music";
                 }
-                if (source.includes("weekly speech") || source.includes("weekly_speech")) {
-                    return "Wkly Spch";
-                }
-                if (source.includes("minimax-m") || source.includes("minimax_m")) {
-                    return "M*";
-                }
-                if (source.includes("image-01")) {
-                    return "image-01";
-                }
-                if (source.includes("speech-hd")) {
-                    return "speech-hd";
+                if (source.includes("wkly speech") || source.includes("wkly_speech") || source.includes("weekly_speech") || source.includes("weekly speech")) {
+                    return "Wkly Speech";
                 }
                 if (source.includes("coding")) {
                     return "Coding";
+                }
+                if (source.includes("image")) {
+                    return "Image";
+                }
+                if (source.includes("music")) {
+                    return "Music";
+                }
+                if (source.includes("speech")) {
+                    return "Speech";
                 }
                 if (source.includes("subscription")) {
                     return "Sub";
@@ -2938,7 +2939,7 @@
             }
 
             function promoLabel(promo) {
-                const label = isPromoOffPeak(promo) ? "2x limits" : "Peak hours";
+                const label = isPromoOffPeak(promo) ? "Off-peak" : "Peak hours";
                 const countdown = formatPromoCountdown(promoMinutesUntilTransition(promo));
                 return countdown ? label + " till " + countdown : label;
             }
