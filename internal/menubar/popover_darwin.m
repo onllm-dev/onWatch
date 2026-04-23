@@ -426,9 +426,20 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
   }
 
   if ([action isEqualToString:@"open_dashboard"]) {
-    NSURL *url = [NSURL URLWithString:@"http://localhost:9211"];
-    if (url) {
-      [[NSWorkspace sharedWorkspace] openURL:url];
+    // Derive the dashboard origin from the webview's own URL so we honor the
+    // runtime port (ONWATCH_PORT / --port) without threading it through CGO.
+    NSURL *current = self.webView.URL;
+    if (!current || ![self isLocalURL:current]) {
+      return;
+    }
+    NSURLComponents *components =
+        [NSURLComponents componentsWithURL:current resolvingAgainstBaseURL:NO];
+    components.path = @"";
+    components.query = nil;
+    components.fragment = nil;
+    NSURL *dashboardURL = components.URL;
+    if (dashboardURL) {
+      [[NSWorkspace sharedWorkspace] openURL:dashboardURL];
       [self close];
     }
   }
