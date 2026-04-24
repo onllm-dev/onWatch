@@ -7970,6 +7970,14 @@ async function loadSettings() {
     const tzSelect = document.getElementById('settings-timezone');
     if (tzSelect && data.timezone) { tzSelect.value = data.timezone; }
 
+    // Global dashboard display (usage vs available) - per-provider settings override this
+    const globalDisplayMode = document.getElementById('settings-global-display-mode');
+    if (globalDisplayMode) {
+      const gs = (data.global_settings && typeof data.global_settings === 'object') ? data.global_settings : {};
+      globalDisplayMode.value = (gs.display_mode === 'available') ? 'available' : 'usage';
+    }
+    State.globalSettings = (data.global_settings && typeof data.global_settings === 'object') ? data.global_settings : {};
+
     // SMTP
     if (data.smtp) {
       const s = data.smtp;
@@ -8787,7 +8795,7 @@ const providerSettingsConfig = {
       { id: 'display_mode', label: 'Quota Display', type: 'select', options: [
         { value: 'usage', text: 'Usage (show utilization %)' },
         { value: 'available', text: 'Available (show remaining %)' },
-      ], default: 'usage', hint: 'Choose how to display five_hour and seven_day quota usage.' },
+      ], default: 'usage', hint: 'Choose how to display five_hour and seven_day quota usage. Overrides the global Dashboard Display setting for Codex.' },
       { id: 'pace_mode', label: 'Weekly Pace Mode', type: 'select', options: [
         { value: 'calendar', text: 'Calendar (7-day)' },
         { value: '6-day', text: '6-day (Mon-Sat)' },
@@ -9341,6 +9349,13 @@ function gatherSettings() {
     settings.timezone = tzSelect.value;
   }
 
+  // Global dashboard display - applies across providers unless a provider has its own override
+  const globalDisplayMode = document.getElementById('settings-global-display-mode');
+  if (globalDisplayMode) {
+    const value = globalDisplayMode.value === 'available' ? 'available' : 'usage';
+    settings.global_settings = { display_mode: value };
+  }
+
   // Provider settings are saved via the provider settings modal (saveProviderSettings),
   // NOT through the general settings save. Including them here would overwrite
   // sensitive keys (API keys/tokens) with empty strings since the server strips
@@ -9405,6 +9420,7 @@ function setupSettingsSave() {
       } else {
         if (data.provider_visibility) State.providerVisibility = data.provider_visibility;
         if (data.api_integrations_visibility) State.apiIntegrationsVisibility = data.api_integrations_visibility;
+        if (data.global_settings && typeof data.global_settings === 'object') State.globalSettings = data.global_settings;
         showSettingsFeedback(feedback, 'Settings saved successfully.', 'success');
       }
     } catch (e) {

@@ -330,6 +330,21 @@
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
+                <h3 class="settings-section-title">Dashboard Display</h3>
+                <p class="settings-section-desc">Default for quota cards that support "usage vs remaining". Individual providers can override this in their own settings.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="settings-global-display-mode">Quota Display</label>
+                        <select id="settings-global-display-mode" class="settings-input">
+                            <option value="usage">Usage (show utilization %)</option>
+                            <option value="available">Available (show remaining %)</option>
+                        </select>
+                        <span class="settings-field-hint">Applied where a provider has no explicit Quota Display configured.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
                 <h3 class="settings-section-title">Password</h3>
                 <p class="settings-section-desc">Change the dashboard login password.</p>
                 <div class="settings-fields">

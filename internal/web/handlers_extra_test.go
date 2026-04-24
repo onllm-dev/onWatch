@@ -4317,6 +4317,67 @@ func TestHandler_UpdateSettings_WithTimezone(t *testing.T) {
 	}
 }
 
+// TestHandler_UpdateSettings_GlobalSettings persists global_settings and confirms
+// they are echoed back, and that getGlobalDisplayMode then resolves the new value.
+func TestHandler_UpdateSettings_GlobalSettings(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithSynthetic()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	body := strings.NewReader(`{"global_settings":{"display_mode":"available"}}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.UpdateSettings(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	gs, ok := resp["global_settings"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("response missing global_settings; got: %v", resp)
+	}
+	if gs["display_mode"] != "available" {
+		t.Errorf("display_mode = %v, want %q", gs["display_mode"], "available")
+	}
+
+	if got := h.getGlobalDisplayMode(); got != "available" {
+		t.Errorf("after PUT, getGlobalDisplayMode() = %q, want %q", got, "available")
+	}
+}
+
+// TestHandler_UpdateSettings_GlobalSettings_InvalidEnumReset confirms that an
+// invalid display_mode is sanitized to the default rather than rejected.
+func TestHandler_UpdateSettings_GlobalSettings_InvalidEnumReset(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithSynthetic()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	body := strings.NewReader(`{"global_settings":{"display_mode":"garbage"}}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.UpdateSettings(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if got := h.getGlobalDisplayMode(); got != "usage" {
+		t.Errorf("after sanitizer, getGlobalDisplayMode() = %q, want %q", got, "usage")
+	}
+}
+
 // TestHandler_UpdateSettings_MethodNotAllowedExtra covers the 405 path (second variant).
 func TestHandler_UpdateSettings_MethodNotAllowedExtra(t *testing.T) {
 	t.Parallel()
@@ -11862,6 +11923,155 @@ func TestHandler_GetCodexDisplayMode_NilStore(t *testing.T) {
 	mode := h.getCodexDisplayMode()
 	if mode != "available" {
 		t.Errorf("getCodexDisplayMode() = %q, want %q (nil store should fall back to env)", mode, "available")
+	}
+}
+
+// ── Global display mode tests ──
+
+func TestHandler_GetGlobalDisplayMode_Unset(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
+
+	if got := h.getGlobalDisplayMode(); got != "" {
+		t.Errorf("getGlobalDisplayMode() = %q, want empty (unset)", got)
+	}
+}
+
+func TestHandler_GetGlobalDisplayMode_Valid(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+	if err := s.SetSetting("global_settings", `{"display_mode":"available"}`); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
+
+	if got := h.getGlobalDisplayMode(); got != "available" {
+		t.Errorf("getGlobalDisplayMode() = %q, want %q", got, "available")
+	}
+}
+
+func TestHandler_GetGlobalDisplayMode_InvalidValue(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+	// Stored value is garbage - getGlobalDisplayMode should treat it as unset.
+	if err := s.SetSetting("global_settings", `{"display_mode":"garbage"}`); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
+
+	if got := h.getGlobalDisplayMode(); got != "" {
+		t.Errorf("getGlobalDisplayMode() = %q, want empty (invalid should be treated as unset)", got)
+	}
+}
+
+// ── Codex display mode priority chain with global fallback ──
+
+// Codex-specific setting wins even if global is also set - existing configs aren't broken.
+func TestHandler_GetCodexDisplayMode_CodexOverridesGlobal(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	if err := s.SetSetting("global_settings", `{"display_mode":"usage"}`); err != nil {
+		t.Fatalf("SetSetting global: %v", err)
+	}
+	if err := s.SetSetting("provider_settings", `{"codex":{"display_mode":"available"}}`); err != nil {
+		t.Fatalf("SetSetting provider: %v", err)
+	}
+
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "usage"
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	if got := h.getCodexDisplayMode(); got != "available" {
+		t.Errorf("getCodexDisplayMode() = %q, want %q (codex setting must override global)", got, "available")
+	}
+}
+
+// Global setting is used when no codex-specific setting exists.
+func TestHandler_GetCodexDisplayMode_GlobalAppliesWhenCodexUnset(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	if err := s.SetSetting("global_settings", `{"display_mode":"available"}`); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "usage" // would otherwise be chosen
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	if got := h.getCodexDisplayMode(); got != "available" {
+		t.Errorf("getCodexDisplayMode() = %q, want %q (global should beat env var)", got, "available")
+	}
+}
+
+// Codex-specific with empty string should NOT be treated as "set" - fall through to global.
+func TestHandler_GetCodexDisplayMode_EmptyCodexFallsThroughToGlobal(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	if err := s.SetSetting("provider_settings", `{"codex":{"display_mode":""}}`); err != nil {
+		t.Fatalf("SetSetting provider: %v", err)
+	}
+	if err := s.SetSetting("global_settings", `{"display_mode":"available"}`); err != nil {
+		t.Fatalf("SetSetting global: %v", err)
+	}
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
+
+	if got := h.getCodexDisplayMode(); got != "available" {
+		t.Errorf("getCodexDisplayMode() = %q, want %q (empty codex value should fall through to global)", got, "available")
+	}
+}
+
+// When neither codex-specific nor global is set, env var still wins.
+func TestHandler_GetCodexDisplayMode_EnvUsedWhenBothUnset(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithCodex()
+	cfg.CodexShowAvailable = "available"
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	if got := h.getCodexDisplayMode(); got != "available" {
+		t.Errorf("getCodexDisplayMode() = %q, want %q (env var should apply when nothing else is set)", got, "available")
+	}
+}
+
+// ── Global settings sanitizer ──
+
+func TestSanitizeGlobalSettings_InvalidReset(t *testing.T) {
+	t.Parallel()
+	gs := map[string]interface{}{"display_mode": "bogus"}
+	sanitizeGlobalSettings(gs)
+	if gs["display_mode"] != "usage" {
+		t.Errorf("display_mode = %q, want %q (invalid should reset to default)", gs["display_mode"], "usage")
+	}
+}
+
+func TestSanitizeGlobalSettings_ValidPreserved(t *testing.T) {
+	t.Parallel()
+	gs := map[string]interface{}{"display_mode": "available"}
+	sanitizeGlobalSettings(gs)
+	if gs["display_mode"] != "available" {
+		t.Errorf("display_mode = %q, want %q", gs["display_mode"], "available")
+	}
+}
+
+func TestSanitizeGlobalSettings_MissingFieldNoOp(t *testing.T) {
+	t.Parallel()
+	gs := map[string]interface{}{}
+	sanitizeGlobalSettings(gs)
+	if _, exists := gs["display_mode"]; exists {
+		t.Errorf("display_mode should not be added by sanitize when missing")
 	}
 }
 

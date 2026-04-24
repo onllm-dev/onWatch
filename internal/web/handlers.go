@@ -1392,6 +1392,34 @@ var providerEnumFields = map[string]map[string][]string{
 	},
 }
 
+// globalSettingsEnumFields defines valid values for enum-type fields in the
+// top-level global_settings blob. Unknown or invalid values are reset to the
+// first listed (default) value.
+var globalSettingsEnumFields = map[string][]string{
+	"display_mode": {"usage", "available"},
+}
+
+// sanitizeGlobalSettings validates enum fields in the global_settings map and
+// resets invalid values to their defaults before persisting.
+func sanitizeGlobalSettings(gs map[string]interface{}) {
+	for field, validValues := range globalSettingsEnumFields {
+		val, ok := gs[field].(string)
+		if !ok || val == "" {
+			continue
+		}
+		valid := false
+		for _, v := range validValues {
+			if val == v {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			gs[field] = validValues[0]
+		}
+	}
+}
+
 // sanitizeProviderSettings validates enum fields and resets invalid values
 // to their defaults before persisting to DB.
 func sanitizeProviderSettings(providers map[string]interface{}) {
@@ -5894,6 +5922,15 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 				result["provider_settings"] = prov
 			}
 		}
+
+		// Global settings (top-level UI preferences shared across providers)
+		globalJSON, _ := h.store.GetSetting("global_settings")
+		if globalJSON != "" {
+			var gs map[string]interface{}
+			if json.Unmarshal([]byte(globalJSON), &gs) == nil {
+				result["global_settings"] = gs
+			}
+		}
 	}
 
 	respondJSON(w, http.StatusOK, result)
@@ -6230,6 +6267,30 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		// Strip sensitive fields before returning to client
 		stripProviderSecrets(existing)
 		result["provider_settings"] = existing
+	}
+
+	// Handle global settings (top-level UI preferences)
+	if raw, ok := body["global_settings"]; ok {
+		var incoming map[string]interface{}
+		if err := json.Unmarshal(raw, &incoming); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid global_settings value")
+			return
+		}
+		existing := make(map[string]interface{})
+		if existingJSON, _ := h.store.GetSetting("global_settings"); existingJSON != "" {
+			_ = json.Unmarshal([]byte(existingJSON), &existing)
+		}
+		for k, v := range incoming {
+			existing[k] = v
+		}
+		sanitizeGlobalSettings(existing)
+		merged, _ := json.Marshal(existing)
+		if err := h.store.SetSetting("global_settings", string(merged)); err != nil {
+			h.logger.Error("failed to save global settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save global settings")
+			return
+		}
+		result["global_settings"] = existing
 	}
 
 	respondJSON(w, http.StatusOK, result)
@@ -7378,8 +7439,37 @@ func (h *Handler) currentCodex(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, h.buildCodexCurrent(accountID))
 }
 
+// getGlobalDisplayMode returns the top-level dashboard display mode configured
+// in Settings -> General -> Dashboard Display. Returns "usage" or "available",
+// or "" if unset. Invalid stored values are treated as unset.
+func (h *Handler) getGlobalDisplayMode() string {
+	if h.store == nil {
+		return ""
+	}
+	raw, err := h.store.GetSetting("global_settings")
+	if err != nil || raw == "" {
+		return ""
+	}
+	var gs map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &gs); err != nil {
+		return ""
+	}
+	dm, ok := gs["display_mode"].(string)
+	if !ok {
+		return ""
+	}
+	if dm == "usage" || dm == "available" {
+		return dm
+	}
+	return ""
+}
+
 // getCodexDisplayMode returns the Codex display mode for a given account.
-// Priority: 1) provider_settings[codex][display_mode] from DB, 2) CODEX_SHOW_AVAILABLE env var, 3) default "usage"
+// Priority:
+//  1. provider_settings[codex][display_mode] - codex-specific override (preserved for existing users)
+//  2. global_settings[display_mode]          - UI-configured global default
+//  3. CODEX_SHOW_AVAILABLE env var           - legacy env var
+//  4. "usage"                                - hard default
 func (h *Handler) getCodexDisplayMode() string {
 	if h.store != nil {
 		provJSON, err := h.store.GetSetting("provider_settings")
@@ -7393,6 +7483,9 @@ func (h *Handler) getCodexDisplayMode() string {
 				}
 			}
 		}
+	}
+	if global := h.getGlobalDisplayMode(); global != "" {
+		return global
 	}
 	if h.config != nil && h.config.CodexShowAvailable != "" {
 		return h.config.CodexShowAvailable
