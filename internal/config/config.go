@@ -55,6 +55,12 @@ type Config struct {
 	// OpenRouter provider configuration
 	OpenRouterAPIKey string // OPENROUTER_API_KEY
 
+	// Moonshot provider configuration
+	MoonshotAPIKey string // MOONSHOT_API_KEY
+	
+	// DeepSeek provider configuration
+	DeepSeekAPIKey string // DEEPSEEK_API_KEY
+
 	// Gemini provider configuration (auto-detected from ~/.gemini/oauth_creds.json or env vars)
 	GeminiEnabled      bool   // true if auto-detected or GEMINI_ENABLED=true
 	GeminiAutoToken    bool   // true if token was auto-detected
@@ -189,6 +195,8 @@ var onwatchEnvKeys = []string{
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
+	"MOONSHOT_API_KEY",
+	"DEEPSEEK_API_KEY",
 	"CURSOR_TOKEN",
 	"GEMINI_ENABLED",
 	"GEMINI_REFRESH_TOKEN",
@@ -297,6 +305,12 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// OpenRouter provider
 	cfg.OpenRouterAPIKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
+	
+	// Moonshot provider
+	cfg.MoonshotAPIKey = strings.TrimSpace(os.Getenv("MOONSHOT_API_KEY"))
+	
+	// DeepSeek provider
+	cfg.DeepSeekAPIKey = strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
 
 	// Gemini provider (auto-detected, env vars, or opt-out via GEMINI_ENABLED=false)
 	cfg.GeminiRefreshToken = strings.TrimSpace(os.Getenv("GEMINI_REFRESH_TOKEN"))
@@ -513,6 +527,12 @@ func (c *Config) AvailableProviders() []string {
 	if c.OpenRouterAPIKey != "" {
 		providers = append(providers, "openrouter")
 	}
+	if c.MoonshotAPIKey != "" {
+		providers = append(providers, "moonshot")
+	}
+	if c.DeepSeekAPIKey != "" {
+		providers = append(providers, "deepseek")
+	}
 	if c.GeminiEnabled {
 		providers = append(providers, "gemini")
 	}
@@ -541,6 +561,10 @@ func (c *Config) HasProvider(name string) bool {
 		return c.MiniMaxAPIKey != ""
 	case "openrouter":
 		return c.OpenRouterAPIKey != ""
+	case "moonshot":
+		return c.MoonshotAPIKey != ""
+	case "deepseek":
+		return c.DeepSeekAPIKey != ""
 	case "gemini":
 		return c.GeminiEnabled
 	case "cursor":
@@ -574,6 +598,12 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.OpenRouterAPIKey != "" {
+		count++
+	}
+	if c.MoonshotAPIKey != "" {
+		count++
+	}
+	if c.DeepSeekAPIKey != "" {
 		count++
 	}
 	if c.GeminiEnabled {
@@ -621,6 +651,15 @@ func (c *Config) String() string {
 	// Redact MiniMax token
 	minimaxDisplay := redactAPIKey(c.MiniMaxAPIKey, "")
 	fmt.Fprintf(&sb, "  MiniMaxAPIKey: %s,\n", minimaxDisplay)
+	
+	// Redact Moonshot token
+	moonshotDisplay := redactAPIKey(c.MoonshotAPIKey, "")
+	fmt.Fprintf(&sb, "  MoonshotAPIKey: %s,\n", moonshotDisplay)
+
+	// Redact DeepSeek token
+	deepseekDisplay := redactAPIKey(c.DeepSeekAPIKey, "")
+	fmt.Fprintf(&sb, "  DeepSeekAPIKey: %s,\n", deepseekDisplay)
+	
 	fmt.Fprintf(&sb, "  APIIntegrationsEnabled: %v,\n", c.APIIntegrationsEnabled)
 	fmt.Fprintf(&sb, "  APIIntegrationsDir: %s,\n", c.APIIntegrationsDir)
 	fmt.Fprintf(&sb, "  APIIntegrationsRetention: %v,\n", c.APIIntegrationsRetention)

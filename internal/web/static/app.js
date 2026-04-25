@@ -5119,7 +5119,7 @@ function getCompactProviderInsights(provider, insights) {
   let ordered = insights;
   if (provider === 'cursor') {
     ordered = sortItemsByPreference(insights, ['forecast_total_usage', 'forecast_auto_usage', 'forecast_api_usage'], (insight) => insight.key);
-  } else if (provider === 'minimax' || provider === 'gemini' || provider === 'openrouter') {
+  } else if (provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'moonshot' || provider === 'deepseek') {
     ordered = sortItemsByPreference(insights, ['efficiency', 'trend', 'burn_rate', 'shared_status'], (insight) => insight.key);
   }
   const urgent = ordered.filter((insight) => ['warning', 'negative'].includes(insight.severity));
@@ -5517,6 +5517,26 @@ function buildProviderCardDatasets(provider, rows, range) {
     const orFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
     return buildDynamicDatasetsForRows(rows, range, orDisplayNames, orColors, orFallback, 'openrouter');
   }
+  if (provider === 'moonshot') {
+    const msDisplayNames = { available_balance: 'Available', voucher_balance: 'Voucher', cash_balance: 'Cash' };
+    const msColors = {
+      available_balance: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+      voucher_balance: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
+      cash_balance: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
+    };
+    const msFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+    return buildDynamicDatasetsForRows(rows, range, msDisplayNames, msColors, msFallback, 'moonshot');
+  }
+  if (provider === 'deepseek') {
+    const dsDisplayNames = { total_balance: 'Total Balance', granted_balance: 'Granted', topped_up_balance: 'Topped Up' };
+    const dsColors = {
+      total_balance: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+      granted_balance: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
+      topped_up_balance: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
+    };
+    const dsFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+    return buildDynamicDatasetsForRows(rows, range, dsDisplayNames, dsColors, dsFallback, 'deepseek');
+  }
   return [];
 }
 
@@ -5802,6 +5822,16 @@ function updateBothCharts(data, range = '6h') {
       const orCM = { usage: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' }, usageDaily: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' }, percent: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' } };
       const orFB = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
       datasets = createDynamicDatasets(slot.rows, orDN, orCM, orFB, 'openrouter');
+    } else if (slot.provider === 'moonshot') {
+      const msDN = { available_balance: 'Available', voucher_balance: 'Voucher', cash_balance: 'Cash' };
+      const msCM = { available_balance: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' }, voucher_balance: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' }, cash_balance: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' } };
+      const msFB = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+      datasets = createDynamicDatasets(slot.rows, msDN, msCM, msFB, 'moonshot');
+    } else if (slot.provider === 'deepseek') {
+      const dsDN = { total_balance: 'Total Balance', granted_balance: 'Granted', topped_up_balance: 'Topped Up' };
+      const dsCM = { total_balance: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' }, granted_balance: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' }, topped_up_balance: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' } };
+      const dsFB = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+      datasets = createDynamicDatasets(slot.rows, dsDN, dsCM, dsFB, 'deepseek');
     }
 
     if (datasets.length === 0) return;
@@ -6095,8 +6125,8 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor';
-  const deltaUsesPercent = usePercent && provider !== 'minimax';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'moonshot' || provider === 'deepseek';
+  const deltaUsesPercent = usePercent && provider !== 'minimax' && provider !== 'moonshot' && provider !== 'deepseek';
   const isLoggingHistory = State.isLoggingHistory === true;
 
   // Build dynamic header
@@ -9843,6 +9873,8 @@ function addOverrideRow(quotaKey, provider, warning, critical, isAbsolute, disab
       <option value="gemini" ${provider === 'gemini' ? 'selected' : ''}>Gemini</option>
       <option value="cursor" ${provider === 'cursor' ? 'selected' : ''}>Cursor</option>
       <option value="openrouter" ${provider === 'openrouter' ? 'selected' : ''}>OpenRouter</option>
+      <option value="moonshot" ${provider === 'moonshot' ? 'selected' : ''}>Moonshot</option>
+      <option value="deepseek" ${provider === 'deepseek' ? 'selected' : ''}>DeepSeek</option>
       <option value="synthetic" ${provider === 'synthetic' ? 'selected' : ''}>Synthetic</option>
       <option value="zai" ${provider === 'zai' ? 'selected' : ''}>Z.ai</option>
     </select>
