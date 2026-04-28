@@ -3,6 +3,7 @@ package menubar
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 // TrayTitle formats the compact metric shown next to the macOS tray icon.
@@ -71,13 +72,17 @@ func providerByID(snapshot *Snapshot, providerID string) (ProviderCard, bool) {
 	return ProviderCard{}, false
 }
 
+// joinTrayParts assembles the metrics shown next to the macOS tray icon.
+// Width budget on the macOS menubar is tight, so the join uses the narrowest
+// readable separator that survives crowded menubars (notch, many status items).
+// A single quota uses no separator. Two or more quotas use a middle dot
+// without surrounding spaces, keeping a 3-quota title under 12 characters.
 func joinTrayParts(parts []string) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	out := "\u2009" + parts[0]
-	for i := 1; i < len(parts); i++ {
-		out += " │ " + parts[i]
+	if len(parts) == 1 {
+		return parts[0]
 	}
-	return out
+	return strings.Join(parts, "·")
 }
