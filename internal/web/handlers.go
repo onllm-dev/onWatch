@@ -1377,18 +1377,39 @@ func stripProviderSecrets(providers map[string]interface{}) {
 // providerEnumFields defines valid values for enum-type provider settings.
 // Fields not listed here pass through unvalidated (free-form strings, numbers).
 var providerEnumFields = map[string]map[string][]string{
+	"global": {
+		"display_mode": {"usage", "available"},
+	},
 	"codex": {
 		"display_mode": {"usage", "available"},
 	},
 	"anthropic": {
+		"display_mode": {"usage", "available"},
 		"source":       {"auto", "statusline", "api"},
 		"cc_detection": {"on", "off"},
 	},
+	"copilot": {
+		"display_mode": {"usage", "available"},
+	},
+	"synthetic": {
+		"display_mode": {"usage", "available"},
+	},
 	"zai": {
-		"region": {"global", "cn"},
+		"display_mode": {"usage", "available"},
+		"region":       {"global", "cn"},
 	},
 	"minimax": {
-		"region": {"global", "cn"},
+		"display_mode": {"usage", "available"},
+		"region":       {"global", "cn"},
+	},
+	"antigravity": {
+		"display_mode": {"usage", "available"},
+	},
+	"gemini": {
+		"display_mode": {"usage", "available"},
+	},
+	"cursor": {
+		"display_mode": {"usage", "available"},
 	},
 }
 
@@ -1920,6 +1941,7 @@ func (h *Handler) buildSyntheticCurrent() map[string]interface{} {
 		}
 	}
 
+	applyDisplayModeToResponse(response, h.getDisplayMode("synthetic"))
 	return response
 }
 
@@ -1968,6 +1990,7 @@ func (h *Handler) buildZaiCurrent() map[string]interface{} {
 		}
 	}
 
+	applyDisplayModeToResponse(response, h.getDisplayMode("zai"))
 	return response
 }
 
@@ -5016,6 +5039,7 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 		quotas = append(quotas, qMap)
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("anthropic"))
 	return response
 }
 
@@ -5067,6 +5091,7 @@ func (h *Handler) buildAnthropicCurrentFallback(response map[string]interface{})
 		quotas = append(quotas, qMap)
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("anthropic"))
 	return response
 }
 
@@ -7049,6 +7074,7 @@ func (h *Handler) buildCopilotCurrent() map[string]interface{} {
 		quotas = append(quotas, qMap)
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("copilot"))
 	return response
 }
 
@@ -7379,25 +7405,140 @@ func (h *Handler) currentCodex(w http.ResponseWriter, r *http.Request) {
 }
 
 // getCodexDisplayMode returns the Codex display mode for a given account.
-// Priority: 1) provider_settings[codex][display_mode] from DB, 2) CODEX_SHOW_AVAILABLE env var, 3) default "usage"
+// Kept for backward compatibility with existing tests; delegates to getDisplayMode.
 func (h *Handler) getCodexDisplayMode() string {
+	return h.getDisplayMode("codex")
+}
+
+// getDisplayMode returns the display mode ("usage" or "available") for a given
+// provider key. Priority order:
+//  1. provider_settings[<providerKey>][display_mode] from DB - per-provider override
+//  2. provider_settings[global][display_mode] from DB - global override
+//  3. CODEX_SHOW_AVAILABLE env var (only when providerKey == "codex")
+//  4. ONWATCH_DISPLAY_MODE env var - global env var
+//  5. default "usage"
+//
+// "available" means: cards display % remaining; "usage" means: cards display % used.
+func (h *Handler) getDisplayMode(providerKey string) string {
 	if h.store != nil {
 		provJSON, err := h.store.GetSetting("provider_settings")
 		if err == nil && provJSON != "" {
 			var provSettings map[string]map[string]interface{}
 			if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
-				if codexSettings, ok := provSettings["codex"]; ok {
-					if dm, ok := codexSettings["display_mode"].(string); ok && dm != "" {
-						return dm
+				if providerKey != "" {
+					if pSettings, ok := provSettings[providerKey]; ok {
+						if dm, ok := pSettings["display_mode"].(string); ok {
+							if dm == "usage" || dm == "available" {
+								return dm
+							}
+						}
+					}
+				}
+				if globalSettings, ok := provSettings["global"]; ok {
+					if dm, ok := globalSettings["display_mode"].(string); ok {
+						if dm == "usage" || dm == "available" {
+							return dm
+						}
 					}
 				}
 			}
 		}
 	}
-	if h.config != nil && h.config.CodexShowAvailable != "" {
-		return h.config.CodexShowAvailable
+	if h.config != nil {
+		if providerKey == "codex" && h.config.CodexShowAvailable != "" && h.config.CodexShowAvailable != "usage" {
+			return h.config.CodexShowAvailable
+		}
+		if h.config.DisplayMode == "available" {
+			return "available"
+		}
 	}
 	return "usage"
+}
+
+// applyDisplayModeToQuotaMap mutates a quota map to reflect the requested
+// display mode. When mode is "available", reads the usage percentage (trying
+// usagePercent / percent / utilization in that order) and sets
+// cardPercent / cardLabel / remainingPercent so dashboard and menubar surface
+// the remaining percentage. When mode is "usage" (or anything else), the map
+// is unchanged.
+//
+// applyDisplayModeToQuotaMap never overwrites cardPercent if already set, so
+// providers like Codex that have per-quota overrides keep their behavior.
+func applyDisplayModeToQuotaMap(qMap map[string]interface{}, mode string) {
+	if qMap == nil || mode != "available" {
+		return
+	}
+	if _, exists := qMap["cardPercent"]; exists {
+		return
+	}
+	usagePercent, ok := readUsagePercent(qMap)
+	if !ok {
+		return
+	}
+	if usagePercent < 0 {
+		usagePercent = 0
+	}
+	if usagePercent > 100 {
+		usagePercent = 100
+	}
+	remaining := 100 - usagePercent
+	qMap["cardPercent"] = remaining
+	qMap["cardLabel"] = "Remaining"
+	qMap["remainingPercent"] = remaining
+}
+
+// readUsagePercent looks up the usage percentage from a quota map. Different
+// providers store this under different keys: usagePercent (most), percent
+// (synthetic), utilization (anthropic/codex/cursor). Returns false if no
+// usage value can be located.
+func readUsagePercent(qMap map[string]interface{}) (float64, bool) {
+	for _, key := range []string{"usagePercent", "percent", "utilization"} {
+		switch v := qMap[key].(type) {
+		case float64:
+			return v, true
+		case float32:
+			return float64(v), true
+		case int:
+			return float64(v), true
+		case int64:
+			return float64(v), true
+		}
+	}
+	return 0, false
+}
+
+// applyDisplayModeToResponse walks a provider response and applies the display
+// mode to every quota map it finds. Supports the two response shapes used in
+// onWatch:
+//
+//   - Top-level quota keys: synthetic and z.ai store quotas under named keys
+//     (subscription, search, toolCalls, tokensLimit, timeLimit, sharedQuota,
+//     credits) at the top level of the response.
+//   - quotas array: most providers store a list under response["quotas"].
+//
+// This is a no-op for mode == "usage", so callers can safely invoke it
+// unconditionally.
+func applyDisplayModeToResponse(response map[string]interface{}, mode string) {
+	if response == nil || mode != "available" {
+		return
+	}
+	for _, key := range []string{"subscription", "search", "toolCalls", "tokensLimit", "timeLimit", "sharedQuota", "credits"} {
+		if quotaMap, ok := response[key].(map[string]interface{}); ok {
+			applyDisplayModeToQuotaMap(quotaMap, mode)
+		}
+	}
+	switch typed := response["quotas"].(type) {
+	case []map[string]interface{}:
+		for _, q := range typed {
+			applyDisplayModeToQuotaMap(q, mode)
+		}
+	case []interface{}:
+		for _, raw := range typed {
+			if q, ok := raw.(map[string]interface{}); ok {
+				applyDisplayModeToQuotaMap(q, mode)
+			}
+		}
+	}
 }
 
 // getCodexPaceMode returns the Codex pace mode from provider_settings.
@@ -7506,6 +7647,7 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 		}
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, displayMode)
 	return response
 }
 
@@ -7632,6 +7774,7 @@ func (h *Handler) buildAntigravityCurrent() map[string]interface{} {
 		response["lowestPool"] = lowestPool
 	}
 
+	applyDisplayModeToResponse(response, h.getDisplayMode("antigravity"))
 	return response
 }
 
@@ -8576,6 +8719,7 @@ func (h *Handler) buildMiniMaxCurrent(accountID int64) map[string]interface{} {
 		response["weeklyQuotas"] = weeklyQuotas
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("minimax"))
 	return response
 }
 

@@ -234,6 +234,7 @@ func (h *Handler) buildCursorCurrent() map[string]interface{} {
 			}
 			response["quotas"] = append(response["quotas"].([]interface{}), quotaMap)
 		}
+		applyDisplayModeToResponse(response, h.getDisplayMode("cursor"))
 		return response
 	}
 
@@ -276,6 +277,7 @@ func (h *Handler) buildCursorCurrent() map[string]interface{} {
 		quotas = append(quotas, qMap)
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("cursor"))
 	return response
 }
 

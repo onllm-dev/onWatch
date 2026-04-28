@@ -41,7 +41,8 @@ type Config struct {
 	CodexToken         string // CODEX_TOKEN or auto-detected
 	CodexAutoToken     bool   // true if token was auto-detected
 	CodexHasProfiles   bool   // true if saved profiles exist (enables bootstrap without token)
-	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage"
+	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
+	DisplayMode        string // ONWATCH_DISPLAY_MODE: "usage" | "available", default "usage" (global, applies to all providers)
 
 	// Antigravity provider configuration (auto-detected from local process)
 	AntigravityBaseURL   string // ANTIGRAVITY_BASE_URL (for Docker)
@@ -278,6 +279,12 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// Validate display mode - only accept "usage" or "available"
 	if cfg.CodexShowAvailable != "usage" && cfg.CodexShowAvailable != "available" {
 		cfg.CodexShowAvailable = "usage"
+	}
+
+	// Global display mode (applies to all providers unless per-provider override)
+	cfg.DisplayMode = strings.ToLower(strings.TrimSpace(os.Getenv("ONWATCH_DISPLAY_MODE")))
+	if cfg.DisplayMode != "usage" && cfg.DisplayMode != "available" {
+		cfg.DisplayMode = ""
 	}
 
 	// Antigravity provider (auto-detection, or manual via env vars for Docker)
