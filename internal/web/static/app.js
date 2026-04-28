@@ -1223,7 +1223,9 @@ function renderAnthropicQuotaCards(quotas, containerId) {
   container.innerHTML = quotas.map((q, i) => {
     const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
     const displayName = q.displayName || anthropicDisplayNames[q.name] || q.name;
-    const utilPct = (q.utilization || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.utilization || 0);
+    const utilPct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Utilization';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-anth-${q.name}`;
@@ -1242,10 +1244,10 @@ function renderAnthropicQuotaCards(quotas, containerId) {
       </header>
       <div class="progress-stats">
         <span class="usage-percent" id="${percentId}">${utilPct}%</span>
-        <span class="usage-fraction">Utilization</span>
+        <span class="usage-fraction">${cardLabel}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.utilization || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${utilPct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -1299,17 +1301,20 @@ function updateAnthropicCard(quota) {
   const resetEl = document.getElementById(`reset-anth-${quota.name}`);
   const countdownEl = document.getElementById(`countdown-anth-${quota.name}`);
 
-  const utilPct = (quota.utilization || 0).toFixed(1);
+  const displayPct = quota.cardPercent != null ? quota.cardPercent : (quota.utilization || 0);
+  const utilPct = displayPct.toFixed(1);
   const status = quota.status || 'healthy';
 
   if (progressEl) {
     progressEl.style.width = `${utilPct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(displayPct));
   }
   if (percentEl) {
     const oldVal = prev ? prev.percent : 0;
-    if (Math.abs(oldVal - quota.utilization) > 0.2) {
-      animateValue(percentEl, oldVal, quota.utilization, 400, v => `${v.toFixed(1)}%`);
+    if (Math.abs(oldVal - displayPct) > 0.2) {
+      animateValue(percentEl, oldVal, displayPct, 400, v => `${v.toFixed(1)}%`);
     } else {
       percentEl.textContent = `${utilPct}%`;
     }
@@ -1482,7 +1487,9 @@ function renderCopilotQuotaCards(quotas, containerId) {
   container.innerHTML = quotas.map((q, i) => {
     const icon = copilotQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
     const displayName = q.displayName || copilotDisplayNames[q.name] || q.name;
-    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+    const usagePct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Usage';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-copilot-${q.name}`;
@@ -1515,7 +1522,7 @@ function renderCopilotQuotaCards(quotas, containerId) {
         <span class="usage-fraction" id="${fractionId}">${fractionText}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${q.unlimited ? 0 : Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${q.unlimited ? 0 : Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${q.unlimited ? 0 : usagePct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -1567,17 +1574,20 @@ function updateCopilotCard(quota) {
   const resetEl = document.getElementById(`reset-copilot-${quota.name}`);
   const countdownEl = document.getElementById(`countdown-copilot-${quota.name}`);
 
-  const usagePct = quota.unlimited ? 0 : (quota.usagePercent || 0).toFixed(1);
+  const rawPct = quota.cardPercent != null ? quota.cardPercent : (quota.usagePercent || 0);
+  const usagePct = quota.unlimited ? 0 : rawPct.toFixed(1);
   const status = quota.status || 'healthy';
 
   if (progressEl) {
     progressEl.style.width = `${usagePct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', quota.unlimited ? 0 : Math.round(rawPct));
   }
   if (percentEl) {
     const oldVal = prev ? prev.percent : 0;
-    if (!quota.unlimited && Math.abs(oldVal - quota.usagePercent) > 0.2) {
-      animateValue(percentEl, oldVal, quota.usagePercent, 400, v => `${v.toFixed(1)}%`);
+    if (!quota.unlimited && Math.abs(oldVal - rawPct) > 0.2) {
+      animateValue(percentEl, oldVal, rawPct, 400, v => `${v.toFixed(1)}%`);
     } else {
       percentEl.textContent = quota.unlimited ? '0%' : `${usagePct}%`;
     }
@@ -1629,7 +1639,9 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
     const cardKey = minimaxCardKey(q.name);
     const displayName = q.displayName || minimaxDisplayNames[q.name] || q.name;
     const subtitle = minimaxSharedSubtitle(q.sharedModels);
-    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+    const usagePct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Usage';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-minimax-${cardKey}`;
@@ -1659,7 +1671,7 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
         <span class="usage-fraction" id="${fractionId}">${formatNumber(q.used || 0)} / ${formatNumber(q.total || 0)}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${usagePct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -1689,7 +1701,8 @@ function updateMiniMaxCard(quota) {
     sharedModels: quota.sharedModels || []
   };
 
-  const usagePct = (quota.usagePercent || 0).toFixed(1);
+  const displayPct = quota.cardPercent != null ? quota.cardPercent : (quota.usagePercent || 0);
+  const usagePct = displayPct.toFixed(1);
   const status = quota.status || 'healthy';
   const progressEl = document.getElementById(`progress-minimax-${cardKey}`);
   const percentEl = document.getElementById(`percent-minimax-${cardKey}`);
@@ -1703,6 +1716,8 @@ function updateMiniMaxCard(quota) {
   if (progressEl) {
     progressEl.style.width = `${usagePct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(displayPct));
   }
   if (percentEl) percentEl.textContent = `${usagePct}%`;
   if (fractionEl) fractionEl.textContent = `${formatNumber(quota.used || 0)} / ${formatNumber(quota.total || 0)}`;
@@ -1911,7 +1926,9 @@ function renderAntigravityQuotaCards(quotas, containerId) {
   container.innerHTML = quotas.map((q, i) => {
     const icon = getAntigravityIcon(q.modelId);
     const displayName = q.displayName || q.label || q.modelId;
-    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+    const usagePct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Usage';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-antigravity-${q.modelId}`;
@@ -1921,9 +1938,9 @@ function renderAntigravityQuotaCards(quotas, containerId) {
     const statusId = `status-antigravity-${q.modelId}`;
     const resetId = `reset-antigravity-${q.modelId}`;
 
-    // Format the remaining percent
+    // Format the remaining percent (leave as-is - separate fallback computation)
     const remainingPct = (q.remainingPercent || 0).toFixed(1);
-    const fractionText = `${remainingPct}% remaining`;
+    const fractionText = q.cardPercent != null ? `${cardLabel}` : `${remainingPct}% remaining`;
 
     return `<article class="quota-card antigravity-card" data-quota="${q.modelId}" data-provider="antigravity" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
@@ -1939,7 +1956,7 @@ function renderAntigravityQuotaCards(quotas, containerId) {
         <span class="usage-fraction" id="${fractionId}">${fractionText}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${usagePct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -1991,24 +2008,30 @@ function updateAntigravityCard(quota) {
   const resetEl = document.getElementById(`reset-antigravity-${quota.modelId}`);
   const countdownEl = document.getElementById(`countdown-antigravity-${quota.modelId}`);
 
-  const usagePct = (quota.usagePercent || 0).toFixed(1);
+  const displayPct = quota.cardPercent != null ? quota.cardPercent : (quota.usagePercent || 0);
+  const usagePct = displayPct.toFixed(1);
   const status = quota.status || 'healthy';
 
   if (progressEl) {
     progressEl.style.width = `${usagePct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(displayPct));
   }
   if (percentEl) {
     const oldVal = prev ? prev.percent : 0;
-    if (Math.abs(oldVal - quota.usagePercent) > 0.2) {
-      animateValue(percentEl, oldVal, quota.usagePercent, 400, v => `${v.toFixed(1)}%`);
+    if (Math.abs(oldVal - displayPct) > 0.2) {
+      animateValue(percentEl, oldVal, displayPct, 400, v => `${v.toFixed(1)}%`);
     } else {
       percentEl.textContent = `${usagePct}%`;
     }
   }
   if (fractionEl) {
+    // remainingPercent stays as-is - separate computation, not the display toggle
     const remainingPct = (quota.remainingPercent || 0).toFixed(1);
-    fractionEl.textContent = `${remainingPct}% remaining`;
+    fractionEl.textContent = quota.cardPercent != null
+      ? (quota.cardLabel || 'Usage')
+      : `${remainingPct}% remaining`;
   }
   if (statusEl) {
     const config = statusConfig[status] || statusConfig.healthy;
@@ -2043,7 +2066,9 @@ function renderGeminiQuotaCards(quotas, containerId) {
   container.innerHTML = quotas.map((q, i) => {
     const displayName = q.displayName || geminiDisplayNames[q.modelId] || q.modelId;
     const membersText = q.members && q.members.length > 0 ? q.members.join(', ') : '';
-    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+    const usagePct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Usage';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-gemini-${q.modelId}`;
@@ -2053,8 +2078,9 @@ function renderGeminiQuotaCards(quotas, containerId) {
     const statusId = `status-gemini-${q.modelId}`;
     const resetId = `reset-gemini-${q.modelId}`;
 
+    // remainingPercent is a separate computation - leave as-is
     const remainingPct = (q.remainingPercent || (q.remainingFraction != null ? q.remainingFraction * 100 : 0)).toFixed(1);
-    const fractionText = `${remainingPct}% remaining`;
+    const fractionText = q.cardPercent != null ? cardLabel : `${remainingPct}% remaining`;
 
     return `<article class="quota-card gemini-card" data-quota="${q.modelId}" data-provider="gemini" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
@@ -2071,7 +2097,7 @@ function renderGeminiQuotaCards(quotas, containerId) {
         <span class="usage-fraction" id="${fractionId}">${fractionText}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${usagePct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -2133,24 +2159,30 @@ function updateGeminiCard(q) {
   const resetEl = document.getElementById(`reset-gemini-${q.modelId}`);
   const countdownEl = document.getElementById(`countdown-gemini-${q.modelId}`);
 
-  const usagePct = (q.usagePercent || 0).toFixed(1);
+  const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+  const usagePct = displayPct.toFixed(1);
   const status = q.status || 'healthy';
 
   if (progressEl) {
     progressEl.style.width = `${usagePct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(displayPct));
   }
   if (percentEl) {
     const oldVal = prev ? prev.percent : 0;
-    if (Math.abs(oldVal - (q.usagePercent || 0)) > 0.2) {
-      animateValue(percentEl, oldVal, q.usagePercent || 0, 400, v => `${v.toFixed(1)}%`);
+    if (Math.abs(oldVal - displayPct) > 0.2) {
+      animateValue(percentEl, oldVal, displayPct, 400, v => `${v.toFixed(1)}%`);
     } else {
       percentEl.textContent = `${usagePct}%`;
     }
   }
   if (fractionEl) {
+    // remainingPercent is a separate computation - leave as-is
     const remainingPct = (q.remainingPercent || (q.remainingFraction != null ? q.remainingFraction * 100 : 0)).toFixed(1);
-    fractionEl.textContent = `${remainingPct}% remaining`;
+    fractionEl.textContent = q.cardPercent != null
+      ? (q.cardLabel || 'Usage')
+      : `${remainingPct}% remaining`;
   }
   if (statusEl) {
     const config = statusConfig[status] || statusConfig.healthy;
@@ -3158,10 +3190,12 @@ function updateCard(quotaType, data, suffix) {
   const resetEl = document.getElementById(`reset-${idSuffix}`);
   const countdownEl = document.getElementById(`countdown-${idSuffix}`);
 
+  const displayPct = data.cardPercent != null ? data.cardPercent : (data.percent || 0);
+
   if (progressEl) {
-    progressEl.style.width = `${data.percent}%`;
+    progressEl.style.width = `${displayPct}%`;
     progressEl.setAttribute('data-status', data.status);
-    progressEl.parentElement.setAttribute('aria-valuenow', Math.round(data.percent));
+    progressEl.parentElement.setAttribute('aria-valuenow', Math.round(displayPct));
   }
 
   if (fractionEl) {
@@ -3170,12 +3204,12 @@ function updateCard(quotaType, data, suffix) {
 
   if (percentEl) {
     // Animate percentage from old to new
-    const oldVal = prev ? prev.percent : 0;
-    const newVal = data.percent;
+    const oldVal = prev ? (prev.cardPercent != null ? prev.cardPercent : (prev.percent || 0)) : 0;
+    const newVal = displayPct;
     if (Math.abs(oldVal - newVal) > 0.2) {
       animateValue(percentEl, oldVal, newVal, 400, v => `${v.toFixed(1)}%`);
     } else {
-      percentEl.textContent = `${data.percent.toFixed(1)}%`;
+      percentEl.textContent = `${displayPct.toFixed(1)}%`;
     }
   }
 
@@ -8021,6 +8055,13 @@ async function loadSettings() {
     State.providerSettings = data.provider_settings || {};
     State.apiIntegrationsVisibility = data.api_integrations_visibility || { dashboard: true };
 
+    // Global display mode (persisted under provider_settings.global.display_mode)
+    const displayModeSelect = document.getElementById('settings-display-mode');
+    if (displayModeSelect) {
+      const globalSettings = State.providerSettings.global || {};
+      displayModeSelect.value = (globalSettings.display_mode === 'available') ? 'available' : 'usage';
+    }
+
     // Provider visibility + dynamic provider status
     await populateProviderToggles(data.provider_visibility || {});
     await populateMenubarSettings(data.menubar || {});
@@ -8785,9 +8826,10 @@ const providerSettingsConfig = {
     fields: [
       { id: 'profiles_dir', label: 'Profiles Directory', type: 'text', placeholder: 'Auto-detected (default)', hint: 'Override the auto-detected Codex profiles directory. Leave blank to use the default.' },
       { id: 'display_mode', label: 'Quota Display', type: 'select', options: [
+        { value: '', text: 'Use global default' },
         { value: 'usage', text: 'Usage (show utilization %)' },
         { value: 'available', text: 'Available (show remaining %)' },
-      ], default: 'usage', hint: 'Choose how to display five_hour and seven_day quota usage.' },
+      ], default: '', hint: 'Override the global Quota Display setting (Settings → General) for Codex only. Choose "Use global default" to follow the global setting.' },
       { id: 'pace_mode', label: 'Weekly Pace Mode', type: 'select', options: [
         { value: 'calendar', text: 'Calendar (7-day)' },
         { value: '6-day', text: '6-day (Mon-Sat)' },
@@ -9341,10 +9383,21 @@ function gatherSettings() {
     settings.timezone = tzSelect.value;
   }
 
-  // Provider settings are saved via the provider settings modal (saveProviderSettings),
-  // NOT through the general settings save. Including them here would overwrite
-  // sensitive keys (API keys/tokens) with empty strings since the server strips
-  // them from GET responses for security.
+  // Global display mode goes under provider_settings.global. Other provider
+  // settings (API keys, tokens, etc.) are still saved via the per-provider
+  // modal because the server strips sensitive keys from the GET response;
+  // including them here would clobber them with empty strings on save. The
+  // backend deep-merges provider_settings, so writing only `global` is safe.
+  const displayModeSelect = document.getElementById('settings-display-mode');
+  if (displayModeSelect && displayModeSelect.value) {
+    settings.provider_settings = settings.provider_settings || {};
+    settings.provider_settings.global = { display_mode: displayModeSelect.value };
+  }
+
+  // Per-provider settings (API keys, tokens, etc.) are saved via the provider
+  // settings modal (saveProviderSettings), NOT through the general settings
+  // save. Including them here would overwrite sensitive keys with empty
+  // strings since the server strips them from GET responses for security.
 
   const menubarShell = document.getElementById('menubar-settings-shell');
   if (menubarShell && !menubarShell.hidden) {

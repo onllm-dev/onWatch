@@ -315,6 +315,21 @@
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
+                <h3 class="settings-section-title">Quota Display</h3>
+                <p class="settings-section-desc">Choose whether quota cards show how much you've used or how much is left. Per-provider settings (e.g. Codex) override this global default.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="settings-display-mode">Display Mode</label>
+                        <select id="settings-display-mode" class="settings-input">
+                            <option value="usage">Usage (% used)</option>
+                            <option value="available">Available (% remaining)</option>
+                        </select>
+                        <span class="settings-field-hint">Applies to all providers unless overridden in the per-provider settings.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
                 <h3 class="settings-section-title">Layout Density</h3>
                 <p class="settings-section-desc">Choose how compact the dashboard cards appear.</p>
                 <div class="settings-fields">

@@ -70,6 +70,7 @@ func (h *Handler) buildGeminiCurrent() map[string]interface{} {
 		quotas = append(quotas, quota)
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("gemini"))
 	return response
 }
 
