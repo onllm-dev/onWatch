@@ -789,6 +789,18 @@ func run() error {
 		logger.Info("OpenRouter API client configured")
 	}
 
+	var moonshotClient *api.MoonshotClient
+	if cfg.HasProvider("moonshot") {
+		moonshotClient = api.NewMoonshotClient(cfg.MoonshotAPIKey, logger)
+		logger.Info("Moonshot API client configured")
+	}
+
+	var deepseekClient *api.DeepSeekClient
+	if cfg.HasProvider("deepseek") {
+		deepseekClient = api.NewDeepSeekClient(cfg.DeepSeekAPIKey, logger)
+		logger.Info("DeepSeek API client configured")
+	}
+
 	// Gemini provider - env vars or auto-detect from ~/.gemini/oauth_creds.json
 	var geminiClient *api.GeminiClient
 	var geminiCreds *api.GeminiCredentials
@@ -975,6 +987,16 @@ func run() error {
 		openrouterTr = tracker.NewOpenRouterTracker(db, logger)
 	}
 
+	var moonshotTr *tracker.MoonshotTracker
+	if cfg.HasProvider("moonshot") {
+		moonshotTr = tracker.NewMoonshotTracker(db, logger)
+	}
+
+	var deepseekTr *tracker.DeepSeekTracker
+	if cfg.HasProvider("deepseek") {
+		deepseekTr = tracker.NewDeepSeekTracker(db, logger)
+	}
+
 	var geminiTr *tracker.GeminiTracker
 	if cfg.HasProvider("gemini") {
 		geminiTr = tracker.NewGeminiTracker(db, logger)
@@ -1016,6 +1038,18 @@ func run() error {
 	if openrouterClient != nil {
 		openrouterSm := agent.NewSessionManager(db, "openrouter", idleTimeout, logger)
 		openrouterAg = agent.NewOpenRouterAgent(openrouterClient, db, openrouterTr, cfg.PollInterval, logger, openrouterSm)
+	}
+
+	var moonshotAg *agent.MoonshotAgent
+	if moonshotClient != nil {
+		moonshotSm := agent.NewSessionManager(db, "moonshot", idleTimeout, logger)
+		moonshotAg = agent.NewMoonshotAgent(moonshotClient, db, moonshotTr, cfg.PollInterval, logger, moonshotSm)
+	}
+
+	var deepseekAg *agent.DeepSeekAgent
+	if deepseekClient != nil {
+		deepseekSm := agent.NewSessionManager(db, "deepseek", idleTimeout, logger)
+		deepseekAg = agent.NewDeepSeekAgent(deepseekClient, db, deepseekTr, cfg.PollInterval, logger, deepseekSm)
 	}
 
 	var geminiAg *agent.GeminiAgent
@@ -1080,6 +1114,12 @@ func run() error {
 	}
 	if openrouterAg != nil {
 		openrouterAg.SetNotifier(notifier)
+	}
+	if moonshotAg != nil {
+		moonshotAg.SetNotifier(notifier)
+	}
+	if deepseekAg != nil {
+		deepseekAg.SetNotifier(notifier)
 	}
 	if geminiAg != nil {
 		geminiAg.SetNotifier(notifier)
@@ -1185,6 +1225,12 @@ func run() error {
 	if openrouterAg != nil {
 		openrouterAg.SetPollingCheck(func() bool { return isPollingEnabled("openrouter") })
 	}
+	if moonshotAg != nil {
+		moonshotAg.SetPollingCheck(func() bool { return isPollingEnabled("moonshot") })
+	}
+	if deepseekAg != nil {
+		deepseekAg.SetPollingCheck(func() bool { return isPollingEnabled("deepseek") })
+	}
 	if geminiAg != nil {
 		geminiAg.SetPollingCheck(func() bool { return isPollingEnabled("gemini") })
 	}
@@ -1231,6 +1277,16 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "openrouter", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	if moonshotTr != nil {
+		moonshotTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "moonshot", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
+	if deepseekTr != nil {
+		deepseekTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "deepseek", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 	if geminiTr != nil {
 		geminiTr.SetOnReset(func(modelID string) {
 			notifier.Check(notify.QuotaStatus{Provider: "gemini", QuotaKey: modelID, ResetOccurred: true})
@@ -1263,6 +1319,12 @@ func run() error {
 	if openrouterTr != nil {
 		handler.SetOpenRouterTracker(openrouterTr)
 	}
+	if moonshotTr != nil {
+		handler.SetMoonshotTracker(moonshotTr)
+	}
+	if deepseekTr != nil {
+		handler.SetDeepSeekTracker(deepseekTr)
+	}
 	if geminiTr != nil {
 		handler.SetGeminiTracker(geminiTr)
 	}
@@ -1293,6 +1355,12 @@ func run() error {
 	}
 	if openrouterAg != nil {
 		agentMgr.RegisterFactory("openrouter", func() (agent.AgentRunner, error) { return openrouterAg, nil })
+	}
+	if moonshotAg != nil {
+		agentMgr.RegisterFactory("moonshot", func() (agent.AgentRunner, error) { return moonshotAg, nil })
+	}
+	if deepseekAg != nil {
+		agentMgr.RegisterFactory("deepseek", func() (agent.AgentRunner, error) { return deepseekAg, nil })
 	}
 	if geminiAg != nil {
 		agentMgr.RegisterFactory("gemini", func() (agent.AgentRunner, error) { return geminiAg, nil })
@@ -1326,7 +1394,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "moonshot", "deepseek", "gemini", "cursor"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}

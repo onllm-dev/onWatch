@@ -256,6 +256,8 @@ func (m *Metrics) Scrape(s *store.Store, pollInterval time.Duration) {
 	m.scrapeAntigravity(s, staleThreshold)
 	m.scrapeGemini(s, staleThreshold)
 	m.scrapeOpenRouter(s, staleThreshold)
+	m.scrapeMoonshot(s, staleThreshold)
+	m.scrapeDeepSeek(s, staleThreshold)
 	m.scrapeAPIIntegrations(s, staleThreshold)
 }
 
@@ -569,6 +571,75 @@ func (m *Metrics) scrapeOpenRouter(s *store.Store, staleThreshold time.Duration)
 			"unit":       "usd",
 		}).Set(*snap.LimitRemaining)
 	}
+}
+
+func (m *Metrics) scrapeMoonshot(s *store.Store, staleThreshold time.Duration) {
+	method := "moonshot"
+
+	snap, err := s.QueryLatestMoonshot()
+	if err != nil {
+		m.scrapeErrorsTotal.WithLabelValues(method, "query_failed").Inc()
+		return
+	}
+	if snap == nil {
+		return
+	}
+
+	m.recordLastCycleAge(method, defaultAccountID, snap.CapturedAt, staleThreshold)
+
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       "cny_available",
+	}).Set(snap.AvailableBalance)
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       "cny_voucher",
+	}).Set(snap.VoucherBalance)
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       "cny_cash",
+	}).Set(snap.CashBalance)
+}
+
+func (m *Metrics) scrapeDeepSeek(s *store.Store, staleThreshold time.Duration) {
+	method := "deepseek"
+
+	snap, err := s.QueryLatestDeepSeek()
+	if err != nil {
+		m.scrapeErrorsTotal.WithLabelValues(method, "query_failed").Inc()
+		return
+	}
+	if snap == nil {
+		return
+	}
+
+	m.recordLastCycleAge(method, defaultAccountID, snap.CapturedAt, staleThreshold)
+
+	unitPrefix := "cny"
+	if snap.Currency == "USD" {
+		unitPrefix = "usd"
+	} else if snap.Currency != "CNY" && snap.Currency != "" {
+		unitPrefix = snap.Currency
+	}
+
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       unitPrefix + "_total",
+	}).Set(snap.TotalBalance)
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       unitPrefix + "_granted",
+	}).Set(snap.GrantedBalance)
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       unitPrefix + "_topped_up",
+	}).Set(snap.ToppedUpBalance)
 }
 
 // RecordCycleCompleted increments the successful-poll counter.
