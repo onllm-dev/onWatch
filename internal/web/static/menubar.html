@@ -1377,7 +1377,7 @@
             <div class="settings-body" id="settings-body"></div>
             <div class="settings-footer">
                 <div class="settings-hint" id="settings-note">tray + local</div>
-                <button class="save-button" id="settings-save" type="button">Save</button>
+                <button class="save-button" id="settings-save" type="button">Done</button>
             </div>
         </section>
     </main>
@@ -1460,6 +1460,7 @@
             let refreshTimer = null;
             let resizeFrame = 0;
             let resizeTimer = 0;
+            let autoSaveTimer = null;
 
             if (footerVersion) {
                 footerVersion.textContent = `v${MENUBAR_VERSION || "-"}`;
@@ -1477,7 +1478,7 @@
                 writeStoredViewMode(state.view);
                 if (state.settingsOpen && state.draft) {
                     state.draft.default_view = state.view;
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                 }
                 render();
             });
@@ -1501,7 +1502,7 @@
             headerCluster.addEventListener("click", () => openDashboard());
             document.getElementById("close-button").addEventListener("click", () => closeMenubar());
             document.getElementById("refresh-button").addEventListener("click", () => void refreshData());
-            document.getElementById("settings-save").addEventListener("click", () => void savePreferences());
+            document.getElementById("settings-save").addEventListener("click", () => closeSettings());
             settingsBody.addEventListener("change", handleSettingsChange);
             settingsBody.addEventListener("click", handleSettingsClick);
             settingsBody.addEventListener("dragstart", handleSettingsDragStart);
@@ -1528,8 +1529,15 @@
                         throw new Error(`preferences ${response.status}`);
                     }
                     const data = await response.json();
+                    const previousIDs = new Set(state.providerOptions.map((p) => p.id));
                     state.providerOptions = Array.isArray(data.providers) ? data.providers : [];
                     const preferences = normalizePreferences(data);
+                    if (previousIDs.size > 0 && preferences.visible_providers.length > 0) {
+                        const newProviders = state.providerOptions.filter((p) => !previousIDs.has(p.id));
+                        for (const provider of newProviders) {
+                            preferences.visible_providers.push(provider.id);
+                        }
+                    }
                     const localStatus = readStoredStatusDisplay();
                     const localOrder = readStoredProviderOrder();
                     if (localStatus) {
@@ -1665,17 +1673,77 @@
                 }
             }
 
+            function scheduleAutoSave(delayMs) {
+                if (autoSaveTimer) clearTimeout(autoSaveTimer);
+                autoSaveTimer = setTimeout(() => {
+                    autoSaveTimer = null;
+                    void autoSavePreferences();
+                }, delayMs || 500);
+            }
+
+            async function autoSavePreferences() {
+                if (state.saving || !state.draft) return;
+                const draft = normalizePreferences(state.draft);
+                draft.providers_order = mergeProviderOrder(draft.providers_order, state.providerOptions.map((p) => p.id));
+                state.saving = true;
+                settingsNote.textContent = "saving…";
+                renderSettings();
+                try {
+                    const response = await fetch("/api/menubar/preferences", {
+                        method: "PUT",
+                        credentials: "same-origin",
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "X-Requested-With": "XMLHttpRequest"
+                        },
+                        body: JSON.stringify(draft)
+                    });
+                    if (!response.ok) throw new Error(`save ${response.status}`);
+                    const data = await response.json();
+                    state.providerOptions = Array.isArray(data.providers) ? data.providers : state.providerOptions;
+                    state.preferences = normalizePreferences(data);
+                    state.preferences.providers_order = mergeProviderOrder(
+                        draft.providers_order,
+                        state.providerOptions.map((p) => p.id)
+                    );
+                    writeStoredStatusDisplay(state.preferences.status_display);
+                    writeStoredProviderOrder(state.preferences.providers_order);
+                    writeStoredThemeMode(state.preferences.theme);
+                    writeStoredViewMode(state.view);
+                    if (state.settingsOpen) {
+                        state.draft = normalizePreferences(state.preferences);
+                        state.draft.default_view = normalizeView(state.view || state.draft.default_view);
+                    }
+                    state.error = "";
+                    settingsNote.textContent = "saved";
+                    applyTheme();
+                    resetRefreshTimer();
+                    loadSnapshot();
+                } catch (error) {
+                    settingsNote.textContent = "save failed";
+                } finally {
+                    state.saving = false;
+                    renderSettings();
+                }
+            }
+
             function openSettings() {
                 const draft = normalizePreferences(state.preferences);
                 draft.default_view = normalizeView(state.view || draft.default_view);
                 draft.providers_order = mergeProviderOrder(draft.providers_order, state.providerOptions.map((provider) => provider.id));
                 state.draft = draft;
                 state.settingsOpen = true;
-                settingsNote.textContent = "drag + save";
+                settingsNote.textContent = "";
                 render();
             }
 
             function closeSettings() {
+                if (autoSaveTimer && state.draft) {
+                    clearTimeout(autoSaveTimer);
+                    autoSaveTimer = null;
+                    void autoSavePreferences();
+                }
                 state.settingsOpen = false;
                 state.draft = null;
                 state.draggingProviderID = "";
@@ -1696,7 +1764,7 @@
                         ensureMultiProviderSelection();
                         state.quotaSelectionExpanded = true;
                     }
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     renderSettings();
                     return;
                 }
@@ -1706,7 +1774,7 @@
                             .map((input) => parseStatusSelectionValue(input.value))
                     );
                     state.quotaSelectionExpanded = true;
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     renderSettings();
                     return;
                 }
@@ -1719,7 +1787,7 @@
                     }
                     ensureMultiProviderSelection();
                     state.quotaSelectionExpanded = true;
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     renderSettings();
                     return;
                 }
@@ -1727,13 +1795,13 @@
                     state.draft.default_view = normalizeView(target.value);
                     state.view = state.draft.default_view;
                     writeStoredViewMode(state.view);
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     render();
                     return;
                 }
                 if (target.matches('select[name="theme-mode"]')) {
                     state.draft.theme = normalizeTheme(target.value);
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     applyTheme();
                     queueResizeReport();
                     return;
@@ -1818,7 +1886,7 @@
                 state.draft.providers_order = [...list.querySelectorAll(".provider-order-item[data-provider-id]")]
                     .map((item) => item.getAttribute("data-provider-id") || "")
                     .filter(Boolean);
-                settingsNote.textContent = "unsaved";
+                scheduleAutoSave();
                 renderBody();
                 queueResizeReport();
             }
@@ -1840,7 +1908,7 @@
                 }
                 [order[from], order[to]] = [order[to], order[from]];
                 state.draft.providers_order = order;
-                settingsNote.textContent = "unsaved";
+                scheduleAutoSave();
                 renderBody();
                 renderSettings();
                 queueResizeReport();

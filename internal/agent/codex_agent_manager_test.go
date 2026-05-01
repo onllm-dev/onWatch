@@ -675,3 +675,54 @@ func TestCodexAgentManager_StartDefaultAgent_UsesCompositeExternalID(t *testing.
 		t.Fatalf("external_id = %q, want acct-default:user-default", accounts[0].ExternalID)
 	}
 }
+
+func TestCodexAgentManager_TeamProfileRejectsSystemCredsFromDifferentUser(t *testing.T) {
+	fx := newCodexManagerFixture(t)
+
+	sharedAccount := "acct-team"
+	userA := "user-alice"
+	userB := "user-bob"
+
+	tokenA := makeCodexIDToken(t, time.Now().Add(2*time.Hour), sharedAccount, userA)
+	tokenB := makeCodexIDToken(t, time.Now().Add(24*time.Hour), sharedAccount, userB)
+
+	profile := CodexProfile{
+		Name: "alice", AccountID: sharedAccount, UserID: userA,
+		SavedAt: time.Now().UTC(),
+	}
+	profile.Tokens.AccessToken = "alice-token"
+	profile.Tokens.RefreshToken = "alice-refresh"
+	profile.Tokens.IDToken = tokenA
+	fx.writeProfile(t, profile)
+
+	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	if err := os.MkdirAll(authDir, 0o700); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	authJSON := `{"tokens":{"access_token":"bob-token","refresh_token":"bob-refresh","id_token":"` + tokenB + `","account_id":"` + sharedAccount + `"}}`
+	if err := os.WriteFile(filepath.Join(authDir, "auth.json"), []byte(authJSON), 0o600); err != nil {
+		t.Fatalf("write auth.json: %v", err)
+	}
+
+	if err := fx.manager.startAgentForProfile(profile); err != nil {
+		t.Fatalf("startAgentForProfile: %v", err)
+	}
+	waitUntil(t, time.Second, func() bool { return fx.instance("alice") != nil }, "alice profile to start")
+
+	instance := fx.instance("alice")
+	got := instance.Agent.tokenRefresh()
+	if got == "bob-token" {
+		t.Fatal("tokenRefresh returned bob's token - cross-contamination")
+	}
+	if got != "alice-token" {
+		t.Fatalf("tokenRefresh = %q, want alice-token", got)
+	}
+
+	creds := instance.Agent.credsRefresh()
+	if creds == nil {
+		t.Fatal("credsRefresh returned nil")
+	}
+	if creds.AccessToken == "bob-token" {
+		t.Fatal("credsRefresh returned bob's token - cross-contamination")
+	}
+}
