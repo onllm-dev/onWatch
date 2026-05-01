@@ -257,7 +257,7 @@ func readCodexProfileCredentials(profilePath string) *api.CodexCredentials {
 	return codexCredentialsFromProfile(profile)
 }
 
-func shouldUseSystemCredsForProfile(profileCreds, systemCreds *api.CodexCredentials, expectedAccountID string) bool {
+func shouldUseSystemCredsForProfile(profileCreds, systemCreds *api.CodexCredentials, expectedAccountID, expectedUserID string) bool {
 	if systemCreds == nil {
 		return false
 	}
@@ -272,6 +272,18 @@ func shouldUseSystemCredsForProfile(profileCreds, systemCreds *api.CodexCredenti
 	}
 	if profileCreds != nil {
 		if accountID := strings.TrimSpace(profileCreds.AccountID); accountID != "" && accountID != systemAccountID {
+			return false
+		}
+	}
+
+	// Team/Business workspaces share account_id across users. Reject system
+	// creds that belong to a different user on the same workspace.
+	if uid := strings.TrimSpace(expectedUserID); uid != "" {
+		systemUserID := strings.TrimSpace(systemCreds.UserID)
+		if systemUserID == "" {
+			systemUserID = api.ParseIDTokenUserID(systemCreds.IDToken)
+		}
+		if systemUserID != "" && uid != systemUserID {
 			return false
 		}
 	}
@@ -465,7 +477,7 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 		}
 
 		systemCreds := api.DetectCodexCredentials(m.logger)
-		if shouldUseSystemCredsForProfile(profileCreds, systemCreds, profile.AccountID) {
+		if shouldUseSystemCredsForProfile(profileCreds, systemCreds, profile.AccountID, profile.UserID) {
 			if err := updateProfileFromSystemCreds(profilePath, systemCreds, m.logger); err != nil {
 				m.logger.Warn("failed to persist Codex profile token refresh from auth.json", "error", err, "profile", profile.Name)
 			}
@@ -493,7 +505,7 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 		}
 
 		systemCreds := api.DetectCodexCredentials(m.logger)
-		if shouldUseSystemCredsForProfile(profileCreds, systemCreds, profile.AccountID) {
+		if shouldUseSystemCredsForProfile(profileCreds, systemCreds, profile.AccountID, profile.UserID) {
 			if err := updateProfileFromSystemCreds(profilePath, systemCreds, m.logger); err != nil {
 				m.logger.Warn("failed to update Codex profile from auth.json", "error", err, "profile", profile.Name)
 			}
