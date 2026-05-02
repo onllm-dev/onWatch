@@ -607,16 +607,24 @@ func run() error {
 	}
 
 	// Primary handler: writes to log file (or stdout for --debugstdout/Docker)
-	fileHandler := slog.NewTextHandler(logWriter, &slog.HandlerOptions{
-		Level: logLevel,
-	})
+	handlerOpts := &slog.HandlerOptions{Level: logLevel}
+	var fileHandler slog.Handler
+	if cfg.LogFormat == "json" {
+		fileHandler = slog.NewJSONHandler(logWriter, handlerOpts)
+	} else {
+		fileHandler = slog.NewTextHandler(logWriter, handlerOpts)
+	}
 
 	var logger *slog.Logger
 	if cfg.DebugMode && !cfg.DebugStdout && !cfg.IsDockerEnvironment() {
 		// --debug mode: file gets full logs, stdout gets only warn/error
-		stdoutHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelWarn,
-		})
+		stdoutOpts := &slog.HandlerOptions{Level: slog.LevelWarn}
+		var stdoutHandler slog.Handler
+		if cfg.LogFormat == "json" {
+			stdoutHandler = slog.NewJSONHandler(os.Stdout, stdoutOpts)
+		} else {
+			stdoutHandler = slog.NewTextHandler(os.Stdout, stdoutOpts)
+		}
 		logger = slog.New(dualHandler{file: fileHandler, stdout: stdoutHandler})
 	} else {
 		logger = slog.New(fileHandler)
@@ -629,6 +637,7 @@ func run() error {
 		"db_path", cfg.DBPath,
 		"debug", cfg.DebugMode,
 		"test_mode", cfg.TestMode,
+		"log_format", cfg.LogFormat,
 	)
 
 	// Warn if using default password
@@ -1903,6 +1912,7 @@ func printHelp() {
 	fmt.Println("  --debug            Run in foreground mode (logs to file, stdout gets warn/error)")
 	fmt.Println("  --debugstdout      Run in foreground mode with all logs to stdout")
 	fmt.Println("  --test             Test mode: isolated PID/log files, won't affect production")
+	fmt.Println("  --log-format FMT   Log output format: text, txt, fmt, or json (default: text)")
 	fmt.Println()
 	fmt.Println("Environment Variables:")
 	fmt.Println("  SYNTHETIC_API_KEY       Synthetic API key")
@@ -1922,6 +1932,7 @@ func printHelp() {
 	fmt.Println("  ONWATCH_ADMIN_PASS      Dashboard admin password")
 	fmt.Println("  ONWATCH_DB_PATH         SQLite database file path")
 	fmt.Println("  ONWATCH_LOG_LEVEL       Log level: debug, info, warn, error")
+	fmt.Println("  ONWATCH_LOG_FORMAT      Log output format: text, txt, fmt, or json (default: text)")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  onwatch setup                     # Interactive setup wizard")

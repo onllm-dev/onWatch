@@ -82,6 +82,7 @@ type Config struct {
 	DBPath             string        // ONWATCH_DB_PATH
 	DBPathExplicit     bool          // true if user explicitly set --db or ONWATCH_DB_PATH
 	LogLevel           string        // ONWATCH_LOG_LEVEL
+	LogFormat          string        // ONWATCH_LOG_FORMAT: text (default), txt, fmt, or json
 	MetricsToken      string        // ONWATCH_METRICS_TOKEN (bearer token for /metrics endpoint)
 	SessionIdleTimeout time.Duration // ONWATCH_SESSION_IDLE_TIMEOUT (seconds → Duration)
 	BasePath           string        // ONWATCH_BASE_PATH (subdirectory hosting, e.g. "/onwatch")
@@ -117,6 +118,7 @@ type flagValues struct {
 	interval    int
 	port        int
 	db          string
+	logFormat   string
 	debug       bool
 	debugStdout bool
 	test        bool
@@ -172,6 +174,13 @@ func loadWithArgs(args []string) (*Config, error) {
 		case arg == "--db":
 			if i+1 < len(args) {
 				flags.db = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(arg, "--log-format="):
+			flags.logFormat = strings.TrimPrefix(arg, "--log-format=")
+		case arg == "--log-format":
+			if i+1 < len(args) {
+				flags.logFormat = args[i+1]
 				i++
 			}
 		}
@@ -367,6 +376,13 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// Log Level
 	cfg.LogLevel = envWithFallback("ONWATCH_LOG_LEVEL", "SYNTRACK_LOG_LEVEL")
 
+	// Log Format (CLI flag overrides env var)
+	if flags.logFormat != "" {
+		cfg.LogFormat = flags.logFormat
+	} else {
+		cfg.LogFormat = os.Getenv("ONWATCH_LOG_FORMAT")
+	}
+
 	// Metrics token for Prometheus endpoint
 	cfg.MetricsToken = os.Getenv("ONWATCH_METRICS_TOKEN")
 
@@ -435,6 +451,15 @@ func (c *Config) applyDefaults() {
 	}
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
+	}
+	c.LogFormat = strings.ToLower(strings.TrimSpace(c.LogFormat))
+	switch c.LogFormat {
+	case "json":
+		// keep as-is
+	case "text", "txt", "fmt":
+		c.LogFormat = "text"
+	default:
+		c.LogFormat = "text"
 	}
 	// Normalize base path: ensure leading slash, no trailing slash, empty means root
 	c.BasePath = strings.TrimRight(c.BasePath, "/")
@@ -649,6 +674,7 @@ func (c *Config) String() string {
 	fmt.Fprintf(&sb, "  AdminPass: ****,\n")
 	fmt.Fprintf(&sb, "  DBPath: %s,\n", c.DBPath)
 	fmt.Fprintf(&sb, "  LogLevel: %s,\n", c.LogLevel)
+	fmt.Fprintf(&sb, "  LogFormat: %s,\n", c.LogFormat)
 	fmt.Fprintf(&sb, "  DebugMode: %v,\n", c.DebugMode)
 	fmt.Fprintf(&sb, "  DebugStdout: %v,\n", c.DebugStdout)
 	fmt.Fprintf(&sb, "}")
