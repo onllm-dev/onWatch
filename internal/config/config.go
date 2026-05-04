@@ -66,6 +66,10 @@ type Config struct {
 	CursorToken     string // CURSOR_TOKEN or auto-detected
 	CursorAutoToken bool   // true if token was auto-detected
 
+	// OpenCode Go provider configuration (cookie-based auth from opencode.ai)
+	OpenCodeGoCookie      string // OPENCODEGO_COOKIE (auth cookie for opencode.ai)
+	OpenCodeGoWorkspaceID string // OPENCODEGO_WORKSPACE_ID (optional, skip resolution)
+
 	// Custom API Integrations telemetry ingestion
 	APIIntegrationsEnabled   bool          // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
 	APIIntegrationsDir       string        // ONWATCH_API_INTEGRATIONS_DIR (default: ~/.onwatch/api-integrations or /data/api-integrations)
@@ -200,6 +204,8 @@ var onwatchEnvKeys = []string{
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
 	"CURSOR_TOKEN",
+	"OPENCODEGO_COOKIE",
+	"OPENCODEGO_WORKSPACE_ID",
 	"GEMINI_ENABLED",
 	"GEMINI_REFRESH_TOKEN",
 	"GEMINI_ACCESS_TOKEN",
@@ -326,6 +332,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// Cursor provider (auto-detected from Cursor Desktop SQLite or keychain)
 	cfg.CursorToken = strings.TrimSpace(os.Getenv("CURSOR_TOKEN"))
+
+	// OpenCode Go provider (cookie-based auth)
+	cfg.OpenCodeGoCookie = strings.TrimSpace(os.Getenv("OPENCODEGO_COOKIE"))
+	cfg.OpenCodeGoWorkspaceID = strings.TrimSpace(os.Getenv("OPENCODEGO_WORKSPACE_ID"))
 
 	// Custom API Integrations telemetry ingestion
 	cfg.APIIntegrationsDir = strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_DIR"))
@@ -551,6 +561,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.CursorToken != "" {
 		providers = append(providers, "cursor")
 	}
+	if c.OpenCodeGoCookie != "" {
+		providers = append(providers, "opencodego")
+	}
 	return providers
 }
 
@@ -577,6 +590,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.GeminiEnabled
 	case "cursor":
 		return c.CursorToken != ""
+	case "opencodego":
+		return c.OpenCodeGoCookie != ""
 	}
 	return false
 }
@@ -612,6 +627,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.CursorToken != "" {
+		count++
+	}
+	if c.OpenCodeGoCookie != "" {
 		count++
 	}
 	return count > 1
@@ -663,6 +681,10 @@ func (c *Config) String() string {
 	if c.CursorAutoToken {
 		fmt.Fprintf(&sb, "  CursorAutoToken: true,\n")
 	}
+
+	// Redact OpenCodeGo cookie
+	opencodegoDisplay := redactAPIKey(c.OpenCodeGoCookie, "")
+	fmt.Fprintf(&sb, "  OpenCodeGoCookie: %s,\n", opencodegoDisplay)
 
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)
 	fmt.Fprintf(&sb, "  SessionIdleTimeout: %v,\n", c.SessionIdleTimeout)

@@ -828,6 +828,15 @@ func run() error {
 		logger.Info("Cursor API client configured")
 	}
 
+	var opencodegoClient *api.OpenCodeGoClient
+	if cfg.HasProvider("opencodego") {
+		opencodegoClient = api.NewOpenCodeGoClient(cfg.OpenCodeGoCookie, logger)
+		if cfg.OpenCodeGoWorkspaceID != "" {
+			opencodegoClient.SetWorkspaceID(cfg.OpenCodeGoWorkspaceID)
+		}
+		logger.Info("OpenCode Go API client configured")
+	}
+
 	// Create components
 	tr := tracker.New(db, logger)
 
@@ -994,6 +1003,11 @@ func run() error {
 		cursorTr = tracker.NewCursorTracker(db, logger)
 	}
 
+	var opencodegoTr *tracker.OpenCodeGoTracker
+	if cfg.HasProvider("opencodego") {
+		opencodegoTr = tracker.NewOpenCodeGoTracker(db, logger)
+	}
+
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
 		antigravitySm := agent.NewSessionManager(db, "antigravity", idleTimeout, logger)
@@ -1052,6 +1066,12 @@ func run() error {
 		})
 	}
 
+	var openCodeGoAg *agent.OpenCodeGoAgent
+	if opencodegoClient != nil {
+		openCodeGoSm := agent.NewSessionManager(db, "opencodego", idleTimeout, logger)
+		openCodeGoAg = agent.NewOpenCodeGoAgent(opencodegoClient, db, opencodegoTr, cfg.PollInterval, logger, openCodeGoSm)
+	}
+
 	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
 	if cfg.APIIntegrationsEnabled {
 		apiIntegrationsAg = agent.NewAPIIntegrationsIngestAgent(db, cfg.APIIntegrationsDir, cfg.APIIntegrationsRetention, logger)
@@ -1095,6 +1115,9 @@ func run() error {
 	}
 	if cursorAg != nil {
 		cursorAg.SetNotifier(notifier)
+	}
+	if openCodeGoAg != nil {
+		openCodeGoAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -1200,6 +1223,9 @@ func run() error {
 	if cursorAg != nil {
 		cursorAg.SetPollingCheck(func() bool { return isPollingEnabled("cursor") })
 	}
+	if openCodeGoAg != nil {
+		openCodeGoAg.SetPollingCheck(func() bool { return isPollingEnabled("opencodego") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -1250,6 +1276,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "cursor", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	if opencodegoTr != nil {
+		opencodegoTr.SetOnReset(func(windowName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "opencodego", QuotaKey: windowName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -1277,6 +1308,12 @@ func run() error {
 	}
 	if cursorTr != nil {
 		handler.SetCursorTracker(cursorTr)
+	}
+	if opencodegoTr != nil {
+		handler.SetOpenCodeGoTracker(opencodegoTr)
+	}
+	if openCodeGoAg != nil {
+		handler.SetOpenCodeGoAgent(openCodeGoAg)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -1309,6 +1346,9 @@ func run() error {
 	if cursorAg != nil {
 		agentMgr.RegisterFactory("cursor", func() (agent.AgentRunner, error) { return cursorAg, nil })
 	}
+	if openCodeGoAg != nil {
+		agentMgr.RegisterFactory("opencodego", func() (agent.AgentRunner, error) { return openCodeGoAg, nil })
+	}
 
 	if apiIntegrationsAg != nil {
 		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
@@ -1335,7 +1375,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "opencodego"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}

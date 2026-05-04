@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/onllm-dev/onwatch/v2/internal/agent"
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
@@ -92,6 +93,8 @@ type Handler struct {
 	geminiTracker      *tracker.GeminiTracker
 	openrouterTracker  *tracker.OpenRouterTracker
 	cursorTracker      *tracker.CursorTracker
+	opencodegoTracker  *tracker.OpenCodeGoTracker
+	opencodegoAgent    *agent.OpenCodeGoAgent
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -817,6 +820,15 @@ func (h *Handler) SetCursorTracker(t *tracker.CursorTracker) {
 	h.cursorTracker = t
 }
 
+func (h *Handler) SetOpenCodeGoTracker(t *tracker.OpenCodeGoTracker) {
+	h.opencodegoTracker = t
+}
+
+// SetOpenCodeGoAgent sets the OpenCode Go agent for usage summary enrichment.
+func (h *Handler) SetOpenCodeGoAgent(a *agent.OpenCodeGoAgent) {
+	h.opencodegoAgent = a
+}
+
 // SetAgentManager sets provider agent lifecycle controller.
 func (h *Handler) SetAgentManager(m ProviderAgentController) {
 	h.agentManager = m
@@ -1152,6 +1164,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "openrouter", Name: "OpenRouter", Description: "OpenRouter credits usage tracking"},
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 		{Key: "cursor", Name: "Cursor", Description: "Cursor usage and quota tracking", AutoDetectable: true},
+		{Key: "opencodego", Name: "OpenCode Go", Description: "OpenCode Go subscription usage", AutoDetectable: false},
 	}
 }
 
@@ -1211,6 +1224,8 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return h.config.GeminiEnabled
 	case "cursor":
 		return strings.TrimSpace(h.config.CursorToken) != "" || strings.TrimSpace(api.DetectCursorToken(h.logger)) != ""
+	case "opencodego":
+		return h.config.OpenCodeGoCookie != ""
 	default:
 		return false
 	}
@@ -1411,6 +1426,9 @@ var providerEnumFields = map[string]map[string][]string{
 	"cursor": {
 		"display_mode": {"usage", "available"},
 	},
+	"opencodego": {
+		"display_mode": {"usage", "available"},
+	},
 }
 
 // sanitizeProviderSettings validates enum fields and resets invalid values
@@ -1497,6 +1515,11 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 		}
 		if token, _ := s["csrf_token"].(string); token != "" {
 			cfg.AntigravityCSRFToken = token
+		}
+	}
+	if s := provSettings["opencodego"]; s != nil {
+		if cookie, _ := s["cookie"].(string); cookie != "" {
+			cfg.OpenCodeGoCookie = cookie
 		}
 	}
 
@@ -1830,6 +1853,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentGemini(w, r)
 	case "cursor":
 		h.currentCursor(w, r)
+	case "opencodego":
+		h.currentOpenCodeGo(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1839,6 +1864,136 @@ func (h *Handler) currentCursor(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := h.buildCursorCurrent()
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *Handler) currentOpenCodeGo(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildOpenCodeGoCurrent())
+}
+
+func (h *Handler) buildOpenCodeGoCurrent() map[string]interface{} {
+	now := time.Now().UTC()
+	response := map[string]interface{}{
+		"capturedAt": now.Format(time.RFC3339),
+		"windows":    []interface{}{},
+	}
+
+	if h.store == nil {
+		return response
+	}
+
+	latest, err := h.store.QueryLatestOpenCodeGo()
+	if err != nil || latest == nil {
+		return response
+	}
+
+	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
+
+	type windowEntry struct {
+		Name                  string  `json:"name"`
+		DisplayName           string  `json:"displayName"`
+		UsagePercent          float64 `json:"usagePercent"`
+		ResetInSec            int     `json:"resetInSec"`
+		ResetsAt              string  `json:"resetsAt"`
+		TimeUntilReset        string  `json:"timeUntilReset"`
+		TimeUntilResetSeconds int64   `json:"timeUntilResetSeconds"`
+		Status                string  `json:"status"`
+		AgeSeconds            int64   `json:"ageSeconds"`
+	}
+
+	windows := make([]windowEntry, 0, len(latest.Windows))
+	for _, w := range latest.Windows {
+		displayName := opencodegoDisplayName(w.WindowName)
+		age := now.Sub(latest.CapturedAt)
+		resetsAt := latest.CapturedAt.Add(time.Duration(w.ResetInSec) * time.Second)
+		timeUntilReset := time.Until(resetsAt)
+		if timeUntilReset < 0 {
+			timeUntilReset = 0
+		}
+		status := w.Status
+		if status == "ok" || status == "normal" {
+			status = "healthy"
+		}
+		entry := windowEntry{
+			Name:                  w.WindowName,
+			DisplayName:           displayName,
+			UsagePercent:          w.UsagePercent,
+			ResetInSec:            w.ResetInSec,
+			ResetsAt:              resetsAt.Format(time.RFC3339),
+			TimeUntilReset:        formatDuration(timeUntilReset),
+			TimeUntilResetSeconds: int64(timeUntilReset.Seconds()),
+			Status:                status,
+			AgeSeconds:            int64(age.Seconds()),
+		}
+		windows = append(windows, entry)
+	}
+	response["quotas"] = windows
+
+	applyDisplayModeToResponse(response, h.getDisplayMode("opencodego"))
+	return response
+}
+
+func (h *Handler) historyOpenCodeGo(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	rangeParam := r.URL.Query().Get("range")
+	if rangeParam == "" {
+		rangeParam = "7d"
+	}
+
+	now := time.Now().UTC()
+	var start time.Time
+	switch rangeParam {
+	case "1h":
+		start = now.Add(-1 * time.Hour)
+	case "6h":
+		start = now.Add(-6 * time.Hour)
+	case "24h", "1d":
+		start = now.Add(-24 * time.Hour)
+	case "3d":
+		start = now.Add(-3 * 24 * time.Hour)
+	case "30d":
+		start = now.Add(-30 * 24 * time.Hour)
+	case "7d":
+		start = now.Add(-7 * 24 * time.Hour)
+	default:
+		start = now.Add(-7 * 24 * time.Hour)
+	}
+
+	snapshots, err := h.store.QueryOpenCodeGoRange(start, now, 200)
+	if err != nil {
+		h.logger.Error("failed to query OpenCode Go history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query history")
+		return
+	}
+
+	type historyEntry struct {
+		CapturedAt string                   `json:"capturedAt"`
+		Quotas     []map[string]interface{} `json:"quotas"`
+	}
+
+	result := make([]historyEntry, 0, len(snapshots))
+	for _, snap := range snapshots {
+		entry := historyEntry{
+			CapturedAt: snap.CapturedAt.Format(time.RFC3339),
+		}
+		for _, w := range snap.Windows {
+			wMap := map[string]interface{}{
+				"name":         w.WindowName,
+				"displayName":  opencodegoDisplayName(w.WindowName),
+				"usagePercent": w.UsagePercent,
+				"utilization":  w.UsagePercent,
+				"resetInSec":   w.ResetInSec,
+				"status":       w.Status,
+			}
+			entry.Quotas = append(entry.Quotas, wMap)
+		}
+		result = append(result, entry)
+	}
+
+	respondJSON(w, http.StatusOK, result)
 }
 
 // currentBoth returns combined quota status for all configured providers.
@@ -1907,6 +2062,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") {
 		response["cursor"] = h.buildCursorCurrent()
+	}
+	if h.config.HasProvider("opencodego") && providerTelemetryEnabled(visibility, "opencodego") {
+		response["opencodego"] = h.buildOpenCodeGoCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -2250,6 +2408,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyGemini(w, r)
 	case "cursor":
 		h.historyCursor(w, r)
+	case "opencodego":
+		h.historyOpenCodeGo(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2564,6 +2724,28 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				cursorData = append(cursorData, entry)
 			}
 			response["cursor"] = cursorData
+		}
+	}
+
+	if h.config.HasProvider("opencodego") && providerTelemetryEnabled(visibility, "opencodego") && h.store != nil {
+		snapshots, err := h.store.QueryOpenCodeGoRange(start, now)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			ocgData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+				}
+				for _, w := range snap.Windows {
+					entry[w.WindowName] = w.UsagePercent
+				}
+				ocgData = append(ocgData, entry)
+			}
+			response["opencodego"] = ocgData
 		}
 	}
 
@@ -3165,6 +3347,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesGemini(w, r)
 	case "cursor":
 		h.cyclesCursor(w, r)
+	case "opencodego":
+		h.cyclesOpenCodeGo(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3308,6 +3492,36 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("gemini") {
 		response["gemini"] = []interface{}{}
+	}
+
+	if h.config.HasProvider("opencodego") {
+		windowName := r.URL.Query().Get("type")
+		if windowName == "" {
+			windowName = "rolling"
+		}
+		switch windowName {
+		case "rollingUsage":
+			windowName = "rolling"
+		case "weeklyUsage":
+			windowName = "weekly"
+		case "monthlyUsage":
+			windowName = "monthly"
+		}
+		var ocgCycles []map[string]interface{}
+		if active, err := h.store.QueryActiveOpenCodeGoCycle(windowName); err == nil && active != nil {
+			ocgCycles = append(ocgCycles, opencodegoCycleToMap(active))
+		}
+		if history, err := h.store.QueryOpenCodeGoCycleHistory(windowName, 50); err == nil {
+			for _, c := range history {
+				ocgCycles = append(ocgCycles, opencodegoCycleToMap(c))
+			}
+		}
+		response["opencodego"] = map[string]interface{}{
+			"groupBy":    windowName,
+			"provider":   "opencodego",
+			"quotaNames": []string{"rolling", "weekly", "monthly"},
+			"cycles":     ocgCycles,
+		}
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -3484,6 +3698,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryGemini(w, r)
 	case "cursor":
 		h.summaryCursor(w, r)
+	case "opencodego":
+		h.summaryOpenCodeGo(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3553,6 +3769,9 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("cursor") && h.cursorTracker != nil {
 		response["cursor"] = h.buildCursorSummaryMap()
+	}
+	if h.config.HasProvider("opencodego") && h.opencodegoTracker != nil {
+		response["opencodego"] = h.buildOpenCodeGoSummaryMap()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -4280,6 +4499,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsGemini(w, r, rangeDur)
 	case "cursor":
 		h.insightsCursor(w, r, rangeDur)
+	case "opencodego":
+		h.insightsOpenCodeGo(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4360,6 +4581,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") {
 		response["cursor"] = h.buildCursorInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("opencodego") && providerTelemetryEnabled(visibility, "opencodego") {
+		response["opencodego"] = h.buildOpenCodeGoInsights(hidden, rangeDur)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -6697,6 +6921,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewGemini(w, r)
 	case "cursor":
 		h.cycleOverviewCursor(w, r)
+	case "opencodego":
+		h.cycleOverviewOpenCodeGo(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -6967,6 +7193,29 @@ func (h *Handler) cycleOverviewBoth(w http.ResponseWriter, r *http.Request) {
 			"provider":   "gemini",
 			"quotaNames": []string{},
 			"cycles":     []interface{}{},
+		}
+	}
+
+	if h.config.HasProvider("opencodego") {
+		groupBy := r.URL.Query().Get("opencodegoGroupBy")
+		if groupBy == "" {
+			groupBy = "rolling"
+		}
+		switch groupBy {
+		case "rollingUsage":
+			groupBy = "rolling"
+		case "weeklyUsage":
+			groupBy = "weekly"
+		case "monthlyUsage":
+			groupBy = "monthly"
+		}
+		if rows, err := h.store.QueryOpenCodeGoCycleOverview(groupBy, limit); err == nil {
+			response["opencodego"] = map[string]interface{}{
+				"groupBy":    groupBy,
+				"provider":   "opencodego",
+				"quotaNames": []string{"rolling", "weekly", "monthly"},
+				"cycles":     opencodegoCycleOverviewRowsToJSON(rows),
+			}
 		}
 	}
 
@@ -10191,6 +10440,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryGemini(w, r)
 	case "cursor":
 		h.loggingHistoryCursor(w, r)
+	case "opencodego":
+		h.loggingHistoryOpenCodeGo(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -10945,5 +11196,314 @@ func (h *Handler) SimulateAlert(w http.ResponseWriter, r *http.Request) {
 		"title":    req.Title,
 		"message":  req.Message,
 		"provider": req.Provider,
+	})
+}
+
+// ── OpenCode Go Handlers ──
+
+var opencodegoDisplayNames = map[string]string{
+	"rolling": "Rolling",
+	"weekly":  "Weekly",
+	"monthly": "Monthly",
+}
+
+func opencodegoDisplayName(name string) string {
+	if dn, ok := opencodegoDisplayNames[name]; ok {
+		return dn
+	}
+	return name
+}
+
+var opencodegoWindowOrder = map[string]int{
+	"rolling": 1,
+	"weekly":  2,
+	"monthly": 3,
+}
+
+func opencodegoWindowSortOrder(name string) int {
+	if order, ok := opencodegoWindowOrder[name]; ok {
+		return order
+	}
+	return 99
+}
+
+func opencodegoCycleToMap(cycle *store.OpenCodeGoResetCycle) map[string]interface{} {
+	m := map[string]interface{}{
+		"id":           cycle.ID,
+		"windowName":   cycle.WindowName,
+		"quotaName":    cycle.WindowName,
+		"cycleStart":   cycle.CycleStart.Format(time.RFC3339),
+		"peakUsage":    cycle.PeakUsage,
+		"peakUtilization": cycle.PeakUsage,
+		"totalDelta":   cycle.TotalDelta,
+		"isActive":     true,
+	}
+	if cycle.ResetsAt.After(cycle.CycleStart) {
+		m["resetsAt"] = cycle.ResetsAt.Format(time.RFC3339)
+		m["timeUntilReset"] = formatDuration(time.Until(cycle.ResetsAt))
+	}
+	m["cycleEnd"] = nil
+	return m
+}
+
+func opencodegoCycleOverviewRowsToJSON(rows []api.OpenCodeGoCycleOverviewRow) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		entry := map[string]interface{}{
+			"cycleId":    row.CycleID,
+			"quotaType":  row.WindowName,
+			"cycleStart": row.CycleStart.Format(time.RFC3339),
+			"peakValue":  row.PeakValue,
+			"totalDelta": row.TotalDelta,
+			"peakTime":   row.PeakTime.Format(time.RFC3339),
+		}
+		if row.CycleEnd != nil {
+			entry["cycleEnd"] = row.CycleEnd.Format(time.RFC3339)
+		} else {
+			entry["cycleEnd"] = nil
+		}
+		crossQuotas := make([]map[string]interface{}, 0, len(row.CrossQuotas))
+		for _, cq := range row.CrossQuotas {
+			crossQuotas = append(crossQuotas, map[string]interface{}{
+				"name":         cq.Name,
+				"value":        cq.Value,
+				"limit":        cq.Limit,
+				"percent":      cq.Percent,
+				"startPercent": cq.StartPercent,
+				"delta":        cq.Delta,
+			})
+		}
+		entry["crossQuotas"] = crossQuotas
+		result = append(result, entry)
+	}
+	return result
+}
+
+func (h *Handler) summaryOpenCodeGo(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildOpenCodeGoSummaryMap())
+}
+
+func (h *Handler) buildOpenCodeGoSummaryMap() map[string]interface{} {
+	if h.store == nil || h.opencodegoTracker == nil {
+		return map[string]interface{}{}
+	}
+
+	result := make(map[string]interface{})
+	for _, windowName := range []string{"rolling", "weekly", "monthly"} {
+		summary, err := h.opencodegoTracker.UsageSummary(windowName)
+		if err != nil || summary == nil {
+			continue
+		}
+		entry := map[string]interface{}{
+			"displayName":   opencodegoDisplayName(windowName),
+			"usagePercent":  summary.UsagePercent,
+			"resetInSec":    summary.ResetInSec,
+			"currentRate":   summary.CurrentRate,
+			"projectedUsage": summary.ProjectedUsage,
+			"completedCycles": summary.CompletedCycles,
+			"peakCycle":     summary.PeakCycle,
+			"totalTracked":  summary.TotalTracked,
+		}
+		if summary.TimeUntilReset > 0 {
+			entry["timeUntilReset"] = formatDuration(summary.TimeUntilReset)
+		}
+		result[windowName] = entry
+	}
+	return result
+}
+
+func (h *Handler) cyclesOpenCodeGo(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	windowName := r.URL.Query().Get("type")
+	if windowName == "" {
+		windowName = "rolling"
+	}
+	// Accept legacy window names from older clients.
+	switch windowName {
+	case "rollingUsage":
+		windowName = "rolling"
+	case "weeklyUsage":
+		windowName = "weekly"
+	case "monthlyUsage":
+		windowName = "monthly"
+	}
+
+	active, err := h.store.QueryActiveOpenCodeGoCycle(windowName)
+	if err != nil {
+		h.logger.Error("failed to query active OpenCode Go cycle", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycles")
+		return
+	}
+
+	history, err := h.store.QueryOpenCodeGoCycleHistory(windowName, 50)
+	if err != nil {
+		h.logger.Error("failed to query OpenCode Go cycle history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycles")
+		return
+	}
+
+	var cycles []map[string]interface{}
+	if active != nil {
+		cycles = append(cycles, opencodegoCycleToMap(active))
+	}
+	for _, c := range history {
+		m := opencodegoCycleToMap(c)
+		m["isActive"] = false
+		if c.CycleEnd != nil {
+			m["cycleEnd"] = c.CycleEnd.Format(time.RFC3339)
+		}
+		cycles = append(cycles, m)
+	}
+
+	respondJSON(w, http.StatusOK, cycles)
+}
+
+func (h *Handler) cycleOverviewOpenCodeGo(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	groupBy := r.URL.Query().Get("group_by")
+	if groupBy == "" {
+		groupBy = "rolling"
+	}
+	switch groupBy {
+	case "rollingUsage":
+		groupBy = "rolling"
+	case "weeklyUsage":
+		groupBy = "weekly"
+	case "monthlyUsage":
+		groupBy = "monthly"
+	}
+
+	overview, err := h.store.QueryOpenCodeGoCycleOverview(groupBy, 50)
+	if err != nil {
+		h.logger.Error("failed to query OpenCode Go cycle overview", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycle overview")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, overview)
+}
+
+func (h *Handler) insightsOpenCodeGo(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
+	hidden := h.getHiddenInsightKeys()
+	respondJSON(w, http.StatusOK, h.buildOpenCodeGoInsights(hidden, rangeDur))
+}
+
+func (h *Handler) buildOpenCodeGoInsights(hidden map[string]bool, _ time.Duration) insightsResponse {
+	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
+
+	if h.store == nil {
+		return resp
+	}
+
+	latest, err := h.store.QueryLatestOpenCodeGo()
+	if err != nil || latest == nil || len(latest.Windows) == 0 {
+		return resp
+	}
+
+	windows := make([]api.OpenCodeGoWindowValue, len(latest.Windows))
+	copy(windows, latest.Windows)
+	sort.SliceStable(windows, func(i, j int) bool {
+		left := opencodegoWindowSortOrder(windows[i].WindowName)
+		right := opencodegoWindowSortOrder(windows[j].WindowName)
+		if left != right {
+			return left < right
+		}
+		return windows[i].WindowName < windows[j].WindowName
+	})
+
+	for _, w := range windows {
+		label := fmt.Sprintf("%s Usage", opencodegoDisplayName(w.WindowName))
+		value := fmt.Sprintf("%.1f%%", w.UsagePercent)
+		sublabel := "resets in " + formatDuration(time.Duration(w.ResetInSec)*time.Second)
+		resp.Stats = append(resp.Stats, insightStat{
+			Label:    label,
+			Value:    value,
+			Sublabel: sublabel,
+		})
+
+		insightKey := fmt.Sprintf("forecast_%s", w.WindowName)
+		if hidden[insightKey] {
+			continue
+		}
+		severity := utilStatus(w.UsagePercent)
+		var metric string
+		var desc string
+		if h.opencodegoTracker != nil {
+			summary, err := h.opencodegoTracker.UsageSummary(w.WindowName)
+			if err == nil && summary != nil {
+				if summary.CurrentRate > 0 {
+					metric = fmt.Sprintf("%.1f%%/hr", summary.CurrentRate)
+				}
+				if summary.ProjectedUsage > 0 {
+					desc = fmt.Sprintf("At %.1f%%, projected %.1f%% by reset", w.UsagePercent, summary.ProjectedUsage)
+				}
+			}
+		}
+		if desc == "" {
+			desc = fmt.Sprintf("Currently at %.1f%% usage", w.UsagePercent)
+		}
+		resp.Insights = append(resp.Insights, insightItem{
+			Key:      insightKey,
+			Type:     "forecast",
+			Severity: severity,
+			Title:    label,
+			Metric:   metric,
+			Sublabel: sublabel,
+			Desc:     desc,
+		})
+	}
+
+	return resp
+}
+
+func (h *Handler) loggingHistoryOpenCodeGo(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"logs": []interface{}{}})
+		return
+	}
+
+	start, end, limit := h.loggingHistoryRangeAndLimit(r)
+	snapshots, err := h.store.QueryOpenCodeGoRange(start, end, limit)
+	if err != nil {
+		h.logger.Error("failed to query OpenCode Go snapshots", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query logging history")
+		return
+	}
+
+	quotaNames := []string{"rolling", "weekly", "monthly"}
+
+	capturedAt := make([]time.Time, 0, len(snapshots))
+	ids := make([]int64, 0, len(snapshots))
+	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
+
+	for _, snap := range snapshots {
+		capturedAt = append(capturedAt, snap.CapturedAt)
+		ids = append(ids, snap.ID)
+		row := make(map[string]loggingHistoryCrossQuota, len(snap.Windows))
+		for _, w := range snap.Windows {
+			row[w.WindowName] = loggingHistoryCrossQuota{
+				Name:     w.WindowName,
+				Value:    w.UsagePercent,
+				Limit:    100,
+				Percent:  w.UsagePercent,
+				HasValue: true,
+				HasLimit: true,
+			}
+		}
+		series = append(series, row)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"provider":   "opencodego",
+		"quotaNames": quotaNames,
+		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
 	})
 }
