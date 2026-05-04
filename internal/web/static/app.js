@@ -995,6 +995,22 @@ const cursorChartColorFallback = [
   { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)' },
 ];
 
+const opencodegoDisplayNames = {
+  rolling: 'Rolling',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+};
+
+const opencodegoChartColorMap = {
+  rolling: { border: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.08)' },
+  weekly: { border: '#22C55E', bg: 'rgba(34, 197, 94, 0.08)' },
+  monthly: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
+};
+const opencodegoChartColorFallback = [
+  { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.08)' },
+  { border: '#EC4899', bg: 'rgba(236, 72, 153, 0.08)' },
+];
+
 const geminiChartColorFallback = [
   { border: '#4285F4', bg: 'rgba(66, 133, 244, 0.08)' },
   { border: '#34A853', bg: 'rgba(52, 168, 83, 0.08)' },
@@ -4690,6 +4706,7 @@ const bothProviderNames = {
   minimax: 'MiniMax',
   gemini: 'Gemini',
   cursor: 'Cursor',
+  opencodego: 'OpenCode Go',
   'api-integrations': 'API Integrations',
 };
 
@@ -5551,6 +5568,9 @@ function buildProviderCardDatasets(provider, rows, range) {
     const orFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
     return buildDynamicDatasetsForRows(rows, range, orDisplayNames, orColors, orFallback, 'openrouter');
   }
+  if (provider === 'opencodego') {
+    return buildDynamicDatasetsForRows(rows, range, opencodegoDisplayNames, opencodegoChartColorMap, opencodegoChartColorFallback, 'opencodego');
+  }
   return [];
 }
 
@@ -5706,6 +5726,9 @@ function updateBothCharts(data, range = '6h') {
   if (activeProviders.has('cursor') && Array.isArray(data.cursor) && data.cursor.length > 0) {
     slots.push({ id: 'cursor', label: 'Cursor', provider: 'cursor', rows: data.cursor });
   }
+  if (activeProviders.has('opencodego') && Array.isArray(data.opencodego) && data.opencodego.length > 0) {
+    slots.push({ id: 'opencodego', label: 'OpenCode Go', provider: 'opencodego', rows: data.opencodego });
+  }
   if (activeProviders.has('codex')) {
     if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
       data.codexAccounts.forEach((account, idx) => {
@@ -5836,6 +5859,8 @@ function updateBothCharts(data, range = '6h') {
       const orCM = { usage: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' }, usageDaily: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' }, percent: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' } };
       const orFB = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
       datasets = createDynamicDatasets(slot.rows, orDN, orCM, orFB, 'openrouter');
+    } else if (slot.provider === 'opencodego') {
+      datasets = createDynamicDatasets(slot.rows, opencodegoDisplayNames, opencodegoChartColorMap, opencodegoChartColorFallback, 'opencodego');
     }
 
     if (datasets.length === 0) return;
