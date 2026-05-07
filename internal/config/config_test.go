@@ -1530,3 +1530,18 @@ func TestConfig_LogFormat_AliasesAndCaseInsensitive(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenRotatingLogFile_CreatesDirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "nested", "dirs", "test.log")
+
+	file, err := OpenRotatingLogFile(logPath)
+	if err != nil {
+		t.Fatalf("OpenRotatingLogFile() failed: %v", err)
+	}
+	defer file.Close()
+
+	if _, err := os.Stat(filepath.Dir(logPath)); os.IsNotExist(err) {
+		t.Errorf("Directory was not created: %v", err)
+	}
+}

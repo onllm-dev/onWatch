@@ -62,7 +62,7 @@ if (-not (Test-Path $InstallDir)) {
 # 4. Stop and Remove Existing Service (if any)
 Write-Host "`nCleaning up existing service (if any)..."
 $existingStatus = & $NSSM status $ServiceName 2>$null
-if ($LASTEXITCODE -eq 0 -or $existingStatus) {
+if ($LASTEXITCODE -eq 0 -and $existingStatus -like "*SERVICE_*") {
     Write-Host "Stopping $ServiceName..." -ForegroundColor Yellow
     & $NSSM stop $ServiceName 2>$null
     Start-Sleep -Seconds 2
@@ -91,7 +91,7 @@ Write-Host "Applying robust configuration..." -ForegroundColor DarkGray
 & $NSSM set $ServiceName Description "Tracks AI API quota usage across providers"
 
 # Inject current user environment so LocalSystem can find ~/.codex, ~/.claude, and ~/.gemini
-$envExtra = "USERPROFILE=$env:USERPROFILE`0HOME=$env:USERPROFILE`0"
+$envExtra = "USERPROFILE=$env:USERPROFILE\0HOME=$env:USERPROFILE\0"
 & $NSSM set $ServiceName AppEnvironmentExtra $envExtra
 
 # Set startup type

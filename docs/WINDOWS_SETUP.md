@@ -285,8 +285,9 @@ For production deployments, you can run onWatch as a background Windows Service 
    # If you cloned the repository:
    .\scripts\setup-windows-service.ps1
    
-   # Or download and run directly:
-   irm https://raw.githubusercontent.com/onllm-dev/onwatch/main/scripts/setup-windows-service.ps1 | iex
+   # Or download and review the script before running:
+   Invoke-WebRequest -Uri https://raw.githubusercontent.com/onllm-dev/onwatch/main/scripts/setup-windows-service.ps1 -OutFile setup-windows-service.ps1
+   .\setup-windows-service.ps1
    ```
 
 ### Manual Setup (For Custom Environments)
