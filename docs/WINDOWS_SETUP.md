@@ -271,28 +271,47 @@ To run in debug mode (shows console window):
 
 ## Running as a Windows Service (Advanced)
 
-For production deployments, you can run onWatch as a Windows Service using [NSSM](https://nssm.cc/) (Non-Sucking Service Manager):
+For production deployments, you can run onWatch as a background Windows Service using [NSSM](https://nssm.cc/) (Non-Sucking Service Manager). We provide a robust setup script to handle common service pitfalls (like path resolution and lifecycle management).
 
-1. Download NSSM from https://nssm.cc/download
-2. Extract and open Command Prompt as Administrator
-3. Install the service:
+### Automatic Setup (Recommended)
+
+1. Ensure NSSM is installed via winget:
+   ```powershell
+   winget install nssm --accept-package-agreements --accept-source-agreements --silent
+   ```
+2. Open an **Elevated (Administrator) PowerShell** session.
+3. Run the provided setup script:
+   ```powershell
+   # If you cloned the repository:
+   .\scripts\setup-windows-service.ps1
+   
+   # Or download and run directly:
+   irm https://raw.githubusercontent.com/onllm-dev/onwatch/main/scripts/setup-windows-service.ps1 | iex
+   ```
+
+### Manual Setup (For Custom Environments)
+
+If you prefer to configure NSSM manually, open an Administrator prompt and use the following commands. **Note:** Using `--debugstdout` keeps the process attached to NSSM so it can monitor the application correctly, and setting `AppEnvironmentExtra` ensures the `LocalSystem` account can find your auto-detected AI API keys.
 
 ```cmd
-nssm install onwatch "%USERPROFILE%\.onwatch\bin\onwatch.exe"
-nssm set onwatch AppDirectory "%USERPROFILE%\.onwatch"
-nssm set onwatch AppParameters "--debug"
-nssm set onwatch DisplayName "onWatch API Quota Tracker"
-nssm set onwatch Description "Tracks AI API quota usage"
-nssm set onwatch Start SERVICE_AUTO_START
-nssm start onwatch
+nssm install onWatchService "%USERPROFILE%\.onwatch\bin\onwatch.exe"
+nssm set onWatchService AppParameters "--debugstdout"
+nssm set onWatchService AppDirectory "%USERPROFILE%\.onwatch"
+nssm set onWatchService AppStdout "%USERPROFILE%\.onwatch\service.log"
+nssm set onWatchService AppStderr "%USERPROFILE%\.onwatch\service.log"
+nssm set onWatchService DisplayName "onWatch API Quota Tracker"
+nssm set onWatchService Description "Tracks AI API quota usage"
+nssm set onWatchService AppEnvironmentExtra "USERPROFILE=%USERPROFILE%\0HOME=%USERPROFILE%\0"
+nssm set onWatchService Start SERVICE_AUTO_START
+nssm start onWatchService
 ```
 
 Manage the service:
 ```cmd
-nssm status onwatch
-nssm stop onwatch
-nssm restart onwatch
-nssm remove onwatch confirm
+nssm status onWatchService
+nssm stop onWatchService
+nssm restart onWatchService
+nssm remove onWatchService confirm
 ```
 
 ---

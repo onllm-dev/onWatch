@@ -726,6 +726,10 @@ func OpenRotatingLogFile(path string) (*os.File, error) {
 		return nil, fmt.Errorf("failed to stat log file %s: %w", path, err)
 	}
 
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create log directory: %w", err)
+	}
+
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
