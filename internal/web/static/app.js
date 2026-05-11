@@ -759,6 +759,8 @@ const anthropicDisplayNames = {
   five_hour: '5-Hour Limit',
   seven_day: 'Weekly All-Model',
   seven_day_sonnet: 'Weekly Sonnet',
+  seven_day_opus: 'Weekly Opus',
+  seven_day_design: 'Claude Design',
   monthly_limit: 'Monthly Limit',
   extra_usage: 'Extra Usage'
 };
@@ -768,6 +770,8 @@ const anthropicQuotaIcons = {
   five_hour: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',       // clock
   seven_day: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>', // calendar
   seven_day_sonnet: '<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>', // layers
+  seven_day_opus: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', // star
+  seven_day_design: '<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.5 1.5"/><path d="M7.1 7.1L9 9"/>', // feather/design
   monthly_limit: '<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>', // briefcase
   extra_usage: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>' // pie-chart
 };
@@ -777,6 +781,8 @@ const anthropicChartColorMap = {
   five_hour:        { border: '#D97757', bg: 'rgba(217, 119, 87, 0.08)' },   // coral
   seven_day:        { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },   // emerald
   seven_day_sonnet: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.08)' },   // blue
+  seven_day_opus:   { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },   // indigo
+  seven_day_design: { border: '#EC4899', bg: 'rgba(236, 72, 153, 0.08)' },   // pink
   monthly_limit:    { border: '#A855F7', bg: 'rgba(168, 85, 247, 0.08)' },   // violet
   extra_usage:      { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' }    // amber
 };
@@ -835,7 +841,7 @@ function codexVisibleQuotaNames(planType) {
     : ['five_hour', 'seven_day', 'code_review'];
 }
 
-const anthropicQuotaOrder = ['five_hour', 'seven_day', 'seven_day_sonnet', 'monthly_limit', 'extra_usage'];
+const anthropicQuotaOrder = ['five_hour', 'seven_day', 'seven_day_sonnet', 'seven_day_opus', 'seven_day_design', 'monthly_limit', 'extra_usage'];
 const codexQuotaOrder = ['five_hour', 'seven_day', 'code_review'];
 const cursorQuotaOrder = ['total_usage', 'auto_usage', 'api_usage', 'credits', 'on_demand'];
 
@@ -1234,6 +1240,11 @@ function renderAnthropicQuotaCards(quotas, containerId) {
     const statusId = `status-anth-${q.name}`;
     const resetId = `reset-anth-${q.name}`;
 
+    let fractionText = cardLabel;
+    if (q.name === 'extra_usage' && q.monthlyLimit > 0) {
+      fractionText = `${formatCurrencyEUR(q.usedCredits || 0)} / ${formatCurrencyEUR(q.monthlyLimit)}`;
+    }
+
     return `<article class="quota-card anthropic-card${q.isStale ? ' stale-card' : ''}" data-quota="${q.name}" data-provider="anthropic" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
@@ -1244,7 +1255,7 @@ function renderAnthropicQuotaCards(quotas, containerId) {
       </header>
       <div class="progress-stats">
         <span class="usage-percent" id="${percentId}">${utilPct}%</span>
-        <span class="usage-fraction">${cardLabel}</span>
+        <span class="usage-fraction">${fractionText}</span>
       </div>
       <div class="progress-wrapper">
         <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
@@ -1283,6 +1294,8 @@ function updateAnthropicCard(quota) {
   State.currentQuotas[key] = {
     percent: quota.utilization || 0,
     usage: quota.utilization || 0,
+    usedCredits: quota.usedCredits || 0,
+    monthlyLimit: quota.monthlyLimit || 0,
     limit: 100,
     status: quota.status || 'healthy',
     renewsAt: quota.resetsAt,
@@ -2827,6 +2840,15 @@ function formatCurrencyUSD(num) {
   }).format(num || 0);
 }
 
+function formatCurrencyEUR(num) {
+  return new Intl.NumberFormat('en-IE', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(num || 0);
+}
+
 function formatDateTime(isoString) {
   const d = new Date(isoString);
   const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
@@ -3104,12 +3126,18 @@ function initTheme() {
 function setLayoutDensity(mode) {
   const aliases = { default: 'normal' };
   const normalized = aliases[mode] || mode;
-  const valid = new Set(['compact', 'normal', 'wide']);
+  const valid = new Set(['compact', 'normal', 'wide', 'wall']);
   const next = valid.has(normalized) ? normalized : 'normal';
 
   if (document.body) {
-    document.body.classList.remove('layout-compact', 'layout-normal', 'layout-default', 'layout-wide');
+    document.body.classList.remove('layout-compact', 'layout-normal', 'layout-default', 'layout-wide', 'layout-wall');
     document.body.classList.add(`layout-${next}`);
+  }
+
+  // Wall Mode Button sync
+  const wallBtn = document.getElementById('wall-mode-toggle');
+  if (wallBtn) {
+    wallBtn.classList.toggle('active', next === 'wall');
   }
 
   const toggle = document.getElementById('layout-toggle');
@@ -7728,6 +7756,16 @@ function setupHeaderActions() {
     });
   }
 
+  // Wall Mode Toggle
+  const wallBtn = document.getElementById('wall-mode-toggle');
+  if (wallBtn) {
+    wallBtn.addEventListener('click', () => {
+      const current = localStorage.getItem('onwatch-layout') || 'normal';
+      const next = current === 'wall' ? 'normal' : 'wall';
+      setLayoutDensity(next);
+    });
+  }
+
   // Manual refresh
   const refreshBtn = document.getElementById('refresh-btn');
   if (refreshBtn) {
@@ -7740,6 +7778,14 @@ function setupHeaderActions() {
       Promise.all(tasks).finally(() => {
         setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
       });
+    });
+  }
+
+  // Exit Wall Mode (Floating Button)
+  const exitBtn = document.getElementById('exit-wall-btn');
+  if (exitBtn) {
+    exitBtn.addEventListener('click', () => {
+      setLayoutDensity('normal');
     });
   }
 }

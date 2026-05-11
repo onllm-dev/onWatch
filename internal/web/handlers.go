@@ -5017,6 +5017,8 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 			"name":          q.Name,
 			"displayName":   api.AnthropicDisplayName(q.Name),
 			"utilization":   q.Utilization,
+			"usedCredits":   q.UsedCredits,
+			"monthlyLimit":  q.MonthlyLimit,
 			"status":        anthropicUtilStatus(q.Utilization),
 			"source":        q.Source,
 			"lastUpdatedAt": q.CapturedAt.Format(time.RFC3339),

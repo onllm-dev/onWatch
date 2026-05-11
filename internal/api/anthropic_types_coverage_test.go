@@ -13,6 +13,8 @@ func TestAnthropicDisplayName_KnownKeys(t *testing.T) {
 		{"five_hour", "5-Hour Limit"},
 		{"seven_day", "Weekly All-Model"},
 		{"seven_day_sonnet", "Weekly Sonnet"},
+		{"seven_day_opus", "Weekly Opus"},
+		{"seven_day_design", "Claude Design"},
 		{"monthly_limit", "Monthly Limit"},
 		{"extra_usage", "Extra Usage"},
 		{"unknown_key", "unknown_key"},
@@ -35,6 +37,9 @@ func TestAnthropicQuotaResponse_ToSnapshot(t *testing.T) {
 
 	fiveHour := 45.2
 	sevenDay := 12.8
+	extraUsage := 15.0
+	extraUsed := 11.25
+	extraLimit := 75.0
 	boolTrue := true
 	fiveHourResetStr := fiveHourReset.Format(time.RFC3339)
 	sevenDayResetStr := sevenDayReset.Format(time.RFC3339)
@@ -50,28 +55,41 @@ func TestAnthropicQuotaResponse_ToSnapshot(t *testing.T) {
 			ResetsAt:    &sevenDayResetStr,
 			IsEnabled:   &boolTrue,
 		},
+		"extra_usage": &AnthropicQuotaEntry{
+			Utilization:  &extraUsage,
+			UsedCredits:  &extraUsed,
+			MonthlyLimit: &extraLimit,
+			IsEnabled:    &boolTrue,
+		},
 	}
 
 	snapshot := resp.ToSnapshot(now)
 	if snapshot.CapturedAt != now {
 		t.Errorf("CapturedAt = %v, want %v", snapshot.CapturedAt, now)
 	}
-	if len(snapshot.Quotas) != 2 {
-		t.Fatalf("expected 2 quotas, got %d", len(snapshot.Quotas))
+	if len(snapshot.Quotas) != 3 {
+		t.Fatalf("expected 3 quotas, got %d", len(snapshot.Quotas))
 	}
 	if snapshot.RawJSON == "" {
 		t.Error("RawJSON should not be empty")
 	}
 
-	// Quotas should be sorted by name
-	if snapshot.Quotas[0].Name != "five_hour" {
-		t.Errorf("first quota = %q, want five_hour", snapshot.Quotas[0].Name)
+	// Quotas should be sorted by name: extra_usage, five_hour, seven_day
+	if snapshot.Quotas[0].Name != "extra_usage" {
+		t.Errorf("first quota = %q, want extra_usage", snapshot.Quotas[0].Name)
 	}
-	if snapshot.Quotas[0].Utilization != 45.2 {
-		t.Errorf("five_hour utilization = %f, want 45.2", snapshot.Quotas[0].Utilization)
+	if snapshot.Quotas[0].UsedCredits != 11.25 {
+		t.Errorf("extra_usage usedCredits = %f, want 11.25", snapshot.Quotas[0].UsedCredits)
 	}
-	if snapshot.Quotas[0].ResetsAt == nil {
-		t.Error("five_hour ResetsAt should not be nil")
+	if snapshot.Quotas[0].MonthlyLimit != 75.0 {
+		t.Errorf("extra_usage monthlyLimit = %f, want 75.0", snapshot.Quotas[0].MonthlyLimit)
+	}
+
+	if snapshot.Quotas[1].Name != "five_hour" {
+		t.Errorf("second quota = %q, want five_hour", snapshot.Quotas[1].Name)
+	}
+	if snapshot.Quotas[1].Utilization != 45.2 {
+		t.Errorf("five_hour utilization = %f, want 45.2", snapshot.Quotas[1].Utilization)
 	}
 }
 

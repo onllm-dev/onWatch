@@ -213,6 +213,212 @@ body.layout-compact {
   --layout-gap-sm: 6px;
 }
 
+body.layout-wall {
+  --layout-max-width: 100%;
+  --layout-card-min: 280px;
+  --layout-insight-min: 100px;
+  --layout-gap: 10px;
+  --layout-gap-sm: 4px;
+  --surface-page: #050608 !important; /* Force black for wall mode */
+  --surface-card: #121418;
+  --text-primary: #F1F3F5;
+  --text-secondary: #ABB5C2;
+  font-size: 13px;
+  overflow: hidden !important; /* NO SCROLLING */
+}
+
+body.layout-wall .app-header,
+body.layout-wall .app-footer,
+body.layout-wall .welcome-banner,
+body.layout-wall .quota-subtitle,
+body.layout-wall .promo-tag,
+body.layout-wall .card-freshness,
+body.layout-wall .usage-fraction:not(:has(span)), /* Hide 'Utilization' label */
+body.layout-wall .quota-desc {
+  display: none !important;
+}
+
+/* Hide 'Utilization' text in Wall Mode specifically */
+body.layout-wall .usage-percent + .usage-fraction {
+  display: none !important;
+}
+
+body.layout-wall .main-content {
+  padding: 8px;
+  max-width: 100%;
+  height: 100vh;
+  margin: 0;
+}
+
+/* Redesigned Quota Cards (Mini Row Style) */
+body.layout-wall .quota-card {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  border-color: #2F3440;
+}
+
+body.layout-wall .card-header {
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+body.layout-wall .quota-title {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+body.layout-wall .countdown {
+  font-size: 10px;
+  padding: 0 4px;
+}
+
+body.layout-wall .progress-stats {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+body.layout-wall .usage-percent {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* Show currency for extra_usage */
+body.layout-wall .quota-card[data-quota="extra_usage"] .usage-fraction {
+  display: block !important;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+body.layout-wall .progress-wrapper { margin: 0; }
+body.layout-wall .progress-bar { height: 3px; }
+
+/* Side-by-side on Wall Mode */
+@media (min-width: 1200px) {
+  body.layout-wall .main-content {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    grid-template-areas: 
+      "quotas quotas"
+      "insights chart"
+      "overview overview";
+    gap: var(--layout-gap);
+    align-items: start;
+    grid-template-rows: auto 580px 1fr; /* Increased Insights height to 580px */
+  }
+  
+  body.layout-wall .quota-grid { 
+    grid-area: quotas; 
+    margin-bottom: 0;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--layout-gap);
+  }
+  
+  body.layout-wall .insights-panel { 
+    grid-area: insights; 
+    margin-bottom: 0;
+    padding: 10px;
+    height: 580px; /* Matched to grid row */
+    overflow-y: auto;
+  }
+  
+  body.layout-wall .chart-section { 
+    grid-area: chart; 
+    margin-bottom: 0;
+    padding: 10px;
+    height: 580px;
+  }
+  
+  body.layout-wall .cycle-overview-section { 
+    grid-area: overview;
+    margin-bottom: 0;
+    padding: 6px 12px;
+    height: calc(100vh - 680px); /* Fill remaining space */
+    overflow: hidden;
+  }
+  
+  body.layout-wall .section-header { margin-bottom: 4px; }
+  
+  /* Ultra Compact Insights for Wall Mode */
+  body.layout-wall .insights-stats { grid-template-columns: repeat(3, 1fr); margin-bottom: 6px; }
+  body.layout-wall .insight-stat { padding: 4px; }
+  body.layout-wall .insight-stat-value { font-size: 14px; }
+  
+  body.layout-wall .insights-cards { 
+    grid-template-columns: repeat(2, 1fr); 
+    gap: 4px; 
+  }
+  
+  body.layout-wall .insight-card { padding: 6px; }
+  body.layout-wall .insight-card-values { padding: 2px 0; }
+  body.layout-wall .insight-card-metric { font-size: 12px; }
+  
+  /* Compact Chart */
+  body.layout-wall .provider-chart canvas { height: 500px !important; max-height: 500px; }
+  
+  /* Hide heavy elements in Wall Mode tables */
+  body.layout-wall .table-footer,
+  body.layout-wall .table-legend,
+  body.layout-wall .table-controls,
+  body.layout-wall .delta { display: none !important; }
+  body.layout-wall .data-table td, body.layout-wall .data-table th { padding: 2px 8px; font-size: 11px; }
+}
+
+.wall-mode-toggle.active {
+  background: var(--accent-teal-muted);
+  color: var(--accent-teal);
+  border-color: var(--accent-teal);
+}
+
+/* Exit Wall Mode Floating Button */
+.exit-wall-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  z-index: 1000;
+  transition: all var(--transition-fast);
+  opacity: 0;
+  pointer-events: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+body.layout-wall .exit-wall-btn {
+  opacity: 0.6;
+  pointer-events: auto;
+}
+
+.exit-wall-btn:hover {
+  opacity: 1 !important;
+  transform: translateY(-2px);
+  border-color: var(--accent-teal);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.exit-wall-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 body.layout-wide {
   --layout-max-width: 1100px;
   --layout-card-min: 340px;
