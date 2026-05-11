@@ -49,8 +49,8 @@ func (s *Store) InsertAnthropicSnapshot(snapshot *api.AnthropicSnapshot) (int64,
 			resetsAt = q.ResetsAt.Format(time.RFC3339Nano)
 		}
 		_, err := tx.Exec(
-			`INSERT INTO anthropic_quota_values (snapshot_id, quota_name, utilization, resets_at) VALUES (?, ?, ?, ?)`,
-			snapshotID, q.Name, q.Utilization, resetsAt,
+			`INSERT INTO anthropic_quota_values (snapshot_id, quota_name, utilization, resets_at, used_credits, monthly_limit) VALUES (?, ?, ?, ?, ?, ?)`,
+			snapshotID, q.Name, q.Utilization, resetsAt, q.UsedCredits, q.MonthlyLimit,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("failed to insert quota value %s: %w", q.Name, err)
@@ -511,18 +511,20 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 
 // AnthropicLatestQuota holds the most recent value for a single quota across all snapshots.
 type AnthropicLatestQuota struct {
-	Name        string
-	Utilization float64
-	ResetsAt    *time.Time
-	CapturedAt  time.Time
-	Source      string // "statusline" or "api"
+	Name         string
+	Utilization  float64
+	UsedCredits  float64
+	MonthlyLimit float64
+	ResetsAt     *time.Time
+	CapturedAt   time.Time
+	Source       string // "statusline" or "api"
 }
 
 // QueryAnthropicLatestPerQuota returns the most recent value for each distinct quota name.
 // Scans only the last 50 snapshots (bounded) and merges in Go - fast even on large DBs.
 func (s *Store) QueryAnthropicLatestPerQuota() ([]AnthropicLatestQuota, error) {
 	rows, err := s.db.Query(`
-		SELECT qv.quota_name, qv.utilization, qv.resets_at, s.captured_at, s.raw_json
+		SELECT qv.quota_name, qv.utilization, qv.resets_at, s.captured_at, s.raw_json, qv.used_credits, qv.monthly_limit
 		FROM anthropic_quota_values qv
 		JOIN anthropic_snapshots s ON s.id = qv.snapshot_id
 		WHERE s.id >= (SELECT MAX(id) - 50 FROM anthropic_snapshots)
@@ -537,10 +539,10 @@ func (s *Store) QueryAnthropicLatestPerQuota() ([]AnthropicLatestQuota, error) {
 	var results []AnthropicLatestQuota
 	for rows.Next() {
 		var name string
-		var utilization float64
+		var utilization, usedCredits, monthlyLimit float64
 		var resetsAt sql.NullString
 		var capturedAt, rawJSON string
-		if err := rows.Scan(&name, &utilization, &resetsAt, &capturedAt, &rawJSON); err != nil {
+		if err := rows.Scan(&name, &utilization, &resetsAt, &capturedAt, &rawJSON, &usedCredits, &monthlyLimit); err != nil {
 			return nil, fmt.Errorf("failed to scan latest quota: %w", err)
 		}
 		// Hide historical rows for experimental/unknown quota keys (pre-whitelist data).
@@ -553,8 +555,10 @@ func (s *Store) QueryAnthropicLatestPerQuota() ([]AnthropicLatestQuota, error) {
 		seen[name] = true
 
 		q := AnthropicLatestQuota{
-			Name:        name,
-			Utilization: utilization,
+			Name:         name,
+			Utilization:  utilization,
+			UsedCredits:  usedCredits,
+			MonthlyLimit: monthlyLimit,
 		}
 		q.CapturedAt, _ = time.Parse(time.RFC3339Nano, capturedAt)
 		if resetsAt.Valid && resetsAt.String != "" {

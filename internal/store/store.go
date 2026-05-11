@@ -976,6 +976,19 @@ func (s *Store) migrateSchema() error {
 		}
 	}
 
+	// Add used_credits and monthly_limit to anthropic_quota_values
+	for _, col := range []string{
+		"used_credits REAL NOT NULL DEFAULT 0",
+		"monthly_limit REAL NOT NULL DEFAULT 0",
+	} {
+		if _, err := s.db.Exec(`ALTER TABLE anthropic_quota_values ADD COLUMN ` + col); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") &&
+				!strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("failed to add anthropic column: %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 

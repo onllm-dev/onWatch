@@ -21,6 +21,15 @@ func SetTestMode(enabled bool) {
 	testMode = enabled
 }
 
+// getCredentialsFilePath returns the path to the Claude credentials file on Windows.
+func getCredentialsFilePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude", ".credentials.json")
+}
+
 // detectAnthropicCredentialsPlatform tries to detect full OAuth credentials on Windows.
 func detectAnthropicCredentialsPlatform(logger *slog.Logger) *AnthropicCredentials {
 	if logger == nil {
