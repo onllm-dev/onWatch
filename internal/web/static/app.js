@@ -161,6 +161,8 @@ const State = {
   codexProfiles: [],
   codexPlanType: '',
   codexQuotaNames: [],
+  geminiAccount: 0,
+  geminiProfiles: [],
   allProvidersCurrent: null,
   allProvidersInsights: null,
   allProvidersHistory: null,
@@ -322,6 +324,61 @@ function closeCodexProfileDropdown() {
   const menu = document.getElementById('codex-profile-menu');
   if (trigger) trigger.setAttribute('aria-expanded', 'false');
   if (menu) menu.classList.remove('open');
+}
+
+// ── Gemini Profile Management ──
+
+async function loadGeminiProfiles() {
+  try {
+    const res = await authFetch(`${API_BASE}/api/gemini/profiles`);
+    if (!res.ok) return;
+    State.geminiProfiles = await res.json();
+    populateGeminiProfileTabs();
+  } catch (e) {
+    // silent
+  }
+}
+
+function populateGeminiProfileTabs() {
+  const dropdown = document.getElementById('gemini-profile-dropdown');
+  const menu = document.getElementById('gemini-profile-menu');
+  if (!dropdown || !menu) return;
+
+  if (State.geminiProfiles.length === 0) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  menu.innerHTML = '';
+  for (const profile of State.geminiProfiles) {
+    const li = document.createElement('li');
+    li.textContent = profile.name;
+    li.addEventListener('click', () => switchGeminiProfile(profile.name));
+    menu.appendChild(li);
+  }
+  dropdown.style.display = 'block';
+}
+
+function switchGeminiProfile(name) {
+  State.geminiAccount = name;
+  localStorage.setItem('onwatch-gemini-account', name);
+  window.location.reload();
+}
+
+function initGeminiProfileTabs() {
+  const account = localStorage.getItem('onwatch-gemini-account');
+  if (account) State.geminiAccount = account;
+  
+  const trigger = document.getElementById('gemini-profile-trigger');
+  const menu = document.getElementById('gemini-profile-menu');
+  if (trigger && menu) {
+    trigger.addEventListener('click', () => {
+      const expanded = trigger.getAttribute('aria-expanded') === 'true';
+      trigger.setAttribute('aria-expanded', !expanded);
+      menu.style.display = expanded ? 'none' : 'block';
+    });
+  }
+  loadGeminiProfiles();
 }
 
 // Show/hide profile dropdown based on current provider and profile count
@@ -8885,8 +8942,20 @@ const providerSettingsConfig = {
   },
   gemini: {
     title: 'Gemini',
-    desc: 'Gemini is auto-detected from your local credentials. Use the telemetry toggle to enable or disable tracking.',
-    fields: [],
+    desc: 'Configure Gemini profile discovery and display. Display changes take effect immediately; directory changes require a daemon restart.',
+    fields: [
+      { id: 'profiles_dir', label: 'Profiles Directory', type: 'text', placeholder: 'Auto-detected (default)', hint: 'Override the auto-detected Gemini profiles directory. Leave blank to use the default.' },
+      { id: 'display_mode', label: 'Quota Display', type: 'select', options: [
+        { value: '', text: 'Use global default' },
+        { value: 'usage', text: 'Usage (show utilization %)' },
+        { value: 'available', text: 'Available (show remaining %)' },
+      ], default: '', hint: 'Override the global Quota Display setting (Settings → General) for Gemini only. Choose "Use global default" to follow the global setting.' },
+      { id: 'pace_mode', label: 'Weekly Pace Mode', type: 'select', options: [
+        { value: 'calendar', text: 'Calendar (7-day)' },
+        { value: '6-day', text: '6-day (Mon-Sat)' },
+        { value: '5-day', text: '5-day (Mon-Fri)' },
+      ], default: 'calendar', hint: 'Distributes 100% expected pace across selected work days only. Non-work days show "off day - pace paused".' },
+    ],
   },
 };
 
@@ -9157,6 +9226,70 @@ async function openProviderSettingsModal(providerKey) {
       }
     } catch (e) {
       accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load accounts</p>';
+    }
+  } else if (providerKey === 'gemini') {
+    let profilesHTML = '<div class="gemini-modal-profiles"><h4 style="margin:0 0 12px;font-size:13px;color:var(--text-secondary)">Saved Profiles</h4>';
+    profilesHTML += '<div id="gemini-profiles-list">Loading...</div>';
+    profilesHTML += '</div>';
+
+    // Build the full body with profiles section first, then settings fields
+    bodyEl.innerHTML = profilesHTML + buildFieldsHTML();
+
+    // Fetch and render profiles
+    const profilesList = document.getElementById('gemini-profiles-list');
+    try {
+      const res = await authFetch(`${API_BASE}/api/gemini/profiles`);
+      if (res.ok) {
+        const profiles = await res.json();
+        if (profiles.length === 0) {
+          profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin:0">No profiles saved. Save your first profile using the CLI: <code>onwatch gemini profile save &lt;name&gt;</code></p>';
+        } else {
+          let html = '';
+          profiles.forEach(profile => {
+            html += `<div class="gemini-profile-item" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-light)">`;
+            html += `<div>`;
+            html += `<div style="font-weight:500">${escapeHtml(profile.name)}</div>`;
+            html += `<div style="font-size:12px;color:var(--text-secondary)">${profile.project_id || 'Auto-detected'}</div>`;
+            html += `</div>`;
+            html += `<div style="display:flex;gap:8px">`;
+            html += `<button class="gemini-profile-action-btn" data-action="delete" data-name="${escapeHtml(profile.name)}" title="Delete profile" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--md-error,#b3261e)">Delete</button>`;
+            html += `</div></div>`;
+          });
+          profilesList.innerHTML = html;
+
+          // Attach event handlers to profile action buttons
+          profilesList.querySelectorAll('.gemini-profile-action-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              const name = btn.dataset.name;
+              if (!confirm(`Delete profile "${name}"?`)) return;
+              btn.disabled = true;
+              btn.textContent = '...';
+              try {
+                const res = await authFetch(`${API_BASE}/api/gemini/profiles?name=${encodeURIComponent(name)}`, {
+                  method: 'DELETE',
+                });
+                if (res.ok) {
+                  // Refresh the profiles list
+                  await openProviderSettingsModal('gemini');
+                } else {
+                  const error = await res.json().catch(() => ({}));
+                  alert('Delete failed: ' + (error.error || res.statusText));
+                  btn.disabled = false;
+                  btn.textContent = 'Delete';
+                }
+              } catch (err) {
+                alert('Delete failed: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = 'Delete';
+              }
+            });
+          });
+        }
+      } else {
+        profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load profiles</p>';
+      }
+    } catch (e) {
+      profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load profiles</p>';
     }
   } else {
     bodyEl.innerHTML = buildFieldsHTML();
@@ -10161,6 +10294,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateMiniMaxAccountTabsVisibility();
   }
   initMiniMaxAccountTabs();
+
+  if (getCurrentProvider() === 'gemini') {
+    await loadGeminiProfiles();
+  }
+  initGeminiProfileTabs();
+
   loadAPIIntegrationsPreferences();
 
   initTheme();

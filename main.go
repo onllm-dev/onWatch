@@ -74,6 +74,10 @@ func (d dualHandler) WithGroup(name string) slog.Handler {
 	return dualHandler{file: d.file.WithGroup(name), stdout: d.stdout.WithGroup(name)}
 }
 
+func getDatabasePath() string {
+	return filepath.Join(defaultPIDDir(), "onwatch.db")
+}
+
 func main() {
 	if err := runWithCrashCapture(); err != nil {
 		if !errors.Is(err, errCodexProfileRefreshAborted) {
@@ -813,6 +817,7 @@ func run() error {
 			}
 			if token != "" {
 				geminiClient = api.NewGeminiClient(token, logger)
+				_ = geminiClient // Marcatore per evitare declared and not used
 				source := "auto-detected"
 				if os.Getenv("GEMINI_REFRESH_TOKEN") != "" || os.Getenv("GEMINI_ACCESS_TOKEN") != "" {
 					source = "environment variables"
@@ -1027,14 +1032,24 @@ func run() error {
 		openrouterAg = agent.NewOpenRouterAgent(openrouterClient, db, openrouterTr, cfg.PollInterval, logger, openrouterSm)
 	}
 
-	var geminiAg *agent.GeminiAgent
-	if geminiClient != nil {
-		geminiSm := agent.NewSessionManager(db, "gemini", idleTimeout, logger)
-		geminiAg = agent.NewGeminiAgent(geminiClient, db, geminiTr, cfg.PollInterval, logger, geminiSm)
-		geminiAg.SetCredentialsRefresh(func() *api.GeminiCredentials {
-			return api.DetectGeminiCredentials(logger, db)
-		})
-		geminiAg.SetClientCredentials(api.DetectGeminiClientCredentials())
+	var geminiMgr *agent.GeminiAgentManager
+	if cfg.HasProvider("gemini") || geminiTr != nil {
+		geminiMgr = agent.NewGeminiAgentManager(db, geminiTr, cfg.PollInterval, logger)
+		geminiMgr.SetProfilesDir(geminiProfilesDir())
+		// Override profiles dir from DB if configured via UI
+		if db != nil {
+			if provJSON, _ := db.GetSetting("provider_settings"); provJSON != "" {
+				var provSettings map[string]map[string]interface{}
+				if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
+					if s := provSettings["gemini"]; s != nil {
+						if dir, _ := s["profiles_dir"].(string); dir != "" {
+							geminiMgr.SetProfilesDir(dir)
+							logger.Info("Gemini profiles directory overridden from UI", "dir", dir)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	var cursorAg *agent.CursorAgent
@@ -1090,8 +1105,8 @@ func run() error {
 	if openrouterAg != nil {
 		openrouterAg.SetNotifier(notifier)
 	}
-	if geminiAg != nil {
-		geminiAg.SetNotifier(notifier)
+	if geminiMgr != nil {
+		geminiMgr.SetNotifier(notifier)
 	}
 	if cursorAg != nil {
 		cursorAg.SetNotifier(notifier)
@@ -1194,8 +1209,8 @@ func run() error {
 	if openrouterAg != nil {
 		openrouterAg.SetPollingCheck(func() bool { return isPollingEnabled("openrouter") })
 	}
-	if geminiAg != nil {
-		geminiAg.SetPollingCheck(func() bool { return isPollingEnabled("gemini") })
+	if geminiMgr != nil {
+		geminiMgr.SetPollingCheck(func() bool { return isPollingEnabled("gemini") })
 	}
 	if cursorAg != nil {
 		cursorAg.SetPollingCheck(func() bool { return isPollingEnabled("cursor") })
@@ -1275,6 +1290,9 @@ func run() error {
 	if geminiTr != nil {
 		handler.SetGeminiTracker(geminiTr)
 	}
+	if geminiMgr != nil {
+		handler.SetGeminiAgentManager(geminiMgr)
+	}
 	if cursorTr != nil {
 		handler.SetCursorTracker(cursorTr)
 	}
@@ -1303,8 +1321,8 @@ func run() error {
 	if openrouterAg != nil {
 		agentMgr.RegisterFactory("openrouter", func() (agent.AgentRunner, error) { return openrouterAg, nil })
 	}
-	if geminiAg != nil {
-		agentMgr.RegisterFactory("gemini", func() (agent.AgentRunner, error) { return geminiAg, nil })
+	if geminiMgr != nil {
+		agentMgr.RegisterFactory("gemini", func() (agent.AgentRunner, error) { return geminiMgr, nil })
 	}
 	if cursorAg != nil {
 		agentMgr.RegisterFactory("cursor", func() (agent.AgentRunner, error) { return cursorAg, nil })
