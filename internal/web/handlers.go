@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/onllm-dev/onwatch/v2/internal/agent"
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
@@ -95,6 +96,7 @@ type Handler struct {
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
+	geminiAgentManager *agent.GeminiAgentManager
 	minimaxAgentMgr    MiniMaxAccountReloader
 	logger             *slog.Logger
 	dashboardTmpl      *template.Template
@@ -323,6 +325,19 @@ func (h *Handler) CodexProfiles(w http.ResponseWriter, r *http.Request) {
 	default:
 		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+// getAvailableTemplateNames returns a slice of all template names registered in the given template set.
+// This is used for debugging when template lookups fail.
+func (h *Handler) getAvailableTemplateNames(tmpl *template.Template) []string {
+	if tmpl == nil {
+		return []string{}
+	}
+	var names []string
+	for _, t := range tmpl.Templates() {
+		names = append(names, t.Name())
+	}
+	return names
 }
 
 // codexProfilesList returns all Codex profiles/accounts from the database.
@@ -730,24 +745,67 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 	}
 
 	// Parse dashboard template (layout + dashboard)
-	dashboardTmpl, err := template.New("").ParseFS(templatesFS, "templates/layout.html", "templates/dashboard.html")
+	dashboardTmpl, err := template.ParseFS(templatesFS, "templates/layout.html", "templates/dashboard.html")
 	if err != nil {
 		logger.Error("failed to parse dashboard template", "error", err)
-		dashboardTmpl = template.New("empty")
+		// Keep the returned template (may contain partially parsed definitions like layout.html)
+		if dashboardTmpl == nil {
+			dashboardTmpl = template.New("empty")
+		}
+	}
+	if dashboardTmpl != nil {
+		for _, t := range dashboardTmpl.Templates() {
+			logger.Debug("registered dashboard template", "name", t.Name())
+		}
+		// Verify required templates exist
+		if dashboardTmpl.Lookup("layout.html") == nil {
+			logger.Error("layout.html template not found in dashboard templates")
+		}
+		if dashboardTmpl.Lookup("content") == nil {
+			logger.Error("content template not found in dashboard templates")
+		}
 	}
 
 	// Parse login template (layout + login)
-	loginTmpl, err := template.New("").ParseFS(templatesFS, "templates/layout.html", "templates/login.html")
+	loginTmpl, err := template.ParseFS(templatesFS, "templates/layout.html", "templates/login.html")
 	if err != nil {
 		logger.Error("failed to parse login template", "error", err)
-		loginTmpl = template.New("empty")
+		if loginTmpl == nil {
+			loginTmpl = template.New("empty")
+		}
+	}
+	if loginTmpl != nil {
+		for _, t := range loginTmpl.Templates() {
+			logger.Debug("registered login template", "name", t.Name())
+		}
+		// Verify required templates exist
+		if loginTmpl.Lookup("layout.html") == nil {
+			logger.Error("layout.html template not found in login templates")
+		}
+		if loginTmpl.Lookup("content") == nil {
+			logger.Error("content template not found in login templates")
+		}
 	}
 
 	// Parse settings template (layout + settings)
-	settingsTmpl, err := template.New("").ParseFS(templatesFS, "templates/layout.html", "templates/settings.html")
+	settingsTmpl, err := template.ParseFS(templatesFS, "templates/layout.html", "templates/settings.html")
 	if err != nil {
 		logger.Error("failed to parse settings template", "error", err)
-		settingsTmpl = template.New("empty")
+		if settingsTmpl == nil {
+			settingsTmpl = template.New("empty")
+		}
+	}
+	if settingsTmpl != nil {
+		for _, t := range settingsTmpl.Templates() {
+			logger.Debug("registered settings template", "name", t.Name())
+		}
+		// Verify required templates exist
+		if settingsTmpl.Lookup("layout.html") == nil {
+			logger.Error("layout.html template not found in settings templates")
+		}
+		if settingsTmpl.Lookup("content") == nil {
+			logger.Error("content template not found in settings templates")
+		}
 	}
 
 	h := &Handler{
@@ -822,6 +880,11 @@ func (h *Handler) SetAgentManager(m ProviderAgentController) {
 	h.agentManager = m
 }
 
+// SetGeminiAgentManager sets the Gemini agent manager for profile management.
+func (h *Handler) SetGeminiAgentManager(m *agent.GeminiAgentManager) {
+	h.geminiAgentManager = m
+}
+
 // SetUpdater sets the updater for self-update functionality.
 func (h *Handler) SetUpdater(u *update.Updater) {
 	h.updater = u
@@ -886,7 +949,16 @@ func (h *Handler) SettingsPage(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	if err := h.settingsTmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
+
+	// Get the layout template and execute it
+	layoutTmpl := h.settingsTmpl.Lookup("layout.html")
+	if layoutTmpl == nil {
+		h.logger.Error("layout.html template not found in settings", "available_templates", h.getAvailableTemplateNames(h.settingsTmpl))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := layoutTmpl.Execute(w, data); err != nil {
 		h.logger.Error("failed to render settings template", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
@@ -1407,6 +1479,7 @@ var providerEnumFields = map[string]map[string][]string{
 	},
 	"gemini": {
 		"display_mode": {"usage", "available"},
+		"pace_mode":    {"calendar", "6-day", "5-day"},
 	},
 	"cursor": {
 		"display_mode": {"usage", "available"},
@@ -1793,7 +1866,16 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	if err := h.dashboardTmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
+
+	// Get the layout template and execute it
+	layoutTmpl := h.dashboardTmpl.Lookup("layout.html")
+	if layoutTmpl == nil {
+		h.logger.Error("layout.html template not found", "available_templates", h.getAvailableTemplateNames(h.dashboardTmpl))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := layoutTmpl.Execute(w, data); err != nil {
 		h.logger.Error("failed to render dashboard template", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
@@ -2518,7 +2600,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") && h.store != nil {
-		snapshots, err := h.store.QueryGeminiRange(start, now)
+		snapshots, err := h.store.QueryGeminiRange(0, start, now)
 		if err == nil {
 			// Filter empty snapshots and aggregate by family
 			var valid []*api.GeminiSnapshot
@@ -3536,7 +3618,7 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 		modelIDs, _ := h.store.QueryAllGeminiModelIDs()
 		var geminiSummaries []map[string]interface{}
 		for _, modelID := range modelIDs {
-			if summary, err := h.geminiTracker.UsageSummary(modelID); err == nil && summary != nil {
+			if summary, err := h.geminiTracker.UsageSummary(0, modelID); err == nil && summary != nil {
 				s := map[string]interface{}{
 					"modelId":           summary.ModelID,
 					"remainingFraction": summary.RemainingFraction,
@@ -6454,7 +6536,16 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.loginTmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
+
+	// Get the layout template and execute it
+	layoutTmpl := h.loginTmpl.Lookup("layout.html")
+	if layoutTmpl == nil {
+		h.logger.Error("layout.html template not found in login", "available_templates", h.getAvailableTemplateNames(h.loginTmpl))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := layoutTmpl.Execute(w, data); err != nil {
 		h.logger.Error("failed to render login template", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
@@ -7551,6 +7642,25 @@ func (h *Handler) getCodexPaceMode() string {
 			if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
 				if codexSettings, ok := provSettings["codex"]; ok {
 					if pm, ok := codexSettings["pace_mode"].(string); ok && pm != "" {
+						return pm
+					}
+				}
+			}
+		}
+	}
+	return "calendar"
+}
+
+// getGeminiPaceMode returns the Gemini pace mode from provider_settings.
+// Returns "calendar", "5-day", or "6-day". Defaults to "calendar".
+func (h *Handler) getGeminiPaceMode() string {
+	if h.store != nil {
+		provJSON, err := h.store.GetSetting("provider_settings")
+		if err == nil && provJSON != "" {
+			var provSettings map[string]map[string]interface{}
+			if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
+				if geminiSettings, ok := provSettings["gemini"]; ok {
+					if pm, ok := geminiSettings["pace_mode"].(string); ok && pm != "" {
 						return pm
 					}
 				}
