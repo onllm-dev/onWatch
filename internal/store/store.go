@@ -665,6 +665,40 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_cursor_cycles_name_start ON cursor_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_cursor_cycles_name_active ON cursor_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
 
+		-- OpenCode Go-specific tables
+		CREATE TABLE IF NOT EXISTS opencodego_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			raw_json TEXT NOT NULL DEFAULT '',
+			quota_count INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS opencodego_usage_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			window_name TEXT NOT NULL,
+			usage_percent REAL NOT NULL DEFAULT 0,
+			reset_in_sec INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'normal',
+			FOREIGN KEY (snapshot_id) REFERENCES opencodego_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS opencodego_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			window_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			resets_at TEXT,
+			peak_usage REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		-- OpenCode Go indexes
+		CREATE INDEX IF NOT EXISTS idx_opencodego_snapshots_captured ON opencodego_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_opencodego_usage_values_snapshot ON opencodego_usage_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_opencodego_cycles_name_start ON opencodego_reset_cycles(window_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_opencodego_cycles_name_active ON opencodego_reset_cycles(window_name, cycle_end) WHERE cycle_end IS NULL;
+
 		-- API integrations telemetry ingestion tables
 		CREATE TABLE IF NOT EXISTS api_integration_usage_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -973,6 +1007,38 @@ func (s *Store) migrateSchema() error {
 		if !strings.Contains(err.Error(), "no such column") &&
 			!strings.Contains(err.Error(), "no such table") {
 			return fmt.Errorf("failed to drop raw_line from api_integration_usage_events: %w", err)
+		}
+	}
+
+	// Normalize OpenCode Go window names from legacy "rollingUsage" style to short "rolling".
+	if _, err := s.db.Exec(`UPDATE opencodego_usage_values SET window_name = 'rolling' WHERE window_name = 'rollingUsage'`); err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to migrate opencodego_usage_values rollingUsage: %w", err)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE opencodego_usage_values SET window_name = 'weekly' WHERE window_name = 'weeklyUsage'`); err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to migrate opencodego_usage_values weeklyUsage: %w", err)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE opencodego_usage_values SET window_name = 'monthly' WHERE window_name = 'monthlyUsage'`); err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to migrate opencodego_usage_values monthlyUsage: %w", err)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE opencodego_reset_cycles SET window_name = 'rolling' WHERE window_name = 'rollingUsage'`); err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to migrate opencodego_reset_cycles rollingUsage: %w", err)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE opencodego_reset_cycles SET window_name = 'weekly' WHERE window_name = 'weeklyUsage'`); err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to migrate opencodego_reset_cycles weeklyUsage: %w", err)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE opencodego_reset_cycles SET window_name = 'monthly' WHERE window_name = 'monthlyUsage'`); err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to migrate opencodego_reset_cycles monthlyUsage: %w", err)
 		}
 	}
 
