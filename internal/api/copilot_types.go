@@ -47,7 +47,7 @@ func (r *CopilotUserResponse) normalize() {
 
 	r.QuotaSnapshots = make(map[string]*CopilotQuotaSnapshot, len(r.LimitedUserQuotas))
 
-	for key, used := range r.LimitedUserQuotas {
+	for key, remaining := range r.LimitedUserQuotas {
 		monthly, hasMonthly := r.MonthlyQuotas[key]
 		if !hasMonthly || monthly == 0 {
 			// No monthly limit - treat as unlimited
@@ -57,7 +57,6 @@ func (r *CopilotUserResponse) normalize() {
 			continue
 		}
 
-		remaining := monthly - used
 		if remaining < 0 {
 			remaining = 0
 		}
