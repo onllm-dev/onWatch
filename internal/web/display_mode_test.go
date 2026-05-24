@@ -2,7 +2,9 @@ package web
 
 import (
 	"testing"
+	"time"
 
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
@@ -188,6 +190,38 @@ func TestApplyDisplayModeToResponse_UsageModeIsNoOp(t *testing.T) {
 func TestApplyDisplayModeToResponse_NilNoCrash(t *testing.T) {
 	t.Parallel()
 	applyDisplayModeToResponse(nil, "available")
+}
+
+func TestHandler_BuildOpenCodeGoCurrent_AppliesAvailableDisplayMode(t *testing.T) {
+	t.Parallel()
+
+	s, _ := store.New(":memory:")
+	defer s.Close()
+	if _, err := s.InsertOpenCodeGoSnapshot(&api.OpenCodeGoSnapshot{
+		CapturedAt: time.Now().UTC(),
+		Windows: []api.OpenCodeGoWindowValue{{
+			WindowName:   "rolling",
+			UsagePercent: 25,
+			ResetInSec:   3600,
+			Status:       "ok",
+		}},
+	}); err != nil {
+		t.Fatalf("InsertOpenCodeGoSnapshot: %v", err)
+	}
+	s.SetSetting("provider_settings", `{"opencodego":{"display_mode":"available"}}`)
+
+	h := NewHandler(s, nil, nil, nil, &config.Config{})
+	resp := h.buildOpenCodeGoCurrent()
+	quotas, ok := resp["quotas"].([]map[string]interface{})
+	if !ok || len(quotas) != 1 {
+		t.Fatalf("quotas type/len = %T %v", resp["quotas"], resp["quotas"])
+	}
+	if got := quotas[0]["cardPercent"].(float64); got != 75 {
+		t.Fatalf("cardPercent = %v, want 75", got)
+	}
+	if got := quotas[0]["status"].(string); got != "healthy" {
+		t.Fatalf("status = %q, want healthy", got)
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════════

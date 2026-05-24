@@ -39,6 +39,59 @@ func TestOpenCodeGoTracker_ProcessAndReset(t *testing.T) {
 	if !resetCalled {
 		t.Fatal("expected reset callback")
 	}
+
+	history, err := s.QueryOpenCodeGoCycleHistory("rolling", 0)
+	if err != nil {
+		t.Fatalf("QueryOpenCodeGoCycleHistory: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("cycle history length = %d, want 1", len(history))
+	}
+	if !history[0].CycleEnd.Equal(second.CapturedAt) {
+		t.Fatalf("cycle end = %v, want %v", history[0].CycleEnd, second.CapturedAt)
+	}
+
+	active, err := s.QueryActiveOpenCodeGoCycle("rolling")
+	if err != nil {
+		t.Fatalf("QueryActiveOpenCodeGoCycle: %v", err)
+	}
+	if active == nil {
+		t.Fatal("expected active cycle")
+	}
+	if !active.CycleStart.Equal(second.CapturedAt) {
+		t.Fatalf("cycle start = %v, want %v", active.CycleStart, second.CapturedAt)
+	}
+	wantReset := second.CapturedAt.Add(2 * time.Hour)
+	if !active.ResetsAt.Equal(wantReset) {
+		t.Fatalf("resets_at = %v, want %v", active.ResetsAt, wantReset)
+	}
+}
+
+func TestOpenCodeGoTracker_Process_InitialCycleUsesCapturedAt(t *testing.T) {
+	t.Parallel()
+	s := newOpenCodeGoTestStore(t)
+	tr := NewOpenCodeGoTracker(s, slog.Default())
+
+	capturedAt := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	snap := &api.OpenCodeGoSnapshot{CapturedAt: capturedAt, Windows: []api.OpenCodeGoWindowValue{{WindowName: "rolling", UsagePercent: 20, ResetInSec: 600}}}
+	if err := tr.Process(snap); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	active, err := s.QueryActiveOpenCodeGoCycle("rolling")
+	if err != nil {
+		t.Fatalf("QueryActiveOpenCodeGoCycle: %v", err)
+	}
+	if active == nil {
+		t.Fatal("expected active cycle")
+	}
+	if !active.CycleStart.Equal(capturedAt) {
+		t.Fatalf("cycle start = %v, want %v", active.CycleStart, capturedAt)
+	}
+	wantReset := capturedAt.Add(10 * time.Minute)
+	if !active.ResetsAt.Equal(wantReset) {
+		t.Fatalf("resets_at = %v, want %v", active.ResetsAt, wantReset)
+	}
 }
 
 func TestOpenCodeGoTracker_UsageSummary(t *testing.T) {

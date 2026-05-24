@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -65,7 +66,9 @@ func TestOpenCodeGoClient_DoGet_StatusHandling(t *testing.T) {
 
 func TestOpenCodeGoClient_ResolveWorkspaceID_UsesFallback(t *testing.T) {
 	t.Parallel()
+	var requested []string
 	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requested = append(requested, req.URL.String())
 		if req.Method == http.MethodGet {
 			return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader("no workspace")), Header: make(http.Header)}, nil
 		}
@@ -84,6 +87,36 @@ func TestOpenCodeGoClient_ResolveWorkspaceID_UsesFallback(t *testing.T) {
 	}
 	if id != "wrk_fallback123" {
 		t.Fatalf("workspace id = %q", id)
+	}
+	if len(requested) != 2 {
+		t.Fatalf("request count = %d, want 2", len(requested))
+	}
+}
+
+func TestOpenCodeGoClient_ResolveWorkspaceID_UsesCustomBaseURL(t *testing.T) {
+	t.Parallel()
+
+	var requested []string
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requested = append(requested, req.URL.String())
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"workspace":"wrk_custom123"}`)), Header: make(http.Header)}, nil
+	})
+
+	client := NewOpenCodeGoClient("auth=ok", testOpenCodeGoLogger(), WithOpenCodeGoBaseURL("https://example.test/opencode"))
+	client.httpClient = &http.Client{Transport: transport}
+
+	id, err := client.resolveWorkspaceID(context.Background())
+	if err != nil {
+		t.Fatalf("resolveWorkspaceID: %v", err)
+	}
+	if id != "wrk_custom123" {
+		t.Fatalf("workspace id = %q", id)
+	}
+	if len(requested) != 1 {
+		t.Fatalf("request count = %d, want 1", len(requested))
+	}
+	if requested[0] != "https://example.test/opencode/_server?id="+OpenCodeGoWorkspaceServerID {
+		t.Fatalf("requested URL = %q", requested[0])
 	}
 }
 
@@ -127,5 +160,28 @@ func TestExtractWorkspaceIDAndTrimQuotes(t *testing.T) {
 	}
 	if got := extractWorkspaceID([]byte(`prefix "wrk_one" middle "wrk_two"`)); got != "wrk_one" {
 		t.Fatalf("extractWorkspaceID = %q", got)
+	}
+}
+
+func TestOpenCodeGoClient_FetchQuotas_ParseFailureDoesNotLogBody(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `<html><body>secret-token-123</body></html>`)
+	}))
+	defer server.Close()
+
+	client := NewOpenCodeGoClient("auth=abc", logger, WithOpenCodeGoBaseURL(server.URL), WithOpenCodeGoWorkspaceID("wrk_test"))
+	client.httpClient = server.Client()
+
+	_, err := client.FetchQuotas(context.Background())
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+	if strings.Contains(logs.String(), "secret-token-123") {
+		t.Fatalf("log output leaked response body: %s", logs.String())
 	}
 }

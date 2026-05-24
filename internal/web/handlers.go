@@ -1357,6 +1357,8 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.GeminiAutoToken = src.GeminiAutoToken
 	dst.ZaiRegion = src.ZaiRegion
 	dst.MiniMaxRegion = src.MiniMaxRegion
+	dst.OpenCodeGoCookie = src.OpenCodeGoCookie
+	dst.OpenCodeGoWorkspaceID = src.OpenCodeGoWorkspaceID
 }
 
 // providerSecretKeys lists the provider_settings field names that contain
@@ -1366,6 +1368,7 @@ func applyProviderConfig(dst, src *config.Config) {
 var providerSecretKeys = map[string]bool{
 	"api_key":    true,
 	"token":      true,
+	"cookie":     true,
 	"csrf_token": true,
 }
 
@@ -1520,6 +1523,9 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 	if s := provSettings["opencodego"]; s != nil {
 		if cookie, _ := s["cookie"].(string); cookie != "" {
 			cfg.OpenCodeGoCookie = cookie
+		}
+		if workspaceID, _ := s["workspace_id"].(string); workspaceID != "" {
+			cfg.OpenCodeGoWorkspaceID = workspaceID
 		}
 	}
 
@@ -1888,19 +1894,7 @@ func (h *Handler) buildOpenCodeGoCurrent() map[string]interface{} {
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 
-	type windowEntry struct {
-		Name                  string  `json:"name"`
-		DisplayName           string  `json:"displayName"`
-		UsagePercent          float64 `json:"usagePercent"`
-		ResetInSec            int     `json:"resetInSec"`
-		ResetsAt              string  `json:"resetsAt"`
-		TimeUntilReset        string  `json:"timeUntilReset"`
-		TimeUntilResetSeconds int64   `json:"timeUntilResetSeconds"`
-		Status                string  `json:"status"`
-		AgeSeconds            int64   `json:"ageSeconds"`
-	}
-
-	windows := make([]windowEntry, 0, len(latest.Windows))
+	windows := make([]map[string]interface{}, 0, len(latest.Windows))
 	for _, w := range latest.Windows {
 		displayName := opencodegoDisplayName(w.WindowName)
 		age := now.Sub(latest.CapturedAt)
@@ -1913,16 +1907,16 @@ func (h *Handler) buildOpenCodeGoCurrent() map[string]interface{} {
 		if status == "ok" || status == "normal" {
 			status = "healthy"
 		}
-		entry := windowEntry{
-			Name:                  w.WindowName,
-			DisplayName:           displayName,
-			UsagePercent:          w.UsagePercent,
-			ResetInSec:            w.ResetInSec,
-			ResetsAt:              resetsAt.Format(time.RFC3339),
-			TimeUntilReset:        formatDuration(timeUntilReset),
-			TimeUntilResetSeconds: int64(timeUntilReset.Seconds()),
-			Status:                status,
-			AgeSeconds:            int64(age.Seconds()),
+		entry := map[string]interface{}{
+			"name":                  w.WindowName,
+			"displayName":           displayName,
+			"usagePercent":          w.UsagePercent,
+			"resetInSec":            w.ResetInSec,
+			"resetsAt":              resetsAt.Format(time.RFC3339),
+			"timeUntilReset":        formatDuration(timeUntilReset),
+			"timeUntilResetSeconds": int64(timeUntilReset.Seconds()),
+			"status":                status,
+			"ageSeconds":            int64(age.Seconds()),
 		}
 		windows = append(windows, entry)
 	}
@@ -11229,14 +11223,14 @@ func opencodegoWindowSortOrder(name string) int {
 
 func opencodegoCycleToMap(cycle *store.OpenCodeGoResetCycle) map[string]interface{} {
 	m := map[string]interface{}{
-		"id":           cycle.ID,
-		"windowName":   cycle.WindowName,
-		"quotaName":    cycle.WindowName,
-		"cycleStart":   cycle.CycleStart.Format(time.RFC3339),
-		"peakUsage":    cycle.PeakUsage,
+		"id":              cycle.ID,
+		"windowName":      cycle.WindowName,
+		"quotaName":       cycle.WindowName,
+		"cycleStart":      cycle.CycleStart.Format(time.RFC3339),
+		"peakUsage":       cycle.PeakUsage,
 		"peakUtilization": cycle.PeakUsage,
-		"totalDelta":   cycle.TotalDelta,
-		"isActive":     true,
+		"totalDelta":      cycle.TotalDelta,
+		"isActive":        true,
 	}
 	if cycle.ResetsAt.After(cycle.CycleStart) {
 		m["resetsAt"] = cycle.ResetsAt.Format(time.RFC3339)
@@ -11295,14 +11289,14 @@ func (h *Handler) buildOpenCodeGoSummaryMap() map[string]interface{} {
 			continue
 		}
 		entry := map[string]interface{}{
-			"displayName":   opencodegoDisplayName(windowName),
-			"usagePercent":  summary.UsagePercent,
-			"resetInSec":    summary.ResetInSec,
-			"currentRate":   summary.CurrentRate,
-			"projectedUsage": summary.ProjectedUsage,
+			"displayName":     opencodegoDisplayName(windowName),
+			"usagePercent":    summary.UsagePercent,
+			"resetInSec":      summary.ResetInSec,
+			"currentRate":     summary.CurrentRate,
+			"projectedUsage":  summary.ProjectedUsage,
 			"completedCycles": summary.CompletedCycles,
-			"peakCycle":     summary.PeakCycle,
-			"totalTracked":  summary.TotalTracked,
+			"peakCycle":       summary.PeakCycle,
+			"totalTracked":    summary.TotalTracked,
 		}
 		if summary.TimeUntilReset > 0 {
 			entry["timeUntilReset"] = formatDuration(summary.TimeUntilReset)

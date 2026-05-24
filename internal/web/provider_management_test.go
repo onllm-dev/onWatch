@@ -70,22 +70,24 @@ func TestProviderUtilityFunctions(t *testing.T) {
 	}
 
 	src := &config.Config{
-		SyntheticAPIKey:      "syn",
-		ZaiAPIKey:            "zai",
-		ZaiBaseURL:           "https://z.ai",
-		AnthropicToken:       "anth",
-		AnthropicAutoToken:   true,
-		CopilotToken:         "copilot",
-		CodexToken:           "codex",
-		CodexAutoToken:       true,
-		AntigravityBaseURL:   "http://127.0.0.1:4242",
-		AntigravityCSRFToken: "csrf",
-		AntigravityEnabled:   true,
-		MiniMaxAPIKey:        "minimax",
+		SyntheticAPIKey:       "syn",
+		ZaiAPIKey:             "zai",
+		ZaiBaseURL:            "https://z.ai",
+		AnthropicToken:        "anth",
+		AnthropicAutoToken:    true,
+		CopilotToken:          "copilot",
+		CodexToken:            "codex",
+		CodexAutoToken:        true,
+		AntigravityBaseURL:    "http://127.0.0.1:4242",
+		AntigravityCSRFToken:  "csrf",
+		AntigravityEnabled:    true,
+		MiniMaxAPIKey:         "minimax",
+		OpenCodeGoCookie:      "auth=opencode",
+		OpenCodeGoWorkspaceID: "wrk_test",
 	}
 	dst := &config.Config{}
 	applyProviderConfig(dst, src)
-	if dst.CodexToken != "codex" || dst.AntigravityBaseURL != "http://127.0.0.1:4242" || dst.MiniMaxAPIKey != "minimax" {
+	if dst.CodexToken != "codex" || dst.AntigravityBaseURL != "http://127.0.0.1:4242" || dst.MiniMaxAPIKey != "minimax" || dst.OpenCodeGoCookie != "auth=opencode" || dst.OpenCodeGoWorkspaceID != "wrk_test" {
 		t.Fatalf("applyProviderConfig failed: %+v", dst)
 	}
 
@@ -95,6 +97,30 @@ func TestProviderUtilityFunctions(t *testing.T) {
 	}
 	if catalog[0].Key != "anthropic" {
 		t.Fatalf("providerCatalog first key = %q, want anthropic", catalog[0].Key)
+	}
+}
+
+func TestStripProviderSecrets_MasksCookieFields(t *testing.T) {
+	t.Parallel()
+
+	providers := map[string]interface{}{
+		"opencodego": map[string]interface{}{
+			"cookie":       "auth=secret",
+			"workspace_id": "wrk_test",
+		},
+	}
+
+	stripProviderSecrets(providers)
+
+	opencodego := providers["opencodego"].(map[string]interface{})
+	if got := opencodego["cookie"]; got != "" {
+		t.Fatalf("cookie = %v, want empty", got)
+	}
+	if got := opencodego["cookie_set"]; got != true {
+		t.Fatalf("cookie_set = %v, want true", got)
+	}
+	if got := opencodego["workspace_id"]; got != "wrk_test" {
+		t.Fatalf("workspace_id = %v, want wrk_test", got)
 	}
 }
 

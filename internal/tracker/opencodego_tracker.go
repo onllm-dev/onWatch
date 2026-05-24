@@ -11,11 +11,11 @@ import (
 
 // OpenCodeGoTracker manages reset cycle detection and usage calculation for OpenCode Go windows.
 type OpenCodeGoTracker struct {
-	store          *store.Store
-	logger         *slog.Logger
-	lastPercents   map[string]float64   // window_name -> last usage percent
-	lastResetSecs  map[string]int       // window_name -> last reset seconds
-	hasLastValues  bool
+	store         *store.Store
+	logger        *slog.Logger
+	lastPercents  map[string]float64 // window_name -> last usage percent
+	lastResetSecs map[string]int     // window_name -> last reset seconds
+	hasLastValues bool
 
 	onReset func(windowName string)
 }
@@ -62,12 +62,11 @@ func (t *OpenCodeGoTracker) processWindow(w api.OpenCodeGoWindowValue, capturedA
 
 	if cycle == nil {
 		// Create new cycle
-		now := time.Now().UTC()
-		resetTime := now
+		resetTime := capturedAt
 		if w.ResetInSec > 0 {
-			resetTime = now.Add(time.Duration(w.ResetInSec) * time.Second)
+			resetTime = capturedAt.Add(time.Duration(w.ResetInSec) * time.Second)
 		} else {
-			resetTime = now.Add(24 * time.Hour)
+			resetTime = capturedAt.Add(24 * time.Hour)
 		}
 
 		_, err := t.store.CreateOpenCodeGoCycle(windowName, capturedAt, resetTime)
@@ -96,7 +95,6 @@ func (t *OpenCodeGoTracker) processWindow(w api.OpenCodeGoWindowValue, capturedA
 
 	// Detect reset: if rename_sec increased significantly (went up instead of down by more than interval)
 	// or if usage dropped significantly
-	now := time.Now().UTC()
 	resetDetected := false
 
 	if w.ResetInSec > lastResetSec+300 {
@@ -111,16 +109,16 @@ func (t *OpenCodeGoTracker) processWindow(w api.OpenCodeGoWindowValue, capturedA
 
 	if resetDetected {
 		// Close current cycle
-		if err := t.store.CloseOpenCodeGoCycle(windowName, now, cycle.PeakUsage, cycle.TotalDelta+delta); err != nil {
+		if err := t.store.CloseOpenCodeGoCycle(windowName, capturedAt, cycle.PeakUsage, cycle.TotalDelta+delta); err != nil {
 			return fmt.Errorf("close cycle: %w", err)
 		}
 
 		// Create new cycle
-		resetTime := now
+		resetTime := capturedAt
 		if w.ResetInSec > 0 {
-			resetTime = now.Add(time.Duration(w.ResetInSec) * time.Second)
+			resetTime = capturedAt.Add(time.Duration(w.ResetInSec) * time.Second)
 		} else {
-			resetTime = now.Add(24 * time.Hour)
+			resetTime = capturedAt.Add(24 * time.Hour)
 		}
 
 		if _, err := t.store.CreateOpenCodeGoCycle(windowName, capturedAt, resetTime); err != nil {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -15,16 +16,16 @@ import (
 )
 
 var (
-	ErrOpenCodeGoUnauthorized   = errors.New("opencodego: unauthorized - invalid or expired cookie")
-	ErrOpenCodeGoServerError    = errors.New("opencodego: server error")
+	ErrOpenCodeGoUnauthorized    = errors.New("opencodego: unauthorized - invalid or expired cookie")
+	ErrOpenCodeGoServerError     = errors.New("opencodego: server error")
 	ErrOpenCodeGoInvalidResponse = errors.New("opencodego: invalid response")
 )
 
 const (
-	OpenCodeGoBaseURL          = "https://opencode.ai"
-	OpenCodeGoServerURL        = "https://opencode.ai/_server"
+	OpenCodeGoBaseURL           = "https://opencode.ai"
+	OpenCodeGoServerURL         = "https://opencode.ai/_server"
 	OpenCodeGoWorkspaceServerID = "def39973159c7f0483d8793a822b8dbb10d067e12c65455fcb4608459ba0234f"
-	OpenCodeGoUserAgent        = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+	OpenCodeGoUserAgent         = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
 )
 
 // wrkPattern matches workspace IDs in responses.
@@ -168,12 +169,11 @@ func (c *OpenCodeGoClient) FetchQuotas(ctx context.Context) (*OpenCodeGoSnapshot
 		if errors.Is(err, ErrOpenCodeGoNotSignedIn) {
 			return nil, fmt.Errorf("%w: %v", ErrOpenCodeGoUnauthorized, err)
 		}
-		// Log raw response prefix for debugging
-		bodyPreview := string(body)
-		if len(bodyPreview) > 500 {
-			bodyPreview = bodyPreview[:500]
-		}
-		c.logger.Error("opencodego: parse failed, raw response prefix", "body_preview", bodyPreview)
+		c.logger.Error("opencodego: parse failed",
+			"body_len", len(body),
+			"has_initial_state", bytes.Contains(body, []byte("__INITIAL_STATE__")),
+			"has_workspace_marker", bytes.Contains(body, []byte("workspace/")),
+		)
 		return nil, fmt.Errorf("opencodego: parse usage: %w", err)
 	}
 
@@ -193,7 +193,7 @@ func (c *OpenCodeGoClient) resolveWorkspaceID(ctx context.Context) (string, erro
 		return c.workspaceID, nil
 	}
 
-	rpcURL := OpenCodeGoServerURL + "?id=" + OpenCodeGoWorkspaceServerID
+	rpcURL := c.serverURL() + "?id=" + OpenCodeGoWorkspaceServerID
 	body, err := c.doServerGet(ctx, rpcURL)
 	if err != nil {
 		id := extractWorkspaceID(body)
@@ -232,8 +232,8 @@ func (c *OpenCodeGoClient) doServerGet(ctx context.Context, url string) ([]byte,
 	c.setCommonHeaders(req)
 	req.Header.Set("X-Server-Id", OpenCodeGoWorkspaceServerID)
 	req.Header.Set("X-Server-Instance", "server-fn:"+newUUID())
-	req.Header.Set("Origin", OpenCodeGoBaseURL)
-	req.Header.Set("Referer", OpenCodeGoBaseURL)
+	req.Header.Set("Origin", c.baseURL)
+	req.Header.Set("Referer", c.baseURL)
 	req.Header.Set("Accept", "text/javascript, application/json;q=0.9, */*;q=0.8")
 
 	resp, err := c.httpClient.Do(req)
@@ -262,7 +262,7 @@ func (c *OpenCodeGoClient) resolveWorkspaceIDFallback(ctx context.Context) (stri
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, OpenCodeGoServerURL, bytes.NewReader([]byte("[]")))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, c.serverURL(), bytes.NewReader([]byte("[]")))
 	if err != nil {
 		return "", fmt.Errorf("create workspace request: %w", err)
 	}
@@ -271,8 +271,8 @@ func (c *OpenCodeGoClient) resolveWorkspaceIDFallback(ctx context.Context) (stri
 	req.Header.Set("X-Server-Id", OpenCodeGoWorkspaceServerID)
 	req.Header.Set("X-Server-Instance", "server-fn:"+newUUID())
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", OpenCodeGoBaseURL)
-	req.Header.Set("Referer", OpenCodeGoBaseURL)
+	req.Header.Set("Origin", c.baseURL)
+	req.Header.Set("Referer", c.baseURL)
 	req.Header.Set("Accept", "text/javascript, application/json;q=0.9, */*;q=0.8")
 
 	resp, err := c.httpClient.Do(req)
@@ -337,6 +337,17 @@ func (c *OpenCodeGoClient) doGet(ctx context.Context, url string) ([]byte, error
 	default:
 		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
 	}
+}
+
+func (c *OpenCodeGoClient) serverURL() string {
+	base, err := url.Parse(c.baseURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return OpenCodeGoServerURL
+	}
+	base.Path = strings.TrimRight(base.Path, "/") + "/_server"
+	base.RawQuery = ""
+	base.Fragment = ""
+	return base.String()
 }
 
 // setCommonHeaders sets the common request headers including cookie auth.
