@@ -65,7 +65,7 @@ func (t *GeminiTracker) Process(snapshot *api.GeminiSnapshot) error {
 			ResetTime:         fq.ResetTime,
 			TimeUntilReset:    fq.TimeUntilReset,
 		}
-		if err := t.processModel(q, snapshot.CapturedAt); err != nil {
+		if err := t.processModel(q, snapshot.CapturedAt, snapshot.AccountID); err != nil {
 			return fmt.Errorf("gemini tracker: %s: %w", fq.FamilyID, err)
 		}
 	}
@@ -74,22 +74,22 @@ func (t *GeminiTracker) Process(snapshot *api.GeminiSnapshot) error {
 	return nil
 }
 
-func (t *GeminiTracker) processModel(quota api.GeminiQuota, capturedAt time.Time) error {
+func (t *GeminiTracker) processModel(quota api.GeminiQuota, capturedAt time.Time, accountID int64) error {
 	modelID := quota.ModelID
 	// Usage = 1.0 - remainingFraction
 	currentUsage := 1.0 - quota.RemainingFraction
 
-	cycle, err := t.store.QueryActiveGeminiCycle(modelID)
+	cycle, err := t.store.QueryActiveGeminiCycle(accountID, modelID)
 	if err != nil {
 		return fmt.Errorf("failed to query active cycle: %w", err)
 	}
 
 	if cycle == nil {
-		_, err := t.store.CreateGeminiCycle(modelID, capturedAt, quota.ResetTime)
+		_, err := t.store.CreateGeminiCycle(accountID, modelID, capturedAt, quota.ResetTime)
 		if err != nil {
 			return fmt.Errorf("failed to create cycle: %w", err)
 		}
-		if err := t.store.UpdateGeminiCycle(modelID, currentUsage, 0); err != nil {
+		if err := t.store.UpdateGeminiCycle(accountID, modelID, currentUsage, 0); err != nil {
 			return fmt.Errorf("failed to set initial peak: %w", err)
 		}
 		t.lastFractions[modelID] = quota.RemainingFraction
@@ -156,13 +156,13 @@ func (t *GeminiTracker) processModel(quota api.GeminiQuota, capturedAt time.Time
 			}
 		}
 
-		if err := t.store.CloseGeminiCycle(modelID, cycleEndTime, cycle.PeakUsage, cycle.TotalDelta); err != nil {
+		if err := t.store.CloseGeminiCycle(accountID, modelID, cycleEndTime, cycle.PeakUsage, cycle.TotalDelta); err != nil {
 			return fmt.Errorf("failed to close cycle: %w", err)
 		}
-		if _, err := t.store.CreateGeminiCycle(modelID, capturedAt, quota.ResetTime); err != nil {
+		if _, err := t.store.CreateGeminiCycle(accountID, modelID, capturedAt, quota.ResetTime); err != nil {
 			return fmt.Errorf("failed to create new cycle: %w", err)
 		}
-		if err := t.store.UpdateGeminiCycle(modelID, currentUsage, 0); err != nil {
+		if err := t.store.UpdateGeminiCycle(accountID, modelID, currentUsage, 0); err != nil {
 			return fmt.Errorf("failed to set initial peak: %w", err)
 		}
 		t.lastFractions[modelID] = quota.RemainingFraction
@@ -176,7 +176,7 @@ func (t *GeminiTracker) processModel(quota api.GeminiQuota, capturedAt time.Time
 	}
 
 	if updateCycleResetTime {
-		if err := t.store.UpdateGeminiCycleResetTime(modelID, quota.ResetTime); err != nil {
+		if err := t.store.UpdateGeminiCycleResetTime(accountID, modelID, quota.ResetTime); err != nil {
 			return fmt.Errorf("failed to update cycle reset time: %w", err)
 		}
 		if quota.ResetTime != nil {
@@ -195,13 +195,13 @@ func (t *GeminiTracker) processModel(quota api.GeminiQuota, capturedAt time.Time
 			if currentUsage > cycle.PeakUsage {
 				cycle.PeakUsage = currentUsage
 			}
-			if err := t.store.UpdateGeminiCycle(modelID, cycle.PeakUsage, cycle.TotalDelta); err != nil {
+			if err := t.store.UpdateGeminiCycle(accountID, modelID, cycle.PeakUsage, cycle.TotalDelta); err != nil {
 				return fmt.Errorf("failed to update cycle: %w", err)
 			}
 		}
 	} else if currentUsage > cycle.PeakUsage {
 		cycle.PeakUsage = currentUsage
-		if err := t.store.UpdateGeminiCycle(modelID, cycle.PeakUsage, cycle.TotalDelta); err != nil {
+		if err := t.store.UpdateGeminiCycle(accountID, modelID, cycle.PeakUsage, cycle.TotalDelta); err != nil {
 			return fmt.Errorf("failed to update cycle: %w", err)
 		}
 	}
@@ -210,14 +210,14 @@ func (t *GeminiTracker) processModel(quota api.GeminiQuota, capturedAt time.Time
 	return nil
 }
 
-// UsageSummary returns computed stats for a Gemini family ID.
-func (t *GeminiTracker) UsageSummary(familyID string) (*GeminiSummary, error) {
-	activeCycle, err := t.store.QueryActiveGeminiCycle(familyID)
+// UsageSummary returns computed stats for a Gemini family ID and account.
+func (t *GeminiTracker) UsageSummary(accountID int64, familyID string) (*GeminiSummary, error) {
+	activeCycle, err := t.store.QueryActiveGeminiCycle(accountID, familyID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active cycle: %w", err)
 	}
 
-	history, err := t.store.QueryGeminiCycleHistory(familyID)
+	history, err := t.store.QueryGeminiCycleHistory(accountID, familyID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cycle history: %w", err)
 	}
@@ -247,7 +247,7 @@ func (t *GeminiTracker) UsageSummary(familyID string) (*GeminiSummary, error) {
 			summary.TimeUntilReset = time.Until(*activeCycle.ResetTime)
 		}
 
-		latest, err := t.store.QueryLatestGemini()
+		latest, err := t.store.QueryLatestGemini(accountID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query latest: %w", err)
 		}

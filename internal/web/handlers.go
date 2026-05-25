@@ -116,6 +116,22 @@ type Handler struct {
 // DefaultCodexAccountID is the default account ID for single-account setups.
 const DefaultCodexAccountID int64 = 1
 
+// DefaultGeminiAccountID is the default account ID for single-account setups.
+const DefaultGeminiAccountID = store.DefaultGeminiAccountID
+
+// parseGeminiAccountID extracts the account ID from query params, using the store default when omitted.
+func parseGeminiAccountID(r *http.Request) int64 {
+	accountStr := r.URL.Query().Get("account")
+	if accountStr == "" {
+		return DefaultGeminiAccountID
+	}
+	accountID, err := strconv.ParseInt(accountStr, 10, 64)
+	if err != nil || accountID <= 0 {
+		return DefaultGeminiAccountID
+	}
+	return accountID
+}
+
 // parseCodexAccountID extracts the account ID from query params, defaulting to 1.
 func parseCodexAccountID(r *http.Request) int64 {
 	accountStr := r.URL.Query().Get("account")
@@ -341,6 +357,74 @@ func (h *Handler) getAvailableTemplateNames(tmpl *template.Template) []string {
 }
 
 // codexProfilesList returns all Codex profiles/accounts from the database.
+// GeminiProfiles handles Gemini profile management API requests.
+// GET /api/gemini/profiles - list profiles
+// POST /api/gemini/profiles - save current auth as a named profile
+// DELETE /api/gemini/profiles?name=xxx - delete a profile
+func (h *Handler) GeminiProfiles(w http.ResponseWriter, r *http.Request) {
+	if h.geminiAgentManager == nil {
+		respondError(w, http.StatusNotImplemented, "Gemini multi-account support not enabled")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		h.geminiProfilesList(w, r)
+	case http.MethodPost:
+		h.geminiProfileSave(w, r)
+	case http.MethodDelete:
+		h.geminiProfileDelete(w, r)
+	default:
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (h *Handler) geminiProfilesList(w http.ResponseWriter, r *http.Request) {
+	profiles, err := h.geminiAgentManager.ListProfiles()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, profiles)
+}
+
+func (h *Handler) geminiProfileSave(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Name == "" {
+		respondError(w, http.StatusBadRequest, "missing profile name")
+		return
+	}
+
+	if err := h.geminiAgentManager.SaveProfile(req.Name); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) geminiProfileDelete(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		respondError(w, http.StatusBadRequest, "missing profile name")
+		return
+	}
+
+	if err := h.geminiAgentManager.DeleteProfile(name); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) codexProfilesList(w http.ResponseWriter, r *http.Request) {
 	if h.store == nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{"profiles": []interface{}{}})
@@ -745,68 +829,13 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 	}
 
 	// Parse dashboard template (layout + dashboard)
-	dashboardTmpl, err := template.ParseFS(templatesFS, "templates/layout.html", "templates/dashboard.html")
-	if err != nil {
-		logger.Error("failed to parse dashboard template", "error", err)
-		// Keep the returned template (may contain partially parsed definitions like layout.html)
-		if dashboardTmpl == nil {
-			dashboardTmpl = template.New("empty")
-		}
-	}
-	if dashboardTmpl != nil {
-		for _, t := range dashboardTmpl.Templates() {
-			logger.Debug("registered dashboard template", "name", t.Name())
-		}
-		// Verify required templates exist
-		if dashboardTmpl.Lookup("layout.html") == nil {
-			logger.Error("layout.html template not found in dashboard templates")
-		}
-		if dashboardTmpl.Lookup("content") == nil {
-			logger.Error("content template not found in dashboard templates")
-		}
-	}
+	dashboardTmpl := template.Must(template.New("").ParseFS(templatesFS, "templates/layout.html", "templates/dashboard.html"))
 
 	// Parse login template (layout + login)
-	loginTmpl, err := template.ParseFS(templatesFS, "templates/layout.html", "templates/login.html")
-	if err != nil {
-		logger.Error("failed to parse login template", "error", err)
-		if loginTmpl == nil {
-			loginTmpl = template.New("empty")
-		}
-	}
-	if loginTmpl != nil {
-		for _, t := range loginTmpl.Templates() {
-			logger.Debug("registered login template", "name", t.Name())
-		}
-		// Verify required templates exist
-		if loginTmpl.Lookup("layout.html") == nil {
-			logger.Error("layout.html template not found in login templates")
-		}
-		if loginTmpl.Lookup("content") == nil {
-			logger.Error("content template not found in login templates")
-		}
-	}
+	loginTmpl := template.Must(template.New("").ParseFS(templatesFS, "templates/layout.html", "templates/login.html"))
 
 	// Parse settings template (layout + settings)
-	settingsTmpl, err := template.ParseFS(templatesFS, "templates/layout.html", "templates/settings.html")
-	if err != nil {
-		logger.Error("failed to parse settings template", "error", err)
-		if settingsTmpl == nil {
-			settingsTmpl = template.New("empty")
-		}
-	}
-	if settingsTmpl != nil {
-		for _, t := range settingsTmpl.Templates() {
-			logger.Debug("registered settings template", "name", t.Name())
-		}
-		// Verify required templates exist
-		if settingsTmpl.Lookup("layout.html") == nil {
-			logger.Error("layout.html template not found in settings templates")
-		}
-		if settingsTmpl.Lookup("content") == nil {
-			logger.Error("content template not found in settings templates")
-		}
-	}
+	settingsTmpl := template.Must(template.New("").ParseFS(templatesFS, "templates/layout.html", "templates/settings.html"))
 
 	h := &Handler{
 		store:         store,
@@ -1985,7 +2014,7 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 		response["openrouter"] = h.buildOpenRouterCurrent()
 	}
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
-		response["gemini"] = h.buildGeminiCurrent()
+		response["gemini"] = h.buildGeminiCurrent(parseGeminiAccountID(r))
 	}
 	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") {
 		response["cursor"] = h.buildCursorCurrent()
@@ -2600,7 +2629,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") && h.store != nil {
-		snapshots, err := h.store.QueryGeminiRange(0, start, now)
+		snapshots, err := h.store.QueryGeminiRange(parseGeminiAccountID(r), start, now)
 		if err == nil {
 			// Filter empty snapshots and aggregate by family
 			var valid []*api.GeminiSnapshot
@@ -3618,7 +3647,7 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 		modelIDs, _ := h.store.QueryAllGeminiModelIDs()
 		var geminiSummaries []map[string]interface{}
 		for _, modelID := range modelIDs {
-			if summary, err := h.geminiTracker.UsageSummary(0, modelID); err == nil && summary != nil {
+			if summary, err := h.geminiTracker.UsageSummary(parseGeminiAccountID(r), modelID); err == nil && summary != nil {
 				s := map[string]interface{}{
 					"modelId":           summary.ModelID,
 					"remainingFraction": summary.RemainingFraction,

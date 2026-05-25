@@ -26,6 +26,7 @@ func TestGeminiTracker_Process(t *testing.T) {
 	resetTime := time.Date(2026, 3, 18, 10, 0, 0, 0, time.UTC)
 	snapshot := &api.GeminiSnapshot{
 		CapturedAt: time.Date(2026, 3, 17, 10, 0, 0, 0, time.UTC),
+		AccountID:  1,
 		Tier:       "standard",
 		Quotas: []api.GeminiQuota{
 			{ModelID: "gemini-2.5-pro", RemainingFraction: 1.0, UsagePercent: 0, ResetTime: &resetTime},
@@ -39,7 +40,7 @@ func TestGeminiTracker_Process(t *testing.T) {
 	}
 
 	// Check cycles were created by family ID, not model ID
-	cycle, err := s.QueryActiveGeminiCycle("pro")
+	cycle, err := s.QueryActiveGeminiCycle(1, "pro")
 	if err != nil {
 		t.Fatalf("QueryActiveGeminiCycle() error = %v", err)
 	}
@@ -47,7 +48,7 @@ func TestGeminiTracker_Process(t *testing.T) {
 		t.Fatal("expected active cycle for 'pro' family")
 	}
 
-	flashCycle, err := s.QueryActiveGeminiCycle("flash")
+	flashCycle, err := s.QueryActiveGeminiCycle(1, "flash")
 	if err != nil {
 		t.Fatalf("QueryActiveGeminiCycle() error = %v", err)
 	}
@@ -71,6 +72,7 @@ func TestGeminiTracker_ResetDetection(t *testing.T) {
 	// First snapshot: some usage (both pro models report identical remaining)
 	snap1 := &api.GeminiSnapshot{
 		CapturedAt: time.Date(2026, 3, 17, 10, 0, 0, 0, time.UTC),
+		AccountID:  1,
 		Quotas: []api.GeminiQuota{
 			{ModelID: "gemini-2.5-pro", RemainingFraction: 0.5, UsagePercent: 50, ResetTime: &resetTime},
 			{ModelID: "gemini-3-pro-preview", RemainingFraction: 0.5, UsagePercent: 50, ResetTime: &resetTime},
@@ -84,6 +86,7 @@ func TestGeminiTracker_ResetDetection(t *testing.T) {
 	newResetTime := time.Date(2026, 3, 19, 10, 0, 0, 0, time.UTC)
 	snap2 := &api.GeminiSnapshot{
 		CapturedAt: time.Date(2026, 3, 18, 10, 5, 0, 0, time.UTC), // past reset time
+		AccountID:  1,
 		Quotas: []api.GeminiQuota{
 			{ModelID: "gemini-2.5-pro", RemainingFraction: 1.0, UsagePercent: 0, ResetTime: &newResetTime},
 			{ModelID: "gemini-3-pro-preview", RemainingFraction: 1.0, UsagePercent: 0, ResetTime: &newResetTime},
@@ -98,7 +101,7 @@ func TestGeminiTracker_ResetDetection(t *testing.T) {
 	}
 
 	// Check completed cycle by family ID
-	history, err := s.QueryGeminiCycleHistory("pro")
+	history, err := s.QueryGeminiCycleHistory(1, "pro")
 	if err != nil {
 		t.Fatalf("QueryGeminiCycleHistory() error = %v", err)
 	}
@@ -115,6 +118,7 @@ func TestGeminiTracker_UsageSummary(t *testing.T) {
 	resetTime := time.Now().Add(12 * time.Hour).UTC()
 	snapshot := &api.GeminiSnapshot{
 		CapturedAt: time.Now().UTC(),
+		AccountID:  1,
 		Quotas: []api.GeminiQuota{
 			{ModelID: "gemini-2.5-pro", RemainingFraction: 0.8, UsagePercent: 20, ResetTime: &resetTime},
 			{ModelID: "gemini-3-pro-preview", RemainingFraction: 0.8, UsagePercent: 20, ResetTime: &resetTime},
@@ -129,7 +133,7 @@ func TestGeminiTracker_UsageSummary(t *testing.T) {
 		t.Fatalf("Process: %v", err)
 	}
 
-	summary, err := tr.UsageSummary("pro")
+	summary, err := tr.UsageSummary(1, "pro")
 	if err != nil {
 		t.Fatalf("UsageSummary() error = %v", err)
 	}

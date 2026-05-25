@@ -9,6 +9,9 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
+// DefaultGeminiAccountID selects the real default Gemini provider account.
+const DefaultGeminiAccountID int64 = 0
+
 // GeminiResetCycle represents a Gemini quota reset cycle.
 type GeminiResetCycle struct {
 	ID         int64
@@ -34,8 +37,23 @@ func parseGeminiTime(value string, field string) (time.Time, error) {
 	return parsed, nil
 }
 
+func (s *Store) defaultGeminiAccountID() int64 {
+	var accountID int64
+	if err := s.db.QueryRow(`SELECT id FROM provider_accounts WHERE provider = 'gemini' AND name = 'default'`).Scan(&accountID); err == nil && accountID > 0 {
+		return accountID
+	}
+	return DefaultGeminiAccountID
+}
+
 // InsertGeminiSnapshot inserts a Gemini snapshot with its quota values.
 func (s *Store) InsertGeminiSnapshot(snapshot *api.GeminiSnapshot) (int64, error) {
+	if snapshot == nil {
+		return 0, fmt.Errorf("nil gemini snapshot")
+	}
+	if snapshot.AccountID <= 0 {
+		snapshot.AccountID = s.defaultGeminiAccountID()
+	}
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
@@ -43,8 +61,9 @@ func (s *Store) InsertGeminiSnapshot(snapshot *api.GeminiSnapshot) (int64, error
 	defer tx.Rollback()
 
 	result, err := tx.Exec(
-		`INSERT INTO gemini_snapshots (captured_at, tier, project_id, raw_json, quota_count) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO gemini_snapshots (captured_at, account_id, tier, project_id, raw_json, quota_count) VALUES (?, ?, ?, ?, ?, ?)`,
 		snapshot.CapturedAt.Format(time.RFC3339Nano),
+		snapshot.AccountID,
 		snapshot.Tier,
 		snapshot.ProjectID,
 		snapshot.RawJSON,
@@ -82,15 +101,20 @@ func (s *Store) InsertGeminiSnapshot(snapshot *api.GeminiSnapshot) (int64, error
 	return snapshotID, nil
 }
 
-// QueryLatestGemini returns the most recent Gemini snapshot with quotas.
-func (s *Store) QueryLatestGemini() (*api.GeminiSnapshot, error) {
+// QueryLatestGemini returns the most recent Gemini snapshot with quotas for a specific account.
+func (s *Store) QueryLatestGemini(accountID int64) (*api.GeminiSnapshot, error) {
+	if accountID <= 0 {
+		accountID = s.defaultGeminiAccountID()
+	}
+
 	var snapshot api.GeminiSnapshot
 	var capturedAt string
 	var tier, projectID sql.NullString
 
 	err := s.db.QueryRow(
 		`SELECT id, captured_at, tier, project_id, quota_count
-		FROM gemini_snapshots ORDER BY captured_at DESC LIMIT 1`,
+		FROM gemini_snapshots WHERE account_id = ? ORDER BY captured_at DESC LIMIT 1`,
+		accountID,
 	).Scan(&snapshot.ID, &capturedAt, &tier, &projectID, new(int))
 
 	if err == sql.ErrNoRows {
@@ -100,6 +124,7 @@ func (s *Store) QueryLatestGemini() (*api.GeminiSnapshot, error) {
 		return nil, fmt.Errorf("failed to query latest gemini: %w", err)
 	}
 
+	snapshot.AccountID = accountID
 	parsedCapturedAt, err := parseGeminiTime(capturedAt, "gemini snapshot captured_at")
 	if err != nil {
 		return nil, err
@@ -141,17 +166,21 @@ func (s *Store) QueryLatestGemini() (*api.GeminiSnapshot, error) {
 	return &snapshot, rows.Err()
 }
 
-// QueryGeminiRange returns Gemini snapshots within a time range.
-func (s *Store) QueryGeminiRange(start, end time.Time, limit ...int) ([]*api.GeminiSnapshot, error) {
+// QueryGeminiRange returns Gemini snapshots within a time range for a specific account.
+func (s *Store) QueryGeminiRange(accountID int64, start, end time.Time, limit ...int) ([]*api.GeminiSnapshot, error) {
+	if accountID <= 0 {
+		accountID = s.defaultGeminiAccountID()
+	}
+
 	query := `SELECT id, captured_at, tier, project_id, quota_count FROM gemini_snapshots
-		WHERE captured_at BETWEEN ? AND ? ORDER BY captured_at ASC`
-	args := []interface{}{start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)}
+		WHERE account_id = ? AND captured_at BETWEEN ? AND ? ORDER BY captured_at ASC`
+	args := []interface{}{accountID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)}
 	if len(limit) > 0 && limit[0] > 0 {
 		query = `SELECT id, captured_at, tier, project_id, quota_count
 			FROM (
 				SELECT id, captured_at, tier, project_id, quota_count
 				FROM gemini_snapshots
-				WHERE captured_at BETWEEN ? AND ?
+				WHERE account_id = ? AND captured_at BETWEEN ? AND ?
 				ORDER BY captured_at DESC
 				LIMIT ?
 			) recent
@@ -173,6 +202,7 @@ func (s *Store) QueryGeminiRange(start, end time.Time, limit ...int) ([]*api.Gem
 		if err := rows.Scan(&snap.ID, &capturedAt, &tier, &projectID, new(int)); err != nil {
 			return nil, fmt.Errorf("failed to scan gemini snapshot: %w", err)
 		}
+		snap.AccountID = accountID
 		parsedCapturedAt, err := parseGeminiTime(capturedAt, "gemini snapshot captured_at")
 		if err != nil {
 			return nil, err
@@ -224,15 +254,20 @@ func (s *Store) QueryGeminiRange(start, end time.Time, limit ...int) ([]*api.Gem
 	return snapshots, nil
 }
 
-// CreateGeminiCycle creates a new Gemini reset cycle.
-func (s *Store) CreateGeminiCycle(modelID string, cycleStart time.Time, resetTime *time.Time) (int64, error) {
+// CreateGeminiCycle creates a new Gemini reset cycle for a specific account.
+func (s *Store) CreateGeminiCycle(accountID int64, modelID string, cycleStart time.Time, resetTime *time.Time) (int64, error) {
+	if accountID <= 0 {
+		accountID = s.defaultGeminiAccountID()
+	}
+
 	var resetTimeVal interface{}
 	if resetTime != nil {
 		resetTimeVal = resetTime.Format(time.RFC3339Nano)
 	}
 
 	result, err := s.db.Exec(
-		`INSERT INTO gemini_reset_cycles (model_id, cycle_start, reset_time) VALUES (?, ?, ?)`,
+		`INSERT INTO gemini_reset_cycles (account_id, model_id, cycle_start, reset_time) VALUES (?, ?, ?, ?)`,
+		accountID,
 		modelID,
 		cycleStart.Format(time.RFC3339Nano),
 		resetTimeVal,
@@ -249,13 +284,18 @@ func (s *Store) CreateGeminiCycle(modelID string, cycleStart time.Time, resetTim
 }
 
 // CloseGeminiCycle closes a Gemini reset cycle with final stats.
-func (s *Store) CloseGeminiCycle(modelID string, cycleEnd time.Time, peakUsage, totalDelta float64) error {
+func (s *Store) CloseGeminiCycle(accountID int64, modelID string, cycleEnd time.Time, peakUsage, totalDelta float64) error {
+	if accountID <= 0 {
+		accountID = s.defaultGeminiAccountID()
+	}
+
 	_, err := s.db.Exec(
 		`UPDATE gemini_reset_cycles SET cycle_end = ?, peak_usage = ?, total_delta = ?
-		WHERE model_id = ? AND cycle_end IS NULL`,
+		WHERE account_id = ? AND model_id = ? AND cycle_end IS NULL`,
 		cycleEnd.Format(time.RFC3339Nano),
 		peakUsage,
 		totalDelta,
+		accountID,
 		modelID,
 	)
 	if err != nil {
@@ -265,12 +305,17 @@ func (s *Store) CloseGeminiCycle(modelID string, cycleEnd time.Time, peakUsage, 
 }
 
 // UpdateGeminiCycle updates the peak and delta for an active Gemini cycle.
-func (s *Store) UpdateGeminiCycle(modelID string, peakUsage, totalDelta float64) error {
+func (s *Store) UpdateGeminiCycle(accountID int64, modelID string, peakUsage, totalDelta float64) error {
+	if accountID <= 0 {
+		accountID = s.defaultGeminiAccountID()
+	}
+
 	_, err := s.db.Exec(
 		`UPDATE gemini_reset_cycles SET peak_usage = ?, total_delta = ?
-		WHERE model_id = ? AND cycle_end IS NULL`,
+		WHERE account_id = ? AND model_id = ? AND cycle_end IS NULL`,
 		peakUsage,
 		totalDelta,
+		accountID,
 		modelID,
 	)
 	if err != nil {
@@ -280,7 +325,11 @@ func (s *Store) UpdateGeminiCycle(modelID string, peakUsage, totalDelta float64)
 }
 
 // UpdateGeminiCycleResetTime updates the reset timestamp for an active Gemini cycle.
-func (s *Store) UpdateGeminiCycleResetTime(modelID string, resetTime *time.Time) error {
+func (s *Store) UpdateGeminiCycleResetTime(accountID int64, modelID string, resetTime *time.Time) error {
+	if accountID <= 0 {
+		accountID = s.defaultGeminiAccountID()
+	}
+
 	var resetTimeValue interface{}
 	if resetTime != nil {
 		resetTimeValue = resetTime.Format(time.RFC3339Nano)
@@ -288,8 +337,9 @@ func (s *Store) UpdateGeminiCycleResetTime(modelID string, resetTime *time.Time)
 
 	_, err := s.db.Exec(
 		`UPDATE gemini_reset_cycles SET reset_time = ?
-		WHERE model_id = ? AND cycle_end IS NULL`,
+		WHERE account_id = ? AND model_id = ? AND cycle_end IS NULL`,
 		resetTimeValue,
+		accountID,
 		modelID,
 	)
 	if err != nil {
@@ -298,15 +348,20 @@ func (s *Store) UpdateGeminiCycleResetTime(modelID string, resetTime *time.Time)
 	return nil
 }
 
-// QueryActiveGeminiCycle returns the active cycle for a Gemini model.
-func (s *Store) QueryActiveGeminiCycle(modelID string) (*GeminiResetCycle, error) {
+// QueryActiveGeminiCycle returns the active cycle for a Gemini model and account.
+func (s *Store) QueryActiveGeminiCycle(accountID int64, modelID string) (*GeminiResetCycle, error) {
+	if accountID <= 0 {
+		accountID = s.defaultGeminiAccountID()
+	}
+
 	var cycle GeminiResetCycle
 	var cycleStart string
 	var cycleEnd, resetTime sql.NullString
 
 	err := s.db.QueryRow(
 		`SELECT id, model_id, cycle_start, cycle_end, reset_time, peak_usage, total_delta
-		FROM gemini_reset_cycles WHERE model_id = ? AND cycle_end IS NULL`,
+		FROM gemini_reset_cycles WHERE account_id = ? AND model_id = ? AND cycle_end IS NULL`,
+		accountID,
 		modelID,
 	).Scan(
 		&cycle.ID,
@@ -348,11 +403,15 @@ func (s *Store) QueryActiveGeminiCycle(modelID string) (*GeminiResetCycle, error
 	return &cycle, nil
 }
 
-// QueryGeminiCycleHistory returns completed cycles for a Gemini model with optional limit.
-func (s *Store) QueryGeminiCycleHistory(modelID string, limit ...int) ([]*GeminiResetCycle, error) {
+// QueryGeminiCycleHistory returns completed cycles for a Gemini model and account.
+func (s *Store) QueryGeminiCycleHistory(accountID int64, modelID string, limit ...int) ([]*GeminiResetCycle, error) {
+	if accountID <= 0 {
+		accountID = s.defaultGeminiAccountID()
+	}
+
 	query := `SELECT id, model_id, cycle_start, cycle_end, reset_time, peak_usage, total_delta
-		FROM gemini_reset_cycles WHERE model_id = ? AND cycle_end IS NOT NULL ORDER BY cycle_start DESC`
-	args := []interface{}{modelID}
+		FROM gemini_reset_cycles WHERE account_id = ? AND model_id = ? AND cycle_end IS NOT NULL ORDER BY cycle_start DESC`
+	args := []interface{}{accountID, modelID}
 	if len(limit) > 0 && limit[0] > 0 {
 		query += ` LIMIT ?`
 		args = append(args, limit[0])
@@ -440,15 +499,19 @@ func (s *Store) QueryGeminiUsageSeries(modelID string, since time.Time) ([]Gemin
 	return points, rows.Err()
 }
 
-// QueryGeminiCycleOverview returns Gemini cycles for a given model
+// QueryGeminiCycleOverview returns Gemini cycles for a given model and account
 // with cross-model snapshot data at the peak moment of each cycle.
-func (s *Store) QueryGeminiCycleOverview(modelID string, limit int) ([]CycleOverviewRow, error) {
+func (s *Store) QueryGeminiCycleOverview(accountID int64, modelID string, limit int) ([]CycleOverviewRow, error) {
+	if accountID <= 0 {
+		accountID = s.defaultGeminiAccountID()
+	}
+
 	if limit <= 0 {
 		limit = 50
 	}
 
 	var cycles []*GeminiResetCycle
-	activeCycle, err := s.QueryActiveGeminiCycle(modelID)
+	activeCycle, err := s.QueryActiveGeminiCycle(accountID, modelID)
 	if err != nil {
 		return nil, fmt.Errorf("store.QueryGeminiCycleOverview: active: %w", err)
 	}
@@ -457,7 +520,7 @@ func (s *Store) QueryGeminiCycleOverview(modelID string, limit int) ([]CycleOver
 		limit--
 	}
 
-	completedCycles, err := s.QueryGeminiCycleHistory(modelID, limit)
+	completedCycles, err := s.QueryGeminiCycleHistory(accountID, modelID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store.QueryGeminiCycleOverview: %w", err)
 	}
@@ -487,8 +550,9 @@ func (s *Store) QueryGeminiCycleOverview(modelID string, limit int) ([]CycleOver
 		err := s.db.QueryRow(
 			`SELECT s.id, s.captured_at FROM gemini_snapshots s
 			JOIN gemini_quota_values qv ON qv.snapshot_id = s.id
-			WHERE qv.model_id = ? AND s.captured_at >= ? AND s.captured_at < ?
+			WHERE s.account_id = ? AND qv.model_id = ? AND s.captured_at >= ? AND s.captured_at < ?
 			ORDER BY qv.usage_percent DESC LIMIT 1`,
+			accountID,
 			modelID,
 			c.CycleStart.Format(time.RFC3339Nano),
 			endBoundary.Format(time.RFC3339Nano),

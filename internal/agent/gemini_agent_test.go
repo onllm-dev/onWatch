@@ -66,7 +66,7 @@ func TestGeminiAgent_Poll(t *testing.T) {
 	}
 
 	// Verify data was stored
-	latest, err := st.QueryLatestGemini()
+	latest, err := st.QueryLatestGemini(store.DefaultGeminiAccountID)
 	if err != nil {
 		t.Fatalf("QueryLatestGemini() error = %v", err)
 	}
@@ -195,7 +195,7 @@ func TestGeminiAgent_TokenPersistenceOnRefresh(t *testing.T) {
 	}
 
 	// Verify quota data was stored (retry after refresh succeeded)
-	latest, err := st.QueryLatestGemini()
+	latest, err := st.QueryLatestGemini(store.DefaultGeminiAccountID)
 	if err != nil {
 		t.Fatalf("QueryLatestGemini() error = %v", err)
 	}

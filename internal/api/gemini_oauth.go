@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -162,4 +163,34 @@ func WriteGeminiCredentials(accessToken string, expiresIn int) error {
 	}
 
 	return os.Rename(tempPath, credPath)
+}
+
+// ParseGeminiIDTokenUserID extracts the user ID (sub claim) from a Google JWT id_token.
+// Returns empty string if parsing fails or claim is missing.
+func ParseGeminiIDTokenUserID(idToken string) string {
+	if idToken == "" {
+		return ""
+	}
+
+	parts := strings.Split(idToken, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		payload, err = base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			return ""
+		}
+	}
+
+	var claims struct {
+		Sub string `json:"sub"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(claims.Sub)
 }

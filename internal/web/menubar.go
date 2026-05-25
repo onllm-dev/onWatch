@@ -319,7 +319,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		}
 	}
 	if h.config != nil && h.config.HasProvider("gemini") && h.providerDashboardVisible("gemini", visibility) {
-		payload := h.buildGeminiCurrent()
+		payload := h.buildGeminiCurrent(DefaultGeminiAccountID)
 		if card := normalizeProviderCard("gemini", "Gemini", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {

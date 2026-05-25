@@ -2,12 +2,12 @@ package agent
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -277,7 +277,7 @@ func shouldUseSystemCredsForGeminiProfile(profileCreds, systemCreds *api.GeminiC
 		return true
 	}
 
-	return systemCreds.AccessToken != "" && subtle.ConstantTimeCompare([]byte(systemCreds.AccessToken), []byte(profileCreds.AccessToken)) == 0
+	return systemCreds.AccessToken != "" && systemCreds.AccessToken != profileCreds.AccessToken
 }
 
 func updateGeminiProfileFromSystemCreds(profilePath string, creds *api.GeminiCredentials, logger *slog.Logger) error {
@@ -423,12 +423,7 @@ func (m *GeminiAgentManager) startAgentForProfile(profile GeminiProfile) error {
 		return profileCreds
 	})
 
-	agent.SetTokenSave(func(accessToken, refreshToken string, expiresIn int) error {
-		// Google Gemini OAuth doesn't usually provide id_token on refresh unless
-		// specifically requested and it's not always rotated. We'll handle it if it comes.
-		// For now, RefreshGeminiToken doesn't return IDToken in the same way Codex does.
-		// Wait, GeminiOAuthTokenResponse DOES have IDToken.
-
+	agent.SetTokenSave(func(accessToken, refreshToken, idToken string, expiresIn int) error {
 		if isDefaultProfile {
 			// Save to both file and DB for default
 			if err := api.WriteGeminiCredentials(accessToken, expiresIn); err != nil {
@@ -438,10 +433,8 @@ func (m *GeminiAgentManager) startAgentForProfile(profile GeminiProfile) error {
 			return m.store.SaveGeminiTokens(accessToken, refreshToken, expiresAt)
 		}
 
-		// Named profiles: save refreshed tokens to the profile file only.
-		// We don't have idToken here yet from the SetTokenSave signature.
-		// Let's check GeminiAgent's SetTokenSave signature.
-		if err := saveGeminiTokensToProfile(profilePath, accessToken, refreshToken, "", m.logger); err != nil {
+		// Named profiles save refreshed tokens to the profile file only.
+		if err := saveGeminiTokensToProfile(profilePath, accessToken, refreshToken, idToken, m.logger); err != nil {
 			return err
 		}
 
@@ -667,22 +660,158 @@ func (m *GeminiAgentManager) GetRunningProfiles() []map[string]interface{} {
 	return result
 }
 
+func isDuplicateGeminiProfile(profile GeminiProfile, creds *api.GeminiCredentials, projectID string) bool {
+	if creds == nil {
+		return false
+	}
+	userID := strings.TrimSpace(creds.UserID)
+	if userID == "" {
+		userID = api.ParseGeminiIDTokenUserID(creds.IDToken)
+	}
+
+	profileUserID := profile.UserID
+	if profileUserID == "" {
+		profileUserID = api.ParseGeminiIDTokenUserID(profile.Tokens.IDToken)
+	}
+
+	if projectID != profile.ProjectID {
+		return false
+	}
+	if userID != "" && profileUserID != "" {
+		return userID == profileUserID
+	}
+	// If one or both are empty, match by project ID alone
+	return true
+}
+
+// ListProfiles returns all saved Gemini profiles from disk.
+func (m *GeminiAgentManager) ListProfiles() ([]GeminiProfile, error) {
+	if m.profilesDir == "" {
+		return nil, fmt.Errorf("profiles directory not set")
+	}
+
+	entries, err := os.ReadDir(m.profilesDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read profiles directory: %w", err)
+	}
+
+	var profiles []GeminiProfile
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		profilePath := filepath.Join(m.profilesDir, entry.Name())
+		data, err := os.ReadFile(profilePath)
+		if err != nil {
+			continue
+		}
+
+		var p GeminiProfile
+		if err := json.Unmarshal(data, &p); err != nil {
+			continue
+		}
+		if p.Name == "" {
+			p.Name = strings.TrimSuffix(entry.Name(), ".json")
+		}
+		profiles = append(profiles, p)
+	}
+
+	sort.Slice(profiles, func(i, j int) bool {
+		return profiles[i].Name < profiles[j].Name
+	})
+
+	return profiles, nil
+}
+
+func sanitizeProfileName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
+			return ""
+		}
+	}
+	return name
+}
+
 func (m *GeminiAgentManager) SaveProfile(name string) error {
 	if m.profilesDir == "" {
 		return fmt.Errorf("profiles directory not set")
 	}
+	name = sanitizeProfileName(name)
+	if name == "" {
+		return fmt.Errorf("invalid profile name")
+	}
+	if name == "default" {
+		return fmt.Errorf("'default' is a reserved profile name")
+	}
+	if err := os.MkdirAll(m.profilesDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create profiles directory: %w", err)
+	}
+
 	profilePath := filepath.Join(m.profilesDir, name+".json")
-	profile := map[string]string{"name": name}
-	data, err := json.Marshal(profile)
+	if _, err := os.Stat(profilePath); err == nil {
+		return fmt.Errorf("profile %q already exists", name)
+	} else if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check profile: %w", err)
+	}
+
+	creds := api.DetectGeminiCredentials(m.logger, m.store)
+	if creds == nil || (creds.AccessToken == "" && creds.RefreshToken == "") {
+		return fmt.Errorf("no active Gemini session found")
+	}
+	if creds.UserID == "" {
+		creds.UserID = api.ParseGeminiIDTokenUserID(creds.IDToken)
+	}
+
+	projectID := ""
+	if creds.AccessToken != "" {
+		client := api.NewGeminiClient(creds.AccessToken, m.logger)
+		if tier, err := client.FetchTier(context.Background()); err == nil && tier != nil {
+			projectID = tier.CloudAICompanionProject
+		}
+	}
+
+	profiles, err := m.ListProfiles()
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(profilePath, data, 0644)
+	for _, existing := range profiles {
+		if isDuplicateGeminiProfile(existing, creds, projectID) {
+			return fmt.Errorf("account is already saved as profile %q", existing.Name)
+		}
+	}
+
+	profile := GeminiProfile{
+		Name:      name,
+		ProjectID: projectID,
+		UserID:    creds.UserID,
+		SavedAt:   time.Now().UTC(),
+	}
+	profile.Tokens.AccessToken = creds.AccessToken
+	profile.Tokens.RefreshToken = creds.RefreshToken
+	profile.Tokens.IDToken = creds.IDToken
+
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(profilePath, data, 0o600)
 }
 
 func (m *GeminiAgentManager) DeleteProfile(name string) error {
 	if m.profilesDir == "" {
 		return fmt.Errorf("profiles directory not set")
+	}
+	name = sanitizeProfileName(name)
+	if name == "" {
+		return fmt.Errorf("invalid profile name")
 	}
 	profilePath := filepath.Join(m.profilesDir, name+".json")
 	return os.Remove(profilePath)

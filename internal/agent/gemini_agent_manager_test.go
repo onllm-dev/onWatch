@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
@@ -96,9 +97,10 @@ func TestGeminiAgentManager_LoadAndStartProfiles(t *testing.T) {
 	f.writeProfile(t, p1)
 	f.writeProfile(t, p2)
 
-	if err := f.manager.Run(); err != nil {
-		t.Fatalf("manager.Run: %v", err)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go f.manager.Run(ctx)
 
 	// Wait a bit for agents to start
 	time.Sleep(100 * time.Millisecond)
@@ -144,8 +146,6 @@ func TestGeminiAgentManager_CompositeIDs(t *testing.T) {
 }
 
 func TestGeminiAgentManager_IsDuplicateGeminiProfile(t *testing.T) {
-	f := newGeminiManagerFixture(t)
-
 	profile := GeminiProfile{
 		Name:      "existing",
 		ProjectID: "p1",

@@ -256,6 +256,7 @@ func seedAll(s *store.Store, now, future time.Time) error {
 	// gemini
 	if _, err := s.InsertGeminiSnapshot(&api.GeminiSnapshot{
 		CapturedAt: now,
+		AccountID:  1,
 		Tier:       "pro",
 		ProjectID:  "project-1",
 		Quotas: []api.GeminiQuota{{

@@ -465,6 +465,9 @@ func run() error {
 	if hasCommand("codex") {
 		return runCodexCommand()
 	}
+	if hasCommand("gemini") {
+		return agent.RunGeminiCommand()
+	}
 	if hasCommand("menubar") {
 		if hasFlag("--help") || hasFlag("-h") {
 			printMenubarHelp()
@@ -803,27 +806,16 @@ func run() error {
 	}
 
 	// Gemini provider - env vars or auto-detect from ~/.gemini/oauth_creds.json
-	var geminiClient *api.GeminiClient
-	var geminiCreds *api.GeminiCredentials
 	if os.Getenv("GEMINI_ENABLED") != "false" {
-		geminiCreds = api.DetectGeminiCredentials(logger, db)
+		geminiCreds := api.DetectGeminiCredentials(logger, db)
 		if geminiCreds != nil {
 			cfg.GeminiEnabled = true
 			cfg.GeminiAutoToken = true
-			token := geminiCreds.AccessToken
-			// If only refresh token available (no access token), agent will refresh on first poll
-			if token == "" && geminiCreds.RefreshToken != "" {
-				token = "pending-refresh"
+			source := "auto-detected"
+			if os.Getenv("GEMINI_REFRESH_TOKEN") != "" || os.Getenv("GEMINI_ACCESS_TOKEN") != "" {
+				source = "environment variables"
 			}
-			if token != "" {
-				geminiClient = api.NewGeminiClient(token, logger)
-				_ = geminiClient // Marcatore per evitare declared and not used
-				source := "auto-detected"
-				if os.Getenv("GEMINI_REFRESH_TOKEN") != "" || os.Getenv("GEMINI_ACCESS_TOKEN") != "" {
-					source = "environment variables"
-				}
-				logger.Info("Gemini API client configured", "source", source)
-			}
+			logger.Info("Gemini provider configured", "source", source)
 		}
 	}
 

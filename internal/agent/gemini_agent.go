@@ -39,8 +39,12 @@ type GeminiAgent struct {
 	notifier     *notify.NotificationEngine
 	pollingCheck func() bool
 	credsRefresh GeminiCredentialsRefreshFunc
+	tokenSave    func(accessToken, refreshToken, idToken string, expiresIn int) error
 	clientCreds  *api.GeminiClientCredentials
 	lastToken    string
+
+	// Multi-account support
+	accountID int64
 
 	// Auth failure rate limiting
 	authFailCount   int
@@ -57,13 +61,21 @@ func NewGeminiAgent(client *api.GeminiClient, st *store.Store, tracker *tracker.
 		logger = slog.Default()
 	}
 	return &GeminiAgent{
-		client:   client,
-		store:    st,
-		tracker:  tracker,
-		interval: interval,
-		logger:   logger,
-		sm:       sm,
+		client:    client,
+		store:     st,
+		tracker:   tracker,
+		interval:  interval,
+		logger:    logger,
+		sm:        sm,
+		accountID: store.DefaultGeminiAccountID,
 	}
+}
+
+// NewGeminiAgentWithAccount creates a new GeminiAgent for a specific provider account ID.
+func NewGeminiAgentWithAccount(client *api.GeminiClient, st *store.Store, tracker *tracker.GeminiTracker, interval time.Duration, logger *slog.Logger, sm *SessionManager, accountID int64) *GeminiAgent {
+	agent := NewGeminiAgent(client, st, tracker, interval, logger, sm)
+	agent.accountID = accountID
+	return agent
 }
 
 // SetPollingCheck sets a function called before each poll.
@@ -79,6 +91,11 @@ func (a *GeminiAgent) SetNotifier(n *notify.NotificationEngine) {
 // SetCredentialsRefresh sets a function that returns fresh credentials for proactive OAuth refresh.
 func (a *GeminiAgent) SetCredentialsRefresh(fn GeminiCredentialsRefreshFunc) {
 	a.credsRefresh = fn
+}
+
+// SetTokenSave sets a function that persists refreshed tokens.
+func (a *GeminiAgent) SetTokenSave(fn func(accessToken, refreshToken, idToken string, expiresIn int) error) {
+	a.tokenSave = fn
 }
 
 // SetClientCredentials sets the OAuth client credentials for token refresh.
@@ -145,12 +162,18 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 				if err != nil {
 					a.logger.Error("Proactive Gemini OAuth refresh failed", "error", err)
 				} else {
-					// Save to file (local users)
-					if err := api.WriteGeminiCredentials(newTokens.AccessToken, newTokens.ExpiresIn); err != nil {
-						a.logger.Debug("Failed to save Gemini credentials to file", "error", err)
+					// Persist new tokens
+					if a.tokenSave != nil {
+						if err := a.tokenSave(newTokens.AccessToken, creds.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
+							a.logger.Error("Failed to save Gemini tokens via callback", "error", err)
+						}
+					} else {
+						// Fallback to legacy single-account persistence
+						if err := api.WriteGeminiCredentials(newTokens.AccessToken, newTokens.ExpiresIn); err != nil {
+							a.logger.Debug("Failed to save Gemini credentials to file", "error", err)
+						}
+						a.saveTokensToDB(newTokens.AccessToken, creds.RefreshToken, newTokens.ExpiresIn)
 					}
-					// Save to DB (survives Docker container restarts)
-					a.saveTokensToDB(newTokens.AccessToken, creds.RefreshToken, newTokens.ExpiresIn)
 
 					a.client.SetToken(newTokens.AccessToken)
 					a.lastToken = newTokens.AccessToken
@@ -221,10 +244,19 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 					a.clientCreds.ClientSecret,
 				)
 				if refreshErr == nil {
-					if err := api.WriteGeminiCredentials(newTokens.AccessToken, newTokens.ExpiresIn); err != nil {
-						a.logger.Debug("Failed to save Gemini credentials to file", "error", err)
+					// Persist new tokens
+					if a.tokenSave != nil {
+						if err := a.tokenSave(newTokens.AccessToken, creds.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
+							a.logger.Error("Failed to save Gemini tokens via callback", "error", err)
+						}
+					} else {
+						// Fallback to legacy single-account persistence
+						if err := api.WriteGeminiCredentials(newTokens.AccessToken, newTokens.ExpiresIn); err != nil {
+							a.logger.Debug("Failed to save Gemini credentials to file", "error", err)
+						}
+						a.saveTokensToDB(newTokens.AccessToken, creds.RefreshToken, newTokens.ExpiresIn)
 					}
-					a.saveTokensToDB(newTokens.AccessToken, creds.RefreshToken, newTokens.ExpiresIn)
+
 					a.client.SetToken(newTokens.AccessToken)
 					a.lastToken = newTokens.AccessToken
 					a.logger.Info("Retrying Gemini poll with refreshed token")
@@ -285,6 +317,7 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
+	snapshot.AccountID = a.accountID
 
 	if _, err := a.store.InsertGeminiSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert Gemini snapshot", "error", err)

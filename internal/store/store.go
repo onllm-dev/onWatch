@@ -565,6 +565,7 @@ func (s *Store) createTables() error {
 		CREATE TABLE IF NOT EXISTS gemini_snapshots (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			captured_at TEXT NOT NULL,
+			account_id INTEGER NOT NULL DEFAULT 0,
 			tier TEXT,
 			project_id TEXT,
 			raw_json TEXT,
@@ -973,6 +974,73 @@ func (s *Store) migrateSchema() error {
 		if !strings.Contains(err.Error(), "no such column") &&
 			!strings.Contains(err.Error(), "no such table") {
 			return fmt.Errorf("failed to drop raw_line from api_integration_usage_events: %w", err)
+		}
+	}
+
+	// Add account_id column to gemini_snapshots for multi-account support.
+	if _, err := s.db.Exec(`
+		ALTER TABLE gemini_snapshots ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") &&
+			!strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to add account_id to gemini_snapshots: %w", err)
+		}
+	}
+
+	// Add account_id column to gemini_reset_cycles for multi-account support.
+	if _, err := s.db.Exec(`
+		ALTER TABLE gemini_reset_cycles ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") &&
+			!strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to add account_id to gemini_reset_cycles: %w", err)
+		}
+	}
+
+	// Ensure default Gemini provider account exists.
+	if _, err := s.db.Exec(`
+		INSERT OR IGNORE INTO provider_accounts (provider, name, created_at)
+		VALUES ('gemini', 'default', datetime('now'))
+	`); err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to insert default gemini account: %w", err)
+		}
+	}
+
+	var geminiDefaultAccountID int64
+	if err := s.db.QueryRow(`
+		SELECT id FROM provider_accounts WHERE provider = 'gemini' AND name = 'default'
+	`).Scan(&geminiDefaultAccountID); err == nil && geminiDefaultAccountID > 0 {
+		tx, txErr := s.db.Begin()
+		if txErr != nil {
+			return fmt.Errorf("failed to begin gemini backfill transaction: %w", txErr)
+		}
+		if _, err := tx.Exec(`
+			UPDATE gemini_snapshots SET account_id = ? WHERE account_id = 0 OR account_id = 1
+		`, geminiDefaultAccountID); err != nil && !strings.Contains(err.Error(), "no such table") {
+			tx.Rollback()
+			return fmt.Errorf("failed to backfill gemini_snapshots account_id: %w", err)
+		}
+		if _, err := tx.Exec(`
+			UPDATE gemini_reset_cycles SET account_id = ? WHERE account_id = 0 OR account_id = 1
+		`, geminiDefaultAccountID); err != nil && !strings.Contains(err.Error(), "no such table") {
+			tx.Rollback()
+			return fmt.Errorf("failed to backfill gemini_reset_cycles account_id: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit gemini account backfill: %w", err)
+		}
+	}
+
+	// Add Gemini multi-account indexes.
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_gemini_snapshots_account ON gemini_snapshots(account_id, captured_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_gemini_cycles_account ON gemini_reset_cycles(account_id, model_id)`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("failed gemini account index migration: %w", err)
+			}
 		}
 	}
 
