@@ -9956,6 +9956,14 @@ const providerSettingsConfig = {
       { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'OpenRouter API key. Overrides OPENROUTER_API_KEY from .env.', sensitive: true },
     ],
   },
+  opencode: {
+    title: 'OpenCode Go',
+    desc: 'Configure OpenCode Go quota tracking. Changes take effect after daemon restart.',
+    fields: [
+      { id: 'workspace_id', label: 'Workspace ID', type: 'text', placeholder: 'wrk_...', hint: 'Your OpenCode Go workspace ID. Overrides OPENCODE_GO_WORKSPACE_ID from .env.' },
+      { id: 'auth_cookie', label: 'Auth Cookie', type: 'password', placeholder: 'Not configured', hint: 'The auth cookie value required for scraping the dashboard. Overrides OPENCODE_GO_AUTH_COOKIE from .env.', sensitive: true },
+    ],
+  },
   synthetic: {
     title: 'Synthetic',
     desc: 'Configure Synthetic quota tracking. Changes take effect after daemon restart.',

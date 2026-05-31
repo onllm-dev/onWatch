@@ -1098,7 +1098,7 @@ func run() error {
 	var opencodeAg *agent.OpenCodeAgent
 	if cfg.HasProvider("opencode") {
 		opencodeSm := agent.NewSessionManager(db, "opencode", idleTimeout, logger)
-		opencodeAg = agent.NewOpenCodeAgent(db, cfg.PollInterval, logger, opencodeSm)
+		opencodeAg = agent.NewOpenCodeAgent(db, cfg, cfg.PollInterval, logger, opencodeSm)
 	}
 
 	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
