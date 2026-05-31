@@ -16,11 +16,13 @@ const (
 )
 
 var allowedProviders = map[string]struct{}{
-	"anthropic":  {},
-	"openai":     {},
-	"mistral":    {},
-	"openrouter": {},
-	"gemini":     {},
+	"anthropic":   {},
+	"openai":      {},
+	"mistral":     {},
+	"openrouter":  {},
+	"gemini":      {},
+	"opencode-go": {},
+	"opencode":    {},
 }
 
 // UsageEvent is the normalized API integration telemetry event stored by onWatch.

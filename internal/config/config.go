@@ -593,6 +593,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.GrokToken != "" || c.GrokEnabled {
 		providers = append(providers, "grok")
 	}
+	if c.APIIntegrationsEnabled {
+		providers = append(providers, "opencode")
+	}
 	return providers
 }
 
@@ -621,6 +624,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.CursorToken != ""
 	case "grok":
 		return c.GrokToken != "" || c.GrokEnabled
+	case "opencode":
+		return c.APIIntegrationsEnabled
 	}
 	return false
 }
@@ -659,6 +664,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.GrokToken != "" || c.GrokEnabled {
+		count++
+	}
+	if c.APIIntegrationsEnabled {
 		count++
 	}
 	return count > 1

@@ -404,6 +404,26 @@ func (s *Store) GetActiveSystemAlertsByProvider(provider string, limit int) ([]S
 	return alerts, rows.Err()
 }
 
+// SumAPIIntegrationCost calculates the total cost for a provider since a given time.
+func (s *Store) SumAPIIntegrationCost(provider string, since time.Time) (float64, error) {
+	var total sql.NullFloat64
+	err := s.db.QueryRow(`
+		SELECT SUM(cost_usd)
+		FROM api_integration_usage_events
+		WHERE provider = ? AND captured_at >= ?
+	`, provider, since.UTC().Format(time.RFC3339Nano)).Scan(&total)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to sum API integration cost: %w", err)
+	}
+	if total.Valid {
+		return total.Float64, nil
+	}
+	return 0, nil
+}
+
 func isSQLiteUniqueConstraintError(err error) bool {
 	var sqliteErr *sqlite.Error
 	if !errors.As(err, &sqliteErr) {

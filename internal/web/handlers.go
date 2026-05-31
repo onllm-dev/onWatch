@@ -93,6 +93,7 @@ type Handler struct {
 	openrouterTracker  *tracker.OpenRouterTracker
 	cursorTracker      *tracker.CursorTracker
 	grokTracker        *tracker.GrokTracker
+	opencodeTracker    *tracker.OpenCodeTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -769,6 +770,11 @@ func (h *Handler) SetGrokTracker(t *tracker.GrokTracker) {
 	h.grokTracker = t
 }
 
+// SetOpenCodeTracker sets the OpenCode tracker for usage summary enrichment.
+func (h *Handler) SetOpenCodeTracker(t *tracker.OpenCodeTracker) {
+	h.opencodeTracker = t
+}
+
 // SetAgentManager sets provider agent lifecycle controller.
 func (h *Handler) SetAgentManager(m ProviderAgentController) {
 	h.agentManager = m
@@ -1104,6 +1110,8 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "openrouter", Name: "OpenRouter", Description: "OpenRouter credits usage tracking"},
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 		{Key: "cursor", Name: "Cursor", Description: "Cursor usage and quota tracking", AutoDetectable: true},
+		{Key: "grok", Name: "Grok", Description: "Grok usage and quota tracking", AutoDetectable: true},
+		{Key: "opencode", Name: "OpenCode", Description: "OpenCode Go quota tracking", AutoDetectable: true},
 	}
 }
 
@@ -1163,6 +1171,10 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return h.config.GeminiEnabled
 	case "cursor":
 		return strings.TrimSpace(h.config.CursorToken) != "" || strings.TrimSpace(api.DetectCursorToken(h.logger)) != ""
+	case "grok":
+		return strings.TrimSpace(h.config.GrokToken) != "" || api.DetectGrokCredentials(h.logger) != nil
+	case "opencode":
+		return h.config.APIIntegrationsEnabled
 	default:
 		return false
 	}
@@ -1817,6 +1829,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentCursor(w, r)
 	case "grok":
 		h.currentGrok(w, r)
+	case "opencode":
+		h.currentOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2179,6 +2193,12 @@ func (h *Handler) buildGrokInsights(hidden map[string]bool) insightsResponse {
 	return resp
 }
 
+func (h *Handler) currentOpenCode(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	response := h.buildOpenCodeCurrent()
+	json.NewEncoder(w).Encode(response)
+}
+
 // currentBoth returns combined quota status for all configured providers.
 func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{}
@@ -2248,6 +2268,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") {
 		response["grok"] = h.buildGrokCurrent()
+	}
+	if h.config.HasProvider("opencode") && providerTelemetryEnabled(visibility, "opencode") {
+		response["opencode"] = h.buildOpenCodeCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -2593,6 +2616,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyCursor(w, r)
 	case "grok":
 		h.historyGrok(w, r)
+	case "opencode":
+		h.historyOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3536,6 +3561,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesCursor(w, r)
 	case "grok":
 		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
+	case "opencode":
+		h.cyclesOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3858,6 +3885,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	case "grok":
 		// Grok summary can be derived from the current or tracker; return minimal for now
 		respondJSON(w, http.StatusOK, map[string]interface{}{"summaries": []interface{}{}})
+	case "opencode":
+		h.summaryOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4656,6 +4685,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsCursor(w, r, rangeDur)
 	case "grok":
 		h.insightsGrok(w, r, rangeDur)
+	case "opencode":
+		h.insightsOpenCode(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4739,6 +4770,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") {
 		response["grok"] = h.buildGrokInsights(hidden)
+	}
+	if h.config.HasProvider("opencode") && providerTelemetryEnabled(visibility, "opencode") {
+		response["opencode"] = h.buildOpenCodeInsights(hidden, rangeDur)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -7078,6 +7112,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewCursor(w, r)
 	case "grok":
 		h.cycleOverviewGrok(w, r)
+	case "opencode":
+		h.cycleOverviewOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -10674,6 +10710,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryCursor(w, r)
 	case "grok":
 		h.loggingHistoryGrok(w, r)
+	case "opencode":
+		h.loggingHistoryOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
