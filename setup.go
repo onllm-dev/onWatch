@@ -33,6 +33,7 @@ type setupConfig struct {
 	zaiBaseURL         string
 	anthropicToken     string
 	codexToken         string
+	openCodeEnabled    bool
 	antigravityEnabled bool
 	geminiEnabled      bool
 	adminUser          string
@@ -101,6 +102,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		"Z.ai only",
 		"Anthropic (Claude Code) only",
 		"Codex only",
+		"OpenCode (opencode-codex) only",
 		"Antigravity (Windsurf) only",
 		"Gemini CLI only",
 		"Multiple (choose one at a time)",
@@ -121,19 +123,22 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		cfg.anthropicToken = collectAnthropicToken(reader, logger)
 	case 4: // Codex only
 		cfg.codexToken = collectCodexToken(reader, logger)
-	case 5: // Antigravity only
+	case 5: // OpenCode only
+		cfg.openCodeEnabled = collectOpenCode(reader)
+	case 6: // Antigravity only
 		cfg.antigravityEnabled = true
 		fmt.Printf("  %s ok %s  Antigravity enabled (auto-detects running Windsurf process)\n", colorGreen, colorReset)
-	case 6: // Gemini only
+	case 7: // Gemini only
 		cfg.geminiEnabled = true
 		fmt.Printf("  %s ok %s  Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n", colorGreen, colorReset)
-	case 7: // Multiple
-		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.antigravityEnabled, cfg.geminiEnabled = collectMultipleProviders(reader, logger)
-	case 8: // All
+	case 8: // Multiple
+		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled = collectMultipleProviders(reader, logger)
+	case 9: // All
 		cfg.syntheticKey = collectSyntheticKey(reader)
 		cfg.zaiKey, cfg.zaiBaseURL = collectZaiConfig(reader)
 		cfg.anthropicToken = collectAnthropicToken(reader, logger)
 		cfg.codexToken = collectCodexToken(reader, logger)
+		cfg.openCodeEnabled = collectOpenCode(reader)
 		cfg.antigravityEnabled = true
 		fmt.Printf("\n  %s ok %s  Antigravity enabled (auto-detects running Windsurf process)\n", colorGreen, colorReset)
 		cfg.geminiEnabled = true
@@ -141,7 +146,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	}
 
 	// Validate at least one provider
-	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.antigravityEnabled && !cfg.geminiEnabled {
+	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled {
 		return nil, fmt.Errorf("at least one provider is required")
 	}
 
@@ -187,7 +192,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	return cfg, nil
 }
 
-func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, antiEnabled, geminiEnabled bool) {
+func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled bool) {
 	if promptYesNo(reader, "Add Synthetic provider?", false) {
 		synKey = collectSyntheticKey(reader)
 	}
@@ -200,6 +205,9 @@ func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey
 	if promptYesNo(reader, "Add Codex provider?", false) {
 		codexToken = collectCodexToken(reader, logger)
 	}
+	if promptYesNo(reader, "Add OpenCode (opencode-codex) provider?", false) {
+		openCodeEnabled = collectOpenCode(reader)
+	}
 	if promptYesNo(reader, "Add Antigravity (Windsurf) provider?", false) {
 		antiEnabled = true
 		fmt.Printf("  %sAntigravity auto-detects the running Windsurf process%s\n", colorDim, colorReset)
@@ -209,6 +217,24 @@ func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey
 		fmt.Printf("  %sGemini auto-detects from ~/.gemini/oauth_creds.json%s\n", colorDim, colorReset)
 	}
 	return
+}
+
+// collectOpenCode enables ChatGPT tracking via OpenCode's auth.json. onWatch
+// reads, refreshes, and writes back the token at runtime, so no token is stored
+// in .env. Returns true if the user opts in.
+func collectOpenCode(reader *bufio.Reader) bool {
+	fmt.Printf("\n  %sOpenCode (opencode-codex) Setup%s\n", colorBold, colorReset)
+	fmt.Printf("  %sonWatch reads your ChatGPT OAuth login from the opencode-codex auth.json.%s\n", colorDim, colorReset)
+
+	if path := api.OpenCodeAuthPath(); path != "" {
+		if _, err := os.Stat(path); err == nil {
+			fmt.Printf("  %s ok %s  Detected opencode-codex credentials at %s\n", colorGreen, colorReset, path)
+			return promptYesNo(reader, "Enable OpenCode (opencode-codex) tracking?", true)
+		}
+		fmt.Printf("  %s!%s No opencode-codex auth.json found at %s\n", colorYellow, colorReset, path)
+		fmt.Printf("  %sRun 'opencode auth login' and choose ChatGPT, then re-run setup.%s\n", colorDim, colorReset)
+	}
+	return promptYesNo(reader, "Enable OpenCode (opencode-codex) tracking anyway?", false)
 }
 
 func collectSyntheticKey(reader *bufio.Reader) string {
@@ -326,6 +352,11 @@ func writeEnvFile(path string, cfg *setupConfig) error {
 		b.WriteString(fmt.Sprintf("CODEX_TOKEN=%s\n\n", cfg.codexToken))
 	}
 
+	if cfg.openCodeEnabled {
+		b.WriteString("# OpenCode (opencode-codex) - reads ~/.local/share/opencode/auth.json (feeds Codex)\n")
+		b.WriteString("OPENCODE_ENABLED=true\n\n")
+	}
+
 	if cfg.antigravityEnabled {
 		b.WriteString("# Antigravity (Windsurf) - auto-detected from local process\n")
 		b.WriteString("ANTIGRAVITY_ENABLED=true\n\n")
@@ -368,6 +399,9 @@ func printSummary(cfg *setupConfig) {
 	if cfg.codexToken != "" {
 		providers = append(providers, "Codex")
 	}
+	if cfg.openCodeEnabled {
+		providers = append(providers, "OpenCode")
+	}
 	if cfg.antigravityEnabled {
 		providers = append(providers, "Antigravity")
 	}
@@ -405,6 +439,7 @@ type existingEnv struct {
 	zaiKey             string
 	anthropicToken     string
 	codexToken         string
+	openCodeEnabled    bool
 	antigravityEnabled bool
 	geminiEnabled      bool
 }
@@ -434,6 +469,8 @@ func loadExistingEnv(path string) *existingEnv {
 			env.anthropicToken = val
 		case "CODEX_TOKEN":
 			env.codexToken = val
+		case "OPENCODE_ENABLED":
+			env.openCodeEnabled = val == "true"
 		case "ANTIGRAVITY_ENABLED":
 			env.antigravityEnabled = val == "true"
 		case "GEMINI_ENABLED":
@@ -451,11 +488,11 @@ func loadExistingEnv(path string) *existingEnv {
 }
 
 func allProvidersConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" && env.zaiKey != "" && env.anthropicToken != "" && env.codexToken != "" && env.antigravityEnabled && env.geminiEnabled
+	return env.syntheticKey != "" && env.zaiKey != "" && env.anthropicToken != "" && env.codexToken != "" && env.openCodeEnabled && env.antigravityEnabled && env.geminiEnabled
 }
 
 func anyProviderConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.antigravityEnabled || env.geminiEnabled
+	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.openCodeEnabled || env.antigravityEnabled || env.geminiEnabled
 }
 
 func addMissingProviders(reader *bufio.Reader, envFile string, existing *existingEnv) error {
@@ -473,6 +510,9 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 	}
 	if existing.codexToken != "" {
 		configured = append(configured, "Codex")
+	}
+	if existing.openCodeEnabled {
+		configured = append(configured, "OpenCode")
 	}
 	if existing.antigravityEnabled {
 		configured = append(configured, "Antigravity")
@@ -530,6 +570,27 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 			token := collectCodexToken(reader, logger)
 			fmt.Fprintf(f, "\n# Codex OAuth token\nCODEX_TOKEN=%s\n", token)
 			fmt.Printf("  %s ok %s  Added Codex provider to .env\n", colorGreen, colorReset)
+		}
+	}
+
+	if !existing.openCodeEnabled {
+		path := api.OpenCodeAuthPath()
+		detected := false
+		if path != "" {
+			if _, statErr := os.Stat(path); statErr == nil {
+				detected = true
+			}
+		}
+		if detected {
+			fmt.Printf("  %s ok %s  OpenCode (opencode-codex) credentials detected on this system\n", colorGreen, colorReset)
+			if promptYesNo(reader, "Enable OpenCode (opencode-codex) tracking?", true) {
+				fmt.Fprintf(f, "\n# OpenCode (opencode-codex) - reads ~/.local/share/opencode/auth.json (feeds Codex)\nOPENCODE_ENABLED=true\n")
+				fmt.Printf("  %s ok %s  Added OpenCode provider to .env (auto-detected)\n", colorGreen, colorReset)
+			}
+		} else if promptYesNo(reader, "Add OpenCode (opencode-codex) provider?", false) {
+			fmt.Fprintf(f, "\n# OpenCode (opencode-codex) - reads ~/.local/share/opencode/auth.json (feeds Codex)\nOPENCODE_ENABLED=true\n")
+			fmt.Printf("  %s ok %s  Added OpenCode provider to .env\n", colorGreen, colorReset)
+			fmt.Printf("  %sNote: run 'opencode auth login' and choose ChatGPT to authenticate%s\n", colorDim, colorReset)
 		}
 	}
 

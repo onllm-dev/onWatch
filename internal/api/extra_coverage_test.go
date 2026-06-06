@@ -109,6 +109,7 @@ func TestDetectCodexCredentials_APIKeyOnly_ReturnsCredentials(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", "")
 	t.Setenv("HOME", home)
+	isolateOpenCodeEnv(t)
 
 	codexDir := filepath.Join(home, ".codex")
 	if err := os.MkdirAll(codexDir, 0o755); err != nil {
@@ -138,6 +139,8 @@ func TestDetectCodexCredentials_BothEmpty_ReturnsNil(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", "")
 	t.Setenv("HOME", home)
+	t.Setenv("CODEX_TOKEN", "")
+	isolateOpenCodeEnv(t)
 
 	codexDir := filepath.Join(home, ".codex")
 	if err := os.MkdirAll(codexDir, 0o755); err != nil {
@@ -160,6 +163,8 @@ func TestDetectCodexCredentials_InvalidJSON_ReturnsNil(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_TOKEN", "")
+	isolateOpenCodeEnv(t)
 
 	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{not valid json}`), 0o600); err != nil {
 		t.Fatalf("write auth.json: %v", err)
@@ -175,7 +180,9 @@ func TestDetectCodexCredentials_NoFile_ReturnsNil(t *testing.T) {
 	// Set CODEX_HOME to a temp dir that has no auth.json
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CODEX_TOKEN", "")
+	isolateOpenCodeEnv(t)
 
 	creds := DetectCodexCredentials(nil)
 	if creds != nil {

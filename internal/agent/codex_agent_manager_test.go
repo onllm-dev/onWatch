@@ -31,6 +31,10 @@ func newCodexManagerFixture(t *testing.T) *codexManagerFixture {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")
+	// Pin OpenCode detection under the temp HOME so DetectCodexCredentials never
+	// reads the host's real ~/.local/share/opencode/auth.json (issue #78 path).
+	t.Setenv("OPENCODE_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
 
 	str, err := store.New(":memory:")
 	if err != nil {

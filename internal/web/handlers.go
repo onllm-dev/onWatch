@@ -141,20 +141,6 @@ type CodexProfile struct {
 	APIKey string `json:"api_key,omitempty"`
 }
 
-type codexRefreshAuthFile struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	IDToken      string `json:"id_token"`
-	AccountID    string `json:"account_id"`
-	OpenAIAPIKey string `json:"OPENAI_API_KEY"`
-	Tokens       struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		IDToken      string `json:"id_token"`
-		AccountID    string `json:"account_id"`
-	} `json:"tokens"`
-}
-
 type codexRefreshAuthCredentials struct {
 	AccessToken  string
 	RefreshToken string
@@ -180,18 +166,6 @@ func codexProfilesDir() string {
 		return ""
 	}
 	return filepath.Join(home, ".onwatch", "data", "codex-profiles")
-}
-
-// codexAuthRefreshPath returns the path to the Codex auth.json file.
-func codexAuthRefreshPath() string {
-	if codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME")); codexHome != "" {
-		return filepath.Join(codexHome, "auth.json")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ""
-	}
-	return filepath.Join(home, ".codex", "auth.json")
 }
 
 // codexCompositeExternalID returns a composite external ID for deduplication.
@@ -514,48 +488,20 @@ func (h *Handler) codexProfileRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load current auth from auth.json
-	authPath := codexAuthRefreshPath()
-	if authPath == "" {
-		respondError(w, http.StatusBadRequest, "cannot determine Codex auth.json path")
-		return
-	}
-	authData, err := os.ReadFile(authPath)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "cannot read Codex auth.json: run 'codex auth' first")
-		return
-	}
-
-	var auth codexRefreshAuthFile
-	if err := json.Unmarshal(authData, &auth); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid auth.json format")
+	// Load current auth from Codex auth.json or opencode-codex auth.json.
+	// DetectCodexCredentials unifies both shapes (Codex wins when both exist).
+	detected := api.DetectCodexCredentials(h.logger)
+	if detected == nil || strings.TrimSpace(detected.AccessToken) == "" {
+		respondError(w, http.StatusBadRequest, "cannot read auth: run 'codex auth' or 'opencode auth login' first")
 		return
 	}
 
 	creds := &codexRefreshAuthCredentials{
-		AccessToken:  strings.TrimSpace(auth.Tokens.AccessToken),
-		RefreshToken: strings.TrimSpace(auth.Tokens.RefreshToken),
-		IDToken:      strings.TrimSpace(auth.Tokens.IDToken),
-		AccountID:    strings.TrimSpace(auth.Tokens.AccountID),
-		APIKey:       strings.TrimSpace(auth.OpenAIAPIKey),
-	}
-	// Backward support for flat auth.json
-	if creds.AccessToken == "" {
-		creds.AccessToken = strings.TrimSpace(auth.AccessToken)
-	}
-	if creds.RefreshToken == "" {
-		creds.RefreshToken = strings.TrimSpace(auth.RefreshToken)
-	}
-	if creds.IDToken == "" {
-		creds.IDToken = strings.TrimSpace(auth.IDToken)
-	}
-	if creds.AccountID == "" {
-		creds.AccountID = strings.TrimSpace(auth.AccountID)
-	}
-
-	if creds.AccessToken == "" {
-		respondError(w, http.StatusBadRequest, "auth.json has no access_token - run 'codex auth' first")
-		return
+		AccessToken:  strings.TrimSpace(detected.AccessToken),
+		RefreshToken: strings.TrimSpace(detected.RefreshToken),
+		IDToken:      strings.TrimSpace(detected.IDToken),
+		AccountID:    strings.TrimSpace(detected.AccountID),
+		APIKey:       strings.TrimSpace(detected.APIKey),
 	}
 
 	// Load existing profile
@@ -1274,9 +1220,15 @@ func (h *Handler) tryAutoDetect(provider string) bool {
 			return true
 		}
 	case "codex":
-		if token := strings.TrimSpace(api.DetectCodexToken(h.logger)); token != "" {
-			h.config.CodexToken = token
+		if creds := api.DetectCodexCredentials(h.logger); creds != nil && strings.TrimSpace(creds.AccessToken) != "" {
+			h.config.CodexToken = strings.TrimSpace(creds.AccessToken)
 			h.config.CodexAutoToken = true
+			if creds.Source == api.CredentialSourceOpenCode {
+				h.config.CodexAutoSource = "opencode"
+				h.config.OpenCodeEnabled = true
+			} else {
+				h.config.CodexAutoSource = "codex"
+			}
 			return true
 		}
 	case "antigravity":
@@ -1333,6 +1285,8 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.CopilotToken = src.CopilotToken
 	dst.CodexToken = src.CodexToken
 	dst.CodexAutoToken = src.CodexAutoToken
+	dst.CodexAutoSource = src.CodexAutoSource
+	dst.OpenCodeEnabled = src.OpenCodeEnabled
 	dst.AntigravityBaseURL = src.AntigravityBaseURL
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
@@ -1497,6 +1451,13 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 		}
 		if token, _ := s["csrf_token"].(string); token != "" {
 			cfg.AntigravityCSRFToken = token
+		}
+	}
+	// OpenCode (opencode-codex) feeds the Codex provider; the UI persists a
+	// simple enabled flag, mirroring the OPENCODE_ENABLED env var.
+	if s := provSettings["opencode"]; s != nil {
+		if enabled, ok := s["enabled"].(bool); ok {
+			cfg.OpenCodeEnabled = enabled
 		}
 	}
 
@@ -8775,6 +8736,14 @@ func minimaxRepresentativeModel(snapshot *api.MiniMaxSnapshot) string {
 	if snapshot == nil || len(snapshot.Models) == 0 {
 		return ""
 	}
+	// Prefer a model with an active quota allocation; the response also lists
+	// inactive/discontinued models with zero totals that should not represent
+	// the account's cycle overview.
+	for _, m := range snapshot.Models {
+		if m.ModelName != "" && (m.Total > 0 || m.Used > 0) {
+			return m.ModelName
+		}
+	}
 	return snapshot.Models[0].ModelName
 }
 
@@ -8998,27 +8967,36 @@ func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int, accou
 
 	isWeeklyView := groupBy == "weekly_all"
 
-	// Map the shared quota display name ("coding_plan") to the actual representative model.
-	// Also handle empty groupBy by checking if a shared/merged model exists.
-	if groupBy == "" || minimaxIsSharedGroup(groupBy) || isWeeklyView {
-		// Check if there's a merged "MiniMax-M*" model with cycles
-		if cycle, err := h.store.QueryActiveMiniMaxCycle("MiniMax-M*", minimaxAccID); err == nil && cycle != nil {
-			groupBy = "MiniMax-M*"
-		} else if history, err := h.store.QueryMiniMaxCycleHistory("MiniMax-M*", minimaxAccID, 1); err == nil && len(history) > 0 {
-			groupBy = "MiniMax-M*"
-		}
-	}
-
 	latest, err := h.store.QueryLatestMiniMax(minimaxAccID)
 	if err != nil {
 		return nil, nil, groupBy, err
 	}
-	useSharedPath := (latest != nil && latest.IsSharedQuota()) || groupBy == "MiniMax-M*" || isWeeklyView
+
+	// Resolve the shared display name ("coding_plan") or an empty/weekly request
+	// to a concrete representative model. Only prefer the merged "MiniMax-M*"
+	// model when the CURRENT plan actually shares a quota pool - otherwise an
+	// account that switched to a single percentage-based model (e.g. "general")
+	// would keep showing stale cycles from its old per-model plan.
+	currentlyShared := latest != nil && latest.IsSharedQuota()
+	if groupBy == "" || minimaxIsSharedGroup(groupBy) || isWeeklyView {
+		if currentlyShared {
+			if cycle, err := h.store.QueryActiveMiniMaxCycle("MiniMax-M*", minimaxAccID); err == nil && cycle != nil {
+				groupBy = "MiniMax-M*"
+			} else if history, err := h.store.QueryMiniMaxCycleHistory("MiniMax-M*", minimaxAccID, 1); err == nil && len(history) > 0 {
+				groupBy = "MiniMax-M*"
+			}
+		} else if rep := minimaxRepresentativeModel(latest); rep != "" && !isWeeklyView {
+			groupBy = rep
+		}
+	}
+
+	useSharedPath := currentlyShared || groupBy == "MiniMax-M*" || isWeeklyView
 	if useSharedPath {
 		sourceModel := groupBy // use resolved groupBy (e.g. "MiniMax-M*") as primary
-		if sourceModel == "" || minimaxIsSharedGroup(sourceModel) {
-			// Resolution gave us the shared key (e.g. "coding_plan") or nothing.
-			// Fall back to a real model name so the cycle query finds data.
+		if sourceModel == "" || minimaxIsSharedGroup(sourceModel) || isWeeklyView {
+			// Resolution gave us the shared key ("coding_plan"), the weekly
+			// sentinel ("weekly_all"), or nothing. Fall back to a real model
+			// name so the cycle query finds data.
 			sourceModel = minimaxRepresentativeModel(latest)
 		}
 		if sourceModel == "" {

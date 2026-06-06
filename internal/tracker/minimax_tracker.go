@@ -64,10 +64,14 @@ func (t *MiniMaxTracker) SetOnReset(fn func(modelName string)) {
 
 // Process processes one snapshot and updates/reset-cycles per model.
 func (t *MiniMaxTracker) Process(snapshot *api.MiniMaxSnapshot, accountID int64) error {
+	activeModels := make([]string, 0, len(snapshot.Models))
 	for _, model := range snapshot.Models {
 		// Skip models with no quota allocation
 		if model.Total == 0 && model.Used == 0 {
 			continue
+		}
+		if model.ModelName != "" {
+			activeModels = append(activeModels, model.ModelName)
 		}
 		if err := t.processModel(model, snapshot.CapturedAt, accountID); err != nil {
 			return fmt.Errorf("minimax tracker: %s: %w", model.ModelName, err)
@@ -76,6 +80,16 @@ func (t *MiniMaxTracker) Process(snapshot *api.MiniMaxSnapshot, accountID int64)
 	for _, model := range snapshot.Models {
 		if model.ModelName != "" {
 			t.hasLastValue[trackerKey(accountID, model.ModelName)] = true
+		}
+	}
+	// Close cycles for models that are no longer part of the plan (e.g. MiniMax
+	// switched this account from per-model request counts to a single "general"
+	// percentage quota). Otherwise their cycles stay active forever.
+	if len(activeModels) > 0 {
+		if closed, err := t.store.CloseStaleMiniMaxCycles(accountID, activeModels, snapshot.CapturedAt); err != nil {
+			t.logger.Warn("failed to close stale MiniMax cycles", "error", err, "account_id", accountID)
+		} else if closed > 0 {
+			t.logger.Info("closed stale MiniMax cycles for discontinued models", "count", closed, "account_id", accountID)
 		}
 	}
 	return nil

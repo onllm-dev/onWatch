@@ -510,7 +510,7 @@ button, input, select { font-family: inherit; }
 }
 
 #quota-grid-minimax {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .weekly-badge {
@@ -2318,6 +2318,7 @@ button, input, select { font-family: inherit; }
   .brand-text { font-size: 18px; }
   .main-content { padding: 16px; }
   .quota-grid { grid-template-columns: 1fr; gap: 14px; }
+  #quota-grid-minimax { grid-template-columns: 1fr; }
   .all-providers-view { gap: 14px; }
   .provider-card-header { padding: 14px 16px; }
   .provider-card-body { padding: 16px; }

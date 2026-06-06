@@ -37,6 +37,48 @@ func miniMaxTrackerSnapshot(capturedAt time.Time, resetAt *time.Time, used int) 
 	}
 }
 
+// TestMiniMaxTracker_ClosesStaleCycles verifies that when the plan switches to
+// a new model set (e.g. per-model counts -> a single "general" percentage
+// quota), cycles for discontinued models are closed instead of staying active.
+func TestMiniMaxTracker_ClosesStaleCycles(t *testing.T) {
+	t.Parallel()
+	s := newTestMiniMaxStore(t)
+	tr := NewMiniMaxTracker(s, slog.Default())
+	now := time.Now().UTC().Truncate(time.Second)
+	reset := now.Add(2 * time.Hour)
+
+	// Old plan: per-model count-based quota.
+	oldSnap := miniMaxTrackerSnapshot(now, &reset, 1200) // model "MiniMax-M2"
+	if err := tr.Process(oldSnap, 7); err != nil {
+		t.Fatalf("Process old: %v", err)
+	}
+	if active, _ := s.QueryActiveMiniMaxCycle("MiniMax-M2", 7); active == nil {
+		t.Fatal("expected active MiniMax-M2 cycle after old snapshot")
+	}
+
+	// New plan: single percentage-based "general" model; MiniMax-M2 is gone.
+	newSnap := &api.MiniMaxSnapshot{
+		CapturedAt: now.Add(time.Minute),
+		Models: []api.MiniMaxModelQuota{
+			{ModelName: "general", Total: 100, Used: 80, Remain: 20, UsedPercent: 80, ResetAt: &reset},
+		},
+	}
+	if err := tr.Process(newSnap, 7); err != nil {
+		t.Fatalf("Process new: %v", err)
+	}
+
+	// The discontinued model's cycle must now be closed.
+	if active, _ := s.QueryActiveMiniMaxCycle("MiniMax-M2", 7); active != nil {
+		t.Fatal("expected stale MiniMax-M2 cycle to be closed")
+	}
+	// The new model must have an active cycle.
+	if active, _ := s.QueryActiveMiniMaxCycle("general", 7); active == nil {
+		t.Fatal("expected active general cycle")
+	} else if active.PeakUsed != 80 {
+		t.Fatalf("general peak = %d, want 80", active.PeakUsed)
+	}
+}
+
 func TestMiniMaxTracker_Process(t *testing.T) {
 	t.Parallel()
 	s := newTestMiniMaxStore(t)

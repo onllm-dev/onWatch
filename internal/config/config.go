@@ -40,7 +40,9 @@ type Config struct {
 	// Codex provider configuration
 	CodexToken         string // CODEX_TOKEN or auto-detected
 	CodexAutoToken     bool   // true if token was auto-detected
+	CodexAutoSource    string // "codex" | "opencode" when auto-detected (display/logging)
 	CodexHasProfiles   bool   // true if saved profiles exist (enables bootstrap without token)
+	OpenCodeEnabled    bool   // OPENCODE_ENABLED=true: track ChatGPT via OpenCode auth.json (feeds Codex)
 	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
 	DisplayMode        string // ONWATCH_DISPLAY_MODE: "usage" | "available", default "usage" (global, applies to all providers)
 
@@ -196,6 +198,8 @@ var onwatchEnvKeys = []string{
 	"ANTHROPIC_TOKEN",
 	"COPILOT_TOKEN",
 	"CODEX_TOKEN",
+	"OPENCODE_ENABLED",
+	"OPENCODE_HOME",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
@@ -289,6 +293,8 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	if cfg.CodexShowAvailable != "usage" && cfg.CodexShowAvailable != "available" {
 		cfg.CodexShowAvailable = "usage"
 	}
+	// OpenCode feeds the Codex provider using ChatGPT OAuth stored by OpenCode.
+	cfg.OpenCodeEnabled = os.Getenv("OPENCODE_ENABLED") == "true"
 
 	// Global display mode (applies to all providers unless per-provider override)
 	cfg.DisplayMode = strings.ToLower(strings.TrimSpace(os.Getenv("ONWATCH_DISPLAY_MODE")))
@@ -533,7 +539,7 @@ func (c *Config) AvailableProviders() []string {
 	if c.CopilotToken != "" {
 		providers = append(providers, "copilot")
 	}
-	if c.CodexToken != "" || c.CodexHasProfiles {
+	if c.CodexToken != "" || c.CodexHasProfiles || c.OpenCodeEnabled {
 		providers = append(providers, "codex")
 	}
 	if c.AntigravityEnabled {
@@ -566,7 +572,7 @@ func (c *Config) HasProvider(name string) bool {
 	case "copilot":
 		return c.CopilotToken != ""
 	case "codex":
-		return c.CodexToken != "" || c.CodexHasProfiles
+		return c.CodexToken != "" || c.CodexHasProfiles || c.OpenCodeEnabled
 	case "antigravity":
 		return c.AntigravityEnabled
 	case "minimax":
@@ -596,7 +602,7 @@ func (c *Config) HasMultipleProviders() bool {
 	if c.CopilotToken != "" {
 		count++
 	}
-	if c.CodexToken != "" || c.CodexHasProfiles {
+	if c.CodexToken != "" || c.CodexHasProfiles || c.OpenCodeEnabled {
 		count++
 	}
 	if c.AntigravityEnabled {
