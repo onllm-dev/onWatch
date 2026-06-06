@@ -22,9 +22,11 @@ type AnthropicQuotaResponse map[string]*AnthropicQuotaEntry
 
 // AnthropicQuota represents a single normalized quota for storage.
 type AnthropicQuota struct {
-	Name        string
-	Utilization float64
-	ResetsAt    *time.Time
+	Name         string
+	Utilization  float64
+	UsedCredits  float64
+	MonthlyLimit float64
+	ResetsAt     *time.Time
 }
 
 // AnthropicSnapshot represents a point-in-time capture of all Anthropic quotas.
@@ -40,6 +42,8 @@ var anthropicDisplayNames = map[string]string{
 	"five_hour":        "5-Hour Limit",
 	"seven_day":        "Weekly All-Model",
 	"seven_day_sonnet": "Weekly Sonnet",
+	"seven_day_opus":   "Weekly Opus",
+	"seven_day_design": "Claude Design",
 	"monthly_limit":    "Monthly Limit",
 	"extra_usage":      "Extra Usage",
 }
@@ -98,6 +102,12 @@ func (r AnthropicQuotaResponse) ToSnapshot(capturedAt time.Time) *AnthropicSnaps
 			Name:        name,
 			Utilization: *entry.Utilization,
 		}
+		if entry.UsedCredits != nil {
+			q.UsedCredits = *entry.UsedCredits
+		}
+		if entry.MonthlyLimit != nil {
+			q.MonthlyLimit = *entry.MonthlyLimit
+		}
 		if entry.ResetsAt != nil && *entry.ResetsAt != "" {
 			if t, err := time.Parse(time.RFC3339, *entry.ResetsAt); err == nil {
 				q.ResetsAt = &t
@@ -106,9 +116,9 @@ func (r AnthropicQuotaResponse) ToSnapshot(capturedAt time.Time) *AnthropicSnaps
 		snapshot.Quotas = append(snapshot.Quotas, q)
 	}
 
-	// Store raw JSON for debugging/auditing
-	if raw, err := json.Marshal(r); err == nil {
-		snapshot.RawJSON = string(raw)
+	// Capture RawJSON for debugging and potential detail extraction
+	if data, err := json.Marshal(r); err == nil {
+		snapshot.RawJSON = string(data)
 	}
 
 	return snapshot
