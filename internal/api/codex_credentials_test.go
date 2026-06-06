@@ -2,9 +2,11 @@ package api
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,17 @@ import (
 
 func discardLoggerCredentials() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
+}
+
+// isolateOpenCodeEnv prevents codex-credential detection from reading the real
+// developer/CI OpenCode auth file. DetectCodexCredentials falls back to
+// OPENCODE_HOME, then XDG_DATA_HOME/opencode, then HOME/.local/share/opencode;
+// clearing the first two pins resolution under the (already temp) HOME so tests
+// are hermetic regardless of the host's real ChatGPT/OpenCode login state.
+func isolateOpenCodeEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("OPENCODE_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
 }
 
 func TestDetectCodexCredentials_ParsesOAuthTokens(t *testing.T) {
@@ -78,6 +91,7 @@ func TestDetectCodexCredentials_ParsesAPIKey(t *testing.T) {
 func TestDetectCodexCredentials_EnvVarFallback(t *testing.T) {
 	t.Setenv("CODEX_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	isolateOpenCodeEnv(t)
 	t.Setenv("CODEX_TOKEN", "env_access_token")
 
 	creds := DetectCodexCredentials(discardLoggerCredentials())
@@ -336,6 +350,244 @@ func TestDetectCodexCredentials_ParsesUserIDFromIDToken(t *testing.T) {
 	}
 	if creds.UserID != "user-123" {
 		t.Fatalf("UserID = %q, want user-123", creds.UserID)
+	}
+}
+
+// openCodeAuthJSON builds an OpenCode auth.json body with the given access token
+// and expiry (ms). accessToken should be a JWT if UserID extraction is expected.
+func openCodeAuthJSON(access, refresh, accountID string, expiresMs int64) string {
+	return `{
+		"openai": {
+			"type": "oauth",
+			"access": "` + access + `",
+			"refresh": "` + refresh + `",
+			"expires": ` + strconv.FormatInt(expiresMs, 10) + `,
+			"accountId": "` + accountID + `"
+		}
+	}`
+}
+
+func setOpenCodeOnly(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CODEX_TOKEN", "")
+	t.Setenv("OPENCODE_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
+	dir := filepath.Join(home, ".local", "share", "opencode")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir opencode dir: %v", err)
+	}
+	return filepath.Join(dir, "auth.json")
+}
+
+func TestDetectCodexCredentials_OpenCodeFormat(t *testing.T) {
+	authPath := setOpenCodeOnly(t)
+	expiresMs := time.Now().Add(2 * time.Hour).UnixMilli()
+	if err := os.WriteFile(authPath, []byte(openCodeAuthJSON("oc_access", "oc_refresh", "oc_acct", expiresMs)), 0o600); err != nil {
+		t.Fatalf("write opencode auth.json: %v", err)
+	}
+
+	creds := DetectCodexCredentials(discardLoggerCredentials())
+	if creds == nil {
+		t.Fatal("DetectCodexCredentials returned nil")
+	}
+	if creds.AccessToken != "oc_access" {
+		t.Fatalf("AccessToken = %q, want oc_access", creds.AccessToken)
+	}
+	if creds.RefreshToken != "oc_refresh" {
+		t.Fatalf("RefreshToken = %q, want oc_refresh", creds.RefreshToken)
+	}
+	if creds.AccountID != "oc_acct" {
+		t.Fatalf("AccountID = %q, want oc_acct", creds.AccountID)
+	}
+	if creds.Source != CredentialSourceOpenCode {
+		t.Fatalf("Source = %v, want CredentialSourceOpenCode", creds.Source)
+	}
+	if creds.SourcePath != authPath {
+		t.Fatalf("SourcePath = %q, want %q", creds.SourcePath, authPath)
+	}
+	// expires (ms) maps to ExpiresAt within ~2h.
+	if creds.ExpiresAt.IsZero() {
+		t.Fatal("ExpiresAt is zero, want parsed from ms timestamp")
+	}
+	if d := time.Until(creds.ExpiresAt); d < 90*time.Minute || d > 150*time.Minute {
+		t.Fatalf("ExpiresIn ~%v, want ~2h", d)
+	}
+}
+
+func TestDetectCodexCredentials_CodexPriorityOverOpenCode(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CODEX_TOKEN", "")
+	t.Setenv("OPENCODE_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
+
+	codexDir := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codexDir, "auth.json"), []byte(`{"tokens":{"access_token":"codex_wins"}}`), 0o600); err != nil {
+		t.Fatalf("write codex auth.json: %v", err)
+	}
+
+	ocDir := filepath.Join(home, ".local", "share", "opencode")
+	if err := os.MkdirAll(ocDir, 0o755); err != nil {
+		t.Fatalf("mkdir opencode dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ocDir, "auth.json"), []byte(openCodeAuthJSON("oc_loses", "r", "a", time.Now().Add(time.Hour).UnixMilli())), 0o600); err != nil {
+		t.Fatalf("write opencode auth.json: %v", err)
+	}
+
+	creds := DetectCodexCredentials(discardLoggerCredentials())
+	if creds == nil {
+		t.Fatal("DetectCodexCredentials returned nil")
+	}
+	if creds.AccessToken != "codex_wins" {
+		t.Fatalf("AccessToken = %q, want codex_wins (Codex priority)", creds.AccessToken)
+	}
+	if creds.Source != CredentialSourceCodex {
+		t.Fatalf("Source = %v, want CredentialSourceCodex", creds.Source)
+	}
+}
+
+func TestDetectCodexCredentials_OpenCodeHomeOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CODEX_TOKEN", "")
+	t.Setenv("XDG_DATA_HOME", "")
+
+	ocHome := t.TempDir()
+	t.Setenv("OPENCODE_HOME", ocHome)
+	if err := os.WriteFile(filepath.Join(ocHome, "auth.json"), []byte(openCodeAuthJSON("home_override", "r", "a", time.Now().Add(time.Hour).UnixMilli())), 0o600); err != nil {
+		t.Fatalf("write opencode auth.json: %v", err)
+	}
+
+	creds := DetectCodexCredentials(discardLoggerCredentials())
+	if creds == nil || creds.AccessToken != "home_override" {
+		t.Fatalf("OPENCODE_HOME override not honored: %+v", creds)
+	}
+}
+
+func TestOpenCodeAuthPath_XDGDataHome(t *testing.T) {
+	t.Setenv("OPENCODE_HOME", "")
+	xdg := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", xdg)
+	want := filepath.Join(xdg, "opencode", "auth.json")
+	if got := OpenCodeAuthPath(); got != want {
+		t.Fatalf("OpenCodeAuthPath() = %q, want %q", got, want)
+	}
+}
+
+func TestDetectCodexCredentials_OpenCodeUserIDFromAccessJWT(t *testing.T) {
+	authPath := setOpenCodeOnly(t)
+	header := "eyJhbGciOiJub25lIn0"
+	payloadJSON := `{"https://api.openai.com/auth":{"chatgpt_user_id":"oc-user-9"}}`
+	payload := base64.RawURLEncoding.EncodeToString([]byte(payloadJSON))
+	accessJWT := header + "." + payload + "."
+	if err := os.WriteFile(authPath, []byte(openCodeAuthJSON(accessJWT, "r", "a", time.Now().Add(time.Hour).UnixMilli())), 0o600); err != nil {
+		t.Fatalf("write opencode auth.json: %v", err)
+	}
+
+	creds := DetectCodexCredentials(discardLoggerCredentials())
+	if creds == nil {
+		t.Fatal("DetectCodexCredentials returned nil")
+	}
+	if creds.UserID != "oc-user-9" {
+		t.Fatalf("UserID = %q, want oc-user-9 (parsed from access JWT)", creds.UserID)
+	}
+}
+
+func TestDetectCodexCredentials_OpenCodeMalformedAndEmpty(t *testing.T) {
+	authPath := setOpenCodeOnly(t)
+
+	// Malformed JSON -> nil (no CODEX_TOKEN set).
+	if err := os.WriteFile(authPath, []byte(`{not json`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if creds := DetectCodexCredentials(discardLoggerCredentials()); creds != nil {
+		t.Fatalf("malformed OpenCode auth should yield nil, got %+v", creds)
+	}
+
+	// Valid JSON but empty access -> nil.
+	if err := os.WriteFile(authPath, []byte(`{"openai":{"access":""}}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if creds := DetectCodexCredentials(discardLoggerCredentials()); creds != nil {
+		t.Fatalf("empty OpenCode access should yield nil, got %+v", creds)
+	}
+}
+
+func TestWriteOpenCodeCredentials(t *testing.T) {
+	ocHome := t.TempDir()
+	t.Setenv("OPENCODE_HOME", ocHome)
+	authPath := filepath.Join(ocHome, "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"openai":{"type":"oauth","access":"old","refresh":"old_r","expires":1,"accountId":"keep_me"},"other":"preserved"}`), 0o600); err != nil {
+		t.Fatalf("write initial: %v", err)
+	}
+
+	expiresAt := time.Now().Add(time.Hour)
+	if err := WriteOpenCodeCredentials("new_access", "new_refresh", expiresAt); err != nil {
+		t.Fatalf("WriteOpenCodeCredentials: %v", err)
+	}
+
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	var parsed openCodeAuthFile
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("parse back: %v", err)
+	}
+	if parsed.OpenAI.Access != "new_access" || parsed.OpenAI.Refresh != "new_refresh" {
+		t.Fatalf("tokens not updated: %+v", parsed.OpenAI)
+	}
+	if parsed.OpenAI.AccountID != "keep_me" {
+		t.Fatalf("accountId not preserved: %q", parsed.OpenAI.AccountID)
+	}
+	if parsed.OpenAI.Expires != expiresAt.UnixMilli() {
+		t.Fatalf("expires = %d, want %d (ms)", parsed.OpenAI.Expires, expiresAt.UnixMilli())
+	}
+	// Unknown top-level field preserved.
+	if !strings.Contains(string(data), "preserved") {
+		t.Error("expected unknown field 'other' to be preserved")
+	}
+	// Backup created.
+	if _, err := os.Stat(authPath + ".bak"); os.IsNotExist(err) {
+		t.Error("expected backup file")
+	}
+}
+
+func TestWriteCredentialsBySource_Dispatch(t *testing.T) {
+	// OpenCode source -> writes OpenCode format.
+	ocHome := t.TempDir()
+	t.Setenv("OPENCODE_HOME", ocHome)
+	t.Setenv("CODEX_HOME", t.TempDir())
+
+	if err := WriteCredentialsBySource(CredentialSourceOpenCode, "a", "r", "", 3600); err != nil {
+		t.Fatalf("dispatch opencode: %v", err)
+	}
+	ocData, err := os.ReadFile(filepath.Join(ocHome, "auth.json"))
+	if err != nil {
+		t.Fatalf("read opencode: %v", err)
+	}
+	if !strings.Contains(string(ocData), `"openai"`) || !strings.Contains(string(ocData), `"access"`) {
+		t.Fatalf("OpenCode dispatch did not write OpenCode format: %s", ocData)
+	}
+
+	// Codex source -> writes Codex format.
+	if err := WriteCredentialsBySource(CredentialSourceCodex, "ca", "cr", "ci", 3600); err != nil {
+		t.Fatalf("dispatch codex: %v", err)
+	}
+	cxData, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "auth.json"))
+	if err != nil {
+		t.Fatalf("read codex: %v", err)
+	}
+	if !strings.Contains(string(cxData), `"tokens"`) || !strings.Contains(string(cxData), `"access_token"`) {
+		t.Fatalf("Codex dispatch did not write Codex format: %s", cxData)
 	}
 }
 

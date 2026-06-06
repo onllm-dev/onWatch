@@ -520,7 +520,14 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 	// restart the agent for our own write.
 	agent.SetTokenSave(func(accessToken, refreshToken, idToken string, expiresIn int) error {
 		if isDefaultProfile {
-			return api.WriteCodexCredentials(accessToken, refreshToken, idToken, expiresIn)
+			// Write back to whichever file the credentials came from, in its
+			// native format. OpenCode-sourced tokens must stay in OpenCode
+			// format (one-time-use refresh tokens must not be lost).
+			source := api.CredentialSourceCodex
+			if cur := api.DetectCodexCredentials(m.logger); cur != nil {
+				source = cur.Source
+			}
+			return api.WriteCredentialsBySource(source, accessToken, refreshToken, idToken, expiresIn)
 		}
 
 		// Named profiles: save refreshed tokens to the profile file only

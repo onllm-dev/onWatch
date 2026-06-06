@@ -513,9 +513,15 @@ func run() error {
 		}
 	}
 	if cfg.CodexToken == "" {
-		if token := api.DetectCodexToken(preflightLogger); token != "" {
-			cfg.CodexToken = token
+		if creds := api.DetectCodexCredentials(preflightLogger); creds != nil && creds.AccessToken != "" {
+			cfg.CodexToken = creds.AccessToken
 			cfg.CodexAutoToken = true
+			if creds.Source == api.CredentialSourceOpenCode {
+				cfg.CodexAutoSource = "opencode"
+				cfg.OpenCodeEnabled = true
+			} else {
+				cfg.CodexAutoSource = "codex"
+			}
 		}
 	}
 
@@ -726,7 +732,11 @@ func run() error {
 		logger.Info("Auto-detected Anthropic token from Claude Code credentials")
 	}
 	if cfg.CodexAutoToken {
-		logger.Info("Auto-detected Codex token from Codex credentials")
+		if cfg.CodexAutoSource == "opencode" {
+			logger.Info("Auto-detected ChatGPT token from OpenCode credentials")
+		} else {
+			logger.Info("Auto-detected Codex token from Codex credentials")
+		}
 	}
 
 	// Apply provider_settings from DB (UI-configured keys/regions override .env)
@@ -1816,7 +1826,9 @@ func printBanner(cfg *config.Config, version string) {
 		fmt.Println("║  API:       github.com/copilot (β)   ║")
 	}
 	if cfg.HasProvider("codex") {
-		if cfg.CodexAutoToken {
+		if cfg.CodexAutoSource == "opencode" {
+			fmt.Println("║  API:       chatgpt.com/wham (oc)    ║")
+		} else if cfg.CodexAutoToken {
 			fmt.Println("║  API:       chatgpt.com/wham (auto)  ║")
 		} else {
 			fmt.Println("║  API:       chatgpt.com/wham         ║")
@@ -1861,7 +1873,9 @@ func printBanner(cfg *config.Config, version string) {
 	}
 	if cfg.HasProvider("codex") {
 		label := "Codex Token:       "
-		if cfg.CodexAutoToken {
+		if cfg.CodexAutoSource == "opencode" {
+			label = "Codex (OpenCode):  "
+		} else if cfg.CodexAutoToken {
 			label = "Codex (auto):      "
 		}
 		fmt.Printf("%s%s\n", label, redactAPIKey(cfg.CodexToken))

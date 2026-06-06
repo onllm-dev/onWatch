@@ -297,6 +297,56 @@ func (s *Store) CloseMiniMaxCycle(modelName string, cycleEnd time.Time, peakUsed
 	return nil
 }
 
+// CloseStaleMiniMaxCycles closes any active cycle whose model is not in
+// activeModels. MiniMax discontinues models (e.g. a plan switch from per-model
+// request counts to a single percentage-based "general" quota), and their
+// cycles would otherwise stay active forever, polluting the cycle overview and
+// usage summaries. Returns the number of cycles closed. Peak/delta are
+// preserved; only cycle_end is set.
+func (s *Store) CloseStaleMiniMaxCycles(accountID int64, activeModels []string, cycleEnd time.Time) (int, error) {
+	active := make(map[string]bool, len(activeModels))
+	for _, m := range activeModels {
+		active[m] = true
+	}
+
+	rows, err := s.db.Query(
+		`SELECT model_name FROM minimax_reset_cycles WHERE account_id = ? AND cycle_end IS NULL`,
+		accountID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query active minimax cycles: %w", err)
+	}
+	var stale []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("failed to scan minimax cycle model: %w", err)
+		}
+		if !active[name] {
+			stale = append(stale, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	closed := 0
+	for _, name := range stale {
+		if _, err := s.db.Exec(
+			`UPDATE minimax_reset_cycles SET cycle_end = ?
+			WHERE model_name = ? AND account_id = ? AND cycle_end IS NULL`,
+			cycleEnd.Format(time.RFC3339Nano), name, accountID,
+		); err != nil {
+			return closed, fmt.Errorf("failed to close stale minimax cycle %q: %w", name, err)
+		}
+		closed++
+	}
+	return closed, nil
+}
+
 // UpdateMiniMaxCycle updates an active cycle's peak/delta.
 func (s *Store) UpdateMiniMaxCycle(modelName string, peakUsed, totalDelta int, accountID int64) error {
 	_, err := s.db.Exec(
@@ -495,7 +545,8 @@ func (s *Store) QueryMiniMaxCycleOverview(groupBy string, limit int, accountID i
 		if active.ResetAt != nil {
 			refTime = *active.ResetAt
 		}
-		cross, crossErr := s.minimaxCrossQuotasAt(refTime, accountID)
+		// Active cycle is ongoing: show current usage from the latest snapshot.
+		cross, crossErr := s.minimaxLatestCrossQuotas(accountID)
 		if crossErr != nil {
 			return nil, crossErr
 		}
@@ -563,12 +614,33 @@ func (s *Store) minimaxCrossQuotasAt(referenceTime time.Time, accountID int64) (
 			return nil, err
 		}
 	}
-	if snap == nil || len(snap.Models) == 0 {
-		return nil, nil
-	}
+	return minimaxCrossQuotaEntries(snap), nil
+}
 
+// minimaxLatestCrossQuotas builds cross-quota entries from the most recent
+// snapshot. Used for the active (ongoing) cycle so it reflects current usage
+// rather than the snapshot captured at the cycle's reset boundary.
+func (s *Store) minimaxLatestCrossQuotas(accountID int64) ([]CrossQuotaEntry, error) {
+	snap, err := s.QueryLatestMiniMax(accountID)
+	if err != nil {
+		return nil, err
+	}
+	return minimaxCrossQuotaEntries(snap), nil
+}
+
+// minimaxCrossQuotaEntries converts a snapshot's models into cross-quota entries
+// (one daily entry per model, plus a weekly entry when present).
+func minimaxCrossQuotaEntries(snap *api.MiniMaxSnapshot) []CrossQuotaEntry {
+	if snap == nil || len(snap.Models) == 0 {
+		return nil
+	}
 	entries := make([]CrossQuotaEntry, 0, len(snap.Models)*2)
 	for _, model := range snap.Models {
+		// Skip inactive/discontinued models (no quota allocation) so they don't
+		// show as empty columns in the cycle overview.
+		if model.Total == 0 && model.Used == 0 {
+			continue
+		}
 		entries = append(entries, CrossQuotaEntry{
 			Name:         model.ModelName,
 			Value:        float64(model.Used),
@@ -589,5 +661,5 @@ func (s *Store) minimaxCrossQuotasAt(referenceTime time.Time, accountID int64) (
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
-	return entries, nil
+	return entries
 }

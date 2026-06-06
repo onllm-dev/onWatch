@@ -335,11 +335,12 @@ func TestProviderCollectionHelpers(t *testing.T) {
 			"y",            // use default zai url
 			"n",            // anthropic no
 			"n",            // codex no
+			"n",            // opencode no
 			"y",            // antigravity yes
 			"n",            // gemini no
 		}, "\n") + "\n"
 		r := bufio.NewReader(strings.NewReader(input))
-		syn, zai, zaiURL, anth, codex, anti, _ := collectMultipleProviders(r, testLogger())
+		syn, zai, zaiURL, anth, codex, _, anti, _ := collectMultipleProviders(r, testLogger())
 		if syn == "" || zai == "" || zaiURL == "" {
 			t.Fatalf("expected synthetic and zai collected, got syn=%q zai=%q zaiURL=%q", syn, zai, zaiURL)
 		}
@@ -354,7 +355,7 @@ func TestProviderCollectionHelpers(t *testing.T) {
 
 func TestFreshSetup_AntigravityOnlySafeBranch(t *testing.T) {
 	input := strings.Join([]string{
-		"5",     // antigravity only
+		"6",     // antigravity only
 		"",      // default admin user
 		"",      // auto-generate password
 		"70000", // invalid port
@@ -437,7 +438,7 @@ func TestRunSetupEarlyPathsAndSafeRunCommands(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 		input := strings.Join([]string{
-			"5",    // antigravity only
+			"6",    // antigravity only
 			"",     // default admin user
 			"",     // auto-generated password
 			"9211", // valid port

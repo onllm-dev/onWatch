@@ -110,6 +110,11 @@ func TestRunStopAndStatus_StalePIDBranches(t *testing.T) {
 
 func TestSetupHelpers_AddMissingProvidersAndTokenCollectors(t *testing.T) {
 	t.Run("addMissingProviders appends selected providers", func(t *testing.T) {
+		// Isolate OpenCode detection so it doesn't read the real home dir.
+		ocTmp := t.TempDir()
+		t.Setenv("OPENCODE_HOME", filepath.Join(ocTmp, "no-opencode"))
+		t.Setenv("XDG_DATA_HOME", "")
+
 		envFile := filepath.Join(t.TempDir(), ".env")
 		initial := strings.Join([]string{
 			"ANTHROPIC_TOKEN=already_set",
@@ -125,6 +130,7 @@ func TestSetupHelpers_AddMissingProvidersAndTokenCollectors(t *testing.T) {
 			"y",            // add zai
 			"zai-token",    // zai key
 			"y",            // use default zai URL
+			"n",            // skip opencode
 			"y",            // add antigravity
 			"n",            // skip gemini
 		}, "\n") + "\n"

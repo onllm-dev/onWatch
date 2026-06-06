@@ -7454,15 +7454,21 @@ function renderOverviewTable() {
   const overviewProv = getOverviewProvider();
   const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
+  // MiniMax reports a percentage-based quota; the Duration and Total Delta
+  // columns add no signal there, so omit them for this provider.
+  const showDurationDelta = overviewProv !== 'minimax';
 
   // Build dynamic header
   let headerHtml = `
     <tr>
       <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
       <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
-      <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
+      <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>`;
+  if (showDurationDelta) {
+    headerHtml += `
       <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
       <th data-sort-key="totalDelta" role="button" tabindex="0">Total Delta${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
+  }
 
   quotaNames.forEach(qn => {
     const isPrimary = qn === State.overviewGroupBy;
@@ -7532,7 +7538,7 @@ function renderOverviewTable() {
   };
 
   if (pageData.length === 0) {
-    const colCount = 5 + quotaNames.length;
+    const colCount = (showDurationDelta ? 5 : 3) + quotaNames.length;
     const emptyMsg = overviewProv === 'cursor'
       ? 'No completed monthly billing cycles found for this quota yet.'
       : 'No completed cycles found for this period.';
@@ -7555,9 +7561,12 @@ function renderOverviewTable() {
       let html = `<tr>
         <td>${cycleLabel}</td>
         <td>${start ? formatDateTime(start) : '--'}</td>
-        <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>
+        <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>`;
+      if (showDurationDelta) {
+        html += `
         <td>${duration}</td>
         <td>${fmtOverviewWithRate(row.totalDelta, durationHrs, suffix)}</td>`;
+      }
 
       quotaNames.forEach(qn => {
         const pct = getCrossQuotaPercent(row, qn);

@@ -85,9 +85,42 @@ onWatch follows this order:
 2. If missing, try Codex auth state from:
    - `CODEX_HOME/auth.json` (when `CODEX_HOME` is set)
    - `~/.codex/auth.json` (default)
-3. During runtime, keep checking auth state and refresh token usage automatically when credentials change.
+3. If still missing, try the opencode-codex auth state (see below).
+4. During runtime, keep checking auth state and refresh token usage automatically when credentials change.
 
 This is aligned with the Anthropic provider behavior: explicit env token first, local auth-state detection as fallback, and runtime refresh for credential changes.
+
+---
+
+## OpenCode (opencode-codex) ChatGPT Login
+
+If you sign in to ChatGPT through OpenCode (the opencode-codex auth flow) instead of the Codex CLI, onWatch can track the same ChatGPT quota - it feeds the existing Codex provider (same backend, same dashboard card).
+
+OpenCode stores its credentials at `~/.local/share/opencode/auth.json` in a different shape than Codex:
+
+```json
+{ "openai": { "type": "oauth", "access": "...", "refresh": "...", "expires": 1234567890123, "accountId": "..." } }
+```
+
+`expires` is a Unix timestamp in milliseconds. onWatch reads, refreshes, and writes back this file in its native format, so your OpenCode login keeps working (one-time-use refresh tokens are preserved).
+
+### Enabling
+
+Pick whichever fits your workflow:
+
+- **Setup wizard**: run `onwatch setup` (or the installer) and choose "OpenCode (opencode-codex)".
+- **Env flag**: set `OPENCODE_ENABLED=true` in `.env`. This enables the Codex provider using the opencode-codex credentials, even when no `CODEX_TOKEN` is set.
+- **Dashboard**: persist `provider_settings.opencode.enabled = true` via the settings API.
+
+### Paths and overrides
+
+onWatch resolves the opencode-codex auth file in this order:
+
+1. `OPENCODE_HOME/auth.json` (when `OPENCODE_HOME` is set)
+2. `XDG_DATA_HOME/opencode/auth.json` (when `XDG_DATA_HOME` is set)
+3. `~/.local/share/opencode/auth.json` (default)
+
+When both Codex and opencode-codex credentials exist, Codex takes priority. To track several ChatGPT accounts at once, use Codex profiles (below) - they work with opencode-codex credentials too.
 
 ---
 
