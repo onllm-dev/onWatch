@@ -86,6 +86,72 @@ func TestToSnapshot_PercentageBasedAPI(t *testing.T) {
 	}
 }
 
+// TestToSnapshot_IntervalExhaustedStatus2 covers the live case where the 5-hour
+// interval is fully consumed: MiniMax reports current_interval_status=2 with
+// current_interval_remaining_percent=0 (0% remaining = 100% used). This window
+// is still active and must be recorded as 100% used, not dropped - it is exactly
+// when the user has hit their limit and most needs to see it. The weekly window
+// (status=1, 61% remaining) keeps tracking normally; video (status=3) is dropped.
+func TestToSnapshot_IntervalExhaustedStatus2(t *testing.T) {
+	raw := []byte(`{
+		"model_remains": [
+			{
+				"model_name": "general",
+				"remains_time": 2711991,
+				"current_interval_total_count": 0,
+				"current_interval_usage_count": 0,
+				"current_weekly_total_count": 0,
+				"current_weekly_usage_count": 0,
+				"weekly_remains_time": 103511991,
+				"current_interval_status": 2,
+				"current_interval_remaining_percent": 0,
+				"current_weekly_status": 1,
+				"current_weekly_remaining_percent": 61
+			},
+			{
+				"model_name": "video",
+				"current_interval_status": 3,
+				"current_interval_remaining_percent": 100,
+				"current_weekly_status": 3,
+				"current_weekly_remaining_percent": 100
+			}
+		],
+		"base_resp": {"status_code": 0, "status_msg": "success"}
+	}`)
+
+	resp, err := ParseMiniMaxResponse(raw)
+	if err != nil {
+		t.Fatalf("ParseMiniMaxResponse: %v", err)
+	}
+	snap := resp.ToSnapshot(time.Now().UTC())
+
+	var general *MiniMaxModelQuota
+	for i := range snap.Models {
+		if snap.Models[i].ModelName == "general" {
+			general = &snap.Models[i]
+		}
+	}
+	if general == nil {
+		t.Fatal("general model missing from snapshot")
+	}
+	// Exhausted interval: 0% remaining -> 100% used on a 0-100 scale.
+	if general.Total != 100 || general.Remain != 0 || general.Used != 100 {
+		t.Fatalf("general interval: total=%d remain=%d used=%d, want 100/0/100", general.Total, general.Remain, general.Used)
+	}
+	if general.UsedPercent != 100 {
+		t.Fatalf("general interval UsedPercent=%v, want 100", general.UsedPercent)
+	}
+	// Weekly still active at 61% remaining -> 39% used.
+	if !general.HasWeeklyQuota || general.WeeklyTotal != 100 || general.WeeklyRemain != 61 || general.WeeklyUsed != 39 {
+		t.Fatalf("general weekly: total=%d remain=%d used=%d, want 100/61/39", general.WeeklyTotal, general.WeeklyRemain, general.WeeklyUsed)
+	}
+	// Exhausted-but-active general must survive grouping; inactive video dropped.
+	groups := snap.GroupByPool()
+	if len(groups) != 1 {
+		t.Fatalf("GroupByPool returned %d groups, want 1 (general only)", len(groups))
+	}
+}
+
 // TestToSnapshot_CountBasedAPIStillWorks ensures older count-based accounts are
 // unaffected by the percentage fallback.
 func TestToSnapshot_CountBasedAPIStillWorks(t *testing.T) {

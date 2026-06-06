@@ -33,7 +33,7 @@ type MiniMaxModelRemain struct {
 
 	// Percentage-based fields (newer API). For coding-plan accounts the count
 	// fields above are 0 and remaining quota is reported as a percentage here.
-	// Status: 1 = active/subscribed, other values (e.g. 3) = not subscribed.
+	// Status: 1 = active, 2 = active but exhausted (0% left), 3 = not subscribed.
 	// Pointers distinguish "absent" from a legitimate 0.
 	CurrentIntervalRemainingPercent *int `json:"current_interval_remaining_percent"`
 	CurrentIntervalStatus           *int `json:"current_interval_status"`
@@ -52,11 +52,15 @@ func clampPercent(v int) int {
 	return v
 }
 
-// minimaxIntervalActive reports whether a percentage-based quota window is for
-// an active/subscribed plan. MiniMax uses status 1 for active windows; other
-// values (e.g. 3) indicate the model is not part of the subscription.
+// minimaxIntervalActive reports whether a percentage-based quota window belongs
+// to an active/subscribed plan whose percentage should be tracked. MiniMax uses:
+//   status 1 = active with quota remaining
+//   status 2 = active but exhausted (0% remaining = 100% used)
+//   status 3 = model not part of the subscription
+// Both 1 and 2 are live windows that must be recorded - status 2 is exactly when
+// the user has hit their limit and most needs the reading; status 3 is dropped.
 func minimaxIntervalActive(status *int) bool {
-	return status != nil && *status == 1
+	return status != nil && (*status == 1 || *status == 2)
 }
 
 // MiniMaxRemainsResponse is the full API response.
@@ -262,11 +266,11 @@ func (r MiniMaxRemainsResponse) ToSnapshot(capturedAt time.Time) *MiniMaxSnapsho
 		}
 
 		// Newer coding-plan API reports remaining quota as a percentage with
-		// zero count fields. When the interval is active (status == 1) and no
+		// zero count fields. When the interval is active (status 1 or 2) and no
 		// absolute counts are present, synthesize a 0-100 scale so usage,
-		// grouping, and reset tracking work. Inactive models (status != 1,
-		// e.g. unsubscribed "video") keep zero counts and are dropped by
-		// GroupByPool, matching prior behaviour for empty quotas.
+		// grouping, and reset tracking work. A status-2 window is fully consumed
+		// (0% remaining -> 100% used). Unsubscribed models (status 3, e.g.
+		// "video") keep zero counts and are dropped by GroupByPool.
 		if total == 0 && model.CurrentIntervalRemainingPercent != nil && minimaxIntervalActive(model.CurrentIntervalStatus) {
 			rp := clampPercent(*model.CurrentIntervalRemainingPercent)
 			total = 100
