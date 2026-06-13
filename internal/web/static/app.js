@@ -1258,7 +1258,7 @@ function renderAnthropicQuotaCards(quotas, containerId) {
           ${statusCfg.label}
         </span>
         ${promoTagHTML()}
-        <span class="reset-time" id="${resetId}">${q.resetsAt ? 'Resets: ' + formatDateTime(q.resetsAt) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetsAt ? ` data-reset-at="${q.resetsAt}"` : ''}>${q.resetsAt ? formatResetTime(q.resetsAt) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -1324,9 +1324,7 @@ function updateAnthropicCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = quota.resetsAt ? `Resets: ${formatDateTime(quota.resetsAt)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, quota.resetsAt);
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -1531,7 +1529,7 @@ function renderCopilotQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetDate ? 'Resets: ' + formatDateTime(q.resetDate) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetDate ? ` data-reset-at="${q.resetDate}"` : ''}>${q.resetDate ? formatResetTime(q.resetDate) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -1605,9 +1603,7 @@ function updateCopilotCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = quota.resetDate ? `Resets: ${formatDateTime(quota.resetDate)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, quota.resetDate);
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -1680,7 +1676,7 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetAt ? 'Resets: ' + formatDateTime(q.resetAt) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetAt ? ` data-reset-at="${q.resetAt}"` : ''}>${q.resetAt ? formatResetTime(q.resetAt) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -1726,7 +1722,7 @@ function updateMiniMaxCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) resetEl.textContent = quota.resetAt ? `Resets: ${formatDateTime(quota.resetAt)}` : '';
+  if (resetEl) setResetTimeElement(resetEl, quota.resetAt);
   if (subtitleEl) {
     subtitleEl.textContent = subtitle;
     subtitleEl.hidden = !subtitle;
@@ -1965,7 +1961,7 @@ function renderAntigravityQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetTime ? 'Resets: ' + formatDateTime(q.resetTime) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetTime ? ` data-reset-at="${q.resetTime}"` : ''}>${q.resetTime ? formatResetTime(q.resetTime) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -2038,9 +2034,7 @@ function updateAntigravityCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = quota.resetTime ? `Resets: ${formatDateTime(quota.resetTime)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, quota.resetTime);
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -2106,7 +2100,7 @@ function renderGeminiQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetTime ? 'Resets: ' + formatDateTime(q.resetTime) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetTime ? ` data-reset-at="${q.resetTime}"` : ''}>${q.resetTime ? formatResetTime(q.resetTime) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -2189,9 +2183,7 @@ function updateGeminiCard(q) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = q.resetTime ? `Resets: ${formatDateTime(q.resetTime)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, q.resetTime);
   if (countdownEl) {
     if (q.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(q.timeUntilResetSeconds);
@@ -2488,7 +2480,7 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetsAt ? 'Resets: ' + formatDateTime(q.resetsAt) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetsAt ? ` data-reset-at="${q.resetsAt}"` : ''}>${q.resetsAt ? formatResetTime(q.resetsAt) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -2567,7 +2559,7 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="reset-${cardKey}">${q.resetsAt ? 'Resets: ' + formatDateTime(q.resetsAt) : ''}</span>
+        <span class="reset-time" id="reset-${cardKey}"${q.resetsAt ? ` data-reset-at="${q.resetsAt}"` : ''}>${q.resetsAt ? formatResetTime(q.resetsAt) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -2643,9 +2635,7 @@ function updateCodexCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = quota.resetsAt ? `Resets: ${formatDateTime(quota.resetsAt)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, quota.resetsAt);
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -2827,13 +2817,90 @@ function formatCurrencyUSD(num) {
   }).format(num || 0);
 }
 
+function parseDateValue(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function formatDateTime(isoString) {
-  const d = new Date(isoString);
+  const d = parseDateValue(isoString);
+  if (!d) return '--';
   const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
   if (typeof getEffectiveTimezone === 'function') {
     opts.timeZone = getEffectiveTimezone();
   }
   return d.toLocaleString('en-US', opts);
+}
+
+function formatClockTime(value) {
+  const d = parseDateValue(value);
+  if (!d) return '--';
+  const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : undefined;
+  const opts = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+  if (tz) opts.timeZone = tz;
+  return `${d.toLocaleTimeString('en-US', opts)} ${tz || ''}`.trim();
+}
+
+function zonedDateKey(date, tz) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(date);
+  } catch (e) {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
+function formatResetTime(isoString) {
+  const d = parseDateValue(isoString);
+  if (!d) return '';
+  const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : undefined;
+  const timeOpts = { hour: '2-digit', minute: '2-digit', hour12: false };
+  const dateOpts = { month: 'short', day: 'numeric' };
+  if (tz) {
+    timeOpts.timeZone = tz;
+    dateOpts.timeZone = tz;
+  }
+
+  const resetDay = zonedDateKey(d, tz);
+  const today = zonedDateKey(new Date(), tz);
+  const localTime = d.toLocaleTimeString('en-US', timeOpts);
+  const localDate = resetDay === today ? '' : `${d.toLocaleDateString('en-US', dateOpts)}, `;
+  return `Reset at ${localDate}${localTime}${tz ? ' ' + tz : ''}`;
+}
+
+function setResetTimeElement(el, isoString) {
+  if (!el) return;
+  if (isoString) {
+    el.dataset.resetAt = isoString;
+    el.textContent = formatResetTime(isoString);
+    el.style.display = '';
+  } else {
+    delete el.dataset.resetAt;
+    el.textContent = '';
+  }
+}
+
+function setLastUpdated(value = new Date()) {
+  const lastUpdated = document.getElementById('last-updated');
+  if (!lastUpdated) return;
+  const d = parseDateValue(value) || new Date();
+  lastUpdated.dataset.lastUpdatedAt = d.toISOString();
+  lastUpdated.textContent = `Last updated: ${formatClockTime(d)}`;
+}
+
+function refreshTimezoneSensitiveText() {
+  updateBadgeText();
+  document.querySelectorAll('.reset-time[data-reset-at]').forEach(el => {
+    setResetTimeElement(el, el.dataset.resetAt);
+  });
+  const lastUpdated = document.getElementById('last-updated');
+  if (lastUpdated?.dataset.lastUpdatedAt) {
+    setLastUpdated(lastUpdated.dataset.lastUpdatedAt);
+  }
 }
 
 function formatChartXAxisLabel(isoOrLabel, range) {
@@ -2884,7 +2951,18 @@ const TZ_ALIASES = {
   'US/Pacific': 'America/Los_Angeles',
 };
 
-function normalizeTz(tz) { return TZ_ALIASES[tz] || tz; }
+function normalizeTz(tz) {
+  if (!tz) return '';
+  return TZ_ALIASES[tz] || tz;
+}
+
+function getBrowserTimezone() {
+  try {
+    return normalizeTz(Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC';
+  } catch (e) {
+    return 'UTC';
+  }
+}
 
 // Curated timezone list sorted by UTC offset (descending: east → west).
 // India (Asia/Kolkata) is always present.
@@ -2911,7 +2989,7 @@ const TZ_LIST = (() => {
     { tz: 'Pacific/Honolulu', label: 'Honolulu' },
   ];
   // Insert user's browser timezone if not already in list (after normalization)
-  const browserTz = normalizeTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const browserTz = getBrowserTimezone();
   if (!base.some(e => e.tz === browserTz)) {
     const label = browserTz.split('/').pop().replace(/_/g, ' ');
     const off = tzOffsetMin(browserTz);
@@ -2942,7 +3020,7 @@ function tzOffsetMin(tz) {
 }
 
 function getEffectiveTimezone() {
-  return activeTimezone || normalizeTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  return activeTimezone || getBrowserTimezone();
 }
 
 function tzAbbr(tz) {
@@ -2959,17 +3037,16 @@ function findTzIndex(tz) {
   return idx >= 0 ? idx : 0;
 }
 
-function initTimezoneBadge() {
+async function initTimezoneBadge() {
   const badge = document.getElementById('timezone-badge');
+  await loadTimezoneFromAPI();
   if (!badge) return;
 
-  loadTimezoneFromAPI().then(() => {
-    updateBadgeText(badge);
-    badge.style.cursor = 'pointer';
-    badge.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleTzPicker(badge);
-    });
+  updateBadgeText(badge);
+  badge.style.cursor = 'pointer';
+  badge.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleTzPicker(badge);
   });
 }
 
@@ -2978,9 +3055,7 @@ async function loadTimezoneFromAPI() {
     const res = await authFetch(`${API_BASE}/api/settings`);
     if (!res.ok) return;
     const data = await res.json();
-    if (data.timezone) {
-      activeTimezone = normalizeTz(data.timezone);
-    }
+    activeTimezone = normalizeTz(data.timezone || '');
   } catch (e) {}
 }
 
@@ -2990,8 +3065,20 @@ function updateBadgeText(badge) {
   const tz = getEffectiveTimezone();
   const entry = TZ_LIST.find(e => e.tz === tz);
   const label = entry ? entry.label : tz.split('/').pop().replace(/_/g, ' ');
-  badge.textContent = `${label} (${tzAbbr(tz)})`;
-  badge.title = tz;
+  if (activeTimezone) {
+    badge.textContent = `${label} (${tzAbbr(tz)})`;
+    badge.title = tz;
+  } else {
+    badge.textContent = `Browser Default (${label} ${tzAbbr(tz)})`;
+    badge.title = `Browser default: ${tz}`;
+  }
+}
+
+function timezonePickerEntries() {
+  return [
+    { tz: '', label: 'Browser Default', browserDefault: true },
+    ...TZ_LIST
+  ];
 }
 
 function toggleTzPicker(badge) {
@@ -3008,17 +3095,20 @@ function toggleTzPicker(badge) {
   const ITEM_H = 36;
   const VISIBLE = 7;
   const COPIES = 3;
-  const totalItems = TZ_LIST.length;
+  const entries = timezonePickerEntries();
+  const totalItems = entries.length;
 
   // Render 3 copies for infinite scroll illusion
   for (let copy = 0; copy < COPIES; copy++) {
-    TZ_LIST.forEach((entry, i) => {
+    entries.forEach((entry, i) => {
       const item = document.createElement('div');
       item.className = 'tz-picker-item';
-      if (entry.tz === getEffectiveTimezone()) item.classList.add('active');
+      if ((entry.browserDefault && !activeTimezone) || (activeTimezone && entry.tz === activeTimezone)) {
+        item.classList.add('active');
+      }
       item.dataset.tz = entry.tz;
       item.dataset.idx = i;
-      const abbr = tzAbbr(entry.tz);
+      const abbr = entry.browserDefault ? getBrowserTimezone() : tzAbbr(entry.tz);
       item.innerHTML = `<span class="tz-picker-label">${entry.label}</span><span class="tz-picker-abbr">${abbr}</span>`;
       item.addEventListener('click', () => selectTz(entry.tz, picker, badge));
       list.appendChild(item);
@@ -3036,7 +3126,7 @@ function toggleTzPicker(badge) {
   document.body.appendChild(picker);
 
   // Scroll to center current timezone in middle copy
-  const activeIdx = findTzIndex(getEffectiveTimezone());
+  const activeIdx = activeTimezone ? findTzIndex(activeTimezone) + 1 : 0;
   const midStart = totalItems; // start of middle copy
   const targetScroll = (midStart + activeIdx) * ITEM_H - Math.floor(VISIBLE / 2) * ITEM_H;
   list.scrollTop = targetScroll;
@@ -3073,15 +3163,16 @@ function toggleTzPicker(badge) {
 }
 
 async function selectTz(tz, picker, badge) {
-  activeTimezone = tz;
+  activeTimezone = normalizeTz(tz);
   updateBadgeText(badge);
   if (picker) picker.remove();
   try {
     await authFetch(`${API_BASE}/api/settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timezone: tz })
+      body: JSON.stringify({ timezone: activeTimezone })
     });
+    refreshTimezoneSensitiveText();
   } catch (e) {
     // silent
   }
@@ -3222,10 +3313,9 @@ function updateCard(quotaType, data, suffix) {
 
   if (resetEl) {
     if (data.renewsAt && data.timeUntilReset !== 'N/A') {
-      resetEl.textContent = `Resets: ${formatDateTime(data.renewsAt)}`;
-      resetEl.style.display = '';
+      setResetTimeElement(resetEl, data.renewsAt);
     } else {
-      resetEl.textContent = '';
+      setResetTimeElement(resetEl, '');
       resetEl.style.display = 'none';
     }
   }
@@ -3313,8 +3403,7 @@ async function fetchCurrent() {
         renderAPIIntegrationsHealth();
         renderAPIIntegrationsInsights();
 
-        const lastUpdated = document.getElementById('last-updated');
-        if (lastUpdated) lastUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        setLastUpdated();
         const statusDot = document.getElementById('status-dot');
         if (statusDot) statusDot.classList.remove('stale');
       });
@@ -3432,10 +3521,7 @@ async function fetchCurrent() {
         updateCard('toolCalls', data.toolCalls);
       }
 
-      const lastUpdated = document.getElementById('last-updated');
-      if (lastUpdated) {
-        lastUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
-      }
+      setLastUpdated();
 
       const statusDot = document.getElementById('status-dot');
       if (statusDot) statusDot.classList.remove('stale');
@@ -5027,7 +5113,8 @@ function renderProviderKPIHTML(quotas) {
     const icon = anthropicQuotaIcons[quota.name]
       || quotaIcons[quota.name]
       || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
-    const resetText = quota.resetsAt ? `Resets: ${formatDateTime(quota.resetsAt)}` : '';
+    const resetText = quota.resetsAt ? formatResetTime(quota.resetsAt) : '';
+    const resetAttr = quota.resetsAt ? ` data-reset-at="${escapeHTML(quota.resetsAt)}"` : '';
     const countdown = quota.timeUntilResetSeconds > 0 ? formatDuration(quota.timeUntilResetSeconds) : '--:--';
 
     return `<article class="quota-card provider-kpi-card" data-quota="${escapeHTML(quota.name || '')}">
@@ -5055,7 +5142,7 @@ function renderProviderKPIHTML(quotas) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time">${escapeHTML(resetText)}</span>
+        <span class="reset-time"${resetAttr}>${escapeHTML(resetText)}</span>
       </footer>
     </article>`;
   }).join('');
@@ -7916,6 +8003,7 @@ function isSettingsPage() {
 async function initSettingsPage() {
   setupSettingsTabs();
   await setupMenubarSettings();
+  populateTimezoneSelect();
   await loadSettings();
   setupSettingsSave();
   setupProviderReload();
@@ -7925,7 +8013,6 @@ async function initSettingsPage() {
   setupSettingsPassword();
   setupThresholdSliders();
   setupOverrides();
-  populateTimezoneSelect();
 }
 
 function activateSettingsTab(tabName) {
@@ -8011,7 +8098,13 @@ async function loadSettings() {
 
     // Timezone
     const tzSelect = document.getElementById('settings-timezone');
-    if (tzSelect && data.timezone) { tzSelect.value = data.timezone; }
+    if (tzSelect) {
+      const savedTimezone = normalizeTz(data.timezone || '');
+      ensureTimezoneOption(tzSelect, savedTimezone);
+      tzSelect.value = savedTimezone;
+      activeTimezone = savedTimezone;
+      updateBrowserDefaultTimezoneText();
+    }
 
     // SMTP
     if (data.smtp) {
@@ -8115,16 +8208,38 @@ function setVal(id, val) {
   if (el && val !== undefined && val !== null) el.value = val;
 }
 
+function updateBrowserDefaultTimezoneText() {
+  const browserTz = getBrowserTimezone();
+  const select = document.getElementById('settings-timezone');
+  const defaultOption = select?.querySelector('option[value=""]');
+  if (defaultOption) defaultOption.textContent = `Browser Default (${browserTz})`;
+  const hint = document.getElementById('settings-timezone-hint');
+  if (hint) {
+    hint.textContent = `Affects dashboard times. Browser Default currently resolves to ${browserTz}.`;
+  }
+}
+
+function ensureTimezoneOption(select, timezone) {
+  if (!select || !timezone) return;
+  if ([...select.options].some(opt => opt.value === timezone)) return;
+  const opt = document.createElement('option');
+  opt.value = timezone;
+  opt.textContent = timezone.replace(/_/g, ' ');
+  select.appendChild(opt);
+}
+
 function populateTimezoneSelect() {
   const select = document.getElementById('settings-timezone');
   if (!select) return;
+  updateBrowserDefaultTimezoneText();
   const zones = [
     'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
     'America/Sao_Paulo', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
     'Asia/Dubai', 'Asia/Kolkata', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul',
     'Australia/Sydney', 'Pacific/Auckland'
   ];
-  zones.forEach(tz => {
+  zones.map(normalizeTz).forEach(tz => {
+    if ([...select.options].some(opt => opt.value === tz)) return;
     const opt = document.createElement('option');
     opt.value = tz;
     opt.textContent = tz.replace(/_/g, ' ');
@@ -9389,7 +9504,7 @@ function gatherSettings() {
   // Timezone
   const tzSelect = document.getElementById('settings-timezone');
   if (tzSelect) {
-    settings.timezone = tzSelect.value;
+    settings.timezone = normalizeTz(tzSelect.value);
   }
 
   // Global display mode goes under provider_settings.global. Other provider
@@ -9465,6 +9580,16 @@ function setupSettingsSave() {
       if (!resp.ok) {
         showSettingsFeedback(feedback, data.error || 'Failed to save settings.', 'error');
       } else {
+        if (Object.prototype.hasOwnProperty.call(data, 'timezone')) {
+          activeTimezone = normalizeTz(data.timezone || '');
+          const tzSelect = document.getElementById('settings-timezone');
+          if (tzSelect) {
+            ensureTimezoneOption(tzSelect, activeTimezone);
+            tzSelect.value = activeTimezone;
+          }
+          updateBrowserDefaultTimezoneText();
+          refreshTimezoneSensitiveText();
+        }
         if (data.provider_visibility) State.providerVisibility = data.provider_visibility;
         if (data.api_integrations_visibility) State.apiIntegrationsVisibility = data.api_integrations_visibility;
         showSettingsFeedback(feedback, 'Settings saved successfully.', 'success');
@@ -10174,7 +10299,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   initTheme();
   initLayoutToggle();
-  initTimezoneBadge();
+  await initTimezoneBadge();
   setupProviderSelector();
   setupRangeSelector();
   setupAPIIntegrationsMetricSelector();
