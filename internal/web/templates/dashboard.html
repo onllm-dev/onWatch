@@ -114,6 +114,12 @@
         {{else if eq .CurrentProvider "openrouter"}}
         <!-- OpenRouter quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-openrouter" data-provider="openrouter"></div>
+        {{else if eq .CurrentProvider "moonshot"}}
+        <!-- Moonshot quota cards (dynamically populated by JS) -->
+        <div class="quota-grid" id="quota-grid-moonshot" data-provider="moonshot"></div>
+        {{else if eq .CurrentProvider "deepseek"}}
+        <!-- DeepSeek quota cards (dynamically populated by JS) -->
+        <div class="quota-grid" id="quota-grid-deepseek" data-provider="deepseek"></div>
         {{else if eq .CurrentProvider "gemini"}}
         <!-- Gemini quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-gemini" data-provider="gemini"></div>
@@ -527,6 +533,14 @@
                             <th data-sort-key="sub" role="button" tabindex="0">Credits Used <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
                             <th data-sort-key="tool" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
+                            {{else if eq .CurrentProvider "moonshot"}}
+                            <th data-sort-key="sub" role="button" tabindex="0">Balance Drop <span class="sort-arrow"></span></th>
+                            <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
+                            <th data-sort-key="tool" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
+                            {{else if eq .CurrentProvider "deepseek"}}
+                            <th data-sort-key="sub" role="button" tabindex="0">Balance Drop <span class="sort-arrow"></span></th>
+                            <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
+                            <th data-sort-key="tool" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
                             {{else}}
                             <th data-sort-key="sub" role="button" tabindex="0">Sub Usage <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Search Usage <span class="sort-arrow"></span></th>
@@ -547,6 +561,10 @@
                             {{else if eq .CurrentProvider "gemini"}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "openrouter"}}
+                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            {{else if eq .CurrentProvider "moonshot"}}
+                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            {{else if eq .CurrentProvider "deepseek"}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{else}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
