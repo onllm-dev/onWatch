@@ -39,6 +39,7 @@ type GeminiQuota struct {
 type GeminiSnapshot struct {
 	ID         int64
 	CapturedAt time.Time
+	AccountID  int64
 	Tier       string
 	ProjectID  string
 	Quotas     []GeminiQuota

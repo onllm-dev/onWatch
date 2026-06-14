@@ -14,6 +14,7 @@ type GeminiCredentials struct {
 	AccessToken  string
 	RefreshToken string
 	IDToken      string
+	UserID       string
 	ExpiresAt    time.Time
 	ExpiresIn    time.Duration
 }
@@ -138,12 +139,18 @@ func mergeGeminiCredentials(sources ...*GeminiCredentials) *GeminiCredentials {
 		if merged.IDToken == "" && src.IDToken != "" {
 			merged.IDToken = src.IDToken
 		}
+		if merged.UserID == "" && src.UserID != "" {
+			merged.UserID = src.UserID
+		}
 	}
 	if !hasAny {
 		return nil
 	}
 	if merged.AccessToken == "" && merged.RefreshToken == "" {
 		return nil
+	}
+	if merged.UserID == "" {
+		merged.UserID = ParseGeminiIDTokenUserID(merged.IDToken)
 	}
 	return merged
 }
@@ -164,6 +171,7 @@ func detectGeminiCredentialsFromEnv(logger *slog.Logger) *GeminiCredentials {
 	return &GeminiCredentials{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
+		IDToken:      strings.TrimSpace(os.Getenv("GEMINI_ID_TOKEN")),
 	}
 }
 
@@ -209,6 +217,7 @@ func detectGeminiCredentialsFromFile(logger *slog.Logger) *GeminiCredentials {
 		ExpiresAt:    expiresAt,
 		ExpiresIn:    expiresIn,
 	}
+	result.UserID = ParseGeminiIDTokenUserID(result.IDToken)
 
 	if !expiresAt.IsZero() {
 		logger.Debug("Gemini credentials loaded",
@@ -227,6 +236,21 @@ func DetectGeminiToken(logger *slog.Logger) string {
 		return ""
 	}
 	return creds.AccessToken
+}
+
+// CompositeExternalID returns a combined ID for multi-account tracking.
+// Format: <project_id>:<user_id> or just <user_id> if project_id is missing.
+func (c *GeminiCredentials) CompositeExternalID(projectID string) string {
+	userID := strings.TrimSpace(c.UserID)
+	projectID = strings.TrimSpace(projectID)
+
+	if projectID == "" {
+		return userID
+	}
+	if userID == "" {
+		return projectID
+	}
+	return projectID + ":" + userID
 }
 
 // GeminiClientCredentials holds OAuth client ID and secret for token refresh.

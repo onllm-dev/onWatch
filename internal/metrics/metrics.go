@@ -519,26 +519,44 @@ func (m *Metrics) scrapeAntigravity(s *store.Store, staleThreshold time.Duration
 func (m *Metrics) scrapeGemini(s *store.Store, staleThreshold time.Duration) {
 	method := "gemini"
 
-	snap, err := s.QueryLatestGemini()
+	accounts, err := s.QueryActiveProviderAccounts("gemini")
 	if err != nil {
 		m.scrapeErrorsTotal.WithLabelValues(method, "query_failed").Inc()
 		return
 	}
-	if snap == nil {
-		return
-	}
 
-	m.recordLastCycleAge(method, defaultAccountID, snap.CapturedAt, staleThreshold)
-
-	for _, v := range snap.Quotas {
-		labels := prometheus.Labels{
-			"provider":   method,
-			"quota_type": v.ModelID,
-			"account_id": defaultAccountID,
+	for _, acc := range accounts {
+		snap, err := s.QueryLatestGemini(acc.ID)
+		if err != nil {
+			m.scrapeErrorsTotal.WithLabelValues(method, "query_failed").Inc()
+			continue
 		}
-		m.quotaUtilization.With(labels).Set(v.UsagePercent)
-		if v.ResetTime != nil && !v.ResetTime.IsZero() {
-			m.quotaResetTimestamp.With(labels).Set(float64(v.ResetTime.Unix()))
+		if snap == nil {
+			continue
+		}
+
+		accountID := strconv.FormatInt(acc.ID, 10)
+		if acc.Name == "default" {
+			accountID = defaultAccountID
+		}
+		m.accountInfo.WithLabelValues(method, accountID, acc.Name).Set(1)
+
+		m.recordLastCycleAge(method, accountID, snap.CapturedAt, staleThreshold)
+
+		for _, v := range snap.Quotas {
+			m.quotaUtilization.With(prometheus.Labels{
+				"provider":   method,
+				"quota_type": v.ModelID,
+				"account_id": accountID,
+			}).Set(v.UsagePercent)
+
+			if v.ResetTime != nil && !v.ResetTime.IsZero() {
+				m.quotaResetTimestamp.With(prometheus.Labels{
+					"provider":   method,
+					"quota_type": v.ModelID,
+					"account_id": accountID,
+				}).Set(float64(v.ResetTime.Unix()))
+			}
 		}
 	}
 }

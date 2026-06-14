@@ -88,6 +88,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/codex/profiles"), handler.CodexProfiles)
 	mux.HandleFunc(p("/api/codex/usage"), handler.CodexUsage)
 	mux.HandleFunc(p("/api/codex/accounts/usage"), handler.CodexAccountsUsage)
+	mux.HandleFunc(p("/api/gemini/profiles"), handler.GeminiProfiles)
 	mux.HandleFunc(p("/api/minimax/current"), handler.currentMiniMax)
 	mux.HandleFunc(p("/api/minimax/history"), handler.historyMiniMax)
 	mux.HandleFunc(p("/api/minimax/cycles"), handler.cyclesMiniMax)

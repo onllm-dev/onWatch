@@ -12,11 +12,12 @@ import (
 
 // currentGemini returns current Gemini model quotas.
 func (h *Handler) currentGemini(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, h.buildGeminiCurrent())
+	accountID := parseGeminiAccountID(r)
+	respondJSON(w, http.StatusOK, h.buildGeminiCurrent(accountID))
 }
 
 // buildGeminiCurrent builds current Gemini response.
-func (h *Handler) buildGeminiCurrent() map[string]interface{} {
+func (h *Handler) buildGeminiCurrent(accountID int64) map[string]interface{} {
 	now := time.Now().UTC()
 	response := map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
@@ -26,9 +27,9 @@ func (h *Handler) buildGeminiCurrent() map[string]interface{} {
 		return response
 	}
 
-	latest, err := h.store.QueryLatestGemini()
+	latest, err := h.store.QueryLatestGemini(accountID)
 	if err != nil {
-		h.logger.Error("failed to query latest Gemini snapshot", "error", err)
+		h.logger.Error("failed to query latest Gemini snapshot", "error", err, "account_id", accountID)
 		return response
 	}
 	if latest == nil {
@@ -62,7 +63,7 @@ func (h *Handler) buildGeminiCurrent() map[string]interface{} {
 			quota["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
 		if h.geminiTracker != nil {
-			if summary, err := h.geminiTracker.UsageSummary(fq.FamilyID); err == nil && summary != nil {
+			if summary, err := h.geminiTracker.UsageSummary(accountID, fq.FamilyID); err == nil && summary != nil {
 				quota["currentRate"] = summary.CurrentRate
 				quota["projectedUsage"] = summary.ProjectedUsage
 			}
@@ -91,10 +92,11 @@ func (h *Handler) historyGemini(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	start := now.Add(-rangeDur)
+	accountID := parseGeminiAccountID(r)
 
-	snapshots, err := h.store.QueryGeminiRange(start, now)
+	snapshots, err := h.store.QueryGeminiRange(accountID, start, now)
 	if err != nil {
-		h.logger.Error("failed to query Gemini history", "error", err)
+		h.logger.Error("failed to query Gemini history", "error", err, "account_id", accountID)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
 		return
 	}
@@ -173,9 +175,10 @@ func (h *Handler) cyclesGemini(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	accountID := parseGeminiAccountID(r)
 	now := time.Now().UTC()
 	start := now.Add(-30 * 24 * time.Hour)
-	snapshots, err := h.store.QueryGeminiRange(start, now, limit)
+	snapshots, err := h.store.QueryGeminiRange(accountID, start, now, limit)
 	if err != nil || len(snapshots) == 0 {
 		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
 		return
@@ -224,9 +227,10 @@ func (h *Handler) summaryGemini(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	summary, err := h.geminiTracker.UsageSummary(modelID)
+	accountID := parseGeminiAccountID(r)
+	summary, err := h.geminiTracker.UsageSummary(accountID, modelID)
 	if err != nil {
-		h.logger.Error("failed to get Gemini summary", "error", err, "model", modelID)
+		h.logger.Error("failed to get Gemini summary", "error", err, "model", modelID, "account_id", accountID)
 		respondError(w, http.StatusInternalServerError, "failed to compute summary")
 		return
 	}
@@ -255,14 +259,15 @@ func (h *Handler) summaryGemini(w http.ResponseWriter, r *http.Request) {
 }
 
 // insightsGemini returns Gemini usage insights matching insightsResponse contract.
-func (h *Handler) insightsGemini(w http.ResponseWriter, _ *http.Request, rangeDur time.Duration) {
+func (h *Handler) insightsGemini(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildGeminiInsights(hidden, rangeDur))
+	accountID := parseGeminiAccountID(r)
+	respondJSON(w, http.StatusOK, h.buildGeminiInsights(accountID, hidden, rangeDur))
 }
 
 // buildGeminiInsights builds Gemini insights matching the Anthropic insights pattern:
 // per-family stat cards + per-family burn rate/forecast insight cards.
-func (h *Handler) buildGeminiInsights(hidden map[string]bool, _ time.Duration) insightsResponse {
+func (h *Handler) buildGeminiInsights(accountID int64, hidden map[string]bool, _ time.Duration) insightsResponse {
 	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
 
 	if h.store == nil {
@@ -270,7 +275,7 @@ func (h *Handler) buildGeminiInsights(hidden map[string]bool, _ time.Duration) i
 	}
 
 	now := time.Now().UTC()
-	latest, err := h.store.QueryLatestGemini()
+	latest, err := h.store.QueryLatestGemini(accountID)
 	if err != nil || latest == nil {
 		return resp
 	}
@@ -297,7 +302,7 @@ func (h *Handler) buildGeminiInsights(hidden map[string]bool, _ time.Duration) i
 		rate := &geminiInsightRate{}
 		memberIDs := h.geminiFamilyModelIDs(fid)
 		for _, mid := range memberIDs {
-			if active, err := h.store.QueryActiveGeminiCycle(mid); err == nil && active != nil {
+			if active, err := h.store.QueryActiveGeminiCycle(accountID, mid); err == nil && active != nil {
 				dur := now.Sub(active.CycleStart)
 				if dur.Minutes() >= 10 && active.TotalDelta > 0 {
 					r := (active.TotalDelta * 100) / dur.Hours()
@@ -313,7 +318,7 @@ func (h *Handler) buildGeminiInsights(hidden map[string]bool, _ time.Duration) i
 		// Cycle history stats (check all member model IDs)
 		seen := map[int64]bool{}
 		for _, mid := range memberIDs {
-			cycles, err := h.store.QueryGeminiCycleHistory(mid, 50)
+			cycles, err := h.store.QueryGeminiCycleHistory(accountID, mid, 50)
 			if err != nil {
 				continue
 			}
@@ -460,9 +465,10 @@ func (h *Handler) loggingHistoryGemini(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start, end, limit := h.loggingHistoryRangeAndLimit(r)
-	snapshots, err := h.store.QueryGeminiRange(start, end, limit)
+	accountID := parseGeminiAccountID(r)
+	snapshots, err := h.store.QueryGeminiRange(accountID, start, end, limit)
 	if err != nil {
-		h.logger.Error("failed to query Gemini logging history", "error", err)
+		h.logger.Error("failed to query Gemini logging history", "error", err, "account_id", accountID)
 		respondError(w, http.StatusInternalServerError, "failed to query logging history")
 		return
 	}
