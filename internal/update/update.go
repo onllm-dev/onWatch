@@ -19,12 +19,15 @@ import (
 )
 
 const (
-	githubReleasesURL    = "https://api.github.com/repos/onllm-dev/onwatch/releases/latest"
-	downloadBaseURL      = "https://github.com/onllm-dev/onwatch/releases/download"
-	defaultCacheTTL      = 1 * time.Hour
-	downloadTimeout      = 10 * time.Minute
-	downloadRetryBackoff = 2 * time.Second
-	downloadMaxAttempts  = 2
+	githubReleasesURL     = "https://api.github.com/repos/onllm-dev/onwatch/releases/latest"
+	githubReleasesListURL = "https://api.github.com/repos/onllm-dev/onwatch/releases"
+	downloadBaseURL       = "https://github.com/onllm-dev/onwatch/releases/download"
+	defaultCacheTTL       = 1 * time.Hour
+	downloadTimeout       = 10 * time.Minute
+	downloadRetryBackoff  = 2 * time.Second
+	downloadMaxAttempts   = 2
+	checkRetryBackoff     = 2 * time.Second
+	checkMaxAttempts      = 3
 )
 
 var (
@@ -57,11 +60,15 @@ type Updater struct {
 
 	// For testing: override the GitHub API URL and download base URL
 	apiURL      string
+	listURL     string
 	downloadURL string
 
 	downloadTimeout      time.Duration
 	downloadRetryBackoff time.Duration
 	downloadMaxAttempts  int
+
+	checkRetryBackoff time.Duration
+	checkMaxAttempts  int
 }
 
 // NewUpdater creates a new Updater with the given version and logger.
@@ -82,16 +89,21 @@ func NewUpdater(version string, logger *slog.Logger) *Updater {
 		},
 		cacheTTL:             defaultCacheTTL,
 		apiURL:               githubReleasesURL,
+		listURL:              githubReleasesListURL,
 		downloadURL:          downloadBaseURL,
 		downloadTimeout:      downloadTimeout,
 		downloadRetryBackoff: downloadRetryBackoff,
 		downloadMaxAttempts:  downloadMaxAttempts,
+		checkRetryBackoff:    checkRetryBackoff,
+		checkMaxAttempts:     checkMaxAttempts,
 	}
 }
 
 // githubRelease is a minimal struct for parsing the GitHub API response.
 type githubRelease struct {
-	TagName string `json:"tag_name"`
+	TagName    string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
 }
 
 // Check queries GitHub for the latest release and compares with current version.
@@ -121,30 +133,13 @@ func (u *Updater) Check() (UpdateInfo, error) {
 	}
 	u.mu.Unlock()
 
-	// Fetch from GitHub
-	req, err := http.NewRequest("GET", u.apiURL, nil)
+	// Fetch from GitHub (with retry on transient 5xx and a list-endpoint fallback)
+	tagName, err := u.fetchLatestTag()
 	if err != nil {
-		return info, fmt.Errorf("update.Check: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "onwatch/"+u.currentVersion)
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return info, fmt.Errorf("update.Check: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return info, fmt.Errorf("update.Check: GitHub API returned %d", resp.StatusCode)
+		return info, err
 	}
 
-	var release githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return info, fmt.Errorf("update.Check: %w", err)
-	}
-
-	latest := strings.TrimPrefix(release.TagName, "v")
+	latest := strings.TrimPrefix(tagName, "v")
 
 	// Update cache
 	u.mu.Lock()
@@ -164,6 +159,96 @@ func (u *Updater) Check() (UpdateInfo, error) {
 		"available", info.Available)
 
 	return info, nil
+}
+
+// fetchLatestTag resolves the latest release tag. It first queries the
+// dedicated releases/latest endpoint, retrying on transient 5xx/network
+// failures. GitHub's releases/latest endpoint is comparatively expensive and
+// intermittently returns 504 (which its edge then caches for ~60s), so on a
+// persistent transient failure we fall back to the cheaper releases list
+// endpoint and pick the newest published (non-draft, non-prerelease) entry.
+func (u *Updater) fetchLatestTag() (string, error) {
+	tag, retryable, err := u.fetchTagFromLatest()
+	if err == nil {
+		return tag, nil
+	}
+	if !retryable {
+		// 4xx or a malformed response - the list endpoint won't help.
+		return "", err
+	}
+
+	u.logger.Warn("releases/latest unavailable, falling back to releases list", "error", err)
+	tag, listErr := u.fetchTagFromList()
+	if listErr == nil {
+		return tag, nil
+	}
+	return "", fmt.Errorf("%w (releases list fallback also failed: %v)", err, listErr)
+}
+
+// fetchTagFromLatest queries releases/latest, retrying on transient failures.
+// The returned bool reports whether the final error (if any) was transient.
+func (u *Updater) fetchTagFromLatest() (tag string, retryable bool, err error) {
+	attempts := u.checkMaxAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			sleepFn(u.checkRetryBackoff)
+		}
+		var rel githubRelease
+		retryable, err = u.getJSON(u.apiURL, &rel)
+		if err == nil {
+			return rel.TagName, false, nil
+		}
+		if !retryable {
+			return "", false, err
+		}
+	}
+	return "", true, err
+}
+
+// fetchTagFromList queries the releases list endpoint and returns the tag of
+// the newest published release (releases are returned newest-first).
+func (u *Updater) fetchTagFromList() (string, error) {
+	var releases []githubRelease
+	if _, err := u.getJSON(u.listURL, &releases); err != nil {
+		return "", err
+	}
+	for _, rel := range releases {
+		if rel.Draft || rel.Prerelease || rel.TagName == "" {
+			continue
+		}
+		return rel.TagName, nil
+	}
+	return "", fmt.Errorf("update.Check: no published release found")
+}
+
+// getJSON performs a GET against the GitHub API and decodes the JSON body into
+// dst. The returned bool reports whether a failure is transient (5xx or a
+// network error) and therefore worth retrying.
+func (u *Updater) getJSON(url string, dst any) (retryable bool, err error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, fmt.Errorf("update.Check: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "onwatch/"+u.currentVersion)
+
+	resp, err := u.httpClient.Do(req)
+	if err != nil {
+		return true, fmt.Errorf("update.Check: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return resp.StatusCode >= 500, fmt.Errorf("update.Check: GitHub API returned %d", resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
+		return false, fmt.Errorf("update.Check: %w", err)
+	}
+	return false, nil
 }
 
 // Apply downloads the latest binary and replaces the current one.

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -610,11 +611,120 @@ func TestApply_DownloadAndReplace(t *testing.T) {
 
 func TestCheck_ServerUnreachable(t *testing.T) {
 	u := NewUpdater("2.2.0", slog.Default())
-	u.apiURL = "http://127.0.0.1:1" // nothing listening
+	u.apiURL = "http://127.0.0.1:1"  // nothing listening
+	u.listURL = "http://127.0.0.1:1" // fallback also unreachable
+	u.checkMaxAttempts = 1           // keep the test fast/offline
 
 	_, err := u.Check()
 	if err == nil {
 		t.Error("expected error when server is unreachable")
+	}
+}
+
+func TestCheck_RetriesOn504ThenSucceeds(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) <= 2 {
+			w.WriteHeader(http.StatusGatewayTimeout)
+			return
+		}
+		json.NewEncoder(w).Encode(githubRelease{TagName: "v3.0.0"})
+	}))
+	defer srv.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = srv.URL
+	u.checkMaxAttempts = 3
+	u.checkRetryBackoff = time.Millisecond
+
+	info, err := u.Check()
+	if err != nil {
+		t.Fatalf("expected retry to succeed, got error: %v", err)
+	}
+	if !info.Available || info.LatestVersion != "3.0.0" {
+		t.Errorf("got %+v, want available v3.0.0", info)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("expected 3 calls (2 retries then success), got %d", got)
+	}
+}
+
+func TestCheck_FallsBackToListOnPersistent504(t *testing.T) {
+	latest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+	}))
+	defer latest.Close()
+
+	list := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode([]githubRelease{
+			{TagName: "v9.9.9-rc1", Prerelease: true},
+			{TagName: "v3.1.0-draft", Draft: true},
+			{TagName: "v3.0.0"},
+			{TagName: "v2.0.0"},
+		})
+	}))
+	defer list.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = latest.URL
+	u.listURL = list.URL
+	u.checkMaxAttempts = 2
+	u.checkRetryBackoff = time.Millisecond
+
+	info, err := u.Check()
+	if err != nil {
+		t.Fatalf("expected list fallback to succeed, got error: %v", err)
+	}
+	if info.LatestVersion != "3.0.0" {
+		t.Errorf("got latest=%q, want 3.0.0 (newest non-draft/non-prerelease)", info.LatestVersion)
+	}
+}
+
+func TestCheck_NoRetryOn4xx(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = srv.URL
+	u.listURL = srv.URL
+	u.checkMaxAttempts = 3
+	u.checkRetryBackoff = time.Millisecond
+
+	if _, err := u.Check(); err == nil {
+		t.Fatal("expected error on 403")
+	}
+	// 4xx is not retryable and must not trigger the list fallback.
+	if got := calls.Load(); got != 1 {
+		t.Errorf("expected exactly 1 call (no retry, no fallback on 4xx), got %d", got)
+	}
+}
+
+func TestCheck_BothEndpointsFail(t *testing.T) {
+	latest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+	}))
+	defer latest.Close()
+	list := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer list.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = latest.URL
+	u.listURL = list.URL
+	u.checkMaxAttempts = 2
+	u.checkRetryBackoff = time.Millisecond
+
+	_, err := u.Check()
+	if err == nil {
+		t.Fatal("expected error when both endpoints fail")
+	}
+	if !strings.Contains(err.Error(), "fallback") {
+		t.Errorf("expected error to mention the fallback attempt, got %v", err)
 	}
 }
 
