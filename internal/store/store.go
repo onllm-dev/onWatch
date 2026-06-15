@@ -665,6 +665,46 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_cursor_cycles_name_start ON cursor_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_cursor_cycles_name_active ON cursor_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
 
+		-- Grok-specific tables (credits utilization, identity from ~/.grok/auth.json, single-account v1)
+		CREATE TABLE IF NOT EXISTS grok_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			account_id INTEGER NOT NULL DEFAULT 1,
+			email TEXT,
+			team_id TEXT,
+			login_method TEXT,
+			raw_json TEXT NOT NULL DEFAULT '',
+			quota_count INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS grok_quota_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			quota_name TEXT NOT NULL,
+			utilization REAL NOT NULL DEFAULT 0,
+			resets_at TEXT,
+			status TEXT NOT NULL DEFAULT '',
+			FOREIGN KEY (snapshot_id) REFERENCES grok_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS grok_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			account_id INTEGER NOT NULL DEFAULT 1,
+			quota_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			resets_at TEXT,
+			peak_utilization REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		-- Grok indexes
+		CREATE INDEX IF NOT EXISTS idx_grok_snapshots_captured ON grok_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_grok_quota_values_snapshot ON grok_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_grok_cycles_name_start ON grok_reset_cycles(quota_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_grok_cycles_name_active ON grok_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
+		CREATE INDEX IF NOT EXISTS idx_grok_snapshots_account ON grok_snapshots(account_id, captured_at);
+
 		-- API integrations telemetry ingestion tables
 		CREATE TABLE IF NOT EXISTS api_integration_usage_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -68,6 +68,11 @@ type Config struct {
 	CursorToken     string // CURSOR_TOKEN or auto-detected
 	CursorAutoToken bool   // true if token was auto-detected
 
+	// Grok provider configuration (auto-detected from ~/.grok/auth.json or $GROK_HOME/auth.json)
+	GrokToken     string // GROK_TOKEN or auto-detected bearer from auth.json
+	GrokAutoToken bool   // true if token was auto-detected from local grok auth
+	GrokEnabled   bool   // true if GROK_ENABLED=true or token present (unless explicitly false)
+
 	// Custom API Integrations telemetry ingestion
 	APIIntegrationsEnabled   bool          // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
 	APIIntegrationsDir       string        // ONWATCH_API_INTEGRATIONS_DIR (default: ~/.onwatch/api-integrations or /data/api-integrations)
@@ -204,6 +209,9 @@ var onwatchEnvKeys = []string{
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
 	"CURSOR_TOKEN",
+	"GROK_TOKEN",
+	"GROK_ENABLED",
+	"GROK_HOME",
 	"GEMINI_ENABLED",
 	"GEMINI_REFRESH_TOKEN",
 	"GEMINI_ACCESS_TOKEN",
@@ -332,6 +340,15 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// Cursor provider (auto-detected from Cursor Desktop SQLite or keychain)
 	cfg.CursorToken = strings.TrimSpace(os.Getenv("CURSOR_TOKEN"))
+
+	// Grok provider (primary via ~/.grok/auth.json or GROK_HOME; explicit token for Docker)
+	cfg.GrokToken = strings.TrimSpace(os.Getenv("GROK_TOKEN"))
+	if os.Getenv("GROK_ENABLED") == "false" {
+		cfg.GrokEnabled = false
+	} else if os.Getenv("GROK_ENABLED") == "true" || cfg.GrokToken != "" {
+		cfg.GrokEnabled = true
+	}
+	// File-based auto-detection (DetectGrokCredentials) happens later in main.go preflight
 
 	// Custom API Integrations telemetry ingestion
 	cfg.APIIntegrationsDir = strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_DIR"))
@@ -557,6 +574,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.CursorToken != "" {
 		providers = append(providers, "cursor")
 	}
+	if c.GrokToken != "" || c.GrokEnabled {
+		providers = append(providers, "grok")
+	}
 	return providers
 }
 
@@ -583,6 +603,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.GeminiEnabled
 	case "cursor":
 		return c.CursorToken != ""
+	case "grok":
+		return c.GrokToken != "" || c.GrokEnabled
 	}
 	return false
 }
@@ -618,6 +640,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.CursorToken != "" {
+		count++
+	}
+	if c.GrokToken != "" || c.GrokEnabled {
 		count++
 	}
 	return count > 1
@@ -668,6 +693,16 @@ func (c *Config) String() string {
 	fmt.Fprintf(&sb, "  CursorToken: %s,\n", cursorDisplay)
 	if c.CursorAutoToken {
 		fmt.Fprintf(&sb, "  CursorAutoToken: true,\n")
+	}
+
+	// Redact Grok token
+	grokDisplay := redactAPIKey(c.GrokToken, "")
+	fmt.Fprintf(&sb, "  GrokToken: %s,\n", grokDisplay)
+	if c.GrokAutoToken {
+		fmt.Fprintf(&sb, "  GrokAutoToken: true,\n")
+	}
+	if c.GrokEnabled {
+		fmt.Fprintf(&sb, "  GrokEnabled: true,\n")
 	}
 
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)

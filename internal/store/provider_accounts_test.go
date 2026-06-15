@@ -7,6 +7,63 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
+func TestCreateOrRestoreProviderAccount(t *testing.T) {
+	t.Parallel()
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	// An existing "default" account must NOT be renamed when adding a distinct
+	// account - the add must be additive (regression: add silently renamed default).
+	def, err := s.GetOrCreateProviderAccount("minimax", "default")
+	if err != nil {
+		t.Fatalf("seed default: %v", err)
+	}
+	work, err := s.CreateOrRestoreProviderAccount("minimax", "work")
+	if err != nil {
+		t.Fatalf("CreateOrRestoreProviderAccount(work): %v", err)
+	}
+	if work.ID == def.ID {
+		t.Fatalf("add reused default account row (id=%d); want a new distinct account", def.ID)
+	}
+	active, err := s.QueryActiveProviderAccounts("minimax")
+	if err != nil {
+		t.Fatalf("QueryActiveProviderAccounts: %v", err)
+	}
+	if len(active) != 2 {
+		t.Fatalf("active accounts = %d, want 2 (default + work)", len(active))
+	}
+
+	// Re-adding the same name restores a soft-deleted account (same row).
+	if err := s.MarkProviderAccountDeletedByID(work.ID); err != nil {
+		t.Fatalf("delete work: %v", err)
+	}
+	restored, err := s.CreateOrRestoreProviderAccount("minimax", "work")
+	if err != nil {
+		t.Fatalf("CreateOrRestoreProviderAccount(work restore): %v", err)
+	}
+	if restored.ID != work.ID {
+		t.Fatalf("restore created new row (id=%d); want reuse of id=%d", restored.ID, work.ID)
+	}
+	if restored.DeletedAt != nil {
+		t.Fatalf("restored account still marked deleted")
+	}
+
+	// Restore-by-id clears the deleted flag too.
+	if err := s.MarkProviderAccountDeletedByID(work.ID); err != nil {
+		t.Fatalf("delete work again: %v", err)
+	}
+	if err := s.UndeleteProviderAccountByID(work.ID); err != nil {
+		t.Fatalf("UndeleteProviderAccountByID: %v", err)
+	}
+	got, err := s.GetProviderAccountByID(work.ID)
+	if err != nil || got == nil || got.DeletedAt != nil {
+		t.Fatalf("after UndeleteProviderAccountByID: acc=%+v err=%v", got, err)
+	}
+}
+
 func TestProviderAccountsLifecycleAndCodexAccountQueries(t *testing.T) {
 	t.Parallel()
 	s, err := New(":memory:")

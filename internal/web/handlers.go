@@ -92,6 +92,7 @@ type Handler struct {
 	geminiTracker      *tracker.GeminiTracker
 	openrouterTracker  *tracker.OpenRouterTracker
 	cursorTracker      *tracker.CursorTracker
+	grokTracker        *tracker.GrokTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -763,6 +764,11 @@ func (h *Handler) SetCursorTracker(t *tracker.CursorTracker) {
 	h.cursorTracker = t
 }
 
+// SetGrokTracker sets the Grok tracker for usage summary enrichment.
+func (h *Handler) SetGrokTracker(t *tracker.GrokTracker) {
+	h.grokTracker = t
+}
+
 // SetAgentManager sets provider agent lifecycle controller.
 func (h *Handler) SetAgentManager(m ProviderAgentController) {
 	h.agentManager = m
@@ -1248,6 +1254,15 @@ func (h *Handler) tryAutoDetect(provider string) bool {
 			h.config.GeminiAutoToken = true
 			return true
 		}
+	case "grok":
+		if creds := api.DetectGrokCredentials(h.logger); creds != nil && strings.TrimSpace(creds.AccessToken) != "" {
+			if h.config.GrokToken == "" {
+				h.config.GrokToken = strings.TrimSpace(creds.AccessToken)
+				h.config.GrokAutoToken = true
+			}
+			h.config.GrokEnabled = true
+			return true
+		}
 	}
 	return false
 }
@@ -1294,6 +1309,9 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.OpenRouterAPIKey = src.OpenRouterAPIKey
 	dst.GeminiEnabled = src.GeminiEnabled
 	dst.GeminiAutoToken = src.GeminiAutoToken
+	dst.GrokToken = src.GrokToken
+	dst.GrokAutoToken = src.GrokAutoToken
+	dst.GrokEnabled = src.GrokEnabled
 	dst.ZaiRegion = src.ZaiRegion
 	dst.MiniMaxRegion = src.MiniMaxRegion
 }
@@ -1791,6 +1809,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentGemini(w, r)
 	case "cursor":
 		h.currentCursor(w, r)
+	case "grok":
+		h.currentGrok(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1800,6 +1820,357 @@ func (h *Handler) currentCursor(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := h.buildCursorCurrent()
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *Handler) currentGrok(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildGrokCurrent())
+}
+
+// latestGrokSnapshot returns the most recent Grok snapshot that actually carries
+// quota values. Some polls store an empty snapshot (transient API response), so
+// falling back keeps the card/insights populated instead of flickering empty.
+func (h *Handler) latestGrokSnapshot() *api.GrokSnapshot {
+	if h.store == nil {
+		return nil
+	}
+	latest, err := h.store.QueryLatestGrok(store.DefaultGrokAccountID)
+	if err == nil && latest != nil && len(latest.Quotas) > 0 {
+		return latest
+	}
+	now := time.Now().UTC()
+	if snaps, rerr := h.store.QueryGrokRange(store.DefaultGrokAccountID, now.Add(-7*24*time.Hour), now); rerr == nil {
+		for i := len(snaps) - 1; i >= 0; i-- {
+			if len(snaps[i].Quotas) > 0 {
+				return snaps[i]
+			}
+		}
+	}
+	return latest
+}
+
+// buildGrokCurrent builds the response for the Grok provider using the dedicated store
+// and tracker. Returns a structure with "quotas" array (for the custom Grok card renderer)
+// plus identity info from the auth.json snapshot.
+func (h *Handler) buildGrokCurrent() map[string]interface{} {
+	now := time.Now().UTC()
+	response := map[string]interface{}{
+		"provider":   "grok",
+		"capturedAt": now.Format(time.RFC3339),
+		"quotas":     []interface{}{},
+	}
+
+	if h.store == nil {
+		return response
+	}
+
+	latest := h.latestGrokSnapshot()
+	if latest == nil {
+		// No data yet (agent may not have run, or first poll pending). Return empty quotas but identity if we can detect.
+		if creds := api.DetectGrokCredentials(h.logger); creds != nil {
+			response["email"] = creds.Email
+			response["team_id"] = creds.TeamID
+			response["login_method"] = creds.LoginMethod()
+		}
+		return response
+	}
+
+	// Build quotas array matching what renderGrokQuotaCards expects.
+	// Also provide displayName/label so menubar normalizeQuotas shows nice "Credits".
+	quotas := make([]map[string]interface{}, 0, len(latest.Quotas))
+	for _, q := range latest.Quotas {
+		display := q.Name
+		if q.Name == "credits" {
+			display = "Credits"
+		}
+		qm := map[string]interface{}{
+			"name":        q.Name,
+			"displayName": display,
+			"label":       display,
+			"utilization": q.Utilization,
+			"status":      q.Status,
+		}
+		if q.ResetsAt != nil {
+			qm["resets_at"] = q.ResetsAt.Format(time.RFC3339)
+		}
+		quotas = append(quotas, qm)
+	}
+	response["quotas"] = quotas
+
+	// Carry identity for potential future UI use (displayed in settings or menubar perhaps).
+	response["email"] = latest.Email
+	response["team_id"] = latest.TeamID
+	response["login_method"] = latest.LoginMethod
+
+	// If tracker available, we could enrich with rate/projected, but the custom renderer
+	// currently focuses on the quota cards. The summary is available for insights.
+	if h.grokTracker != nil {
+		// Optionally attach a top-level summary for the primary quota.
+		if len(latest.Quotas) > 0 {
+			primary := latest.Quotas[0]
+			sum := h.grokTracker.GetGrokSummary(store.DefaultGrokAccountID, primary.Name, latest)
+			if sum != nil {
+				response["summary"] = map[string]interface{}{
+					"current_util":    sum.CurrentUtil,
+					"resets_at":       nil,
+					"current_rate":    sum.CurrentRate,
+					"projected_util":  sum.ProjectedUtil,
+					"completed_cycles": sum.CompletedCycles,
+				}
+				if sum.ResetsAt != nil {
+					(response["summary"].(map[string]interface{}))["resets_at"] = sum.ResetsAt.Format(time.RFC3339)
+				}
+			}
+		}
+	}
+
+	return response
+}
+
+// historyGrok serves /api/history?provider=grok . Returns a flat array of points
+// keyed by quota name (e.g. {capturedAt, credits: <utilization%>}) for the chart.
+func (h *Handler) historyGrok(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	duration, err := parseTimeRange(r.URL.Query().Get("range"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	snaps, err := h.store.QueryGrokRange(store.DefaultGrokAccountID, now.Add(-duration), now)
+	if err != nil {
+		h.logger.Error("failed to query grok range for history", "error", err)
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+	// Drop snapshots without quota values - some grok polls store an empty
+	// snapshot, and plotting those as 0% produces a false sawtooth on the chart.
+	withQuotas := make([]*api.GrokSnapshot, 0, len(snaps))
+	for _, s := range snaps {
+		if len(s.Quotas) > 0 {
+			withQuotas = append(withQuotas, s)
+		}
+	}
+
+	step := downsampleStep(len(withQuotas), maxChartPoints)
+	last := len(withQuotas) - 1
+	out := make([]map[string]interface{}, 0, min(len(withQuotas), maxChartPoints))
+	for i, s := range withQuotas {
+		if step > 1 && i != 0 && i != last && i%step != 0 {
+			continue
+		}
+		entry := map[string]interface{}{"capturedAt": s.CapturedAt.Format(time.RFC3339)}
+		for _, q := range s.Quotas {
+			entry[q.Name] = q.Utilization
+		}
+		out = append(out, entry)
+	}
+	respondJSON(w, http.StatusOK, out)
+}
+
+// loggingHistoryGrok serves /api/logging-history?provider=grok - per-poll rows
+// with the credits utilization for the Logging History table.
+func (h *Handler) loggingHistoryGrok(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"provider": "grok", "quotaNames": []string{}, "logs": []interface{}{}})
+		return
+	}
+	start, end, limit := h.loggingHistoryRangeAndLimit(r)
+	snaps, err := h.store.QueryGrokRange(store.DefaultGrokAccountID, start, end, limit)
+	if err != nil {
+		h.logger.Error("failed to query grok logging history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query history")
+		return
+	}
+
+	quotaNames := []string{"credits"}
+	// Only include snapshots that actually carry the credits value (some polls
+	// store an empty snapshot); the table reads crossQuotas via the shared helper.
+	capturedAt := make([]time.Time, 0, len(snaps))
+	ids := make([]int64, 0, len(snaps))
+	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snaps))
+	for _, s := range snaps {
+		var credits *api.GrokQuota
+		for i := range s.Quotas {
+			if s.Quotas[i].Name == "credits" {
+				credits = &s.Quotas[i]
+				break
+			}
+		}
+		if credits == nil {
+			continue
+		}
+		capturedAt = append(capturedAt, s.CapturedAt)
+		ids = append(ids, s.ID)
+		series = append(series, map[string]loggingHistoryCrossQuota{
+			"credits": {
+				Name:     "credits",
+				Value:    credits.Utilization,
+				Limit:    100,
+				Percent:  credits.Utilization,
+				HasValue: true,
+				HasLimit: true,
+			},
+		})
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"provider":   "grok",
+		"quotaNames": quotaNames,
+		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
+	})
+}
+
+// grokCycleToMap renders a reset cycle. The tracker only persists peak/delta when
+// a cycle closes, so for the active (open) cycle we fold in the live utilization
+// so the table shows the current peak instead of a stale value.
+func grokCycleToMap(c *store.GrokResetCycle, liveUtil float64) map[string]interface{} {
+	peak := c.PeakUtilization
+	delta := c.TotalDelta
+	if c.CycleEnd == nil && liveUtil > peak {
+		peak = liveUtil
+	}
+	m := map[string]interface{}{
+		"id":           c.ID,
+		"quotaType":    c.QuotaName,
+		"cycleStart":   c.CycleStart.Format(time.RFC3339),
+		"cycleEnd":     nil,
+		"peakRequests": peak,
+		"totalDelta":   delta,
+		"crossQuotas": []map[string]interface{}{{
+			"name":    c.QuotaName,
+			"value":   peak,
+			"limit":   100.0,
+			"percent": peak,
+			"delta":   delta,
+		}},
+	}
+	if c.CycleEnd != nil {
+		m["cycleEnd"] = c.CycleEnd.Format(time.RFC3339)
+	}
+	return m
+}
+
+// cycleOverviewGrok serves /api/cycle-overview?provider=grok .
+func (h *Handler) cycleOverviewGrok(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}, "provider": "grok"})
+		return
+	}
+	quotaType := "credits"
+	// Current utilization, used to keep the active cycle's peak up to date.
+	liveUtil := 0.0
+	if latest := h.latestGrokSnapshot(); latest != nil {
+		for _, q := range latest.Quotas {
+			if q.Name == quotaType {
+				liveUtil = q.Utilization
+				break
+			}
+		}
+	}
+	cycles := make([]map[string]interface{}, 0)
+	// QueryGrokCyclesForQuota already includes the active (open) cycle, so we don't
+	// query the active cycle separately to avoid duplicate rows.
+	if history, err := h.store.QueryGrokCyclesForQuota(store.DefaultGrokAccountID, quotaType, 50); err == nil {
+		for _, c := range history {
+			cycles = append(cycles, grokCycleToMap(c, liveUtil))
+		}
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"groupBy":    quotaType,
+		"provider":   "grok",
+		"quotaNames": []string{"credits"},
+		"cycles":     cycles,
+	})
+}
+
+// insightsGrok serves /api/insights?provider=grok .
+func (h *Handler) insightsGrok(w http.ResponseWriter, _ *http.Request, _ time.Duration) {
+	respondJSON(w, http.StatusOK, h.buildGrokInsights(h.getHiddenInsightKeys()))
+}
+
+// buildGrokInsights builds stats + forecast insights for the single Grok credits quota.
+func (h *Handler) buildGrokInsights(hidden map[string]bool) insightsResponse {
+	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
+	if h.store == nil {
+		return resp
+	}
+	latest := h.latestGrokSnapshot()
+	if latest == nil || len(latest.Quotas) == 0 {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "info",
+			Title: "Getting Started",
+			Desc:  "Keep onWatch running to collect Grok usage data. Insights appear after a few snapshots.",
+		})
+		return resp
+	}
+
+	primary := latest.Quotas[0]
+	var sum *tracker.GrokSummary
+	if h.grokTracker != nil {
+		sum = h.grokTracker.GetGrokSummary(store.DefaultGrokAccountID, primary.Name, latest)
+	}
+
+	if !hidden["utilization"] {
+		resp.Stats = append(resp.Stats, insightStat{
+			Label: "Credits Used", Value: fmt.Sprintf("%.1f%%", primary.Utilization), Sublabel: "current cycle",
+		})
+	}
+	if sum != nil {
+		if !hidden["rate"] && sum.CurrentRate > 0 {
+			resp.Stats = append(resp.Stats, insightStat{
+				Label: "Burn Rate", Value: fmt.Sprintf("%.2f%%/poll", sum.CurrentRate), Sublabel: "recent",
+			})
+		}
+		if !hidden["completed_cycles"] && sum.CompletedCycles > 0 {
+			resp.Stats = append(resp.Stats, insightStat{
+				Label: "Cycles Tracked", Value: fmt.Sprintf("%d", sum.CompletedCycles), Sublabel: fmt.Sprintf("avg %.1f%%", sum.AvgPerCycle),
+			})
+		}
+		// The tracker only persists peak on cycle close, so fold in the live value.
+		peak := sum.PeakCycle
+		if primary.Utilization > peak {
+			peak = primary.Utilization
+		}
+		if !hidden["peak"] && peak > 0 {
+			resp.Stats = append(resp.Stats, insightStat{
+				Label: "Peak Cycle", Value: fmt.Sprintf("%.1f%%", peak), Sublabel: "highest usage",
+			})
+		}
+	}
+
+	// Forecast / threshold insights
+	if primary.Utilization >= 90 && !hidden["high_usage"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "warning", Severity: "high",
+			Title: "High Credit Usage",
+			Desc:  fmt.Sprintf("Grok credits are at %.1f%% for the current cycle.", primary.Utilization),
+		})
+	} else if primary.Utilization >= 75 && !hidden["moderate_usage"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "medium",
+			Title: "Moderate Credit Usage",
+			Desc:  fmt.Sprintf("Grok credits are at %.1f%% for the current cycle.", primary.Utilization),
+		})
+	}
+	if sum != nil && sum.ProjectedUtil > 100 && sum.TimeUntilReset > 0 && !hidden["projected"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "warning", Severity: "high",
+			Title: "Projected to Exhaust",
+			Desc:  fmt.Sprintf("At the current rate, Grok credits may reach 100%% before the reset in %s.", formatDuration(sum.TimeUntilReset)),
+		})
+	}
+	if primary.ResetsAt != nil && !hidden["resets_at"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "info",
+			Title: "Next Reset",
+			Desc:  fmt.Sprintf("The current Grok credit cycle resets at %s.", primary.ResetsAt.Format("Jan 2, 15:04 MST")),
+		})
+	}
+	return resp
 }
 
 // currentBoth returns combined quota status for all configured providers.
@@ -1868,6 +2239,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") {
 		response["cursor"] = h.buildCursorCurrent()
+	}
+	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") {
+		response["grok"] = h.buildGrokCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -2211,6 +2585,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyGemini(w, r)
 	case "cursor":
 		h.historyCursor(w, r)
+	case "grok":
+		h.historyGrok(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2525,6 +2901,32 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				cursorData = append(cursorData, entry)
 			}
 			response["cursor"] = cursorData
+		}
+	}
+
+	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") && h.store != nil {
+		snaps, err := h.store.QueryGrokRange(store.DefaultGrokAccountID, start, now)
+		if err == nil {
+			withQuotas := make([]*api.GrokSnapshot, 0, len(snaps))
+			for _, s := range snaps {
+				if len(s.Quotas) > 0 {
+					withQuotas = append(withQuotas, s)
+				}
+			}
+			step := downsampleStep(len(withQuotas), maxChartPoints)
+			last := len(withQuotas) - 1
+			grokData := make([]map[string]interface{}, 0, min(len(withQuotas), maxChartPoints))
+			for i, s := range withQuotas {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{"capturedAt": s.CapturedAt.Format(time.RFC3339)}
+				for _, q := range s.Quotas {
+					entry[q.Name] = q.Utilization
+				}
+				grokData = append(grokData, entry)
+			}
+			response["grok"] = grokData
 		}
 	}
 
@@ -3126,6 +3528,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesGemini(w, r)
 	case "cursor":
 		h.cyclesCursor(w, r)
+	case "grok":
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3445,6 +3849,9 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryGemini(w, r)
 	case "cursor":
 		h.summaryCursor(w, r)
+	case "grok":
+		// Grok summary can be derived from the current or tracker; return minimal for now
+		respondJSON(w, http.StatusOK, map[string]interface{}{"summaries": []interface{}{}})
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4241,6 +4648,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsGemini(w, r, rangeDur)
 	case "cursor":
 		h.insightsCursor(w, r, rangeDur)
+	case "grok":
+		h.insightsGrok(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4321,6 +4730,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") {
 		response["cursor"] = h.buildCursorInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") {
+		response["grok"] = h.buildGrokInsights(hidden)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -6658,6 +7070,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewGemini(w, r)
 	case "cursor":
 		h.cycleOverviewCursor(w, r)
+	case "grok":
+		h.cycleOverviewGrok(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -8375,7 +8789,7 @@ func (h *Handler) minimaxAccountCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	acc, err := h.store.GetOrCreateProviderAccount("minimax", req.Name)
+	acc, err := h.store.CreateOrRestoreProviderAccount("minimax", req.Name)
 	if err != nil {
 		h.logger.Error("failed to create MiniMax account", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to create account")
@@ -8422,9 +8836,10 @@ func (h *Handler) minimaxAccountUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name   *string `json:"name"`
-		APIKey *string `json:"api_key"`
-		Region *string `json:"region"`
+		Name    *string `json:"name"`
+		APIKey  *string `json:"api_key"`
+		Region  *string `json:"region"`
+		Restore *bool   `json:"restore"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
@@ -8439,6 +8854,15 @@ func (h *Handler) minimaxAccountUpdate(w http.ResponseWriter, r *http.Request) {
 	if err != nil || acc == nil || acc.Provider != "minimax" {
 		respondError(w, http.StatusNotFound, "account not found")
 		return
+	}
+
+	// Restore a soft-deleted account
+	if req.Restore != nil && *req.Restore {
+		if err := h.store.UndeleteProviderAccountByID(id); err != nil {
+			h.logger.Error("failed to restore MiniMax account", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to restore account")
+			return
+		}
 	}
 
 	// Update name
@@ -10169,6 +10593,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryGemini(w, r)
 	case "cursor":
 		h.loggingHistoryCursor(w, r)
+	case "grok":
+		h.loggingHistoryGrok(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}

@@ -570,6 +570,17 @@ func run() error {
 		}
 	}
 
+	// Grok provider auto-detect from ~/.grok/auth.json (or $GROK_HOME). Explicit GROK_TOKEN wins in config.
+	if os.Getenv("GROK_ENABLED") != "false" {
+		if creds := api.DetectGrokCredentials(preflightLogger); creds != nil && creds.AccessToken != "" {
+			if cfg.GrokToken == "" {
+				cfg.GrokToken = creds.AccessToken
+				cfg.GrokAutoToken = true
+			}
+			cfg.GrokEnabled = true
+		}
+	}
+
 	// Daemonize: if not in debug mode, not already the daemon child, and NOT in Docker, fork
 	// Docker containers should always run in foreground mode (logs to stdout)
 	if !cfg.DebugMode && !isDaemonChild && !cfg.IsDockerEnvironment() {
@@ -838,6 +849,12 @@ func run() error {
 		logger.Info("Cursor API client configured")
 	}
 
+	var grokClient *api.GrokClient
+	if cfg.HasProvider("grok") {
+		grokClient = api.NewGrokClient(cfg.GrokToken, logger)
+		logger.Info("Grok API client configured")
+	}
+
 	// Create components
 	tr := tracker.New(db, logger)
 
@@ -1004,6 +1021,11 @@ func run() error {
 		cursorTr = tracker.NewCursorTracker(db, logger)
 	}
 
+	var grokTr *tracker.GrokTracker
+	if cfg.HasProvider("grok") {
+		grokTr = tracker.NewGrokTracker(db, logger)
+	}
+
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
 		antigravitySm := agent.NewSessionManager(db, "antigravity", idleTimeout, logger)
@@ -1062,6 +1084,12 @@ func run() error {
 		})
 	}
 
+	var grokAg *agent.GrokAgent
+	if grokClient != nil {
+		grokSm := agent.NewSessionManager(db, "grok", idleTimeout, logger)
+		grokAg = agent.NewGrokAgent(grokClient, db, grokTr, cfg.PollInterval, logger, grokSm)
+	}
+
 	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
 	if cfg.APIIntegrationsEnabled {
 		apiIntegrationsAg = agent.NewAPIIntegrationsIngestAgent(db, cfg.APIIntegrationsDir, cfg.APIIntegrationsRetention, logger)
@@ -1105,6 +1133,9 @@ func run() error {
 	}
 	if cursorAg != nil {
 		cursorAg.SetNotifier(notifier)
+	}
+	if grokAg != nil {
+		grokAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -1210,6 +1241,9 @@ func run() error {
 	if cursorAg != nil {
 		cursorAg.SetPollingCheck(func() bool { return isPollingEnabled("cursor") })
 	}
+	if grokAg != nil {
+		grokAg.SetPollingCheck(func() bool { return isPollingEnabled("grok") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -1260,6 +1294,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "cursor", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	if grokTr != nil {
+		grokTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "grok", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -1287,6 +1326,9 @@ func run() error {
 	}
 	if cursorTr != nil {
 		handler.SetCursorTracker(cursorTr)
+	}
+	if grokTr != nil {
+		handler.SetGrokTracker(grokTr)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -1319,6 +1361,9 @@ func run() error {
 	if cursorAg != nil {
 		agentMgr.RegisterFactory("cursor", func() (agent.AgentRunner, error) { return cursorAg, nil })
 	}
+	if grokAg != nil {
+		agentMgr.RegisterFactory("grok", func() (agent.AgentRunner, error) { return grokAg, nil })
+	}
 
 	if apiIntegrationsAg != nil {
 		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
@@ -1345,7 +1390,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}

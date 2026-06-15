@@ -816,6 +816,56 @@ func (s *Store) UndeleteProviderAccount(provider, name string) error {
 	return nil
 }
 
+// UndeleteProviderAccountByID clears the deleted_at flag for a provider account by ID.
+func (s *Store) UndeleteProviderAccountByID(id int64) error {
+	_, err := s.db.Exec(`UPDATE provider_accounts SET deleted_at = NULL WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("failed to undelete provider account: %w", err)
+	}
+	return nil
+}
+
+// CreateOrRestoreProviderAccount creates a new provider account, or restores a
+// soft-deleted one with the same name. Unlike GetOrCreateProviderAccount it never
+// renames an unrelated "default" account, so it always yields a distinct account
+// for the given name - the correct semantics for an explicit "add account" action.
+func (s *Store) CreateOrRestoreProviderAccount(provider, name string) (*ProviderAccount, error) {
+	var acc ProviderAccount
+	var createdAt string
+	var deletedAt sql.NullString
+	err := s.db.QueryRow(
+		`SELECT id, provider, name, created_at, COALESCE(metadata, ''), deleted_at FROM provider_accounts WHERE provider = ? AND name = ?`,
+		provider, name,
+	).Scan(&acc.ID, &acc.Provider, &acc.Name, &createdAt, &acc.Metadata, &deletedAt)
+
+	if err == nil {
+		acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		if deletedAt.Valid && deletedAt.String != "" {
+			if undelErr := s.UndeleteProviderAccountByID(acc.ID); undelErr != nil {
+				return nil, undelErr
+			}
+			acc.DeletedAt = nil
+		}
+		return &acc, nil
+	}
+	if err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to query provider account: %w", err)
+	}
+
+	result, err := s.db.Exec(
+		`INSERT INTO provider_accounts (provider, name, created_at) VALUES (?, ?, ?)`,
+		provider, name, time.Now().UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create provider account: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account ID: %w", err)
+	}
+	return &ProviderAccount{ID: id, Provider: provider, Name: name, CreatedAt: time.Now().UTC()}, nil
+}
+
 // GetOrCreateProviderAccount gets an existing account by name or creates a new one.
 // If the account doesn't exist and "default" is the only account for this provider,
 // it renames "default" to the new name (preserving historical data).

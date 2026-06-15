@@ -327,6 +327,15 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 			}
 		}
 	}
+	if h.config != nil && h.config.HasProvider("grok") && h.providerDashboardVisible("grok", visibility) {
+		payload := h.buildGrokCurrent()
+		if card := normalizeProviderCard("grok", "Grok", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			providers = append(providers, *card)
+			if captured := parseCapturedAt(payload); captured.After(latest) {
+				latest = captured
+			}
+		}
+	}
 	if h.config != nil && h.config.HasProvider("cursor") && h.providerDashboardVisible("cursor", visibility) {
 		payload := h.buildCursorCurrent()
 		if card := normalizeProviderCard("cursor", "Cursor", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {

@@ -68,6 +68,8 @@ function getCurrentProvider() {
   if (geminiGrid) return 'gemini';
   const cursorGrid = document.getElementById('quota-grid-cursor');
   if (cursorGrid) return 'cursor';
+  const grokGrid = document.getElementById('quota-grid-grok');
+  if (grokGrid) return 'grok';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -84,8 +86,17 @@ function providerParam() {
   return param;
 }
 
+// True when a multi-account provider tab is showing the aggregate "All accounts"
+// overview rather than a single selected account. Per-account detail sections
+// (sessions/cycles/overview/insights) do not apply in this mode.
+function isAccountsOverviewMode(provider = getCurrentProvider()) {
+  return (provider === 'codex' && State.codexAccount === 'all') ||
+         (provider === 'minimax' && State.minimaxAccount === 'all');
+}
+
 function shouldShowSessionsTable(provider = getCurrentProvider()) {
-  return provider !== 'both' && provider !== 'cursor' && provider !== 'api-integrations';
+  return provider !== 'both' && provider !== 'cursor' && provider !== 'api-integrations' && !isAccountsOverviewMode(provider);
+  // grok (like synthetic/codex/etc) shows sessions
 }
 
 function shouldShowCyclesTable(provider = getCurrentProvider()) {
@@ -212,7 +223,9 @@ function saveHiddenQuotas() {
 function loadCodexAccount() {
   try {
     const stored = localStorage.getItem('onwatch-codex-account');
-    if (stored) {
+    if (stored === 'all') {
+      State.codexAccount = 'all';
+    } else if (stored) {
       const parsed = parseInt(stored, 10);
       State.codexAccount = isNaN(parsed) ? 1 : parsed;
     }
@@ -247,11 +260,31 @@ async function loadCodexProfiles() {
         // All profiles deleted - no tabs needed
         State.codexProfiles = [];
       }
+      applyDefaultCodexSelection();
       populateCodexProfileTabs();
       updateCodexProfileTabsVisibility();
     }
   } catch (e) {
     // silent - profiles endpoint may not exist on older versions
+  }
+}
+
+// Pick the default Codex selection on first load: honor a stored preference
+// ('all' or a specific account id); otherwise default to the aggregate "All
+// accounts" overview when more than one account exists.
+function applyDefaultCodexSelection() {
+  let stored = null;
+  try { stored = localStorage.getItem('onwatch-codex-account'); } catch (e) { stored = null; }
+  if (stored === 'all') { State.codexAccount = 'all'; return; }
+  const storedId = stored != null ? parseInt(stored, 10) : NaN;
+  if (!isNaN(storedId) && State.codexProfiles.find(p => p.id === storedId)) {
+    State.codexAccount = storedId;
+    return;
+  }
+  if (State.codexProfiles.length > 1) {
+    State.codexAccount = 'all';
+  } else if (State.codexProfiles.length === 1) {
+    State.codexAccount = State.codexProfiles[0].id;
   }
 }
 
@@ -268,6 +301,19 @@ function populateCodexProfileTabs() {
 
   menu.innerHTML = '';
 
+  // "All accounts" aggregate option always sits at the top for multi-account.
+  const allItem = document.createElement('li');
+  allItem.className = 'codex-profile-item' + (State.codexAccount === 'all' ? ' active' : '');
+  allItem.dataset.accountId = 'all';
+  allItem.textContent = 'All accounts';
+  allItem.setAttribute('role', 'option');
+  allItem.setAttribute('aria-selected', State.codexAccount === 'all' ? 'true' : 'false');
+  allItem.addEventListener('click', () => {
+    switchCodexProfile('all');
+    closeCodexProfileDropdown();
+  });
+  menu.appendChild(allItem);
+
   for (const profile of State.codexProfiles) {
     const li = document.createElement('li');
     li.className = 'codex-profile-item' + (profile.id === State.codexAccount ? ' active' : '');
@@ -282,8 +328,8 @@ function populateCodexProfileTabs() {
     menu.appendChild(li);
   }
 
-  // If current account not in list, reset to first profile
-  if (!State.codexProfiles.find(p => p.id === State.codexAccount)) {
+  // If current selection is neither 'all' nor a known profile, reset to first profile
+  if (State.codexAccount !== 'all' && !State.codexProfiles.find(p => p.id === State.codexAccount)) {
     State.codexAccount = State.codexProfiles[0].id;
     saveCodexAccount(State.codexAccount);
     updateProfileTabsActive();
@@ -305,13 +351,19 @@ function updateProfileTabsActive() {
   const menu = document.getElementById('codex-profile-menu');
   if (!menu) return;
 
-  const activeProfile = State.codexProfiles.find(p => p.id === State.codexAccount);
-  if (label && activeProfile) {
-    label.textContent = activeProfile.name;
+  if (label) {
+    if (State.codexAccount === 'all') {
+      label.textContent = 'All accounts';
+    } else {
+      const activeProfile = State.codexProfiles.find(p => p.id === State.codexAccount);
+      if (activeProfile) label.textContent = activeProfile.name;
+    }
   }
 
   menu.querySelectorAll('.codex-profile-item').forEach(item => {
-    const isActive = parseInt(item.dataset.accountId, 10) === State.codexAccount;
+    const isActive = item.dataset.accountId === 'all'
+      ? State.codexAccount === 'all'
+      : parseInt(item.dataset.accountId, 10) === State.codexAccount;
     item.classList.toggle('active', isActive);
     item.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
@@ -373,7 +425,8 @@ function initCodexProfileTabs() {
 }
 
 function codexAccountParam() {
-  return State.codexAccount ? `&account=${encodeURIComponent(State.codexAccount)}` : '';
+  if (!State.codexAccount || State.codexAccount === 'all') return '';
+  return `&account=${encodeURIComponent(State.codexAccount)}`;
 }
 
 // ── MiniMax Account Persistence (multi-account) ──
@@ -381,7 +434,9 @@ function codexAccountParam() {
 function loadMiniMaxAccount() {
   try {
     const stored = localStorage.getItem('onwatch-minimax-account');
-    if (stored) {
+    if (stored === 'all') {
+      State.minimaxAccount = 'all';
+    } else if (stored) {
       const parsed = parseInt(stored, 10);
       State.minimaxAccount = isNaN(parsed) ? null : parsed;
     }
@@ -407,11 +462,29 @@ async function loadMiniMaxAccounts() {
     if (data.accounts && data.accounts.length > 0) {
       const activeAccounts = data.accounts.filter(a => !a.deletedAt);
       State.minimaxAccounts = activeAccounts;
+      applyDefaultMiniMaxSelection();
       populateMiniMaxAccountTabs();
       updateMiniMaxAccountTabsVisibility();
     }
   } catch (e) {
     // silent
+  }
+}
+
+// Mirror of applyDefaultCodexSelection for MiniMax accounts.
+function applyDefaultMiniMaxSelection() {
+  let stored = null;
+  try { stored = localStorage.getItem('onwatch-minimax-account'); } catch (e) { stored = null; }
+  if (stored === 'all') { State.minimaxAccount = 'all'; return; }
+  const storedId = stored != null ? parseInt(stored, 10) : NaN;
+  if (!isNaN(storedId) && State.minimaxAccounts.find(a => a.id === storedId)) {
+    State.minimaxAccount = storedId;
+    return;
+  }
+  if (State.minimaxAccounts.length > 1) {
+    State.minimaxAccount = 'all';
+  } else if (State.minimaxAccounts.length === 1) {
+    State.minimaxAccount = State.minimaxAccounts[0].id;
   }
 }
 
@@ -427,6 +500,18 @@ function populateMiniMaxAccountTabs() {
 
   menu.innerHTML = '';
 
+  const allItem = document.createElement('li');
+  allItem.className = 'codex-profile-item' + (State.minimaxAccount === 'all' ? ' active' : '');
+  allItem.dataset.accountId = 'all';
+  allItem.textContent = 'All accounts';
+  allItem.setAttribute('role', 'option');
+  allItem.setAttribute('aria-selected', State.minimaxAccount === 'all' ? 'true' : 'false');
+  allItem.addEventListener('click', () => {
+    switchMiniMaxAccount('all');
+    closeMiniMaxAccountDropdown();
+  });
+  menu.appendChild(allItem);
+
   for (const account of State.minimaxAccounts) {
     const li = document.createElement('li');
     li.className = 'codex-profile-item' + (account.id === State.minimaxAccount ? ' active' : '');
@@ -441,7 +526,7 @@ function populateMiniMaxAccountTabs() {
     menu.appendChild(li);
   }
 
-  if (!State.minimaxAccounts.find(a => a.id === State.minimaxAccount)) {
+  if (State.minimaxAccount !== 'all' && !State.minimaxAccounts.find(a => a.id === State.minimaxAccount)) {
     State.minimaxAccount = State.minimaxAccounts[0].id;
     saveMiniMaxAccount(State.minimaxAccount);
     updateMiniMaxAccountTabsActive();
@@ -463,13 +548,19 @@ function updateMiniMaxAccountTabsActive() {
   const menu = document.getElementById('minimax-profile-menu');
   if (!menu) return;
 
-  const active = State.minimaxAccounts && State.minimaxAccounts.find(a => a.id === State.minimaxAccount);
-  if (label && active) {
-    label.textContent = active.name;
+  if (label) {
+    if (State.minimaxAccount === 'all') {
+      label.textContent = 'All accounts';
+    } else {
+      const active = State.minimaxAccounts && State.minimaxAccounts.find(a => a.id === State.minimaxAccount);
+      if (active) label.textContent = active.name;
+    }
   }
 
   menu.querySelectorAll('.codex-profile-item').forEach(item => {
-    const isActive = parseInt(item.dataset.accountId, 10) === State.minimaxAccount;
+    const isActive = item.dataset.accountId === 'all'
+      ? State.minimaxAccount === 'all'
+      : parseInt(item.dataset.accountId, 10) === State.minimaxAccount;
     item.classList.toggle('active', isActive);
     item.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
@@ -514,7 +605,8 @@ function initMiniMaxAccountTabs() {
 }
 
 function minimaxAccountParam() {
-  return State.minimaxAccount ? `&account=${encodeURIComponent(State.minimaxAccount)}` : '';
+  if (!State.minimaxAccount || State.minimaxAccount === 'all') return '';
+  return `&account=${encodeURIComponent(State.minimaxAccount)}`;
 }
 
 // ── Insight Visibility (DB-persisted) ──
@@ -1041,6 +1133,9 @@ const renewalCategories = {
     { label: 'Weekly', groupBy: 'weekly_all' }
   ],
   openrouter: [
+    { label: 'Credits', groupBy: 'credits' }
+  ],
+  grok: [
     { label: 'Credits', groupBy: 'credits' }
   ],
   gemini: [],
@@ -3379,11 +3474,110 @@ function startCountdowns() {
 
 // ── Data Fetching ──
 
+// Minimal Grok credits renderer (1 quota: "credits"). Supports dynamic label + standard card.
+function renderGrokQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  const list = (quotas && quotas.length) ? quotas : [{ name: 'credits', utilization: 0, status: 'healthy' }];
+  list.forEach((q, idx) => {
+    const pct = (q.utilization || 0);
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(pct);
+    const name = (q.name || 'credits');
+    const label = (name === 'credits') ? 'Credits' : (window.GrokDisplayName ? window.GrokDisplayName(name) : name);
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const cdSecs = resetsAt ? Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)) : 0;
+    const cdText = cdSecs > 0 ? formatDuration(cdSecs) : '--:--';
+    if (resetsAt) State.currentQuotas['grok-' + name] = { timeUntilResetSeconds: cdSecs };
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const card = document.createElement('article');
+    card.className = 'quota-card grok-card';
+    card.dataset.quota = name;
+    card.dataset.provider = 'grok';
+    card.style.animationDelay = (idx * 60) + 'ms';
+    card.innerHTML = `
+      <header class="card-header">
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 2a8 8 0 110 16 8 8 0 010-16zm-1 3v4H7v2h4v4h2v-4h4v-2h-4V7h-2z"/></svg>
+            ${label}
+          </h2>
+        </div>
+        <span class="countdown" id="countdown-grok-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ' style="display:none"'}>${cdText}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="percent-grok-${name}">${pctStr}%</span>
+        <span class="usage-fraction" id="fraction-grok-${name}">utilization</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="progress-grok-${name}" style="width:${pctStr}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="status-grok-${name}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="reset-grok-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ''}>${resetsAt ? formatResetTime(resetsAt) : ''}</span>
+      </footer>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function updateGrokQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  (quotas || []).forEach(q => {
+    const name = q.name || 'credits';
+    const pct = q.utilization || 0;
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(pct);
+    const pctEl = document.getElementById('percent-grok-' + name);
+    if (pctEl) pctEl.textContent = pctStr + '%';
+    const fill = document.getElementById('progress-grok-' + name);
+    if (fill) {
+      fill.style.width = pctStr + '%';
+      fill.dataset.status = status;
+    }
+    const bar = fill ? fill.parentElement : null;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(pct));
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const resetEl = document.getElementById('reset-grok-' + name);
+    if (resetEl) {
+      resetEl.textContent = resetsAt ? formatResetTime(resetsAt) : '';
+      if (resetsAt) resetEl.dataset.resetAt = resetsAt;
+    }
+    const statusEl = document.getElementById('status-grok-' + name);
+    if (statusEl) {
+      const cfg = statusConfig[status] || statusConfig.healthy;
+      statusEl.dataset.status = status;
+      statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${cfg.icon}"/></svg> ${cfg.label}`;
+    }
+    const cd = document.getElementById('countdown-grok-' + name);
+    if (cd && resetsAt) {
+      const secs = Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000));
+      State.currentQuotas['grok-' + name] = { timeUntilResetSeconds: secs };
+      cd.dataset.resetAt = resetsAt;
+      cd.style.display = '';
+      cd.textContent = secs > 0 ? formatDuration(secs) : '--:--';
+    }
+  });
+}
+
 async function fetchCurrent() {
   const requestProvider = getCurrentProvider();
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
   const requestSeq = (State.currentRequestSeq || 0) + 1;
   State.currentRequestSeq = requestSeq;
+
+  syncAccountsOverviewLayout();
+  if (isAccountsOverviewMode(requestProvider)) {
+    await fetchAccountsOverview(requestProvider, requestSeq);
+    return;
+  }
 
   try {
     if (requestProvider === 'api-integrations') {
@@ -3482,9 +3676,10 @@ async function fetchCurrent() {
       } else if (provider === 'minimax') {
         if (data.quotas) {
           const container = document.getElementById('quota-grid-minimax');
-          if (container && container.children.length !== data.quotas.length) {
-            renderMiniMaxQuotaCards(data.quotas, 'quota-grid-minimax');
-          } else if (container && container.children.length === 0) {
+          // Force a fresh render when leaving the all-accounts overview (the grid
+          // still holds overview cards, whose count can coincidentally match).
+          const hasOverviewCards = container && container.querySelector('.account-overview-card');
+          if (container && (hasOverviewCards || container.children.length !== data.quotas.length || container.children.length === 0)) {
             renderMiniMaxQuotaCards(data.quotas, 'quota-grid-minimax');
           } else {
             data.quotas.forEach(q => updateMiniMaxCard(q));
@@ -3509,6 +3704,15 @@ async function fetchCurrent() {
             renderOpenRouterCard(data.credits, 'quota-grid-openrouter');
           } else {
             updateOpenRouterCard(data.credits);
+          }
+        }
+      } else if (provider === 'grok') {
+        const container = document.getElementById('quota-grid-grok');
+        if (container) {
+          if (container.children.length === 0) {
+            renderGrokQuotaCards(data.quotas || [], 'quota-grid-grok');
+          } else {
+            updateGrokQuotaCards(data.quotas || [], 'quota-grid-grok');
           }
         }
       } else if (provider === 'zai') {
@@ -3592,6 +3796,298 @@ async function fetchCodexUsage(options = {}) {
   } catch (err) {
     // codex usage fetch error - non-critical
   }
+}
+
+
+// ── Multi-account "All accounts" overview (Codex / MiniMax) ──
+
+// Toggle the body class that hides per-account detail sections (insights,
+// sessions, cycles, overview) while the aggregate overview is showing.
+function syncAccountsOverviewLayout() {
+  const on = isAccountsOverviewMode();
+  document.body.classList.toggle('accounts-overview-mode', on);
+  if (!on) {
+    const toggle = document.getElementById('account-window-toggle');
+    if (toggle) toggle.remove();
+  }
+}
+
+// MiniMax quota labels mirror Anthropic's naming: "5h Limit" / "Weekly Limit".
+// Multiple non-general model pools keep the model name to stay unambiguous.
+function minimaxWindowLabel(q) {
+  const isWeekly = q.isWeekly || /^(wkly|weekly)_/.test(q.name || '');
+  const base = isWeekly ? 'Weekly Limit' : '5h Limit';
+  const model = String(q.name || '').replace(/^(wkly|weekly)_/, '');
+  return (model && model !== 'general') ? `${base} (${model})` : base;
+}
+
+// Normalize an account's quotas into compact {label, percent, status, resetAt}
+// rows, keeping only the windows the account actually reports.
+function accountOverviewQuotas(provider, account) {
+  if (provider === 'minimax') {
+    return (account.quotas || []).map(q => ({
+      label: minimaxWindowLabel(q),
+      percent: typeof q.usagePercent === 'number' ? q.usagePercent : 0,
+      status: q.status || 'healthy',
+      resetAt: q.resetAt || null,
+    }));
+  }
+  const visible = filterCodexQuotasForPlan(account.quotas || [], account.planType);
+  return visible.map(q => ({
+    label: q.displayName || codexDisplayNames[q.name] || q.name,
+    percent: typeof q.cardPercent === 'number' ? q.cardPercent : (q.utilization || 0),
+    status: q.status || 'healthy',
+    resetAt: q.resetsAt || null,
+  }));
+}
+
+// Build the HTML for a single compact account summary card.
+function accountOverviewCardHTML(provider, account, idx) {
+  const accountId = account.accountId || account.id || idx + 1;
+  const accountName = account.accountName || account.name || `Account ${accountId}`;
+  const badge = provider === 'codex' && account.planType ? formatCodexPlan(account.planType) : '';
+  const rows = accountOverviewQuotas(provider, account);
+  const quotaHTML = rows.length === 0
+    ? '<p class="empty-state">No quota data yet.</p>'
+    : rows.map(r => {
+        const pct = Math.max(0, Math.min(100, r.percent)).toFixed(1);
+        const reset = r.resetAt ? formatResetTime(r.resetAt) : '';
+        return `<div class="account-overview-quota">
+          <div class="aoq-top">
+            <span class="aoq-label">${escapeHTML(r.label)}</span>
+            <span class="aoq-pct">${pct}%</span>
+          </div>
+          <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(r.percent)}" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-fill" style="width: ${pct}%" data-status="${r.status}"></div>
+          </div>
+          ${reset ? `<div class="aoq-reset" data-reset-at="${r.resetAt}">${reset}</div>` : ''}
+        </div>`;
+      }).join('');
+
+  return `<article class="account-overview-card" data-account-id="${accountId}" data-provider="${provider}" role="button" tabindex="0" aria-label="Open ${escapeHTML(accountName)} details">
+    <header class="account-overview-header">
+      <span class="account-overview-name">${escapeHTML(accountName)}</span>
+      ${badge ? `<span class="account-overview-badge">${escapeHTML(badge)}</span>` : ''}
+    </header>
+    <div class="account-overview-quotas">${quotaHTML}</div>
+    <span class="account-overview-cta">View details &rarr;</span>
+  </article>`;
+}
+
+// Build one compact, clickable summary card per account in the provider grid.
+function renderAccountsOverview(provider, accounts) {
+  const container = document.getElementById(`quota-grid-${provider}`);
+  if (!container) return;
+
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    container.innerHTML = '<p class="empty-state">No account usage found yet.</p>';
+    return;
+  }
+
+  container.innerHTML = accounts.map((account, idx) => accountOverviewCardHTML(provider, account, idx)).join('');
+
+  const drill = (accountId) => {
+    if (provider === 'minimax') switchMiniMaxAccount(accountId);
+    else switchCodexProfile(accountId);
+  };
+  container.querySelectorAll('.account-overview-card').forEach(card => {
+    const accountId = parseInt(card.dataset.accountId, 10);
+    card.addEventListener('click', () => drill(accountId));
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); drill(accountId); }
+    });
+  });
+}
+
+// Fetch all accounts for a provider and render the overview cards.
+async function fetchAccountsOverview(provider, requestSeq) {
+  const endpoint = provider === 'minimax'
+    ? `${API_BASE}/api/minimax/accounts/usage`
+    : `${API_BASE}/api/codex/accounts/usage`;
+  try {
+    const res = await authFetch(endpoint);
+    if (!res.ok) throw new Error('Failed to fetch account usage');
+    const data = await res.json();
+    const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+
+    requestAnimationFrame(() => {
+      if (State.currentRequestSeq !== requestSeq) return;
+      if (getCurrentProvider() !== provider) return;
+      if (!isAccountsOverviewMode(provider)) return;
+      State.accountsOverview = { provider, accounts };
+      renderAccountsOverview(provider, accounts);
+      setLastUpdated();
+      const statusDot = document.getElementById('status-dot');
+      if (statusDot) statusDot.classList.remove('stale');
+    });
+  } catch (err) {
+    if (State.currentRequestSeq !== requestSeq) return;
+    const statusDot = document.getElementById('status-dot');
+    if (statusDot) statusDot.classList.add('stale');
+  }
+}
+
+// The accounts to combine for the overview tables/chart: prefer the loaded
+// usage payload, fall back to the dropdown account lists.
+function overviewAccounts(provider) {
+  if (State.accountsOverview && State.accountsOverview.provider === provider && State.accountsOverview.accounts.length) {
+    return State.accountsOverview.accounts.map(a => ({ id: a.accountId || a.id, name: a.accountName || a.name }));
+  }
+  if (provider === 'minimax') return (State.minimaxAccounts || []).map(a => ({ id: a.id, name: a.name }));
+  return (State.codexProfiles || []).map(p => ({ id: p.id, name: p.name }));
+}
+
+// Distinct colors for account lines on the multi-account chart.
+function multiAccountPalette() {
+  // A fixed set of visually distinct colors. (Deliberately not derived from the
+  // chart CSS tokens + fallback, which overlapped and produced repeated colors.)
+  return ['#0D9488', '#F59E0B', '#3B82F6', '#A855F7', '#EF4444', '#10B981', '#EC4899', '#6366F1', '#F97316', '#06B6D4'];
+}
+
+// Build the selectable graph windows (e.g. 5-Hour / Weekly) and a per-window
+// extractor that pulls one numeric value per history entry for an account.
+function buildOverviewWindows(provider, accounts) {
+  if (provider === 'minimax') {
+    const hasWeekly = accounts.some(a => (a.quotas || []).some(q => q.isWeekly || /^weekly_/.test(q.name || '')));
+    const maxOver = (entry, match) => {
+      let max = null;
+      for (const k of Object.keys(entry)) {
+        if (k === 'capturedAt' || !match(k)) continue;
+        const v = entry[k];
+        if (typeof v === 'number' && (max == null || v > max)) max = v;
+      }
+      return max;
+    };
+    const windows = [{ key: '5h', label: '5h Limit', extract: (d) => maxOver(d, k => !k.startsWith('Wkly ')) }];
+    if (hasWeekly) windows.push({ key: 'weekly', label: 'Weekly Limit', extract: (d) => maxOver(d, k => k.startsWith('Wkly ')) });
+    return windows;
+  }
+  // Codex: one window per distinct quota name across accounts. History entries
+  // are keyed by the same normalized quota name.
+  const seen = new Map();
+  for (const a of accounts) {
+    for (const q of filterCodexQuotasForPlan(a.quotas || [], a.planType)) {
+      if (!seen.has(q.name)) seen.set(q.name, q.displayName || codexDisplayNames[q.name] || q.name);
+    }
+  }
+  return [...seen.entries()].map(([key, label]) => ({ key, label, extract: (d) => (typeof d[key] === 'number' ? d[key] : null) }));
+}
+
+// Dash patterns to distinguish quota windows of the same account on one chart.
+const overviewWindowDashes = [[], [6, 4], [2, 3], [8, 3, 2, 3]];
+
+// Draw a single chart with one line per (account × quota window), Anthropic-style
+// - every account's 5-Hour and Weekly limits are shown together, no toggle.
+async function renderMultiAccountChart(provider, range, requestSeq) {
+  const overview = State.accountsOverview && State.accountsOverview.provider === provider
+    ? State.accountsOverview : null;
+  let accounts = overview ? overview.accounts : [];
+  // The cards fetch (fetchAccountsOverview) and this chart run concurrently in
+  // refreshAll, so the account list may not be cached yet on first load.
+  if (accounts.length === 0) {
+    const endpoint = provider === 'minimax'
+      ? `${API_BASE}/api/minimax/accounts/usage`
+      : `${API_BASE}/api/codex/accounts/usage`;
+    try {
+      const res = await authFetch(endpoint);
+      if (res.ok) {
+        const d = await res.json();
+        accounts = Array.isArray(d.accounts) ? d.accounts : [];
+        if (accounts.length) State.accountsOverview = { provider, accounts };
+      }
+    } catch (e) { /* chart stays empty on failure */ }
+  }
+  const windows = buildOverviewWindows(provider, accounts);
+  if (windows.length === 0 || accounts.length === 0) return;
+
+  const histories = await Promise.all(accounts.map(async (acc) => {
+    const accId = acc.accountId || acc.id;
+    try {
+      const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=${provider}&account=${encodeURIComponent(accId)}`);
+      if (!res.ok) return { acc, data: [] };
+      const data = await res.json();
+      return { acc, data: Array.isArray(data) ? data : [] };
+    } catch (e) {
+      return { acc, data: [] };
+    }
+  }));
+
+  if (State.historyRequestSeq !== requestSeq) return;
+  if (!isAccountsOverviewMode(provider)) return;
+
+  const ctx = document.getElementById('usage-chart');
+  if (!ctx || typeof Chart === 'undefined') return;
+  if (State.chart) { State.chart.destroy(); State.chart = null; }
+  Chart.register(crosshairPlugin);
+
+  const colors = getThemeColors();
+  const palette = multiAccountPalette();
+  // One line per (account, window). Each line gets a distinct color so
+  // same-account lines are easy to tell apart; dash style still hints the window.
+  const datasets = [];
+  let colorIdx = 0;
+  histories.forEach((h) => {
+    const accName = h.acc.accountName || h.acc.name || `Account ${h.acc.accountId || h.acc.id}`;
+    windows.forEach((win, w) => {
+      const points = h.data
+        .map(d => ({ x: new Date(d.capturedAt), y: win.extract(d) }))
+        .filter(p => p.y != null);
+      if (points.length === 0) return; // account doesn't have this window
+      const color = palette[colorIdx++ % palette.length];
+      datasets.push({
+        label: windows.length > 1 ? `${accName} · ${win.label}` : accName,
+        data: points,
+        borderColor: color,
+        backgroundColor: 'transparent',
+        borderDash: overviewWindowDashes[w % overviewWindowDashes.length],
+        fill: false,
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      });
+    });
+  });
+
+  const rangeKey = String(range).toLowerCase();
+  const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : 'hour';
+
+  State.chart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: colors.text, usePointStyle: true, boxWidth: 8 } },
+        tooltip: {
+          mode: 'index', intersect: false,
+          backgroundColor: colors.surfaceContainer || '#1E1E1E',
+          titleColor: colors.onSurface || '#E6E1E5',
+          bodyColor: colors.text || '#CAC4D0',
+          borderColor: colors.outline || '#938F99',
+          borderWidth: 1, padding: 12, usePointStyle: true,
+          callbacks: {
+            label: (c) => c.parsed.y == null ? null : `${c.dataset.label}: ${c.parsed.y.toFixed(1)}%`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: timeUnit, displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'MMM d' } },
+          grid: { color: colors.grid, drawBorder: false },
+          ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' },
+        },
+        y: {
+          min: 0, max: 100,
+          grid: { color: colors.grid, drawBorder: false },
+          ticks: { color: colors.text, callback: (v) => `${v}%` },
+        },
+      },
+    },
+  });
 }
 
 
@@ -3680,6 +4176,8 @@ async function fetchDeepInsights() {
     renderAPIIntegrationsInsights();
     return;
   }
+  // Per-account insights don't apply to the aggregate all-accounts overview.
+  if (isAccountsOverviewMode(provider)) return;
   const requestProvider = provider;
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
   const requestRange = State.insightsRange;
@@ -4206,6 +4704,8 @@ function initChart() {
     defaultDatasets = []; // Cursor datasets are dynamic - populated when history data arrives
   } else if (provider === 'openrouter') {
     defaultDatasets = []; // OpenRouter datasets are dynamic - populated when history data arrives
+  } else if (provider === 'grok') {
+    defaultDatasets = []; // Grok datasets are dynamic - populated when history data arrives
   } else if (provider === 'zai') {
     defaultDatasets = [
       { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
@@ -4228,6 +4728,8 @@ function initChart() {
     : provider === 'cursor'
       ? []
     : provider === 'openrouter'
+      ? []
+    : provider === 'grok'
       ? []
     : provider === 'api-integrations'
       ? []
@@ -4373,6 +4875,11 @@ async function fetchHistory(range) {
   const requestRange = range;
   const requestSeq = (State.historyRequestSeq || 0) + 1;
   State.historyRequestSeq = requestSeq;
+
+  if (isAccountsOverviewMode(requestProvider)) {
+    await renderMultiAccountChart(requestProvider, range, requestSeq);
+    return;
+  }
 
   try {
     if (requestProvider === 'api-integrations') {
@@ -4691,6 +5198,35 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'grok') {
+      // Grok history: array of { capturedAt, credits: <utilization%> }
+      const grokColors = { credits: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' } };
+      const grokDisplay = { credits: 'Credits' };
+      const quotaKeys = new Set();
+      historyRows.forEach(d => { Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); }); });
+      const datasets = [];
+      [...quotaKeys].sort().forEach((key) => {
+        const color = grokColors[key] || { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' };
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        datasets.push({
+          label: grokDisplay[key] || key,
+          data: data,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key), spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
+        });
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
     if (provider === 'codex') {
       // Codex history: array of { capturedAt, five_hour, seven_day, ... }
       const quotaKeys = new Set();
@@ -4776,6 +5312,7 @@ const bothProviderNames = {
   minimax: 'MiniMax',
   gemini: 'Gemini',
   cursor: 'Cursor',
+  grok: 'Grok',
   'api-integrations': 'API Integrations',
 };
 
@@ -4914,7 +5451,7 @@ function normalizeBothQuotas(provider, payload) {
       cardLabel: quota.cardLabel || 'Utilization',
       status: quota.status || 'healthy',
       timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
-      resetsAt: quota.resetsAt || quota.renewsAt || '',
+      resetsAt: quota.resetsAt || quota.renewsAt || quota.resets_at || quota.resetAt || '',
     };
   });
 }
@@ -4998,6 +5535,21 @@ function buildAllProviderEntries() {
       const insightAccounts = Array.isArray(insights.codexAccounts) ? insights.codexAccounts : [];
       const historyAccounts = Array.isArray(history.codexAccounts) ? history.codexAccounts : [];
 
+      // Multiple accounts: group into one compact card instead of N stacked cards.
+      if (currentAccounts.length > 1) {
+        const groupAccounts = currentAccounts.filter((acc, idx) =>
+          isProviderTelemetryEnabled('codex', acc.accountId || acc.id || idx + 1));
+        if (groupAccounts.length === 0) return;
+        entries.push({
+          provider: 'codex',
+          cardKey: sanitizeProviderCardKey('codex'),
+          title: 'Codex',
+          badge: `${groupAccounts.length} accounts`,
+          accountsGroup: groupAccounts,
+        });
+        return;
+      }
+
       currentAccounts.forEach((account, idx) => {
         const accountID = account.accountId || account.id || idx + 1;
         if (!isProviderTelemetryEnabled('codex', accountID)) return;
@@ -5044,6 +5596,21 @@ function buildAllProviderEntries() {
           quotas: normalizeBothQuotas('minimax', payload),
           insights: insights.minimax || { stats: [], insights: [] },
           historyRows: Array.isArray(history.minimax) ? history.minimax : [],
+        });
+        return;
+      }
+
+      // Multiple accounts: group into one compact card.
+      if (currentAccounts.length > 1) {
+        const groupAccounts = currentAccounts.filter((acc, idx) =>
+          isProviderTelemetryEnabled('minimax', acc.accountId || acc.id || idx + 1));
+        if (groupAccounts.length === 0) return;
+        entries.push({
+          provider: 'minimax',
+          cardKey: sanitizeProviderCardKey('minimax'),
+          title: bothProviderNames.minimax || 'MiniMax',
+          badge: `${groupAccounts.length} accounts`,
+          accountsGroup: groupAccounts,
         });
         return;
       }
@@ -5638,6 +6205,12 @@ function buildProviderCardDatasets(provider, rows, range) {
     const orFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
     return buildDynamicDatasetsForRows(rows, range, orDisplayNames, orColors, orFallback, 'openrouter');
   }
+  if (provider === 'grok') {
+    const grokDisplay = { credits: 'Credits' };
+    const grokColors = { credits: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' } };
+    const grokFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+    return buildDynamicDatasetsForRows(rows, range, grokDisplay, grokColors, grokFallback, 'grok');
+  }
   return [];
 }
 
@@ -5678,8 +6251,7 @@ function renderAllProvidersView() {
     if (entry.summaryOnly) {
       return renderAPIIntegrationsSummaryCard(entry, collapsed);
     }
-    return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
-      <header class="provider-card-header">
+    const cardHeader = `<header class="provider-card-header">
         <div class="provider-card-title">
           <span>${escapeHTML(entry.title)}</span>
           ${badge}${promo}
@@ -5689,7 +6261,20 @@ function renderAllProvidersView() {
             <path d="m9 6 6 6-6 6"/>
           </svg>
         </button>
-      </header>
+      </header>`;
+    if (Array.isArray(entry.accountsGroup)) {
+      const cards = entry.accountsGroup
+        .map((account, idx) => accountOverviewCardHTML(entry.provider, account, idx))
+        .join('');
+      return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
+      ${cardHeader}
+      <div class="provider-card-body">
+        <div class="accounts-overview-grid">${cards}</div>
+      </div>
+    </section>`;
+    }
+    return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
+      ${cardHeader}
       <div class="provider-card-body">
         <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas)}</div>
         ${(() => {
@@ -5700,6 +6285,23 @@ function renderAllProvidersView() {
       </div>
     </section>`;
   }).join('');
+
+  // Grouped multi-account cards in the All view navigate to the provider tab,
+  // pinning the clicked account as the active selection.
+  container.querySelectorAll('.accounts-overview-grid .account-overview-card').forEach((card) => {
+    const provider = card.dataset.provider;
+    const accountId = parseInt(card.dataset.accountId, 10);
+    const go = () => {
+      if (provider === 'minimax') saveMiniMaxAccount(accountId);
+      else saveCodexAccount(accountId);
+      saveDefaultProvider(provider);
+      window.location.href = `${BASE_PATH}/?provider=${provider}`;
+    };
+    card.addEventListener('click', go);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+    });
+  });
 
   container.querySelectorAll('.provider-card-collapse-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -6068,7 +6670,50 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok']);
+
+  // All-accounts overview: fetch each account's logging history and merge,
+  // tagging every row with its account name for the combined table.
+  if (isAccountsOverviewMode(provider)) {
+    const rangeDays = Math.min(30, Math.max(1, Math.ceil(State.cyclesRange / (24 * 60 * 60 * 1000))));
+    const dynamicLimit = Math.min(50000, rangeDays * 24 * 60);
+    const accounts = overviewAccounts(provider);
+    const results = await Promise.all(accounts.map(async (acc) => {
+      const url = `/api/logging-history?provider=${provider}&limit=${dynamicLimit}&range=${rangeDays}&account=${encodeURIComponent(acc.id)}`;
+      try {
+        const r = await authFetch(url);
+        if (!r.ok) return { acc, logs: [], quotaNames: [] };
+        const d = await r.json();
+        return { acc, logs: d.logs || [], quotaNames: d.quotaNames || [] };
+      } catch (e) {
+        return { acc, logs: [], quotaNames: [] };
+      }
+    }));
+    if (State.cyclesRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (!isAccountsOverviewMode(provider)) return;
+    if (State.cyclesRange !== requestRange) return;
+    const qn = new Set();
+    const merged = [];
+    results.forEach(({ acc, logs, quotaNames }) => {
+      quotaNames.forEach(n => qn.add(n));
+      logs.forEach(log => merged.push({
+        cycleId: log.id,
+        cycleStart: log.capturedAt,
+        cycleEnd: log.capturedAt,
+        totalDelta: 0,
+        crossQuotas: log.crossQuotas || [],
+        _account: acc.name,
+      }));
+    });
+    merged.sort((a, b) => new Date(b.cycleStart).getTime() - new Date(a.cycleStart).getTime());
+    State.allCyclesData = merged;
+    State.cyclesQuotaNames = [...qn];
+    State.cyclesPage = 1;
+    State.isLoggingHistory = true;
+    renderCyclesTable();
+    return;
+  }
 
   if (loggingHistoryProviders.has(provider)) {
     // Convert range from ms to days (min 1, max 30)
@@ -6142,12 +6787,15 @@ function aggregateCyclesByBucket(rows, bucketMinutes) {
     const bucketISO = bucketStartISO(row.cycleStart, bucketMinutes);
     if (!bucketISO) continue;
 
-    if (!grouped.has(bucketISO)) {
-      grouped.set(bucketISO, {
+    // Keep accounts separate when combining the all-accounts overview.
+    const groupKey = `${row._account || ''}|${bucketISO}`;
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, {
         cycleId: row.cycleId,
         cycleStart: bucketISO,
         cycleEnd: row.cycleEnd || null,
         totalDelta: typeof row.totalDelta === 'number' ? row.totalDelta : 0,
+        _account: row._account,
         crossQuotas: Array.isArray(row.crossQuotas)
           ? row.crossQuotas.map(cq => ({
               name: cq.name,
@@ -6162,7 +6810,7 @@ function aggregateCyclesByBucket(rows, bucketMinutes) {
       continue;
     }
 
-    const agg = grouped.get(bucketISO);
+    const agg = grouped.get(groupKey);
     if (agg.cycleEnd == null) {
       if (row.cycleEnd != null) {
         agg.cycleEnd = row.cycleEnd;
@@ -6216,9 +6864,11 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'grok';
   const deltaUsesPercent = usePercent && provider !== 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
+  const showAccount = isAccountsOverviewMode(provider);
+  const accountTh = showAccount ? '<th data-sort-key="account" role="button" tabindex="0">Account <span class="sort-arrow"></span></th>' : '';
 
   // Build dynamic header
   let headerHtml;
@@ -6226,12 +6876,14 @@ function renderCyclesTable() {
     // Logging history: simpler header with # and Time
     headerHtml = `
       <tr>
+        ${accountTh}
         <th data-sort-key="id" role="button" tabindex="0"># <span class="sort-arrow"></span></th>
         <th data-sort-key="start" role="button" tabindex="0">Time <span class="sort-arrow"></span></th>`;
   } else {
     // Cycle-based: full header with Start, End, Duration, Total Δ
     headerHtml = `
       <tr>
+        ${accountTh}
         <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
         <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
         <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
@@ -6310,6 +6962,7 @@ function renderCyclesTable() {
         vb = b.cycleEnd ? new Date(b.cycleEnd) - new Date(b.cycleStart) : 0;
       }
       else if (key === 'totalDelta') { va = a.totalDelta; vb = b.totalDelta; }
+      else if (key === 'account') { va = a._account || ''; vb = b._account || ''; }
       else if (key.startsWith('cq_')) {
         const qn = key.slice(3);
         va = getCrossQuotaPercent(a, qn);
@@ -6342,7 +6995,7 @@ function renderCyclesTable() {
     return valStr;
   };
 
-  const colCount = isLoggingHistory ? (2 + quotaNames.length) : (5 + quotaNames.length);
+  const colCount = (showAccount ? 1 : 0) + (isLoggingHistory ? (2 + quotaNames.length) : (5 + quotaNames.length));
 
   if (pageData.length === 0) {
     const emptyMsg = isLoggingHistory
@@ -6357,10 +7010,12 @@ function renderCyclesTable() {
       const endDate = end ? new Date(end) : null;
       const suffix = deltaUsesPercent ? '%' : '';
 
+      const accountTd = showAccount ? `<td>${escapeHTML(row._account || '')}</td>` : '';
       let html;
       if (isLoggingHistory) {
         // Logging history: simpler row with # and Time
         html = `<tr>
+          ${accountTd}
           <td>${row.cycleId}</td>
           <td>${start ? formatDateTime(start) : '--'}</td>`;
       } else {
@@ -6388,6 +7043,7 @@ function renderCyclesTable() {
         }
 
         html = `<tr>
+          ${accountTd}
           <td>${cycleLabel}</td>
           <td>${start ? formatDateTime(start) : '--'}</td>
           <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>
@@ -7497,6 +8153,37 @@ async function fetchCycleOverview() {
   const requestSeq = (State.overviewRequestSeq || 0) + 1;
   State.overviewRequestSeq = requestSeq;
 
+  // All-accounts overview: merge each account's cycle overview, tagged by account.
+  if (isAccountsOverviewMode(provider)) {
+    const accounts = overviewAccounts(provider);
+    const results = await Promise.all(accounts.map(async (acc) => {
+      const url = `/api/cycle-overview?provider=${provider}&groupBy=${requestGroupBy}&limit=50&account=${encodeURIComponent(acc.id)}`;
+      try {
+        const r = await authFetch(url);
+        if (!r.ok) return { acc, cycles: [], quotaNames: [] };
+        const d = await r.json();
+        return { acc, cycles: d.cycles || [], quotaNames: d.quotaNames || [] };
+      } catch (e) {
+        return { acc, cycles: [], quotaNames: [] };
+      }
+    }));
+    if (State.overviewRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (!isAccountsOverviewMode(provider)) return;
+    if (State.overviewGroupBy !== requestGroupBy) return;
+    const qn = new Set();
+    const merged = [];
+    results.forEach(({ acc, cycles, quotaNames }) => {
+      quotaNames.forEach(n => qn.add(n));
+      cycles.forEach(c => merged.push({ ...c, _account: acc.name }));
+    });
+    merged.sort((a, b) => new Date(b.cycleStart).getTime() - new Date(a.cycleStart).getTime());
+    State.allOverviewData = merged;
+    State.overviewQuotaNames = [...qn];
+    renderOverviewTable();
+    return;
+  }
+
   let url;
   if (provider === 'both') {
     // Determine which provider this groupBy belongs to
@@ -7539,15 +8226,18 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
   // MiniMax reports a percentage-based quota; the Duration and Total Delta
   // columns add no signal there, so omit them for this provider.
   const showDurationDelta = overviewProv !== 'minimax';
+  const showAccount = isAccountsOverviewMode(getCurrentProvider());
+  const accountTh = showAccount ? '<th data-sort-key="account" role="button" tabindex="0">Account <span class="sort-arrow"></span></th>' : '';
 
   // Build dynamic header
   let headerHtml = `
     <tr>
+      ${accountTh}
       <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
       <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
       <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>`;
@@ -7592,6 +8282,7 @@ function renderOverviewTable() {
         vb = b.cycleEnd ? new Date(b.cycleEnd) - new Date(b.cycleStart) : 0;
       }
       else if (key === 'totalDelta') { va = a.totalDelta; vb = b.totalDelta; }
+      else if (key === 'account') { va = a._account || ''; vb = b._account || ''; }
       else if (key.startsWith('cq_')) {
         const qn = key.slice(3);
         va = getCrossQuotaPercent(a, qn);
@@ -7625,7 +8316,7 @@ function renderOverviewTable() {
   };
 
   if (pageData.length === 0) {
-    const colCount = (showDurationDelta ? 5 : 3) + quotaNames.length;
+    const colCount = (showAccount ? 1 : 0) + (showDurationDelta ? 5 : 3) + quotaNames.length;
     const emptyMsg = overviewProv === 'cursor'
       ? 'No completed monthly billing cycles found for this quota yet.'
       : 'No completed cycles found for this period.';
@@ -7644,8 +8335,10 @@ function renderOverviewTable() {
       // For active cycles (no end, or cycleId is -1 or 'active'), show "Active" badge
       const isActive = !end || row.cycleId === -1 || row.cycleId === 'active';
       const cycleLabel = isActive ? '<span class="badge">Active</span>' : `${row.cycleId}`;
+      const accountTd = showAccount ? `<td>${escapeHTML(row._account || '')}</td>` : '';
 
       let html = `<tr>
+        ${accountTd}
         <td>${cycleLabel}</td>
         <td>${start ? formatDateTime(start) : '--'}</td>
         <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>`;
@@ -9214,6 +9907,8 @@ async function openProviderSettingsModal(providerKey) {
             if (!isDeleted) {
               html += `<button class="minimax-acct-btn" data-action="edit" data-id="${account.id}" data-name="${escapeHtml(account.name)}" data-region="${account.region || 'global'}" data-has-key="${account.hasKey}" title="Edit account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Edit</button>`;
               html += `<button class="minimax-acct-btn" data-action="delete" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="Delete account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--md-error,#b3261e)">Delete</button>`;
+            } else {
+              html += `<button class="minimax-acct-btn" data-action="restore" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="Restore account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--accent-teal,#0d9488)">Restore</button>`;
             }
             html += `</div></div>`;
           });
@@ -9232,6 +9927,17 @@ async function openProviderSettingsModal(providerKey) {
                   if (res.ok) { await openProviderSettingsModal('minimax'); }
                   else { const e = await res.json().catch(() => ({})); alert('Delete failed: ' + (e.error || res.statusText)); btn.disabled = false; btn.textContent = 'Delete'; }
                 } catch (e) { alert('Delete failed: ' + e.message); btn.disabled = false; btn.textContent = 'Delete'; }
+              } else if (action === 'restore') {
+                btn.disabled = true; btn.textContent = '...';
+                try {
+                  const res = await authFetch(`${API_BASE}/api/minimax/accounts?id=${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ restore: true }),
+                  });
+                  if (res.ok) { await openProviderSettingsModal('minimax'); }
+                  else { const e = await res.json().catch(() => ({})); alert('Restore failed: ' + (e.error || res.statusText)); btn.disabled = false; btn.textContent = 'Restore'; }
+                } catch (e) { alert('Restore failed: ' + e.message); btn.disabled = false; btn.textContent = 'Restore'; }
               } else if (action === 'edit') {
                 // Show inline edit form
                 const item = btn.closest('.minimax-account-item');
