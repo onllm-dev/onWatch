@@ -275,6 +275,7 @@ func TestLoadExistingEnvAndProviderChecks(t *testing.T) {
 			"OPENCODE_ENABLED=true",
 			"ANTIGRAVITY_ENABLED=true",
 			"GEMINI_ENABLED=true",
+			"GROK_ENABLED=true",
 			"MALFORMED_LINE",
 		}, "\n")
 		if err := os.WriteFile(envPath, []byte(content), 0o600); err != nil {
