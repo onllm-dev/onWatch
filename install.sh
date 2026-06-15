@@ -718,6 +718,35 @@ append_gemini_to_env() {
     } >> "$env_file"
 }
 
+# Resolve the Grok auth.json path (honors GROK_HOME, defaults to ~/.grok)
+grok_auth_path() {
+    if [[ -n "${GROK_HOME:-}" ]]; then
+        echo "${GROK_HOME%/}/auth.json"
+    else
+        echo "$HOME/.grok/auth.json"
+    fi
+}
+
+# Check if Grok is enabled (explicit flag/token or auto-detected auth.json)
+has_grok_enabled() {
+    local val
+    val=$(env_get GROK_ENABLED)
+    [[ "$val" == "true" ]] && return 0
+    val=$(env_get GROK_TOKEN)
+    [[ -n "$val" ]] && return 0
+    [[ -f "$(grok_auth_path)" ]]
+}
+
+# Append Grok config to existing .env
+append_grok_to_env() {
+    local env_file="${INSTALL_DIR}/.env"
+    {
+        echo ""
+        echo "# Grok (xAI) - auto-detected from ~/.grok/auth.json (or \$GROK_HOME)"
+        echo "GROK_ENABLED=true"
+    } >> "$env_file"
+}
+
 # ─── Interactive Setup ──────────────────────────────────────────────
 # Fully interactive .env configuration for fresh installs.
 # On upgrade: checks for missing providers and offers to add them.
@@ -734,7 +763,7 @@ interactive_setup() {
         SETUP_USERNAME="${SETUP_USERNAME:-admin}"
         SETUP_PASSWORD=""  # Don't show existing password
 
-        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false
+        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false has_grok=false
         has_synthetic_key && has_syn=true
         has_zai_key && has_zai=true
         has_anthropic_key && has_anth=true
@@ -742,14 +771,15 @@ interactive_setup() {
         has_opencode_enabled && has_opencode=true
         has_antigravity_enabled && has_anti=true
         has_gemini_enabled && has_gemini=true
+        has_grok_enabled && has_grok=true
 
-        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini; then
+        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini && $has_grok; then
             # All providers configured — nothing to do
             info "Existing .env found — all providers configured"
             return
         fi
 
-        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini; then
+        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini && ! $has_grok; then
             # .env exists but no keys at all — run full setup
             warn "Existing .env found but no API keys configured"
             info "Running interactive setup..."
@@ -771,6 +801,7 @@ interactive_setup() {
             $has_opencode && configured="${configured}OpenCode "
             $has_anti && configured="${configured}Antigravity "
             $has_gemini && configured="${configured}Gemini "
+            $has_grok && configured="${configured}Grok "
             info "Existing .env found — configured: ${configured}"
             printf "\n"
 
@@ -908,6 +939,27 @@ interactive_setup() {
                 fi
             fi
 
+            if ! $has_grok; then
+                # Try to detect Grok credentials (~/.grok/auth.json or $GROK_HOME)
+                if [[ -f "$(grok_auth_path)" ]]; then
+                    printf "  ${GREEN}✓${NC} Grok credentials detected on this system\n"
+                    local add_grok
+                    add_grok=$(prompt_with_default "Enable Grok tracking? (Y/n)" "Y")
+                    if [[ "$add_grok" =~ ^[Yy] ]] || [[ -z "$add_grok" ]]; then
+                        append_grok_to_env
+                        ok "Added Grok provider to .env (auto-detected)"
+                    fi
+                else
+                    local add_grok
+                    add_grok=$(prompt_with_default "Add Grok (xAI) provider? (y/N)" "N")
+                    if [[ "$add_grok" =~ ^[Yy] ]]; then
+                        append_grok_to_env
+                        ok "Added Grok provider to .env"
+                        printf "  ${DIM}Note: run 'grok login' to authenticate (or set GROK_TOKEN)${NC}\n"
+                    fi
+                fi
+            fi
+
             $_opened_fd3 && exec 3<&- || true
             return
         fi
@@ -935,12 +987,13 @@ interactive_setup() {
         "OpenCode (opencode-codex) only" \
         "Antigravity (Windsurf) only" \
         "Gemini CLI only" \
+        "Grok (xAI) only" \
         "Multiple (choose one at a time)" \
         "All available")
 
-    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled=""
+    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled=""
 
-    if [[ "$provider_choice" == "8" ]]; then
+    if [[ "$provider_choice" == "9" ]]; then
         # ── Multiple: ask for each provider individually ──
         local add_it
         add_it=$(prompt_with_default "Add Synthetic provider? (y/N)" "N")
@@ -985,8 +1038,14 @@ interactive_setup() {
             printf "  ${DIM}Gemini auto-detects from ~/.gemini/oauth_creds.json${NC}\n"
         fi
 
+        add_it=$(prompt_with_default "Add Grok (xAI) provider? (y/N)" "N")
+        if [[ "$add_it" =~ ^[Yy] ]]; then
+            grok_enabled="true"
+            printf "  ${DIM}Grok auto-detects from ~/.grok/auth.json (or \$GROK_HOME)${NC}\n"
+        fi
+
         # Validate at least one provider selected
-        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" ]]; then
+        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" ]]; then
             printf "  ${RED}No providers selected. Please select at least one.${NC}\n"
             # Re-run provider selection by recursion-safe retry
             printf "\n"
@@ -1029,6 +1088,12 @@ interactive_setup() {
                 fi
             fi
             if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$antigravity_enabled" && -z "$gemini_enabled" ]]; then
+                add_it=$(prompt_with_default "Add Grok (xAI) provider? (y/N)" "N")
+                if [[ "$add_it" =~ ^[Yy] ]]; then
+                    grok_enabled="true"
+                fi
+            fi
+            if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" ]]; then
                 fail "At least one provider is required"
             fi
         fi
@@ -1036,13 +1101,13 @@ interactive_setup() {
         # ── Single provider or All ──
 
         # ── Synthetic API Key ──
-        if [[ "$provider_choice" == "1" || "$provider_choice" == "9" ]]; then
+        if [[ "$provider_choice" == "1" || "$provider_choice" == "10" ]]; then
             printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
             synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
         fi
 
         # ── Z.ai API Key ──
-        if [[ "$provider_choice" == "2" || "$provider_choice" == "9" ]]; then
+        if [[ "$provider_choice" == "2" || "$provider_choice" == "10" ]]; then
             local zai_result
             zai_result=$(collect_zai_config)
             zai_key=$(echo "$zai_result" | head -1)
@@ -1050,17 +1115,17 @@ interactive_setup() {
         fi
 
         # ── Anthropic Token ──
-        if [[ "$provider_choice" == "3" || "$provider_choice" == "9" ]]; then
+        if [[ "$provider_choice" == "3" || "$provider_choice" == "10" ]]; then
             anthropic_token=$(collect_anthropic_config)
         fi
 
         # ── Codex Token ──
-        if [[ "$provider_choice" == "4" || "$provider_choice" == "9" ]]; then
+        if [[ "$provider_choice" == "4" || "$provider_choice" == "10" ]]; then
             codex_token=$(collect_codex_config)
         fi
 
         # ── OpenCode (opencode-codex) ──
-        if [[ "$provider_choice" == "5" || "$provider_choice" == "9" ]]; then
+        if [[ "$provider_choice" == "5" || "$provider_choice" == "10" ]]; then
             opencode_enabled="true"
             if detect_opencode_auth; then
                 printf "\n  ${GREEN}✓${NC} OpenCode (opencode-codex) credentials detected (feeds Codex)\n"
@@ -1070,15 +1135,25 @@ interactive_setup() {
         fi
 
         # ── Antigravity (Windsurf) ──
-        if [[ "$provider_choice" == "6" || "$provider_choice" == "9" ]]; then
+        if [[ "$provider_choice" == "6" || "$provider_choice" == "10" ]]; then
             antigravity_enabled="true"
             printf "\n  ${GREEN}✓${NC} Antigravity enabled (auto-detects running Windsurf process)\n"
         fi
 
         # ── Gemini CLI ──
-        if [[ "$provider_choice" == "7" || "$provider_choice" == "9" ]]; then
+        if [[ "$provider_choice" == "7" || "$provider_choice" == "10" ]]; then
             gemini_enabled="true"
             printf "\n  ${GREEN}✓${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n"
+        fi
+
+        # ── Grok (xAI) ──
+        if [[ "$provider_choice" == "8" || "$provider_choice" == "10" ]]; then
+            grok_enabled="true"
+            if [[ -f "$(grok_auth_path)" ]]; then
+                printf "\n  ${GREEN}✓${NC} Grok enabled (credentials detected at $(grok_auth_path))\n"
+            else
+                printf "\n  ${GREEN}✓${NC} Grok enabled (run 'grok login' or set GROK_TOKEN to authenticate)\n"
+            fi
         fi
     fi
 
@@ -1177,6 +1252,12 @@ interactive_setup() {
             echo ""
         fi
 
+        if [[ -n "$grok_enabled" ]]; then
+            echo "# Grok (xAI) - auto-detected from ~/.grok/auth.json (or \$GROK_HOME)"
+            echo "GROK_ENABLED=true"
+            echo ""
+        fi
+
         echo "# Dashboard credentials"
         echo "ONWATCH_ADMIN_USER=${SETUP_USERNAME}"
         echo "ONWATCH_ADMIN_PASS=${SETUP_PASSWORD}"
@@ -1200,7 +1281,8 @@ interactive_setup() {
         5) provider_label="OpenCode" ;;
         6) provider_label="Antigravity" ;;
         7) provider_label="Gemini" ;;
-        8)
+        8) provider_label="Grok" ;;
+        9)
             # Multiple — build label from selected providers
             local parts=()
             [[ -n "$synthetic_key" ]] && parts+=("Synthetic")
@@ -1210,9 +1292,10 @@ interactive_setup() {
             [[ -n "$opencode_enabled" ]] && parts+=("OpenCode")
             [[ -n "$antigravity_enabled" ]] && parts+=("Antigravity")
             [[ -n "$gemini_enabled" ]] && parts+=("Gemini")
+            [[ -n "$grok_enabled" ]] && parts+=("Grok")
             provider_label=$(IFS=", "; echo "${parts[*]}")
             ;;
-        9) provider_label="All providers" ;;
+        10) provider_label="All providers" ;;
     esac
 
     local masked_pass

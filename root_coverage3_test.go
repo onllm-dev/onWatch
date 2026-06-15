@@ -217,7 +217,7 @@ func TestFreshSetup_AllProviders(t *testing.T) {
 	t.Setenv("PATH", "")
 
 	input := strings.Join([]string{
-		"9",            // All providers
+		"10",           // All providers
 		"syn_abc12345", // synthetic key
 		"zai-key",      // zai key
 		"y",            // use default zai URL
@@ -226,6 +226,7 @@ func TestFreshSetup_AllProviders(t *testing.T) {
 		"",             // codex: no auto-detect, manual entry
 		"codex-token",  // codex manual token
 		"n",            // opencode: not detected, skip
+		"n",            // grok: not detected, skip
 		"",             // admin user (default)
 		"",             // auto-generate password
 		"9211",         // port
@@ -235,7 +236,7 @@ func TestFreshSetup_AllProviders(t *testing.T) {
 	reader := bufio.NewReader(strings.NewReader(input))
 	cfg, err := freshSetup(reader)
 	if err != nil {
-		t.Fatalf("freshSetup choice 9 error: %v", err)
+		t.Fatalf("freshSetup choice 10 error: %v", err)
 	}
 	if cfg.syntheticKey == "" {
 		t.Fatal("expected synthetic key to be set")
@@ -259,7 +260,7 @@ func TestFreshSetup_MultipleProviders_Choice6(t *testing.T) {
 	t.Setenv("PATH", "")
 
 	input := strings.Join([]string{
-		"8",            // Multiple
+		"9",            // Multiple
 		"y",            // add synthetic
 		"syn_abc12345", // synthetic key
 		"n",            // skip zai
@@ -268,6 +269,7 @@ func TestFreshSetup_MultipleProviders_Choice6(t *testing.T) {
 		"n",            // skip opencode
 		"y",            // add antigravity
 		"n",            // skip gemini
+		"n",            // skip grok
 		"",             // admin user (default)
 		"",             // auto-generate password
 		"9211",         // port
@@ -1772,10 +1774,11 @@ func TestCollectMultipleProviders_AllNo(t *testing.T) {
 		"n", // skip opencode
 		"n", // skip antigravity
 		"n", // skip gemini
+		"n", // skip grok
 	}, "\n") + "\n"
 
 	reader := bufio.NewReader(strings.NewReader(input))
-	syn, zai, zaiURL, anth, codex, _, anti, gemini := collectMultipleProviders(reader, testLogger())
+	syn, zai, zaiURL, anth, codex, _, anti, gemini, _ := collectMultipleProviders(reader, testLogger())
 
 	if syn != "" || zai != "" || zaiURL != "" || anth != "" || codex != "" || anti || gemini {
 		t.Fatalf("expected all empty/false: syn=%q zai=%q zaiURL=%q anth=%q codex=%q anti=%v gemini=%v",
@@ -1799,10 +1802,11 @@ func TestCollectMultipleProviders_AnthropicAndCodexAdded(t *testing.T) {
 		"n",         // skip opencode
 		"n",         // skip antigravity
 		"n",         // skip gemini
+		"n",         // skip grok
 	}, "\n") + "\n"
 
 	reader := bufio.NewReader(strings.NewReader(input))
-	_, _, _, anth, codex, _, _, _ := collectMultipleProviders(reader, testLogger())
+	_, _, _, anth, codex, _, _, _, _ := collectMultipleProviders(reader, testLogger())
 
 	if anth == "" {
 		t.Fatal("expected anthropic token")

@@ -36,6 +36,7 @@ type setupConfig struct {
 	openCodeEnabled    bool
 	antigravityEnabled bool
 	geminiEnabled      bool
+	grokEnabled        bool
 	adminUser          string
 	adminPass          string
 	port               int
@@ -105,6 +106,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		"OpenCode (opencode-codex) only",
 		"Antigravity (Windsurf) only",
 		"Gemini CLI only",
+		"Grok (xAI) only",
 		"Multiple (choose one at a time)",
 		"All available",
 	}
@@ -131,9 +133,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	case 7: // Gemini only
 		cfg.geminiEnabled = true
 		fmt.Printf("  %s ok %s  Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n", colorGreen, colorReset)
-	case 8: // Multiple
-		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled = collectMultipleProviders(reader, logger)
-	case 9: // All
+	case 8: // Grok only
+		cfg.grokEnabled = collectGrok(reader, logger)
+	case 9: // Multiple
+		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled = collectMultipleProviders(reader, logger)
+	case 10: // All
 		cfg.syntheticKey = collectSyntheticKey(reader)
 		cfg.zaiKey, cfg.zaiBaseURL = collectZaiConfig(reader)
 		cfg.anthropicToken = collectAnthropicToken(reader, logger)
@@ -143,10 +147,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		fmt.Printf("\n  %s ok %s  Antigravity enabled (auto-detects running Windsurf process)\n", colorGreen, colorReset)
 		cfg.geminiEnabled = true
 		fmt.Printf("  %s ok %s  Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n", colorGreen, colorReset)
+		cfg.grokEnabled = collectGrok(reader, logger)
 	}
 
 	// Validate at least one provider
-	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled {
+	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled {
 		return nil, fmt.Errorf("at least one provider is required")
 	}
 
@@ -192,7 +197,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	return cfg, nil
 }
 
-func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled bool) {
+func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled, grokEnabled bool) {
 	if promptYesNo(reader, "Add Synthetic provider?", false) {
 		synKey = collectSyntheticKey(reader)
 	}
@@ -216,7 +221,27 @@ func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey
 		geminiEnabled = true
 		fmt.Printf("  %sGemini auto-detects from ~/.gemini/oauth_creds.json%s\n", colorDim, colorReset)
 	}
+	if promptYesNo(reader, "Add Grok (xAI) provider?", false) {
+		grokEnabled = collectGrok(reader, logger)
+	}
 	return
+}
+
+// collectGrok enables xAI Grok credit tracking. onWatch auto-detects the bearer
+// from ~/.grok/auth.json (or $GROK_HOME) and refreshes it at runtime, so no
+// token is stored in .env. Returns true if the user opts in.
+func collectGrok(reader *bufio.Reader, logger *slog.Logger) bool {
+	fmt.Printf("\n  %sGrok (xAI) Setup%s\n", colorBold, colorReset)
+	fmt.Printf("  %sonWatch reads your Grok login from %s.%s\n", colorDim, api.GrokAuthPath(), colorReset)
+
+	if creds := api.DetectGrokCredentials(logger); creds != nil && creds.AccessToken != "" {
+		fmt.Printf("  %s ok %s  Detected Grok credentials at %s\n", colorGreen, colorReset, api.GrokAuthPath())
+		return promptYesNo(reader, "Enable Grok tracking?", true)
+	}
+
+	fmt.Printf("  %s!%s No Grok auth.json found at %s\n", colorYellow, colorReset, api.GrokAuthPath())
+	fmt.Printf("  %sRun 'grok login' (or set GROK_TOKEN), then re-run setup.%s\n", colorDim, colorReset)
+	return promptYesNo(reader, "Enable Grok tracking anyway?", false)
 }
 
 // collectOpenCode enables ChatGPT tracking via OpenCode's auth.json. onWatch
@@ -367,6 +392,11 @@ func writeEnvFile(path string, cfg *setupConfig) error {
 		b.WriteString("GEMINI_ENABLED=true\n\n")
 	}
 
+	if cfg.grokEnabled {
+		b.WriteString("# Grok (xAI) - auto-detected from ~/.grok/auth.json (or $GROK_HOME)\n")
+		b.WriteString("GROK_ENABLED=true\n\n")
+	}
+
 	b.WriteString("# Dashboard credentials\n")
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_USER=%s\n", cfg.adminUser))
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_PASS=%s\n\n", cfg.adminPass))
@@ -408,6 +438,9 @@ func printSummary(cfg *setupConfig) {
 	if cfg.geminiEnabled {
 		providers = append(providers, "Gemini")
 	}
+	if cfg.grokEnabled {
+		providers = append(providers, "Grok")
+	}
 	providerLabel := strings.Join(providers, ", ")
 
 	maskedPass := strings.Repeat("*", len(cfg.adminPass))
@@ -442,6 +475,7 @@ type existingEnv struct {
 	openCodeEnabled    bool
 	antigravityEnabled bool
 	geminiEnabled      bool
+	grokEnabled        bool
 }
 
 func loadExistingEnv(path string) *existingEnv {
@@ -475,6 +509,12 @@ func loadExistingEnv(path string) *existingEnv {
 			env.antigravityEnabled = val == "true"
 		case "GEMINI_ENABLED":
 			env.geminiEnabled = val == "true"
+		case "GROK_ENABLED":
+			env.grokEnabled = val == "true"
+		case "GROK_TOKEN":
+			if val != "" {
+				env.grokEnabled = true
+			}
 		}
 	}
 	if !env.geminiEnabled {
@@ -484,15 +524,20 @@ func loadExistingEnv(path string) *existingEnv {
 			}
 		}
 	}
+	if !env.grokEnabled {
+		if _, err := os.Stat(api.GrokAuthPath()); err == nil {
+			env.grokEnabled = true
+		}
+	}
 	return env
 }
 
 func allProvidersConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" && env.zaiKey != "" && env.anthropicToken != "" && env.codexToken != "" && env.openCodeEnabled && env.antigravityEnabled && env.geminiEnabled
+	return env.syntheticKey != "" && env.zaiKey != "" && env.anthropicToken != "" && env.codexToken != "" && env.openCodeEnabled && env.antigravityEnabled && env.geminiEnabled && env.grokEnabled
 }
 
 func anyProviderConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.openCodeEnabled || env.antigravityEnabled || env.geminiEnabled
+	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.openCodeEnabled || env.antigravityEnabled || env.geminiEnabled || env.grokEnabled
 }
 
 func addMissingProviders(reader *bufio.Reader, envFile string, existing *existingEnv) error {
@@ -519,6 +564,9 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 	}
 	if existing.geminiEnabled {
 		configured = append(configured, "Gemini")
+	}
+	if existing.grokEnabled {
+		configured = append(configured, "Grok")
 	}
 	fmt.Printf("  %sinfo%s  Existing .env found -- configured: %s\n\n", colorBlue, colorReset, strings.Join(configured, ", "))
 
@@ -613,6 +661,20 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 			fmt.Fprintf(f, "\n# Gemini CLI - auto-detected from ~/.gemini/oauth_creds.json\nGEMINI_ENABLED=true\n")
 			fmt.Printf("  %s ok %s  Added Gemini provider to .env\n", colorGreen, colorReset)
 			fmt.Printf("  %sNote: Install Gemini CLI and run 'gemini' to authenticate%s\n", colorDim, colorReset)
+		}
+	}
+
+	if !existing.grokEnabled {
+		if creds := api.DetectGrokCredentials(logger); creds != nil && creds.AccessToken != "" {
+			fmt.Printf("  %s ok %s  Grok credentials detected on this system\n", colorGreen, colorReset)
+			if promptYesNo(reader, "Enable Grok tracking?", true) {
+				fmt.Fprintf(f, "\n# Grok (xAI) - auto-detected from ~/.grok/auth.json (or $GROK_HOME)\nGROK_ENABLED=true\n")
+				fmt.Printf("  %s ok %s  Added Grok provider to .env (auto-detected)\n", colorGreen, colorReset)
+			}
+		} else if promptYesNo(reader, "Add Grok (xAI) provider?", false) {
+			fmt.Fprintf(f, "\n# Grok (xAI) - auto-detected from ~/.grok/auth.json (or $GROK_HOME)\nGROK_ENABLED=true\n")
+			fmt.Printf("  %s ok %s  Added Grok provider to .env\n", colorGreen, colorReset)
+			fmt.Printf("  %sNote: run 'grok login' to authenticate (or set GROK_TOKEN)%s\n", colorDim, colorReset)
 		}
 	}
 
