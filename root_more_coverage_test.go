@@ -132,6 +132,7 @@ func TestSetupHelpers_AddMissingProvidersAndTokenCollectors(t *testing.T) {
 			"y",            // use default zai URL
 			"n",            // skip opencode
 			"y",            // add antigravity
+			"1",            // antigravity source: both
 			"n",            // skip gemini
 		}, "\n") + "\n"
 

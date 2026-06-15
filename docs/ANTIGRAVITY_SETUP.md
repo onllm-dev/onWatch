@@ -30,6 +30,43 @@ No manual configuration is required for local development.
 
 ---
 
+## Data Sources: IDE vs CLI (agy)
+
+Antigravity ships in more than one form, and **all variants share a single
+Google-account quota**, so onWatch shows one Antigravity card and lets you choose
+where the data comes from:
+
+| Source | What it does | Data richness |
+|--------|--------------|---------------|
+| `ide` | Probes the running Antigravity **desktop/IDE** language server. | Per-model session quotas. |
+| `cli` | Launches and manages the **`agy` CLI** in a pseudo-terminal and reads its `RetrieveUserQuotaSummary` endpoint. | Richer: weekly **and** 5-hour limits for the Gemini and Claude+GPT groups. |
+| `both` (default) | Prefers the `agy` CLI for its richer data and falls back to the IDE probe when `agy` is unavailable. | Best available. |
+
+The dashboard card shows a **"Source: agy CLI / IDE"** badge indicating which
+probe produced the data you're seeing.
+
+### Choosing a source
+
+- **During setup:** `onwatch setup` asks which source to use when you enable Antigravity.
+- **Anytime in the dashboard:** open Settings -> Providers -> Antigravity and pick a Data Source. The change takes effect on the next poll - no restart needed.
+- **Via environment:** set `ANTIGRAVITY_SOURCE=both|cli|ide` in your `.env`.
+
+### About the `agy` CLI source
+
+The `agy` CLI only exposes its quota server while an interactive process is
+alive, and it exits immediately without a terminal. To read it, onWatch launches
+a managed `agy` process inside a pseudo-terminal, keeps it warm between polls,
+relaunches it if it becomes unhealthy, tears it down when idle or on shutdown,
+and **only ever stops the process it started** - your own interactive `agy`
+sessions are never touched.
+
+onWatch locates `agy` via `ANTIGRAVITY_CLI_PATH`, then your `PATH`, then common
+install locations (`~/.local/bin/agy`, `/opt/homebrew/bin/agy`,
+`/usr/local/bin/agy`). The CLI source is supported on macOS, Linux, and Windows
+(via ConPTY); the Unix path is the most thoroughly validated.
+
+---
+
 ## Quick Start (Auto-Detection)
 
 ### Step 1: Enable Antigravity in onWatch

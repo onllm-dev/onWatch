@@ -257,6 +257,28 @@ type AntigravityModelQuota struct {
 	TimeUntilReset    time.Duration
 }
 
+// Antigravity data sources. All variants share one Google-account quota, so
+// the provider exposes a single card whose data may come from either source.
+const (
+	AntigravitySourceIDE  = "ide"
+	AntigravitySourceCLI  = "cli"
+	AntigravitySourceBoth = "both"
+)
+
+// NormalizeAntigravitySource validates a source preference, defaulting to "both".
+func NormalizeAntigravitySource(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case AntigravitySourceIDE:
+		return AntigravitySourceIDE
+	case AntigravitySourceCLI:
+		return AntigravitySourceCLI
+	case AntigravitySourceBoth:
+		return AntigravitySourceBoth
+	default:
+		return AntigravitySourceBoth
+	}
+}
+
 // AntigravitySnapshot represents a point-in-time capture of Antigravity quotas.
 type AntigravitySnapshot struct {
 	ID             int64
@@ -267,6 +289,127 @@ type AntigravitySnapshot struct {
 	MonthlyCredits int
 	Models         []AntigravityModelQuota
 	RawJSON        string
+	// Source records which probe produced this snapshot: "ide" or "cli".
+	Source string
+}
+
+// --- agy CLI: RetrieveUserQuotaSummary ------------------------------------
+// The agy CLI's language server exposes a richer, bucket-based quota summary
+// than the IDE probe: per logical group (Gemini, Claude+GPT) it reports a
+// weekly and a 5-hour bucket, each with a remaining fraction and reset time.
+
+// AntigravityQuotaBucket is a single weekly/5h limit within a quota group.
+type AntigravityQuotaBucket struct {
+	BucketID          string  `json:"bucketId"`
+	DisplayName       string  `json:"displayName"`
+	Window            string  `json:"window"`
+	RemainingFraction float64 `json:"remainingFraction"`
+	ResetTime         string  `json:"resetTime"`
+}
+
+// AntigravityQuotaGroup is a set of models sharing weekly + 5h buckets.
+type AntigravityQuotaGroup struct {
+	DisplayName string                   `json:"displayName"`
+	Description string                   `json:"description"`
+	Buckets     []AntigravityQuotaBucket `json:"buckets"`
+}
+
+// AntigravityQuotaSummaryResponse is the agy RetrieveUserQuotaSummary payload.
+type AntigravityQuotaSummaryResponse struct {
+	Response *struct {
+		Groups      []AntigravityQuotaGroup `json:"groups"`
+		Description string                  `json:"description"`
+	} `json:"response"`
+}
+
+// agyBucketMeta provides stable display ordering and colors for known buckets.
+// Unknown bucket IDs still render via parser fallbacks.
+var agyBucketMeta = map[string]struct {
+	short string
+	color string
+	order int
+}{
+	"gemini-weekly": {"Gemini Weekly", "#10B981", 0},
+	"gemini-5h":     {"Gemini 5h", "#34D399", 1},
+	"3p-weekly":     {"Claude + GPT Weekly", "#D97757", 2},
+	"3p-5h":         {"Claude + GPT 5h", "#E8A38C", 3},
+}
+
+// AgyBucketColor returns a stable card color for a bucket ID.
+func AgyBucketColor(bucketID string) string {
+	if m, ok := agyBucketMeta[bucketID]; ok {
+		return m.color
+	}
+	return "#6e40c9"
+}
+
+// AgyBucketOrder returns a stable sort index for a bucket ID (unknown last).
+func AgyBucketOrder(bucketID string) int {
+	if m, ok := agyBucketMeta[bucketID]; ok {
+		return m.order
+	}
+	return 1000
+}
+
+// agyBucketLabel builds a human label like "Gemini Weekly Limit" from the
+// group display name and the bucket's own display name.
+func agyBucketLabel(groupDisplay, bucketID, bucketDisplay string) string {
+	if m, ok := agyBucketMeta[bucketID]; ok {
+		return m.short
+	}
+	short := strings.TrimSpace(strings.TrimSuffix(groupDisplay, " models"))
+	short = strings.TrimSpace(strings.TrimSuffix(short, " Models"))
+	if short == "" {
+		return strings.TrimSpace(bucketDisplay)
+	}
+	return strings.TrimSpace(short + " " + bucketDisplay)
+}
+
+// ParseAgyQuotaSummary converts a RetrieveUserQuotaSummary payload into
+// normalized model-quota rows (one row per bucket), reusing the existing
+// storage/tracking pipeline which is generic over model_id + fraction + reset.
+func ParseAgyQuotaSummary(data []byte) ([]AntigravityModelQuota, error) {
+	var resp AntigravityQuotaSummaryResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Response == nil {
+		return nil, fmt.Errorf("agy quota summary: missing response body")
+	}
+
+	now := time.Now()
+	var rows []AntigravityModelQuota
+	for _, g := range resp.Response.Groups {
+		for _, b := range g.Buckets {
+			frac := b.RemainingFraction
+			if frac < 0 {
+				frac = 0
+			}
+			if frac > 1 {
+				frac = 1
+			}
+			row := AntigravityModelQuota{
+				ModelID:           b.BucketID,
+				Label:             agyBucketLabel(g.DisplayName, b.BucketID, b.DisplayName),
+				RemainingFraction: frac,
+				RemainingPercent:  frac * 100,
+				IsExhausted:       frac <= 0,
+			}
+			if b.ResetTime != "" {
+				if t, err := time.Parse(time.RFC3339, b.ResetTime); err == nil {
+					row.ResetTime = &t
+					if d := t.Sub(now); d > 0 {
+						row.TimeUntilReset = d
+					}
+				}
+			}
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("agy quota summary: no buckets found")
+	}
+	return rows, nil
 }
 
 // AntigravityQuotaPool represents a group of models sharing the same quota.

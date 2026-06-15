@@ -35,6 +35,7 @@ type setupConfig struct {
 	codexToken         string
 	openCodeEnabled    bool
 	antigravityEnabled bool
+	antigravitySource  string
 	geminiEnabled      bool
 	grokEnabled        bool
 	adminUser          string
@@ -155,6 +156,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		return nil, fmt.Errorf("at least one provider is required")
 	}
 
+	// Antigravity data source preference (all variants share one quota).
+	if cfg.antigravityEnabled {
+		cfg.antigravitySource = collectAntigravitySource(reader)
+	}
+
 	// Dashboard credentials
 	fmt.Printf("\n  %s--- Dashboard Credentials ---%s\n\n", colorBold, colorReset)
 
@@ -225,6 +231,27 @@ func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey
 		grokEnabled = collectGrok(reader, logger)
 	}
 	return
+}
+
+// collectAntigravitySource asks which Antigravity data source to use. All
+// variants share one Google-account quota, so this is a preference, not a
+// separate provider. Returns "both" (default), "cli", or "ide".
+func collectAntigravitySource(reader *bufio.Reader) string {
+	fmt.Printf("\n  %sAntigravity Data Source%s\n", colorBold, colorReset)
+	fmt.Printf("  %sAll Antigravity variants share one Google-account quota.%s\n", colorDim, colorReset)
+	options := []string{
+		"Both (prefer agy CLI, fall back to IDE)",
+		"agy CLI only (richer weekly + 5h data; auto-launches agy)",
+		"IDE only (desktop language server)",
+	}
+	switch promptChoice(reader, "Which source should onWatch use?", options) {
+	case 2:
+		return "cli"
+	case 3:
+		return "ide"
+	default:
+		return "both"
+	}
 }
 
 // collectGrok enables xAI Grok credit tracking. onWatch auto-detects the bearer
@@ -384,7 +411,13 @@ func writeEnvFile(path string, cfg *setupConfig) error {
 
 	if cfg.antigravityEnabled {
 		b.WriteString("# Antigravity (Windsurf) - auto-detected from local process\n")
-		b.WriteString("ANTIGRAVITY_ENABLED=true\n\n")
+		b.WriteString("ANTIGRAVITY_ENABLED=true\n")
+		source := cfg.antigravitySource
+		if source == "" {
+			source = "both"
+		}
+		b.WriteString("# Data source: both | cli (agy) | ide\n")
+		b.WriteString(fmt.Sprintf("ANTIGRAVITY_SOURCE=%s\n\n", source))
 	}
 
 	if cfg.geminiEnabled {
@@ -644,8 +677,9 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 
 	if !existing.antigravityEnabled {
 		if promptYesNo(reader, "Add Antigravity (Windsurf) provider?", false) {
-			fmt.Fprintf(f, "\n# Antigravity (Windsurf) - auto-detected from local process\nANTIGRAVITY_ENABLED=true\n")
-			fmt.Printf("  %s ok %s  Added Antigravity provider to .env\n", colorGreen, colorReset)
+			source := collectAntigravitySource(reader)
+			fmt.Fprintf(f, "\n# Antigravity (Windsurf) - auto-detected from local process\nANTIGRAVITY_ENABLED=true\n# Data source: both | cli (agy) | ide\nANTIGRAVITY_SOURCE=%s\n", source)
+			fmt.Printf("  %s ok %s  Added Antigravity provider to .env (source: %s)\n", colorGreen, colorReset, source)
 		}
 	}
 

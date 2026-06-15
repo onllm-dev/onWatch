@@ -705,6 +705,8 @@ append_antigravity_to_env() {
         echo ""
         echo "# Antigravity (Windsurf) - auto-detected from local process"
         echo "ANTIGRAVITY_ENABLED=true"
+        echo "# Data source: both | cli (agy) | ide. Change anytime in dashboard settings."
+        echo "ANTIGRAVITY_SOURCE=${ANTIGRAVITY_SOURCE:-both}"
     } >> "$env_file"
 }
 
@@ -1243,6 +1245,8 @@ interactive_setup() {
         if [[ -n "$antigravity_enabled" ]]; then
             echo "# Antigravity (Windsurf) - auto-detected from local process"
             echo "ANTIGRAVITY_ENABLED=true"
+            echo "# Data source: both | cli (agy) | ide. Change anytime in dashboard settings."
+            echo "ANTIGRAVITY_SOURCE=${ANTIGRAVITY_SOURCE:-both}"
             echo ""
         fi
 

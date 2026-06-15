@@ -357,6 +357,7 @@ func TestProviderCollectionHelpers(t *testing.T) {
 func TestFreshSetup_AntigravityOnlySafeBranch(t *testing.T) {
 	input := strings.Join([]string{
 		"6",     // antigravity only
+		"1",     // antigravity source: both
 		"",      // default admin user
 		"",      // auto-generate password
 		"70000", // invalid port
@@ -440,6 +441,7 @@ func TestRunSetupEarlyPathsAndSafeRunCommands(t *testing.T) {
 		t.Setenv("HOME", home)
 		input := strings.Join([]string{
 			"6",    // antigravity only
+			"1",    // antigravity source: both
 			"",     // default admin user
 			"",     // auto-generated password
 			"9211", // valid port

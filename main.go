@@ -1202,6 +1202,22 @@ func run() error {
 	}
 	if antigravityAg != nil {
 		antigravityAg.SetPollingCheck(func() bool { return isPollingEnabled("antigravity") })
+		// Source preference is read fresh each poll so a settings-UI change
+		// (ide/cli/both) takes effect without a daemon restart.
+		antigravityAg.SetSourceCheck(func() string {
+			v, err := db.GetSetting("provider_settings")
+			if err == nil && v != "" {
+				var ps map[string]map[string]interface{}
+				if json.Unmarshal([]byte(v), &ps) == nil {
+					if ag, ok := ps["antigravity"]; ok {
+						if src, ok := ag["source"].(string); ok && src != "" {
+							return src
+						}
+					}
+				}
+			}
+			return cfg.AntigravitySource
+		})
 	}
 	if minimaxMgr != nil {
 		minimaxMgr.SetPollingCheck(func() bool { return isPollingEnabled("minimax") })

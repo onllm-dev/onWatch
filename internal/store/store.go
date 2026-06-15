@@ -490,7 +490,8 @@ func (s *Store) createTables() error {
 			prompt_credits REAL,
 			monthly_credits INTEGER,
 			raw_json TEXT,
-			model_count INTEGER DEFAULT 0
+			model_count INTEGER DEFAULT 0,
+			source TEXT NOT NULL DEFAULT 'unknown'
 		);
 
 		CREATE TABLE IF NOT EXISTS antigravity_model_values (
@@ -816,6 +817,15 @@ func (s *Store) migrateSchema() error {
 			if !strings.Contains(err.Error(), "no such table") {
 				return fmt.Errorf("failed antigravity index migration: %w", err)
 			}
+		}
+	}
+
+	// Record which source (ide/cli) produced each Antigravity snapshot.
+	if _, err := s.db.Exec(`
+		ALTER TABLE antigravity_snapshots ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown'
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to add source to antigravity_snapshots: %w", err)
 		}
 	}
 

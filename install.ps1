@@ -647,6 +647,8 @@ CODEX_TOKEN=$codexToken
         $envContent += @"
 # Antigravity (Windsurf) - auto-detected from local process
 ANTIGRAVITY_ENABLED=true
+# Data source: both | cli (agy) | ide. Change anytime in dashboard settings.
+ANTIGRAVITY_SOURCE=both
 
 "@
     }

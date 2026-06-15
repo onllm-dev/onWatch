@@ -1376,6 +1376,7 @@ var providerEnumFields = map[string]map[string][]string{
 	},
 	"antigravity": {
 		"display_mode": {"usage", "available"},
+		"source":       {"both", "ide", "cli"},
 	},
 	"gemini": {
 		"display_mode": {"usage", "available"},
@@ -1469,6 +1470,9 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 		}
 		if token, _ := s["csrf_token"].(string); token != "" {
 			cfg.AntigravityCSRFToken = token
+		}
+		if source, _ := s["source"].(string); source != "" {
+			cfg.AntigravitySource = api.NormalizeAntigravitySource(source)
 		}
 	}
 	// OpenCode (opencode-codex) feeds the Codex provider; the UI persists a
@@ -8091,6 +8095,22 @@ func (h *Handler) buildAntigravityCurrent() map[string]interface{} {
 		response["promptCredits"] = latest.PromptCredits
 		response["monthlyCredits"] = latest.MonthlyCredits
 	}
+	if latest.Source != "" && latest.Source != "unknown" {
+		response["source"] = latest.Source
+	}
+
+	// The agy CLI source reports bucket rows (weekly + 5h per group); render them
+	// directly rather than collapsing into the IDE's logical model groups.
+	if latest.Source == api.AntigravitySourceCLI {
+		quotas := h.buildAntigravityCLIQuotas(latest.Models)
+		response["quotas"] = quotas
+		response["pools"] = quotas
+		if lowest := lowestAntigravityPool(quotas); lowest != nil {
+			response["lowestPool"] = lowest
+		}
+		applyDisplayModeToResponse(response, h.getDisplayMode("antigravity"))
+		return response
+	}
 
 	groups := api.GroupAntigravityModelsByLogicalQuota(latest.Models)
 	quotas := make([]map[string]interface{}, 0, len(groups))
@@ -8137,20 +8157,77 @@ func (h *Handler) buildAntigravityCurrent() map[string]interface{} {
 	response["quotas"] = quotas
 	response["pools"] = quotas
 
-	var lowestPool map[string]interface{}
-	lowestRemaining := 101.0
-	for _, q := range quotas {
-		if remaining, ok := q["remainingPercent"].(float64); ok && remaining < lowestRemaining {
-			lowestRemaining = remaining
-			lowestPool = q
-		}
-	}
-	if lowestPool != nil {
-		response["lowestPool"] = lowestPool
+	if lowest := lowestAntigravityPool(quotas); lowest != nil {
+		response["lowestPool"] = lowest
 	}
 
 	applyDisplayModeToResponse(response, h.getDisplayMode("antigravity"))
 	return response
+}
+
+// buildAntigravityCLIQuotas renders agy CLI bucket rows (one card per bucket,
+// e.g. Gemini Weekly/5h, Claude+GPT Weekly/5h) in stable display order.
+func (h *Handler) buildAntigravityCLIQuotas(models []api.AntigravityModelQuota) []map[string]interface{} {
+	ordered := make([]api.AntigravityModelQuota, len(models))
+	copy(ordered, models)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return api.AgyBucketOrder(ordered[i].ModelID) < api.AgyBucketOrder(ordered[j].ModelID)
+	})
+
+	quotas := make([]map[string]interface{}, 0, len(ordered))
+	for _, m := range ordered {
+		usagePercent := 100 - m.RemainingPercent
+		if usagePercent < 0 {
+			usagePercent = 0
+		}
+		if usagePercent > 100 {
+			usagePercent = 100
+		}
+		qMap := map[string]interface{}{
+			"modelId":           m.ModelID,
+			"quotaGroup":        m.ModelID,
+			"label":             m.Label,
+			"displayName":       m.Label,
+			"remainingFraction": m.RemainingFraction,
+			"remainingPercent":  m.RemainingPercent,
+			"usagePercent":      usagePercent,
+			"isExhausted":       m.IsExhausted,
+			"status":            antigravityUsageStatus(usagePercent),
+			"models":            []string{m.ModelID},
+			"modelLabels":       []string{m.Label},
+			"color":             api.AgyBucketColor(m.ModelID),
+		}
+		if m.ResetTime != nil {
+			timeUntilReset := m.TimeUntilReset
+			if timeUntilReset < 0 {
+				timeUntilReset = 0
+			}
+			qMap["resetTime"] = m.ResetTime.Format(time.RFC3339)
+			qMap["timeUntilReset"] = formatDuration(timeUntilReset)
+			qMap["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+		}
+		if h.antigravityTracker != nil {
+			if summary, err := h.antigravityTracker.UsageSummary(m.ModelID); err == nil && summary != nil {
+				qMap["currentRate"] = summary.CurrentRate
+				qMap["projectedUsage"] = summary.ProjectedUsage
+			}
+		}
+		quotas = append(quotas, qMap)
+	}
+	return quotas
+}
+
+// lowestAntigravityPool returns the quota entry with the least remaining.
+func lowestAntigravityPool(quotas []map[string]interface{}) map[string]interface{} {
+	var lowest map[string]interface{}
+	lowestRemaining := 101.0
+	for _, q := range quotas {
+		if remaining, ok := q["remainingPercent"].(float64); ok && remaining < lowestRemaining {
+			lowestRemaining = remaining
+			lowest = q
+		}
+	}
+	return lowest
 }
 
 func antigravityUsageStatus(usagePercent float64) string {

@@ -7,6 +7,61 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
+func TestInsertAntigravitySnapshot_RoundTripsSource(t *testing.T) {
+	t.Parallel()
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer s.Close()
+
+	snap := &api.AntigravitySnapshot{
+		CapturedAt: time.Now().UTC(),
+		Source:     api.AntigravitySourceCLI,
+		Models: []api.AntigravityModelQuota{
+			{ModelID: "gemini-5h", Label: "Gemini 5h", RemainingFraction: 0.4, RemainingPercent: 40},
+		},
+	}
+	if _, err := s.InsertAntigravitySnapshot(snap); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	latest, err := s.QueryLatestAntigravity()
+	if err != nil {
+		t.Fatalf("query latest: %v", err)
+	}
+	if latest == nil {
+		t.Fatal("expected a snapshot")
+	}
+	if latest.Source != api.AntigravitySourceCLI {
+		t.Fatalf("source = %q, want %q", latest.Source, api.AntigravitySourceCLI)
+	}
+}
+
+func TestInsertAntigravitySnapshot_DefaultsSourceToUnknown(t *testing.T) {
+	t.Parallel()
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer s.Close()
+
+	snap := &api.AntigravitySnapshot{
+		CapturedAt: time.Now().UTC(),
+		Models:     []api.AntigravityModelQuota{{ModelID: "x", RemainingFraction: 1, RemainingPercent: 100}},
+	}
+	if _, err := s.InsertAntigravitySnapshot(snap); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	latest, err := s.QueryLatestAntigravity()
+	if err != nil {
+		t.Fatalf("query latest: %v", err)
+	}
+	if latest.Source != "unknown" {
+		t.Fatalf("source = %q, want %q", latest.Source, "unknown")
+	}
+}
+
 func TestQueryAntigravityModelIDsForGroup(t *testing.T) {
 	t.Parallel()
 	s, err := New(":memory:")

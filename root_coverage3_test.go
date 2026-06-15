@@ -227,6 +227,7 @@ func TestFreshSetup_AllProviders(t *testing.T) {
 		"codex-token",  // codex manual token
 		"n",            // opencode: not detected, skip
 		"n",            // grok: not detected, skip
+		"1",            // antigravity source: both
 		"",             // admin user (default)
 		"",             // auto-generate password
 		"9211",         // port
@@ -270,6 +271,7 @@ func TestFreshSetup_MultipleProviders_Choice6(t *testing.T) {
 		"y",            // add antigravity
 		"n",            // skip gemini
 		"n",            // skip grok
+		"1",            // antigravity source: both
 		"",             // admin user (default)
 		"",             // auto-generate password
 		"9211",         // port
@@ -901,6 +903,7 @@ func TestAddMissingProviders_AntigravityAdded(t *testing.T) {
 		"n", // skip codex
 		"n", // skip opencode
 		"y", // add antigravity
+		"1", // antigravity source: both
 		"n", // skip gemini
 	}, "\n") + "\n"
 
@@ -1696,6 +1699,7 @@ func TestRunSetup_ExistingEnvNoProviders_FreshSetup(t *testing.T) {
 
 	input := strings.Join([]string{
 		"6",    // antigravity only
+		"1",    // antigravity source: both
 		"",     // default admin user
 		"",     // auto-generate password
 		"9211", // valid port

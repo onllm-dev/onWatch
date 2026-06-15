@@ -50,6 +50,7 @@ type Config struct {
 	AntigravityBaseURL   string // ANTIGRAVITY_BASE_URL (for Docker)
 	AntigravityCSRFToken string // ANTIGRAVITY_CSRF_TOKEN (for Docker)
 	AntigravityEnabled   bool   // true if auto-detection should be attempted
+	AntigravitySource    string // ANTIGRAVITY_SOURCE: "ide" | "cli" | "both" (default "both")
 
 	// MiniMax provider configuration
 	MiniMaxAPIKey string // MINIMAX_API_KEY
@@ -316,6 +317,15 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// Enable Antigravity if: (1) manual config provided, or (2) ANTIGRAVITY_ENABLED=true, or (3) auto-detect
 	if cfg.AntigravityBaseURL != "" || os.Getenv("ANTIGRAVITY_ENABLED") == "true" {
 		cfg.AntigravityEnabled = true
+	}
+	// Data source preference: "ide" | "cli" | "both" (default "both").
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ANTIGRAVITY_SOURCE"))) {
+	case "ide":
+		cfg.AntigravitySource = "ide"
+	case "cli":
+		cfg.AntigravitySource = "cli"
+	default:
+		cfg.AntigravitySource = "both"
 	}
 
 	// MiniMax provider

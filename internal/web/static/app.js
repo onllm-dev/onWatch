@@ -1019,6 +1019,11 @@ const antigravityChartColorMap = {
   antigravity_claude_gpt: { border: '#D97757', bg: 'rgba(217, 119, 87, 0.08)' },
   antigravity_gemini_pro: { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },
   antigravity_gemini_flash: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.08)' },
+  // agy CLI bucket rows (weekly + 5h per group)
+  'gemini-weekly': { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },
+  'gemini-5h': { border: '#34D399', bg: 'rgba(52, 211, 153, 0.08)' },
+  '3p-weekly': { border: '#D97757', bg: 'rgba(217, 119, 87, 0.08)' },
+  '3p-5h': { border: '#E8A38C', bg: 'rgba(232, 163, 140, 0.08)' },
 };
 const antigravityChartColorFallback = [
   { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
@@ -2008,6 +2013,19 @@ function getAntigravityGroupColumns(quota) {
     labels[1] || '--',
     labels[2] || '--'
   ];
+}
+
+function updateAntigravitySourceBadge(source) {
+  const badge = document.getElementById('antigravity-source-badge');
+  if (!badge) return;
+  const labels = { cli: 'agy CLI', ide: 'IDE' };
+  const label = labels[source];
+  if (!label) {
+    badge.hidden = true;
+    return;
+  }
+  badge.textContent = `Source: ${label}`;
+  badge.hidden = false;
 }
 
 function renderAntigravityQuotaCards(quotas, containerId) {
@@ -3665,13 +3683,18 @@ async function fetchCurrent() {
       } else if (provider === 'codex') {
         fetchCodexUsage({ mode: 'codex', data });
       } else if (provider === 'antigravity') {
-        // Antigravity response: { capturedAt: ..., quotas: [...] }
+        // Antigravity response: { capturedAt: ..., quotas: [...], source: 'cli'|'ide' }
         if (data.quotas) {
           const container = document.getElementById('quota-grid-antigravity');
-          if (container && container.children.length === 0) {
+          // The card set (count and ids) changes when the source switches between
+          // IDE groups and CLI buckets, so re-render whenever the ids don't match.
+          const existingIds = container ? [...container.children].map(c => c.dataset.quota).join(',') : '';
+          const incomingIds = data.quotas.map(q => q.modelId).join(',');
+          if (container && (container.children.length === 0 || existingIds !== incomingIds)) {
             renderAntigravityQuotaCards(data.quotas, 'quota-grid-antigravity');
           }
           data.quotas.forEach(q => updateAntigravityCard(q));
+          updateAntigravitySourceBadge(data.source);
         }
       } else if (provider === 'minimax') {
         if (data.quotas) {
@@ -9694,8 +9717,13 @@ const providerSettingsConfig = {
   },
   antigravity: {
     title: 'Antigravity',
-    desc: 'Override auto-detection for Docker or remote environments. Leave blank to use auto-detection.',
+    desc: 'Choose where quota data comes from. All Antigravity variants share one Google-account quota, so onWatch shows a single card and labels the active source.',
     fields: [
+      { id: 'source', label: 'Data Source', type: 'select', options: [
+        { value: 'both', text: 'Both (prefer agy CLI, fall back to IDE)' },
+        { value: 'cli', text: 'agy CLI only (richer weekly + 5h data)' },
+        { value: 'ide', text: 'IDE only (desktop language server)' },
+      ], default: 'both', hint: 'The agy CLI exposes richer weekly + 5-hour quota data but auto-launches a managed agy process. IDE uses the running Antigravity desktop app. Equivalent to ANTIGRAVITY_SOURCE.' },
       { id: 'base_url', label: 'Base URL', type: 'text', placeholder: 'Auto-detected', hint: 'Override the auto-detected Antigravity server URL (e.g. for Docker). Equivalent to ANTIGRAVITY_BASE_URL.' },
       { id: 'csrf_token', label: 'CSRF Token', type: 'password', placeholder: 'Auto-detected', hint: 'Override the CSRF token for the Antigravity server. Equivalent to ANTIGRAVITY_CSRF_TOKEN.', sensitive: true },
     ],
