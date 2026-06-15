@@ -1353,7 +1353,9 @@ var providerEnumFields = map[string]map[string][]string{
 		"display_mode": {"usage", "available"},
 	},
 	"codex": {
-		"display_mode": {"usage", "available"},
+		"display_mode":  {"usage", "available"},
+		"auto_start_5h": {"off", "on"},
+		"auto_start_7d": {"off", "on"},
 	},
 	"anthropic": {
 		"display_mode": {"usage", "available"},
@@ -1914,10 +1916,10 @@ func (h *Handler) buildGrokCurrent() map[string]interface{} {
 			sum := h.grokTracker.GetGrokSummary(store.DefaultGrokAccountID, primary.Name, latest)
 			if sum != nil {
 				response["summary"] = map[string]interface{}{
-					"current_util":    sum.CurrentUtil,
-					"resets_at":       nil,
-					"current_rate":    sum.CurrentRate,
-					"projected_util":  sum.ProjectedUtil,
+					"current_util":     sum.CurrentUtil,
+					"resets_at":        nil,
+					"current_rate":     sum.CurrentRate,
+					"projected_util":   sum.ProjectedUtil,
 					"completed_cycles": sum.CompletedCycles,
 				}
 				if sum.ResetsAt != nil {

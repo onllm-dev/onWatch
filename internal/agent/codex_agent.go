@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
@@ -15,6 +16,16 @@ import (
 
 // maxCodexAuthFailures is the number of consecutive auth failures before pausing polling.
 const maxCodexAuthFailures = 3
+
+// Auto quota-starter (Beta) rate limiting. The starter is re-evaluated every
+// poll (so a failed start is retried at the user's polling cadence), but is hard
+// capped to codexStarterMaxFires pings per quota window within a rolling
+// codexStarterRateWindow. This guarantees we never loop or waste more than a
+// handful of requests even if a start never "takes".
+const (
+	codexStarterMaxFires   = 5
+	codexStarterRateWindow = 4 * time.Hour
+)
 
 // codexTokenRefreshThreshold is how soon before expiry we proactively refresh the token.
 // Codex tokens expire weekly, so refreshing 6 hours early provides a comfortable buffer.
@@ -60,6 +71,122 @@ type CodexAgent struct {
 	authPaused               bool
 	lastFailedToken          string
 	proactiveRefreshFailures int // consecutive proactive refresh failures (non-reused-token)
+
+	// Auto quota-starter (Beta).
+	// codexAccountID is the Codex account_id (string) used for the
+	// ChatGPT-Account-ID header on starter pings. autoStartCheck reports, fresh
+	// per poll, whether auto-start is enabled for a given window ("five_hour" /
+	// "seven_day"). starterFires (guarded by starterMu) holds recent ping times
+	// per window for the rolling rate cap; it is read/written from a goroutine
+	// concurrent with poll().
+	codexAccountID string
+	autoStartCheck func(quotaName string) bool
+	starterMu      sync.Mutex
+	starterFires   map[string][]time.Time
+}
+
+// codexAutoStartWindowSeconds returns the nominal length of an auto-startable
+// Codex quota window, or 0 for windows the starter does not manage.
+func codexAutoStartWindowSeconds(quotaName string) int64 {
+	switch quotaName {
+	case "five_hour":
+		return 5 * 60 * 60
+	case "seven_day":
+		return 7 * 24 * 60 * 60
+	default:
+		return 0
+	}
+}
+
+// codexUnstartedTolerance is how close the time-until-reset must be to the full
+// window length to treat the window as "unstarted". An unstarted Codex window
+// reports reset_at = now + window (it rolls forward every poll, so the countdown
+// stays pinned at ~the full length). Once a turn is sent the window's reset_at
+// becomes fixed and the countdown starts decreasing, dropping below this band.
+const codexUnstartedTolerance = 2 * time.Minute
+
+// isUnstartedCodexWindow reports whether a quota window looks unstarted: its
+// time-until-reset is within codexUnstartedTolerance of the full window length.
+func isUnstartedCodexWindow(quotaName string, resetsAt *time.Time, now time.Time) bool {
+	windowSec := codexAutoStartWindowSeconds(quotaName)
+	if windowSec == 0 || resetsAt == nil {
+		return false
+	}
+	remaining := resetsAt.Sub(now)
+	if remaining <= 0 {
+		return false
+	}
+	full := time.Duration(windowSec) * time.Second
+	return remaining >= full-codexUnstartedTolerance
+}
+
+// SetCodexAccountID sets the Codex account_id used for the ChatGPT-Account-ID
+// header on auto quota-starter pings.
+func (a *CodexAgent) SetCodexAccountID(id string) {
+	a.codexAccountID = id
+}
+
+// SetAutoStartCheck wires a callback that reports, fresh per poll, whether the
+// auto quota-starter (Beta) is enabled for a given window. Read fresh so a
+// dashboard toggle takes effect without a daemon restart.
+func (a *CodexAgent) SetAutoStartCheck(fn func(quotaName string) bool) {
+	a.autoStartCheck = fn
+}
+
+// maybeAutoStartWindows inspects the freshly polled quotas and, for any window
+// that is enabled and observed unstarted, fires a starter ping (cooldown-guarded
+// inside SendStarterPing). Pings run in a goroutine so they never block the poll.
+func (a *CodexAgent) maybeAutoStartWindows(ctx context.Context, quotas []api.CodexQuota, now time.Time) {
+	if a.autoStartCheck == nil {
+		return
+	}
+	for _, q := range quotas {
+		if codexAutoStartWindowSeconds(q.Name) == 0 {
+			continue
+		}
+		if !isUnstartedCodexWindow(q.Name, q.ResetsAt, now) {
+			continue
+		}
+		if !a.autoStartCheck(q.Name) {
+			continue
+		}
+		quotaName := q.Name
+		go a.SendStarterPing(ctx, a.codexAccountID, quotaName)
+	}
+}
+
+// allowStarterPing enforces the rolling rate cap using a bounded ring of the
+// last codexStarterMaxFires fire timestamps for the window:
+//   - fewer than codexStarterMaxFires recorded -> always fire (append now);
+//   - otherwise fire only if the oldest of the five is more than
+//     codexStarterRateWindow ago (then drop it and append now).
+//
+// This guarantees at most codexStarterMaxFires pings per rolling
+// codexStarterRateWindow per window. The slot is reserved even if the subsequent
+// send fails, so repeated unstarted observations retry at the polling cadence but
+// can never exceed the cap.
+func (a *CodexAgent) allowStarterPing(quotaName string) bool {
+	a.starterMu.Lock()
+	defer a.starterMu.Unlock()
+	if a.starterFires == nil {
+		a.starterFires = make(map[string][]time.Time)
+	}
+	now := time.Now()
+	fires := a.starterFires[quotaName]
+
+	if len(fires) < codexStarterMaxFires {
+		a.starterFires[quotaName] = append(fires, now)
+		return true
+	}
+	// Five recorded: only fire if the oldest is older than the rate window.
+	if now.Sub(fires[0]) <= codexStarterRateWindow {
+		return false
+	}
+	next := make([]time.Time, 0, codexStarterMaxFires)
+	next = append(next, fires[1:]...)
+	next = append(next, now)
+	a.starterFires[quotaName] = next
+	return true
 }
 
 // NewCodexAgent creates a new CodexAgent with the given dependencies.
@@ -113,6 +240,38 @@ func (a *CodexAgent) SetCredentialsRefresh(fn CodexCredentialsRefreshFunc) {
 // the global CODEX_HOME/auth.json, preventing auth contamination between profiles.
 func (a *CodexAgent) SetTokenSave(fn CodexTokenSaveFunc) {
 	a.tokenSave = fn
+}
+
+// SendStarterPing sends a minimal Codex generation request to "start" a limit
+// window after a reset (auto quota-starter, Beta). Failures are logged, never
+// fatal, and never retried (to avoid API spam) - a stale/paused token simply
+// yields a logged auth error. codexAccountID is the Codex account_id used for
+// the ChatGPT-Account-ID header; quotaName is for logging only.
+//
+// This may run in a goroutine concurrent with poll(), so it must not read
+// poll-owned agent state (e.g. authPaused) without synchronization. It relies
+// only on the client, which is internally synchronized.
+func (a *CodexAgent) SendStarterPing(ctx context.Context, codexAccountID, quotaName string) {
+	if !a.allowStarterPing(quotaName) {
+		a.logger.Info("Codex auto quota-starter skipped (rate cap reached)",
+			"quota", quotaName, "account_id", a.accountID,
+			"max_fires", codexStarterMaxFires, "window", codexStarterRateWindow)
+		return
+	}
+
+	a.logger.Info("Codex auto quota-starter firing",
+		"quota", quotaName, "account_id", a.accountID, "model", api.CodexStarterModel())
+
+	pingCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	if err := a.client.SendStarterPing(pingCtx, codexAccountID); err != nil {
+		a.logger.Warn("Codex auto quota-starter ping failed",
+			"quota", quotaName, "account_id", a.accountID, "model", api.CodexStarterModel(), "error", err)
+		return
+	}
+	a.logger.Info("Codex auto quota-starter ping sent",
+		"quota", quotaName, "account_id", a.accountID, "model", api.CodexStarterModel())
 }
 
 // sendAuthErrorNotification sends an auth error notification via the notifier.
@@ -326,6 +485,10 @@ func (a *CodexAgent) poll(ctx context.Context) {
 			a.logger.Error("Codex tracker processing failed", "error", err, "account_id", a.accountID)
 		}
 	}
+
+	// Auto quota-starter (Beta): start any enabled window that is observed
+	// unstarted (reset countdown pinned at ~full window length).
+	a.maybeAutoStartWindows(ctx, snapshot.Quotas, now)
 
 	if a.notifier != nil {
 		for _, q := range snapshot.Quotas {

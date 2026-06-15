@@ -35,6 +35,10 @@ type CodexClient struct {
 
 	fallbackMu      sync.RWMutex
 	fallbackBaseURL string
+
+	// starterURL is the Codex Responses endpoint used by the auto quota-starter
+	// (Beta). Defaults to codexResponsesURL; overridable for tests.
+	starterURL string
 }
 
 // CodexOption configures a CodexClient.
@@ -51,6 +55,14 @@ func WithCodexBaseURL(url string) CodexOption {
 func WithCodexTimeout(timeout time.Duration) CodexOption {
 	return func(c *CodexClient) {
 		c.httpClient.Timeout = timeout
+	}
+}
+
+// WithCodexStarterURL overrides the Codex Responses endpoint used by the auto
+// quota-starter ping. Primarily for tests.
+func WithCodexStarterURL(url string) CodexOption {
+	return func(c *CodexClient) {
+		c.starterURL = url
 	}
 }
 
@@ -72,9 +84,10 @@ func NewCodexClient(token string, logger *slog.Logger, opts ...CodexOption) *Cod
 				ForceAttemptHTTP2:     true,
 			},
 		},
-		token:   token,
-		baseURL: "https://chatgpt.com/backend-api/wham/usage",
-		logger:  logger,
+		token:      token,
+		baseURL:    "https://chatgpt.com/backend-api/wham/usage",
+		starterURL: codexResponsesURL,
+		logger:     logger,
 	}
 
 	for _, opt := range opts {

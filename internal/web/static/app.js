@@ -2239,7 +2239,7 @@ function renderCursorQuotaCards(quotas, containerId) {
     return;
   }
 
-  container.innerHTML = renderProviderKPIHTML(normalizeBothQuotas('cursor', { quotas }));
+  container.innerHTML = renderProviderKPIHTML(normalizeBothQuotas('cursor', { quotas }), 'cursor');
 }
 
 function updateGeminiCard(q) {
@@ -2548,6 +2548,50 @@ async function loadAntigravityModalCycles(groupKey) {
 
 // ── Codex Dynamic Card Rendering ──
 
+// codexAutoStartBadge returns a small pill for a Codex quota card when the
+// auto quota-starter (Beta) is enabled for that window. five_hour -> auto_start_5h,
+// seven_day -> auto_start_7d. Returns '' otherwise.
+function codexAutoStartBadge(quotaName) {
+  const ps = (State.providerSettings && State.providerSettings.codex) || {};
+  const key = quotaName === 'five_hour' ? 'auto_start_5h'
+    : (quotaName === 'seven_day' ? 'auto_start_7d' : null);
+  if (!key || ps[key] !== 'on') return '';
+  return `<span class="auto-start-badge" title="Auto-start is on (Beta): when this window resets, onWatch sends a tiny Codex request to start the window automatically.">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    Auto-start
+  </span>`;
+}
+
+// syncCodexAutoStartBadges adds/removes the Auto-start badge on already-rendered
+// Codex cards to match the current toggle state, without a full re-render. Called
+// after saving provider settings so the badge updates immediately. Covers both
+// the per-account `.quota-card.codex-card` and the multi-account overview's
+// `.account-overview-quota` rows.
+function syncCodexAutoStartBadges() {
+  document.querySelectorAll('.quota-card.codex-card').forEach(card => {
+    const title = card.querySelector('.quota-title');
+    if (!title) return;
+    const existing = title.querySelector('.auto-start-badge');
+    const html = codexAutoStartBadge(card.dataset.quota);
+    if (html && !existing) {
+      title.insertAdjacentHTML('beforeend', html);
+    } else if (!html && existing) {
+      existing.remove();
+    }
+  });
+  document.querySelectorAll('.account-overview-quota[data-quota]').forEach(row => {
+    const label = row.querySelector('.aoq-label');
+    if (!label) return;
+    const existing = label.querySelector('.auto-start-badge');
+    const html = codexAutoStartBadge(row.dataset.quota);
+    if (html && !existing) {
+      label.insertAdjacentHTML('beforeend', html);
+    } else if (!html && existing) {
+      existing.remove();
+    }
+  });
+}
+
 function renderCodexQuotaCards(quotas, containerId, planType) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -2576,6 +2620,7 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
           ${displayName}
+          ${codexAutoStartBadge(q.name)}
         </h2>
         <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
@@ -2655,6 +2700,7 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
           ${displayName}
+          ${codexAutoStartBadge(q.name)}
         </h2>
         <span class="countdown" id="countdown-${cardKey}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
@@ -3780,6 +3826,7 @@ async function fetchCodexUsage(options = {}) {
         accounts = Array.isArray(data.accounts) ? data.accounts : [];
       }
       renderCodexAccountSections(accounts);
+      syncCodexAutoStartBadges();
       return;
     }
 
@@ -3816,6 +3863,9 @@ async function fetchCodexUsage(options = {}) {
     }
 
     visibleQuotas.forEach(q => updateCodexCard(q));
+    // Ensure the Auto-start badge matches settings even when cards were rendered
+    // before provider settings loaded (only in-place value updates run after).
+    syncCodexAutoStartBadges();
   } catch (err) {
     // codex usage fetch error - non-critical
   }
@@ -3850,6 +3900,7 @@ function accountOverviewQuotas(provider, account) {
   if (provider === 'minimax') {
     return (account.quotas || []).map(q => ({
       label: minimaxWindowLabel(q),
+      quotaName: q.name || null,
       percent: typeof q.usagePercent === 'number' ? q.usagePercent : 0,
       status: q.status || 'healthy',
       resetAt: q.resetAt || null,
@@ -3858,6 +3909,7 @@ function accountOverviewQuotas(provider, account) {
   const visible = filterCodexQuotasForPlan(account.quotas || [], account.planType);
   return visible.map(q => ({
     label: q.displayName || codexDisplayNames[q.name] || q.name,
+    quotaName: q.name,
     percent: typeof q.cardPercent === 'number' ? q.cardPercent : (q.utilization || 0),
     status: q.status || 'healthy',
     resetAt: q.resetsAt || null,
@@ -3875,9 +3927,12 @@ function accountOverviewCardHTML(provider, account, idx) {
     : rows.map(r => {
         const pct = Math.max(0, Math.min(100, r.percent)).toFixed(1);
         const reset = r.resetAt ? formatResetTime(r.resetAt) : '';
-        return `<div class="account-overview-quota">
+        // Surface the Auto-start indicator for Codex windows here too, so the
+        // multi-account overview (the default Codex tab) shows it.
+        const startBadge = provider === 'codex' ? codexAutoStartBadge(r.quotaName) : '';
+        return `<div class="account-overview-quota" data-quota="${escapeHTML(r.quotaName || '')}">
           <div class="aoq-top">
-            <span class="aoq-label">${escapeHTML(r.label)}</span>
+            <span class="aoq-label">${escapeHTML(r.label)}${startBadge}</span>
             <span class="aoq-pct">${pct}%</span>
           </div>
           <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(r.percent)}" aria-valuemin="0" aria-valuemax="100">
@@ -5686,7 +5741,7 @@ function buildAllProviderEntries() {
   return entries;
 }
 
-function renderProviderKPIHTML(quotas) {
+function renderProviderKPIHTML(quotas, provider) {
   if (!Array.isArray(quotas) || quotas.length === 0) {
     return '<p class="insight-text">No KPI data available yet.</p>';
   }
@@ -5713,6 +5768,7 @@ function renderProviderKPIHTML(quotas) {
           <h2 class="quota-title">
             <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
             ${escapeHTML(displayName)}
+            ${provider === 'codex' ? codexAutoStartBadge(quota.name) : ''}
           </h2>
           ${subtitle ? `<div class="quota-subtitle">${escapeHTML(subtitle)}</div>` : ''}
         </div>
@@ -6299,7 +6355,7 @@ function renderAllProvidersView() {
     return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
       ${cardHeader}
       <div class="provider-card-body">
-        <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas)}</div>
+        <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas, entry.provider)}</div>
         ${(() => {
           const insightsHTML = renderProviderInsightsHTML(entry.provider, entry.insights);
           return insightsHTML ? `<div class="provider-insights">${insightsHTML}</div>` : '';
@@ -9669,12 +9725,20 @@ const providerSettingsConfig = {
         { value: '', text: 'Use global default' },
         { value: 'usage', text: 'Usage (show utilization %)' },
         { value: 'available', text: 'Available (show remaining %)' },
-      ], default: '', hint: 'Override the global Quota Display setting (Settings → General) for Codex only. Choose "Use global default" to follow the global setting.' },
+      ], default: '', noRestart: true, hint: 'Override the global Quota Display setting (Settings → General) for Codex only. Choose "Use global default" to follow the global setting.' },
       { id: 'pace_mode', label: 'Weekly Pace Mode', type: 'select', options: [
         { value: 'calendar', text: 'Calendar (7-day)' },
         { value: '6-day', text: '6-day (Mon-Sat)' },
         { value: '5-day', text: '5-day (Mon-Fri)' },
-      ], default: 'calendar', hint: 'Distributes 100% expected pace across selected work days only. Non-work days show "off day - pace paused".' },
+      ], default: 'calendar', noRestart: true, hint: 'Distributes 100% expected pace across selected work days only. Non-work days show "off day - pace paused".' },
+      { id: 'auto_start_5h', label: 'Auto-start 5h window (Beta)', type: 'select', options: [
+        { value: 'off', text: 'Off' },
+        { value: 'on', text: 'On' },
+      ], default: 'off', noRestart: true, hint: 'Beta: when the 5-hour window resets, onWatch sends a tiny Codex request to start the window so the fresh limit begins immediately. This consumes a small amount of quota each reset. Applies on the next reset - no daemon restart needed.' },
+      { id: 'auto_start_7d', label: 'Auto-start weekly window (Beta)', type: 'select', options: [
+        { value: 'off', text: 'Off' },
+        { value: 'on', text: 'On' },
+      ], default: 'off', noRestart: true, hint: 'Beta: when the weekly (7-day) window resets, onWatch sends a tiny Codex request to start the window so you keep the full reserve even if you do not use Codex right away. Consumes a small amount of quota. Applies on the next reset - no daemon restart needed.' },
     ],
   },
   copilot: {
@@ -9723,7 +9787,7 @@ const providerSettingsConfig = {
         { value: 'both', text: 'Both (prefer agy CLI, fall back to IDE)' },
         { value: 'cli', text: 'agy CLI only (richer weekly + 5h data)' },
         { value: 'ide', text: 'IDE only (desktop language server)' },
-      ], default: 'both', hint: 'The agy CLI exposes richer weekly + 5-hour quota data but auto-launches a managed agy process. IDE uses the running Antigravity desktop app. Equivalent to ANTIGRAVITY_SOURCE.' },
+      ], default: 'both', noRestart: true, hint: 'The agy CLI exposes richer weekly + 5-hour quota data but auto-launches a managed agy process. IDE uses the running Antigravity desktop app. Equivalent to ANTIGRAVITY_SOURCE.' },
       { id: 'base_url', label: 'Base URL', type: 'text', placeholder: 'Auto-detected', hint: 'Override the auto-detected Antigravity server URL (e.g. for Docker). Equivalent to ANTIGRAVITY_BASE_URL.' },
       { id: 'csrf_token', label: 'CSRF Token', type: 'password', placeholder: 'Auto-detected', hint: 'Override the CSRF token for the Antigravity server. Equivalent to ANTIGRAVITY_CSRF_TOKEN.', sensitive: true },
     ],
@@ -10038,6 +10102,11 @@ async function saveProviderSettings() {
   const config = providerSettingsConfig[providerKey];
   if (!config || config.fields.length === 0) { closeProviderSettingsModal(); return; }
 
+  // Snapshot current values so we can tell which fields actually changed and
+  // whether any changed field requires a daemon restart (fields flagged
+  // noRestart apply live).
+  const baseline = (State.providerSettings && State.providerSettings[providerKey]) || {};
+
   const feedbackEl = document.getElementById('provider-settings-feedback');
   const saveBtn = document.getElementById('provider-settings-save');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
@@ -10070,6 +10139,18 @@ async function saveProviderSettings() {
       throw new Error(errData.error || 'Save failed');
     }
     const data = await res.json();
+    // Determine restart requirement from the fields the user actually changed.
+    let anyChange = false;
+    let restartNeeded = false;
+    config.fields.forEach(f => {
+      if (!(f.id in provData)) return;
+      const changed = (f.type === 'password' && f.sensitive)
+        ? true // sensitive fields are only present when newly typed
+        : String(provData[f.id]) !== String(baseline[f.id] === undefined ? (f.default ?? '') : baseline[f.id]);
+      if (!changed) return;
+      anyChange = true;
+      if (!f.noRestart) restartNeeded = true;
+    });
     // Update local state with returned settings
     if (data.provider_settings) {
       State.providerSettings = data.provider_settings;
@@ -10078,7 +10159,14 @@ async function saveProviderSettings() {
       if (!State.providerSettings) State.providerSettings = {};
       State.providerSettings[providerKey] = provData;
     }
-    showSettingsFeedback(feedbackEl, 'Settings saved. Restart daemon to apply changes.', 'success');
+    const savedMsg = !anyChange
+      ? 'Settings saved.'
+      : (restartNeeded
+        ? 'Settings saved. Restart daemon to apply changes.'
+        : 'Settings saved. Changes apply automatically - no restart needed.');
+    // Reflect live-applied changes (e.g. Codex auto-start badges) immediately.
+    if (providerKey === 'codex') syncCodexAutoStartBadges();
+    showSettingsFeedback(feedbackEl, savedMsg, 'success');
     setTimeout(closeProviderSettingsModal, 1200);
   } catch (e) {
     showSettingsFeedback(feedbackEl, e.message || 'Failed to save settings.', 'error');
@@ -10996,6 +11084,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
+  // Preload provider settings (toggles like codex auto_start_5h/7d) on every
+  // dashboard view so live UI indicators (e.g. Auto-start badge) can read them
+  // without depending on a prior visit to /settings.
+  try {
+    const r = await authFetch(`${API_BASE}/api/settings`);
+    if (r.ok) {
+      const d = await r.json();
+      State.providerSettings = d.provider_settings || {};
+    }
+  } catch (_) { /* non-critical: badges simply won't render until settings load */ }
   // Redirect to saved default provider if no explicit provider in URL
   // Only when multiple providers are available (tabs exist)
   const urlParams = new URLSearchParams(window.location.search);

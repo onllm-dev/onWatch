@@ -44,6 +44,8 @@ type Config struct {
 	CodexHasProfiles   bool   // true if saved profiles exist (enables bootstrap without token)
 	OpenCodeEnabled    bool   // OPENCODE_ENABLED=true: track ChatGPT via OpenCode auth.json (feeds Codex)
 	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
+	CodexAutoStart5h   bool   // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
+	CodexAutoStart7d   bool   // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
 	DisplayMode        string // ONWATCH_DISPLAY_MODE: "usage" | "available", default "usage" (global, applies to all providers)
 
 	// Antigravity provider configuration (auto-detected from local process)
@@ -91,7 +93,7 @@ type Config struct {
 	DBPathExplicit     bool          // true if user explicitly set --db or ONWATCH_DB_PATH
 	LogLevel           string        // ONWATCH_LOG_LEVEL
 	LogFormat          string        // ONWATCH_LOG_FORMAT: text (default), txt, fmt, or json
-	MetricsToken      string        // ONWATCH_METRICS_TOKEN (bearer token for /metrics endpoint)
+	MetricsToken       string        // ONWATCH_METRICS_TOKEN (bearer token for /metrics endpoint)
 	SessionIdleTimeout time.Duration // ONWATCH_SESSION_IDLE_TIMEOUT (seconds → Duration)
 	BasePath           string        // ONWATCH_BASE_PATH (subdirectory hosting, e.g. "/onwatch")
 	DebugMode          bool          // --debug flag (foreground mode)
@@ -304,6 +306,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	}
 	// OpenCode feeds the Codex provider using ChatGPT OAuth stored by OpenCode.
 	cfg.OpenCodeEnabled = os.Getenv("OPENCODE_ENABLED") == "true"
+	// Codex auto quota-starter (Beta): default off; the dashboard toggle in
+	// provider_settings overrides these env-provided defaults at runtime.
+	cfg.CodexAutoStart5h = os.Getenv("CODEX_AUTO_START_5H") == "true"
+	cfg.CodexAutoStart7d = os.Getenv("CODEX_AUTO_START_7D") == "true"
 
 	// Global display mode (applies to all providers unless per-provider override)
 	cfg.DisplayMode = strings.ToLower(strings.TrimSpace(os.Getenv("ONWATCH_DISPLAY_MODE")))

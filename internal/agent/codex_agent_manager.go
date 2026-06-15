@@ -47,8 +47,9 @@ type CodexAgentManager struct {
 	interval            time.Duration
 	logger              *slog.Logger
 	notifier            *notify.NotificationEngine
-	pollingCheck        func() bool                // Global Codex polling check
-	accountPollingCheck func(accountID int64) bool // Per-account polling check
+	pollingCheck        func() bool                 // Global Codex polling check
+	accountPollingCheck func(accountID int64) bool  // Per-account polling check
+	autoStartCheck      func(quotaName string) bool // Auto quota-starter enablement (per window)
 
 	mu        sync.RWMutex
 	instances map[string]*CodexAgentInstance // profile name -> instance
@@ -97,6 +98,24 @@ func (m *CodexAgentManager) SetPollingCheck(fn func() bool) {
 // This is called with the database account ID to check if polling is enabled for that specific account.
 func (m *CodexAgentManager) SetAccountPollingCheck(fn func(accountID int64) bool) {
 	m.accountPollingCheck = fn
+}
+
+// SetAutoStartCheck wires the auto quota-starter (Beta) enablement callback for
+// all agents. It is read fresh per poll (per window) so a dashboard toggle takes
+// effect without a daemon restart.
+func (m *CodexAgentManager) SetAutoStartCheck(fn func(quotaName string) bool) {
+	m.autoStartCheck = fn
+}
+
+// rememberProfileWrite records a profile file's current mtime so the profile
+// scanner does not treat onWatch's own credential write-back as an external
+// modification (which would needlessly stop and restart the agent every scan).
+func (m *CodexAgentManager) rememberProfileWrite(profileName, profilePath string) {
+	if info, err := os.Stat(profilePath); err == nil {
+		m.mu.Lock()
+		m.lastScanProfiles[profileName] = info.ModTime()
+		m.mu.Unlock()
+	}
 }
 
 // Run starts the manager and all profile agents.
@@ -480,6 +499,8 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 		if shouldUseSystemCredsForProfile(profileCreds, systemCreds, profile.AccountID, profile.UserID) {
 			if err := updateProfileFromSystemCreds(profilePath, systemCreds, m.logger); err != nil {
 				m.logger.Warn("failed to persist Codex profile token refresh from auth.json", "error", err, "profile", profile.Name)
+			} else {
+				m.rememberProfileWrite(profile.Name, profilePath)
 			}
 			if systemCreds.AccessToken != "" {
 				return systemCreds.AccessToken
@@ -508,6 +529,8 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 		if shouldUseSystemCredsForProfile(profileCreds, systemCreds, profile.AccountID, profile.UserID) {
 			if err := updateProfileFromSystemCreds(profilePath, systemCreds, m.logger); err != nil {
 				m.logger.Warn("failed to update Codex profile from auth.json", "error", err, "profile", profile.Name)
+			} else {
+				m.rememberProfileWrite(profile.Name, profilePath)
 			}
 			return systemCreds
 		}
@@ -562,6 +585,13 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 		}
 		return true
 	})
+
+	// Auto quota-starter (Beta): give the agent its Codex account_id (for the
+	// ChatGPT-Account-ID header) and the per-window enablement check.
+	agent.SetCodexAccountID(profile.AccountID)
+	if m.autoStartCheck != nil {
+		agent.SetAutoStartCheck(m.autoStartCheck)
+	}
 
 	// Create context for this agent
 	agentCtx, agentCancel := context.WithCancel(m.ctx)
@@ -656,7 +686,9 @@ func (m *CodexAgentManager) scanForProfileChanges() {
 			continue
 		}
 
+		m.mu.RLock()
 		lastMod, known := m.lastScanProfiles[profileName]
+		m.mu.RUnlock()
 		if !known || info.ModTime().After(lastMod) {
 			// New or modified profile
 			profilePath := filepath.Join(m.profilesDir, entry.Name())
@@ -673,7 +705,9 @@ func (m *CodexAgentManager) scanForProfileChanges() {
 				m.logger.Warn("failed to start agent for profile", "profile", profileName, "error", err)
 			}
 
+			m.mu.Lock()
 			m.lastScanProfiles[profileName] = info.ModTime()
+			m.mu.Unlock()
 		}
 	}
 
@@ -692,7 +726,9 @@ func (m *CodexAgentManager) scanForProfileChanges() {
 		if _, err := os.Stat(profilePath); os.IsNotExist(err) {
 			m.logger.Info("profile deleted, stopping agent", "profile", name)
 			m.stopAgent(name)
+			m.mu.Lock()
 			delete(m.lastScanProfiles, name)
+			m.mu.Unlock()
 			// Mark the provider account as deleted in the database
 			if m.store != nil {
 				if err := m.store.MarkProviderAccountDeleted("codex", name); err != nil {

@@ -998,6 +998,29 @@ button, input, select { font-family: inherit; }
   flex-shrink: 0;
 }
 
+.auto-start-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #0F9D7A;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.auto-start-badge svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+
 .countdown {
   font-family: var(--font-primary);
   font-size: 13px;

@@ -1199,6 +1199,34 @@ func run() error {
 			}
 			return true
 		})
+		// Auto quota-starter (Beta): enablement is read fresh from provider_settings
+		// each poll, so a dashboard toggle takes effect without a daemon restart.
+		// Falls back to the env defaults. The agent fires when it observes a window
+		// in the unstarted state (reset countdown pinned at ~the full window).
+		codexMgr.SetAutoStartCheck(func(quotaName string) bool {
+			field := ""
+			fallback := false
+			switch quotaName {
+			case "five_hour":
+				field, fallback = "auto_start_5h", cfg.CodexAutoStart5h
+			case "seven_day":
+				field, fallback = "auto_start_7d", cfg.CodexAutoStart7d
+			default:
+				return false
+			}
+			v, err := db.GetSetting("provider_settings")
+			if err == nil && v != "" {
+				var ps map[string]map[string]interface{}
+				if json.Unmarshal([]byte(v), &ps) == nil {
+					if codex, ok := ps["codex"]; ok {
+						if setting, ok := codex[field].(string); ok && setting != "" {
+							return setting == "on"
+						}
+					}
+				}
+			}
+			return fallback
+		})
 	}
 	if antigravityAg != nil {
 		antigravityAg.SetPollingCheck(func() bool { return isPollingEnabled("antigravity") })

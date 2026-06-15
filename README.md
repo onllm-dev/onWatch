@@ -18,7 +18,7 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 
 **Compatibility & Docs**
 
-[![Version](https://img.shields.io/badge/Version-v2.12.3-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.12.3)
+[![Version](https://img.shields.io/badge/Version-v2.12.4-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.12.4)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
@@ -162,7 +162,7 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **Synthetic** -- Subscription, Search, and Tool Call quota cards
 - **Z.ai** -- Tokens, Time, and Tool Call quota cards
 - **Anthropic** -- Dynamic quota cards (5-Hour, 7-Day, 7-Day Sonnet, Monthly, etc.) with utilization percentages, OAuth token auto-refresh, and automatic rate limit bypass via token rotation
-- **Codex** -- Dynamic quota cards (LLMs, Review Requests) with OAuth auth-state refresh, historical cycle analytics, and **multi-account support (Beta)** for tracking multiple ChatGPT accounts
+- **Codex** -- Dynamic quota cards (LLMs, Review Requests) with OAuth auth-state refresh, historical cycle analytics, **multi-account support (Beta)** for tracking multiple ChatGPT accounts, and an **auto quota-starter (Beta, off by default)** that can start an unstarted 5h/weekly window for you (see FAQ)
 - **GitHub Copilot (Beta)** -- Premium Interactions, Chat, and Completions quota cards with monthly reset tracking
 - **MiniMax Coding Plan** -- Shared quota pool tracking for M2, M2.1, and M2.5 models with 5-hour rolling window reset cycles and **multi-account support** for tracking multiple MiniMax subscriptions via the dashboard UI
 - **Gemini CLI (Beta)** -- Per-model quota tracking for Gemini 2.5/3.x Pro, Flash, and Flash Lite models with 24-hour reset cycles
@@ -241,6 +241,12 @@ onWatch auto-detects your Claude Code credentials from the system keychain (macO
 ### How do I track my Codex usage?
 
 Set `CODEX_TOKEN` in your `.env` (recommended for Codex-only installs). You can retrieve it from `~/.codex/auth.json` (`tokens.access_token`) or from `$CODEX_HOME/auth.json` if you use a custom Codex home. onWatch re-reads Codex credentials while running, so token rotation is picked up automatically. Full walkthrough: [Codex Setup Guide](docs/CODEX_SETUP.md).
+
+### What is the Codex auto quota-starter (Beta)?
+
+Codex 5h and weekly windows only begin counting once you send your first message after a reset -- so if you do not use Codex right away, the fresh window (and its reserve) sits unstarted. The auto quota-starter detects an unstarted window (its reset countdown stays pinned at the full length instead of ticking down) and sends one tiny request that asks the model to reply `Quota Resumed`, which starts the window for you.
+
+It is **Beta and disabled by default.** Enable it per window in **Settings -> Providers -> Codex** (`Auto-start 5h window` / `Auto-start weekly window`); changes apply without a daemon restart. Each ping costs roughly **62 tokens** (~44 in, ~18 out) and is hard-capped to **5 pings per rolling 4 hours per window**, so the token/quota cost is negligible. Full details: [Codex Setup Guide](docs/CODEX_SETUP.md#auto-quota-starter-beta).
 
 ### How do I track my GitHub Copilot usage?
 

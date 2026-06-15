@@ -266,6 +266,82 @@ Refresh your Codex login so `auth.json` has a new access token, then restart onW
 
 ---
 
+## Auto quota-starter (Beta)
+
+Codex limit windows only begin counting once you send your first message after a
+reset. If you do not use Codex right after a reset, the fresh window (and its
+reserve) sits unstarted. The auto quota-starter has onWatch send a tiny Codex
+request to start the window for you.
+
+There are two independent toggles, one per window:
+
+- **Auto-start 5h window** — starts the 5-hour window when it is found unstarted.
+- **Auto-start weekly window** — starts the 7-day window when it is found unstarted.
+
+Both default to **Off**. Enable them in **Settings -> Providers -> Codex**.
+Changes take effect without a daemon restart. Each configured Codex account
+starts its own window.
+
+How it works:
+
+- **Detection.** An unstarted window reports its reset time as `now + full
+  window`, so the countdown stays pinned at ~the full length (e.g. a 5h window
+  shows ~4h59m and does not tick down). Once a turn is sent, the reset time
+  becomes fixed and the countdown starts decreasing. After each poll onWatch
+  checks the freshly polled reset time: if a window still looks unstarted and its
+  toggle is on, it fires a starter.
+- **The request.** A minimal call to the ChatGPT-backed Codex Responses endpoint
+  (`/backend-api/codex/responses`) using your existing OAuth token, asking the
+  model to reply with the short string `Quota Resumed`.
+- **Why a full streamed turn (not a tiny request).** The window only anchors when
+  a turn actually *completes* server-side. An earlier approach fired the request
+  but read only the first bytes of the streamed response and closed the
+  connection - that cancels the turn before `response.completed`, so the backend
+  never counts it and the window keeps showing the full reset time. onWatch now
+  reads the SSE stream to completion (through `response.completed`) so the turn
+  commits and the window starts. The extra read costs only the few output tokens
+  of "Quota Resumed" (see Cost below).
+- **Rate cap.** Re-evaluated every poll (so a failed start retries at your
+  polling cadence), but hard-capped to **5 pings per rolling 4 hours per window**.
+  A successful start makes the window no longer look unstarted, so it normally
+  fires once. The cap is a backstop against loops/failed starts.
+- Failures are logged (`~/.onwatch/data/.onwatch.log`) and never retried beyond
+  the cap.
+
+### Cost
+
+Each starter ping is one tiny model turn. Measured against gpt-5.5:
+
+| Item | Tokens |
+|------|--------|
+| Input | ~44 |
+| Output (incl. ~9 reasoning) | ~18 |
+| **Total per ping** | **~62** |
+
+So the quota/token cost is negligible:
+
+- **Typical:** one ping per window start - up to ~5/day for the 5h window (only
+  when it would otherwise sit unstarted) and ~1/week for the weekly window. That
+  is roughly **~300 tokens/day** at most for the 5h window.
+- **Worst case** (a start that never "takes" and keeps hitting the rate cap):
+  5 pings per 4h per window, i.e. ~30/day for the 5h window - still under
+  ~2,000 tokens/day.
+- Against the tracked quota itself, a single start registers as **less than 1%**
+  of the window.
+
+Environment overrides (the dashboard toggles take precedence at runtime):
+
+- `CODEX_AUTO_START_5H=true` / `CODEX_AUTO_START_7D=true` - default-on without the UI.
+- `CODEX_STARTER_MODEL` - override the model used for the starter request (default
+  `gpt-5.5`). ChatGPT-account Codex access supports only a small set of models
+  (currently `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`); set this if the default is
+  rejected.
+
+> Beta: the Codex Responses request shape can change upstream. If starter pings
+> fail, check the logs and try a different `CODEX_STARTER_MODEL`.
+
+---
+
 ## See Also
 
 - [README](../README.md) — Quick start and provider overview
