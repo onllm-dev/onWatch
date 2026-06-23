@@ -50,6 +50,54 @@ func TestAnthropicClient_FetchQuotas_Success(t *testing.T) {
 	}
 }
 
+func TestAnthropicClient_FetchQuotas_IgnoresLimitsArray(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"five_hour": {
+				"utilization": 12.5,
+				"resets_at": "2026-06-24T04:00:00Z"
+			},
+			"seven_day": {
+				"utilization": 34.5,
+				"resets_at": "2026-06-30T00:00:00Z"
+			},
+			"seven_day_oauth_apps": null,
+			"limits": [
+				{
+					"group": "claude",
+					"kind": "quota",
+					"percent": 12.5,
+					"resets_at": "2026-06-24T04:00:00Z",
+					"is_active": true
+				}
+			],
+			"spend": {
+				"enabled": false,
+				"percent": 0
+			}
+		}`)
+	}))
+	defer server.Close()
+
+	client := api.NewAnthropicClient("test_token", testutil.DiscardLogger(),
+		api.WithAnthropicBaseURL(server.URL),
+	)
+
+	resp, err := client.FetchQuotas(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	names := resp.ActiveQuotaNames()
+	if got, want := fmt.Sprint(names), "[five_hour seven_day]"; got != want {
+		t.Fatalf("ActiveQuotaNames() = %s, want %s", got, want)
+	}
+	if _, ok := (*resp)["limits"]; ok {
+		t.Fatal("non-quota limits array should be ignored")
+	}
+}
+
 func TestAnthropicClient_FetchQuotas_Headers(t *testing.T) {
 	var gotAuth atomic.Value
 	var gotBeta atomic.Value

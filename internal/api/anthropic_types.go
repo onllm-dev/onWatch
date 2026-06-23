@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"sort"
 	"time"
@@ -19,6 +20,37 @@ type AnthropicQuotaEntry struct {
 // AnthropicQuotaResponse is the full response from the Anthropic usage API.
 // Keys are dynamic (five_hour, seven_day, etc.).
 type AnthropicQuotaResponse map[string]*AnthropicQuotaEntry
+
+// UnmarshalJSON accepts the quota-object values used by the Claude usage API
+// while ignoring top-level metadata fields such as "limits", which Anthropic
+// began returning as arrays in June 2026.
+func (r *AnthropicQuotaResponse) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	resp := make(AnthropicQuotaResponse, len(raw))
+	for key, value := range raw {
+		trimmed := bytes.TrimSpace(value)
+		if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+			resp[key] = nil
+			continue
+		}
+		if trimmed[0] != '{' {
+			continue
+		}
+
+		var entry AnthropicQuotaEntry
+		if err := json.Unmarshal(trimmed, &entry); err != nil {
+			return err
+		}
+		resp[key] = &entry
+	}
+
+	*r = resp
+	return nil
+}
 
 // AnthropicQuota represents a single normalized quota for storage.
 type AnthropicQuota struct {
