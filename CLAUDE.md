@@ -42,6 +42,16 @@ internal/
 go test -race ./... && go vet ./...   # Pre-commit (mandatory)
 ```
 
+**Nix (alternative to app.sh, for build + dev shell):**
+
+```bash
+nix build .#onwatch         # Pure-Go static binary -> ./result/bin/onwatch
+nix run .#onwatch           # Build + run
+nix develop                 # Shell with go/gopls/gotools/gofumpt (or `direnv allow`)
+```
+
+On `go.sum` changes, update `vendorHash` in `flake.nix` (run `nix build .#onwatch`, paste the `got: sha256-...` from the error). Flake tracks `nixos-unstable` because `go.mod` requires Go >= 1.25.7.
+
 ## Guardrails
 
 | Rule | Reason |
