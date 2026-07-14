@@ -9444,7 +9444,7 @@ function mergeDashboardProviderOrder(preferred, available) {
 }
 
 async function fetchDashboardTabOrderProviders() {
-  // Prefer configured providers from status API, then append special tabs.
+  // Only providers that appear as dashboard tabs (Dashboard toggle on).
   let providers = [];
   try {
     const res = await authFetch(`${API_BASE}/api/providers/status`);
@@ -9456,20 +9456,29 @@ async function fetchDashboardTabOrderProviders() {
     providers = [];
   }
 
+  // Also honor in-memory toggles from this settings session (before full reload).
+  const visMap = State.providerVisibility && typeof State.providerVisibility === 'object'
+    ? State.providerVisibility
+    : {};
+
   const items = providers
     .filter((p) => p && p.key)
+    .filter((p) => {
+      const local = visMap[p.key];
+      if (local && typeof local === 'object' && Object.prototype.hasOwnProperty.call(local, 'dashboard')) {
+        return local.dashboard !== false;
+      }
+      return p.dashboardVisible !== false;
+    })
     .map((p) => ({
       key: p.key,
       defaultName: p.name || defaultProviderTabLabel(p.key),
-      meta: `${p.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${p.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
-      dashboardVisible: p.dashboardVisible !== false,
+      meta: 'Shown as a dashboard tab',
+      dashboardVisible: true,
     }));
 
   // Special dashboard-only tabs (not in provider status list as first-class).
-  const hasMultiple = items.length > 1;
   if (State.apiIntegrationsVisibility?.dashboard !== false) {
-    // Always offer rename/order for API Integrations when the feature exists on this build.
-    // Visibility still controlled by the API Integrations toggle below.
     const already = items.some((i) => i.key === 'api-integrations');
     if (!already) {
       items.push({
@@ -9480,7 +9489,9 @@ async function fetchDashboardTabOrderProviders() {
       });
     }
   }
-  if (hasMultiple || items.length > 1) {
+  // "All" tab only when more than one real provider tab is visible.
+  const realCount = items.filter((i) => i.key !== 'api-integrations' && i.key !== 'both').length;
+  if (realCount > 1) {
     items.push({
       key: 'both',
       defaultName: defaultProviderTabLabel('both'),
@@ -9516,20 +9527,28 @@ async function populateDashboardTabOrder() {
   const arrowUp = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
   const arrowDown = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>';
 
+  const pencilIcon = '<svg class="dashboard-tab-rename-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
   list.innerHTML = ordered.map((provider, index) => {
     const custom = labels[provider.key] || '';
     const placeholder = provider.defaultName || defaultProviderTabLabel(provider.key);
     const canUp = index > 0;
     const canDown = index < ordered.length - 1;
     return `
-    <li class="dashboard-tab-order-item ${provider.dashboardVisible ? '' : 'is-disabled'}" draggable="true" tabindex="0" data-provider="${provider.key}">
-      <div class="menubar-order-handle" aria-hidden="true"><span></span><span></span><span></span></div>
+    <li class="dashboard-tab-order-item" draggable="true" tabindex="0" data-provider="${provider.key}">
+      <div class="menubar-order-handle" aria-hidden="true" title="Drag to reorder"><span></span><span></span><span></span></div>
       <div class="dashboard-tab-order-fields">
-        <span class="dashboard-tab-order-key">${placeholder} · <code>${provider.key}</code></span>
-        <input type="text" class="dashboard-tab-order-label" data-provider="${provider.key}"
-          maxlength="48" value="${escapeHTML(custom)}"
-          placeholder="${escapeHTML(placeholder)}"
-          aria-label="Custom tab name for ${escapeHTML(placeholder)}">
+        <span class="dashboard-tab-order-key">
+          <span class="dashboard-tab-order-default">${escapeHTML(placeholder)}</span>
+          <code class="dashboard-tab-order-id">${escapeHTML(provider.key)}</code>
+        </span>
+        <label class="dashboard-tab-rename">
+          <span class="dashboard-tab-rename-label">${pencilIcon} Tab name</span>
+          <input type="text" class="dashboard-tab-order-label" data-provider="${provider.key}"
+            maxlength="48" value="${escapeHTML(custom)}"
+            placeholder="${escapeHTML(placeholder)}"
+            aria-label="Rename tab for ${escapeHTML(placeholder)} (leave blank for default)">
+        </label>
       </div>
       <div class="dashboard-tab-order-move">
         <button type="button" data-dashboard-move="up" data-provider="${provider.key}" ${canUp ? '' : 'disabled'} aria-label="Move ${escapeHTML(placeholder)} up" title="Move up">${arrowUp}</button>
@@ -9901,6 +9920,12 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
           updateProviderVisibilityState('codex', role, enabled);
         }
         showSettingsFeedback(feedback, `${name} ${role} ${enabled ? 'enabled' : 'disabled'}.`, 'success');
+
+        // Dashboard Tabs list only shows visible tabs — refresh when visibility changes.
+        if (role === 'dashboard') {
+          syncDashboardTabOrderFromDOM();
+          await populateDashboardTabOrder();
+        }
 
         if (getCurrentProvider() === 'both' && role === 'polling') {
           renderAllProvidersView();
