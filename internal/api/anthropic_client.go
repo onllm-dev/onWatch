@@ -155,7 +155,15 @@ func (c *AnthropicClient) FetchQuotas(ctx context.Context) (*AnthropicQuotaRespo
 
 	var quotaResp AnthropicQuotaResponse
 	if err := json.Unmarshal(body, &quotaResp); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrAnthropicInvalidResponse, err)
+		// The Anthropic usage API returns a JSON array (e.g. `[]`) instead of an
+		// object when the account currently has no active quota windows. Treat
+		// that shape as an empty quota set rather than a hard parse error.
+		var arr []json.RawMessage
+		if arrErr := json.Unmarshal(body, &arr); arrErr == nil {
+			quotaResp = AnthropicQuotaResponse{}
+		} else {
+			return nil, fmt.Errorf("%w: %v", ErrAnthropicInvalidResponse, err)
+		}
 	}
 
 	// Log active quota names on success

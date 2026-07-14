@@ -132,6 +132,46 @@ func TestParseAnthropicResponse_InvalidJSON(t *testing.T) {
 	}
 }
 
+// TestParseAnthropicResponse_MixedNonObjectValues reproduces the current shape
+// of the /api/oauth/usage response, where the top-level object mixes quota
+// objects with non-object values (a "limits" array and null placeholders).
+// These non-object values must be tolerated instead of causing a hard
+// "cannot unmarshal array/bool into AnthropicQuotaEntry" error.
+func TestParseAnthropicResponse_MixedNonObjectValues(t *testing.T) {
+	data := []byte(`{
+		"five_hour": {"utilization": 10.0, "resets_at": "2026-07-14T11:10:00Z"},
+		"seven_day": {"utilization": 9.0, "resets_at": "2026-07-19T21:00:00Z"},
+		"seven_day_sonnet": null,
+		"extra_usage": {"is_enabled": true, "utilization": 37.4},
+		"limits": [
+			{"kind": "session", "percent": 10, "is_active": true},
+			{"kind": "weekly_all", "percent": 9, "is_active": false}
+		]
+	}`)
+
+	resp, err := ParseAnthropicResponse(data)
+	if err != nil {
+		t.Fatalf("ParseAnthropicResponse should tolerate mixed values, got: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("response should not be nil")
+	}
+
+	if entry := (*resp)["five_hour"]; entry == nil || entry.Utilization == nil || *entry.Utilization != 10.0 {
+		t.Errorf("five_hour utilization not parsed correctly: %+v", entry)
+	}
+	if entry := (*resp)["seven_day"]; entry == nil || entry.Utilization == nil || *entry.Utilization != 9.0 {
+		t.Errorf("seven_day utilization not parsed correctly: %+v", entry)
+	}
+
+	// The "limits" array value must be ignored (not surfaced as an active quota).
+	for _, name := range resp.ActiveQuotaNames() {
+		if name == "limits" {
+			t.Error("limits array should not be treated as an active quota")
+		}
+	}
+}
+
 func TestRedactAnthropicToken(t *testing.T) {
 	tests := []struct {
 		name string

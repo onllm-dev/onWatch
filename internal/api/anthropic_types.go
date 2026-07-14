@@ -16,6 +16,31 @@ type AnthropicQuotaEntry struct {
 	UsedCredits  *float64 `json:"used_credits,omitempty"`
 }
 
+// UnmarshalJSON tolerates the Anthropic usage API returning a JSON array (e.g.
+// `[]`) for a quota value when that window is inactive, instead of the expected
+// object. An array is treated as an empty (inactive) entry rather than a hard
+// parse error.
+func (e *AnthropicQuotaEntry) UnmarshalJSON(data []byte) error {
+	trimmed := data
+	for len(trimmed) > 0 && (trimmed[0] == ' ' || trimmed[0] == '\t' || trimmed[0] == '\n' || trimmed[0] == '\r') {
+		trimmed = trimmed[1:]
+	}
+	// The Anthropic usage API mixes quota-object values with non-object values
+	// under the same top-level map (e.g. `limits: [...]`, scalar flags). Any
+	// value that is not a JSON object is treated as an inactive/absent quota
+	// entry rather than a hard parse error.
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil
+	}
+	type entryAlias AnthropicQuotaEntry
+	var alias entryAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*e = AnthropicQuotaEntry(alias)
+	return nil
+}
+
 // AnthropicQuotaResponse is the full response from the Anthropic usage API.
 // Keys are dynamic (five_hour, seven_day, etc.).
 type AnthropicQuotaResponse map[string]*AnthropicQuotaEntry
