@@ -10158,7 +10158,9 @@ function createAPIIntegrationsToggleRow(visibility, health) {
         return;
       }
       State.apiIntegrationsVisibility = data.api_integrations_visibility || { dashboard: enabled };
-      showSettingsFeedback(feedback, `API Integrations dashboard ${enabled ? 'enabled' : 'disabled'}. Reload dashboard to apply tab visibility changes.`, 'success');
+      syncDashboardTabOrderFromDOM();
+      await populateDashboardTabOrder();
+      showSettingsFeedback(feedback, `API Integrations dashboard ${enabled ? 'enabled' : 'disabled'}.`, 'success');
     } catch (e) {
       input.checked = !enabled;
       showSettingsFeedback(feedback, 'API Integrations visibility update failed.', 'error');
