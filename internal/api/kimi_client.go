@@ -214,8 +214,7 @@ func (c *KimiClient) resolveAccessToken(ctx context.Context) (string, error) {
 	return creds.AccessToken, nil
 }
 
-// refreshAndPersist refreshes a single credential store (the one Detect selected).
-// Does not walk other CLI directories — when both exist we already locked to kimi-code.
+// refreshAndPersist refreshes the single kimi-code credential store.
 func (c *KimiClient) refreshAndPersist(ctx context.Context, creds *KimiCredentials) error {
 	if creds == nil {
 		creds = DetectKimiCredentials(c.logger)
