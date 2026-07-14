@@ -256,10 +256,22 @@ func orderSelectionsByProvidersOrder(selections []StatusDisplaySelection, order 
 	if len(rank) == 0 {
 		return selections
 	}
+	lookupRank := func(providerID string) (int, bool) {
+		if r, ok := rank[providerID]; ok {
+			return r, true
+		}
+		// providers_order may store bare "codex" while selections use "codex:1".
+		if i := strings.IndexByte(providerID, ':'); i > 0 {
+			if r, ok := rank[providerID[:i]]; ok {
+				return r, true
+			}
+		}
+		return 0, false
+	}
 	out := append([]StatusDisplaySelection(nil), selections...)
 	sort.SliceStable(out, func(i, j int) bool {
-		ri, iok := rank[out[i].ProviderID]
-		rj, jok := rank[out[j].ProviderID]
+		ri, iok := lookupRank(out[i].ProviderID)
+		rj, jok := lookupRank(out[j].ProviderID)
 		switch {
 		case iok && jok:
 			return ri < rj

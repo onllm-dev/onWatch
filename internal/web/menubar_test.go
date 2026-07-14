@@ -634,6 +634,59 @@ func findMenubarProviderCard(t *testing.T, snapshot *menubar.Snapshot, providerI
 	return menubar.ProviderCard{}
 }
 
+func TestMenubarProviderKeysMatch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		card, key string
+		want      bool
+	}{
+		{"codex:1", "codex:1", true},
+		{"codex:1", "codex", true},
+		{"codex", "codex:1", true},
+		{"codex:1", "codex:2", false},
+		{"anthropic", "anthropic", true},
+		{"anthropic", "codex", false},
+		{"minimax:3", "minimax", true},
+		{"", "codex", false},
+	}
+	for _, tc := range cases {
+		if got := menubarProviderKeysMatch(tc.card, tc.key); got != tc.want {
+			t.Fatalf("menubarProviderKeysMatch(%q, %q) = %v, want %v", tc.card, tc.key, got, tc.want)
+		}
+	}
+}
+
+func TestFilterMenubarProvidersAcceptsBareCodexKey(t *testing.T) {
+	t.Parallel()
+	cards := []menubar.ProviderCard{
+		{ID: "codex:1", Label: "Codex - default"},
+		{ID: "anthropic", Label: "Anthropic"},
+		{ID: "grok", Label: "Grok"},
+	}
+	// Web settings previously saved visible_providers as bare "codex", which
+	// exact-matched nothing and dropped Codex from the menubar.
+	got := filterMenubarProviders(cards, []string{"codex", "anthropic", "grok"})
+	if len(got) != 3 {
+		t.Fatalf("filter len = %d, want 3; got %#v", len(got), got)
+	}
+	if got[0].ID != "codex:1" {
+		t.Fatalf("first = %q, want codex:1", got[0].ID)
+	}
+}
+
+func TestSortProviderCardsAcceptsBareCodexOrderKey(t *testing.T) {
+	t.Parallel()
+	cards := []menubar.ProviderCard{
+		{ID: "grok", Label: "Grok"},
+		{ID: "codex:1", Label: "Codex"},
+		{ID: "anthropic", Label: "Anthropic"},
+	}
+	sortProviderCards(cards, []string{"codex", "anthropic", "grok"})
+	if cards[0].ID != "codex:1" || cards[1].ID != "anthropic" || cards[2].ID != "grok" {
+		t.Fatalf("order = %v, %v, %v", cards[0].ID, cards[1].ID, cards[2].ID)
+	}
+}
+
 func assertQuotaLabels(t *testing.T, quotas []menubar.QuotaMeter, want []string) {
 	t.Helper()
 

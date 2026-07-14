@@ -210,6 +210,20 @@ func TestOrderSelectionsByProvidersOrder(t *testing.T) {
 	}
 }
 
+func TestOrderSelectionsByProvidersOrderBareCodexKey(t *testing.T) {
+	t.Parallel()
+	in := []StatusDisplaySelection{
+		{ProviderID: "grok", QuotaKey: "credits"},
+		{ProviderID: "codex:1", QuotaKey: "weekly"},
+		{ProviderID: "anthropic", QuotaKey: "five_hour"},
+	}
+	// Web UI may persist providers_order with bare "codex".
+	got := orderSelectionsByProvidersOrder(in, []string{"codex", "anthropic", "grok"})
+	if got[0].ProviderID != "codex:1" || got[1].ProviderID != "anthropic" || got[2].ProviderID != "grok" {
+		t.Fatalf("order = %#v", got)
+	}
+}
+
 // TestTrayTitleEmptyParts confirms we return empty for empty input.
 func TestTrayTitleEmptyParts(t *testing.T) {
 	t.Parallel()
