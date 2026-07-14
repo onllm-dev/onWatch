@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -121,6 +122,63 @@ func TestParseAnthropicResponse_Valid(t *testing.T) {
 	}
 	if *entry.Utilization != 45.2 {
 		t.Errorf("utilization = %f, want 45.2", *entry.Utilization)
+	}
+}
+
+func TestParseAnthropicResponse_IgnoresUsageMetadataFields(t *testing.T) {
+	// Shape observed from live /api/oauth/usage after mid-2026: quota objects
+	// mixed with limits (array), spend (unrelated object), and booleans.
+	data := []byte(`{
+		"five_hour": {
+			"utilization": 7.0,
+			"resets_at": "2026-07-14T20:50:00.062179+00:00",
+			"limit_dollars": null
+		},
+		"seven_day": {
+			"utilization": 10.0,
+			"resets_at": "2026-07-20T18:00:00.062201+00:00"
+		},
+		"seven_day_oauth_apps": null,
+		"extra_usage": {
+			"is_enabled": false,
+			"monthly_limit": null,
+			"used_credits": null,
+			"utilization": null
+		},
+		"limits": [
+			{"kind": "session", "group": "session", "percent": 7, "severity": "normal"}
+		],
+		"spend": {
+			"used": {"amount_minor": 0, "currency": "USD", "exponent": 2},
+			"percent": 0,
+			"enabled": false
+		},
+		"member_dashboard_available": false
+	}`)
+
+	resp, err := ParseAnthropicResponse(data)
+	if err != nil {
+		t.Fatalf("ParseAnthropicResponse failed: %v", err)
+	}
+	if _, ok := (*resp)["limits"]; ok {
+		t.Fatal("limits array must not become a quota entry")
+	}
+	if _, ok := (*resp)["spend"]; ok {
+		t.Fatal("spend object must not become a quota entry")
+	}
+	if _, ok := (*resp)["member_dashboard_available"]; ok {
+		t.Fatal("boolean companion field must not become a quota entry")
+	}
+	if entry := (*resp)["seven_day_oauth_apps"]; entry != nil {
+		t.Fatal("null quota keys should map to nil entries")
+	}
+	// extra_usage is a real quota-shaped object (is_enabled present) and must be kept.
+	if entry := (*resp)["extra_usage"]; entry == nil || entry.IsEnabled == nil || *entry.IsEnabled {
+		t.Fatalf("extra_usage should be kept with is_enabled=false, got %#v", entry)
+	}
+	names := resp.ActiveQuotaNames()
+	if got, want := fmt.Sprint(names), "[five_hour seven_day]"; got != want {
+		t.Fatalf("ActiveQuotaNames() = %s, want %s", got, want)
 	}
 }
 
