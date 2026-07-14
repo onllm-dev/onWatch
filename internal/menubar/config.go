@@ -1,6 +1,7 @@
 package menubar
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -218,12 +219,59 @@ func (s *Settings) Normalize() *Settings {
 	}
 	out.VisibleProviders = normalizedStringList(out.VisibleProviders)
 	out.StatusDisplay = out.StatusDisplay.normalize(defaults.StatusDisplay)
+	// Tray title metrics must follow the same left-to-right order as the
+	// menubar provider list. selected_quotas may be stored in click order;
+	// re-sort by providers_order at normalize time so every consumer agrees.
+	if out.StatusDisplay.Mode == StatusDisplayMultiProvider {
+		out.StatusDisplay.SelectedQuotas = orderSelectionsByProvidersOrder(
+			out.StatusDisplay.SelectedQuotas,
+			out.ProvidersOrder,
+		)
+	}
 	switch out.Theme {
 	case ThemeSystem, ThemeLight, ThemeDark:
 	default:
 		out.Theme = ThemeSystem
 	}
 	return &out
+}
+
+// orderSelectionsByProvidersOrder reorders tray selections to match
+// providers_order. Selections whose provider is absent from the order keep
+// their relative position after the ordered ones (stable).
+func orderSelectionsByProvidersOrder(selections []StatusDisplaySelection, order []string) []StatusDisplaySelection {
+	if len(selections) <= 1 || len(order) == 0 {
+		return selections
+	}
+	rank := make(map[string]int, len(order))
+	for i, id := range order {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := rank[id]; !exists {
+			rank[id] = i
+		}
+	}
+	if len(rank) == 0 {
+		return selections
+	}
+	out := append([]StatusDisplaySelection(nil), selections...)
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, iok := rank[out[i].ProviderID]
+		rj, jok := rank[out[j].ProviderID]
+		switch {
+		case iok && jok:
+			return ri < rj
+		case iok:
+			return true
+		case jok:
+			return false
+		default:
+			return false
+		}
+	})
+	return out
 }
 
 // ToConfig converts persisted settings into runtime config values.
