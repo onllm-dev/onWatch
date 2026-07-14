@@ -872,8 +872,19 @@ func run() error {
 
 	var kimiClient *api.KimiClient
 	if cfg.HasProvider("kimi") {
-		kimiClient = api.NewKimiClient(cfg.KimiToken, logger)
-		logger.Info("Kimi Code API client configured")
+		// Auto-detected OAuth access tokens expire quickly (~15m). Never freeze
+		// them as a static client token — that skips disk re-read + refresh and
+		// produces permanent 401s after the first expiry (kimi-code store only).
+		// Only explicit KIMI_TOKEN / KIMI_CODE_TOKEN (Docker/CI) use staticToken.
+		kimiToken := ""
+		if !cfg.KimiAutoToken {
+			kimiToken = cfg.KimiToken
+		}
+		kimiClient = api.NewKimiClient(kimiToken, logger)
+		logger.Info("Kimi Code API client configured",
+			"auto_token", cfg.KimiAutoToken,
+			"static_token", kimiToken != "",
+		)
 	}
 
 	// Create components
