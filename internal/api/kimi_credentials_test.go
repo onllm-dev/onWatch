@@ -30,7 +30,7 @@ func writeKimiCred(t *testing.T, dir string, access, refresh string, expiresAt f
 	return path
 }
 
-func TestDetectKimiCredentials_BothCLIs_PrefersFresh(t *testing.T) {
+func TestDetectKimiCredentials_BothCLIs_PrefersKimiCodeOnly(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	// clear overrides
@@ -40,16 +40,13 @@ func TestDetectKimiCredentials_BothCLIs_PrefersFresh(t *testing.T) {
 	t.Setenv("KIMI_HOME", "")
 	t.Setenv("KIMI_CREDENTIALS", "")
 
-	// kimi-cli: expired access, has refresh
+	// kimi-cli: intentionally fresher access — must still be ignored when code exists
 	cliHome := filepath.Join(home, ".kimi")
-	writeKimiCred(t, cliHome, "cli-access", "cli-refresh", float64(time.Now().Unix()-3600))
+	writeKimiCred(t, cliHome, "cli-access", "cli-refresh", float64(time.Now().Unix()+7200))
 
-	// kimi-code: fresh access
+	// kimi-code: older but still valid
 	codeHome := filepath.Join(home, ".kimi-code")
-	writeKimiCred(t, codeHome, "code-access", "code-refresh", float64(time.Now().Unix()+3600))
-
-	// Force re-detect without cache pollution
-	InvalidateKimiCredentialsCache()
+	writeKimiCred(t, codeHome, "code-access", "code-refresh", float64(time.Now().Unix()+600))
 
 	// Candidates should include both when HOME is set - but os.UserHomeDir may not use HOME on all systems.
 	// Set both via env overrides for portability.
@@ -67,10 +64,27 @@ func TestDetectKimiCredentials_BothCLIs_PrefersFresh(t *testing.T) {
 		t.Fatal("expected credentials")
 	}
 	if best.AccessToken != "code-access" {
-		t.Fatalf("expected fresh kimi-code token, got source=%s token=%s path=%s", best.Source, best.AccessToken, best.Path)
+		t.Fatalf("expected kimi-code only when both exist, got source=%s token=%s path=%s", best.Source, best.AccessToken, best.Path)
 	}
 	if best.Source != "kimi-code" {
 		t.Fatalf("source=%s", best.Source)
+	}
+	if best.Expired() {
+		t.Fatal("expected unexpired kimi-code access")
+	}
+}
+
+func TestKimiCredentials_ExpiredSkew(t *testing.T) {
+	c := &KimiCredentials{AccessToken: "t", ExpiresAt: float64(time.Now().Unix() + 120)}
+	if c.Expired() {
+		t.Fatal("should not be expired")
+	}
+	if c.SecondsUntilExpiry() <= 0 {
+		t.Fatalf("expires_in=%d", c.SecondsUntilExpiry())
+	}
+	c.ExpiresAt = float64(time.Now().Unix() - 1)
+	if !c.Expired() {
+		t.Fatal("should be expired")
 	}
 }
 

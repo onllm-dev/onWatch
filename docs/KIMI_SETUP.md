@@ -22,7 +22,21 @@ This is **not** the Moonshot Open Platform pay-as-you-go balance API (`api.moons
    - `~/.kimi-code/credentials/kimi-code.json` (**kimi-code**)
    - `~/.kimi/credentials/kimi-code.json` (**kimi-cli**)
 
-When both CLIs have credentials, onWatch picks the best set (fresh access token preferred; otherwise any with a refresh token). Token refresh tries **every** candidate if one fails—useful after a partial migration left a dead refresh token under `.kimi-code`.
+**When both CLIs have credentials, onWatch uses only kimi-code** (`~/.kimi-code` / `$KIMI_CODE_*`). kimi-cli is a fallback only if no kimi-code file exists (there is a single dashboard tab, so dual-store merge is not useful).
+
+### Token refresh policy
+
+- If the selected store’s **access token is still valid** (`expires_at` with a 60s skew), onWatch **never** refreshes — it just reuses the token the CLI already wrote.
+- Refresh runs only when access is **expired** (or missing expiry left us with a dead token path). Then onWatch may call:
+
+```http
+POST https://auth.kimi.com/api/oauth/token
+grant_type=refresh_token&refresh_token=...&client_id=17e5f671-d194-4dfb-9706-5516cb48c098
+```
+
+and rewrite **that same credentials file** (mode `0600`). It does not walk the other CLI directory.
+
+- On HTTP 401 with a still-unexpired access token, onWatch re-reads disk once (CLI may have rotated tokens) but **does not** force-refresh.
 
 ## Enable
 
@@ -44,20 +58,11 @@ KIMI_TOKEN=<access_token>
 KIMI_CODE_TOKEN=<access_token>
 ```
 
-For long-running daemons, prefer mounting the credentials file and allowing refresh:
+For long-running daemons, prefer mounting the kimi-code credentials file:
 
 ```bash
 KIMI_CODE_CREDENTIALS=/path/to/kimi-code.json
 ```
-
-onWatch will refresh expired access tokens via:
-
-```http
-POST https://auth.kimi.com/api/oauth/token
-grant_type=refresh_token&refresh_token=...&client_id=17e5f671-d194-4dfb-9706-5516cb48c098
-```
-
-and rewrite the credentials file (mode `0600`).
 
 ## What is tracked
 

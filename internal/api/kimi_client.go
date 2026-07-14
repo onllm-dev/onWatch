@@ -108,13 +108,26 @@ func (c *KimiClient) FetchSnapshot(ctx context.Context) (*KimiSnapshot, error) {
 
 	body, err := c.getUsages(ctx, token)
 	if err != nil {
-		// One refresh retry on 401 when using disk credentials.
+		// On 401: re-read disk once (CLI may have refreshed). Only OAuth-refresh
+		// when the selected store's access token is actually expired.
 		if errors.Is(err, ErrKimiUnauthorized) && c.staticToken == "" {
-			if rerr := c.refreshAndPersist(ctx); rerr == nil {
-				token, err = c.resolveAccessToken(ctx)
-				if err == nil {
-					body, err = c.getUsages(ctx, token)
+			InvalidateKimiCredentialsCache()
+			creds := LoadKimiCredentialsCached(c.logger, true)
+			if creds != nil && creds.AccessToken != "" && creds.AccessToken != token && !creds.Expired() {
+				body, err = c.getUsages(ctx, creds.AccessToken)
+			} else if creds != nil && creds.Expired() {
+				if rerr := c.refreshAndPersist(ctx, creds); rerr == nil {
+					token, err = c.resolveAccessToken(ctx)
+					if err == nil {
+						body, err = c.getUsages(ctx, token)
+					}
+				} else {
+					c.logger.Debug("kimi: refresh skipped/failed after 401",
+						"expired", true, "expires_in_sec", creds.SecondsUntilExpiry(), "error", rerr)
 				}
+			} else if creds != nil {
+				c.logger.Debug("kimi: 401 with unexpired access token; not refreshing (harness owns auth)",
+					"source", creds.Source, "expires_in_sec", creds.SecondsUntilExpiry())
 			}
 		}
 		if err != nil {
@@ -177,13 +190,19 @@ func (c *KimiClient) resolveAccessToken(ctx context.Context) (string, error) {
 	if creds == nil {
 		return "", ErrKimiNoCredentials
 	}
+	// Still valid → never refresh. Harness owns auth for live sessions.
 	if !creds.Expired() && creds.AccessToken != "" {
+		c.logger.Debug("kimi: using unexpired access token",
+			"source", creds.Source,
+			"expires_in_sec", creds.SecondsUntilExpiry())
 		return creds.AccessToken, nil
 	}
-	if err := c.refreshAndPersist(ctx); err != nil {
-		// fall back to stale access token if refresh failed but we still have one
+	// Access expired (or missing): try OAuth refresh on THIS store only.
+	if err := c.refreshAndPersist(ctx, creds); err != nil {
+		// Last resort: send the stale access token (some APIs still accept it briefly).
 		if creds.AccessToken != "" {
-			c.logger.Warn("kimi: refresh failed, trying existing access token", "error", err)
+			c.logger.Warn("kimi: access expired and refresh failed, trying existing access token",
+				"source", creds.Source, "error", err)
 			return creds.AccessToken, nil
 		}
 		return "", err
@@ -195,58 +214,58 @@ func (c *KimiClient) resolveAccessToken(ctx context.Context) (string, error) {
 	return creds.AccessToken, nil
 }
 
-func (c *KimiClient) refreshAndPersist(ctx context.Context) error {
-	// Try every known credential store (kimi-code + kimi-cli). After migration,
-	// one path may hold a dead refresh token while the other still works.
-	candidates := DetectAllKimiCredentials(c.logger)
-	if len(candidates) == 0 {
+// refreshAndPersist refreshes a single credential store (the one Detect selected).
+// Does not walk other CLI directories — when both exist we already locked to kimi-code.
+func (c *KimiClient) refreshAndPersist(ctx context.Context, creds *KimiCredentials) error {
+	if creds == nil {
+		creds = DetectKimiCredentials(c.logger)
+	}
+	if creds == nil {
 		return ErrKimiNoCredentials
 	}
-
-	var lastErr error
-	for _, creds := range candidates {
-		if creds.RefreshToken == "" {
-			continue
-		}
-		token, err := c.refreshToken(ctx, creds.RefreshToken)
-		if err != nil {
-			lastErr = err
-			c.logger.Debug("kimi: refresh failed for credentials",
-				"source", creds.Source, "path", creds.Path, "error", err)
-			continue
-		}
-		creds.AccessToken = token.AccessToken
-		if token.RefreshToken != "" {
-			creds.RefreshToken = token.RefreshToken
-		}
-		if token.ExpiresIn > 0 {
-			creds.ExpiresIn = float64(token.ExpiresIn)
-			creds.ExpiresAt = float64(time.Now().Unix() + int64(token.ExpiresIn))
-		}
-		if token.TokenType != "" {
-			creds.TokenType = token.TokenType
-		}
-		if token.Scope != "" {
-			creds.Scope = token.Scope
-		}
-		if err := SaveKimiCredentials(creds); err != nil {
-			c.logger.Warn("kimi: failed to persist refreshed credentials",
-				"source", creds.Source, "path", creds.Path, "error", err)
-		}
-		InvalidateKimiCredentialsCache()
-		// Prefer the refreshed set on next load
-		kimiCredMu.Lock()
-		kimiCredCache = creds
-		kimiCredAt = time.Now()
-		kimiCredMu.Unlock()
-		c.logger.Info("Kimi Code token refreshed from credentials",
-			"source", creds.Source, "path", creds.Path)
+	if !creds.Expired() {
+		// Defensive: callers must only refresh when expired.
+		c.logger.Debug("kimi: refreshAndPersist no-op; access not expired",
+			"source", creds.Source, "expires_in_sec", creds.SecondsUntilExpiry())
 		return nil
 	}
-	if lastErr != nil {
-		return lastErr
+	if creds.RefreshToken == "" {
+		return ErrKimiUnauthorized
 	}
-	return ErrKimiNoCredentials
+
+	token, err := c.refreshToken(ctx, creds.RefreshToken)
+	if err != nil {
+		c.logger.Debug("kimi: refresh failed",
+			"source", creds.Source, "path", creds.Path, "error", err)
+		return err
+	}
+	creds.AccessToken = token.AccessToken
+	if token.RefreshToken != "" {
+		creds.RefreshToken = token.RefreshToken
+	}
+	if token.ExpiresIn > 0 {
+		creds.ExpiresIn = float64(token.ExpiresIn)
+		creds.ExpiresAt = float64(time.Now().Unix() + int64(token.ExpiresIn))
+	}
+	if token.TokenType != "" {
+		creds.TokenType = token.TokenType
+	}
+	if token.Scope != "" {
+		creds.Scope = token.Scope
+	}
+	if err := SaveKimiCredentials(creds); err != nil {
+		c.logger.Warn("kimi: failed to persist refreshed credentials",
+			"source", creds.Source, "path", creds.Path, "error", err)
+	}
+	InvalidateKimiCredentialsCache()
+	kimiCredMu.Lock()
+	kimiCredCache = creds
+	kimiCredAt = time.Now()
+	kimiCredMu.Unlock()
+	c.logger.Info("Kimi Code token refreshed from credentials",
+		"source", creds.Source, "path", creds.Path,
+		"expires_in_sec", creds.SecondsUntilExpiry())
+	return nil
 }
 
 type kimiTokenResponse struct {

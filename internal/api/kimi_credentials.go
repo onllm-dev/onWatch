@@ -37,15 +37,48 @@ type KimiCredentials struct {
 	Source string `json:"-"`
 }
 
+// kimiExpiresAtUnix normalizes expires_at to unix seconds.
+// Writers usually store seconds; some stores use milliseconds.
+func kimiExpiresAtUnix(expiresAt float64) int64 {
+	if expiresAt <= 0 {
+		return 0
+	}
+	// Heuristic: values past year ~2001 in ms are > 1e12.
+	if expiresAt > 1e12 {
+		return int64(expiresAt / 1000)
+	}
+	return int64(expiresAt)
+}
+
 // Expired reports whether the access token is past expires_at (with a 60s skew).
+// Unknown expiry (expires_at <= 0) is treated as not expired so we never
+// proactive-refresh a still-working token just because the field is missing.
 func (c *KimiCredentials) Expired() bool {
 	if c == nil || c.AccessToken == "" {
 		return true
 	}
-	if c.ExpiresAt <= 0 {
+	exp := kimiExpiresAtUnix(c.ExpiresAt)
+	if exp <= 0 {
 		return false
 	}
-	return time.Now().Unix() >= int64(c.ExpiresAt)-60
+	return time.Now().Unix() >= exp-60
+}
+
+// SecondsUntilExpiry returns seconds until access-token expiry (0 if expired,
+// -1 if expiry unknown).
+func (c *KimiCredentials) SecondsUntilExpiry() int64 {
+	if c == nil || c.AccessToken == "" {
+		return 0
+	}
+	exp := kimiExpiresAtUnix(c.ExpiresAt)
+	if exp <= 0 {
+		return -1
+	}
+	d := exp - time.Now().Unix()
+	if d < 0 {
+		return 0
+	}
+	return d
 }
 
 // usable ranks whether credentials can still authenticate (fresh access or refreshable).
@@ -245,8 +278,14 @@ func DetectAllKimiCredentials(logger *slog.Logger) []*KimiCredentials {
 	return out
 }
 
-// DetectKimiCredentials loads the best available Kimi Code OAuth credentials
-// from kimi-code and/or kimi-cli config directories.
+// DetectKimiCredentials loads Kimi Code OAuth credentials.
+//
+// Policy (single dashboard tab):
+//   - If any kimi-code credentials file is present, use only that store
+//     (ignore kimi-cli even when both exist).
+//   - Fall back to kimi-cli only when no kimi-code file is found.
+//   - When multiple files remain in the chosen store class, pick the best by
+//     freshness (never prefer a second product just because its access is newer).
 func DetectKimiCredentials(logger *slog.Logger) *KimiCredentials {
 	if logger == nil {
 		logger = slog.Default()
@@ -255,8 +294,37 @@ func DetectKimiCredentials(logger *slog.Logger) *KimiCredentials {
 	if len(all) == 0 {
 		return nil
 	}
-	best := all[0]
-	for _, c := range all[1:] {
+
+	var codeOnly, cliOnly, other []*KimiCredentials
+	for _, c := range all {
+		switch c.Source {
+		case "kimi-code":
+			codeOnly = append(codeOnly, c)
+		case "kimi-cli":
+			cliOnly = append(cliOnly, c)
+		default:
+			// Explicit env path / unknown — treat as primary when present.
+			other = append(other, c)
+		}
+	}
+
+	// Prefer env/explicit file, then kimi-code exclusively if present, else cli.
+	pool := other
+	sourceClass := "env/file"
+	if len(pool) == 0 && len(codeOnly) > 0 {
+		pool = codeOnly
+		sourceClass = "kimi-code"
+	}
+	if len(pool) == 0 {
+		pool = cliOnly
+		sourceClass = "kimi-cli"
+	}
+	if len(pool) == 0 {
+		return nil
+	}
+
+	best := pool[0]
+	for _, c := range pool[1:] {
 		if rankKimiCredentials(c, best) > 0 {
 			best = c
 		}
@@ -264,9 +332,12 @@ func DetectKimiCredentials(logger *slog.Logger) *KimiCredentials {
 	if best != nil {
 		logger.Debug("kimi: selected credentials",
 			"source", best.Source,
+			"source_class", sourceClass,
 			"path", best.Path,
 			"expired", best.Expired(),
+			"expires_in_sec", best.SecondsUntilExpiry(),
 			"has_refresh", best.RefreshToken != "",
+			"ignored_cli", len(codeOnly) > 0 && len(cliOnly) > 0,
 			"candidates", len(all),
 		)
 	}
