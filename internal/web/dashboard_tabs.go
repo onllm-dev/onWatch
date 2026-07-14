@@ -84,10 +84,16 @@ func normalizeDashboardProviderLabel(label string) (string, bool) {
 	return label, true
 }
 
+// isDashboardSpecialTab is true for composite/header-only tabs that should stay
+// after real providers when a saved order omits newly added providers.
+func isDashboardSpecialTab(key string) bool {
+	return key == "both" || key == "api-integrations"
+}
+
 // orderDashboardProviders reorders available keys using a saved preference list.
-// Unknown keys in order are dropped; available keys missing from order are appended
-// in their original relative order. Special tabs "api-integrations" and "both" are
-// ordered like any other key when present in available.
+// Unknown keys in order are dropped; available keys missing from order are inserted
+// before special tabs (api-integrations / both) so a new provider is never buried
+// after the All tab.
 func orderDashboardProviders(available, preferred []string) []string {
 	if len(available) == 0 {
 		return []string{}
@@ -97,27 +103,54 @@ func orderDashboardProviders(available, preferred []string) []string {
 		availSet[k] = struct{}{}
 	}
 	seen := make(map[string]struct{}, len(available))
-	out := make([]string, 0, len(available))
-	for _, k := range preferred {
-		k = strings.TrimSpace(strings.ToLower(k))
-		if k == "" {
-			continue
-		}
+	regular := make([]string, 0, len(available))
+	specials := make([]string, 0, 2)
+
+	appendKey := func(k string) {
 		if _, ok := availSet[k]; !ok {
-			continue
+			return
 		}
 		if _, dup := seen[k]; dup {
-			continue
+			return
 		}
 		seen[k] = struct{}{}
-		out = append(out, k)
-	}
-	for _, k := range available {
-		if _, ok := seen[k]; ok {
-			continue
+		if isDashboardSpecialTab(k) {
+			specials = append(specials, k)
+			return
 		}
-		out = append(out, k)
+		regular = append(regular, k)
 	}
+
+	for _, k := range preferred {
+		appendKey(strings.TrimSpace(strings.ToLower(k)))
+	}
+	// Missing available keys (e.g. newly enabled Grok) join regular providers
+	// in AvailableProviders order, still before specials.
+	for _, k := range available {
+		appendKey(k)
+	}
+
+	// Stable special order: api-integrations then both, regardless of discovery order.
+	specialOrder := []string{"api-integrations", "both"}
+	orderedSpecials := make([]string, 0, len(specials))
+	specialSeen := map[string]struct{}{}
+	for _, k := range specialOrder {
+		for _, s := range specials {
+			if s == k {
+				orderedSpecials = append(orderedSpecials, s)
+				specialSeen[s] = struct{}{}
+			}
+		}
+	}
+	for _, s := range specials {
+		if _, ok := specialSeen[s]; !ok {
+			orderedSpecials = append(orderedSpecials, s)
+		}
+	}
+
+	out := make([]string, 0, len(regular)+len(orderedSpecials))
+	out = append(out, regular...)
+	out = append(out, orderedSpecials...)
 	return out
 }
 

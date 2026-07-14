@@ -9412,21 +9412,35 @@ function defaultProviderTabLabel(key) {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
+function isDashboardSpecialTab(key) {
+  return key === 'both' || key === 'api-integrations';
+}
+
 function mergeDashboardProviderOrder(preferred, available) {
   const avail = Array.isArray(available) ? available.filter(Boolean) : [];
   const availSet = new Set(avail);
   const seen = new Set();
-  const out = [];
-  (Array.isArray(preferred) ? preferred : []).forEach((key) => {
+  const regular = [];
+  const specials = [];
+  const pushKey = (key) => {
     const k = String(key || '').trim().toLowerCase();
     if (!k || !availSet.has(k) || seen.has(k)) return;
     seen.add(k);
-    out.push(k);
+    if (isDashboardSpecialTab(k)) specials.push(k);
+    else regular.push(k);
+  };
+  (Array.isArray(preferred) ? preferred : []).forEach(pushKey);
+  // Newly available providers (e.g. Grok) join before special tabs.
+  avail.forEach(pushKey);
+  const specialOrder = ['api-integrations', 'both'];
+  const orderedSpecials = [];
+  specialOrder.forEach((k) => {
+    if (specials.includes(k)) orderedSpecials.push(k);
   });
-  avail.forEach((key) => {
-    if (!seen.has(key)) out.push(key);
+  specials.forEach((k) => {
+    if (!orderedSpecials.includes(k)) orderedSpecials.push(k);
   });
-  return out;
+  return regular.concat(orderedSpecials);
 }
 
 async function fetchDashboardTabOrderProviders() {

@@ -22,6 +22,24 @@ func TestOrderDashboardProviders(t *testing.T) {
 	}
 }
 
+func TestOrderDashboardProviders_NewProviderBeforeBoth(t *testing.T) {
+	t.Parallel()
+	// Saved order from an older build that never listed grok, and pinned both last.
+	available := []string{"anthropic", "zai", "codex", "antigravity", "gemini", "grok", "both"}
+	preferred := []string{"codex", "anthropic", "zai", "antigravity", "gemini", "both"}
+	got := orderDashboardProviders(available, preferred)
+	// grok must not land after both
+	want := []string{"codex", "anthropic", "zai", "antigravity", "gemini", "grok", "both"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
+	}
+}
+
 func TestNormalizeDashboardProviderLabel(t *testing.T) {
 	t.Parallel()
 	if _, ok := normalizeDashboardProviderLabel("   "); ok {
