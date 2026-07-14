@@ -1105,7 +1105,6 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 		{Key: "cursor", Name: "Cursor", Description: "Cursor usage and quota tracking", AutoDetectable: true},
 		{Key: "grok", Name: "Grok", Description: "Grok (xAI) usage tracking", AutoDetectable: true},
-		{Key: "kimi", Name: "Kimi", Description: "Kimi Code usage tracking", AutoDetectable: true},
 	}
 }
 
@@ -1170,12 +1169,6 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 			return true
 		}
 		if creds := api.DetectGrokCredentials(h.logger); creds != nil && strings.TrimSpace(creds.AccessToken) != "" {
-			return true
-		}
-		return false
-	case "kimi":
-		// Kimi may only be present on builds that wire the provider; keep a safe probe.
-		if h.config != nil && h.config.HasProvider("kimi") {
 			return true
 		}
 		return false
