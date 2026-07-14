@@ -12,7 +12,7 @@
             {{range .Providers}}
             <button class="provider-tab {{if eq . $.CurrentProvider}}active{{end}}"
                     data-provider="{{.}}" role="tab" aria-selected="{{if eq . $.CurrentProvider}}true{{else}}false{{end}}">
-                {{if eq . "synthetic"}}Synthetic{{else if eq . "zai"}}Z.ai{{else if eq . "anthropic"}}Anthropic{{else if eq . "copilot"}}Copilot{{else if eq . "codex"}}Codex{{else if eq . "antigravity"}}Antigravity{{else if eq . "minimax"}}MiniMax{{else if eq . "gemini"}}Gemini{{else if eq . "cursor"}}Cursor{{else if eq . "grok"}}Grok{{else if eq . "api-integrations"}}API Integrations{{else if eq . "both"}}All{{else}}{{.}}{{end}}
+                {{$label := index $.ProviderLabels .}}{{if $label}}{{$label}}{{else}}{{.}}{{end}}
             </button>
             {{end}}
         </div>

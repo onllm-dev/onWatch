@@ -3109,13 +3109,109 @@ select.settings-input {
   gap: 16px;
 }
 
-.menubar-order-list {
+.menubar-order-list,
+.dashboard-tab-order-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.dashboard-tab-order-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-inset);
+  cursor: grab;
+  transition: border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.dashboard-tab-order-item:focus-visible,
+.dashboard-tab-order-item:hover {
+  outline: none;
+  border-color: var(--accent-teal);
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-tab-order-item.dragging {
+  opacity: 0.72;
+  transform: scale(0.99);
+}
+
+.dashboard-tab-order-item .menubar-order-handle {
+  flex-shrink: 0;
+}
+
+.dashboard-tab-order-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.dashboard-tab-order-key {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dashboard-tab-order-label {
+  width: 100%;
+  max-width: 360px;
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface, var(--bg-primary));
+  color: var(--text-primary);
+}
+
+.dashboard-tab-order-label:focus {
+  outline: none;
+  border-color: var(--accent-teal);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-teal) 25%, transparent);
+}
+
+.dashboard-tab-order-move {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.dashboard-tab-order-move button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--surface, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.dashboard-tab-order-move button:hover:not(:disabled) {
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.dashboard-tab-order-move button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.dashboard-tab-order-move button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .menubar-order-item {

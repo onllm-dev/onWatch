@@ -177,6 +177,9 @@ const State = {
   allProvidersHistory: null,
   providerVisibility: {},
   providerSettings: {},
+  // Dashboard header tab order + custom display names (Settings → Providers)
+  dashboardProvidersOrder: [],
+  dashboardProviderLabels: {},
   menubarCapabilities: null,
   menubarProviderOrder: [],
   menubarProviders: [],
@@ -8936,8 +8939,17 @@ async function loadSettings() {
       displayModeSelect.value = (globalSettings.display_mode === 'available') ? 'available' : 'usage';
     }
 
+    // Dashboard tab order + custom labels
+    State.dashboardProvidersOrder = Array.isArray(data.dashboard_providers_order)
+      ? data.dashboard_providers_order.slice()
+      : [];
+    State.dashboardProviderLabels = (data.dashboard_provider_labels && typeof data.dashboard_provider_labels === 'object')
+      ? { ...data.dashboard_provider_labels }
+      : {};
+
     // Provider visibility + dynamic provider status
     await populateProviderToggles(data.provider_visibility || {});
+    await populateDashboardTabOrder();
     await populateMenubarSettings(data.menubar || {});
   } catch (e) {
     // Settings load failed silently
@@ -9374,6 +9386,263 @@ async function fetchMenubarProviders() {
   }
 
   return items;
+}
+
+// Built-in dashboard tab titles (must match server defaultProviderTabLabel).
+const DEFAULT_PROVIDER_TAB_LABELS = {
+  synthetic: 'Synthetic',
+  zai: 'Z.ai',
+  anthropic: 'Anthropic',
+  copilot: 'Copilot',
+  codex: 'Codex',
+  antigravity: 'Antigravity',
+  minimax: 'MiniMax',
+  openrouter: 'OpenRouter',
+  gemini: 'Gemini',
+  cursor: 'Cursor',
+  grok: 'Grok',
+  kimi: 'Kimi',
+  'api-integrations': 'API Integrations',
+  both: 'All',
+};
+
+function defaultProviderTabLabel(key) {
+  if (!key) return '';
+  if (DEFAULT_PROVIDER_TAB_LABELS[key]) return DEFAULT_PROVIDER_TAB_LABELS[key];
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function mergeDashboardProviderOrder(preferred, available) {
+  const avail = Array.isArray(available) ? available.filter(Boolean) : [];
+  const availSet = new Set(avail);
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(preferred) ? preferred : []).forEach((key) => {
+    const k = String(key || '').trim().toLowerCase();
+    if (!k || !availSet.has(k) || seen.has(k)) return;
+    seen.add(k);
+    out.push(k);
+  });
+  avail.forEach((key) => {
+    if (!seen.has(key)) out.push(key);
+  });
+  return out;
+}
+
+async function fetchDashboardTabOrderProviders() {
+  // Prefer configured providers from status API, then append special tabs.
+  let providers = [];
+  try {
+    const res = await authFetch(`${API_BASE}/api/providers/status`);
+    if (res.ok) {
+      const data = await res.json();
+      providers = Array.isArray(data.providers) ? data.providers : [];
+    }
+  } catch (e) {
+    providers = [];
+  }
+
+  const items = providers
+    .filter((p) => p && p.key)
+    .map((p) => ({
+      key: p.key,
+      defaultName: p.name || defaultProviderTabLabel(p.key),
+      meta: `${p.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${p.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+      dashboardVisible: p.dashboardVisible !== false,
+    }));
+
+  // Special dashboard-only tabs (not in provider status list as first-class).
+  const hasMultiple = items.length > 1;
+  if (State.apiIntegrationsVisibility?.dashboard !== false) {
+    // Always offer rename/order for API Integrations when the feature exists on this build.
+    // Visibility still controlled by the API Integrations toggle below.
+    const already = items.some((i) => i.key === 'api-integrations');
+    if (!already) {
+      items.push({
+        key: 'api-integrations',
+        defaultName: defaultProviderTabLabel('api-integrations'),
+        meta: 'Dashboard tools tab',
+        dashboardVisible: true,
+      });
+    }
+  }
+  if (hasMultiple || items.length > 1) {
+    items.push({
+      key: 'both',
+      defaultName: defaultProviderTabLabel('both'),
+      meta: 'Combined multi-provider view',
+      dashboardVisible: true,
+    });
+  }
+  return items;
+}
+
+async function populateDashboardTabOrder() {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+
+  const providers = await fetchDashboardTabOrderProviders();
+  if (providers.length === 0) {
+    list.innerHTML = '<li class="dashboard-tab-order-item"><div class="dashboard-tab-order-fields"><span class="dashboard-tab-order-key">No providers available</span></div></li>';
+    State.dashboardProvidersOrder = [];
+    return;
+  }
+
+  const order = mergeDashboardProviderOrder(
+    State.dashboardProvidersOrder,
+    providers.map((p) => p.key),
+  );
+  State.dashboardProvidersOrder = order;
+  const labels = State.dashboardProviderLabels && typeof State.dashboardProviderLabels === 'object'
+    ? State.dashboardProviderLabels
+    : {};
+  const byKey = new Map(providers.map((p) => [p.key, p]));
+  const ordered = order.map((key) => byKey.get(key)).filter(Boolean);
+
+  const arrowUp = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+  const arrowDown = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>';
+
+  list.innerHTML = ordered.map((provider, index) => {
+    const custom = labels[provider.key] || '';
+    const placeholder = provider.defaultName || defaultProviderTabLabel(provider.key);
+    const canUp = index > 0;
+    const canDown = index < ordered.length - 1;
+    return `
+    <li class="dashboard-tab-order-item ${provider.dashboardVisible ? '' : 'is-disabled'}" draggable="true" tabindex="0" data-provider="${provider.key}">
+      <div class="menubar-order-handle" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="dashboard-tab-order-fields">
+        <span class="dashboard-tab-order-key">${placeholder} · <code>${provider.key}</code></span>
+        <input type="text" class="dashboard-tab-order-label" data-provider="${provider.key}"
+          maxlength="48" value="${escapeHTML(custom)}"
+          placeholder="${escapeHTML(placeholder)}"
+          aria-label="Custom tab name for ${escapeHTML(placeholder)}">
+      </div>
+      <div class="dashboard-tab-order-move">
+        <button type="button" data-dashboard-move="up" data-provider="${provider.key}" ${canUp ? '' : 'disabled'} aria-label="Move ${escapeHTML(placeholder)} up" title="Move up">${arrowUp}</button>
+        <button type="button" data-dashboard-move="down" data-provider="${provider.key}" ${canDown ? '' : 'disabled'} aria-label="Move ${escapeHTML(placeholder)} down" title="Move down">${arrowDown}</button>
+      </div>
+    </li>`;
+  }).join('');
+
+  // Drag-and-drop
+  list.querySelectorAll('.dashboard-tab-order-item').forEach((item) => {
+    item.addEventListener('dragstart', () => {
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      syncDashboardTabOrderFromDOM();
+      // Refresh move button disabled state without full re-render (preserves inputs).
+      refreshDashboardTabMoveButtons();
+    });
+    // Don't start drag when editing the label input.
+    const input = item.querySelector('.dashboard-tab-order-label');
+    if (input) {
+      input.addEventListener('mousedown', (e) => e.stopPropagation());
+      input.addEventListener('pointerdown', (e) => e.stopPropagation());
+      input.addEventListener('input', () => {
+        const key = input.dataset.provider;
+        if (!key) return;
+        if (!State.dashboardProviderLabels || typeof State.dashboardProviderLabels !== 'object') {
+          State.dashboardProviderLabels = {};
+        }
+        const val = (input.value || '').trim();
+        if (!val || val === defaultProviderTabLabel(key)) {
+          delete State.dashboardProviderLabels[key];
+        } else {
+          State.dashboardProviderLabels[key] = val.slice(0, 48);
+        }
+      });
+    }
+  });
+
+  list.querySelectorAll('button[data-dashboard-move]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.getAttribute('data-provider') || '';
+      const dir = button.getAttribute('data-dashboard-move') || '';
+      if (!key || !dir) return;
+      moveDashboardTabItem(key, dir === 'up' ? -1 : 1);
+    });
+  });
+
+  // Avoid stacking multiple dragover handlers on re-populate.
+  if (!list.dataset.dragBound) {
+    list.dataset.dragBound = '1';
+    list.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      const dragging = list.querySelector('.dashboard-tab-order-item.dragging');
+      if (!dragging) return;
+      const after = getDashboardTabDragAfterElement(list, event.clientY);
+      if (!after) {
+        list.appendChild(dragging);
+      } else if (after !== dragging) {
+        list.insertBefore(dragging, after);
+      }
+    }, { passive: false });
+  }
+
+  syncDashboardTabOrderFromDOM();
+}
+
+function getDashboardTabDragAfterElement(container, y) {
+  const items = [...container.querySelectorAll('.dashboard-tab-order-item:not(.dragging)')];
+  return items.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child };
+    }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+
+function syncDashboardTabOrderFromDOM() {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+  State.dashboardProvidersOrder = [...list.querySelectorAll('.dashboard-tab-order-item[data-provider]')]
+    .map((item) => item.dataset.provider)
+    .filter(Boolean);
+
+  const labels = {};
+  list.querySelectorAll('.dashboard-tab-order-label[data-provider]').forEach((input) => {
+    const key = input.dataset.provider;
+    if (!key) return;
+    const val = (input.value || '').trim();
+    if (!val) return;
+    if (val === defaultProviderTabLabel(key)) return;
+    labels[key] = val.slice(0, 48);
+  });
+  State.dashboardProviderLabels = labels;
+}
+
+function refreshDashboardTabMoveButtons() {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+  const items = [...list.querySelectorAll('.dashboard-tab-order-item[data-provider]')];
+  items.forEach((item, index) => {
+    const up = item.querySelector('button[data-dashboard-move="up"]');
+    const down = item.querySelector('button[data-dashboard-move="down"]');
+    if (up) up.disabled = index === 0;
+    if (down) down.disabled = index === items.length - 1;
+  });
+}
+
+function moveDashboardTabItem(providerKey, delta) {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+  const items = [...list.querySelectorAll('.dashboard-tab-order-item[data-provider]')];
+  const index = items.findIndex((el) => el.dataset.provider === providerKey);
+  if (index < 0) return;
+  const next = index + delta;
+  if (next < 0 || next >= items.length) return;
+  const el = items[index];
+  if (delta < 0) {
+    list.insertBefore(el, items[next]);
+  } else {
+    list.insertBefore(items[next], el);
+  }
+  syncDashboardTabOrderFromDOM();
+  refreshDashboardTabMoveButtons();
 }
 
 async function populateMenubarProviderOrder() {
@@ -10236,6 +10505,7 @@ function setupProviderReload() {
         }
       } else {
         await populateProviderToggles(State.providerVisibility || {});
+        await populateDashboardTabOrder();
         if (result) {
           result.textContent = 'Provider configuration reloaded.';
           result.className = 'settings-test-result success';
@@ -10322,6 +10592,15 @@ function gatherSettings() {
   settings.api_integrations_visibility = {
     dashboard: State.apiIntegrationsVisibility?.dashboard !== false,
   };
+
+  // Dashboard tab order + custom labels (from Settings → Providers list)
+  syncDashboardTabOrderFromDOM();
+  settings.dashboard_providers_order = Array.isArray(State.dashboardProvidersOrder)
+    ? State.dashboardProvidersOrder.slice()
+    : [];
+  settings.dashboard_provider_labels = (State.dashboardProviderLabels && typeof State.dashboardProviderLabels === 'object')
+    ? { ...State.dashboardProviderLabels }
+    : {};
 
   // Timezone
   const tzSelect = document.getElementById('settings-timezone');
@@ -10414,7 +10693,13 @@ function setupSettingsSave() {
         }
         if (data.provider_visibility) State.providerVisibility = data.provider_visibility;
         if (data.api_integrations_visibility) State.apiIntegrationsVisibility = data.api_integrations_visibility;
-        showSettingsFeedback(feedback, 'Settings saved successfully.', 'success');
+        if (Array.isArray(data.dashboard_providers_order)) {
+          State.dashboardProvidersOrder = data.dashboard_providers_order.slice();
+        }
+        if (data.dashboard_provider_labels && typeof data.dashboard_provider_labels === 'object') {
+          State.dashboardProviderLabels = { ...data.dashboard_provider_labels };
+        }
+        showSettingsFeedback(feedback, 'Settings saved successfully. Reload the dashboard to apply tab order and names.', 'success');
       }
     } catch (e) {
       showSettingsFeedback(feedback, 'Network error. Please try again.', 'error');
