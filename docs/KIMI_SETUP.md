@@ -11,30 +11,26 @@ This is **not** the Moonshot Open Platform pay-as-you-go balance API (`api.moons
 
 ## Prerequisites
 
-1. Install and log in with either CLI (both use the same Kimi Code OAuth + `/usages` API):
-   - **kimi-code** (current): [docs](https://moonshotai.github.io/kimi-code/) — `kimi login`
-   - **kimi-cli** (legacy, still usable): share dir `~/.kimi` (or `$KIMI_SHARE_DIR`)
-2. Credentials file (same JSON shape) is searched in order:
-   - `$KIMI_CODE_CREDENTIALS` or `$KIMI_CREDENTIALS` (explicit file)
+1. Install and log in with **kimi-code** only: [docs](https://moonshotai.github.io/kimi-code/) — `kimi login`
+2. Credentials file is searched **only** under the kimi-code store (in order):
+   - `$KIMI_CODE_CREDENTIALS` or `$KIMI_CREDENTIALS` (explicit file; Docker/CI)
    - `$KIMI_CODE_HOME/credentials/kimi-code.json`
-   - `$KIMI_SHARE_DIR/credentials/kimi-code.json` (kimi-cli override)
-   - `$KIMI_HOME/credentials/kimi-code.json`
-   - `~/.kimi-code/credentials/kimi-code.json` (**kimi-code**)
-   - `~/.kimi/credentials/kimi-code.json` (**kimi-cli**)
+   - `~/.kimi-code/credentials/kimi-code.json`
 
-**When both CLIs have credentials, onWatch uses only kimi-code** (`~/.kimi-code` / `$KIMI_CODE_*`). kimi-cli is a fallback only if no kimi-code file exists (there is a single dashboard tab, so dual-store merge is not useful).
+**Legacy kimi-cli (`~/.kimi`, `$KIMI_SHARE_DIR`, `$KIMI_HOME`) is not supported.**  
+A single dashboard tab must not touch two OAuth token chains (refresh rotation would invalidate the other store).
 
 ### Token refresh policy
 
-- If the selected store’s **access token is still valid** (`expires_at` with a 60s skew), onWatch **never** refreshes — it just reuses the token the CLI already wrote.
-- Refresh runs only when access is **expired** (or missing expiry left us with a dead token path). Then onWatch may call:
+- If the kimi-code **access token is still valid** (`expires_at` with a 60s skew), onWatch **never** refreshes — it reuses the token the CLI already wrote.
+- Refresh runs only when access is **expired**. Then onWatch may call:
 
 ```http
 POST https://auth.kimi.com/api/oauth/token
 grant_type=refresh_token&refresh_token=...&client_id=17e5f671-d194-4dfb-9706-5516cb48c098
 ```
 
-and rewrite **that same credentials file** (mode `0600`). It does not walk the other CLI directory.
+and rewrite **the same kimi-code credentials file** (mode `0600`).
 
 - On HTTP 401 with a still-unexpired access token, onWatch re-reads disk once (CLI may have rotated tokens) but **does not** force-refresh.
 
@@ -93,10 +89,10 @@ Other `/usages` fields (`totalQuota`, non-5h windows) are ignored. The membershi
 ## Verify
 
 ```bash
-# slash command in legacy kimi-cli (same API)
-kimi-cli  # then /usage
+# after kimi-code login
+kimi  # then check usage in the CLI if available
 
-# or curl after refreshing a token
+# or curl with the access_token from ~/.kimi-code/credentials/kimi-code.json
 curl -sS -H "Authorization: Bearer $TOKEN" https://api.kimi.com/coding/v1/usages | jq .
 ```
 

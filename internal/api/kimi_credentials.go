@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Kimi Code OAuth client ID (public; same as kimi-cli / kimi-code).
+// Kimi Code OAuth client ID (public; same as the official kimi-code CLI).
 const KimiCodeClientID = "17e5f671-d194-4dfb-9706-5516cb48c098"
 
 // DefaultOAuth/API hosts. Overridable via env for testing.
@@ -19,11 +19,15 @@ const (
 	DefaultKimiCodeBase  = "https://api.kimi.com/coding/v1"
 )
 
-// KimiCredentials is the on-disk OAuth payload from kimi-code or kimi-cli.
+// KimiCredentials is the on-disk OAuth payload written by the kimi-code CLI.
 //
-// Both CLIs store the same Kimi Code OAuth scope, but under different share dirs:
-//   - kimi-code: ~/.kimi-code/credentials/kimi-code.json
-//   - kimi-cli:  ~/.kimi/credentials/kimi-code.json  (also KIMI_SHARE_DIR)
+// Only the kimi-code credential store is supported:
+//
+//	~/.kimi-code/credentials/kimi-code.json
+//
+// (plus $KIMI_CODE_HOME / $KIMI_CODE_CREDENTIALS overrides).
+// Legacy kimi-cli (~/.kimi) is intentionally not read — a single dashboard tab
+// must not refresh two independent OAuth token chains.
 type KimiCredentials struct {
 	AccessToken  string  `json:"access_token"`
 	RefreshToken string  `json:"refresh_token"`
@@ -33,7 +37,7 @@ type KimiCredentials struct {
 	ExpiresIn    float64 `json:"expires_in"`
 	// Path is the file credentials were loaded from (not serialized).
 	Path string `json:"-"`
-	// Source is a short label for logs: "kimi-code", "kimi-cli", or "env".
+	// Source is a short label for logs: "kimi-code", "env", or "file".
 	Source string `json:"-"`
 }
 
@@ -81,7 +85,7 @@ func (c *KimiCredentials) SecondsUntilExpiry() int64 {
 	return d
 }
 
-// usable ranks whether credentials can still authenticate (fresh access or refreshable).
+// usable reports whether credentials can still authenticate (fresh access or refreshable).
 func (c *KimiCredentials) usable() bool {
 	if c == nil {
 		return false
@@ -92,16 +96,12 @@ func (c *KimiCredentials) usable() bool {
 	return c.RefreshToken != ""
 }
 
-// KimiCredentialsCandidates returns credential file paths to try, in preference order.
-//
-// Supported layout (same filename, different share dir):
+// KimiCredentialsCandidates returns kimi-code credential file paths, in preference order.
 //
 //	$KIMI_CODE_CREDENTIALS          # explicit file
-//	$KIMI_CODE_HOME/credentials/... # kimi-code home override
-//	$KIMI_SHARE_DIR/credentials/... # kimi-cli share dir override
-//	$KIMI_HOME/credentials/...      # optional alias
+//	$KIMI_CREDENTIALS               # alias for explicit file (Docker/CI)
+//	$KIMI_CODE_HOME/credentials/kimi-code.json
 //	~/.kimi-code/credentials/kimi-code.json
-//	~/.kimi/credentials/kimi-code.json
 func KimiCredentialsCandidates() []string {
 	var out []string
 	seen := map[string]struct{}{}
@@ -136,14 +136,9 @@ func KimiCredentialsCandidates() []string {
 	}
 
 	add(credFile(os.Getenv("KIMI_CODE_HOME")))
-	add(credFile(os.Getenv("KIMI_SHARE_DIR"))) // kimi-cli official override
-	add(credFile(os.Getenv("KIMI_HOME")))
 
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		// kimi-code (current CLI)
 		add(filepath.Join(home, ".kimi-code", "credentials", "kimi-code.json"))
-		// kimi-cli (legacy / still usable)
-		add(filepath.Join(home, ".kimi", "credentials", "kimi-code.json"))
 	}
 	return out
 }
@@ -156,7 +151,6 @@ func KimiCredentialsPath() string {
 			return p
 		}
 	}
-	// Default write location for kimi-code installs.
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		return filepath.Join(home, ".kimi-code", "credentials", "kimi-code.json")
 	}
@@ -168,20 +162,14 @@ func kimiSourceLabel(path string) string {
 		return "unknown"
 	}
 	clean := filepath.ToSlash(path)
-	// Check kimi-code before .kimi (prefix of .kimi-code would false-match).
 	if strings.Contains(clean, "/.kimi-code/") || strings.HasSuffix(clean, "/.kimi-code") {
 		return "kimi-code"
-	}
-	if strings.Contains(clean, "/.kimi/") || strings.HasSuffix(clean, "/.kimi") {
-		return "kimi-cli"
 	}
 	if env := os.Getenv("KIMI_CODE_CREDENTIALS"); env != "" && filepath.Clean(path) == filepath.Clean(env) {
 		return "env"
 	}
-	if share := os.Getenv("KIMI_SHARE_DIR"); share != "" {
-		if strings.HasPrefix(filepath.Clean(path), filepath.Clean(share)) {
-			return "kimi-cli"
-		}
+	if env := os.Getenv("KIMI_CREDENTIALS"); env != "" && filepath.Clean(path) == filepath.Clean(env) {
+		return "env"
 	}
 	if home := os.Getenv("KIMI_CODE_HOME"); home != "" {
 		if strings.HasPrefix(filepath.Clean(path), filepath.Clean(home)) {
@@ -211,141 +199,33 @@ func loadKimiCredentialsFile(path string, logger *slog.Logger) *KimiCredentials 
 	return &creds
 }
 
-// rankKimiCredentials prefers fresh access tokens, then refreshable sets, then newer expiry/mtime.
-func rankKimiCredentials(a, b *KimiCredentials) int {
-	// higher is better; return >0 if a better than b
-	score := func(c *KimiCredentials) int {
-		if c == nil {
-			return -1000
-		}
-		s := 0
-		if c.AccessToken != "" && !c.Expired() {
-			s += 100
-		}
-		if c.RefreshToken != "" {
-			s += 50
-		}
-		if c.AccessToken != "" {
-			s += 10
-		}
-		// slight preference for kimi-code when tied (current product)
-		if c.Source == "kimi-code" {
-			s += 1
-		}
-		return s
-	}
-	sa, sb := score(a), score(b)
-	if sa != sb {
-		return sa - sb
-	}
-	// Prefer later expires_at
-	if a != nil && b != nil {
-		if a.ExpiresAt != b.ExpiresAt {
-			if a.ExpiresAt > b.ExpiresAt {
-				return 1
-			}
-			return -1
-		}
-		// Prefer newer file mtime
-		ia, ea := os.Stat(a.Path)
-		ib, eb := os.Stat(b.Path)
-		if ea == nil && eb == nil {
-			if ia.ModTime().After(ib.ModTime()) {
-				return 1
-			}
-			if ib.ModTime().After(ia.ModTime()) {
-				return -1
-			}
-		}
-	}
-	return 0
-}
-
-// DetectAllKimiCredentials loads every readable credentials file from known locations.
-func DetectAllKimiCredentials(logger *slog.Logger) []*KimiCredentials {
+// DetectKimiCredentials loads kimi-code OAuth credentials from the first
+// readable path in KimiCredentialsCandidates (explicit env, then ~/.kimi-code).
+// Legacy kimi-cli paths under ~/.kimi are never consulted.
+func DetectKimiCredentials(logger *slog.Logger) *KimiCredentials {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	var out []*KimiCredentials
 	for _, path := range KimiCredentialsCandidates() {
 		if st, err := os.Stat(path); err != nil || st.IsDir() {
 			continue
 		}
 		if c := loadKimiCredentialsFile(path, logger); c != nil {
-			out = append(out, c)
+			logger.Debug("kimi: selected credentials",
+				"source", c.Source,
+				"path", c.Path,
+				"expired", c.Expired(),
+				"expires_in_sec", c.SecondsUntilExpiry(),
+				"has_refresh", c.RefreshToken != "",
+			)
+			return c
 		}
 	}
-	return out
-}
-
-// DetectKimiCredentials loads Kimi Code OAuth credentials.
-//
-// Policy (single dashboard tab):
-//   - If any kimi-code credentials file is present, use only that store
-//     (ignore kimi-cli even when both exist).
-//   - Fall back to kimi-cli only when no kimi-code file is found.
-//   - When multiple files remain in the chosen store class, pick the best by
-//     freshness (never prefer a second product just because its access is newer).
-func DetectKimiCredentials(logger *slog.Logger) *KimiCredentials {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	all := DetectAllKimiCredentials(logger)
-	if len(all) == 0 {
-		return nil
-	}
-
-	var codeOnly, cliOnly, other []*KimiCredentials
-	for _, c := range all {
-		switch c.Source {
-		case "kimi-code":
-			codeOnly = append(codeOnly, c)
-		case "kimi-cli":
-			cliOnly = append(cliOnly, c)
-		default:
-			// Explicit env path / unknown — treat as primary when present.
-			other = append(other, c)
-		}
-	}
-
-	// Prefer env/explicit file, then kimi-code exclusively if present, else cli.
-	pool := other
-	sourceClass := "env/file"
-	if len(pool) == 0 && len(codeOnly) > 0 {
-		pool = codeOnly
-		sourceClass = "kimi-code"
-	}
-	if len(pool) == 0 {
-		pool = cliOnly
-		sourceClass = "kimi-cli"
-	}
-	if len(pool) == 0 {
-		return nil
-	}
-
-	best := pool[0]
-	for _, c := range pool[1:] {
-		if rankKimiCredentials(c, best) > 0 {
-			best = c
-		}
-	}
-	if best != nil {
-		logger.Debug("kimi: selected credentials",
-			"source", best.Source,
-			"source_class", sourceClass,
-			"path", best.Path,
-			"expired", best.Expired(),
-			"expires_in_sec", best.SecondsUntilExpiry(),
-			"has_refresh", best.RefreshToken != "",
-			"ignored_cli", len(codeOnly) > 0 && len(cliOnly) > 0,
-			"candidates", len(all),
-		)
-	}
-	return best
+	return nil
 }
 
 // SaveKimiCredentials writes credentials back to disk (after refresh).
-// Writes to the original Path so kimi-cli and kimi-code stores stay independent.
+// Writes to the original Path (the single kimi-code store).
 func SaveKimiCredentials(creds *KimiCredentials) error {
 	if creds == nil {
 		return nil

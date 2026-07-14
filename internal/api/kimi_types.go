@@ -9,7 +9,7 @@ import (
 )
 
 // KimiUsagesResponse is the JSON shape from GET /coding/v1/usages
-// (documented by kimi-cli's /usage command; same endpoint used by kimi-code).
+// (same endpoint used by the official kimi-code CLI).
 type KimiUsagesResponse struct {
 	User     *KimiUser            `json:"user"`
 	Usage    *KimiUsageDetail     `json:"usage"`
