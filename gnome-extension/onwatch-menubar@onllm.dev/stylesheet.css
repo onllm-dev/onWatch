@@ -1,0 +1,42 @@
+/* Layout only. Icon color is applied via Clutter.ColorizeEffect in indicator.js
+ * (white monochrome SVG × panel tint). Do not force color here. */
+
+.onwatch-menubar-button {
+  padding: 0 4px;
+}
+
+.onwatch-menubar-box {
+  spacing: 2px;
+}
+
+.onwatch-menubar-slot {
+  spacing: 3px;
+  padding: 0 1px;
+}
+
+.onwatch-menubar-provider-icon {
+  icon-size: 14px;
+  width: 14px;
+  height: 14px;
+  margin-right: 1px;
+  /* regular — ColorizeEffect handles tint; symbolic FileIcon path was unreliable */
+  -st-icon-style: regular;
+}
+
+.onwatch-menubar-label {
+  font-weight: 600;
+  font-feature-settings: "tnum";
+  padding: 0;
+  min-width: 1.2em;
+}
+
+.onwatch-menubar-sep {
+  padding: 0 2px;
+  opacity: 0.7;
+  font-weight: 500;
+}
+
+.onwatch-menubar-offline {
+  opacity: 0.55;
+  font-weight: 500;
+}

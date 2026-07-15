@@ -1,0 +1,16 @@
+{
+  "uuid": "onwatch-menubar@onllm.dev",
+  "name": "onWatch Menubar",
+  "description": "GNOME top-bar indicator for onWatch. Shows compact quota % in the panel and opens the shared macOS menubar UI (http://localhost/menubar) in a WebKit popup. Requires the onwatch daemon.",
+  "version": 4,
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
+  ],
+  "url": "https://github.com/onllm-dev/onWatch",
+  "session-modes": ["user"]
+}
