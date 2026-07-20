@@ -13,7 +13,7 @@ import (
 // opencodeInsightsResponse is the JSON payload for OpenCode deep insights.
 type opencodeInsightsResponse struct {
 	Stats    []opencodeInsightStat `json:"stats"`
-	Insights []insightItem       `json:"insights"`
+	Insights []insightItem         `json:"insights"`
 }
 
 // opencodeInsightStat is a stats-row shape that carries linked forecast metadata for the OpenCode dashboard.
@@ -52,8 +52,6 @@ func opencodeQuotaOrder(name string) int {
 	}
 	return 99
 }
-
-
 
 type opencodeQuotaRate struct {
 	Rate          float64

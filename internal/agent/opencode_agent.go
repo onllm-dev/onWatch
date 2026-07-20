@@ -109,27 +109,27 @@ func parseWindowUsage(html string, prefix string) (float64, float64, bool) {
 	// e.g. rollingUsage:$R[123]={...usagePercent:4.5...resetInSec:6000...}
 	// We construct two patterns to handle ordering differences in JS objects
 	numPattern := `(-?\d+(?:\.\d+)?)`
-	
+
 	pattern1 := prefix + `:\$R\[\d+\]=\{[^}]*usagePercent:` + numPattern + `[^}]*resetInSec:` + numPattern
 	pattern2 := prefix + `:\$R\[\d+\]=\{[^}]*resetInSec:` + numPattern + `[^}]*usagePercent:` + numPattern
-	
+
 	re1 := regexp.MustCompile(pattern1)
 	re2 := regexp.MustCompile(pattern2)
-	
+
 	m := re1.FindStringSubmatch(html)
 	if len(m) >= 3 {
 		pct, _ := strconv.ParseFloat(m[1], 64)
 		reset, _ := strconv.ParseFloat(m[2], 64)
 		return pct, reset, true
 	}
-	
+
 	m = re2.FindStringSubmatch(html)
 	if len(m) >= 3 {
 		reset, _ := strconv.ParseFloat(m[1], 64)
 		pct, _ := strconv.ParseFloat(m[2], 64)
 		return pct, reset, true
 	}
-	
+
 	return 0, 0, false
 }
 
@@ -150,16 +150,16 @@ func (a *OpenCodeAgent) FetchQuotas(ctx context.Context) (*api.OpenCodeSnapshot,
 			} else {
 				req.Header.Set("Cookie", authCookie)
 			}
-			
+
 			resp, err := http.DefaultClient.Do(req)
 			if err == nil {
 				defer resp.Body.Close()
 				if resp.StatusCode == 200 {
 					bodyBytes, _ := io.ReadAll(resp.Body)
 					html := string(bodyBytes)
-					
+
 					var quotas []api.OpenCodeQuota
-					
+
 					if pct, resetSec, ok := parseWindowUsage(html, "rollingUsage"); ok {
 						resTime := now.Add(time.Duration(resetSec) * time.Second)
 						quotas = append(quotas, api.OpenCodeQuota{
