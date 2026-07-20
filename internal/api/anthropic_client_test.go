@@ -50,6 +50,95 @@ func TestAnthropicClient_FetchQuotas_Success(t *testing.T) {
 	}
 }
 
+// Regression for upstream #82 / #90: /api/oauth/usage now includes top-level
+// metadata such as limits (array) and spend (unrelated object). Decoding must
+// still return the quota buckets and must not store metadata keys as entries.
+func TestAnthropicClient_FetchQuotas_IgnoresUsageMetadataFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"five_hour": {
+				"utilization": 12.5,
+				"resets_at": "2026-06-24T04:00:00Z"
+			},
+			"seven_day": {
+				"utilization": 34.5,
+				"resets_at": "2026-06-30T00:00:00Z"
+			},
+			"seven_day_oauth_apps": null,
+			"limits": [
+				{
+					"group": "claude",
+					"kind": "quota",
+					"percent": 12.5,
+					"resets_at": "2026-06-24T04:00:00Z",
+					"is_active": true
+				}
+			],
+			"spend": {
+				"enabled": false,
+				"percent": 0,
+				"used": {"amount_minor": 0, "currency": "USD", "exponent": 2}
+			},
+			"member_dashboard_available": false
+		}`)
+	}))
+	defer server.Close()
+
+	client := api.NewAnthropicClient("test_token", testutil.DiscardLogger(),
+		api.WithAnthropicBaseURL(server.URL),
+	)
+
+	resp, err := client.FetchQuotas(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	names := resp.ActiveQuotaNames()
+	if got, want := fmt.Sprint(names), "[five_hour seven_day]"; got != want {
+		t.Fatalf("ActiveQuotaNames() = %s, want %s", got, want)
+	}
+	if _, ok := (*resp)["limits"]; ok {
+		t.Fatal("non-quota limits array should be ignored")
+	}
+	if _, ok := (*resp)["spend"]; ok {
+		t.Fatal("non-quota spend object should be ignored")
+	}
+	if _, ok := (*resp)["member_dashboard_available"]; ok {
+		t.Fatal("boolean companion field should be ignored")
+	}
+	if entry := (*resp)["seven_day_oauth_apps"]; entry != nil {
+		t.Fatal("null quota keys should map to nil entries")
+	}
+	five := (*resp)["five_hour"]
+	if five == nil || five.Utilization == nil || *five.Utilization != 12.5 {
+		t.Fatalf("five_hour utilization = %v, want 12.5", five)
+	}
+}
+
+func TestAnthropicClient_FetchQuotas_EmptyArrayBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[]`)
+	}))
+	defer server.Close()
+
+	client := api.NewAnthropicClient("test_token", testutil.DiscardLogger(),
+		api.WithAnthropicBaseURL(server.URL),
+	)
+
+	resp, err := client.FetchQuotas(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error for empty array body: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("response should not be nil")
+	}
+	if names := resp.ActiveQuotaNames(); len(names) != 0 {
+		t.Fatalf("ActiveQuotaNames() = %v, want empty", names)
+	}
+}
+
 func TestAnthropicClient_FetchQuotas_Headers(t *testing.T) {
 	var gotAuth atomic.Value
 	var gotBeta atomic.Value
