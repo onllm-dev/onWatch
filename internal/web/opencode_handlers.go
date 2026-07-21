@@ -340,7 +340,7 @@ func (h *Handler) cyclesOpenCode(w http.ResponseWriter, r *http.Request) {
 
 	quotaName := r.URL.Query().Get("type")
 	if quotaName == "" {
-		quotaName = "total_usage"
+		quotaName = "five_hour"
 	}
 
 	active, err := h.store.QueryActiveOpenCodeCycle(quotaName)
@@ -403,7 +403,7 @@ func (h *Handler) cycleOverviewOpenCode(w http.ResponseWriter, r *http.Request) 
 
 	groupBy := r.URL.Query().Get("group_by")
 	if groupBy == "" {
-		groupBy = "total_usage"
+		groupBy = "five_hour"
 	}
 
 	overview, err := h.store.QueryOpenCodeCycleOverview(groupBy, 50)

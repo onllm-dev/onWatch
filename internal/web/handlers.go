@@ -1324,6 +1324,8 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.GrokToken = src.GrokToken
 	dst.GrokAutoToken = src.GrokAutoToken
 	dst.GrokEnabled = src.GrokEnabled
+	dst.OpenCodeGoWorkspaceID = src.OpenCodeGoWorkspaceID
+	dst.OpenCodeGoAuthCookie = src.OpenCodeGoAuthCookie
 	dst.ZaiRegion = src.ZaiRegion
 	dst.MiniMaxRegion = src.MiniMaxRegion
 }
