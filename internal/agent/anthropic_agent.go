@@ -96,6 +96,12 @@ type AnthropicAgent struct {
 	// statusline doesn't provide. 0 = disabled.
 	apiPollCycleInterval int // API poll every N cycles (default: 10)
 	pollCycleCount       int // current cycle counter
+
+	// apiPollingDisabled is set in "statusline only" mode. When true the agent
+	// never calls the OAuth usage API - not even as a fallback when the
+	// statusline file is stale or missing. Default false preserves API polling
+	// for "auto" and "api" modes.
+	apiPollingDisabled bool
 }
 
 // SetPollingCheck sets a function that is called before each poll.
@@ -165,6 +171,14 @@ func (a *AnthropicAgent) EnableStatuslineBridge() {
 // 0 disables periodic API polling. Default is 10 (every 10th cycle).
 func (a *AnthropicAgent) SetAPIPollCycleInterval(n int) {
 	a.apiPollCycleInterval = n
+}
+
+// SetAPIPollingDisabled controls whether the agent may call the OAuth usage API.
+// Set true for "statusline only" mode so a stale or missing statusline file
+// never silently falls through to the rate-limited usage API. Default (false)
+// keeps API polling enabled for "auto" and "api" modes.
+func (a *AnthropicAgent) SetAPIPollingDisabled(disabled bool) {
+	a.apiPollingDisabled = disabled
 }
 
 // SetStatuslineStaleness sets the maximum age of the statusline file before
@@ -381,6 +395,16 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 				return // Statusline only - skip API polling this cycle
 			}
 		}
+	}
+
+	// "Statusline only" mode: never touch the OAuth usage API, even when the
+	// statusline file is stale or missing. Everything below is the API path,
+	// which serves only "auto" (hybrid) and "api" modes. Without this guard a
+	// stale or absent statusline silently falls through to FetchQuotas, breaking
+	// the documented contract of statusline-only mode - common in headless usage
+	// (SDK/--print/remote-control) where no interactive TUI refreshes the file.
+	if a.apiPollingDisabled {
+		return
 	}
 
 	// Proactive OAuth refresh

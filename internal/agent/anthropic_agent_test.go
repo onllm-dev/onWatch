@@ -507,3 +507,69 @@ func TestAnthropicAgent_Run_StoresSnapshot(t *testing.T) {
 		t.Error("Expected to find five_hour quota in snapshot")
 	}
 }
+
+// newCountingUsageAgent builds an agent whose client points at a counting
+// httptest server. The returned callCount tracks how many times the OAuth usage
+// API was hit. statuslinePath is set to a missing file so the statusline is
+// never fresh, forcing the stale-fallback decision.
+func newCountingUsageAgent(t *testing.T) (*AnthropicAgent, *atomic.Int32, func()) {
+	t.Helper()
+	var callCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(anthropicResponse(45.2, 12.8)))
+	}))
+
+	str, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+	client := api.NewAnthropicClient("test-token", logger, api.WithAnthropicBaseURL(server.URL+"/api/oauth/usage"))
+	tr := tracker.NewAnthropicTracker(str, logger)
+	agent := NewAnthropicAgent(client, str, tr, 5*time.Second, logger, nil)
+	// Point at a missing statusline file: isStatuslineFresh is always false, so
+	// poll() must decide whether to fall back to the API.
+	agent.statuslinePath = t.TempDir() + "/missing-statusline.json"
+
+	cleanup := func() {
+		server.Close()
+		str.Close()
+	}
+	return agent, &callCount, cleanup
+}
+
+// TestAnthropicAgent_StatuslineOnly_NoAPIFallthrough verifies that in
+// "statusline only" mode (apiPollingDisabled), a stale/missing statusline does
+// NOT fall through to the OAuth usage API. Regression guard for the issue #82
+// follow-up where headless usage silently kept polling the API.
+func TestAnthropicAgent_StatuslineOnly_NoAPIFallthrough(t *testing.T) {
+	t.Parallel()
+	agent, callCount, cleanup := newCountingUsageAgent(t)
+	defer cleanup()
+
+	agent.SetAPIPollingDisabled(true)
+	agent.poll(context.Background())
+
+	if c := callCount.Load(); c != 0 {
+		t.Errorf("statusline-only mode must not call the usage API on stale/missing statusline, got %d call(s)", c)
+	}
+}
+
+// TestAnthropicAgent_StatuslineStale_FallsThroughWhenAPIEnabled verifies the
+// default (auto/api) behavior is preserved: a stale statusline still falls
+// through to a real API poll when API polling is enabled.
+func TestAnthropicAgent_StatuslineStale_FallsThroughWhenAPIEnabled(t *testing.T) {
+	t.Parallel()
+	agent, callCount, cleanup := newCountingUsageAgent(t)
+	defer cleanup()
+
+	// apiPollingDisabled left at its default (false) = API polling enabled.
+	agent.poll(context.Background())
+
+	if c := callCount.Load(); c != 1 {
+		t.Errorf("expected exactly 1 API fallthrough poll when API polling enabled, got %d", c)
+	}
+}

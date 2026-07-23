@@ -975,8 +975,12 @@ func run() error {
 			anthropicAg.EnableStatuslineBridge()
 			// In "statusline" mode, disable hybrid API polling since no API
 			// credentials are configured. Hybrid only works in "auto" mode.
+			// SetAPIPollingDisabled(true) also blocks the stale-statusline
+			// fallback so "statusline only" never hits the usage API (issue #82
+			// follow-up: headless usage leaves the statusline file stale).
 			if anthropicSource == "statusline" {
 				anthropicAg.SetAPIPollCycleInterval(0)
+				anthropicAg.SetAPIPollingDisabled(true)
 			}
 			// Apply DB-configured cycle interval (overrides default 10)
 			if db != nil {
