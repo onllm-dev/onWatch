@@ -371,6 +371,26 @@
             mask-image: url("/static/icons/synthetic.svg");
         }
 
+        .provider-icon-grok {
+            -webkit-mask-image: url("/static/icons/grok.svg");
+            mask-image: url("/static/icons/grok.svg");
+        }
+
+        .provider-icon-kimi {
+            -webkit-mask-image: url("/static/icons/kimi.svg");
+            mask-image: url("/static/icons/kimi.svg");
+        }
+
+        .provider-icon-moonshot {
+            -webkit-mask-image: url("/static/icons/moonshot.svg");
+            mask-image: url("/static/icons/moonshot.svg");
+        }
+
+        .provider-icon-deepseek {
+            -webkit-mask-image: url("/static/icons/deepseek.svg");
+            mask-image: url("/static/icons/deepseek.svg");
+        }
+
         .status-warning .provider-icon {
             color: var(--warning);
         }
@@ -1377,7 +1397,7 @@
             <div class="settings-body" id="settings-body"></div>
             <div class="settings-footer">
                 <div class="settings-hint" id="settings-note">tray + local</div>
-                <button class="save-button" id="settings-save" type="button">Save</button>
+                <button class="save-button" id="settings-save" type="button">Done</button>
             </div>
         </section>
     </main>
@@ -1413,10 +1433,27 @@
             ];
 
             const bootstrap = normalizePreferences(window.__ONWATCH_MENUBAR__ || {});
+            const pageQuery = new URLSearchParams(window.location.search);
             const requestedView = (() => {
-                const query = new URLSearchParams(window.location.search).get("view");
+                const query = pageQuery.get("view");
                 return query ? normalizeView(query) : "";
             })();
+            // Host override (GNOME WebKit often reports light even on a dark panel).
+            // ?system_prefers_dark=1|0 from the desktop companion / extension.
+            const hostSystemPrefersDark = (() => {
+                const q = (pageQuery.get("system_prefers_dark") || "").toLowerCase();
+                if (q === "1" || q === "true" || q === "dark" || q === "yes") {
+                    return true;
+                }
+                if (q === "0" || q === "false" || q === "light" || q === "no") {
+                    return false;
+                }
+                if (typeof window.__onwatchSystemPrefersDark === "boolean") {
+                    return window.__onwatchSystemPrefersDark;
+                }
+                return null;
+            })();
+            const mediaPrefersDark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
             const storedStatus = readStoredStatusDisplay();
             const storedOrder = readStoredProviderOrder();
 
@@ -1438,7 +1475,8 @@
                 settingsOpen: false,
                 error: "",
                 draggingProviderID: "",
-                systemPrefersDark: window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches,
+                systemPrefersDark: hostSystemPrefersDark !== null ? hostSystemPrefersDark : mediaPrefersDark,
+                hostSystemPrefersDark,
                 quotaSelectionExpanded: true
             };
 
@@ -1460,6 +1498,7 @@
             let refreshTimer = null;
             let resizeFrame = 0;
             let resizeTimer = 0;
+            let autoSaveTimer = null;
 
             if (footerVersion) {
                 footerVersion.textContent = `v${MENUBAR_VERSION || "-"}`;
@@ -1477,18 +1516,19 @@
                 writeStoredViewMode(state.view);
                 if (state.settingsOpen && state.draft) {
                     state.draft.default_view = state.view;
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                 }
                 render();
             });
+            // Only follow CSS media when the host did not pin system dark/light.
             const themeMedia = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-            if (themeMedia && typeof themeMedia.addEventListener === "function") {
+            if (state.hostSystemPrefersDark === null && themeMedia && typeof themeMedia.addEventListener === "function") {
                 themeMedia.addEventListener("change", (event) => {
                     state.systemPrefersDark = !!event.matches;
                     applyTheme();
                     queueResizeReport();
                 });
-            } else if (themeMedia && typeof themeMedia.addListener === "function") {
+            } else if (state.hostSystemPrefersDark === null && themeMedia && typeof themeMedia.addListener === "function") {
                 themeMedia.addListener((event) => {
                     state.systemPrefersDark = !!event.matches;
                     applyTheme();
@@ -1501,7 +1541,7 @@
             headerCluster.addEventListener("click", () => openDashboard());
             document.getElementById("close-button").addEventListener("click", () => closeMenubar());
             document.getElementById("refresh-button").addEventListener("click", () => void refreshData());
-            document.getElementById("settings-save").addEventListener("click", () => void savePreferences());
+            document.getElementById("settings-save").addEventListener("click", () => closeSettings());
             settingsBody.addEventListener("change", handleSettingsChange);
             settingsBody.addEventListener("click", handleSettingsClick);
             settingsBody.addEventListener("dragstart", handleSettingsDragStart);
@@ -1528,8 +1568,15 @@
                         throw new Error(`preferences ${response.status}`);
                     }
                     const data = await response.json();
+                    const previousIDs = new Set(state.providerOptions.map((p) => p.id));
                     state.providerOptions = Array.isArray(data.providers) ? data.providers : [];
                     const preferences = normalizePreferences(data);
+                    if (previousIDs.size > 0 && preferences.visible_providers.length > 0) {
+                        const newProviders = state.providerOptions.filter((p) => !previousIDs.has(p.id));
+                        for (const provider of newProviders) {
+                            preferences.visible_providers.push(provider.id);
+                        }
+                    }
                     const localStatus = readStoredStatusDisplay();
                     const localOrder = readStoredProviderOrder();
                     if (localStatus) {
@@ -1600,21 +1647,32 @@
                 if (sendNativeAction("open_dashboard")) {
                     return;
                 }
+                // Prefer a new tab/window so a tray WebView is not replaced by the full dashboard.
+                try {
+                    const opened = window.open("/", "_blank", "noopener,noreferrer");
+                    if (opened) {
+                        return;
+                    }
+                } catch (_e) {
+                    // fall through
+                }
                 window.location.href = "/";
             }
 
             function closeMenubar() {
+                // Native hosts (macOS WKWebView / GNOME WebKitGTK) hide the popover.
                 if (sendNativeAction("close")) {
                     return;
                 }
-                if (typeof window.close === "function") {
-                    window.close();
-                }
-                setTimeout(() => {
-                    if (window.location.pathname !== "/") {
-                        window.location.href = "/";
+                // Browser-only fallback. Never navigate to "/" — that loads the full
+                // dashboard (or /login) inside the tray surface and looks like a logout.
+                try {
+                    if (typeof window.close === "function") {
+                        window.close();
                     }
-                }, 50);
+                } catch (_e) {
+                    // ignore
+                }
             }
 
             async function savePreferences() {
@@ -1665,17 +1723,77 @@
                 }
             }
 
+            function scheduleAutoSave(delayMs) {
+                if (autoSaveTimer) clearTimeout(autoSaveTimer);
+                autoSaveTimer = setTimeout(() => {
+                    autoSaveTimer = null;
+                    void autoSavePreferences();
+                }, delayMs || 500);
+            }
+
+            async function autoSavePreferences() {
+                if (state.saving || !state.draft) return;
+                const draft = normalizePreferences(state.draft);
+                draft.providers_order = mergeProviderOrder(draft.providers_order, state.providerOptions.map((p) => p.id));
+                state.saving = true;
+                settingsNote.textContent = "saving…";
+                renderSettings();
+                try {
+                    const response = await fetch("/api/menubar/preferences", {
+                        method: "PUT",
+                        credentials: "same-origin",
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "X-Requested-With": "XMLHttpRequest"
+                        },
+                        body: JSON.stringify(draft)
+                    });
+                    if (!response.ok) throw new Error(`save ${response.status}`);
+                    const data = await response.json();
+                    state.providerOptions = Array.isArray(data.providers) ? data.providers : state.providerOptions;
+                    state.preferences = normalizePreferences(data);
+                    state.preferences.providers_order = mergeProviderOrder(
+                        draft.providers_order,
+                        state.providerOptions.map((p) => p.id)
+                    );
+                    writeStoredStatusDisplay(state.preferences.status_display);
+                    writeStoredProviderOrder(state.preferences.providers_order);
+                    writeStoredThemeMode(state.preferences.theme);
+                    writeStoredViewMode(state.view);
+                    if (state.settingsOpen) {
+                        state.draft = normalizePreferences(state.preferences);
+                        state.draft.default_view = normalizeView(state.view || state.draft.default_view);
+                    }
+                    state.error = "";
+                    settingsNote.textContent = "saved";
+                    applyTheme();
+                    resetRefreshTimer();
+                    loadSnapshot();
+                } catch (error) {
+                    settingsNote.textContent = "save failed";
+                } finally {
+                    state.saving = false;
+                    renderSettings();
+                }
+            }
+
             function openSettings() {
                 const draft = normalizePreferences(state.preferences);
                 draft.default_view = normalizeView(state.view || draft.default_view);
                 draft.providers_order = mergeProviderOrder(draft.providers_order, state.providerOptions.map((provider) => provider.id));
                 state.draft = draft;
                 state.settingsOpen = true;
-                settingsNote.textContent = "drag + save";
+                settingsNote.textContent = "";
                 render();
             }
 
             function closeSettings() {
+                if (autoSaveTimer && state.draft) {
+                    clearTimeout(autoSaveTimer);
+                    autoSaveTimer = null;
+                    void autoSavePreferences();
+                }
                 state.settingsOpen = false;
                 state.draft = null;
                 state.draggingProviderID = "";
@@ -1696,7 +1814,7 @@
                         ensureMultiProviderSelection();
                         state.quotaSelectionExpanded = true;
                     }
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     renderSettings();
                     return;
                 }
@@ -1706,7 +1824,7 @@
                             .map((input) => parseStatusSelectionValue(input.value))
                     );
                     state.quotaSelectionExpanded = true;
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     renderSettings();
                     return;
                 }
@@ -1719,7 +1837,7 @@
                     }
                     ensureMultiProviderSelection();
                     state.quotaSelectionExpanded = true;
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     renderSettings();
                     return;
                 }
@@ -1727,13 +1845,13 @@
                     state.draft.default_view = normalizeView(target.value);
                     state.view = state.draft.default_view;
                     writeStoredViewMode(state.view);
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     render();
                     return;
                 }
                 if (target.matches('select[name="theme-mode"]')) {
                     state.draft.theme = normalizeTheme(target.value);
-                    settingsNote.textContent = "unsaved";
+                    scheduleAutoSave();
                     applyTheme();
                     queueResizeReport();
                     return;
@@ -1818,7 +1936,7 @@
                 state.draft.providers_order = [...list.querySelectorAll(".provider-order-item[data-provider-id]")]
                     .map((item) => item.getAttribute("data-provider-id") || "")
                     .filter(Boolean);
-                settingsNote.textContent = "unsaved";
+                scheduleAutoSave();
                 renderBody();
                 queueResizeReport();
             }
@@ -1840,7 +1958,7 @@
                 }
                 [order[from], order[to]] = [order[to], order[from]];
                 state.draft.providers_order = order;
-                settingsNote.textContent = "unsaved";
+                scheduleAutoSave();
                 renderBody();
                 renderSettings();
                 queueResizeReport();
@@ -2559,7 +2677,7 @@
                     return "✦";
                 }
                 const parts = multiProviderPreviewParts(snapshot, display);
-                return parts.length > 0 ? `✦ ${parts.join(" │ ")}` : "✦ Select up to 3 quotas";
+                return parts.length > 0 ? `✦ ${parts.join("·")}` : "✦ Select up to 3 quotas";
             }
 
             function multiProviderPreviewParts(snapshot, display) {
@@ -2600,6 +2718,14 @@
                     return "provider-icon-zai";
                 case "synthetic":
                     return "provider-icon-synthetic";
+                case "grok":
+                    return "provider-icon-grok";
+                case "kimi":
+                    return "provider-icon-kimi";
+                case "moonshot":
+                    return "provider-icon-moonshot";
+                case "deepseek":
+                    return "provider-icon-deepseek";
                 default:
                     return "provider-icon-openai";
                 }
