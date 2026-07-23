@@ -1896,7 +1896,14 @@ func (h *Handler) buildGrokCurrent() map[string]interface{} {
 			"status":      q.Status,
 		}
 		if q.ResetsAt != nil {
-			qm["resets_at"] = q.ResetsAt.Format(time.RFC3339)
+			// CamelCase fields match menubar normalizeQuotas + other providers;
+			// snake_case kept for dashboard renderGrokQuotaCards compatibility.
+			timeUntilReset := time.Until(*q.ResetsAt)
+			resetStr := q.ResetsAt.Format(time.RFC3339)
+			qm["resetsAt"] = resetStr
+			qm["resets_at"] = resetStr
+			qm["timeUntilReset"] = formatDuration(timeUntilReset)
+			qm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
 		quotas = append(quotas, qm)
 	}
@@ -1915,16 +1922,21 @@ func (h *Handler) buildGrokCurrent() map[string]interface{} {
 			primary := latest.Quotas[0]
 			sum := h.grokTracker.GetGrokSummary(store.DefaultGrokAccountID, primary.Name, latest)
 			if sum != nil {
-				response["summary"] = map[string]interface{}{
+				sm := map[string]interface{}{
 					"current_util":     sum.CurrentUtil,
-					"resets_at":        nil,
 					"current_rate":     sum.CurrentRate,
 					"projected_util":   sum.ProjectedUtil,
 					"completed_cycles": sum.CompletedCycles,
 				}
 				if sum.ResetsAt != nil {
-					(response["summary"].(map[string]interface{}))["resets_at"] = sum.ResetsAt.Format(time.RFC3339)
+					timeUntilReset := time.Until(*sum.ResetsAt)
+					resetStr := sum.ResetsAt.Format(time.RFC3339)
+					sm["resetsAt"] = resetStr
+					sm["resets_at"] = resetStr
+					sm["timeUntilReset"] = formatDuration(timeUntilReset)
+					sm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 				}
+				response["summary"] = sm
 			}
 		}
 	}

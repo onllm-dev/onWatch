@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
@@ -655,3 +656,51 @@ func quotaLabels(quotas []menubar.QuotaMeter) []string {
 	}
 	return labels
 }
+
+func TestBuildMenubarSnapshotGrokResetFields(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	reset := time.Now().UTC().Add(3 * time.Hour).Truncate(time.Second)
+	capturedAt := time.Now().UTC().Truncate(time.Second)
+
+	if _, err := s.InsertGrokSnapshot(&api.GrokSnapshot{
+		CapturedAt: capturedAt,
+		AccountID:  1,
+		Email:      "test@example.com",
+		Quotas: []api.GrokQuota{
+			{Name: "credits", Utilization: 15, ResetsAt: &reset, Status: "healthy"},
+		},
+	}); err != nil {
+		t.Fatalf("InsertGrokSnapshot: %v", err)
+	}
+
+	cfg := &config.Config{
+		GrokEnabled:  true,
+		GrokToken:    "grok-test",
+		PollInterval: 60 * time.Second,
+		Port:         9211,
+		AdminUser:    "admin",
+		AdminPass:    "test",
+	}
+	h := NewHandler(s, nil, nil, nil, cfg)
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		t.Fatalf("BuildMenubarSnapshot: %v", err)
+	}
+
+	grok := findMenubarProviderCard(t, snapshot, "grok")
+	if len(grok.Quotas) == 0 {
+		t.Fatal("expected grok quotas")
+	}
+	if grok.Quotas[0].ResetAt == "" {
+		t.Fatalf("grok reset_at empty: %#v", grok.Quotas[0])
+	}
+	if grok.Quotas[0].TimeUntilReset == "" {
+		t.Fatalf("grok time_until_reset empty: %#v", grok.Quotas[0])
+	}
+}
+
