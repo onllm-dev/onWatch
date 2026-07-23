@@ -381,6 +381,16 @@
             mask-image: url("/static/icons/kimi.svg");
         }
 
+        .provider-icon-moonshot {
+            -webkit-mask-image: url("/static/icons/moonshot.svg");
+            mask-image: url("/static/icons/moonshot.svg");
+        }
+
+        .provider-icon-deepseek {
+            -webkit-mask-image: url("/static/icons/deepseek.svg");
+            mask-image: url("/static/icons/deepseek.svg");
+        }
+
         .status-warning .provider-icon {
             color: var(--warning);
         }
@@ -2712,6 +2722,10 @@
                     return "provider-icon-grok";
                 case "kimi":
                     return "provider-icon-kimi";
+                case "moonshot":
+                    return "provider-icon-moonshot";
+                case "deepseek":
+                    return "provider-icon-deepseek";
                 default:
                     return "provider-icon-openai";
                 }
