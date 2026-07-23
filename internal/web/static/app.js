@@ -70,6 +70,8 @@ function getCurrentProvider() {
   if (cursorGrid) return 'cursor';
   const grokGrid = document.getElementById('quota-grid-grok');
   if (grokGrid) return 'grok';
+  const kimiGrid = document.getElementById('quota-grid-kimi');
+  if (kimiGrid) return 'kimi';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -3663,6 +3665,114 @@ function updateGrokQuotaCards(quotas, containerId) {
   });
 }
 
+
+// Kimi Code quota renderer (weekly / 5h / total style quotas).
+function kimiDisplayName(name) {
+  const map = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
+  return map[name] || name;
+}
+
+function renderKimiQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  const list = (quotas && quotas.length) ? quotas : [{ name: 'seven_day', utilization: 0, status: 'healthy' }];
+  list.forEach((q, idx) => {
+    const pct = (q.utilization || 0);
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(pct);
+    const name = (q.name || 'seven_day');
+    const label = q.displayName || q.label || kimiDisplayName(name);
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const cdSecs = resetsAt ? Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)) : 0;
+    const cdText = cdSecs > 0 ? formatDuration(cdSecs) : '--:--';
+    if (resetsAt) State.currentQuotas['kimi-' + name] = { timeUntilResetSeconds: cdSecs };
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const card = document.createElement('article');
+    card.className = 'quota-card kimi-card';
+    card.dataset.quota = name;
+    card.dataset.provider = 'kimi';
+    card.style.animationDelay = (idx * 60) + 'ms';
+    card.innerHTML = `
+      <header class="card-header">
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>
+            ${label}
+          </h2>
+        </div>
+        <span class="countdown" id="countdown-kimi-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ' style="display:none"'}>${cdText}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="percent-kimi-${name}">${pctStr}%</span>
+        <span class="usage-fraction" id="fraction-kimi-${name}">utilization</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="progress-kimi-${name}" style="width:${pctStr}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="status-kimi-${name}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="reset-kimi-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ''}>${resetsAt ? formatResetTime(resetsAt) : ''}</span>
+      </footer>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function updateKimiQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  // If count changed, full re-render
+  if ((quotas || []).length !== container.querySelectorAll('.quota-card').length) {
+    renderKimiQuotaCards(quotas, containerId);
+    return;
+  }
+  (quotas || []).forEach(q => {
+    const name = q.name || 'seven_day';
+    const pct = q.utilization || 0;
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(pct);
+    if (!document.getElementById('percent-kimi-' + name)) {
+      renderKimiQuotaCards(quotas, containerId);
+      return;
+    }
+    const pctEl = document.getElementById('percent-kimi-' + name);
+    if (pctEl) pctEl.textContent = pctStr + '%';
+    const fill = document.getElementById('progress-kimi-' + name);
+    if (fill) {
+      fill.style.width = pctStr + '%';
+      fill.dataset.status = status;
+    }
+    const bar = fill ? fill.parentElement : null;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(pct));
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const resetEl = document.getElementById('reset-kimi-' + name);
+    if (resetEl) {
+      resetEl.textContent = resetsAt ? formatResetTime(resetsAt) : '';
+      if (resetsAt) resetEl.dataset.resetAt = resetsAt;
+    }
+    const statusEl = document.getElementById('status-kimi-' + name);
+    if (statusEl) {
+      const cfg = statusConfig[status] || statusConfig.healthy;
+      statusEl.dataset.status = status;
+      statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${cfg.icon}"/></svg> ${cfg.label}`;
+    }
+    const cd = document.getElementById('countdown-kimi-' + name);
+    if (cd && resetsAt) {
+      const secs = Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000));
+      State.currentQuotas['kimi-' + name] = { timeUntilResetSeconds: secs };
+      cd.dataset.resetAt = resetsAt;
+      cd.style.display = '';
+      cd.textContent = secs > 0 ? formatDuration(secs) : '--:--';
+    }
+  });
+}
+
 async function fetchCurrent() {
   const requestProvider = getCurrentProvider();
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
@@ -3814,6 +3924,15 @@ async function fetchCurrent() {
             renderGrokQuotaCards(data.quotas || [], 'quota-grid-grok');
           } else {
             updateGrokQuotaCards(data.quotas || [], 'quota-grid-grok');
+          }
+        }
+      } else if (provider === 'kimi') {
+        const container = document.getElementById('quota-grid-kimi');
+        if (container) {
+          if (container.children.length === 0) {
+            renderKimiQuotaCards(data.quotas || [], 'quota-grid-kimi');
+          } else {
+            updateKimiQuotaCards(data.quotas || [], 'quota-grid-kimi');
           }
         }
       } else if (provider === 'zai') {
@@ -4816,6 +4935,8 @@ function initChart() {
     defaultDatasets = []; // OpenRouter datasets are dynamic - populated when history data arrives
   } else if (provider === 'grok') {
     defaultDatasets = []; // Grok datasets are dynamic - populated when history data arrives
+  } else if (provider === 'kimi') {
+    defaultDatasets = []; // Kimi datasets are dynamic - populated when history data arrives
   } else if (provider === 'zai') {
     defaultDatasets = [
       { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
@@ -4840,6 +4961,8 @@ function initChart() {
     : provider === 'openrouter'
       ? []
     : provider === 'grok'
+      ? []
+    : provider === 'kimi'
       ? []
     : provider === 'api-integrations'
       ? []
@@ -5337,6 +5460,39 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'kimi') {
+      // Kimi history: array of { capturedAt, seven_day, 5h, ... }
+      const kimiColors = {
+        weekly: { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },
+        '5h': { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
+        total: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+      };
+      const kimiDisplay = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
+      const quotaKeys = new Set();
+      historyRows.forEach(d => { Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); }); });
+      const datasets = [];
+      [...quotaKeys].sort().forEach((key) => {
+        const color = kimiColors[key] || { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' };
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        datasets.push({
+          label: kimiDisplay[key] || key,
+          data: data,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key), spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
+        });
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
     if (provider === 'codex') {
       // Codex history: array of { capturedAt, five_hour, seven_day, ... }
       const quotaKeys = new Set();
@@ -5423,6 +5579,7 @@ const bothProviderNames = {
   gemini: 'Gemini',
   cursor: 'Cursor',
   grok: 'Grok',
+  kimi: 'Kimi Code',
   'api-integrations': 'API Integrations',
 };
 
@@ -6322,6 +6479,17 @@ function buildProviderCardDatasets(provider, rows, range) {
     const grokFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
     return buildDynamicDatasetsForRows(rows, range, grokDisplay, grokColors, grokFallback, 'grok');
   }
+  if (provider === 'kimi') {
+    const kimiDisplay = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
+    const kimiColors = {
+      seven_day: { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },
+      weekly: { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },
+      '5h': { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
+      total: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+    };
+    const kimiFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+    return buildDynamicDatasetsForRows(rows, range, kimiDisplay, kimiColors, kimiFallback, 'kimi');
+  }
   return [];
 }
 
@@ -6781,7 +6949,7 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi']);
 
   // All-accounts overview: fetch each account's logging history and merge,
   // tagging every row with its account name for the combined table.
@@ -6975,7 +7143,7 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'grok';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'grok' || provider === 'kimi';
   const deltaUsesPercent = usePercent && provider !== 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
   const showAccount = isAccountsOverviewMode(provider);
@@ -8337,7 +8505,7 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok' || overviewProv === 'kimi';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
   // MiniMax reports a percentage-based quota; the Duration and Total Delta
   // columns add no signal there, so omit them for this provider.

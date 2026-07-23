@@ -76,6 +76,11 @@ type Config struct {
 	GrokAutoToken bool   // true if token was auto-detected from local grok auth
 	GrokEnabled   bool   // true if GROK_ENABLED=true or token present (unless explicitly false)
 
+	// Kimi Code provider (auto-detected from ~/.kimi-code/credentials/kimi-code.json)
+	KimiToken     string // KIMI_TOKEN / KIMI_CODE_TOKEN or auto-detected OAuth access token
+	KimiAutoToken bool   // true if token was auto-detected from local kimi-code credentials
+	KimiEnabled   bool   // true if KIMI_ENABLED/KIMI_CODE_ENABLED=true or credentials present
+
 	// Custom API Integrations telemetry ingestion
 	APIIntegrationsEnabled   bool          // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
 	APIIntegrationsDir       string        // ONWATCH_API_INTEGRATIONS_DIR (default: ~/.onwatch/api-integrations or /data/api-integrations)
@@ -215,6 +220,16 @@ var onwatchEnvKeys = []string{
 	"GROK_TOKEN",
 	"GROK_ENABLED",
 	"GROK_HOME",
+	"KIMI_TOKEN",
+	"KIMI_CODE_TOKEN",
+	"KIMI_ENABLED",
+	"KIMI_CODE_ENABLED",
+	"KIMI_CODE_CREDENTIALS",
+	"KIMI_CREDENTIALS",
+	"KIMI_CODE_HOME",
+	"KIMI_CODE_BASE_URL",
+	"KIMI_CODE_OAUTH_HOST",
+	"KIMI_OAUTH_HOST",
 	"GEMINI_ENABLED",
 	"GEMINI_REFRESH_TOKEN",
 	"GEMINI_ACCESS_TOKEN",
@@ -365,6 +380,22 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 		cfg.GrokEnabled = true
 	}
 	// File-based auto-detection (DetectGrokCredentials) happens later in main.go preflight
+
+	// Kimi Code provider (primary via ~/.kimi-code credentials; explicit token for Docker)
+	cfg.KimiToken = strings.TrimSpace(os.Getenv("KIMI_TOKEN"))
+	if cfg.KimiToken == "" {
+		cfg.KimiToken = strings.TrimSpace(os.Getenv("KIMI_CODE_TOKEN"))
+	}
+	kimiEnabledEnv := os.Getenv("KIMI_ENABLED")
+	if kimiEnabledEnv == "" {
+		kimiEnabledEnv = os.Getenv("KIMI_CODE_ENABLED")
+	}
+	if kimiEnabledEnv == "false" {
+		cfg.KimiEnabled = false
+	} else if kimiEnabledEnv == "true" || cfg.KimiToken != "" {
+		cfg.KimiEnabled = true
+	}
+	// File-based auto-detection (DetectKimiCredentials) happens later in main.go preflight
 
 	// Custom API Integrations telemetry ingestion
 	cfg.APIIntegrationsDir = strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_DIR"))
@@ -593,6 +624,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.GrokToken != "" || c.GrokEnabled {
 		providers = append(providers, "grok")
 	}
+	if c.KimiToken != "" || c.KimiEnabled {
+		providers = append(providers, "kimi")
+	}
 	return providers
 }
 
@@ -621,6 +655,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.CursorToken != ""
 	case "grok":
 		return c.GrokToken != "" || c.GrokEnabled
+	case "kimi":
+		return c.KimiToken != "" || c.KimiEnabled
 	}
 	return false
 }
@@ -659,6 +695,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.GrokToken != "" || c.GrokEnabled {
+		count++
+	}
+	if c.KimiToken != "" || c.KimiEnabled {
 		count++
 	}
 	return count > 1
@@ -719,6 +758,16 @@ func (c *Config) String() string {
 	}
 	if c.GrokEnabled {
 		fmt.Fprintf(&sb, "  GrokEnabled: true,\n")
+	}
+
+	// Redact Kimi token
+	kimiDisplay := redactAPIKey(c.KimiToken, "")
+	fmt.Fprintf(&sb, "  KimiToken: %s,\n", kimiDisplay)
+	if c.KimiAutoToken {
+		fmt.Fprintf(&sb, "  KimiAutoToken: true,\n")
+	}
+	if c.KimiEnabled {
+		fmt.Fprintf(&sb, "  KimiEnabled: true,\n")
 	}
 
 	fmt.Fprintf(&sb, "  PollInterval: %v,\n", c.PollInterval)

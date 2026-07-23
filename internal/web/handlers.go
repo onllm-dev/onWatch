@@ -93,6 +93,7 @@ type Handler struct {
 	openrouterTracker  *tracker.OpenRouterTracker
 	cursorTracker      *tracker.CursorTracker
 	grokTracker        *tracker.GrokTracker
+	kimiTracker        *tracker.KimiTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -1105,6 +1106,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 		{Key: "cursor", Name: "Cursor", Description: "Cursor usage and quota tracking", AutoDetectable: true},
 		{Key: "grok", Name: "Grok", Description: "Grok (xAI) usage tracking", AutoDetectable: true},
+		{Key: "kimi", Name: "Kimi Code", Description: "Kimi Code CLI OAuth quota tracking", AutoDetectable: true},
 	}
 }
 
@@ -1172,6 +1174,11 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 			return true
 		}
 		return false
+	case "kimi":
+		if h.config != nil && (strings.TrimSpace(h.config.KimiToken) != "" || h.config.KimiEnabled) {
+			return true
+		}
+		return api.DetectKimiCredentials(h.logger) != nil
 	default:
 		return false
 	}
@@ -1272,6 +1279,15 @@ func (h *Handler) tryAutoDetect(provider string) bool {
 			h.config.GrokEnabled = true
 			return true
 		}
+	case "kimi":
+		if creds := api.DetectKimiCredentials(h.logger); creds != nil && (strings.TrimSpace(creds.AccessToken) != "" || strings.TrimSpace(creds.RefreshToken) != "") {
+			if h.config.KimiToken == "" && strings.TrimSpace(creds.AccessToken) != "" {
+				h.config.KimiToken = strings.TrimSpace(creds.AccessToken)
+				h.config.KimiAutoToken = true
+			}
+			h.config.KimiEnabled = true
+			return true
+		}
 	}
 	return false
 }
@@ -1321,6 +1337,9 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.GrokToken = src.GrokToken
 	dst.GrokAutoToken = src.GrokAutoToken
 	dst.GrokEnabled = src.GrokEnabled
+	dst.KimiToken = src.KimiToken
+	dst.KimiAutoToken = src.KimiAutoToken
+	dst.KimiEnabled = src.KimiEnabled
 	dst.ZaiRegion = src.ZaiRegion
 	dst.MiniMaxRegion = src.MiniMaxRegion
 }
@@ -1790,6 +1809,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentCursor(w, r)
 	case "grok":
 		h.currentGrok(w, r)
+	case "kimi":
+		h.currentKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2234,6 +2255,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") {
 		response["grok"] = h.buildGrokCurrent()
 	}
+	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") {
+		response["kimi"] = h.buildKimiCurrent()
+	}
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -2578,6 +2602,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyCursor(w, r)
 	case "grok":
 		h.historyGrok(w, r)
+	case "kimi":
+		h.historyKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2918,6 +2944,32 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				grokData = append(grokData, entry)
 			}
 			response["grok"] = grokData
+		}
+	}
+
+	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") && h.store != nil {
+		snaps, err := h.store.QueryKimiRange(store.DefaultKimiAccountID, start, now)
+		if err == nil {
+			withQuotas := make([]*api.KimiSnapshot, 0, len(snaps))
+			for _, s := range snaps {
+				if len(s.Quotas) > 0 {
+					withQuotas = append(withQuotas, s)
+				}
+			}
+			step := downsampleStep(len(withQuotas), maxChartPoints)
+			last := len(withQuotas) - 1
+			kimiData := make([]map[string]interface{}, 0, min(len(withQuotas), maxChartPoints))
+			for i, s := range withQuotas {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{"capturedAt": s.CapturedAt.Format(time.RFC3339)}
+				for _, q := range s.Quotas {
+					entry[q.Name] = q.Utilization
+				}
+				kimiData = append(kimiData, entry)
+			}
+			response["kimi"] = kimiData
 		}
 	}
 
@@ -3521,6 +3573,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesCursor(w, r)
 	case "grok":
 		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
+	case "kimi":
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3842,6 +3896,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryCursor(w, r)
 	case "grok":
 		// Grok summary can be derived from the current or tracker; return minimal for now
+		respondJSON(w, http.StatusOK, map[string]interface{}{"summaries": []interface{}{}})
+	case "kimi":
 		respondJSON(w, http.StatusOK, map[string]interface{}{"summaries": []interface{}{}})
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
@@ -4641,6 +4697,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsCursor(w, r, rangeDur)
 	case "grok":
 		h.insightsGrok(w, r, rangeDur)
+	case "kimi":
+		h.insightsKimi(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4724,6 +4782,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") {
 		response["grok"] = h.buildGrokInsights(hidden)
+	}
+	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") {
+		response["kimi"] = h.buildKimiInsights(hidden)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -7127,6 +7188,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewCursor(w, r)
 	case "grok":
 		h.cycleOverviewGrok(w, r)
+	case "kimi":
+		h.cycleOverviewKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -10723,6 +10786,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryCursor(w, r)
 	case "grok":
 		h.loggingHistoryGrok(w, r)
+	case "kimi":
+		h.loggingHistoryKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}

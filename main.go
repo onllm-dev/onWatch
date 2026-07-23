@@ -581,6 +581,21 @@ func run() error {
 		}
 	}
 
+	// Kimi Code provider auto-detect from ~/.kimi-code credentials. Explicit KIMI_TOKEN wins.
+	kimiEnabledEnv := os.Getenv("KIMI_ENABLED")
+	if kimiEnabledEnv == "" {
+		kimiEnabledEnv = os.Getenv("KIMI_CODE_ENABLED")
+	}
+	if kimiEnabledEnv != "false" {
+		if creds := api.DetectKimiCredentials(preflightLogger); creds != nil && (creds.AccessToken != "" || creds.RefreshToken != "") {
+			if cfg.KimiToken == "" && creds.AccessToken != "" {
+				cfg.KimiToken = creds.AccessToken
+				cfg.KimiAutoToken = true
+			}
+			cfg.KimiEnabled = true
+		}
+	}
+
 	// Daemonize: if not in debug mode, not already the daemon child, and NOT in Docker, fork
 	// Docker containers should always run in foreground mode (logs to stdout)
 	if !cfg.DebugMode && !isDaemonChild && !cfg.IsDockerEnvironment() {
@@ -855,6 +870,23 @@ func run() error {
 		logger.Info("Grok API client configured")
 	}
 
+	var kimiClient *api.KimiClient
+	if cfg.HasProvider("kimi") {
+		// Auto-detected OAuth access tokens expire quickly (~15m). Never freeze
+		// them as a static client token — that skips disk re-read + refresh and
+		// produces permanent 401s after the first expiry (kimi-code store only).
+		// Only explicit KIMI_TOKEN / KIMI_CODE_TOKEN (Docker/CI) use staticToken.
+		kimiToken := ""
+		if !cfg.KimiAutoToken {
+			kimiToken = cfg.KimiToken
+		}
+		kimiClient = api.NewKimiClient(kimiToken, logger)
+		logger.Info("Kimi Code API client configured",
+			"auto_token", cfg.KimiAutoToken,
+			"static_token", kimiToken != "",
+		)
+	}
+
 	// Create components
 	tr := tracker.New(db, logger)
 
@@ -1026,6 +1058,11 @@ func run() error {
 		grokTr = tracker.NewGrokTracker(db, logger)
 	}
 
+	var kimiTr *tracker.KimiTracker
+	if cfg.HasProvider("kimi") {
+		kimiTr = tracker.NewKimiTracker(db, logger)
+	}
+
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
 		antigravitySm := agent.NewSessionManager(db, "antigravity", idleTimeout, logger)
@@ -1090,6 +1127,12 @@ func run() error {
 		grokAg = agent.NewGrokAgent(grokClient, db, grokTr, cfg.PollInterval, logger, grokSm)
 	}
 
+	var kimiAg *agent.KimiAgent
+	if kimiClient != nil {
+		kimiSm := agent.NewSessionManager(db, "kimi", idleTimeout, logger)
+		kimiAg = agent.NewKimiAgent(kimiClient, db, kimiTr, cfg.PollInterval, logger, kimiSm)
+	}
+
 	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
 	if cfg.APIIntegrationsEnabled {
 		apiIntegrationsAg = agent.NewAPIIntegrationsIngestAgent(db, cfg.APIIntegrationsDir, cfg.APIIntegrationsRetention, logger)
@@ -1136,6 +1179,9 @@ func run() error {
 	}
 	if grokAg != nil {
 		grokAg.SetNotifier(notifier)
+	}
+	if kimiAg != nil {
+		kimiAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -1288,6 +1334,9 @@ func run() error {
 	if grokAg != nil {
 		grokAg.SetPollingCheck(func() bool { return isPollingEnabled("grok") })
 	}
+	if kimiAg != nil {
+		kimiAg.SetPollingCheck(func() bool { return isPollingEnabled("kimi") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -1343,6 +1392,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "grok", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	if kimiTr != nil {
+		kimiTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "kimi", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -1373,6 +1427,9 @@ func run() error {
 	}
 	if grokTr != nil {
 		handler.SetGrokTracker(grokTr)
+	}
+	if kimiTr != nil {
+		handler.SetKimiTracker(kimiTr)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -1408,6 +1465,9 @@ func run() error {
 	if grokAg != nil {
 		agentMgr.RegisterFactory("grok", func() (agent.AgentRunner, error) { return grokAg, nil })
 	}
+	if kimiAg != nil {
+		agentMgr.RegisterFactory("kimi", func() (agent.AgentRunner, error) { return kimiAg, nil })
+	}
 
 	if apiIntegrationsAg != nil {
 		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
@@ -1434,7 +1494,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
