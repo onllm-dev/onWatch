@@ -302,6 +302,23 @@
         <!-- General Panel -->
         <div class="settings-panel" id="panel-general" role="tabpanel" hidden>
             <div class="settings-section">
+                <h3 class="settings-section-title">Credentials</h3>
+                <p class="settings-section-desc">Control how onWatch interacts with coding-harness OAuth tokens on disk (Claude Code, Kimi Code, Codex, etc.).</p>
+                <div class="settings-fields">
+                    <div class="settings-toggle-row">
+                        <div class="settings-toggle-info">
+                            <div class="settings-toggle-label">Auto refresh tokens</div>
+                            <div class="settings-toggle-sublabel">When enabled, onWatch may refresh OAuth tokens and write them back to harness credential files. Turn off if your CLI sessions keep expiring while onWatch is running.</div>
+                        </div>
+                        <label class="settings-toggle">
+                            <input type="checkbox" id="settings-auto-refresh-tokens" checked>
+                            <span class="settings-toggle-track"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
                 <h3 class="settings-section-title">Timezone</h3>
                 <div class="settings-fields">
                     <div class="settings-field">

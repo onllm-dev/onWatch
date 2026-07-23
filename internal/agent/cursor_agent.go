@@ -121,8 +121,12 @@ func (a *CursorAgent) poll(ctx context.Context) {
 	if a.credentialsRefresh != nil {
 		creds := a.credentialsRefresh()
 		if creds != nil && api.NeedsCursorRefresh(creds) && creds.RefreshToken != "" {
-			a.logger.Info("Cursor token expiring soon, refreshing", "expires_in", creds.ExpiresIn.Round(time.Minute))
-			refreshedThisPoll = a.refreshToken(ctx, creds.RefreshToken)
+			if a.store != nil && !a.store.AutoRefreshTokensEnabled() {
+				a.logger.Debug("Skipping Cursor OAuth refresh - auto_refresh_tokens disabled")
+			} else {
+				a.logger.Info("Cursor token expiring soon, refreshing", "expires_in", creds.ExpiresIn.Round(time.Minute))
+				refreshedThisPoll = a.refreshToken(ctx, creds.RefreshToken)
+			}
 		}
 	}
 
@@ -149,7 +153,7 @@ func (a *CursorAgent) poll(ctx context.Context) {
 			)
 
 			if a.authFailCount >= cursorMaxAuthFailures {
-				if a.credentialsRefresh != nil {
+				if a.credentialsRefresh != nil && (a.store == nil || a.store.AutoRefreshTokensEnabled()) {
 					creds := a.credentialsRefresh()
 					if creds != nil && creds.RefreshToken != "" {
 						a.logger.Info("Cursor: attempting token refresh due to auth failure")

@@ -1632,6 +1632,9 @@ func (s *Store) QuerySyntheticCycleOverview(groupBy string, limit int) ([]CycleO
 	return rows, nil
 }
 
+// Setting key for OAuth auto-refresh of coding-harness credentials.
+const SettingAutoRefreshTokens = "auto_refresh_tokens"
+
 // GetSetting returns the value for a setting key. Returns "" if not found.
 func (s *Store) GetSetting(key string) (string, error) {
 	var value string
@@ -1652,6 +1655,25 @@ func (s *Store) SetSetting(key, value string) error {
 		return fmt.Errorf("store.SetSetting: %w", err)
 	}
 	return nil
+}
+
+// AutoRefreshTokensEnabled reports whether onWatch may perform OAuth token
+// refresh and write tokens back to coding-harness credential stores.
+// Defaults to true when unset (backward-compatible with existing installs).
+func (s *Store) AutoRefreshTokensEnabled() bool {
+	if s == nil {
+		return true
+	}
+	val, err := s.GetSetting(SettingAutoRefreshTokens)
+	if err != nil || val == "" {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(val)) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 // GetMenubarSettings returns persisted menubar settings, falling back to defaults.

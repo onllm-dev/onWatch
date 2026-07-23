@@ -682,6 +682,41 @@ func TestStore_SetAndGetSetting(t *testing.T) {
 	}
 }
 
+func TestStore_AutoRefreshTokensEnabled_DefaultTrue(t *testing.T) {
+	t.Parallel()
+	if !(*Store)(nil).AutoRefreshTokensEnabled() {
+		t.Fatal("nil store should default to true")
+	}
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+	if !s.AutoRefreshTokensEnabled() {
+		t.Fatal("unset setting should default to true")
+	}
+	if err := s.SetSetting(SettingAutoRefreshTokens, "false"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	if s.AutoRefreshTokensEnabled() {
+		t.Fatal("want false after setting false")
+	}
+	if err := s.SetSetting(SettingAutoRefreshTokens, "true"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	if !s.AutoRefreshTokensEnabled() {
+		t.Fatal("want true after setting true")
+	}
+	for _, off := range []string{"0", "no", "off", "FALSE"} {
+		if err := s.SetSetting(SettingAutoRefreshTokens, off); err != nil {
+			t.Fatalf("SetSetting(%q): %v", off, err)
+		}
+		if s.AutoRefreshTokensEnabled() {
+			t.Fatalf("want false for %q", off)
+		}
+	}
+}
+
 func TestStore_QuerySyntheticCycleOverview_NoCycles(t *testing.T) {
 	t.Parallel()
 	s, err := New(":memory:")

@@ -6252,10 +6252,17 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		hiddenInsights = []string{}
 	}
 
+	// OAuth auto-refresh: default true when unset
+	autoRefreshTokens := true
+	if h.store != nil {
+		autoRefreshTokens = h.store.AutoRefreshTokensEnabled()
+	}
+
 	result := map[string]interface{}{
-		"timezone":        tz,
-		"hidden_insights": hiddenInsights,
-		"menubar":         menubarSettings,
+		"timezone":            tz,
+		"hidden_insights":     hiddenInsights,
+		"menubar":             menubarSettings,
+		"auto_refresh_tokens": autoRefreshTokens,
 	}
 
 	// SMTP settings (never return the actual password)
@@ -6365,6 +6372,25 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result["timezone"] = tz
+	}
+
+	// Handle auto_refresh_tokens (OAuth refresh of coding-harness credentials)
+	if raw, ok := body["auto_refresh_tokens"]; ok {
+		var enabled bool
+		if err := json.Unmarshal(raw, &enabled); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid auto_refresh_tokens value")
+			return
+		}
+		val := "true"
+		if !enabled {
+			val = "false"
+		}
+		if err := h.store.SetSetting(store.SettingAutoRefreshTokens, val); err != nil {
+			h.logger.Error("failed to save auto_refresh_tokens setting", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save setting")
+			return
+		}
+		result["auto_refresh_tokens"] = enabled
 	}
 
 	// Handle hidden_insights

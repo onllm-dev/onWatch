@@ -3587,6 +3587,53 @@ func TestHandler_UpdateSettings_Timezone(t *testing.T) {
 	}
 }
 
+func TestHandler_AutoRefreshTokensSetting(t *testing.T) {
+	t.Parallel()
+	s, _ := store.New(":memory:")
+	defer s.Close()
+
+	cfg := createTestConfigWithSynthetic()
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	// Default: enabled
+	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	rr := httptest.NewRecorder()
+	h.GetSettings(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET status %d", rr.Code)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["auto_refresh_tokens"] != true {
+		t.Fatalf("default auto_refresh_tokens = %v, want true", got["auto_refresh_tokens"])
+	}
+
+	// Disable
+	body := strings.NewReader(`{"auto_refresh_tokens":false}`)
+	req = httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	h.UpdateSettings(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT status %d body %s", rr.Code, rr.Body.String())
+	}
+	if s.AutoRefreshTokensEnabled() {
+		t.Fatal("store still reports enabled after false")
+	}
+
+	// GET reflects off
+	req = httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	rr = httptest.NewRecorder()
+	h.GetSettings(rr, req)
+	got = map[string]interface{}{}
+	_ = json.Unmarshal(rr.Body.Bytes(), &got)
+	if got["auto_refresh_tokens"] != false {
+		t.Fatalf("after disable auto_refresh_tokens = %v, want false", got["auto_refresh_tokens"])
+	}
+}
+
 func TestHandler_UpdateSettings_InvalidTimezone(t *testing.T) {
 	t.Parallel()
 	s, _ := store.New(":memory:")

@@ -8878,6 +8878,12 @@ async function loadSettings() {
       updateBrowserDefaultTimezoneText();
     }
 
+    // Auto refresh OAuth tokens (default on)
+    const autoRefresh = document.getElementById('settings-auto-refresh-tokens');
+    if (autoRefresh) {
+      autoRefresh.checked = data.auto_refresh_tokens !== false;
+    }
+
     // SMTP
     if (data.smtp) {
       const s = data.smtp;
@@ -10334,6 +10340,12 @@ function gatherSettings() {
   const tzSelect = document.getElementById('settings-timezone');
   if (tzSelect) {
     settings.timezone = normalizeTz(tzSelect.value);
+  }
+
+  // Auto refresh OAuth tokens (coding harness credentials)
+  const autoRefresh = document.getElementById('settings-auto-refresh-tokens');
+  if (autoRefresh) {
+    settings.auto_refresh_tokens = !!autoRefresh.checked;
   }
 
   // Global display mode goes under provider_settings.global. Other provider

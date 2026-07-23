@@ -30,9 +30,9 @@ const statuslineFileName = "anthropic-statusline.json"
 // to the original command unchanged. No separate script files needed.
 //
 // How it works:
-//   1. Reads all of stdin into $I
-//   2. Saves $I to ~/.onwatch/data/anthropic-statusline.json (atomic via temp+mv)
-//   3. Pipes $I to stdout (so the next command in the pipe gets it)
+//  1. Reads all of stdin into $I
+//  2. Saves $I to ~/.onwatch/data/anthropic-statusline.json (atomic via temp+mv)
+//  3. Pipes $I to stdout (so the next command in the pipe gets it)
 const bridgeSnippet = `bash -c 'I=$(cat);D=$HOME/.onwatch/data;mkdir -p "$D" 2>/dev/null;T="$D/.sl-$$";printf "%s" "$I">"$T"&&mv -f "$T" "$D/anthropic-statusline.json" 2>/dev/null||rm -f "$T" 2>/dev/null;printf "%s" "$I"'`
 
 // bridgeMarker is a substring used to detect if the bridge snippet is already
