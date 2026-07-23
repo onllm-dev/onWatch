@@ -178,6 +178,7 @@ func TestMenubarSummaryIncludesCursorWhenEnabled(t *testing.T) {
 	h := NewHandler(s, nil, nil, nil, createTestConfigWithCursor())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	rr := httptest.NewRecorder()
 
 	h.MenubarSummary(rr, req)
@@ -219,6 +220,7 @@ func TestMenubarSummaryUsesConfiguredThresholds(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	rr := httptest.NewRecorder()
 
 	h.MenubarSummary(rr, req)
@@ -239,6 +241,39 @@ func TestMenubarSummaryUsesConfiguredThresholds(t *testing.T) {
 	}
 	if len(snapshot.Providers) == 0 {
 		t.Fatal("expected provider cards in snapshot")
+	}
+}
+
+func TestMenubarTrayTitleLoopback(t *testing.T) {
+	t.Setenv("ONWATCH_TEST_MODE", "1")
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/tray-title", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	h.MenubarTrayTitle(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if _, ok := body["title"]; !ok {
+		t.Fatalf("expected title field, got %#v", body)
+	}
+	if _, ok := body["segments"]; !ok {
+		t.Fatalf("expected segments field, got %#v", body)
+	}
+
+	// Non-loopback blocked
+	req2 := httptest.NewRequest(http.MethodGet, "/api/menubar/tray-title", nil)
+	req2.RemoteAddr = "192.168.1.50:12345"
+	rr2 := httptest.NewRecorder()
+	h.MenubarTrayTitle(rr2, req2)
+	if rr2.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-loopback, got %d", rr2.Code)
 	}
 }
 
@@ -415,6 +450,18 @@ func TestMenubarPageRendersLoopbackBootstrap(t *testing.T) {
 	}
 	if !strings.Contains(body, `if (sendNativeAction("open_dashboard"))`) {
 		t.Fatalf("expected native dashboard action bridge usage, got body: %s", body)
+	}
+	// Regression: close must not navigate to "/" (loads dashboard/login in tray WebView).
+	if strings.Contains(body, `function closeMenubar()`) {
+		// Extract a coarse slice of closeMenubar for the dangerous redirect.
+		idx := strings.Index(body, "function closeMenubar()")
+		slice := body[idx:]
+		if end := strings.Index(slice, "\n            async function "); end > 0 {
+			slice = slice[:end]
+		}
+		if strings.Contains(slice, `window.location.href = "/"`) {
+			t.Fatalf("closeMenubar must not redirect to dashboard root, got: %s", slice)
+		}
 	}
 }
 

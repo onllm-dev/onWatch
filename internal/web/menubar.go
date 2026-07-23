@@ -40,8 +40,10 @@ func (h *Handler) Capabilities(w http.ResponseWriter, r *http.Request) {
 }
 
 // MenubarSummary returns the normalized data contract used by the menubar UI.
+// Served to any local consumer (macOS companion, GNOME extension, browser).
+// Does not require a native companion build (menubar.IsSupported).
 func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
-	if !menubar.IsSupported() && os.Getenv("ONWATCH_TEST_MODE") != "1" {
+	if !isLoopbackRequest(r) {
 		http.NotFound(w, r)
 		return
 	}
@@ -52,6 +54,55 @@ func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, snapshot)
+}
+
+// MenubarTrayTitle returns the compact tray label (e.g. "6%·4%·1%") using the
+// same rules as the macOS menubar companion, so GNOME can stay in sync without
+// reimplementing formatting.
+func (h *Handler) MenubarTrayTitle(w http.ResponseWriter, r *http.Request) {
+	if !isLoopbackRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		h.logger.Error("failed to build menubar snapshot for tray title", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to build menubar tray title")
+		return
+	}
+	settings, err := h.menubarSettings()
+	if err != nil {
+		settings = menubar.DefaultSettings()
+	}
+	title := menubar.TrayTitle(snapshot, settings)
+	segments := menubar.TraySegments(snapshot, settings)
+	tooltip := ""
+	if snapshot != nil {
+		if snapshot.Aggregate.ProviderCount == 0 {
+			tooltip = "onWatch: no provider data"
+		} else {
+			tooltip = fmt.Sprintf("onWatch: %s across %d providers, updated %s",
+				snapshot.Aggregate.Label, snapshot.Aggregate.ProviderCount, snapshot.UpdatedAgo)
+		}
+		// Prefer per-segment tooltip when available (shows who is who).
+		if len(segments) > 0 {
+			parts := make([]string, 0, len(segments))
+			for _, seg := range segments {
+				if seg.Label != "" && seg.Text != "" {
+					parts = append(parts, seg.Label+": "+seg.Text)
+				}
+			}
+			if len(parts) > 0 {
+				tooltip = strings.Join(parts, " · ")
+			}
+		}
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"title":    title,
+		"tooltip":  tooltip,
+		"online":   snapshot != nil,
+		"segments": segments,
+	})
 }
 
 // MenubarPage renders the localhost-only browser UI used by the tray companion.
@@ -180,7 +231,11 @@ func isLoopbackRequest(r *http.Request) bool {
 }
 
 func isLocalMenubarPublicPath(path string) bool {
-	return path == "/menubar" || path == "/api/menubar/summary" || path == "/api/menubar/preferences" || path == "/api/menubar/refresh"
+	return path == "/menubar" ||
+		path == "/api/menubar/summary" ||
+		path == "/api/menubar/preferences" ||
+		path == "/api/menubar/refresh" ||
+		path == "/api/menubar/tray-title"
 }
 
 // BuildMenubarSnapshot constructs the shared menubar UI contract.

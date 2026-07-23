@@ -24,6 +24,38 @@ func TestTrayTitleDefaultIsEmptyUntilProviderSelectionIsResolved(t *testing.T) {
 	}
 }
 
+func TestTraySegmentsIncludeIconStems(t *testing.T) {
+	snapshot := &Snapshot{
+		Providers: []ProviderCard{
+			{ID: "anthropic", BaseProvider: "anthropic", Label: "Claude", HighestPercent: 10},
+			{ID: "zai", BaseProvider: "zai", Label: "GLM", HighestPercent: 20},
+			{ID: "codex", BaseProvider: "codex", Label: "Codex", HighestPercent: 30},
+		},
+	}
+	settings := DefaultSettings()
+	settings.StatusDisplay = StatusDisplay{
+		Mode: StatusDisplayMultiProvider,
+		SelectedQuotas: []StatusDisplaySelection{
+			{ProviderID: "anthropic"},
+			{ProviderID: "zai"},
+			{ProviderID: "codex"},
+		},
+	}
+	segs := TraySegments(snapshot, settings)
+	if len(segs) != 3 {
+		t.Fatalf("len(segments)=%d want 3: %#v", len(segs), segs)
+	}
+	if segs[0].Text != "10%" || segs[0].Icon != "anthropic" || segs[0].Label != "Claude" {
+		t.Fatalf("seg0 = %#v", segs[0])
+	}
+	if segs[1].Icon != "zai" || segs[2].Icon != "openai" {
+		t.Fatalf("icons = %q %q want zai openai", segs[1].Icon, segs[2].Icon)
+	}
+	if title := TrayTitle(snapshot, settings); title != "10%·20%·30%" {
+		t.Fatalf("TrayTitle = %q", title)
+	}
+}
+
 func TestTrayTitleProviderSpecific(t *testing.T) {
 	t.Parallel()
 	snapshot := &Snapshot{
