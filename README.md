@@ -582,6 +582,20 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilat
 ./app.sh --release     # Cross-compile all platforms (or: make release-local)
 ```
 
+### Nix
+
+If you have Nix (flakes enabled), you can build, run, and develop without touching `app.sh`:
+
+```bash
+nix build .#onwatch            # Build -> ./result/bin/onwatch (pure-Go, static)
+nix run .#onwatch -- --debug   # Build + run
+nix develop                    # Enter a shell with go, gopls, gotools, gofumpt
+```
+
+With [direnv](https://direnv.net/) installed, run `direnv allow` once and the devShell loads automatically on `cd`.
+
+The flake tracks `nixos-unstable` (pinned via `flake.lock`) because `go.mod` requires Go >= 1.25.7 and the `nixos-25.05` branch only ships Go 1.24. When you change `go.sum`, update the `vendorHash` in `flake.nix` by running `nix build .#onwatch` and pasting the `got: sha256-...` value from the mismatch error.
+
 ---
 
 ## Contributing

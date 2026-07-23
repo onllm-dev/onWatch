@@ -1105,6 +1105,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "openrouter", Name: "OpenRouter", Description: "OpenRouter credits usage tracking"},
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 		{Key: "cursor", Name: "Cursor", Description: "Cursor usage and quota tracking", AutoDetectable: true},
+		{Key: "grok", Name: "Grok", Description: "Grok (xAI) usage tracking", AutoDetectable: true},
 		{Key: "kimi", Name: "Kimi Code", Description: "Kimi Code CLI OAuth quota tracking", AutoDetectable: true},
 	}
 }
@@ -1166,7 +1167,13 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 	case "cursor":
 		return strings.TrimSpace(h.config.CursorToken) != "" || strings.TrimSpace(api.DetectCursorToken(h.logger)) != ""
 	case "grok":
-		return h.config != nil && (strings.TrimSpace(h.config.GrokToken) != "" || h.config.GrokEnabled)
+		if h.config.GrokEnabled || strings.TrimSpace(h.config.GrokToken) != "" {
+			return true
+		}
+		if creds := api.DetectGrokCredentials(h.logger); creds != nil && strings.TrimSpace(creds.AccessToken) != "" {
+			return true
+		}
+		return false
 	case "kimi":
 		if h.config != nil && (strings.TrimSpace(h.config.KimiToken) != "" || h.config.KimiEnabled) {
 			return true
@@ -1661,27 +1668,13 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	providers := h.config.AvailableProviders()
-
-	// Filter by provider_visibility dashboard flag
-	if h.store != nil {
-		if visJSON, _ := h.store.GetSetting("provider_visibility"); visJSON != "" {
-			var vis map[string]map[string]bool
-			if json.Unmarshal([]byte(visJSON), &vis) == nil {
-				filtered := make([]string, 0, len(providers))
-				for _, p := range providers {
-					if pv, ok := vis[p]; ok && !pv["dashboard"] {
-						continue
-					}
-					filtered = append(filtered, p)
-				}
-				providers = filtered
-			}
-		}
-	}
+	providers = h.filterDashboardProviders(providers)
 
 	if h.config.HasMultipleProviders() {
 		providers = append(providers, "both")
 	}
+	providers = orderDashboardProviders(providers, h.loadDashboardProvidersOrder())
+	labels := h.loadDashboardProviderLabels()
 	current := ""
 	if len(providers) > 0 {
 		current = providers[0]
@@ -1699,8 +1692,9 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"providers": providers,
-		"current":   current,
+		"providers":       providers,
+		"provider_labels": providerTabLabelsMap(providers, labels),
+		"current":         current,
 	})
 }
 
@@ -1713,38 +1707,14 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	providers := []string{}
 	currentProvider := ""
+	providerLabels := map[string]string{}
 	hasTools := false
 	toolsVisible := false
 	if h.config != nil {
-		providers = h.config.AvailableProviders()
-
-		// Filter by provider_visibility dashboard flag
-		if h.store != nil {
-			if visJSON, _ := h.store.GetSetting("provider_visibility"); visJSON != "" {
-				var vis map[string]map[string]bool
-				if json.Unmarshal([]byte(visJSON), &vis) == nil {
-					filtered := make([]string, 0, len(providers))
-					for _, p := range providers {
-						if pv, ok := vis[p]; ok && !pv["dashboard"] {
-							continue
-						}
-						filtered = append(filtered, p)
-					}
-					providers = filtered
-				}
-			}
-		}
-
+		providers = h.buildDashboardProviderTabs()
+		providerLabels = providerTabLabelsMap(providers, h.loadDashboardProviderLabels())
 		hasTools = h.config.APIIntegrationsEnabled
 		toolsVisible = hasTools && h.apiIntegrationsDashboardVisible()
-		if toolsVisible {
-			providers = append(providers, "api-integrations")
-		}
-
-		// Always add "both" (All tab) when multiple providers configured
-		if h.config.HasMultipleProviders() {
-			providers = append(providers, "both")
-		}
 		if len(providers) > 0 {
 			currentProvider = providers[0]
 		}
@@ -1782,6 +1752,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"Title":           "Dashboard",
 		"Providers":       providers,
+		"ProviderLabels":  providerLabels,
 		"CurrentProvider": currentProvider,
 		"Version":         h.version,
 		"HasSynthetic":    hasSynthetic,
@@ -1919,7 +1890,14 @@ func (h *Handler) buildGrokCurrent() map[string]interface{} {
 			"status":      q.Status,
 		}
 		if q.ResetsAt != nil {
-			qm["resets_at"] = q.ResetsAt.Format(time.RFC3339)
+			// CamelCase fields match menubar normalizeQuotas + other providers;
+			// snake_case kept for dashboard renderGrokQuotaCards compatibility.
+			timeUntilReset := time.Until(*q.ResetsAt)
+			resetStr := q.ResetsAt.Format(time.RFC3339)
+			qm["resetsAt"] = resetStr
+			qm["resets_at"] = resetStr
+			qm["timeUntilReset"] = formatDuration(timeUntilReset)
+			qm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
 		quotas = append(quotas, qm)
 	}
@@ -1938,16 +1916,21 @@ func (h *Handler) buildGrokCurrent() map[string]interface{} {
 			primary := latest.Quotas[0]
 			sum := h.grokTracker.GetGrokSummary(store.DefaultGrokAccountID, primary.Name, latest)
 			if sum != nil {
-				response["summary"] = map[string]interface{}{
+				sm := map[string]interface{}{
 					"current_util":     sum.CurrentUtil,
-					"resets_at":        nil,
 					"current_rate":     sum.CurrentRate,
 					"projected_util":   sum.ProjectedUtil,
 					"completed_cycles": sum.CompletedCycles,
 				}
 				if sum.ResetsAt != nil {
-					(response["summary"].(map[string]interface{}))["resets_at"] = sum.ResetsAt.Format(time.RFC3339)
+					timeUntilReset := time.Until(*sum.ResetsAt)
+					resetStr := sum.ResetsAt.Format(time.RFC3339)
+					sm["resetsAt"] = resetStr
+					sm["resets_at"] = resetStr
+					sm["timeUntilReset"] = formatDuration(timeUntilReset)
+					sm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 				}
+				response["summary"] = sm
 			}
 		}
 	}
@@ -6303,10 +6286,17 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		hiddenInsights = []string{}
 	}
 
+	// OAuth auto-refresh: default true when unset
+	autoRefreshTokens := true
+	if h.store != nil {
+		autoRefreshTokens = h.store.AutoRefreshTokensEnabled()
+	}
+
 	result := map[string]interface{}{
-		"timezone":        tz,
-		"hidden_insights": hiddenInsights,
-		"menubar":         menubarSettings,
+		"timezone":            tz,
+		"hidden_insights":     hiddenInsights,
+		"menubar":             menubarSettings,
+		"auto_refresh_tokens": autoRefreshTokens,
 	}
 
 	// SMTP settings (never return the actual password)
@@ -6342,6 +6332,14 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 				result["provider_visibility"] = vis
 			}
 		}
+
+		// Dashboard tab order + custom labels
+		if order := h.loadDashboardProvidersOrder(); len(order) > 0 {
+			result["dashboard_providers_order"] = order
+		} else {
+			result["dashboard_providers_order"] = []string{}
+		}
+		result["dashboard_provider_labels"] = h.loadDashboardProviderLabels()
 
 		toolsVisJSON, _ := h.store.GetSetting("api_integrations_visibility")
 		if toolsVisJSON != "" {
@@ -6416,6 +6414,25 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result["timezone"] = tz
+	}
+
+	// Handle auto_refresh_tokens (OAuth refresh of coding-harness credentials)
+	if raw, ok := body["auto_refresh_tokens"]; ok {
+		var enabled bool
+		if err := json.Unmarshal(raw, &enabled); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid auto_refresh_tokens value")
+			return
+		}
+		val := "true"
+		if !enabled {
+			val = "false"
+		}
+		if err := h.store.SetSetting(store.SettingAutoRefreshTokens, val); err != nil {
+			h.logger.Error("failed to save auto_refresh_tokens setting", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save setting")
+			return
+		}
+		result["auto_refresh_tokens"] = enabled
 	}
 
 	// Handle hidden_insights
@@ -6616,6 +6633,36 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result["provider_visibility"] = vis
+	}
+
+	// Dashboard tab order (Settings → Providers drag-and-drop)
+	if raw, ok := body["dashboard_providers_order"]; ok {
+		var order []string
+		if err := json.Unmarshal(raw, &order); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid dashboard_providers_order value")
+			return
+		}
+		if err := h.saveDashboardProvidersOrder(order); err != nil {
+			h.logger.Error("failed to save dashboard provider order", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save dashboard provider order")
+			return
+		}
+		result["dashboard_providers_order"] = h.loadDashboardProvidersOrder()
+	}
+
+	// Custom dashboard tab labels
+	if raw, ok := body["dashboard_provider_labels"]; ok {
+		var labels map[string]string
+		if err := json.Unmarshal(raw, &labels); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid dashboard_provider_labels value")
+			return
+		}
+		if err := h.saveDashboardProviderLabels(labels); err != nil {
+			h.logger.Error("failed to save dashboard provider labels", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save dashboard provider labels")
+			return
+		}
+		result["dashboard_provider_labels"] = h.loadDashboardProviderLabels()
 	}
 
 	if raw, ok := body["api_integrations_visibility"]; ok {

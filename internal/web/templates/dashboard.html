@@ -10,9 +10,13 @@
         {{if gt (len .Providers) 1}}
         <div class="provider-tabs" id="provider-tabs" role="tablist" aria-label="Select provider">
             {{range .Providers}}
+            {{$iconFile := .}}{{if eq . "codex"}}{{$iconFile = "openai"}}{{else if eq . "both"}}{{$iconFile = "all"}}{{end}}
+            {{$iconURL := printf "%s/static/icons/%s.svg" $.BasePath $iconFile}}
             <button class="provider-tab {{if eq . $.CurrentProvider}}active{{end}}"
                     data-provider="{{.}}" role="tab" aria-selected="{{if eq . $.CurrentProvider}}true{{else}}false{{end}}">
-                {{if eq . "synthetic"}}Synthetic{{else if eq . "zai"}}Z.ai{{else if eq . "anthropic"}}Anthropic{{else if eq . "copilot"}}Copilot{{else if eq . "codex"}}Codex{{else if eq . "antigravity"}}Antigravity{{else if eq . "minimax"}}MiniMax{{else if eq . "gemini"}}Gemini{{else if eq . "cursor"}}Cursor{{else if eq . "grok"}}Grok{{else if eq . "kimi"}}Kimi Code{{else if eq . "api-integrations"}}API Integrations{{else if eq . "both"}}All{{else}}{{.}}{{end}}
+                {{/* Real <img>: Safari often fails CSS mask-image + custom properties; img works everywhere. */}}
+                <img class="provider-tab-icon" src="{{$iconURL}}" width="14" height="14" alt="" decoding="async" aria-hidden="true">
+                <span class="provider-tab-label">{{$label := index $.ProviderLabels .}}{{if $label}}{{$label}}{{else}}{{.}}{{end}}</span>
             </button>
             {{end}}
         </div>
@@ -36,7 +40,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             </button>
             <div class="header-meta">
-                <span class="last-updated" id="last-updated">Last updated: --:--:--</span>
+                <span class="last-updated" id="last-updated" title="">Updated --:--:--</span>
                 <span class="status-indicator" id="status-dot" aria-label="Connection status"></span>
             </div>
         </div>

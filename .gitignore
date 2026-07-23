@@ -87,3 +87,8 @@ onwatch-test
 .omc/
 .omx/
 .playwright-mcp/
+
+# Nix
+/result
+/result-*
+.direnv/

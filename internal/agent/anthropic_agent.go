@@ -241,12 +241,24 @@ func rateLimitBackoff(failCount int) time.Duration {
 	return backoff
 }
 
+// autoRefreshAllowed reports whether OAuth refresh-and-write is enabled in settings.
+func (a *AnthropicAgent) autoRefreshAllowed() bool {
+	if a.store == nil {
+		return true
+	}
+	return a.store.AutoRefreshTokensEnabled()
+}
+
 // proactiveRefresh attempts to refresh the OAuth token before it expires.
 // Respects rate limit backoff to avoid burning refresh tokens.
 // Skips proactive refresh if Claude Code is running to avoid competing for the
 // same refresh token (onWatch refreshes would invalidate Claude Code's pending
 // refresh and cause re-authentication).
 func (a *AnthropicAgent) proactiveRefresh(ctx context.Context, creds *api.AnthropicCredentials) {
+	if !a.autoRefreshAllowed() {
+		a.logger.Debug("Skipping proactive OAuth refresh - auto_refresh_tokens disabled")
+		return
+	}
 	// Skip if Claude Code is running - avoid competing for the same refresh token.
 	// onWatch refreshing burns Claude Code's scheduled refresh, causing invalid_grant.
 	checkFn := IsClaudeCodeRunning // package-level default
@@ -456,6 +468,10 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 
 			// Try to refresh token to get fresh rate limit window.
 			// Skip if Claude Code is running - refreshing burns CC's token.
+			if !a.autoRefreshAllowed() {
+				a.logger.Debug("Skipping 429 bypass refresh - auto_refresh_tokens disabled")
+				return
+			}
 			checkFn := IsClaudeCodeRunning
 			if a.isClaudeCodeRunning != nil {
 				checkFn = a.isClaudeCodeRunning

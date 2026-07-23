@@ -178,6 +178,7 @@ func TestMenubarSummaryIncludesCursorWhenEnabled(t *testing.T) {
 	h := NewHandler(s, nil, nil, nil, createTestConfigWithCursor())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	rr := httptest.NewRecorder()
 
 	h.MenubarSummary(rr, req)
@@ -219,6 +220,7 @@ func TestMenubarSummaryUsesConfiguredThresholds(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	rr := httptest.NewRecorder()
 
 	h.MenubarSummary(rr, req)
@@ -239,6 +241,39 @@ func TestMenubarSummaryUsesConfiguredThresholds(t *testing.T) {
 	}
 	if len(snapshot.Providers) == 0 {
 		t.Fatal("expected provider cards in snapshot")
+	}
+}
+
+func TestMenubarTrayTitleLoopback(t *testing.T) {
+	t.Setenv("ONWATCH_TEST_MODE", "1")
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/tray-title", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	h.MenubarTrayTitle(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if _, ok := body["title"]; !ok {
+		t.Fatalf("expected title field, got %#v", body)
+	}
+	if _, ok := body["segments"]; !ok {
+		t.Fatalf("expected segments field, got %#v", body)
+	}
+
+	// Non-loopback blocked
+	req2 := httptest.NewRequest(http.MethodGet, "/api/menubar/tray-title", nil)
+	req2.RemoteAddr = "192.168.1.50:12345"
+	rr2 := httptest.NewRecorder()
+	h.MenubarTrayTitle(rr2, req2)
+	if rr2.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-loopback, got %d", rr2.Code)
 	}
 }
 
@@ -415,6 +450,18 @@ func TestMenubarPageRendersLoopbackBootstrap(t *testing.T) {
 	}
 	if !strings.Contains(body, `if (sendNativeAction("open_dashboard"))`) {
 		t.Fatalf("expected native dashboard action bridge usage, got body: %s", body)
+	}
+	// Regression: close must not navigate to "/" (loads dashboard/login in tray WebView).
+	if strings.Contains(body, `function closeMenubar()`) {
+		// Extract a coarse slice of closeMenubar for the dangerous redirect.
+		idx := strings.Index(body, "function closeMenubar()")
+		slice := body[idx:]
+		if end := strings.Index(slice, "\n            async function "); end > 0 {
+			slice = slice[:end]
+		}
+		if strings.Contains(slice, `window.location.href = "/"`) {
+			t.Fatalf("closeMenubar must not redirect to dashboard root, got: %s", slice)
+		}
 	}
 }
 
@@ -635,6 +682,59 @@ func findMenubarProviderCard(t *testing.T, snapshot *menubar.Snapshot, providerI
 	return menubar.ProviderCard{}
 }
 
+func TestMenubarProviderKeysMatch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		card, key string
+		want      bool
+	}{
+		{"codex:1", "codex:1", true},
+		{"codex:1", "codex", true},
+		{"codex", "codex:1", true},
+		{"codex:1", "codex:2", false},
+		{"anthropic", "anthropic", true},
+		{"anthropic", "codex", false},
+		{"minimax:3", "minimax", true},
+		{"", "codex", false},
+	}
+	for _, tc := range cases {
+		if got := menubarProviderKeysMatch(tc.card, tc.key); got != tc.want {
+			t.Fatalf("menubarProviderKeysMatch(%q, %q) = %v, want %v", tc.card, tc.key, got, tc.want)
+		}
+	}
+}
+
+func TestFilterMenubarProvidersAcceptsBareCodexKey(t *testing.T) {
+	t.Parallel()
+	cards := []menubar.ProviderCard{
+		{ID: "codex:1", Label: "Codex - default"},
+		{ID: "anthropic", Label: "Anthropic"},
+		{ID: "grok", Label: "Grok"},
+	}
+	// Web settings previously saved visible_providers as bare "codex", which
+	// exact-matched nothing and dropped Codex from the menubar.
+	got := filterMenubarProviders(cards, []string{"codex", "anthropic", "grok"})
+	if len(got) != 3 {
+		t.Fatalf("filter len = %d, want 3; got %#v", len(got), got)
+	}
+	if got[0].ID != "codex:1" {
+		t.Fatalf("first = %q, want codex:1", got[0].ID)
+	}
+}
+
+func TestSortProviderCardsAcceptsBareCodexOrderKey(t *testing.T) {
+	t.Parallel()
+	cards := []menubar.ProviderCard{
+		{ID: "grok", Label: "Grok"},
+		{ID: "codex:1", Label: "Codex"},
+		{ID: "anthropic", Label: "Anthropic"},
+	}
+	sortProviderCards(cards, []string{"codex", "anthropic", "grok"})
+	if cards[0].ID != "codex:1" || cards[1].ID != "anthropic" || cards[2].ID != "grok" {
+		t.Fatalf("order = %v, %v, %v", cards[0].ID, cards[1].ID, cards[2].ID)
+	}
+}
+
 func assertQuotaLabels(t *testing.T, quotas []menubar.QuotaMeter, want []string) {
 	t.Helper()
 
@@ -655,6 +755,109 @@ func quotaLabels(quotas []menubar.QuotaMeter) []string {
 		labels = append(labels, quota.Label)
 	}
 	return labels
+}
+
+func TestMenubarAccountLabel(t *testing.T) {
+	t.Parallel()
+	labels := map[string]string{"codex": "❄️ Codex", "minimax": "Mini"}
+	if got := menubarAccountLabel("codex", labels, "default", false); got != "❄️ Codex" {
+		t.Fatalf("single = %q", got)
+	}
+	if got := menubarAccountLabel("codex", labels, "work", true); got != "❄️ Codex - work" {
+		t.Fatalf("multi = %q", got)
+	}
+	if got := menubarAccountLabel("anthropic", nil, "", false); got != "Anthropic" {
+		t.Fatalf("default = %q", got)
+	}
+}
+
+func TestBuildMenubarSnapshotUsesDashboardProviderLabels(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	capturedAt := time.Now().UTC().Truncate(time.Second)
+	reset := capturedAt.Add(2 * time.Hour)
+	if _, err := s.InsertGrokSnapshot(&api.GrokSnapshot{
+		CapturedAt: capturedAt,
+		AccountID:  1,
+		Quotas:     []api.GrokQuota{{Name: "credits", Utilization: 10, ResetsAt: &reset, Status: "healthy"}},
+	}); err != nil {
+		t.Fatalf("InsertGrokSnapshot: %v", err)
+	}
+
+	cfg := &config.Config{
+		GrokEnabled:  true,
+		GrokToken:    "g",
+		PollInterval: 60 * time.Second,
+		Port:         9211,
+		AdminUser:    "admin",
+		AdminPass:    "test",
+	}
+	h := NewHandler(s, nil, nil, nil, cfg)
+	if err := h.saveDashboardProviderLabels(map[string]string{
+		"grok": "🛰️ Grok",
+	}); err != nil {
+		t.Fatalf("saveDashboardProviderLabels: %v", err)
+	}
+
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		t.Fatalf("BuildMenubarSnapshot: %v", err)
+	}
+	grok := findMenubarProviderCard(t, snapshot, "grok")
+	if grok.Label != "🛰️ Grok" {
+		t.Fatalf("grok label = %q, want renamed", grok.Label)
+	}
+}
+
+func TestBuildMenubarSnapshotGrokResetFields(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	reset := time.Now().UTC().Add(3 * time.Hour).Truncate(time.Second)
+	capturedAt := time.Now().UTC().Truncate(time.Second)
+
+	if _, err := s.InsertGrokSnapshot(&api.GrokSnapshot{
+		CapturedAt: capturedAt,
+		AccountID:  1,
+		Email:      "test@example.com",
+		Quotas: []api.GrokQuota{
+			{Name: "credits", Utilization: 15, ResetsAt: &reset, Status: "healthy"},
+		},
+	}); err != nil {
+		t.Fatalf("InsertGrokSnapshot: %v", err)
+	}
+
+	cfg := &config.Config{
+		GrokEnabled:  true,
+		GrokToken:    "grok-test",
+		PollInterval: 60 * time.Second,
+		Port:         9211,
+		AdminUser:    "admin",
+		AdminPass:    "test",
+	}
+	h := NewHandler(s, nil, nil, nil, cfg)
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		t.Fatalf("BuildMenubarSnapshot: %v", err)
+	}
+
+	grok := findMenubarProviderCard(t, snapshot, "grok")
+	if len(grok.Quotas) == 0 {
+		t.Fatal("expected grok quotas")
+	}
+	if grok.Quotas[0].ResetAt == "" {
+		t.Fatalf("grok reset_at empty: %#v", grok.Quotas[0])
+	}
+	if grok.Quotas[0].TimeUntilReset == "" {
+		t.Fatalf("grok time_until_reset empty: %#v", grok.Quotas[0])
+	}
 }
 
 func TestBuildMenubarSnapshotKimiResetFields(t *testing.T) {
@@ -701,4 +904,3 @@ func TestBuildMenubarSnapshotKimiResetFields(t *testing.T) {
 		}
 	}
 }
-

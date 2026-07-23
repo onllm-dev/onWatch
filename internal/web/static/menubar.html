@@ -371,6 +371,16 @@
             mask-image: url("/static/icons/synthetic.svg");
         }
 
+        .provider-icon-grok {
+            -webkit-mask-image: url("/static/icons/grok.svg");
+            mask-image: url("/static/icons/grok.svg");
+        }
+
+        .provider-icon-kimi {
+            -webkit-mask-image: url("/static/icons/kimi.svg");
+            mask-image: url("/static/icons/kimi.svg");
+        }
+
         .status-warning .provider-icon {
             color: var(--warning);
         }
@@ -1413,10 +1423,27 @@
             ];
 
             const bootstrap = normalizePreferences(window.__ONWATCH_MENUBAR__ || {});
+            const pageQuery = new URLSearchParams(window.location.search);
             const requestedView = (() => {
-                const query = new URLSearchParams(window.location.search).get("view");
+                const query = pageQuery.get("view");
                 return query ? normalizeView(query) : "";
             })();
+            // Host override (GNOME WebKit often reports light even on a dark panel).
+            // ?system_prefers_dark=1|0 from the desktop companion / extension.
+            const hostSystemPrefersDark = (() => {
+                const q = (pageQuery.get("system_prefers_dark") || "").toLowerCase();
+                if (q === "1" || q === "true" || q === "dark" || q === "yes") {
+                    return true;
+                }
+                if (q === "0" || q === "false" || q === "light" || q === "no") {
+                    return false;
+                }
+                if (typeof window.__onwatchSystemPrefersDark === "boolean") {
+                    return window.__onwatchSystemPrefersDark;
+                }
+                return null;
+            })();
+            const mediaPrefersDark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
             const storedStatus = readStoredStatusDisplay();
             const storedOrder = readStoredProviderOrder();
 
@@ -1438,7 +1465,8 @@
                 settingsOpen: false,
                 error: "",
                 draggingProviderID: "",
-                systemPrefersDark: window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches,
+                systemPrefersDark: hostSystemPrefersDark !== null ? hostSystemPrefersDark : mediaPrefersDark,
+                hostSystemPrefersDark,
                 quotaSelectionExpanded: true
             };
 
@@ -1482,14 +1510,15 @@
                 }
                 render();
             });
+            // Only follow CSS media when the host did not pin system dark/light.
             const themeMedia = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-            if (themeMedia && typeof themeMedia.addEventListener === "function") {
+            if (state.hostSystemPrefersDark === null && themeMedia && typeof themeMedia.addEventListener === "function") {
                 themeMedia.addEventListener("change", (event) => {
                     state.systemPrefersDark = !!event.matches;
                     applyTheme();
                     queueResizeReport();
                 });
-            } else if (themeMedia && typeof themeMedia.addListener === "function") {
+            } else if (state.hostSystemPrefersDark === null && themeMedia && typeof themeMedia.addListener === "function") {
                 themeMedia.addListener((event) => {
                     state.systemPrefersDark = !!event.matches;
                     applyTheme();
@@ -1608,21 +1637,32 @@
                 if (sendNativeAction("open_dashboard")) {
                     return;
                 }
+                // Prefer a new tab/window so a tray WebView is not replaced by the full dashboard.
+                try {
+                    const opened = window.open("/", "_blank", "noopener,noreferrer");
+                    if (opened) {
+                        return;
+                    }
+                } catch (_e) {
+                    // fall through
+                }
                 window.location.href = "/";
             }
 
             function closeMenubar() {
+                // Native hosts (macOS WKWebView / GNOME WebKitGTK) hide the popover.
                 if (sendNativeAction("close")) {
                     return;
                 }
-                if (typeof window.close === "function") {
-                    window.close();
-                }
-                setTimeout(() => {
-                    if (window.location.pathname !== "/") {
-                        window.location.href = "/";
+                // Browser-only fallback. Never navigate to "/" — that loads the full
+                // dashboard (or /login) inside the tray surface and looks like a logout.
+                try {
+                    if (typeof window.close === "function") {
+                        window.close();
                     }
-                }, 50);
+                } catch (_e) {
+                    // ignore
+                }
             }
 
             async function savePreferences() {
@@ -2668,6 +2708,10 @@
                     return "provider-icon-zai";
                 case "synthetic":
                     return "provider-icon-synthetic";
+                case "grok":
+                    return "provider-icon-grok";
+                case "kimi":
+                    return "provider-icon-kimi";
                 default:
                     return "provider-icon-openai";
                 }

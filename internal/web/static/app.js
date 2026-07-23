@@ -179,6 +179,9 @@ const State = {
   allProvidersHistory: null,
   providerVisibility: {},
   providerSettings: {},
+  // Dashboard header tab order + custom display names (Settings → Providers)
+  dashboardProvidersOrder: [],
+  dashboardProviderLabels: {},
   menubarCapabilities: null,
   menubarProviderOrder: [],
   menubarProviders: [],
@@ -2993,13 +2996,35 @@ function formatDateTime(isoString) {
   return d.toLocaleString('en-US', opts);
 }
 
+// Compact UTC offset for header/clock labels, e.g. "UTC+8" / "UTC-05:00".
+// Prefer shortOffset over IANA ids (Asia/Shanghai) which are too long for the header.
+function formatTimezoneOffsetLabel(tz, date = new Date()) {
+  if (!tz) return '';
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(date);
+    const name = parts.find((p) => p.type === 'timeZoneName')?.value || '';
+    // GMT / GMT+8 / GMT-5 → UTC / UTC+8 / UTC-5
+    if (name) return name.replace(/^GMT/i, 'UTC');
+  } catch (e) { /* fall through */ }
+  try {
+    return tzAbbr(tz);
+  } catch (e) {
+    return tz.split('/').pop() || '';
+  }
+}
+
 function formatClockTime(value) {
   const d = parseDateValue(value);
   if (!d) return '--';
   const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : undefined;
   const opts = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
   if (tz) opts.timeZone = tz;
-  return `${d.toLocaleTimeString('en-US', opts)} ${tz || ''}`.trim();
+  const time = d.toLocaleTimeString('en-US', opts);
+  const offset = tz ? formatTimezoneOffsetLabel(tz, d) : '';
+  return offset ? `${time} ${offset}` : time;
 }
 
 function zonedDateKey(date, tz) {
@@ -3030,7 +3055,8 @@ function formatResetTime(isoString) {
   const today = zonedDateKey(new Date(), tz);
   const localTime = d.toLocaleTimeString('en-US', timeOpts);
   const localDate = resetDay === today ? '' : `${d.toLocaleDateString('en-US', dateOpts)}, `;
-  return `Reset at ${localDate}${localTime}${tz ? ' ' + tz : ''}`;
+  const offset = tz ? formatTimezoneOffsetLabel(tz, d) : '';
+  return `Reset at ${localDate}${localTime}${offset ? ' ' + offset : ''}`;
 }
 
 function setResetTimeElement(el, isoString) {
@@ -3050,7 +3076,13 @@ function setLastUpdated(value = new Date()) {
   if (!lastUpdated) return;
   const d = parseDateValue(value) || new Date();
   lastUpdated.dataset.lastUpdatedAt = d.toISOString();
-  lastUpdated.textContent = `Last updated: ${formatClockTime(d)}`;
+  // Compact header label: "Updated 04:59:43 UTC+8" (full IANA zone in tooltip).
+  const clock = formatClockTime(d);
+  lastUpdated.textContent = `Updated ${clock}`;
+  const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : '';
+  lastUpdated.title = tz
+    ? `Last updated at ${clock} (${tz})`
+    : `Last updated at ${clock}`;
 }
 
 function refreshTimezoneSensitiveText() {
@@ -9046,6 +9078,12 @@ async function loadSettings() {
       updateBrowserDefaultTimezoneText();
     }
 
+    // Auto refresh OAuth tokens (default on)
+    const autoRefresh = document.getElementById('settings-auto-refresh-tokens');
+    if (autoRefresh) {
+      autoRefresh.checked = data.auto_refresh_tokens !== false;
+    }
+
     // SMTP
     if (data.smtp) {
       const s = data.smtp;
@@ -9104,8 +9142,17 @@ async function loadSettings() {
       displayModeSelect.value = (globalSettings.display_mode === 'available') ? 'available' : 'usage';
     }
 
+    // Dashboard tab order + custom labels
+    State.dashboardProvidersOrder = Array.isArray(data.dashboard_providers_order)
+      ? data.dashboard_providers_order.slice()
+      : [];
+    State.dashboardProviderLabels = (data.dashboard_provider_labels && typeof data.dashboard_provider_labels === 'object')
+      ? { ...data.dashboard_provider_labels }
+      : {};
+
     // Provider visibility + dynamic provider status
     await populateProviderToggles(data.provider_visibility || {});
+    await populateDashboardTabOrder();
     await populateMenubarSettings(data.menubar || {});
   } catch (e) {
     // Settings load failed silently
@@ -9515,14 +9562,19 @@ async function fetchMenubarProviders() {
     if (res.ok) {
       const data = await res.json();
       const profiles = Array.isArray(data.profiles) ? data.profiles : [];
-      if (profiles.length > 1) {
+      // Always use account-scoped keys (codex:1) so settings match menubar card
+      // IDs. A bare "codex" key used to drop single-account Codex after save
+      // (visible_providers filter is exact-match against "codex:N" cards).
+      if (profiles.length >= 1) {
         profiles.forEach(profile => {
           const key = `codex:${profile.id}`;
           items.push({
             key,
-            name: `Codex - ${escapeHtml(profile.name)}`,
-            meta: 'Per-account Codex usage',
-            dashboardVisible: true,
+            name: profiles.length > 1 ? `Codex - ${escapeHtml(profile.name)}` : (codexStatus?.name || 'Codex'),
+            meta: profiles.length > 1
+              ? 'Per-account Codex usage'
+              : `${codexStatus?.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${codexStatus?.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+            dashboardVisible: codexStatus ? codexStatus.dashboardVisible !== false : true,
           });
         });
         return items;
@@ -9533,6 +9585,8 @@ async function fetchMenubarProviders() {
   }
 
   if (codexStatus) {
+    // Last resort when profiles API is unavailable; backend also accepts bare
+    // "codex" as matching any codex:N card.
     items.push({
       key: 'codex',
       name: codexStatus.name || 'Codex',
@@ -9542,6 +9596,296 @@ async function fetchMenubarProviders() {
   }
 
   return items;
+}
+
+// Built-in dashboard tab titles (must match server defaultProviderTabLabel).
+const DEFAULT_PROVIDER_TAB_LABELS = {
+  synthetic: 'Synthetic',
+  zai: 'Z.ai',
+  anthropic: 'Anthropic',
+  copilot: 'Copilot',
+  codex: 'Codex',
+  antigravity: 'Antigravity',
+  minimax: 'MiniMax',
+  openrouter: 'OpenRouter',
+  gemini: 'Gemini',
+  cursor: 'Cursor',
+  grok: 'Grok',
+  kimi: 'Kimi',
+  'api-integrations': 'API Integrations',
+  both: 'All',
+};
+
+function defaultProviderTabLabel(key) {
+  if (!key) return '';
+  if (DEFAULT_PROVIDER_TAB_LABELS[key]) return DEFAULT_PROVIDER_TAB_LABELS[key];
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function isDashboardSpecialTab(key) {
+  return key === 'both' || key === 'api-integrations';
+}
+
+function mergeDashboardProviderOrder(preferred, available) {
+  const avail = Array.isArray(available) ? available.filter(Boolean) : [];
+  const availSet = new Set(avail);
+  const seen = new Set();
+  const regular = [];
+  const specials = [];
+  const pushKey = (key) => {
+    const k = String(key || '').trim().toLowerCase();
+    if (!k || !availSet.has(k) || seen.has(k)) return;
+    seen.add(k);
+    if (isDashboardSpecialTab(k)) specials.push(k);
+    else regular.push(k);
+  };
+  (Array.isArray(preferred) ? preferred : []).forEach(pushKey);
+  // Newly available providers (e.g. Grok) join before special tabs.
+  avail.forEach(pushKey);
+  const specialOrder = ['api-integrations', 'both'];
+  const orderedSpecials = [];
+  specialOrder.forEach((k) => {
+    if (specials.includes(k)) orderedSpecials.push(k);
+  });
+  specials.forEach((k) => {
+    if (!orderedSpecials.includes(k)) orderedSpecials.push(k);
+  });
+  return regular.concat(orderedSpecials);
+}
+
+async function fetchDashboardTabOrderProviders() {
+  // Only providers that appear as dashboard tabs (Dashboard toggle on).
+  let providers = [];
+  try {
+    const res = await authFetch(`${API_BASE}/api/providers/status`);
+    if (res.ok) {
+      const data = await res.json();
+      providers = Array.isArray(data.providers) ? data.providers : [];
+    }
+  } catch (e) {
+    providers = [];
+  }
+
+  // Also honor in-memory toggles from this settings session (before full reload).
+  const visMap = State.providerVisibility && typeof State.providerVisibility === 'object'
+    ? State.providerVisibility
+    : {};
+
+  const items = providers
+    .filter((p) => p && p.key)
+    .filter((p) => {
+      const local = visMap[p.key];
+      if (local && typeof local === 'object' && Object.prototype.hasOwnProperty.call(local, 'dashboard')) {
+        return local.dashboard !== false;
+      }
+      return p.dashboardVisible !== false;
+    })
+    .map((p) => ({
+      key: p.key,
+      defaultName: p.name || defaultProviderTabLabel(p.key),
+      meta: 'Shown as a dashboard tab',
+      dashboardVisible: true,
+    }));
+
+  // Special dashboard-only tabs (not in provider status list as first-class).
+  if (State.apiIntegrationsVisibility?.dashboard !== false) {
+    const already = items.some((i) => i.key === 'api-integrations');
+    if (!already) {
+      items.push({
+        key: 'api-integrations',
+        defaultName: defaultProviderTabLabel('api-integrations'),
+        meta: 'Dashboard tools tab',
+        dashboardVisible: true,
+      });
+    }
+  }
+  // "All" tab only when more than one real provider tab is visible.
+  const realCount = items.filter((i) => i.key !== 'api-integrations' && i.key !== 'both').length;
+  if (realCount > 1) {
+    items.push({
+      key: 'both',
+      defaultName: defaultProviderTabLabel('both'),
+      meta: 'Combined multi-provider view',
+      dashboardVisible: true,
+    });
+  }
+  return items;
+}
+
+async function populateDashboardTabOrder() {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+
+  const providers = await fetchDashboardTabOrderProviders();
+  if (providers.length === 0) {
+    list.innerHTML = '<li class="dashboard-tab-order-item"><div class="dashboard-tab-order-fields"><span class="dashboard-tab-order-key">No providers available</span></div></li>';
+    State.dashboardProvidersOrder = [];
+    return;
+  }
+
+  const order = mergeDashboardProviderOrder(
+    State.dashboardProvidersOrder,
+    providers.map((p) => p.key),
+  );
+  State.dashboardProvidersOrder = order;
+  const labels = State.dashboardProviderLabels && typeof State.dashboardProviderLabels === 'object'
+    ? State.dashboardProviderLabels
+    : {};
+  const byKey = new Map(providers.map((p) => [p.key, p]));
+  const ordered = order.map((key) => byKey.get(key)).filter(Boolean);
+
+  const arrowUp = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+  const arrowDown = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>';
+
+  const pencilIcon = '<svg class="dashboard-tab-rename-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+  list.innerHTML = ordered.map((provider, index) => {
+    const custom = labels[provider.key] || '';
+    const placeholder = provider.defaultName || defaultProviderTabLabel(provider.key);
+    const canUp = index > 0;
+    const canDown = index < ordered.length - 1;
+    return `
+    <li class="dashboard-tab-order-item" draggable="true" tabindex="0" data-provider="${provider.key}">
+      <div class="menubar-order-handle" aria-hidden="true" title="Drag to reorder"><span></span><span></span><span></span></div>
+      <div class="dashboard-tab-order-fields">
+        <span class="dashboard-tab-order-key">
+          <span class="dashboard-tab-order-default">${escapeHTML(placeholder)}</span>
+          <code class="dashboard-tab-order-id">${escapeHTML(provider.key)}</code>
+        </span>
+        <label class="dashboard-tab-rename">
+          <span class="dashboard-tab-rename-label">${pencilIcon} Tab name</span>
+          <input type="text" class="dashboard-tab-order-label" data-provider="${provider.key}"
+            maxlength="48" value="${escapeHTML(custom)}"
+            placeholder="${escapeHTML(placeholder)}"
+            aria-label="Rename tab for ${escapeHTML(placeholder)} (leave blank for default)">
+        </label>
+      </div>
+      <div class="dashboard-tab-order-move">
+        <button type="button" data-dashboard-move="up" data-provider="${provider.key}" ${canUp ? '' : 'disabled'} aria-label="Move ${escapeHTML(placeholder)} up" title="Move up">${arrowUp}</button>
+        <button type="button" data-dashboard-move="down" data-provider="${provider.key}" ${canDown ? '' : 'disabled'} aria-label="Move ${escapeHTML(placeholder)} down" title="Move down">${arrowDown}</button>
+      </div>
+    </li>`;
+  }).join('');
+
+  // Drag-and-drop
+  list.querySelectorAll('.dashboard-tab-order-item').forEach((item) => {
+    item.addEventListener('dragstart', () => {
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      syncDashboardTabOrderFromDOM();
+      // Refresh move button disabled state without full re-render (preserves inputs).
+      refreshDashboardTabMoveButtons();
+    });
+    // Don't start drag when editing the label input.
+    const input = item.querySelector('.dashboard-tab-order-label');
+    if (input) {
+      input.addEventListener('mousedown', (e) => e.stopPropagation());
+      input.addEventListener('pointerdown', (e) => e.stopPropagation());
+      input.addEventListener('input', () => {
+        const key = input.dataset.provider;
+        if (!key) return;
+        if (!State.dashboardProviderLabels || typeof State.dashboardProviderLabels !== 'object') {
+          State.dashboardProviderLabels = {};
+        }
+        const val = (input.value || '').trim();
+        if (!val || val === defaultProviderTabLabel(key)) {
+          delete State.dashboardProviderLabels[key];
+        } else {
+          State.dashboardProviderLabels[key] = val.slice(0, 48);
+        }
+      });
+    }
+  });
+
+  list.querySelectorAll('button[data-dashboard-move]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.getAttribute('data-provider') || '';
+      const dir = button.getAttribute('data-dashboard-move') || '';
+      if (!key || !dir) return;
+      moveDashboardTabItem(key, dir === 'up' ? -1 : 1);
+    });
+  });
+
+  // Avoid stacking multiple dragover handlers on re-populate.
+  if (!list.dataset.dragBound) {
+    list.dataset.dragBound = '1';
+    list.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      const dragging = list.querySelector('.dashboard-tab-order-item.dragging');
+      if (!dragging) return;
+      const after = getDashboardTabDragAfterElement(list, event.clientY);
+      if (!after) {
+        list.appendChild(dragging);
+      } else if (after !== dragging) {
+        list.insertBefore(dragging, after);
+      }
+    }, { passive: false });
+  }
+
+  syncDashboardTabOrderFromDOM();
+}
+
+function getDashboardTabDragAfterElement(container, y) {
+  const items = [...container.querySelectorAll('.dashboard-tab-order-item:not(.dragging)')];
+  return items.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child };
+    }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+
+function syncDashboardTabOrderFromDOM() {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+  State.dashboardProvidersOrder = [...list.querySelectorAll('.dashboard-tab-order-item[data-provider]')]
+    .map((item) => item.dataset.provider)
+    .filter(Boolean);
+
+  const labels = {};
+  list.querySelectorAll('.dashboard-tab-order-label[data-provider]').forEach((input) => {
+    const key = input.dataset.provider;
+    if (!key) return;
+    const val = (input.value || '').trim();
+    if (!val) return;
+    if (val === defaultProviderTabLabel(key)) return;
+    labels[key] = val.slice(0, 48);
+  });
+  State.dashboardProviderLabels = labels;
+}
+
+function refreshDashboardTabMoveButtons() {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+  const items = [...list.querySelectorAll('.dashboard-tab-order-item[data-provider]')];
+  items.forEach((item, index) => {
+    const up = item.querySelector('button[data-dashboard-move="up"]');
+    const down = item.querySelector('button[data-dashboard-move="down"]');
+    if (up) up.disabled = index === 0;
+    if (down) down.disabled = index === items.length - 1;
+  });
+}
+
+function moveDashboardTabItem(providerKey, delta) {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+  const items = [...list.querySelectorAll('.dashboard-tab-order-item[data-provider]')];
+  const index = items.findIndex((el) => el.dataset.provider === providerKey);
+  if (index < 0) return;
+  const next = index + delta;
+  if (next < 0 || next >= items.length) return;
+  const el = items[index];
+  if (delta < 0) {
+    list.insertBefore(el, items[next]);
+  } else {
+    list.insertBefore(items[next], el);
+  }
+  syncDashboardTabOrderFromDOM();
+  refreshDashboardTabMoveButtons();
 }
 
 async function populateMenubarProviderOrder() {
@@ -9572,13 +9916,19 @@ async function populateMenubarProviderOrder() {
   const visibleSet = new Set(explicitVisible);
   const showAll = visibleSet.size === 0;
 
+  const tabLabels = State.dashboardProviderLabels && typeof State.dashboardProviderLabels === 'object'
+    ? State.dashboardProviderLabels
+    : {};
   list.innerHTML = providers.map(provider => {
     const visible = showAll || visibleSet.has(provider.key);
+    // Prefer dashboard tab rename (base key) so menubar settings match tabs.
+    const baseKey = String(provider.key || '').split(':')[0];
+    const displayName = (tabLabels[baseKey] || tabLabels[provider.key] || provider.name || baseKey);
     return `
     <li class="menubar-order-item ${provider.dashboardVisible ? '' : 'is-disabled'} ${visible ? '' : 'is-hidden'}" draggable="true" tabindex="0" data-provider="${provider.key}">
       <div class="menubar-order-handle" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="menubar-order-copy">
-        <span class="menubar-order-name">${provider.name}</span>
+        <span class="menubar-order-name">${escapeHTML(displayName)}</span>
         <span class="menubar-order-meta">${provider.meta}</span>
       </div>
       <div class="menubar-order-controls">
@@ -9787,6 +10137,12 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
         }
         showSettingsFeedback(feedback, `${name} ${role} ${enabled ? 'enabled' : 'disabled'}.`, 'success');
 
+        // Dashboard Tabs list only shows visible tabs — refresh when visibility changes.
+        if (role === 'dashboard') {
+          syncDashboardTabOrderFromDOM();
+          await populateDashboardTabOrder();
+        }
+
         if (getCurrentProvider() === 'both' && role === 'polling') {
           renderAllProvidersView();
         }
@@ -9850,7 +10206,9 @@ function createAPIIntegrationsToggleRow(visibility, health) {
         return;
       }
       State.apiIntegrationsVisibility = data.api_integrations_visibility || { dashboard: enabled };
-      showSettingsFeedback(feedback, `API Integrations dashboard ${enabled ? 'enabled' : 'disabled'}. Reload dashboard to apply tab visibility changes.`, 'success');
+      syncDashboardTabOrderFromDOM();
+      await populateDashboardTabOrder();
+      showSettingsFeedback(feedback, `API Integrations dashboard ${enabled ? 'enabled' : 'disabled'}.`, 'success');
     } catch (e) {
       input.checked = !enabled;
       showSettingsFeedback(feedback, 'API Integrations visibility update failed.', 'error');
@@ -10404,6 +10762,7 @@ function setupProviderReload() {
         }
       } else {
         await populateProviderToggles(State.providerVisibility || {});
+        await populateDashboardTabOrder();
         if (result) {
           result.textContent = 'Provider configuration reloaded.';
           result.className = 'settings-test-result success';
@@ -10491,10 +10850,25 @@ function gatherSettings() {
     dashboard: State.apiIntegrationsVisibility?.dashboard !== false,
   };
 
+  // Dashboard tab order + custom labels (from Settings → Providers list)
+  syncDashboardTabOrderFromDOM();
+  settings.dashboard_providers_order = Array.isArray(State.dashboardProvidersOrder)
+    ? State.dashboardProvidersOrder.slice()
+    : [];
+  settings.dashboard_provider_labels = (State.dashboardProviderLabels && typeof State.dashboardProviderLabels === 'object')
+    ? { ...State.dashboardProviderLabels }
+    : {};
+
   // Timezone
   const tzSelect = document.getElementById('settings-timezone');
   if (tzSelect) {
     settings.timezone = normalizeTz(tzSelect.value);
+  }
+
+  // Auto refresh OAuth tokens (coding harness credentials)
+  const autoRefresh = document.getElementById('settings-auto-refresh-tokens');
+  if (autoRefresh) {
+    settings.auto_refresh_tokens = !!autoRefresh.checked;
   }
 
   // Global display mode goes under provider_settings.global. Other provider
@@ -10582,7 +10956,13 @@ function setupSettingsSave() {
         }
         if (data.provider_visibility) State.providerVisibility = data.provider_visibility;
         if (data.api_integrations_visibility) State.apiIntegrationsVisibility = data.api_integrations_visibility;
-        showSettingsFeedback(feedback, 'Settings saved successfully.', 'success');
+        if (Array.isArray(data.dashboard_providers_order)) {
+          State.dashboardProvidersOrder = data.dashboard_providers_order.slice();
+        }
+        if (data.dashboard_provider_labels && typeof data.dashboard_provider_labels === 'object') {
+          State.dashboardProviderLabels = { ...data.dashboard_provider_labels };
+        }
+        showSettingsFeedback(feedback, 'Settings saved successfully. Reload the dashboard to apply tab order and names.', 'success');
       }
     } catch (e) {
       showSettingsFeedback(feedback, 'Network error. Please try again.', 'error');

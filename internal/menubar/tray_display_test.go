@@ -24,6 +24,38 @@ func TestTrayTitleDefaultIsEmptyUntilProviderSelectionIsResolved(t *testing.T) {
 	}
 }
 
+func TestTraySegmentsIncludeIconStems(t *testing.T) {
+	snapshot := &Snapshot{
+		Providers: []ProviderCard{
+			{ID: "anthropic", BaseProvider: "anthropic", Label: "Claude", HighestPercent: 10},
+			{ID: "zai", BaseProvider: "zai", Label: "GLM", HighestPercent: 20},
+			{ID: "codex", BaseProvider: "codex", Label: "Codex", HighestPercent: 30},
+		},
+	}
+	settings := DefaultSettings()
+	settings.StatusDisplay = StatusDisplay{
+		Mode: StatusDisplayMultiProvider,
+		SelectedQuotas: []StatusDisplaySelection{
+			{ProviderID: "anthropic"},
+			{ProviderID: "zai"},
+			{ProviderID: "codex"},
+		},
+	}
+	segs := TraySegments(snapshot, settings)
+	if len(segs) != 3 {
+		t.Fatalf("len(segments)=%d want 3: %#v", len(segs), segs)
+	}
+	if segs[0].Text != "10%" || segs[0].Icon != "anthropic" || segs[0].Label != "Claude" {
+		t.Fatalf("seg0 = %#v", segs[0])
+	}
+	if segs[1].Icon != "zai" || segs[2].Icon != "openai" {
+		t.Fatalf("icons = %q %q want zai openai", segs[1].Icon, segs[2].Icon)
+	}
+	if title := TrayTitle(snapshot, settings); title != "10%·20%·30%" {
+		t.Fatalf("TrayTitle = %q", title)
+	}
+}
+
 func TestTrayTitleProviderSpecific(t *testing.T) {
 	t.Parallel()
 	snapshot := &Snapshot{
@@ -158,6 +190,55 @@ func TestTrayTitleSingleQuotaIsBare(t *testing.T) {
 	got := joinTrayParts([]string{"42%"})
 	if got != "42%" {
 		t.Fatalf("joinTrayParts single = %q, want %q", got, "42%")
+	}
+}
+
+// TestTrayTitleFollowsProvidersOrder ensures tray percentages track the
+// menubar provider list order, not the order the quotas were clicked.
+// Repro: providers_order = codex, anthropic, grok but selected_quotas
+// stored as codex, grok, anthropic → was showing 17%·15%·7% instead of
+// 17%·7%·15%.
+func TestTrayTitleFollowsProvidersOrder(t *testing.T) {
+	t.Parallel()
+	snapshot := &Snapshot{
+		Providers: []ProviderCard{
+			{ID: "codex:1", HighestPercent: 17, Quotas: []QuotaMeter{{Key: "weekly_all-model", Percent: 17}}},
+			{ID: "anthropic", HighestPercent: 7, Quotas: []QuotaMeter{{Key: "5-hour_limit", Percent: 7}}},
+			{ID: "grok", HighestPercent: 15, Quotas: []QuotaMeter{{Key: "credits", Percent: 15}}},
+		},
+	}
+	settings := DefaultSettings()
+	settings.ProvidersOrder = []string{"codex:1", "anthropic", "grok", "kimi"}
+	settings.StatusDisplay = StatusDisplay{
+		Mode: StatusDisplayMultiProvider,
+		// Intentionally out of providers_order (click order).
+		SelectedQuotas: []StatusDisplaySelection{
+			{ProviderID: "codex:1", QuotaKey: "weekly_all-model"},
+			{ProviderID: "grok", QuotaKey: "credits"},
+			{ProviderID: "anthropic", QuotaKey: "5-hour_limit"},
+		},
+	}
+
+	got := TrayTitle(snapshot, settings)
+	want := "17%·7%·15%"
+	if got != want {
+		t.Fatalf("TrayTitle() = %q, want %q (providers_order)", got, want)
+	}
+}
+
+func TestOrderSelectionsByProvidersOrder(t *testing.T) {
+	t.Parallel()
+	in := []StatusDisplaySelection{
+		{ProviderID: "grok", QuotaKey: "credits"},
+		{ProviderID: "codex:1", QuotaKey: "weekly"},
+		{ProviderID: "anthropic", QuotaKey: "five_hour"},
+	}
+	got := orderSelectionsByProvidersOrder(in, []string{"codex:1", "anthropic", "grok"})
+	if len(got) != 3 {
+		t.Fatalf("len = %d", len(got))
+	}
+	if got[0].ProviderID != "codex:1" || got[1].ProviderID != "anthropic" || got[2].ProviderID != "grok" {
+		t.Fatalf("order = %#v", got)
 	}
 }
 

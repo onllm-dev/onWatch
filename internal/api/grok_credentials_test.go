@@ -19,7 +19,7 @@ func TestParseGrokAuth_PreferredOIDC(t *testing.T) {
 			"user_id": "uid_789",
 			"first_name": "Jane",
 			"last_name": "Doe",
-			"expires_at": "2026-07-01T00:00:00Z"
+			"expires_at": "2099-01-01T00:00:00Z"
 		},
 		"https://accounts.x.ai/sign-in": {
 			"key": "legacy_tok",
