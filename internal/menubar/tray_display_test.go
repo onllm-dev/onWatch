@@ -161,6 +161,55 @@ func TestTrayTitleSingleQuotaIsBare(t *testing.T) {
 	}
 }
 
+// TestTrayTitleFollowsProvidersOrder ensures tray percentages track the
+// menubar provider list order, not the order the quotas were clicked.
+// Repro: providers_order = codex, anthropic, grok but selected_quotas
+// stored as codex, grok, anthropic → was showing 17%·15%·7% instead of
+// 17%·7%·15%.
+func TestTrayTitleFollowsProvidersOrder(t *testing.T) {
+	t.Parallel()
+	snapshot := &Snapshot{
+		Providers: []ProviderCard{
+			{ID: "codex:1", HighestPercent: 17, Quotas: []QuotaMeter{{Key: "weekly_all-model", Percent: 17}}},
+			{ID: "anthropic", HighestPercent: 7, Quotas: []QuotaMeter{{Key: "5-hour_limit", Percent: 7}}},
+			{ID: "grok", HighestPercent: 15, Quotas: []QuotaMeter{{Key: "credits", Percent: 15}}},
+		},
+	}
+	settings := DefaultSettings()
+	settings.ProvidersOrder = []string{"codex:1", "anthropic", "grok", "kimi"}
+	settings.StatusDisplay = StatusDisplay{
+		Mode: StatusDisplayMultiProvider,
+		// Intentionally out of providers_order (click order).
+		SelectedQuotas: []StatusDisplaySelection{
+			{ProviderID: "codex:1", QuotaKey: "weekly_all-model"},
+			{ProviderID: "grok", QuotaKey: "credits"},
+			{ProviderID: "anthropic", QuotaKey: "5-hour_limit"},
+		},
+	}
+
+	got := TrayTitle(snapshot, settings)
+	want := "17%·7%·15%"
+	if got != want {
+		t.Fatalf("TrayTitle() = %q, want %q (providers_order)", got, want)
+	}
+}
+
+func TestOrderSelectionsByProvidersOrder(t *testing.T) {
+	t.Parallel()
+	in := []StatusDisplaySelection{
+		{ProviderID: "grok", QuotaKey: "credits"},
+		{ProviderID: "codex:1", QuotaKey: "weekly"},
+		{ProviderID: "anthropic", QuotaKey: "five_hour"},
+	}
+	got := orderSelectionsByProvidersOrder(in, []string{"codex:1", "anthropic", "grok"})
+	if len(got) != 3 {
+		t.Fatalf("len = %d", len(got))
+	}
+	if got[0].ProviderID != "codex:1" || got[1].ProviderID != "anthropic" || got[2].ProviderID != "grok" {
+		t.Fatalf("order = %#v", got)
+	}
+}
+
 // TestTrayTitleEmptyParts confirms we return empty for empty input.
 func TestTrayTitleEmptyParts(t *testing.T) {
 	t.Parallel()
