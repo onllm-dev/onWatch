@@ -301,14 +301,14 @@ func TestParseCopilotResponse_LimitedUserFormat(t *testing.T) {
 	if chat.Entitlement != 500 {
 		t.Errorf("chat.Entitlement = %d, want 500", chat.Entitlement)
 	}
-	if chat.Remaining != 240 {
-		t.Errorf("chat.Remaining = %d, want 240 (500-260)", chat.Remaining)
+	if chat.Remaining != 260 {
+		t.Errorf("chat.Remaining = %d, want 260", chat.Remaining)
 	}
 	if chat.Unlimited {
 		t.Error("chat.Unlimited should be false")
 	}
-	if chat.PercentRemaining != 48.0 {
-		t.Errorf("chat.PercentRemaining = %f, want 48.0", chat.PercentRemaining)
+	if chat.PercentRemaining != 52.0 {
+		t.Errorf("chat.PercentRemaining = %f, want 52.0", chat.PercentRemaining)
 	}
 
 	completions := resp.QuotaSnapshots["completions"]
@@ -318,8 +318,8 @@ func TestParseCopilotResponse_LimitedUserFormat(t *testing.T) {
 	if completions.Entitlement != 4000 {
 		t.Errorf("completions.Entitlement = %d, want 4000", completions.Entitlement)
 	}
-	if completions.Remaining != 673 {
-		t.Errorf("completions.Remaining = %d, want 673 (4000-3327)", completions.Remaining)
+	if completions.Remaining != 3327 {
+		t.Errorf("completions.Remaining = %d, want 3327", completions.Remaining)
 	}
 
 	// Reset date should be synthesized from limited_user_reset_date
@@ -375,8 +375,8 @@ func TestParseCopilotResponse_LimitedUserToSnapshot(t *testing.T) {
 	if chat.Entitlement != 500 {
 		t.Errorf("chat.Entitlement = %d, want 500", chat.Entitlement)
 	}
-	if chat.Remaining != 240 {
-		t.Errorf("chat.Remaining = %d, want 240", chat.Remaining)
+	if chat.Remaining != 260 {
+		t.Errorf("chat.Remaining = %d, want 260", chat.Remaining)
 	}
 	if chat.Unlimited {
 		t.Error("chat should not be unlimited")
@@ -384,7 +384,7 @@ func TestParseCopilotResponse_LimitedUserToSnapshot(t *testing.T) {
 }
 
 func TestParseCopilotResponse_LimitedUserOverage(t *testing.T) {
-	// Test that used > monthly clamps remaining to 0
+	// Test that remaining > monthly passes through without clamping
 	raw := `{
 		"limited_user_quotas": {"chat": 600},
 		"monthly_quotas": {"chat": 500}
@@ -399,11 +399,11 @@ func TestParseCopilotResponse_LimitedUserOverage(t *testing.T) {
 	if chat == nil {
 		t.Fatal("chat quota not found")
 	}
-	if chat.Remaining != 0 {
-		t.Errorf("chat.Remaining = %d, want 0 (clamped)", chat.Remaining)
+	if chat.Remaining != 600 {
+		t.Errorf("chat.Remaining = %d, want 600", chat.Remaining)
 	}
-	if chat.PercentRemaining != 0 {
-		t.Errorf("chat.PercentRemaining = %f, want 0", chat.PercentRemaining)
+	if chat.PercentRemaining != 120.0 {
+		t.Errorf("chat.PercentRemaining = %f, want 120.0", chat.PercentRemaining)
 	}
 }
 

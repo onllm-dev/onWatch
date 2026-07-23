@@ -1,6 +1,10 @@
 package menubar
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestTrayTitleDefaultIsEmptyUntilProviderSelectionIsResolved(t *testing.T) {
 	t.Parallel()
@@ -17,6 +21,38 @@ func TestTrayTitleDefaultIsEmptyUntilProviderSelectionIsResolved(t *testing.T) {
 
 	if got := TrayTitle(snapshot, DefaultSettings()); got != "" {
 		t.Fatalf("TrayTitle() = %q, want empty string", got)
+	}
+}
+
+func TestTraySegmentsIncludeIconStems(t *testing.T) {
+	snapshot := &Snapshot{
+		Providers: []ProviderCard{
+			{ID: "anthropic", BaseProvider: "anthropic", Label: "Claude", HighestPercent: 10},
+			{ID: "zai", BaseProvider: "zai", Label: "GLM", HighestPercent: 20},
+			{ID: "codex", BaseProvider: "codex", Label: "Codex", HighestPercent: 30},
+		},
+	}
+	settings := DefaultSettings()
+	settings.StatusDisplay = StatusDisplay{
+		Mode: StatusDisplayMultiProvider,
+		SelectedQuotas: []StatusDisplaySelection{
+			{ProviderID: "anthropic"},
+			{ProviderID: "zai"},
+			{ProviderID: "codex"},
+		},
+	}
+	segs := TraySegments(snapshot, settings)
+	if len(segs) != 3 {
+		t.Fatalf("len(segments)=%d want 3: %#v", len(segs), segs)
+	}
+	if segs[0].Text != "10%" || segs[0].Icon != "anthropic" || segs[0].Label != "Claude" {
+		t.Fatalf("seg0 = %#v", segs[0])
+	}
+	if segs[1].Icon != "zai" || segs[2].Icon != "openai" {
+		t.Fatalf("icons = %q %q want zai openai", segs[1].Icon, segs[2].Icon)
+	}
+	if title := TrayTitle(snapshot, settings); title != "10%·20%·30%" {
+		t.Fatalf("TrayTitle = %q", title)
 	}
 }
 
@@ -43,8 +79,8 @@ func TestTrayTitleProviderSpecific(t *testing.T) {
 		},
 	}
 
-	if got := TrayTitle(snapshot, settings); got != "\u200984%" {
-		t.Fatalf("TrayTitle(multi_provider) = %q, want %q", got, "\u200984%")
+	if got := TrayTitle(snapshot, settings); got != "84%" {
+		t.Fatalf("TrayTitle(multi_provider) = %q, want %q", got, "84%")
 	}
 }
 
@@ -76,12 +112,143 @@ func TestTrayTitleCriticalCountAndIconOnly(t *testing.T) {
 			{ProviderID: "copilot"},
 		},
 	}
-	if got := TrayTitle(snapshot, settings); got != "\u200984% │ 12%" {
-		t.Fatalf("TrayTitle(multi_provider multiple) = %q, want %q", got, "\u200984% │ 12%")
+	if got := TrayTitle(snapshot, settings); got != "84%·12%" {
+		t.Fatalf("TrayTitle(multi_provider multiple) = %q, want %q", got, "84%·12%")
 	}
 
 	settings.StatusDisplay = StatusDisplay{Mode: StatusDisplayIconOnly}
 	if got := TrayTitle(snapshot, settings); got != "" {
 		t.Fatalf("TrayTitle(icon_only) = %q, want empty string", got)
+	}
+}
+
+// TestTrayTitleThreeQuotasFitInMenubar guards issue #67: the user
+// selected 3 quotas, but only 2 rendered on the macOS menubar because
+// the prior "·"-with-spaces format combined with a leading thin space
+// pushed the title over the menubar's available width. The compact
+// middle-dot join keeps three quotas under 12 runes so they fit on
+// even crowded menubars (notched MacBooks with many status items).
+func TestTrayTitleThreeQuotasFitInMenubar(t *testing.T) {
+	t.Parallel()
+	snapshot := &Snapshot{
+		Aggregate: Aggregate{ProviderCount: 3, HighestPercent: 99},
+		Providers: []ProviderCard{
+			{
+				ID:             "anthropic",
+				HighestPercent: 17,
+				Quotas:         []QuotaMeter{{Key: "five_hour", Percent: 17}},
+			},
+			{
+				ID:             "copilot",
+				HighestPercent: 15,
+				Quotas:         []QuotaMeter{{Key: "premium", Percent: 15}},
+			},
+			{
+				ID:             "codex",
+				HighestPercent: 14,
+				Quotas:         []QuotaMeter{{Key: "five_hour", Percent: 14}},
+			},
+		},
+	}
+
+	settings := DefaultSettings()
+	settings.StatusDisplay = StatusDisplay{
+		Mode: StatusDisplayMultiProvider,
+		SelectedQuotas: []StatusDisplaySelection{
+			{ProviderID: "anthropic", QuotaKey: "five_hour"},
+			{ProviderID: "copilot", QuotaKey: "premium"},
+			{ProviderID: "codex", QuotaKey: "five_hour"},
+		},
+	}
+
+	got := TrayTitle(snapshot, settings)
+	want := "17%·15%·14%"
+	if got != want {
+		t.Fatalf("TrayTitle(3 quotas) = %q, want %q", got, want)
+	}
+
+	// No leading whitespace: any U+2009 / regular space at index 0 reproduces
+	// the macOS title-clipping seen in #67.
+	if strings.HasPrefix(got, "\u2009") || strings.HasPrefix(got, " ") {
+		t.Fatalf("tray title must not have leading whitespace, got %q", got)
+	}
+
+	// Width budget guard: 3 quotas at worst case (100%·100%·100%) is 14 runes,
+	// well within the ~16-rune budget we observed on the user's machine.
+	worst := []string{"100%", "100%", "100%"}
+	worstTitle := joinTrayParts(worst)
+	if utf8.RuneCountInString(worstTitle) > 16 {
+		t.Fatalf("worst-case 3-quota title %q is %d runes, exceeds menubar budget", worstTitle, utf8.RuneCountInString(worstTitle))
+	}
+}
+
+// TestTrayTitleSingleQuotaIsBare guards the format choice: a single
+// quota should render with no surrounding decoration so the icon sits
+// flush against the percentage.
+func TestTrayTitleSingleQuotaIsBare(t *testing.T) {
+	t.Parallel()
+	got := joinTrayParts([]string{"42%"})
+	if got != "42%" {
+		t.Fatalf("joinTrayParts single = %q, want %q", got, "42%")
+	}
+}
+
+// TestTrayTitleFollowsProvidersOrder ensures tray percentages track the
+// menubar provider list order, not the order the quotas were clicked.
+// Repro: providers_order = codex, anthropic, grok but selected_quotas
+// stored as codex, grok, anthropic → was showing 17%·15%·7% instead of
+// 17%·7%·15%.
+func TestTrayTitleFollowsProvidersOrder(t *testing.T) {
+	t.Parallel()
+	snapshot := &Snapshot{
+		Providers: []ProviderCard{
+			{ID: "codex:1", HighestPercent: 17, Quotas: []QuotaMeter{{Key: "weekly_all-model", Percent: 17}}},
+			{ID: "anthropic", HighestPercent: 7, Quotas: []QuotaMeter{{Key: "5-hour_limit", Percent: 7}}},
+			{ID: "grok", HighestPercent: 15, Quotas: []QuotaMeter{{Key: "credits", Percent: 15}}},
+		},
+	}
+	settings := DefaultSettings()
+	settings.ProvidersOrder = []string{"codex:1", "anthropic", "grok", "kimi"}
+	settings.StatusDisplay = StatusDisplay{
+		Mode: StatusDisplayMultiProvider,
+		// Intentionally out of providers_order (click order).
+		SelectedQuotas: []StatusDisplaySelection{
+			{ProviderID: "codex:1", QuotaKey: "weekly_all-model"},
+			{ProviderID: "grok", QuotaKey: "credits"},
+			{ProviderID: "anthropic", QuotaKey: "5-hour_limit"},
+		},
+	}
+
+	got := TrayTitle(snapshot, settings)
+	want := "17%·7%·15%"
+	if got != want {
+		t.Fatalf("TrayTitle() = %q, want %q (providers_order)", got, want)
+	}
+}
+
+func TestOrderSelectionsByProvidersOrder(t *testing.T) {
+	t.Parallel()
+	in := []StatusDisplaySelection{
+		{ProviderID: "grok", QuotaKey: "credits"},
+		{ProviderID: "codex:1", QuotaKey: "weekly"},
+		{ProviderID: "anthropic", QuotaKey: "five_hour"},
+	}
+	got := orderSelectionsByProvidersOrder(in, []string{"codex:1", "anthropic", "grok"})
+	if len(got) != 3 {
+		t.Fatalf("len = %d", len(got))
+	}
+	if got[0].ProviderID != "codex:1" || got[1].ProviderID != "anthropic" || got[2].ProviderID != "grok" {
+		t.Fatalf("order = %#v", got)
+	}
+}
+
+// TestTrayTitleEmptyParts confirms we return empty for empty input.
+func TestTrayTitleEmptyParts(t *testing.T) {
+	t.Parallel()
+	if got := joinTrayParts(nil); got != "" {
+		t.Fatalf("joinTrayParts(nil) = %q, want empty", got)
+	}
+	if got := joinTrayParts([]string{}); got != "" {
+		t.Fatalf("joinTrayParts([]) = %q, want empty", got)
 	}
 }

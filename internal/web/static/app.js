@@ -68,6 +68,10 @@ function getCurrentProvider() {
   if (geminiGrid) return 'gemini';
   const cursorGrid = document.getElementById('quota-grid-cursor');
   if (cursorGrid) return 'cursor';
+  const grokGrid = document.getElementById('quota-grid-grok');
+  if (grokGrid) return 'grok';
+  const kimiGrid = document.getElementById('quota-grid-kimi');
+  if (kimiGrid) return 'kimi';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -84,8 +88,17 @@ function providerParam() {
   return param;
 }
 
+// True when a multi-account provider tab is showing the aggregate "All accounts"
+// overview rather than a single selected account. Per-account detail sections
+// (sessions/cycles/overview/insights) do not apply in this mode.
+function isAccountsOverviewMode(provider = getCurrentProvider()) {
+  return (provider === 'codex' && State.codexAccount === 'all') ||
+         (provider === 'minimax' && State.minimaxAccount === 'all');
+}
+
 function shouldShowSessionsTable(provider = getCurrentProvider()) {
-  return provider !== 'both' && provider !== 'cursor' && provider !== 'api-integrations';
+  return provider !== 'both' && provider !== 'cursor' && provider !== 'api-integrations' && !isAccountsOverviewMode(provider);
+  // grok (like synthetic/codex/etc) shows sessions
 }
 
 function shouldShowCyclesTable(provider = getCurrentProvider()) {
@@ -166,6 +179,9 @@ const State = {
   allProvidersHistory: null,
   providerVisibility: {},
   providerSettings: {},
+  // Dashboard header tab order + custom display names (Settings → Providers)
+  dashboardProvidersOrder: [],
+  dashboardProviderLabels: {},
   menubarCapabilities: null,
   menubarProviderOrder: [],
   menubarProviders: [],
@@ -212,7 +228,9 @@ function saveHiddenQuotas() {
 function loadCodexAccount() {
   try {
     const stored = localStorage.getItem('onwatch-codex-account');
-    if (stored) {
+    if (stored === 'all') {
+      State.codexAccount = 'all';
+    } else if (stored) {
       const parsed = parseInt(stored, 10);
       State.codexAccount = isNaN(parsed) ? 1 : parsed;
     }
@@ -247,11 +265,31 @@ async function loadCodexProfiles() {
         // All profiles deleted - no tabs needed
         State.codexProfiles = [];
       }
+      applyDefaultCodexSelection();
       populateCodexProfileTabs();
       updateCodexProfileTabsVisibility();
     }
   } catch (e) {
     // silent - profiles endpoint may not exist on older versions
+  }
+}
+
+// Pick the default Codex selection on first load: honor a stored preference
+// ('all' or a specific account id); otherwise default to the aggregate "All
+// accounts" overview when more than one account exists.
+function applyDefaultCodexSelection() {
+  let stored = null;
+  try { stored = localStorage.getItem('onwatch-codex-account'); } catch (e) { stored = null; }
+  if (stored === 'all') { State.codexAccount = 'all'; return; }
+  const storedId = stored != null ? parseInt(stored, 10) : NaN;
+  if (!isNaN(storedId) && State.codexProfiles.find(p => p.id === storedId)) {
+    State.codexAccount = storedId;
+    return;
+  }
+  if (State.codexProfiles.length > 1) {
+    State.codexAccount = 'all';
+  } else if (State.codexProfiles.length === 1) {
+    State.codexAccount = State.codexProfiles[0].id;
   }
 }
 
@@ -268,6 +306,19 @@ function populateCodexProfileTabs() {
 
   menu.innerHTML = '';
 
+  // "All accounts" aggregate option always sits at the top for multi-account.
+  const allItem = document.createElement('li');
+  allItem.className = 'codex-profile-item' + (State.codexAccount === 'all' ? ' active' : '');
+  allItem.dataset.accountId = 'all';
+  allItem.textContent = 'All accounts';
+  allItem.setAttribute('role', 'option');
+  allItem.setAttribute('aria-selected', State.codexAccount === 'all' ? 'true' : 'false');
+  allItem.addEventListener('click', () => {
+    switchCodexProfile('all');
+    closeCodexProfileDropdown();
+  });
+  menu.appendChild(allItem);
+
   for (const profile of State.codexProfiles) {
     const li = document.createElement('li');
     li.className = 'codex-profile-item' + (profile.id === State.codexAccount ? ' active' : '');
@@ -282,8 +333,8 @@ function populateCodexProfileTabs() {
     menu.appendChild(li);
   }
 
-  // If current account not in list, reset to first profile
-  if (!State.codexProfiles.find(p => p.id === State.codexAccount)) {
+  // If current selection is neither 'all' nor a known profile, reset to first profile
+  if (State.codexAccount !== 'all' && !State.codexProfiles.find(p => p.id === State.codexAccount)) {
     State.codexAccount = State.codexProfiles[0].id;
     saveCodexAccount(State.codexAccount);
     updateProfileTabsActive();
@@ -305,13 +356,19 @@ function updateProfileTabsActive() {
   const menu = document.getElementById('codex-profile-menu');
   if (!menu) return;
 
-  const activeProfile = State.codexProfiles.find(p => p.id === State.codexAccount);
-  if (label && activeProfile) {
-    label.textContent = activeProfile.name;
+  if (label) {
+    if (State.codexAccount === 'all') {
+      label.textContent = 'All accounts';
+    } else {
+      const activeProfile = State.codexProfiles.find(p => p.id === State.codexAccount);
+      if (activeProfile) label.textContent = activeProfile.name;
+    }
   }
 
   menu.querySelectorAll('.codex-profile-item').forEach(item => {
-    const isActive = parseInt(item.dataset.accountId, 10) === State.codexAccount;
+    const isActive = item.dataset.accountId === 'all'
+      ? State.codexAccount === 'all'
+      : parseInt(item.dataset.accountId, 10) === State.codexAccount;
     item.classList.toggle('active', isActive);
     item.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
@@ -373,7 +430,8 @@ function initCodexProfileTabs() {
 }
 
 function codexAccountParam() {
-  return State.codexAccount ? `&account=${encodeURIComponent(State.codexAccount)}` : '';
+  if (!State.codexAccount || State.codexAccount === 'all') return '';
+  return `&account=${encodeURIComponent(State.codexAccount)}`;
 }
 
 // ── MiniMax Account Persistence (multi-account) ──
@@ -381,7 +439,9 @@ function codexAccountParam() {
 function loadMiniMaxAccount() {
   try {
     const stored = localStorage.getItem('onwatch-minimax-account');
-    if (stored) {
+    if (stored === 'all') {
+      State.minimaxAccount = 'all';
+    } else if (stored) {
       const parsed = parseInt(stored, 10);
       State.minimaxAccount = isNaN(parsed) ? null : parsed;
     }
@@ -407,11 +467,29 @@ async function loadMiniMaxAccounts() {
     if (data.accounts && data.accounts.length > 0) {
       const activeAccounts = data.accounts.filter(a => !a.deletedAt);
       State.minimaxAccounts = activeAccounts;
+      applyDefaultMiniMaxSelection();
       populateMiniMaxAccountTabs();
       updateMiniMaxAccountTabsVisibility();
     }
   } catch (e) {
     // silent
+  }
+}
+
+// Mirror of applyDefaultCodexSelection for MiniMax accounts.
+function applyDefaultMiniMaxSelection() {
+  let stored = null;
+  try { stored = localStorage.getItem('onwatch-minimax-account'); } catch (e) { stored = null; }
+  if (stored === 'all') { State.minimaxAccount = 'all'; return; }
+  const storedId = stored != null ? parseInt(stored, 10) : NaN;
+  if (!isNaN(storedId) && State.minimaxAccounts.find(a => a.id === storedId)) {
+    State.minimaxAccount = storedId;
+    return;
+  }
+  if (State.minimaxAccounts.length > 1) {
+    State.minimaxAccount = 'all';
+  } else if (State.minimaxAccounts.length === 1) {
+    State.minimaxAccount = State.minimaxAccounts[0].id;
   }
 }
 
@@ -427,6 +505,18 @@ function populateMiniMaxAccountTabs() {
 
   menu.innerHTML = '';
 
+  const allItem = document.createElement('li');
+  allItem.className = 'codex-profile-item' + (State.minimaxAccount === 'all' ? ' active' : '');
+  allItem.dataset.accountId = 'all';
+  allItem.textContent = 'All accounts';
+  allItem.setAttribute('role', 'option');
+  allItem.setAttribute('aria-selected', State.minimaxAccount === 'all' ? 'true' : 'false');
+  allItem.addEventListener('click', () => {
+    switchMiniMaxAccount('all');
+    closeMiniMaxAccountDropdown();
+  });
+  menu.appendChild(allItem);
+
   for (const account of State.minimaxAccounts) {
     const li = document.createElement('li');
     li.className = 'codex-profile-item' + (account.id === State.minimaxAccount ? ' active' : '');
@@ -441,7 +531,7 @@ function populateMiniMaxAccountTabs() {
     menu.appendChild(li);
   }
 
-  if (!State.minimaxAccounts.find(a => a.id === State.minimaxAccount)) {
+  if (State.minimaxAccount !== 'all' && !State.minimaxAccounts.find(a => a.id === State.minimaxAccount)) {
     State.minimaxAccount = State.minimaxAccounts[0].id;
     saveMiniMaxAccount(State.minimaxAccount);
     updateMiniMaxAccountTabsActive();
@@ -463,13 +553,19 @@ function updateMiniMaxAccountTabsActive() {
   const menu = document.getElementById('minimax-profile-menu');
   if (!menu) return;
 
-  const active = State.minimaxAccounts && State.minimaxAccounts.find(a => a.id === State.minimaxAccount);
-  if (label && active) {
-    label.textContent = active.name;
+  if (label) {
+    if (State.minimaxAccount === 'all') {
+      label.textContent = 'All accounts';
+    } else {
+      const active = State.minimaxAccounts && State.minimaxAccounts.find(a => a.id === State.minimaxAccount);
+      if (active) label.textContent = active.name;
+    }
   }
 
   menu.querySelectorAll('.codex-profile-item').forEach(item => {
-    const isActive = parseInt(item.dataset.accountId, 10) === State.minimaxAccount;
+    const isActive = item.dataset.accountId === 'all'
+      ? State.minimaxAccount === 'all'
+      : parseInt(item.dataset.accountId, 10) === State.minimaxAccount;
     item.classList.toggle('active', isActive);
     item.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
@@ -514,7 +610,8 @@ function initMiniMaxAccountTabs() {
 }
 
 function minimaxAccountParam() {
-  return State.minimaxAccount ? `&account=${encodeURIComponent(State.minimaxAccount)}` : '';
+  if (!State.minimaxAccount || State.minimaxAccount === 'all') return '';
+  return `&account=${encodeURIComponent(State.minimaxAccount)}`;
 }
 
 // ── Insight Visibility (DB-persisted) ──
@@ -927,6 +1024,11 @@ const antigravityChartColorMap = {
   antigravity_claude_gpt: { border: '#D97757', bg: 'rgba(217, 119, 87, 0.08)' },
   antigravity_gemini_pro: { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },
   antigravity_gemini_flash: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.08)' },
+  // agy CLI bucket rows (weekly + 5h per group)
+  'gemini-weekly': { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },
+  'gemini-5h': { border: '#34D399', bg: 'rgba(52, 211, 153, 0.08)' },
+  '3p-weekly': { border: '#D97757', bg: 'rgba(217, 119, 87, 0.08)' },
+  '3p-5h': { border: '#E8A38C', bg: 'rgba(232, 163, 140, 0.08)' },
 };
 const antigravityChartColorFallback = [
   { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
@@ -1041,6 +1143,9 @@ const renewalCategories = {
     { label: 'Weekly', groupBy: 'weekly_all' }
   ],
   openrouter: [
+    { label: 'Credits', groupBy: 'credits' }
+  ],
+  grok: [
     { label: 'Credits', groupBy: 'credits' }
   ],
   gemini: [],
@@ -1223,7 +1328,9 @@ function renderAnthropicQuotaCards(quotas, containerId) {
   container.innerHTML = quotas.map((q, i) => {
     const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
     const displayName = q.displayName || anthropicDisplayNames[q.name] || q.name;
-    const utilPct = (q.utilization || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.utilization || 0);
+    const utilPct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Utilization';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-anth-${q.name}`;
@@ -1242,10 +1349,10 @@ function renderAnthropicQuotaCards(quotas, containerId) {
       </header>
       <div class="progress-stats">
         <span class="usage-percent" id="${percentId}">${utilPct}%</span>
-        <span class="usage-fraction">Utilization</span>
+        <span class="usage-fraction">${cardLabel}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.utilization || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${utilPct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -1256,7 +1363,7 @@ function renderAnthropicQuotaCards(quotas, containerId) {
           ${statusCfg.label}
         </span>
         ${promoTagHTML()}
-        <span class="reset-time" id="${resetId}">${q.resetsAt ? 'Resets: ' + formatDateTime(q.resetsAt) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetsAt ? ` data-reset-at="${q.resetsAt}"` : ''}>${q.resetsAt ? formatResetTime(q.resetsAt) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -1299,17 +1406,20 @@ function updateAnthropicCard(quota) {
   const resetEl = document.getElementById(`reset-anth-${quota.name}`);
   const countdownEl = document.getElementById(`countdown-anth-${quota.name}`);
 
-  const utilPct = (quota.utilization || 0).toFixed(1);
+  const displayPct = quota.cardPercent != null ? quota.cardPercent : (quota.utilization || 0);
+  const utilPct = displayPct.toFixed(1);
   const status = quota.status || 'healthy';
 
   if (progressEl) {
     progressEl.style.width = `${utilPct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(displayPct));
   }
   if (percentEl) {
     const oldVal = prev ? prev.percent : 0;
-    if (Math.abs(oldVal - quota.utilization) > 0.2) {
-      animateValue(percentEl, oldVal, quota.utilization, 400, v => `${v.toFixed(1)}%`);
+    if (Math.abs(oldVal - displayPct) > 0.2) {
+      animateValue(percentEl, oldVal, displayPct, 400, v => `${v.toFixed(1)}%`);
     } else {
       percentEl.textContent = `${utilPct}%`;
     }
@@ -1319,9 +1429,7 @@ function updateAnthropicCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = quota.resetsAt ? `Resets: ${formatDateTime(quota.resetsAt)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, quota.resetsAt);
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -1482,7 +1590,9 @@ function renderCopilotQuotaCards(quotas, containerId) {
   container.innerHTML = quotas.map((q, i) => {
     const icon = copilotQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
     const displayName = q.displayName || copilotDisplayNames[q.name] || q.name;
-    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+    const usagePct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Usage';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-copilot-${q.name}`;
@@ -1515,7 +1625,7 @@ function renderCopilotQuotaCards(quotas, containerId) {
         <span class="usage-fraction" id="${fractionId}">${fractionText}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${q.unlimited ? 0 : Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${q.unlimited ? 0 : Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${q.unlimited ? 0 : usagePct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -1524,7 +1634,7 @@ function renderCopilotQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetDate ? 'Resets: ' + formatDateTime(q.resetDate) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetDate ? ` data-reset-at="${q.resetDate}"` : ''}>${q.resetDate ? formatResetTime(q.resetDate) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -1567,17 +1677,20 @@ function updateCopilotCard(quota) {
   const resetEl = document.getElementById(`reset-copilot-${quota.name}`);
   const countdownEl = document.getElementById(`countdown-copilot-${quota.name}`);
 
-  const usagePct = quota.unlimited ? 0 : (quota.usagePercent || 0).toFixed(1);
+  const rawPct = quota.cardPercent != null ? quota.cardPercent : (quota.usagePercent || 0);
+  const usagePct = quota.unlimited ? 0 : rawPct.toFixed(1);
   const status = quota.status || 'healthy';
 
   if (progressEl) {
     progressEl.style.width = `${usagePct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', quota.unlimited ? 0 : Math.round(rawPct));
   }
   if (percentEl) {
     const oldVal = prev ? prev.percent : 0;
-    if (!quota.unlimited && Math.abs(oldVal - quota.usagePercent) > 0.2) {
-      animateValue(percentEl, oldVal, quota.usagePercent, 400, v => `${v.toFixed(1)}%`);
+    if (!quota.unlimited && Math.abs(oldVal - rawPct) > 0.2) {
+      animateValue(percentEl, oldVal, rawPct, 400, v => `${v.toFixed(1)}%`);
     } else {
       percentEl.textContent = quota.unlimited ? '0%' : `${usagePct}%`;
     }
@@ -1595,9 +1708,7 @@ function updateCopilotCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = quota.resetDate ? `Resets: ${formatDateTime(quota.resetDate)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, quota.resetDate);
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -1629,7 +1740,9 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
     const cardKey = minimaxCardKey(q.name);
     const displayName = q.displayName || minimaxDisplayNames[q.name] || q.name;
     const subtitle = minimaxSharedSubtitle(q.sharedModels);
-    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+    const usagePct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Usage';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-minimax-${cardKey}`;
@@ -1659,7 +1772,7 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
         <span class="usage-fraction" id="${fractionId}">${formatNumber(q.used || 0)} / ${formatNumber(q.total || 0)}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${usagePct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -1668,7 +1781,7 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetAt ? 'Resets: ' + formatDateTime(q.resetAt) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetAt ? ` data-reset-at="${q.resetAt}"` : ''}>${q.resetAt ? formatResetTime(q.resetAt) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -1689,7 +1802,8 @@ function updateMiniMaxCard(quota) {
     sharedModels: quota.sharedModels || []
   };
 
-  const usagePct = (quota.usagePercent || 0).toFixed(1);
+  const displayPct = quota.cardPercent != null ? quota.cardPercent : (quota.usagePercent || 0);
+  const usagePct = displayPct.toFixed(1);
   const status = quota.status || 'healthy';
   const progressEl = document.getElementById(`progress-minimax-${cardKey}`);
   const percentEl = document.getElementById(`percent-minimax-${cardKey}`);
@@ -1703,6 +1817,8 @@ function updateMiniMaxCard(quota) {
   if (progressEl) {
     progressEl.style.width = `${usagePct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(displayPct));
   }
   if (percentEl) percentEl.textContent = `${usagePct}%`;
   if (fractionEl) fractionEl.textContent = `${formatNumber(quota.used || 0)} / ${formatNumber(quota.total || 0)}`;
@@ -1711,7 +1827,7 @@ function updateMiniMaxCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) resetEl.textContent = quota.resetAt ? `Resets: ${formatDateTime(quota.resetAt)}` : '';
+  if (resetEl) setResetTimeElement(resetEl, quota.resetAt);
   if (subtitleEl) {
     subtitleEl.textContent = subtitle;
     subtitleEl.hidden = !subtitle;
@@ -1904,6 +2020,19 @@ function getAntigravityGroupColumns(quota) {
   ];
 }
 
+function updateAntigravitySourceBadge(source) {
+  const badge = document.getElementById('antigravity-source-badge');
+  if (!badge) return;
+  const labels = { cli: 'agy CLI', ide: 'IDE' };
+  const label = labels[source];
+  if (!label) {
+    badge.hidden = true;
+    return;
+  }
+  badge.textContent = `Source: ${label}`;
+  badge.hidden = false;
+}
+
 function renderAntigravityQuotaCards(quotas, containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -1911,7 +2040,9 @@ function renderAntigravityQuotaCards(quotas, containerId) {
   container.innerHTML = quotas.map((q, i) => {
     const icon = getAntigravityIcon(q.modelId);
     const displayName = q.displayName || q.label || q.modelId;
-    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+    const usagePct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Usage';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-antigravity-${q.modelId}`;
@@ -1921,9 +2052,9 @@ function renderAntigravityQuotaCards(quotas, containerId) {
     const statusId = `status-antigravity-${q.modelId}`;
     const resetId = `reset-antigravity-${q.modelId}`;
 
-    // Format the remaining percent
+    // Format the remaining percent (leave as-is - separate fallback computation)
     const remainingPct = (q.remainingPercent || 0).toFixed(1);
-    const fractionText = `${remainingPct}% remaining`;
+    const fractionText = q.cardPercent != null ? `${cardLabel}` : `${remainingPct}% remaining`;
 
     return `<article class="quota-card antigravity-card" data-quota="${q.modelId}" data-provider="antigravity" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
@@ -1939,7 +2070,7 @@ function renderAntigravityQuotaCards(quotas, containerId) {
         <span class="usage-fraction" id="${fractionId}">${fractionText}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${usagePct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -1948,7 +2079,7 @@ function renderAntigravityQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetTime ? 'Resets: ' + formatDateTime(q.resetTime) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetTime ? ` data-reset-at="${q.resetTime}"` : ''}>${q.resetTime ? formatResetTime(q.resetTime) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -1991,33 +2122,37 @@ function updateAntigravityCard(quota) {
   const resetEl = document.getElementById(`reset-antigravity-${quota.modelId}`);
   const countdownEl = document.getElementById(`countdown-antigravity-${quota.modelId}`);
 
-  const usagePct = (quota.usagePercent || 0).toFixed(1);
+  const displayPct = quota.cardPercent != null ? quota.cardPercent : (quota.usagePercent || 0);
+  const usagePct = displayPct.toFixed(1);
   const status = quota.status || 'healthy';
 
   if (progressEl) {
     progressEl.style.width = `${usagePct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(displayPct));
   }
   if (percentEl) {
     const oldVal = prev ? prev.percent : 0;
-    if (Math.abs(oldVal - quota.usagePercent) > 0.2) {
-      animateValue(percentEl, oldVal, quota.usagePercent, 400, v => `${v.toFixed(1)}%`);
+    if (Math.abs(oldVal - displayPct) > 0.2) {
+      animateValue(percentEl, oldVal, displayPct, 400, v => `${v.toFixed(1)}%`);
     } else {
       percentEl.textContent = `${usagePct}%`;
     }
   }
   if (fractionEl) {
+    // remainingPercent stays as-is - separate computation, not the display toggle
     const remainingPct = (quota.remainingPercent || 0).toFixed(1);
-    fractionEl.textContent = `${remainingPct}% remaining`;
+    fractionEl.textContent = quota.cardPercent != null
+      ? (quota.cardLabel || 'Usage')
+      : `${remainingPct}% remaining`;
   }
   if (statusEl) {
     const config = statusConfig[status] || statusConfig.healthy;
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = quota.resetTime ? `Resets: ${formatDateTime(quota.resetTime)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, quota.resetTime);
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -2043,7 +2178,9 @@ function renderGeminiQuotaCards(quotas, containerId) {
   container.innerHTML = quotas.map((q, i) => {
     const displayName = q.displayName || geminiDisplayNames[q.modelId] || q.modelId;
     const membersText = q.members && q.members.length > 0 ? q.members.join(', ') : '';
-    const usagePct = (q.usagePercent || 0).toFixed(1);
+    const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+    const usagePct = displayPct.toFixed(1);
+    const cardLabel = q.cardLabel || 'Usage';
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-gemini-${q.modelId}`;
@@ -2053,8 +2190,9 @@ function renderGeminiQuotaCards(quotas, containerId) {
     const statusId = `status-gemini-${q.modelId}`;
     const resetId = `reset-gemini-${q.modelId}`;
 
+    // remainingPercent is a separate computation - leave as-is
     const remainingPct = (q.remainingPercent || (q.remainingFraction != null ? q.remainingFraction * 100 : 0)).toFixed(1);
-    const fractionText = `${remainingPct}% remaining`;
+    const fractionText = q.cardPercent != null ? cardLabel : `${remainingPct}% remaining`;
 
     return `<article class="quota-card gemini-card" data-quota="${q.modelId}" data-provider="gemini" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
@@ -2071,7 +2209,7 @@ function renderGeminiQuotaCards(quotas, containerId) {
         <span class="usage-fraction" id="${fractionId}">${fractionText}</span>
       </div>
       <div class="progress-wrapper">
-        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(q.usagePercent || 0)}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(displayPct)}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" id="${progressId}" style="width: ${usagePct}%" data-status="${status}"></div>
         </div>
       </div>
@@ -2080,7 +2218,7 @@ function renderGeminiQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetTime ? 'Resets: ' + formatDateTime(q.resetTime) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetTime ? ` data-reset-at="${q.resetTime}"` : ''}>${q.resetTime ? formatResetTime(q.resetTime) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -2106,7 +2244,7 @@ function renderCursorQuotaCards(quotas, containerId) {
     return;
   }
 
-  container.innerHTML = renderProviderKPIHTML(normalizeBothQuotas('cursor', { quotas }));
+  container.innerHTML = renderProviderKPIHTML(normalizeBothQuotas('cursor', { quotas }), 'cursor');
 }
 
 function updateGeminiCard(q) {
@@ -2133,33 +2271,37 @@ function updateGeminiCard(q) {
   const resetEl = document.getElementById(`reset-gemini-${q.modelId}`);
   const countdownEl = document.getElementById(`countdown-gemini-${q.modelId}`);
 
-  const usagePct = (q.usagePercent || 0).toFixed(1);
+  const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
+  const usagePct = displayPct.toFixed(1);
   const status = q.status || 'healthy';
 
   if (progressEl) {
     progressEl.style.width = `${usagePct}%`;
     progressEl.setAttribute('data-status', status);
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(displayPct));
   }
   if (percentEl) {
     const oldVal = prev ? prev.percent : 0;
-    if (Math.abs(oldVal - (q.usagePercent || 0)) > 0.2) {
-      animateValue(percentEl, oldVal, q.usagePercent || 0, 400, v => `${v.toFixed(1)}%`);
+    if (Math.abs(oldVal - displayPct) > 0.2) {
+      animateValue(percentEl, oldVal, displayPct, 400, v => `${v.toFixed(1)}%`);
     } else {
       percentEl.textContent = `${usagePct}%`;
     }
   }
   if (fractionEl) {
+    // remainingPercent is a separate computation - leave as-is
     const remainingPct = (q.remainingPercent || (q.remainingFraction != null ? q.remainingFraction * 100 : 0)).toFixed(1);
-    fractionEl.textContent = `${remainingPct}% remaining`;
+    fractionEl.textContent = q.cardPercent != null
+      ? (q.cardLabel || 'Usage')
+      : `${remainingPct}% remaining`;
   }
   if (statusEl) {
     const config = statusConfig[status] || statusConfig.healthy;
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = q.resetTime ? `Resets: ${formatDateTime(q.resetTime)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, q.resetTime);
   if (countdownEl) {
     if (q.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(q.timeUntilResetSeconds);
@@ -2411,6 +2553,50 @@ async function loadAntigravityModalCycles(groupKey) {
 
 // ── Codex Dynamic Card Rendering ──
 
+// codexAutoStartBadge returns a small pill for a Codex quota card when the
+// auto quota-starter (Beta) is enabled for that window. five_hour -> auto_start_5h,
+// seven_day -> auto_start_7d. Returns '' otherwise.
+function codexAutoStartBadge(quotaName) {
+  const ps = (State.providerSettings && State.providerSettings.codex) || {};
+  const key = quotaName === 'five_hour' ? 'auto_start_5h'
+    : (quotaName === 'seven_day' ? 'auto_start_7d' : null);
+  if (!key || ps[key] !== 'on') return '';
+  return `<span class="auto-start-badge" title="Auto-start is on (Beta): when this window resets, onWatch sends a tiny Codex request to start the window automatically.">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    Auto-start
+  </span>`;
+}
+
+// syncCodexAutoStartBadges adds/removes the Auto-start badge on already-rendered
+// Codex cards to match the current toggle state, without a full re-render. Called
+// after saving provider settings so the badge updates immediately. Covers both
+// the per-account `.quota-card.codex-card` and the multi-account overview's
+// `.account-overview-quota` rows.
+function syncCodexAutoStartBadges() {
+  document.querySelectorAll('.quota-card.codex-card').forEach(card => {
+    const title = card.querySelector('.quota-title');
+    if (!title) return;
+    const existing = title.querySelector('.auto-start-badge');
+    const html = codexAutoStartBadge(card.dataset.quota);
+    if (html && !existing) {
+      title.insertAdjacentHTML('beforeend', html);
+    } else if (!html && existing) {
+      existing.remove();
+    }
+  });
+  document.querySelectorAll('.account-overview-quota[data-quota]').forEach(row => {
+    const label = row.querySelector('.aoq-label');
+    if (!label) return;
+    const existing = label.querySelector('.auto-start-badge');
+    const html = codexAutoStartBadge(row.dataset.quota);
+    if (html && !existing) {
+      label.insertAdjacentHTML('beforeend', html);
+    } else if (!html && existing) {
+      existing.remove();
+    }
+  });
+}
+
 function renderCodexQuotaCards(quotas, containerId, planType) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -2439,6 +2625,7 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
           ${displayName}
+          ${codexAutoStartBadge(q.name)}
         </h2>
         <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
@@ -2456,7 +2643,7 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetsAt ? 'Resets: ' + formatDateTime(q.resetsAt) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetsAt ? ` data-reset-at="${q.resetsAt}"` : ''}>${q.resetsAt ? formatResetTime(q.resetsAt) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -2518,6 +2705,7 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
           ${displayName}
+          ${codexAutoStartBadge(q.name)}
         </h2>
         <span class="countdown" id="countdown-${cardKey}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
@@ -2535,7 +2723,7 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="reset-${cardKey}">${q.resetsAt ? 'Resets: ' + formatDateTime(q.resetsAt) : ''}</span>
+        <span class="reset-time" id="reset-${cardKey}"${q.resetsAt ? ` data-reset-at="${q.resetsAt}"` : ''}>${q.resetsAt ? formatResetTime(q.resetsAt) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -2611,9 +2799,7 @@ function updateCodexCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) {
-    resetEl.textContent = quota.resetsAt ? `Resets: ${formatDateTime(quota.resetsAt)}` : '';
-  }
+  if (resetEl) setResetTimeElement(resetEl, quota.resetsAt);
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -2795,13 +2981,119 @@ function formatCurrencyUSD(num) {
   }).format(num || 0);
 }
 
+function parseDateValue(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function formatDateTime(isoString) {
-  const d = new Date(isoString);
+  const d = parseDateValue(isoString);
+  if (!d) return '--';
   const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
   if (typeof getEffectiveTimezone === 'function') {
     opts.timeZone = getEffectiveTimezone();
   }
   return d.toLocaleString('en-US', opts);
+}
+
+// Compact UTC offset for header/clock labels, e.g. "UTC+8" / "UTC-05:00".
+// Prefer shortOffset over IANA ids (Asia/Shanghai) which are too long for the header.
+function formatTimezoneOffsetLabel(tz, date = new Date()) {
+  if (!tz) return '';
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(date);
+    const name = parts.find((p) => p.type === 'timeZoneName')?.value || '';
+    // GMT / GMT+8 / GMT-5 → UTC / UTC+8 / UTC-5
+    if (name) return name.replace(/^GMT/i, 'UTC');
+  } catch (e) { /* fall through */ }
+  try {
+    return tzAbbr(tz);
+  } catch (e) {
+    return tz.split('/').pop() || '';
+  }
+}
+
+function formatClockTime(value) {
+  const d = parseDateValue(value);
+  if (!d) return '--';
+  const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : undefined;
+  const opts = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+  if (tz) opts.timeZone = tz;
+  const time = d.toLocaleTimeString('en-US', opts);
+  const offset = tz ? formatTimezoneOffsetLabel(tz, d) : '';
+  return offset ? `${time} ${offset}` : time;
+}
+
+function zonedDateKey(date, tz) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(date);
+  } catch (e) {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
+function formatResetTime(isoString) {
+  const d = parseDateValue(isoString);
+  if (!d) return '';
+  const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : undefined;
+  const timeOpts = { hour: '2-digit', minute: '2-digit', hour12: false };
+  const dateOpts = { month: 'short', day: 'numeric' };
+  if (tz) {
+    timeOpts.timeZone = tz;
+    dateOpts.timeZone = tz;
+  }
+
+  const resetDay = zonedDateKey(d, tz);
+  const today = zonedDateKey(new Date(), tz);
+  const localTime = d.toLocaleTimeString('en-US', timeOpts);
+  const localDate = resetDay === today ? '' : `${d.toLocaleDateString('en-US', dateOpts)}, `;
+  const offset = tz ? formatTimezoneOffsetLabel(tz, d) : '';
+  return `Reset at ${localDate}${localTime}${offset ? ' ' + offset : ''}`;
+}
+
+function setResetTimeElement(el, isoString) {
+  if (!el) return;
+  if (isoString) {
+    el.dataset.resetAt = isoString;
+    el.textContent = formatResetTime(isoString);
+    el.style.display = '';
+  } else {
+    delete el.dataset.resetAt;
+    el.textContent = '';
+  }
+}
+
+function setLastUpdated(value = new Date()) {
+  const lastUpdated = document.getElementById('last-updated');
+  if (!lastUpdated) return;
+  const d = parseDateValue(value) || new Date();
+  lastUpdated.dataset.lastUpdatedAt = d.toISOString();
+  // Compact header label: "Updated 04:59:43 UTC+8" (full IANA zone in tooltip).
+  const clock = formatClockTime(d);
+  lastUpdated.textContent = `Updated ${clock}`;
+  const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : '';
+  lastUpdated.title = tz
+    ? `Last updated at ${clock} (${tz})`
+    : `Last updated at ${clock}`;
+}
+
+function refreshTimezoneSensitiveText() {
+  updateBadgeText();
+  document.querySelectorAll('.reset-time[data-reset-at]').forEach(el => {
+    setResetTimeElement(el, el.dataset.resetAt);
+  });
+  const lastUpdated = document.getElementById('last-updated');
+  if (lastUpdated?.dataset.lastUpdatedAt) {
+    setLastUpdated(lastUpdated.dataset.lastUpdatedAt);
+  }
 }
 
 function formatChartXAxisLabel(isoOrLabel, range) {
@@ -2852,7 +3144,18 @@ const TZ_ALIASES = {
   'US/Pacific': 'America/Los_Angeles',
 };
 
-function normalizeTz(tz) { return TZ_ALIASES[tz] || tz; }
+function normalizeTz(tz) {
+  if (!tz) return '';
+  return TZ_ALIASES[tz] || tz;
+}
+
+function getBrowserTimezone() {
+  try {
+    return normalizeTz(Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC';
+  } catch (e) {
+    return 'UTC';
+  }
+}
 
 // Curated timezone list sorted by UTC offset (descending: east → west).
 // India (Asia/Kolkata) is always present.
@@ -2879,7 +3182,7 @@ const TZ_LIST = (() => {
     { tz: 'Pacific/Honolulu', label: 'Honolulu' },
   ];
   // Insert user's browser timezone if not already in list (after normalization)
-  const browserTz = normalizeTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const browserTz = getBrowserTimezone();
   if (!base.some(e => e.tz === browserTz)) {
     const label = browserTz.split('/').pop().replace(/_/g, ' ');
     const off = tzOffsetMin(browserTz);
@@ -2910,7 +3213,7 @@ function tzOffsetMin(tz) {
 }
 
 function getEffectiveTimezone() {
-  return activeTimezone || normalizeTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  return activeTimezone || getBrowserTimezone();
 }
 
 function tzAbbr(tz) {
@@ -2927,17 +3230,16 @@ function findTzIndex(tz) {
   return idx >= 0 ? idx : 0;
 }
 
-function initTimezoneBadge() {
+async function initTimezoneBadge() {
   const badge = document.getElementById('timezone-badge');
+  await loadTimezoneFromAPI();
   if (!badge) return;
 
-  loadTimezoneFromAPI().then(() => {
-    updateBadgeText(badge);
-    badge.style.cursor = 'pointer';
-    badge.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleTzPicker(badge);
-    });
+  updateBadgeText(badge);
+  badge.style.cursor = 'pointer';
+  badge.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleTzPicker(badge);
   });
 }
 
@@ -2946,9 +3248,7 @@ async function loadTimezoneFromAPI() {
     const res = await authFetch(`${API_BASE}/api/settings`);
     if (!res.ok) return;
     const data = await res.json();
-    if (data.timezone) {
-      activeTimezone = normalizeTz(data.timezone);
-    }
+    activeTimezone = normalizeTz(data.timezone || '');
   } catch (e) {}
 }
 
@@ -2958,8 +3258,20 @@ function updateBadgeText(badge) {
   const tz = getEffectiveTimezone();
   const entry = TZ_LIST.find(e => e.tz === tz);
   const label = entry ? entry.label : tz.split('/').pop().replace(/_/g, ' ');
-  badge.textContent = `${label} (${tzAbbr(tz)})`;
-  badge.title = tz;
+  if (activeTimezone) {
+    badge.textContent = `${label} (${tzAbbr(tz)})`;
+    badge.title = tz;
+  } else {
+    badge.textContent = `Browser Default (${label} ${tzAbbr(tz)})`;
+    badge.title = `Browser default: ${tz}`;
+  }
+}
+
+function timezonePickerEntries() {
+  return [
+    { tz: '', label: 'Browser Default', browserDefault: true },
+    ...TZ_LIST
+  ];
 }
 
 function toggleTzPicker(badge) {
@@ -2976,17 +3288,20 @@ function toggleTzPicker(badge) {
   const ITEM_H = 36;
   const VISIBLE = 7;
   const COPIES = 3;
-  const totalItems = TZ_LIST.length;
+  const entries = timezonePickerEntries();
+  const totalItems = entries.length;
 
   // Render 3 copies for infinite scroll illusion
   for (let copy = 0; copy < COPIES; copy++) {
-    TZ_LIST.forEach((entry, i) => {
+    entries.forEach((entry, i) => {
       const item = document.createElement('div');
       item.className = 'tz-picker-item';
-      if (entry.tz === getEffectiveTimezone()) item.classList.add('active');
+      if ((entry.browserDefault && !activeTimezone) || (activeTimezone && entry.tz === activeTimezone)) {
+        item.classList.add('active');
+      }
       item.dataset.tz = entry.tz;
       item.dataset.idx = i;
-      const abbr = tzAbbr(entry.tz);
+      const abbr = entry.browserDefault ? getBrowserTimezone() : tzAbbr(entry.tz);
       item.innerHTML = `<span class="tz-picker-label">${entry.label}</span><span class="tz-picker-abbr">${abbr}</span>`;
       item.addEventListener('click', () => selectTz(entry.tz, picker, badge));
       list.appendChild(item);
@@ -3004,7 +3319,7 @@ function toggleTzPicker(badge) {
   document.body.appendChild(picker);
 
   // Scroll to center current timezone in middle copy
-  const activeIdx = findTzIndex(getEffectiveTimezone());
+  const activeIdx = activeTimezone ? findTzIndex(activeTimezone) + 1 : 0;
   const midStart = totalItems; // start of middle copy
   const targetScroll = (midStart + activeIdx) * ITEM_H - Math.floor(VISIBLE / 2) * ITEM_H;
   list.scrollTop = targetScroll;
@@ -3041,15 +3356,16 @@ function toggleTzPicker(badge) {
 }
 
 async function selectTz(tz, picker, badge) {
-  activeTimezone = tz;
+  activeTimezone = normalizeTz(tz);
   updateBadgeText(badge);
   if (picker) picker.remove();
   try {
     await authFetch(`${API_BASE}/api/settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timezone: tz })
+      body: JSON.stringify({ timezone: activeTimezone })
     });
+    refreshTimezoneSensitiveText();
   } catch (e) {
     // silent
   }
@@ -3158,10 +3474,12 @@ function updateCard(quotaType, data, suffix) {
   const resetEl = document.getElementById(`reset-${idSuffix}`);
   const countdownEl = document.getElementById(`countdown-${idSuffix}`);
 
+  const displayPct = data.cardPercent != null ? data.cardPercent : (data.percent || 0);
+
   if (progressEl) {
-    progressEl.style.width = `${data.percent}%`;
+    progressEl.style.width = `${displayPct}%`;
     progressEl.setAttribute('data-status', data.status);
-    progressEl.parentElement.setAttribute('aria-valuenow', Math.round(data.percent));
+    progressEl.parentElement.setAttribute('aria-valuenow', Math.round(displayPct));
   }
 
   if (fractionEl) {
@@ -3170,12 +3488,12 @@ function updateCard(quotaType, data, suffix) {
 
   if (percentEl) {
     // Animate percentage from old to new
-    const oldVal = prev ? prev.percent : 0;
-    const newVal = data.percent;
+    const oldVal = prev ? (prev.cardPercent != null ? prev.cardPercent : (prev.percent || 0)) : 0;
+    const newVal = displayPct;
     if (Math.abs(oldVal - newVal) > 0.2) {
       animateValue(percentEl, oldVal, newVal, 400, v => `${v.toFixed(1)}%`);
     } else {
-      percentEl.textContent = `${data.percent.toFixed(1)}%`;
+      percentEl.textContent = `${displayPct.toFixed(1)}%`;
     }
   }
 
@@ -3188,10 +3506,9 @@ function updateCard(quotaType, data, suffix) {
 
   if (resetEl) {
     if (data.renewsAt && data.timeUntilReset !== 'N/A') {
-      resetEl.textContent = `Resets: ${formatDateTime(data.renewsAt)}`;
-      resetEl.style.display = '';
+      setResetTimeElement(resetEl, data.renewsAt);
     } else {
-      resetEl.textContent = '';
+      setResetTimeElement(resetEl, '');
       resetEl.style.display = 'none';
     }
   }
@@ -3255,11 +3572,218 @@ function startCountdowns() {
 
 // ── Data Fetching ──
 
+// Minimal Grok credits renderer (1 quota: "credits"). Supports dynamic label + standard card.
+function renderGrokQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  const list = (quotas && quotas.length) ? quotas : [{ name: 'credits', utilization: 0, status: 'healthy' }];
+  list.forEach((q, idx) => {
+    const pct = (q.utilization || 0);
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(pct);
+    const name = (q.name || 'credits');
+    const label = (name === 'credits') ? 'Credits' : (window.GrokDisplayName ? window.GrokDisplayName(name) : name);
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const cdSecs = resetsAt ? Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)) : 0;
+    const cdText = cdSecs > 0 ? formatDuration(cdSecs) : '--:--';
+    if (resetsAt) State.currentQuotas['grok-' + name] = { timeUntilResetSeconds: cdSecs };
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const card = document.createElement('article');
+    card.className = 'quota-card grok-card';
+    card.dataset.quota = name;
+    card.dataset.provider = 'grok';
+    card.style.animationDelay = (idx * 60) + 'ms';
+    card.innerHTML = `
+      <header class="card-header">
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 2a8 8 0 110 16 8 8 0 010-16zm-1 3v4H7v2h4v4h2v-4h4v-2h-4V7h-2z"/></svg>
+            ${label}
+          </h2>
+        </div>
+        <span class="countdown" id="countdown-grok-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ' style="display:none"'}>${cdText}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="percent-grok-${name}">${pctStr}%</span>
+        <span class="usage-fraction" id="fraction-grok-${name}">utilization</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="progress-grok-${name}" style="width:${pctStr}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="status-grok-${name}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="reset-grok-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ''}>${resetsAt ? formatResetTime(resetsAt) : ''}</span>
+      </footer>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function updateGrokQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  (quotas || []).forEach(q => {
+    const name = q.name || 'credits';
+    const pct = q.utilization || 0;
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(pct);
+    const pctEl = document.getElementById('percent-grok-' + name);
+    if (pctEl) pctEl.textContent = pctStr + '%';
+    const fill = document.getElementById('progress-grok-' + name);
+    if (fill) {
+      fill.style.width = pctStr + '%';
+      fill.dataset.status = status;
+    }
+    const bar = fill ? fill.parentElement : null;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(pct));
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const resetEl = document.getElementById('reset-grok-' + name);
+    if (resetEl) {
+      resetEl.textContent = resetsAt ? formatResetTime(resetsAt) : '';
+      if (resetsAt) resetEl.dataset.resetAt = resetsAt;
+    }
+    const statusEl = document.getElementById('status-grok-' + name);
+    if (statusEl) {
+      const cfg = statusConfig[status] || statusConfig.healthy;
+      statusEl.dataset.status = status;
+      statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${cfg.icon}"/></svg> ${cfg.label}`;
+    }
+    const cd = document.getElementById('countdown-grok-' + name);
+    if (cd && resetsAt) {
+      const secs = Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000));
+      State.currentQuotas['grok-' + name] = { timeUntilResetSeconds: secs };
+      cd.dataset.resetAt = resetsAt;
+      cd.style.display = '';
+      cd.textContent = secs > 0 ? formatDuration(secs) : '--:--';
+    }
+  });
+}
+
+
+// Kimi Code quota renderer (weekly / 5h / total style quotas).
+function kimiDisplayName(name) {
+  const map = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
+  return map[name] || name;
+}
+
+function renderKimiQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  const list = (quotas && quotas.length) ? quotas : [{ name: 'seven_day', utilization: 0, status: 'healthy' }];
+  list.forEach((q, idx) => {
+    const pct = (q.utilization || 0);
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(pct);
+    const name = (q.name || 'seven_day');
+    const label = q.displayName || q.label || kimiDisplayName(name);
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const cdSecs = resetsAt ? Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)) : 0;
+    const cdText = cdSecs > 0 ? formatDuration(cdSecs) : '--:--';
+    if (resetsAt) State.currentQuotas['kimi-' + name] = { timeUntilResetSeconds: cdSecs };
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const card = document.createElement('article');
+    card.className = 'quota-card kimi-card';
+    card.dataset.quota = name;
+    card.dataset.provider = 'kimi';
+    card.style.animationDelay = (idx * 60) + 'ms';
+    card.innerHTML = `
+      <header class="card-header">
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>
+            ${label}
+          </h2>
+        </div>
+        <span class="countdown" id="countdown-kimi-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ' style="display:none"'}>${cdText}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="percent-kimi-${name}">${pctStr}%</span>
+        <span class="usage-fraction" id="fraction-kimi-${name}">utilization</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="progress-kimi-${name}" style="width:${pctStr}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="status-kimi-${name}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="reset-kimi-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ''}>${resetsAt ? formatResetTime(resetsAt) : ''}</span>
+      </footer>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function updateKimiQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  // If count changed, full re-render
+  if ((quotas || []).length !== container.querySelectorAll('.quota-card').length) {
+    renderKimiQuotaCards(quotas, containerId);
+    return;
+  }
+  (quotas || []).forEach(q => {
+    const name = q.name || 'seven_day';
+    const pct = q.utilization || 0;
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(pct);
+    if (!document.getElementById('percent-kimi-' + name)) {
+      renderKimiQuotaCards(quotas, containerId);
+      return;
+    }
+    const pctEl = document.getElementById('percent-kimi-' + name);
+    if (pctEl) pctEl.textContent = pctStr + '%';
+    const fill = document.getElementById('progress-kimi-' + name);
+    if (fill) {
+      fill.style.width = pctStr + '%';
+      fill.dataset.status = status;
+    }
+    const bar = fill ? fill.parentElement : null;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(pct));
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const resetEl = document.getElementById('reset-kimi-' + name);
+    if (resetEl) {
+      resetEl.textContent = resetsAt ? formatResetTime(resetsAt) : '';
+      if (resetsAt) resetEl.dataset.resetAt = resetsAt;
+    }
+    const statusEl = document.getElementById('status-kimi-' + name);
+    if (statusEl) {
+      const cfg = statusConfig[status] || statusConfig.healthy;
+      statusEl.dataset.status = status;
+      statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${cfg.icon}"/></svg> ${cfg.label}`;
+    }
+    const cd = document.getElementById('countdown-kimi-' + name);
+    if (cd && resetsAt) {
+      const secs = Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000));
+      State.currentQuotas['kimi-' + name] = { timeUntilResetSeconds: secs };
+      cd.dataset.resetAt = resetsAt;
+      cd.style.display = '';
+      cd.textContent = secs > 0 ? formatDuration(secs) : '--:--';
+    }
+  });
+}
+
 async function fetchCurrent() {
   const requestProvider = getCurrentProvider();
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
   const requestSeq = (State.currentRequestSeq || 0) + 1;
   State.currentRequestSeq = requestSeq;
+
+  syncAccountsOverviewLayout();
+  if (isAccountsOverviewMode(requestProvider)) {
+    await fetchAccountsOverview(requestProvider, requestSeq);
+    return;
+  }
 
   try {
     if (requestProvider === 'api-integrations') {
@@ -3279,8 +3803,7 @@ async function fetchCurrent() {
         renderAPIIntegrationsHealth();
         renderAPIIntegrationsInsights();
 
-        const lastUpdated = document.getElementById('last-updated');
-        if (lastUpdated) lastUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        setLastUpdated();
         const statusDot = document.getElementById('status-dot');
         if (statusDot) statusDot.classList.remove('stale');
       });
@@ -3348,20 +3871,26 @@ async function fetchCurrent() {
       } else if (provider === 'codex') {
         fetchCodexUsage({ mode: 'codex', data });
       } else if (provider === 'antigravity') {
-        // Antigravity response: { capturedAt: ..., quotas: [...] }
+        // Antigravity response: { capturedAt: ..., quotas: [...], source: 'cli'|'ide' }
         if (data.quotas) {
           const container = document.getElementById('quota-grid-antigravity');
-          if (container && container.children.length === 0) {
+          // The card set (count and ids) changes when the source switches between
+          // IDE groups and CLI buckets, so re-render whenever the ids don't match.
+          const existingIds = container ? [...container.children].map(c => c.dataset.quota).join(',') : '';
+          const incomingIds = data.quotas.map(q => q.modelId).join(',');
+          if (container && (container.children.length === 0 || existingIds !== incomingIds)) {
             renderAntigravityQuotaCards(data.quotas, 'quota-grid-antigravity');
           }
           data.quotas.forEach(q => updateAntigravityCard(q));
+          updateAntigravitySourceBadge(data.source);
         }
       } else if (provider === 'minimax') {
         if (data.quotas) {
           const container = document.getElementById('quota-grid-minimax');
-          if (container && container.children.length !== data.quotas.length) {
-            renderMiniMaxQuotaCards(data.quotas, 'quota-grid-minimax');
-          } else if (container && container.children.length === 0) {
+          // Force a fresh render when leaving the all-accounts overview (the grid
+          // still holds overview cards, whose count can coincidentally match).
+          const hasOverviewCards = container && container.querySelector('.account-overview-card');
+          if (container && (hasOverviewCards || container.children.length !== data.quotas.length || container.children.length === 0)) {
             renderMiniMaxQuotaCards(data.quotas, 'quota-grid-minimax');
           } else {
             data.quotas.forEach(q => updateMiniMaxCard(q));
@@ -3388,6 +3917,24 @@ async function fetchCurrent() {
             updateOpenRouterCard(data.credits);
           }
         }
+      } else if (provider === 'grok') {
+        const container = document.getElementById('quota-grid-grok');
+        if (container) {
+          if (container.children.length === 0) {
+            renderGrokQuotaCards(data.quotas || [], 'quota-grid-grok');
+          } else {
+            updateGrokQuotaCards(data.quotas || [], 'quota-grid-grok');
+          }
+        }
+      } else if (provider === 'kimi') {
+        const container = document.getElementById('quota-grid-kimi');
+        if (container) {
+          if (container.children.length === 0) {
+            renderKimiQuotaCards(data.quotas || [], 'quota-grid-kimi');
+          } else {
+            updateKimiQuotaCards(data.quotas || [], 'quota-grid-kimi');
+          }
+        }
       } else if (provider === 'zai') {
         updateCard('tokensLimit', data.tokensLimit);
         updateCard('timeLimit', data.timeLimit);
@@ -3398,10 +3945,7 @@ async function fetchCurrent() {
         updateCard('toolCalls', data.toolCalls);
       }
 
-      const lastUpdated = document.getElementById('last-updated');
-      if (lastUpdated) {
-        lastUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
-      }
+      setLastUpdated();
 
       const statusDot = document.getElementById('status-dot');
       if (statusDot) statusDot.classList.remove('stale');
@@ -3433,6 +3977,7 @@ async function fetchCodexUsage(options = {}) {
         accounts = Array.isArray(data.accounts) ? data.accounts : [];
       }
       renderCodexAccountSections(accounts);
+      syncCodexAutoStartBadges();
       return;
     }
 
@@ -3469,9 +4014,309 @@ async function fetchCodexUsage(options = {}) {
     }
 
     visibleQuotas.forEach(q => updateCodexCard(q));
+    // Ensure the Auto-start badge matches settings even when cards were rendered
+    // before provider settings loaded (only in-place value updates run after).
+    syncCodexAutoStartBadges();
   } catch (err) {
     // codex usage fetch error - non-critical
   }
+}
+
+
+// ── Multi-account "All accounts" overview (Codex / MiniMax) ──
+
+// Toggle the body class that hides per-account detail sections (insights,
+// sessions, cycles, overview) while the aggregate overview is showing.
+function syncAccountsOverviewLayout() {
+  const on = isAccountsOverviewMode();
+  document.body.classList.toggle('accounts-overview-mode', on);
+  if (!on) {
+    const toggle = document.getElementById('account-window-toggle');
+    if (toggle) toggle.remove();
+  }
+}
+
+// MiniMax quota labels mirror Anthropic's naming: "5h Limit" / "Weekly Limit".
+// Multiple non-general model pools keep the model name to stay unambiguous.
+function minimaxWindowLabel(q) {
+  const isWeekly = q.isWeekly || /^(wkly|weekly)_/.test(q.name || '');
+  const base = isWeekly ? 'Weekly Limit' : '5h Limit';
+  const model = String(q.name || '').replace(/^(wkly|weekly)_/, '');
+  return (model && model !== 'general') ? `${base} (${model})` : base;
+}
+
+// Normalize an account's quotas into compact {label, percent, status, resetAt}
+// rows, keeping only the windows the account actually reports.
+function accountOverviewQuotas(provider, account) {
+  if (provider === 'minimax') {
+    return (account.quotas || []).map(q => ({
+      label: minimaxWindowLabel(q),
+      quotaName: q.name || null,
+      percent: typeof q.usagePercent === 'number' ? q.usagePercent : 0,
+      status: q.status || 'healthy',
+      resetAt: q.resetAt || null,
+    }));
+  }
+  const visible = filterCodexQuotasForPlan(account.quotas || [], account.planType);
+  return visible.map(q => ({
+    label: q.displayName || codexDisplayNames[q.name] || q.name,
+    quotaName: q.name,
+    percent: typeof q.cardPercent === 'number' ? q.cardPercent : (q.utilization || 0),
+    status: q.status || 'healthy',
+    resetAt: q.resetsAt || null,
+  }));
+}
+
+// Build the HTML for a single compact account summary card.
+function accountOverviewCardHTML(provider, account, idx) {
+  const accountId = account.accountId || account.id || idx + 1;
+  const accountName = account.accountName || account.name || `Account ${accountId}`;
+  const badge = provider === 'codex' && account.planType ? formatCodexPlan(account.planType) : '';
+  const rows = accountOverviewQuotas(provider, account);
+  const quotaHTML = rows.length === 0
+    ? '<p class="empty-state">No quota data yet.</p>'
+    : rows.map(r => {
+        const pct = Math.max(0, Math.min(100, r.percent)).toFixed(1);
+        const reset = r.resetAt ? formatResetTime(r.resetAt) : '';
+        // Surface the Auto-start indicator for Codex windows here too, so the
+        // multi-account overview (the default Codex tab) shows it.
+        const startBadge = provider === 'codex' ? codexAutoStartBadge(r.quotaName) : '';
+        return `<div class="account-overview-quota" data-quota="${escapeHTML(r.quotaName || '')}">
+          <div class="aoq-top">
+            <span class="aoq-label">${escapeHTML(r.label)}${startBadge}</span>
+            <span class="aoq-pct">${pct}%</span>
+          </div>
+          <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(r.percent)}" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-fill" style="width: ${pct}%" data-status="${r.status}"></div>
+          </div>
+          ${reset ? `<div class="aoq-reset" data-reset-at="${r.resetAt}">${reset}</div>` : ''}
+        </div>`;
+      }).join('');
+
+  return `<article class="account-overview-card" data-account-id="${accountId}" data-provider="${provider}" role="button" tabindex="0" aria-label="Open ${escapeHTML(accountName)} details">
+    <header class="account-overview-header">
+      <span class="account-overview-name">${escapeHTML(accountName)}</span>
+      ${badge ? `<span class="account-overview-badge">${escapeHTML(badge)}</span>` : ''}
+    </header>
+    <div class="account-overview-quotas">${quotaHTML}</div>
+    <span class="account-overview-cta">View details &rarr;</span>
+  </article>`;
+}
+
+// Build one compact, clickable summary card per account in the provider grid.
+function renderAccountsOverview(provider, accounts) {
+  const container = document.getElementById(`quota-grid-${provider}`);
+  if (!container) return;
+
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    container.innerHTML = '<p class="empty-state">No account usage found yet.</p>';
+    return;
+  }
+
+  container.innerHTML = accounts.map((account, idx) => accountOverviewCardHTML(provider, account, idx)).join('');
+
+  const drill = (accountId) => {
+    if (provider === 'minimax') switchMiniMaxAccount(accountId);
+    else switchCodexProfile(accountId);
+  };
+  container.querySelectorAll('.account-overview-card').forEach(card => {
+    const accountId = parseInt(card.dataset.accountId, 10);
+    card.addEventListener('click', () => drill(accountId));
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); drill(accountId); }
+    });
+  });
+}
+
+// Fetch all accounts for a provider and render the overview cards.
+async function fetchAccountsOverview(provider, requestSeq) {
+  const endpoint = provider === 'minimax'
+    ? `${API_BASE}/api/minimax/accounts/usage`
+    : `${API_BASE}/api/codex/accounts/usage`;
+  try {
+    const res = await authFetch(endpoint);
+    if (!res.ok) throw new Error('Failed to fetch account usage');
+    const data = await res.json();
+    const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+
+    requestAnimationFrame(() => {
+      if (State.currentRequestSeq !== requestSeq) return;
+      if (getCurrentProvider() !== provider) return;
+      if (!isAccountsOverviewMode(provider)) return;
+      State.accountsOverview = { provider, accounts };
+      renderAccountsOverview(provider, accounts);
+      setLastUpdated();
+      const statusDot = document.getElementById('status-dot');
+      if (statusDot) statusDot.classList.remove('stale');
+    });
+  } catch (err) {
+    if (State.currentRequestSeq !== requestSeq) return;
+    const statusDot = document.getElementById('status-dot');
+    if (statusDot) statusDot.classList.add('stale');
+  }
+}
+
+// The accounts to combine for the overview tables/chart: prefer the loaded
+// usage payload, fall back to the dropdown account lists.
+function overviewAccounts(provider) {
+  if (State.accountsOverview && State.accountsOverview.provider === provider && State.accountsOverview.accounts.length) {
+    return State.accountsOverview.accounts.map(a => ({ id: a.accountId || a.id, name: a.accountName || a.name }));
+  }
+  if (provider === 'minimax') return (State.minimaxAccounts || []).map(a => ({ id: a.id, name: a.name }));
+  return (State.codexProfiles || []).map(p => ({ id: p.id, name: p.name }));
+}
+
+// Distinct colors for account lines on the multi-account chart.
+function multiAccountPalette() {
+  // A fixed set of visually distinct colors. (Deliberately not derived from the
+  // chart CSS tokens + fallback, which overlapped and produced repeated colors.)
+  return ['#0D9488', '#F59E0B', '#3B82F6', '#A855F7', '#EF4444', '#10B981', '#EC4899', '#6366F1', '#F97316', '#06B6D4'];
+}
+
+// Build the selectable graph windows (e.g. 5-Hour / Weekly) and a per-window
+// extractor that pulls one numeric value per history entry for an account.
+function buildOverviewWindows(provider, accounts) {
+  if (provider === 'minimax') {
+    const hasWeekly = accounts.some(a => (a.quotas || []).some(q => q.isWeekly || /^weekly_/.test(q.name || '')));
+    const maxOver = (entry, match) => {
+      let max = null;
+      for (const k of Object.keys(entry)) {
+        if (k === 'capturedAt' || !match(k)) continue;
+        const v = entry[k];
+        if (typeof v === 'number' && (max == null || v > max)) max = v;
+      }
+      return max;
+    };
+    const windows = [{ key: '5h', label: '5h Limit', extract: (d) => maxOver(d, k => !k.startsWith('Wkly ')) }];
+    if (hasWeekly) windows.push({ key: 'weekly', label: 'Weekly Limit', extract: (d) => maxOver(d, k => k.startsWith('Wkly ')) });
+    return windows;
+  }
+  // Codex: one window per distinct quota name across accounts. History entries
+  // are keyed by the same normalized quota name.
+  const seen = new Map();
+  for (const a of accounts) {
+    for (const q of filterCodexQuotasForPlan(a.quotas || [], a.planType)) {
+      if (!seen.has(q.name)) seen.set(q.name, q.displayName || codexDisplayNames[q.name] || q.name);
+    }
+  }
+  return [...seen.entries()].map(([key, label]) => ({ key, label, extract: (d) => (typeof d[key] === 'number' ? d[key] : null) }));
+}
+
+// Dash patterns to distinguish quota windows of the same account on one chart.
+const overviewWindowDashes = [[], [6, 4], [2, 3], [8, 3, 2, 3]];
+
+// Draw a single chart with one line per (account × quota window), Anthropic-style
+// - every account's 5-Hour and Weekly limits are shown together, no toggle.
+async function renderMultiAccountChart(provider, range, requestSeq) {
+  const overview = State.accountsOverview && State.accountsOverview.provider === provider
+    ? State.accountsOverview : null;
+  let accounts = overview ? overview.accounts : [];
+  // The cards fetch (fetchAccountsOverview) and this chart run concurrently in
+  // refreshAll, so the account list may not be cached yet on first load.
+  if (accounts.length === 0) {
+    const endpoint = provider === 'minimax'
+      ? `${API_BASE}/api/minimax/accounts/usage`
+      : `${API_BASE}/api/codex/accounts/usage`;
+    try {
+      const res = await authFetch(endpoint);
+      if (res.ok) {
+        const d = await res.json();
+        accounts = Array.isArray(d.accounts) ? d.accounts : [];
+        if (accounts.length) State.accountsOverview = { provider, accounts };
+      }
+    } catch (e) { /* chart stays empty on failure */ }
+  }
+  const windows = buildOverviewWindows(provider, accounts);
+  if (windows.length === 0 || accounts.length === 0) return;
+
+  const histories = await Promise.all(accounts.map(async (acc) => {
+    const accId = acc.accountId || acc.id;
+    try {
+      const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=${provider}&account=${encodeURIComponent(accId)}`);
+      if (!res.ok) return { acc, data: [] };
+      const data = await res.json();
+      return { acc, data: Array.isArray(data) ? data : [] };
+    } catch (e) {
+      return { acc, data: [] };
+    }
+  }));
+
+  if (State.historyRequestSeq !== requestSeq) return;
+  if (!isAccountsOverviewMode(provider)) return;
+
+  const ctx = document.getElementById('usage-chart');
+  if (!ctx || typeof Chart === 'undefined') return;
+  if (State.chart) { State.chart.destroy(); State.chart = null; }
+  Chart.register(crosshairPlugin);
+
+  const colors = getThemeColors();
+  const palette = multiAccountPalette();
+  // One line per (account, window). Each line gets a distinct color so
+  // same-account lines are easy to tell apart; dash style still hints the window.
+  const datasets = [];
+  let colorIdx = 0;
+  histories.forEach((h) => {
+    const accName = h.acc.accountName || h.acc.name || `Account ${h.acc.accountId || h.acc.id}`;
+    windows.forEach((win, w) => {
+      const points = h.data
+        .map(d => ({ x: new Date(d.capturedAt), y: win.extract(d) }))
+        .filter(p => p.y != null);
+      if (points.length === 0) return; // account doesn't have this window
+      const color = palette[colorIdx++ % palette.length];
+      datasets.push({
+        label: windows.length > 1 ? `${accName} · ${win.label}` : accName,
+        data: points,
+        borderColor: color,
+        backgroundColor: 'transparent',
+        borderDash: overviewWindowDashes[w % overviewWindowDashes.length],
+        fill: false,
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      });
+    });
+  });
+
+  const rangeKey = String(range).toLowerCase();
+  const timeUnit = ['7d', '30d', '15d'].includes(rangeKey) ? 'day' : 'hour';
+
+  State.chart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: colors.text, usePointStyle: true, boxWidth: 8 } },
+        tooltip: {
+          mode: 'index', intersect: false,
+          backgroundColor: colors.surfaceContainer || '#1E1E1E',
+          titleColor: colors.onSurface || '#E6E1E5',
+          bodyColor: colors.text || '#CAC4D0',
+          borderColor: colors.outline || '#938F99',
+          borderWidth: 1, padding: 12, usePointStyle: true,
+          callbacks: {
+            label: (c) => c.parsed.y == null ? null : `${c.dataset.label}: ${c.parsed.y.toFixed(1)}%`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: timeUnit, displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'MMM d' } },
+          grid: { color: colors.grid, drawBorder: false },
+          ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' },
+        },
+        y: {
+          min: 0, max: 100,
+          grid: { color: colors.grid, drawBorder: false },
+          ticks: { color: colors.text, callback: (v) => `${v}%` },
+        },
+      },
+    },
+  });
 }
 
 
@@ -3560,6 +4405,8 @@ async function fetchDeepInsights() {
     renderAPIIntegrationsInsights();
     return;
   }
+  // Per-account insights don't apply to the aggregate all-accounts overview.
+  if (isAccountsOverviewMode(provider)) return;
   const requestProvider = provider;
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
   const requestRange = State.insightsRange;
@@ -4086,6 +4933,10 @@ function initChart() {
     defaultDatasets = []; // Cursor datasets are dynamic - populated when history data arrives
   } else if (provider === 'openrouter') {
     defaultDatasets = []; // OpenRouter datasets are dynamic - populated when history data arrives
+  } else if (provider === 'grok') {
+    defaultDatasets = []; // Grok datasets are dynamic - populated when history data arrives
+  } else if (provider === 'kimi') {
+    defaultDatasets = []; // Kimi datasets are dynamic - populated when history data arrives
   } else if (provider === 'zai') {
     defaultDatasets = [
       { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
@@ -4108,6 +4959,10 @@ function initChart() {
     : provider === 'cursor'
       ? []
     : provider === 'openrouter'
+      ? []
+    : provider === 'grok'
+      ? []
+    : provider === 'kimi'
       ? []
     : provider === 'api-integrations'
       ? []
@@ -4253,6 +5108,11 @@ async function fetchHistory(range) {
   const requestRange = range;
   const requestSeq = (State.historyRequestSeq || 0) + 1;
   State.historyRequestSeq = requestSeq;
+
+  if (isAccountsOverviewMode(requestProvider)) {
+    await renderMultiAccountChart(requestProvider, range, requestSeq);
+    return;
+  }
 
   try {
     if (requestProvider === 'api-integrations') {
@@ -4571,6 +5431,68 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'grok') {
+      // Grok history: array of { capturedAt, credits: <utilization%> }
+      const grokColors = { credits: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' } };
+      const grokDisplay = { credits: 'Credits' };
+      const quotaKeys = new Set();
+      historyRows.forEach(d => { Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); }); });
+      const datasets = [];
+      [...quotaKeys].sort().forEach((key) => {
+        const color = grokColors[key] || { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' };
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        datasets.push({
+          label: grokDisplay[key] || key,
+          data: data,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key), spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
+        });
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
+    if (provider === 'kimi') {
+      // Kimi history: array of { capturedAt, seven_day, 5h, ... }
+      const kimiColors = {
+        weekly: { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },
+        '5h': { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
+        total: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+      };
+      const kimiDisplay = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
+      const quotaKeys = new Set();
+      historyRows.forEach(d => { Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); }); });
+      const datasets = [];
+      [...quotaKeys].sort().forEach((key) => {
+        const color = kimiColors[key] || { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' };
+        const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        datasets.push({
+          label: kimiDisplay[key] || key,
+          data: data,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4,
+          hidden: State.hiddenQuotas.has(key), spanGaps: true,
+          segment: getSegmentStyle(gapSegments, color.border)
+        });
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
+
     if (provider === 'codex') {
       // Codex history: array of { capturedAt, five_hour, seven_day, ... }
       const quotaKeys = new Set();
@@ -4656,6 +5578,8 @@ const bothProviderNames = {
   minimax: 'MiniMax',
   gemini: 'Gemini',
   cursor: 'Cursor',
+  grok: 'Grok',
+  kimi: 'Kimi Code',
   'api-integrations': 'API Integrations',
 };
 
@@ -4794,7 +5718,7 @@ function normalizeBothQuotas(provider, payload) {
       cardLabel: quota.cardLabel || 'Utilization',
       status: quota.status || 'healthy',
       timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
-      resetsAt: quota.resetsAt || quota.renewsAt || '',
+      resetsAt: quota.resetsAt || quota.renewsAt || quota.resets_at || quota.resetAt || '',
     };
   });
 }
@@ -4878,6 +5802,21 @@ function buildAllProviderEntries() {
       const insightAccounts = Array.isArray(insights.codexAccounts) ? insights.codexAccounts : [];
       const historyAccounts = Array.isArray(history.codexAccounts) ? history.codexAccounts : [];
 
+      // Multiple accounts: group into one compact card instead of N stacked cards.
+      if (currentAccounts.length > 1) {
+        const groupAccounts = currentAccounts.filter((acc, idx) =>
+          isProviderTelemetryEnabled('codex', acc.accountId || acc.id || idx + 1));
+        if (groupAccounts.length === 0) return;
+        entries.push({
+          provider: 'codex',
+          cardKey: sanitizeProviderCardKey('codex'),
+          title: 'Codex',
+          badge: `${groupAccounts.length} accounts`,
+          accountsGroup: groupAccounts,
+        });
+        return;
+      }
+
       currentAccounts.forEach((account, idx) => {
         const accountID = account.accountId || account.id || idx + 1;
         if (!isProviderTelemetryEnabled('codex', accountID)) return;
@@ -4924,6 +5863,21 @@ function buildAllProviderEntries() {
           quotas: normalizeBothQuotas('minimax', payload),
           insights: insights.minimax || { stats: [], insights: [] },
           historyRows: Array.isArray(history.minimax) ? history.minimax : [],
+        });
+        return;
+      }
+
+      // Multiple accounts: group into one compact card.
+      if (currentAccounts.length > 1) {
+        const groupAccounts = currentAccounts.filter((acc, idx) =>
+          isProviderTelemetryEnabled('minimax', acc.accountId || acc.id || idx + 1));
+        if (groupAccounts.length === 0) return;
+        entries.push({
+          provider: 'minimax',
+          cardKey: sanitizeProviderCardKey('minimax'),
+          title: bothProviderNames.minimax || 'MiniMax',
+          badge: `${groupAccounts.length} accounts`,
+          accountsGroup: groupAccounts,
         });
         return;
       }
@@ -4976,7 +5930,7 @@ function buildAllProviderEntries() {
   return entries;
 }
 
-function renderProviderKPIHTML(quotas) {
+function renderProviderKPIHTML(quotas, provider) {
   if (!Array.isArray(quotas) || quotas.length === 0) {
     return '<p class="insight-text">No KPI data available yet.</p>';
   }
@@ -4993,7 +5947,8 @@ function renderProviderKPIHTML(quotas) {
     const icon = anthropicQuotaIcons[quota.name]
       || quotaIcons[quota.name]
       || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
-    const resetText = quota.resetsAt ? `Resets: ${formatDateTime(quota.resetsAt)}` : '';
+    const resetText = quota.resetsAt ? formatResetTime(quota.resetsAt) : '';
+    const resetAttr = quota.resetsAt ? ` data-reset-at="${escapeHTML(quota.resetsAt)}"` : '';
     const countdown = quota.timeUntilResetSeconds > 0 ? formatDuration(quota.timeUntilResetSeconds) : '--:--';
 
     return `<article class="quota-card provider-kpi-card" data-quota="${escapeHTML(quota.name || '')}">
@@ -5002,6 +5957,7 @@ function renderProviderKPIHTML(quotas) {
           <h2 class="quota-title">
             <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
             ${escapeHTML(displayName)}
+            ${provider === 'codex' ? codexAutoStartBadge(quota.name) : ''}
           </h2>
           ${subtitle ? `<div class="quota-subtitle">${escapeHTML(subtitle)}</div>` : ''}
         </div>
@@ -5021,7 +5977,7 @@ function renderProviderKPIHTML(quotas) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time">${escapeHTML(resetText)}</span>
+        <span class="reset-time"${resetAttr}>${escapeHTML(resetText)}</span>
       </footer>
     </article>`;
   }).join('');
@@ -5537,6 +6493,23 @@ function buildProviderCardDatasets(provider, rows, range) {
     const dsFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
     return buildDynamicDatasetsForRows(rows, range, dsDisplayNames, dsColors, dsFallback, 'deepseek');
   }
+  if (provider === 'grok') {
+    const grokDisplay = { credits: 'Credits' };
+    const grokColors = { credits: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' } };
+    const grokFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+    return buildDynamicDatasetsForRows(rows, range, grokDisplay, grokColors, grokFallback, 'grok');
+  }
+  if (provider === 'kimi') {
+    const kimiDisplay = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
+    const kimiColors = {
+      seven_day: { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },
+      weekly: { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },
+      '5h': { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
+      total: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+    };
+    const kimiFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
+    return buildDynamicDatasetsForRows(rows, range, kimiDisplay, kimiColors, kimiFallback, 'kimi');
+  }
   return [];
 }
 
@@ -5577,8 +6550,7 @@ function renderAllProvidersView() {
     if (entry.summaryOnly) {
       return renderAPIIntegrationsSummaryCard(entry, collapsed);
     }
-    return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
-      <header class="provider-card-header">
+    const cardHeader = `<header class="provider-card-header">
         <div class="provider-card-title">
           <span>${escapeHTML(entry.title)}</span>
           ${badge}${promo}
@@ -5588,9 +6560,22 @@ function renderAllProvidersView() {
             <path d="m9 6 6 6-6 6"/>
           </svg>
         </button>
-      </header>
+      </header>`;
+    if (Array.isArray(entry.accountsGroup)) {
+      const cards = entry.accountsGroup
+        .map((account, idx) => accountOverviewCardHTML(entry.provider, account, idx))
+        .join('');
+      return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
+      ${cardHeader}
       <div class="provider-card-body">
-        <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas)}</div>
+        <div class="accounts-overview-grid">${cards}</div>
+      </div>
+    </section>`;
+    }
+    return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
+      ${cardHeader}
+      <div class="provider-card-body">
+        <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas, entry.provider)}</div>
         ${(() => {
           const insightsHTML = renderProviderInsightsHTML(entry.provider, entry.insights);
           return insightsHTML ? `<div class="provider-insights">${insightsHTML}</div>` : '';
@@ -5599,6 +6584,23 @@ function renderAllProvidersView() {
       </div>
     </section>`;
   }).join('');
+
+  // Grouped multi-account cards in the All view navigate to the provider tab,
+  // pinning the clicked account as the active selection.
+  container.querySelectorAll('.accounts-overview-grid .account-overview-card').forEach((card) => {
+    const provider = card.dataset.provider;
+    const accountId = parseInt(card.dataset.accountId, 10);
+    const go = () => {
+      if (provider === 'minimax') saveMiniMaxAccount(accountId);
+      else saveCodexAccount(accountId);
+      saveDefaultProvider(provider);
+      window.location.href = `${BASE_PATH}/?provider=${provider}`;
+    };
+    card.addEventListener('click', go);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+    });
+  });
 
   container.querySelectorAll('.provider-card-collapse-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -5977,7 +6979,50 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi']);
+
+  // All-accounts overview: fetch each account's logging history and merge,
+  // tagging every row with its account name for the combined table.
+  if (isAccountsOverviewMode(provider)) {
+    const rangeDays = Math.min(30, Math.max(1, Math.ceil(State.cyclesRange / (24 * 60 * 60 * 1000))));
+    const dynamicLimit = Math.min(50000, rangeDays * 24 * 60);
+    const accounts = overviewAccounts(provider);
+    const results = await Promise.all(accounts.map(async (acc) => {
+      const url = `/api/logging-history?provider=${provider}&limit=${dynamicLimit}&range=${rangeDays}&account=${encodeURIComponent(acc.id)}`;
+      try {
+        const r = await authFetch(url);
+        if (!r.ok) return { acc, logs: [], quotaNames: [] };
+        const d = await r.json();
+        return { acc, logs: d.logs || [], quotaNames: d.quotaNames || [] };
+      } catch (e) {
+        return { acc, logs: [], quotaNames: [] };
+      }
+    }));
+    if (State.cyclesRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (!isAccountsOverviewMode(provider)) return;
+    if (State.cyclesRange !== requestRange) return;
+    const qn = new Set();
+    const merged = [];
+    results.forEach(({ acc, logs, quotaNames }) => {
+      quotaNames.forEach(n => qn.add(n));
+      logs.forEach(log => merged.push({
+        cycleId: log.id,
+        cycleStart: log.capturedAt,
+        cycleEnd: log.capturedAt,
+        totalDelta: 0,
+        crossQuotas: log.crossQuotas || [],
+        _account: acc.name,
+      }));
+    });
+    merged.sort((a, b) => new Date(b.cycleStart).getTime() - new Date(a.cycleStart).getTime());
+    State.allCyclesData = merged;
+    State.cyclesQuotaNames = [...qn];
+    State.cyclesPage = 1;
+    State.isLoggingHistory = true;
+    renderCyclesTable();
+    return;
+  }
 
   if (loggingHistoryProviders.has(provider)) {
     // Convert range from ms to days (min 1, max 30)
@@ -6051,12 +7096,15 @@ function aggregateCyclesByBucket(rows, bucketMinutes) {
     const bucketISO = bucketStartISO(row.cycleStart, bucketMinutes);
     if (!bucketISO) continue;
 
-    if (!grouped.has(bucketISO)) {
-      grouped.set(bucketISO, {
+    // Keep accounts separate when combining the all-accounts overview.
+    const groupKey = `${row._account || ''}|${bucketISO}`;
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, {
         cycleId: row.cycleId,
         cycleStart: bucketISO,
         cycleEnd: row.cycleEnd || null,
         totalDelta: typeof row.totalDelta === 'number' ? row.totalDelta : 0,
+        _account: row._account,
         crossQuotas: Array.isArray(row.crossQuotas)
           ? row.crossQuotas.map(cq => ({
               name: cq.name,
@@ -6071,7 +7119,7 @@ function aggregateCyclesByBucket(rows, bucketMinutes) {
       continue;
     }
 
-    const agg = grouped.get(bucketISO);
+    const agg = grouped.get(groupKey);
     if (agg.cycleEnd == null) {
       if (row.cycleEnd != null) {
         agg.cycleEnd = row.cycleEnd;
@@ -6125,9 +7173,11 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'moonshot' || provider === 'deepseek';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'grok' || provider === 'kimi' || provider === 'moonshot' || provider === 'deepseek';
   const deltaUsesPercent = usePercent && provider !== 'minimax' && provider !== 'moonshot' && provider !== 'deepseek';
   const isLoggingHistory = State.isLoggingHistory === true;
+  const showAccount = isAccountsOverviewMode(provider);
+  const accountTh = showAccount ? '<th data-sort-key="account" role="button" tabindex="0">Account <span class="sort-arrow"></span></th>' : '';
 
   // Build dynamic header
   let headerHtml;
@@ -6135,12 +7185,14 @@ function renderCyclesTable() {
     // Logging history: simpler header with # and Time
     headerHtml = `
       <tr>
+        ${accountTh}
         <th data-sort-key="id" role="button" tabindex="0"># <span class="sort-arrow"></span></th>
         <th data-sort-key="start" role="button" tabindex="0">Time <span class="sort-arrow"></span></th>`;
   } else {
     // Cycle-based: full header with Start, End, Duration, Total Δ
     headerHtml = `
       <tr>
+        ${accountTh}
         <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
         <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
         <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
@@ -6219,6 +7271,7 @@ function renderCyclesTable() {
         vb = b.cycleEnd ? new Date(b.cycleEnd) - new Date(b.cycleStart) : 0;
       }
       else if (key === 'totalDelta') { va = a.totalDelta; vb = b.totalDelta; }
+      else if (key === 'account') { va = a._account || ''; vb = b._account || ''; }
       else if (key.startsWith('cq_')) {
         const qn = key.slice(3);
         va = getCrossQuotaPercent(a, qn);
@@ -6251,7 +7304,7 @@ function renderCyclesTable() {
     return valStr;
   };
 
-  const colCount = isLoggingHistory ? (2 + quotaNames.length) : (5 + quotaNames.length);
+  const colCount = (showAccount ? 1 : 0) + (isLoggingHistory ? (2 + quotaNames.length) : (5 + quotaNames.length));
 
   if (pageData.length === 0) {
     const emptyMsg = isLoggingHistory
@@ -6266,10 +7319,12 @@ function renderCyclesTable() {
       const endDate = end ? new Date(end) : null;
       const suffix = deltaUsesPercent ? '%' : '';
 
+      const accountTd = showAccount ? `<td>${escapeHTML(row._account || '')}</td>` : '';
       let html;
       if (isLoggingHistory) {
         // Logging history: simpler row with # and Time
         html = `<tr>
+          ${accountTd}
           <td>${row.cycleId}</td>
           <td>${start ? formatDateTime(start) : '--'}</td>`;
       } else {
@@ -6297,6 +7352,7 @@ function renderCyclesTable() {
         }
 
         html = `<tr>
+          ${accountTd}
           <td>${cycleLabel}</td>
           <td>${start ? formatDateTime(start) : '--'}</td>
           <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>
@@ -7406,6 +8462,37 @@ async function fetchCycleOverview() {
   const requestSeq = (State.overviewRequestSeq || 0) + 1;
   State.overviewRequestSeq = requestSeq;
 
+  // All-accounts overview: merge each account's cycle overview, tagged by account.
+  if (isAccountsOverviewMode(provider)) {
+    const accounts = overviewAccounts(provider);
+    const results = await Promise.all(accounts.map(async (acc) => {
+      const url = `/api/cycle-overview?provider=${provider}&groupBy=${requestGroupBy}&limit=50&account=${encodeURIComponent(acc.id)}`;
+      try {
+        const r = await authFetch(url);
+        if (!r.ok) return { acc, cycles: [], quotaNames: [] };
+        const d = await r.json();
+        return { acc, cycles: d.cycles || [], quotaNames: d.quotaNames || [] };
+      } catch (e) {
+        return { acc, cycles: [], quotaNames: [] };
+      }
+    }));
+    if (State.overviewRequestSeq !== requestSeq) return;
+    if (getCurrentProvider() !== requestProvider) return;
+    if (!isAccountsOverviewMode(provider)) return;
+    if (State.overviewGroupBy !== requestGroupBy) return;
+    const qn = new Set();
+    const merged = [];
+    results.forEach(({ acc, cycles, quotaNames }) => {
+      quotaNames.forEach(n => qn.add(n));
+      cycles.forEach(c => merged.push({ ...c, _account: acc.name }));
+    });
+    merged.sort((a, b) => new Date(b.cycleStart).getTime() - new Date(a.cycleStart).getTime());
+    State.allOverviewData = merged;
+    State.overviewQuotaNames = [...qn];
+    renderOverviewTable();
+    return;
+  }
+
   let url;
   if (provider === 'both') {
     // Determine which provider this groupBy belongs to
@@ -7448,17 +8535,26 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok' || overviewProv === 'kimi';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
+  // MiniMax reports a percentage-based quota; the Duration and Total Delta
+  // columns add no signal there, so omit them for this provider.
+  const showDurationDelta = overviewProv !== 'minimax';
+  const showAccount = isAccountsOverviewMode(getCurrentProvider());
+  const accountTh = showAccount ? '<th data-sort-key="account" role="button" tabindex="0">Account <span class="sort-arrow"></span></th>' : '';
 
   // Build dynamic header
   let headerHtml = `
     <tr>
+      ${accountTh}
       <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
       <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
-      <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
+      <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>`;
+  if (showDurationDelta) {
+    headerHtml += `
       <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
       <th data-sort-key="totalDelta" role="button" tabindex="0">Total Delta${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
+  }
 
   quotaNames.forEach(qn => {
     const isPrimary = qn === State.overviewGroupBy;
@@ -7495,6 +8591,7 @@ function renderOverviewTable() {
         vb = b.cycleEnd ? new Date(b.cycleEnd) - new Date(b.cycleStart) : 0;
       }
       else if (key === 'totalDelta') { va = a.totalDelta; vb = b.totalDelta; }
+      else if (key === 'account') { va = a._account || ''; vb = b._account || ''; }
       else if (key.startsWith('cq_')) {
         const qn = key.slice(3);
         va = getCrossQuotaPercent(a, qn);
@@ -7528,7 +8625,7 @@ function renderOverviewTable() {
   };
 
   if (pageData.length === 0) {
-    const colCount = 5 + quotaNames.length;
+    const colCount = (showAccount ? 1 : 0) + (showDurationDelta ? 5 : 3) + quotaNames.length;
     const emptyMsg = overviewProv === 'cursor'
       ? 'No completed monthly billing cycles found for this quota yet.'
       : 'No completed cycles found for this period.';
@@ -7547,13 +8644,18 @@ function renderOverviewTable() {
       // For active cycles (no end, or cycleId is -1 or 'active'), show "Active" badge
       const isActive = !end || row.cycleId === -1 || row.cycleId === 'active';
       const cycleLabel = isActive ? '<span class="badge">Active</span>' : `${row.cycleId}`;
+      const accountTd = showAccount ? `<td>${escapeHTML(row._account || '')}</td>` : '';
 
       let html = `<tr>
+        ${accountTd}
         <td>${cycleLabel}</td>
         <td>${start ? formatDateTime(start) : '--'}</td>
-        <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>
+        <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>`;
+      if (showDurationDelta) {
+        html += `
         <td>${duration}</td>
         <td>${fmtOverviewWithRate(row.totalDelta, durationHrs, suffix)}</td>`;
+      }
 
       quotaNames.forEach(qn => {
         const pct = getCrossQuotaPercent(row, qn);
@@ -7903,6 +9005,7 @@ function isSettingsPage() {
 async function initSettingsPage() {
   setupSettingsTabs();
   await setupMenubarSettings();
+  populateTimezoneSelect();
   await loadSettings();
   setupSettingsSave();
   setupProviderReload();
@@ -7912,7 +9015,6 @@ async function initSettingsPage() {
   setupSettingsPassword();
   setupThresholdSliders();
   setupOverrides();
-  populateTimezoneSelect();
 }
 
 function activateSettingsTab(tabName) {
@@ -7998,7 +9100,19 @@ async function loadSettings() {
 
     // Timezone
     const tzSelect = document.getElementById('settings-timezone');
-    if (tzSelect && data.timezone) { tzSelect.value = data.timezone; }
+    if (tzSelect) {
+      const savedTimezone = normalizeTz(data.timezone || '');
+      ensureTimezoneOption(tzSelect, savedTimezone);
+      tzSelect.value = savedTimezone;
+      activeTimezone = savedTimezone;
+      updateBrowserDefaultTimezoneText();
+    }
+
+    // Auto refresh OAuth tokens (default on)
+    const autoRefresh = document.getElementById('settings-auto-refresh-tokens');
+    if (autoRefresh) {
+      autoRefresh.checked = data.auto_refresh_tokens !== false;
+    }
 
     // SMTP
     if (data.smtp) {
@@ -8051,8 +9165,24 @@ async function loadSettings() {
     State.providerSettings = data.provider_settings || {};
     State.apiIntegrationsVisibility = data.api_integrations_visibility || { dashboard: true };
 
+    // Global display mode (persisted under provider_settings.global.display_mode)
+    const displayModeSelect = document.getElementById('settings-display-mode');
+    if (displayModeSelect) {
+      const globalSettings = State.providerSettings.global || {};
+      displayModeSelect.value = (globalSettings.display_mode === 'available') ? 'available' : 'usage';
+    }
+
+    // Dashboard tab order + custom labels
+    State.dashboardProvidersOrder = Array.isArray(data.dashboard_providers_order)
+      ? data.dashboard_providers_order.slice()
+      : [];
+    State.dashboardProviderLabels = (data.dashboard_provider_labels && typeof data.dashboard_provider_labels === 'object')
+      ? { ...data.dashboard_provider_labels }
+      : {};
+
     // Provider visibility + dynamic provider status
     await populateProviderToggles(data.provider_visibility || {});
+    await populateDashboardTabOrder();
     await populateMenubarSettings(data.menubar || {});
   } catch (e) {
     // Settings load failed silently
@@ -8095,16 +9225,38 @@ function setVal(id, val) {
   if (el && val !== undefined && val !== null) el.value = val;
 }
 
+function updateBrowserDefaultTimezoneText() {
+  const browserTz = getBrowserTimezone();
+  const select = document.getElementById('settings-timezone');
+  const defaultOption = select?.querySelector('option[value=""]');
+  if (defaultOption) defaultOption.textContent = `Browser Default (${browserTz})`;
+  const hint = document.getElementById('settings-timezone-hint');
+  if (hint) {
+    hint.textContent = `Affects dashboard times. Browser Default currently resolves to ${browserTz}.`;
+  }
+}
+
+function ensureTimezoneOption(select, timezone) {
+  if (!select || !timezone) return;
+  if ([...select.options].some(opt => opt.value === timezone)) return;
+  const opt = document.createElement('option');
+  opt.value = timezone;
+  opt.textContent = timezone.replace(/_/g, ' ');
+  select.appendChild(opt);
+}
+
 function populateTimezoneSelect() {
   const select = document.getElementById('settings-timezone');
   if (!select) return;
+  updateBrowserDefaultTimezoneText();
   const zones = [
     'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
     'America/Sao_Paulo', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
     'Asia/Dubai', 'Asia/Kolkata', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul',
     'Australia/Sydney', 'Pacific/Auckland'
   ];
-  zones.forEach(tz => {
+  zones.map(normalizeTz).forEach(tz => {
+    if ([...select.options].some(opt => opt.value === tz)) return;
     const opt = document.createElement('option');
     opt.value = tz;
     opt.textContent = tz.replace(/_/g, ' ');
@@ -8440,14 +9592,19 @@ async function fetchMenubarProviders() {
     if (res.ok) {
       const data = await res.json();
       const profiles = Array.isArray(data.profiles) ? data.profiles : [];
-      if (profiles.length > 1) {
+      // Always use account-scoped keys (codex:1) so settings match menubar card
+      // IDs. A bare "codex" key used to drop single-account Codex after save
+      // (visible_providers filter is exact-match against "codex:N" cards).
+      if (profiles.length >= 1) {
         profiles.forEach(profile => {
           const key = `codex:${profile.id}`;
           items.push({
             key,
-            name: `Codex - ${escapeHtml(profile.name)}`,
-            meta: 'Per-account Codex usage',
-            dashboardVisible: true,
+            name: profiles.length > 1 ? `Codex - ${escapeHtml(profile.name)}` : (codexStatus?.name || 'Codex'),
+            meta: profiles.length > 1
+              ? 'Per-account Codex usage'
+              : `${codexStatus?.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${codexStatus?.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+            dashboardVisible: codexStatus ? codexStatus.dashboardVisible !== false : true,
           });
         });
         return items;
@@ -8458,6 +9615,8 @@ async function fetchMenubarProviders() {
   }
 
   if (codexStatus) {
+    // Last resort when profiles API is unavailable; backend also accepts bare
+    // "codex" as matching any codex:N card.
     items.push({
       key: 'codex',
       name: codexStatus.name || 'Codex',
@@ -8467,6 +9626,296 @@ async function fetchMenubarProviders() {
   }
 
   return items;
+}
+
+// Built-in dashboard tab titles (must match server defaultProviderTabLabel).
+const DEFAULT_PROVIDER_TAB_LABELS = {
+  synthetic: 'Synthetic',
+  zai: 'Z.ai',
+  anthropic: 'Anthropic',
+  copilot: 'Copilot',
+  codex: 'Codex',
+  antigravity: 'Antigravity',
+  minimax: 'MiniMax',
+  openrouter: 'OpenRouter',
+  gemini: 'Gemini',
+  cursor: 'Cursor',
+  grok: 'Grok',
+  kimi: 'Kimi',
+  'api-integrations': 'API Integrations',
+  both: 'All',
+};
+
+function defaultProviderTabLabel(key) {
+  if (!key) return '';
+  if (DEFAULT_PROVIDER_TAB_LABELS[key]) return DEFAULT_PROVIDER_TAB_LABELS[key];
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function isDashboardSpecialTab(key) {
+  return key === 'both' || key === 'api-integrations';
+}
+
+function mergeDashboardProviderOrder(preferred, available) {
+  const avail = Array.isArray(available) ? available.filter(Boolean) : [];
+  const availSet = new Set(avail);
+  const seen = new Set();
+  const regular = [];
+  const specials = [];
+  const pushKey = (key) => {
+    const k = String(key || '').trim().toLowerCase();
+    if (!k || !availSet.has(k) || seen.has(k)) return;
+    seen.add(k);
+    if (isDashboardSpecialTab(k)) specials.push(k);
+    else regular.push(k);
+  };
+  (Array.isArray(preferred) ? preferred : []).forEach(pushKey);
+  // Newly available providers (e.g. Grok) join before special tabs.
+  avail.forEach(pushKey);
+  const specialOrder = ['api-integrations', 'both'];
+  const orderedSpecials = [];
+  specialOrder.forEach((k) => {
+    if (specials.includes(k)) orderedSpecials.push(k);
+  });
+  specials.forEach((k) => {
+    if (!orderedSpecials.includes(k)) orderedSpecials.push(k);
+  });
+  return regular.concat(orderedSpecials);
+}
+
+async function fetchDashboardTabOrderProviders() {
+  // Only providers that appear as dashboard tabs (Dashboard toggle on).
+  let providers = [];
+  try {
+    const res = await authFetch(`${API_BASE}/api/providers/status`);
+    if (res.ok) {
+      const data = await res.json();
+      providers = Array.isArray(data.providers) ? data.providers : [];
+    }
+  } catch (e) {
+    providers = [];
+  }
+
+  // Also honor in-memory toggles from this settings session (before full reload).
+  const visMap = State.providerVisibility && typeof State.providerVisibility === 'object'
+    ? State.providerVisibility
+    : {};
+
+  const items = providers
+    .filter((p) => p && p.key)
+    .filter((p) => {
+      const local = visMap[p.key];
+      if (local && typeof local === 'object' && Object.prototype.hasOwnProperty.call(local, 'dashboard')) {
+        return local.dashboard !== false;
+      }
+      return p.dashboardVisible !== false;
+    })
+    .map((p) => ({
+      key: p.key,
+      defaultName: p.name || defaultProviderTabLabel(p.key),
+      meta: 'Shown as a dashboard tab',
+      dashboardVisible: true,
+    }));
+
+  // Special dashboard-only tabs (not in provider status list as first-class).
+  if (State.apiIntegrationsVisibility?.dashboard !== false) {
+    const already = items.some((i) => i.key === 'api-integrations');
+    if (!already) {
+      items.push({
+        key: 'api-integrations',
+        defaultName: defaultProviderTabLabel('api-integrations'),
+        meta: 'Dashboard tools tab',
+        dashboardVisible: true,
+      });
+    }
+  }
+  // "All" tab only when more than one real provider tab is visible.
+  const realCount = items.filter((i) => i.key !== 'api-integrations' && i.key !== 'both').length;
+  if (realCount > 1) {
+    items.push({
+      key: 'both',
+      defaultName: defaultProviderTabLabel('both'),
+      meta: 'Combined multi-provider view',
+      dashboardVisible: true,
+    });
+  }
+  return items;
+}
+
+async function populateDashboardTabOrder() {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+
+  const providers = await fetchDashboardTabOrderProviders();
+  if (providers.length === 0) {
+    list.innerHTML = '<li class="dashboard-tab-order-item"><div class="dashboard-tab-order-fields"><span class="dashboard-tab-order-key">No providers available</span></div></li>';
+    State.dashboardProvidersOrder = [];
+    return;
+  }
+
+  const order = mergeDashboardProviderOrder(
+    State.dashboardProvidersOrder,
+    providers.map((p) => p.key),
+  );
+  State.dashboardProvidersOrder = order;
+  const labels = State.dashboardProviderLabels && typeof State.dashboardProviderLabels === 'object'
+    ? State.dashboardProviderLabels
+    : {};
+  const byKey = new Map(providers.map((p) => [p.key, p]));
+  const ordered = order.map((key) => byKey.get(key)).filter(Boolean);
+
+  const arrowUp = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+  const arrowDown = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>';
+
+  const pencilIcon = '<svg class="dashboard-tab-rename-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+  list.innerHTML = ordered.map((provider, index) => {
+    const custom = labels[provider.key] || '';
+    const placeholder = provider.defaultName || defaultProviderTabLabel(provider.key);
+    const canUp = index > 0;
+    const canDown = index < ordered.length - 1;
+    return `
+    <li class="dashboard-tab-order-item" draggable="true" tabindex="0" data-provider="${provider.key}">
+      <div class="menubar-order-handle" aria-hidden="true" title="Drag to reorder"><span></span><span></span><span></span></div>
+      <div class="dashboard-tab-order-fields">
+        <span class="dashboard-tab-order-key">
+          <span class="dashboard-tab-order-default">${escapeHTML(placeholder)}</span>
+          <code class="dashboard-tab-order-id">${escapeHTML(provider.key)}</code>
+        </span>
+        <label class="dashboard-tab-rename">
+          <span class="dashboard-tab-rename-label">${pencilIcon} Tab name</span>
+          <input type="text" class="dashboard-tab-order-label" data-provider="${provider.key}"
+            maxlength="48" value="${escapeHTML(custom)}"
+            placeholder="${escapeHTML(placeholder)}"
+            aria-label="Rename tab for ${escapeHTML(placeholder)} (leave blank for default)">
+        </label>
+      </div>
+      <div class="dashboard-tab-order-move">
+        <button type="button" data-dashboard-move="up" data-provider="${provider.key}" ${canUp ? '' : 'disabled'} aria-label="Move ${escapeHTML(placeholder)} up" title="Move up">${arrowUp}</button>
+        <button type="button" data-dashboard-move="down" data-provider="${provider.key}" ${canDown ? '' : 'disabled'} aria-label="Move ${escapeHTML(placeholder)} down" title="Move down">${arrowDown}</button>
+      </div>
+    </li>`;
+  }).join('');
+
+  // Drag-and-drop
+  list.querySelectorAll('.dashboard-tab-order-item').forEach((item) => {
+    item.addEventListener('dragstart', () => {
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      syncDashboardTabOrderFromDOM();
+      // Refresh move button disabled state without full re-render (preserves inputs).
+      refreshDashboardTabMoveButtons();
+    });
+    // Don't start drag when editing the label input.
+    const input = item.querySelector('.dashboard-tab-order-label');
+    if (input) {
+      input.addEventListener('mousedown', (e) => e.stopPropagation());
+      input.addEventListener('pointerdown', (e) => e.stopPropagation());
+      input.addEventListener('input', () => {
+        const key = input.dataset.provider;
+        if (!key) return;
+        if (!State.dashboardProviderLabels || typeof State.dashboardProviderLabels !== 'object') {
+          State.dashboardProviderLabels = {};
+        }
+        const val = (input.value || '').trim();
+        if (!val || val === defaultProviderTabLabel(key)) {
+          delete State.dashboardProviderLabels[key];
+        } else {
+          State.dashboardProviderLabels[key] = val.slice(0, 48);
+        }
+      });
+    }
+  });
+
+  list.querySelectorAll('button[data-dashboard-move]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.getAttribute('data-provider') || '';
+      const dir = button.getAttribute('data-dashboard-move') || '';
+      if (!key || !dir) return;
+      moveDashboardTabItem(key, dir === 'up' ? -1 : 1);
+    });
+  });
+
+  // Avoid stacking multiple dragover handlers on re-populate.
+  if (!list.dataset.dragBound) {
+    list.dataset.dragBound = '1';
+    list.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      const dragging = list.querySelector('.dashboard-tab-order-item.dragging');
+      if (!dragging) return;
+      const after = getDashboardTabDragAfterElement(list, event.clientY);
+      if (!after) {
+        list.appendChild(dragging);
+      } else if (after !== dragging) {
+        list.insertBefore(dragging, after);
+      }
+    }, { passive: false });
+  }
+
+  syncDashboardTabOrderFromDOM();
+}
+
+function getDashboardTabDragAfterElement(container, y) {
+  const items = [...container.querySelectorAll('.dashboard-tab-order-item:not(.dragging)')];
+  return items.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child };
+    }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+
+function syncDashboardTabOrderFromDOM() {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+  State.dashboardProvidersOrder = [...list.querySelectorAll('.dashboard-tab-order-item[data-provider]')]
+    .map((item) => item.dataset.provider)
+    .filter(Boolean);
+
+  const labels = {};
+  list.querySelectorAll('.dashboard-tab-order-label[data-provider]').forEach((input) => {
+    const key = input.dataset.provider;
+    if (!key) return;
+    const val = (input.value || '').trim();
+    if (!val) return;
+    if (val === defaultProviderTabLabel(key)) return;
+    labels[key] = val.slice(0, 48);
+  });
+  State.dashboardProviderLabels = labels;
+}
+
+function refreshDashboardTabMoveButtons() {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+  const items = [...list.querySelectorAll('.dashboard-tab-order-item[data-provider]')];
+  items.forEach((item, index) => {
+    const up = item.querySelector('button[data-dashboard-move="up"]');
+    const down = item.querySelector('button[data-dashboard-move="down"]');
+    if (up) up.disabled = index === 0;
+    if (down) down.disabled = index === items.length - 1;
+  });
+}
+
+function moveDashboardTabItem(providerKey, delta) {
+  const list = document.getElementById('dashboard-tab-order');
+  if (!list) return;
+  const items = [...list.querySelectorAll('.dashboard-tab-order-item[data-provider]')];
+  const index = items.findIndex((el) => el.dataset.provider === providerKey);
+  if (index < 0) return;
+  const next = index + delta;
+  if (next < 0 || next >= items.length) return;
+  const el = items[index];
+  if (delta < 0) {
+    list.insertBefore(el, items[next]);
+  } else {
+    list.insertBefore(items[next], el);
+  }
+  syncDashboardTabOrderFromDOM();
+  refreshDashboardTabMoveButtons();
 }
 
 async function populateMenubarProviderOrder() {
@@ -8497,13 +9946,19 @@ async function populateMenubarProviderOrder() {
   const visibleSet = new Set(explicitVisible);
   const showAll = visibleSet.size === 0;
 
+  const tabLabels = State.dashboardProviderLabels && typeof State.dashboardProviderLabels === 'object'
+    ? State.dashboardProviderLabels
+    : {};
   list.innerHTML = providers.map(provider => {
     const visible = showAll || visibleSet.has(provider.key);
+    // Prefer dashboard tab rename (base key) so menubar settings match tabs.
+    const baseKey = String(provider.key || '').split(':')[0];
+    const displayName = (tabLabels[baseKey] || tabLabels[provider.key] || provider.name || baseKey);
     return `
     <li class="menubar-order-item ${provider.dashboardVisible ? '' : 'is-disabled'} ${visible ? '' : 'is-hidden'}" draggable="true" tabindex="0" data-provider="${provider.key}">
       <div class="menubar-order-handle" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="menubar-order-copy">
-        <span class="menubar-order-name">${provider.name}</span>
+        <span class="menubar-order-name">${escapeHTML(displayName)}</span>
         <span class="menubar-order-meta">${provider.meta}</span>
       </div>
       <div class="menubar-order-controls">
@@ -8712,6 +10167,12 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
         }
         showSettingsFeedback(feedback, `${name} ${role} ${enabled ? 'enabled' : 'disabled'}.`, 'success');
 
+        // Dashboard Tabs list only shows visible tabs — refresh when visibility changes.
+        if (role === 'dashboard') {
+          syncDashboardTabOrderFromDOM();
+          await populateDashboardTabOrder();
+        }
+
         if (getCurrentProvider() === 'both' && role === 'polling') {
           renderAllProvidersView();
         }
@@ -8775,7 +10236,9 @@ function createAPIIntegrationsToggleRow(visibility, health) {
         return;
       }
       State.apiIntegrationsVisibility = data.api_integrations_visibility || { dashboard: enabled };
-      showSettingsFeedback(feedback, `API Integrations dashboard ${enabled ? 'enabled' : 'disabled'}. Reload dashboard to apply tab visibility changes.`, 'success');
+      syncDashboardTabOrderFromDOM();
+      await populateDashboardTabOrder();
+      showSettingsFeedback(feedback, `API Integrations dashboard ${enabled ? 'enabled' : 'disabled'}.`, 'success');
     } catch (e) {
       input.checked = !enabled;
       showSettingsFeedback(feedback, 'API Integrations visibility update failed.', 'error');
@@ -8815,14 +10278,23 @@ const providerSettingsConfig = {
     fields: [
       { id: 'profiles_dir', label: 'Profiles Directory', type: 'text', placeholder: 'Auto-detected (default)', hint: 'Override the auto-detected Codex profiles directory. Leave blank to use the default.' },
       { id: 'display_mode', label: 'Quota Display', type: 'select', options: [
+        { value: '', text: 'Use global default' },
         { value: 'usage', text: 'Usage (show utilization %)' },
         { value: 'available', text: 'Available (show remaining %)' },
-      ], default: 'usage', hint: 'Choose how to display five_hour and seven_day quota usage.' },
+      ], default: '', noRestart: true, hint: 'Override the global Quota Display setting (Settings → General) for Codex only. Choose "Use global default" to follow the global setting.' },
       { id: 'pace_mode', label: 'Weekly Pace Mode', type: 'select', options: [
         { value: 'calendar', text: 'Calendar (7-day)' },
         { value: '6-day', text: '6-day (Mon-Sat)' },
         { value: '5-day', text: '5-day (Mon-Fri)' },
-      ], default: 'calendar', hint: 'Distributes 100% expected pace across selected work days only. Non-work days show "off day - pace paused".' },
+      ], default: 'calendar', noRestart: true, hint: 'Distributes 100% expected pace across selected work days only. Non-work days show "off day - pace paused".' },
+      { id: 'auto_start_5h', label: 'Auto-start 5h window (Beta)', type: 'select', options: [
+        { value: 'off', text: 'Off' },
+        { value: 'on', text: 'On' },
+      ], default: 'off', noRestart: true, hint: 'Beta: when the 5-hour window resets, onWatch sends a tiny Codex request to start the window so the fresh limit begins immediately. This consumes a small amount of quota each reset. Applies on the next reset - no daemon restart needed.' },
+      { id: 'auto_start_7d', label: 'Auto-start weekly window (Beta)', type: 'select', options: [
+        { value: 'off', text: 'Off' },
+        { value: 'on', text: 'On' },
+      ], default: 'off', noRestart: true, hint: 'Beta: when the weekly (7-day) window resets, onWatch sends a tiny Codex request to start the window so you keep the full reserve even if you do not use Codex right away. Consumes a small amount of quota. Applies on the next reset - no daemon restart needed.' },
     ],
   },
   copilot: {
@@ -8865,8 +10337,13 @@ const providerSettingsConfig = {
   },
   antigravity: {
     title: 'Antigravity',
-    desc: 'Override auto-detection for Docker or remote environments. Leave blank to use auto-detection.',
+    desc: 'Choose where quota data comes from. All Antigravity variants share one Google-account quota, so onWatch shows a single card and labels the active source.',
     fields: [
+      { id: 'source', label: 'Data Source', type: 'select', options: [
+        { value: 'both', text: 'Both (prefer agy CLI, fall back to IDE)' },
+        { value: 'cli', text: 'agy CLI only (richer weekly + 5h data)' },
+        { value: 'ide', text: 'IDE only (desktop language server)' },
+      ], default: 'both', noRestart: true, hint: 'The agy CLI exposes richer weekly + 5-hour quota data but auto-launches a managed agy process. IDE uses the running Antigravity desktop app. Equivalent to ANTIGRAVITY_SOURCE.' },
       { id: 'base_url', label: 'Base URL', type: 'text', placeholder: 'Auto-detected', hint: 'Override the auto-detected Antigravity server URL (e.g. for Docker). Equivalent to ANTIGRAVITY_BASE_URL.' },
       { id: 'csrf_token', label: 'CSRF Token', type: 'password', placeholder: 'Auto-detected', hint: 'Override the CSRF token for the Antigravity server. Equivalent to ANTIGRAVITY_CSRF_TOKEN.', sensitive: true },
     ],
@@ -9078,6 +10555,8 @@ async function openProviderSettingsModal(providerKey) {
             if (!isDeleted) {
               html += `<button class="minimax-acct-btn" data-action="edit" data-id="${account.id}" data-name="${escapeHtml(account.name)}" data-region="${account.region || 'global'}" data-has-key="${account.hasKey}" title="Edit account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Edit</button>`;
               html += `<button class="minimax-acct-btn" data-action="delete" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="Delete account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--md-error,#b3261e)">Delete</button>`;
+            } else {
+              html += `<button class="minimax-acct-btn" data-action="restore" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="Restore account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--accent-teal,#0d9488)">Restore</button>`;
             }
             html += `</div></div>`;
           });
@@ -9096,6 +10575,17 @@ async function openProviderSettingsModal(providerKey) {
                   if (res.ok) { await openProviderSettingsModal('minimax'); }
                   else { const e = await res.json().catch(() => ({})); alert('Delete failed: ' + (e.error || res.statusText)); btn.disabled = false; btn.textContent = 'Delete'; }
                 } catch (e) { alert('Delete failed: ' + e.message); btn.disabled = false; btn.textContent = 'Delete'; }
+              } else if (action === 'restore') {
+                btn.disabled = true; btn.textContent = '...';
+                try {
+                  const res = await authFetch(`${API_BASE}/api/minimax/accounts?id=${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ restore: true }),
+                  });
+                  if (res.ok) { await openProviderSettingsModal('minimax'); }
+                  else { const e = await res.json().catch(() => ({})); alert('Restore failed: ' + (e.error || res.statusText)); btn.disabled = false; btn.textContent = 'Restore'; }
+                } catch (e) { alert('Restore failed: ' + e.message); btn.disabled = false; btn.textContent = 'Restore'; }
               } else if (action === 'edit') {
                 // Show inline edit form
                 const item = btn.closest('.minimax-account-item');
@@ -9168,6 +10658,11 @@ async function saveProviderSettings() {
   const config = providerSettingsConfig[providerKey];
   if (!config || config.fields.length === 0) { closeProviderSettingsModal(); return; }
 
+  // Snapshot current values so we can tell which fields actually changed and
+  // whether any changed field requires a daemon restart (fields flagged
+  // noRestart apply live).
+  const baseline = (State.providerSettings && State.providerSettings[providerKey]) || {};
+
   const feedbackEl = document.getElementById('provider-settings-feedback');
   const saveBtn = document.getElementById('provider-settings-save');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
@@ -9200,6 +10695,18 @@ async function saveProviderSettings() {
       throw new Error(errData.error || 'Save failed');
     }
     const data = await res.json();
+    // Determine restart requirement from the fields the user actually changed.
+    let anyChange = false;
+    let restartNeeded = false;
+    config.fields.forEach(f => {
+      if (!(f.id in provData)) return;
+      const changed = (f.type === 'password' && f.sensitive)
+        ? true // sensitive fields are only present when newly typed
+        : String(provData[f.id]) !== String(baseline[f.id] === undefined ? (f.default ?? '') : baseline[f.id]);
+      if (!changed) return;
+      anyChange = true;
+      if (!f.noRestart) restartNeeded = true;
+    });
     // Update local state with returned settings
     if (data.provider_settings) {
       State.providerSettings = data.provider_settings;
@@ -9208,7 +10715,14 @@ async function saveProviderSettings() {
       if (!State.providerSettings) State.providerSettings = {};
       State.providerSettings[providerKey] = provData;
     }
-    showSettingsFeedback(feedbackEl, 'Settings saved. Restart daemon to apply changes.', 'success');
+    const savedMsg = !anyChange
+      ? 'Settings saved.'
+      : (restartNeeded
+        ? 'Settings saved. Restart daemon to apply changes.'
+        : 'Settings saved. Changes apply automatically - no restart needed.');
+    // Reflect live-applied changes (e.g. Codex auto-start badges) immediately.
+    if (providerKey === 'codex') syncCodexAutoStartBadges();
+    showSettingsFeedback(feedbackEl, savedMsg, 'success');
     setTimeout(closeProviderSettingsModal, 1200);
   } catch (e) {
     showSettingsFeedback(feedbackEl, e.message || 'Failed to save settings.', 'error');
@@ -9278,6 +10792,7 @@ function setupProviderReload() {
         }
       } else {
         await populateProviderToggles(State.providerVisibility || {});
+        await populateDashboardTabOrder();
         if (result) {
           result.textContent = 'Provider configuration reloaded.';
           result.className = 'settings-test-result success';
@@ -9365,16 +10880,42 @@ function gatherSettings() {
     dashboard: State.apiIntegrationsVisibility?.dashboard !== false,
   };
 
+  // Dashboard tab order + custom labels (from Settings → Providers list)
+  syncDashboardTabOrderFromDOM();
+  settings.dashboard_providers_order = Array.isArray(State.dashboardProvidersOrder)
+    ? State.dashboardProvidersOrder.slice()
+    : [];
+  settings.dashboard_provider_labels = (State.dashboardProviderLabels && typeof State.dashboardProviderLabels === 'object')
+    ? { ...State.dashboardProviderLabels }
+    : {};
+
   // Timezone
   const tzSelect = document.getElementById('settings-timezone');
   if (tzSelect) {
-    settings.timezone = tzSelect.value;
+    settings.timezone = normalizeTz(tzSelect.value);
   }
 
-  // Provider settings are saved via the provider settings modal (saveProviderSettings),
-  // NOT through the general settings save. Including them here would overwrite
-  // sensitive keys (API keys/tokens) with empty strings since the server strips
-  // them from GET responses for security.
+  // Auto refresh OAuth tokens (coding harness credentials)
+  const autoRefresh = document.getElementById('settings-auto-refresh-tokens');
+  if (autoRefresh) {
+    settings.auto_refresh_tokens = !!autoRefresh.checked;
+  }
+
+  // Global display mode goes under provider_settings.global. Other provider
+  // settings (API keys, tokens, etc.) are still saved via the per-provider
+  // modal because the server strips sensitive keys from the GET response;
+  // including them here would clobber them with empty strings on save. The
+  // backend deep-merges provider_settings, so writing only `global` is safe.
+  const displayModeSelect = document.getElementById('settings-display-mode');
+  if (displayModeSelect && displayModeSelect.value) {
+    settings.provider_settings = settings.provider_settings || {};
+    settings.provider_settings.global = { display_mode: displayModeSelect.value };
+  }
+
+  // Per-provider settings (API keys, tokens, etc.) are saved via the provider
+  // settings modal (saveProviderSettings), NOT through the general settings
+  // save. Including them here would overwrite sensitive keys with empty
+  // strings since the server strips them from GET responses for security.
 
   const menubarShell = document.getElementById('menubar-settings-shell');
   if (menubarShell && !menubarShell.hidden) {
@@ -9433,9 +10974,25 @@ function setupSettingsSave() {
       if (!resp.ok) {
         showSettingsFeedback(feedback, data.error || 'Failed to save settings.', 'error');
       } else {
+        if (Object.prototype.hasOwnProperty.call(data, 'timezone')) {
+          activeTimezone = normalizeTz(data.timezone || '');
+          const tzSelect = document.getElementById('settings-timezone');
+          if (tzSelect) {
+            ensureTimezoneOption(tzSelect, activeTimezone);
+            tzSelect.value = activeTimezone;
+          }
+          updateBrowserDefaultTimezoneText();
+          refreshTimezoneSensitiveText();
+        }
         if (data.provider_visibility) State.providerVisibility = data.provider_visibility;
         if (data.api_integrations_visibility) State.apiIntegrationsVisibility = data.api_integrations_visibility;
-        showSettingsFeedback(feedback, 'Settings saved successfully.', 'success');
+        if (Array.isArray(data.dashboard_providers_order)) {
+          State.dashboardProvidersOrder = data.dashboard_providers_order.slice();
+        }
+        if (data.dashboard_provider_labels && typeof data.dashboard_provider_labels === 'object') {
+          State.dashboardProviderLabels = { ...data.dashboard_provider_labels };
+        }
+        showSettingsFeedback(feedback, 'Settings saved successfully. Reload the dashboard to apply tab order and names.', 'success');
       }
     } catch (e) {
       showSettingsFeedback(feedback, 'Network error. Please try again.', 'error');
@@ -10107,6 +11664,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
+  // Preload provider settings (toggles like codex auto_start_5h/7d) on every
+  // dashboard view so live UI indicators (e.g. Auto-start badge) can read them
+  // without depending on a prior visit to /settings.
+  try {
+    const r = await authFetch(`${API_BASE}/api/settings`);
+    if (r.ok) {
+      const d = await r.json();
+      State.providerSettings = d.provider_settings || {};
+    }
+  } catch (_) { /* non-critical: badges simply won't render until settings load */ }
   // Redirect to saved default provider if no explicit provider in URL
   // Only when multiple providers are available (tabs exist)
   const urlParams = new URLSearchParams(window.location.search);
@@ -10144,7 +11711,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   initTheme();
   initLayoutToggle();
-  initTimezoneBadge();
+  await initTimezoneBadge();
   setupProviderSelector();
   setupRangeSelector();
   setupAPIIntegrationsMetricSelector();

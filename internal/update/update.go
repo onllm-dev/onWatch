@@ -19,12 +19,20 @@ import (
 )
 
 const (
-	githubReleasesURL    = "https://api.github.com/repos/onllm-dev/onwatch/releases/latest"
-	downloadBaseURL      = "https://github.com/onllm-dev/onwatch/releases/download"
-	defaultCacheTTL      = 1 * time.Hour
-	downloadTimeout      = 10 * time.Minute
-	downloadRetryBackoff = 2 * time.Second
-	downloadMaxAttempts  = 2
+	githubReleasesURL     = "https://api.github.com/repos/onllm-dev/onwatch/releases/latest"
+	githubReleasesListURL = "https://api.github.com/repos/onllm-dev/onwatch/releases"
+	// githubReleasesRedirectURL is the github.com (NOT api.github.com) web
+	// endpoint that 302-redirects to the newest release's tag page. It is not
+	// subject to the REST API's 60-req/hr unauthenticated rate limit, so it is
+	// our fallback when the API returns 403 (see issue #81).
+	githubReleasesRedirectURL = "https://github.com/onllm-dev/onwatch/releases/latest"
+	downloadBaseURL           = "https://github.com/onllm-dev/onwatch/releases/download"
+	defaultCacheTTL       = 1 * time.Hour
+	downloadTimeout       = 10 * time.Minute
+	downloadRetryBackoff  = 2 * time.Second
+	downloadMaxAttempts   = 2
+	checkRetryBackoff     = 2 * time.Second
+	checkMaxAttempts      = 3
 )
 
 var (
@@ -57,11 +65,16 @@ type Updater struct {
 
 	// For testing: override the GitHub API URL and download base URL
 	apiURL      string
+	listURL     string
+	redirectURL string
 	downloadURL string
 
 	downloadTimeout      time.Duration
 	downloadRetryBackoff time.Duration
 	downloadMaxAttempts  int
+
+	checkRetryBackoff time.Duration
+	checkMaxAttempts  int
 }
 
 // NewUpdater creates a new Updater with the given version and logger.
@@ -82,16 +95,22 @@ func NewUpdater(version string, logger *slog.Logger) *Updater {
 		},
 		cacheTTL:             defaultCacheTTL,
 		apiURL:               githubReleasesURL,
+		listURL:              githubReleasesListURL,
+		redirectURL:          githubReleasesRedirectURL,
 		downloadURL:          downloadBaseURL,
 		downloadTimeout:      downloadTimeout,
 		downloadRetryBackoff: downloadRetryBackoff,
 		downloadMaxAttempts:  downloadMaxAttempts,
+		checkRetryBackoff:    checkRetryBackoff,
+		checkMaxAttempts:     checkMaxAttempts,
 	}
 }
 
 // githubRelease is a minimal struct for parsing the GitHub API response.
 type githubRelease struct {
-	TagName string `json:"tag_name"`
+	TagName    string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
 }
 
 // Check queries GitHub for the latest release and compares with current version.
@@ -121,30 +140,13 @@ func (u *Updater) Check() (UpdateInfo, error) {
 	}
 	u.mu.Unlock()
 
-	// Fetch from GitHub
-	req, err := http.NewRequest("GET", u.apiURL, nil)
+	// Fetch from GitHub (with retry on transient 5xx and a list-endpoint fallback)
+	tagName, err := u.fetchLatestTag()
 	if err != nil {
-		return info, fmt.Errorf("update.Check: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "onwatch/"+u.currentVersion)
-
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return info, fmt.Errorf("update.Check: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return info, fmt.Errorf("update.Check: GitHub API returned %d", resp.StatusCode)
+		return info, err
 	}
 
-	var release githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return info, fmt.Errorf("update.Check: %w", err)
-	}
-
-	latest := strings.TrimPrefix(release.TagName, "v")
+	latest := strings.TrimPrefix(tagName, "v")
 
 	// Update cache
 	u.mu.Lock()
@@ -164,6 +166,167 @@ func (u *Updater) Check() (UpdateInfo, error) {
 		"available", info.Available)
 
 	return info, nil
+}
+
+// fetchLatestTag resolves the latest release tag. It first queries the
+// dedicated releases/latest endpoint, retrying on transient 5xx/network
+// failures. On failure it falls back to endpoints that do not share the REST
+// API's rate limit / availability characteristics:
+//
+//   - The github.com web redirect (/releases/latest -> /releases/tag/vX.Y.Z).
+//     This is NOT api.github.com and is not subject to the 60-req/hr
+//     unauthenticated REST rate limit, so it rescues the common 403 case where
+//     many machines share an egress IP (NAT/CGNAT) - see issue #81.
+//   - The cheaper releases list API endpoint, which helps when releases/latest
+//     intermittently 504s (GitHub's edge then caches that 504 for ~60s). It
+//     shares the REST rate limit, so it only helps for transient failures.
+func (u *Updater) fetchLatestTag() (string, error) {
+	tag, retryable, err := u.fetchTagFromLatest()
+	if err == nil {
+		return tag, nil
+	}
+
+	// Fallback 1: the github.com web redirect. Tried for every API failure
+	// (including 403 rate limiting) because it does not touch api.github.com.
+	u.logger.Warn("releases/latest API failed, trying github.com redirect fallback", "error", err)
+	redirTag, redirErr := u.fetchTagFromRedirect()
+	if redirErr == nil {
+		return redirTag, nil
+	}
+	u.logger.Warn("releases/latest redirect fallback failed", "error", redirErr)
+
+	// Fallback 2: the releases list API endpoint. Only worth trying when the
+	// original failure was transient - on a 4xx (e.g. rate limit) it 403s too.
+	if retryable {
+		if listTag, listErr := u.fetchTagFromList(); listErr == nil {
+			return listTag, nil
+		} else {
+			return "", fmt.Errorf("%w (redirect fallback: %v; releases list fallback: %v)", err, redirErr, listErr)
+		}
+	}
+
+	return "", fmt.Errorf("%w (redirect fallback also failed: %v)", err, redirErr)
+}
+
+// fetchTagFromLatest queries releases/latest, retrying on transient failures.
+// The returned bool reports whether the final error (if any) was transient.
+func (u *Updater) fetchTagFromLatest() (tag string, retryable bool, err error) {
+	attempts := u.checkMaxAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			sleepFn(u.checkRetryBackoff)
+		}
+		var rel githubRelease
+		retryable, err = u.getJSON(u.apiURL, &rel)
+		if err == nil {
+			return rel.TagName, false, nil
+		}
+		if !retryable {
+			return "", false, err
+		}
+	}
+	return "", true, err
+}
+
+// fetchTagFromList queries the releases list endpoint and returns the tag of
+// the newest published release (releases are returned newest-first).
+func (u *Updater) fetchTagFromList() (string, error) {
+	var releases []githubRelease
+	if _, err := u.getJSON(u.listURL, &releases); err != nil {
+		return "", err
+	}
+	for _, rel := range releases {
+		if rel.Draft || rel.Prerelease || rel.TagName == "" {
+			continue
+		}
+		return rel.TagName, nil
+	}
+	return "", fmt.Errorf("update.Check: no published release found")
+}
+
+// fetchTagFromRedirect resolves the latest tag via the github.com web redirect
+// instead of the REST API. GET /releases/latest returns a 3xx whose Location
+// header points at /releases/tag/vX.Y.Z; we extract the tag from it. This path
+// avoids api.github.com entirely, so it works even when the REST API is rate
+// limiting the client with 403 (issue #81).
+func (u *Updater) fetchTagFromRedirect() (string, error) {
+	req, err := http.NewRequest("GET", u.redirectURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("update.Check: %w", err)
+	}
+	req.Header.Set("User-Agent", "onwatch/"+u.currentVersion)
+
+	// Capture the redirect target rather than following it (no need to fetch
+	// the release HTML page, which would be a wasted download).
+	client := &http.Client{
+		Timeout: u.httpClient.Timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("update.Check: %w", err)
+	}
+	defer resp.Body.Close()
+
+	loc := resp.Header.Get("Location")
+	if loc == "" {
+		return "", fmt.Errorf("update.Check: releases/latest redirect returned no Location (HTTP %d)", resp.StatusCode)
+	}
+
+	// Location looks like https://github.com/onllm-dev/onwatch/releases/tag/v2.12.4
+	const marker = "/releases/tag/"
+	idx := strings.LastIndex(loc, marker)
+	if idx < 0 {
+		return "", fmt.Errorf("update.Check: unexpected redirect Location %q", loc)
+	}
+	tag := strings.Trim(loc[idx+len(marker):], "/")
+	if tag == "" {
+		return "", fmt.Errorf("update.Check: empty tag in redirect Location %q", loc)
+	}
+	return tag, nil
+}
+
+// getJSON performs a GET against the GitHub API and decodes the JSON body into
+// dst. The returned bool reports whether a failure is transient (5xx or a
+// network error) and therefore worth retrying.
+func (u *Updater) getJSON(url string, dst any) (retryable bool, err error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, fmt.Errorf("update.Check: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "onwatch/"+u.currentVersion)
+	// A token (if present) raises the unauthenticated 60-req/hr/IP limit to
+	// 5000-req/hr, sidestepping the 403 rate-limit case entirely.
+	if token := githubToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := u.httpClient.Do(req)
+	if err != nil {
+		return true, fmt.Errorf("update.Check: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// GitHub signals rate limiting with 403 (or 429) plus a zeroed
+		// X-RateLimit-Remaining header. Surface a clearer message for it.
+		if (resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0") ||
+			resp.StatusCode == http.StatusTooManyRequests {
+			return false, fmt.Errorf("update.Check: GitHub API rate limit exceeded (HTTP %d); set GITHUB_TOKEN to raise the limit", resp.StatusCode)
+		}
+		return resp.StatusCode >= 500, fmt.Errorf("update.Check: GitHub API returned %d", resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
+		return false, fmt.Errorf("update.Check: %w", err)
+	}
+	return false, nil
 }
 
 // Apply downloads the latest binary and replaces the current one.
@@ -580,6 +743,15 @@ func filterArgs(args []string) []string {
 		}
 	}
 	return filtered
+}
+
+// githubToken returns a GitHub token from the environment, if any. Both
+// GITHUB_TOKEN and GH_TOKEN are checked (the latter is what the gh CLI sets).
+func githubToken() string {
+	if t := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); t != "" {
+		return t
+	}
+	return strings.TrimSpace(os.Getenv("GH_TOKEN"))
 }
 
 // binaryDownloadURL constructs the download URL for the current platform.

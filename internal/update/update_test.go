@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -178,6 +179,22 @@ func TestCheck_CacheExpiry(t *testing.T) {
 	}
 }
 
+// deadURL is an address with nothing listening, used to force the github.com
+// redirect fallback to fail so tests stay hermetic (never hit real github.com).
+const deadURL = "http://127.0.0.1:1"
+
+// redirectServer returns an httptest server that mimics github.com's
+// /releases/latest behaviour: a 302 whose Location points at the tag page.
+func redirectServer(t *testing.T, tag string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "https://github.com/onllm-dev/onwatch/releases/tag/"+tag)
+		w.WriteHeader(http.StatusFound)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 func TestCheck_GitHubAPIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -186,6 +203,8 @@ func TestCheck_GitHubAPIError(t *testing.T) {
 
 	u := NewUpdater("2.2.0", slog.Default())
 	u.apiURL = srv.URL
+	u.listURL = srv.URL
+	u.redirectURL = deadURL // keep hermetic: no real github.com call
 
 	_, err := u.Check()
 	if err == nil {
@@ -201,6 +220,8 @@ func TestCheck_InvalidJSON(t *testing.T) {
 
 	u := NewUpdater("2.2.0", slog.Default())
 	u.apiURL = srv.URL
+	u.listURL = srv.URL
+	u.redirectURL = deadURL
 
 	_, err := u.Check()
 	if err == nil {
@@ -610,11 +631,207 @@ func TestApply_DownloadAndReplace(t *testing.T) {
 
 func TestCheck_ServerUnreachable(t *testing.T) {
 	u := NewUpdater("2.2.0", slog.Default())
-	u.apiURL = "http://127.0.0.1:1" // nothing listening
+	u.apiURL = deadURL      // nothing listening
+	u.listURL = deadURL     // fallback also unreachable
+	u.redirectURL = deadURL // redirect fallback also unreachable
+	u.checkMaxAttempts = 1  // keep the test fast/offline
 
 	_, err := u.Check()
 	if err == nil {
 		t.Error("expected error when server is unreachable")
+	}
+}
+
+func TestCheck_RetriesOn504ThenSucceeds(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) <= 2 {
+			w.WriteHeader(http.StatusGatewayTimeout)
+			return
+		}
+		json.NewEncoder(w).Encode(githubRelease{TagName: "v3.0.0"})
+	}))
+	defer srv.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = srv.URL
+	u.checkMaxAttempts = 3
+	u.checkRetryBackoff = time.Millisecond
+
+	info, err := u.Check()
+	if err != nil {
+		t.Fatalf("expected retry to succeed, got error: %v", err)
+	}
+	if !info.Available || info.LatestVersion != "3.0.0" {
+		t.Errorf("got %+v, want available v3.0.0", info)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("expected 3 calls (2 retries then success), got %d", got)
+	}
+}
+
+func TestCheck_FallsBackToListOnPersistent504(t *testing.T) {
+	latest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+	}))
+	defer latest.Close()
+
+	list := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode([]githubRelease{
+			{TagName: "v9.9.9-rc1", Prerelease: true},
+			{TagName: "v3.1.0-draft", Draft: true},
+			{TagName: "v3.0.0"},
+			{TagName: "v2.0.0"},
+		})
+	}))
+	defer list.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = latest.URL
+	u.listURL = list.URL
+	u.redirectURL = deadURL // force fall-through to the list endpoint
+	u.checkMaxAttempts = 2
+	u.checkRetryBackoff = time.Millisecond
+
+	info, err := u.Check()
+	if err != nil {
+		t.Fatalf("expected list fallback to succeed, got error: %v", err)
+	}
+	if info.LatestVersion != "3.0.0" {
+		t.Errorf("got latest=%q, want 3.0.0 (newest non-draft/non-prerelease)", info.LatestVersion)
+	}
+}
+
+func TestCheck_NoRetryOn4xx(t *testing.T) {
+	var latestCalls, listCalls atomic.Int32
+	latest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		latestCalls.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer latest.Close()
+	list := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		listCalls.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer list.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = latest.URL
+	u.listURL = list.URL
+	u.redirectURL = deadURL // redirect fallback unreachable so Check still errors
+	u.checkMaxAttempts = 3
+	u.checkRetryBackoff = time.Millisecond
+
+	if _, err := u.Check(); err == nil {
+		t.Fatal("expected error on 403")
+	}
+	// 4xx is not retryable: exactly one latest attempt, no list fallback.
+	if got := latestCalls.Load(); got != 1 {
+		t.Errorf("expected exactly 1 latest call (no retry on 4xx), got %d", got)
+	}
+	if got := listCalls.Load(); got != 0 {
+		t.Errorf("expected no list fallback on 4xx, got %d calls", got)
+	}
+}
+
+// TestCheck_FallsBackToRedirectOn403 is the direct regression test for issue
+// #81: api.github.com 403s due to rate limiting, and the github.com web
+// redirect rescues the version check.
+func TestCheck_FallsBackToRedirectOn403(t *testing.T) {
+	var listCalls atomic.Int32
+	latest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer latest.Close()
+	list := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		listCalls.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer list.Close()
+	redir := redirectServer(t, "v3.0.0")
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = latest.URL
+	u.listURL = list.URL
+	u.redirectURL = redir.URL
+
+	info, err := u.Check()
+	if err != nil {
+		t.Fatalf("expected redirect fallback to succeed on 403, got error: %v", err)
+	}
+	if !info.Available || info.LatestVersion != "3.0.0" {
+		t.Errorf("got %+v, want available v3.0.0", info)
+	}
+	// 403 is not retryable, so the list endpoint must not be consulted.
+	if got := listCalls.Load(); got != 0 {
+		t.Errorf("expected no list fallback on 403, got %d calls", got)
+	}
+}
+
+func TestFetchTagFromRedirect(t *testing.T) {
+	t.Run("valid redirect", func(t *testing.T) {
+		redir := redirectServer(t, "v4.5.6")
+		u := NewUpdater("1.0.0", slog.Default())
+		u.redirectURL = redir.URL
+		tag, err := u.fetchTagFromRedirect()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if tag != "v4.5.6" {
+			t.Errorf("got tag=%q, want v4.5.6", tag)
+		}
+	})
+
+	t.Run("no Location header", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+		u := NewUpdater("1.0.0", slog.Default())
+		u.redirectURL = srv.URL
+		if _, err := u.fetchTagFromRedirect(); err == nil {
+			t.Error("expected error when Location header is missing")
+		}
+	})
+
+	t.Run("unexpected Location format", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Location", "https://github.com/onllm-dev/onwatch/issues/81")
+			w.WriteHeader(http.StatusFound)
+		}))
+		defer srv.Close()
+		u := NewUpdater("1.0.0", slog.Default())
+		u.redirectURL = srv.URL
+		if _, err := u.fetchTagFromRedirect(); err == nil {
+			t.Error("expected error for Location without /releases/tag/")
+		}
+	})
+}
+
+func TestCheck_BothEndpointsFail(t *testing.T) {
+	latest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+	}))
+	defer latest.Close()
+	list := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer list.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = latest.URL
+	u.listURL = list.URL
+	u.redirectURL = deadURL // all three fallbacks fail
+	u.checkMaxAttempts = 2
+	u.checkRetryBackoff = time.Millisecond
+
+	_, err := u.Check()
+	if err == nil {
+		t.Fatal("expected error when both endpoints fail")
+	}
+	if !strings.Contains(err.Error(), "fallback") {
+		t.Errorf("expected error to mention the fallback attempt, got %v", err)
 	}
 }
 
@@ -652,6 +869,7 @@ func TestExtractLeadingInt_Edge(t *testing.T) {
 func TestCheck_InvalidURLPath(t *testing.T) {
 	u := NewUpdater("2.2.0", slog.Default())
 	u.apiURL = "://bad-url"
+	u.redirectURL = "://bad-url" // redirect fallback also invalid
 
 	_, err := u.Check()
 	if err == nil {
@@ -723,6 +941,50 @@ func TestCheck_RequestHeaders(t *testing.T) {
 	}
 	if gotUA != "onwatch/2.2.0" {
 		t.Fatalf("User-Agent header = %q, want onwatch/2.2.0", gotUA)
+	}
+}
+
+func TestCheck_AuthorizationHeaderFromToken(t *testing.T) {
+	// Ensure a clean env, then set GITHUB_TOKEN for this test only.
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "test-token-123")
+
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode(githubRelease{TagName: "v3.0.0"})
+	}))
+	defer srv.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = srv.URL
+
+	if _, err := u.Check(); err != nil {
+		t.Fatalf("Check() failed: %v", err)
+	}
+	if gotAuth != "Bearer test-token-123" {
+		t.Fatalf("Authorization header = %q, want %q", gotAuth, "Bearer test-token-123")
+	}
+}
+
+func TestCheck_RateLimitErrorMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	u := NewUpdater("2.2.0", slog.Default())
+	u.apiURL = srv.URL
+	u.listURL = srv.URL
+	u.redirectURL = deadURL // force surfacing the API error
+
+	_, err := u.Check()
+	if err == nil {
+		t.Fatal("expected error on rate-limited 403")
+	}
+	if !strings.Contains(err.Error(), "rate limit") {
+		t.Errorf("expected rate-limit message, got: %v", err)
 	}
 }
 

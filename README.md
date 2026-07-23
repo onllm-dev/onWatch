@@ -2,7 +2,7 @@
 
 **Free, open-source AI API quota monitoring for developers.**
 
-Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), [Gemini CLI](docs/GEMINI_SETUP.md), [Cursor](docs/CURSOR_SETUP.md), and Antigravity in one place.
+Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), [Gemini CLI](docs/GEMINI_SETUP.md), [Cursor](docs/CURSOR_SETUP.md), [Grok](docs/GROK_SETUP.md), [Kimi Code](docs/KIMI_SETUP.md), and Antigravity in one place.
 See history, get alerts, and open a local web dashboard before you hit throttling or run over budget. Additionally, you can ingest local telemetry from your own API-driven workflows with API Integrations, keeping track of token use and spending across multiple providers.
 
 **Links:** [Website](https://onwatch.onllm.dev) | [Buy Me a Coffee](https://buymeacoffee.com/prakersh)
@@ -18,14 +18,14 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 
 **Compatibility & Docs**
 
-[![Version](https://img.shields.io/badge/Version-v2.11.43-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.43)
+[![Version](https://img.shields.io/badge/Version-v2.12.5-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.12.5)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
 
-onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session view that developers actually need. It runs as a lightweight background agent (<50 MB RAM with all nine providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
+onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session view that developers actually need. It runs as a lightweight background agent (<50 MB RAM with all providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
 
-It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Antigravity**, and others.
+It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, Grok, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Grok CLI**, **Antigravity**, and others.
 
 **Zero telemetry. Single binary. All data stays on your machine.**
 
@@ -162,12 +162,14 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **Synthetic** -- Subscription, Search, and Tool Call quota cards
 - **Z.ai** -- Tokens, Time, and Tool Call quota cards
 - **Anthropic** -- Dynamic quota cards (5-Hour, 7-Day, 7-Day Sonnet, Monthly, etc.) with utilization percentages, OAuth token auto-refresh, and automatic rate limit bypass via token rotation
-- **Codex** -- Dynamic quota cards (LLMs, Review Requests) with OAuth auth-state refresh, historical cycle analytics, and **multi-account support (Beta)** for tracking multiple ChatGPT accounts
+- **Codex** -- Dynamic quota cards (LLMs, Review Requests) with OAuth auth-state refresh, historical cycle analytics, **multi-account support (Beta)** for tracking multiple ChatGPT accounts, and an **auto quota-starter (Beta, off by default)** that can start an unstarted 5h/weekly window for you (see FAQ)
 - **GitHub Copilot (Beta)** -- Premium Interactions, Chat, and Completions quota cards with monthly reset tracking
 - **MiniMax Coding Plan** -- Shared quota pool tracking for M2, M2.1, and M2.5 models with 5-hour rolling window reset cycles and **multi-account support** for tracking multiple MiniMax subscriptions via the dashboard UI
 - **Gemini CLI (Beta)** -- Per-model quota tracking for Gemini 2.5/3.x Pro, Flash, and Flash Lite models with 24-hour reset cycles
-- **Antigravity** -- Multi-model quota cards (Claude, Gemini, GPT) with grouped quota pools, logging history, and cycle overview
+- **Antigravity** -- Multi-model quota cards (Claude, Gemini, GPT) with grouped quota pools, logging history, and cycle overview. Selectable data **source** -- the desktop **IDE** probe or the **`agy` CLI** (richer weekly + 5-hour buckets), or **both** (default) -- switchable in the dashboard settings; all variants share one Google-account quota
 - **Cursor** -- Individual, Team, and Enterprise account tracking with auto-detected credentials from Cursor Desktop SQLite or macOS Keychain/Linux keyring, OAuth token auto-refresh, burn rate forecasts, and on-demand spend tracking
+- **Kimi Code** -- Moonshot Kimi Code CLI OAuth quotas via `GET /coding/v1/usages` (auto-detect `~/.kimi-code/credentials`). Weekly + window limits with reset countdown. See [Kimi Setup](docs/KIMI_SETUP.md).
+- **Grok** -- xAI Grok Build / SuperGrok credits tracking via local `~/.grok/auth.json` (or `$GROK_HOME`), optional `grok agent stdio` RPC, and grok.com gRPC-web bearer probe (no browser cookie import). Primary "Credits" utilization against plan limit with reset countdown. Informational local session token stats also captured.
 - **API Integrations** -- Local JSONL ingestion for custom API-driven workflows and automations. Track per-integration token volume, request counts, recent activity, costs, trends, and accumulated usage across separate API keys and providers.
 - **All** -- Side-by-side view of all configured providers
 - **Prometheus metrics endpoint (Beta)** -- Exposes `/metrics` for Prometheus/Grafana/Alertmanager integrations, with optional bearer token protection via `ONWATCH_METRICS_TOKEN`
@@ -241,6 +243,12 @@ onWatch auto-detects your Claude Code credentials from the system keychain (macO
 
 Set `CODEX_TOKEN` in your `.env` (recommended for Codex-only installs). You can retrieve it from `~/.codex/auth.json` (`tokens.access_token`) or from `$CODEX_HOME/auth.json` if you use a custom Codex home. onWatch re-reads Codex credentials while running, so token rotation is picked up automatically. Full walkthrough: [Codex Setup Guide](docs/CODEX_SETUP.md).
 
+### What is the Codex auto quota-starter (Beta)?
+
+Codex 5h and weekly windows only begin counting once you send your first message after a reset -- so if you do not use Codex right away, the fresh window (and its reserve) sits unstarted. The auto quota-starter detects an unstarted window (its reset countdown stays pinned at the full length instead of ticking down) and sends one tiny request that asks the model to reply `Quota Resumed`, which starts the window for you.
+
+It is **Beta and disabled by default.** Enable it per window in **Settings -> Providers -> Codex** (`Auto-start 5h window` / `Auto-start weekly window`); changes apply without a daemon restart. Each ping costs roughly **62 tokens** (~44 in, ~18 out) and is hard-capped to **5 pings per rolling 4 hours per window**, so the token/quota cost is negligible. Full details: [Codex Setup Guide](docs/CODEX_SETUP.md#auto-quota-starter-beta).
+
 ### How do I track my GitHub Copilot usage?
 
 Set `COPILOT_TOKEN` in your `.env` with a GitHub Personal Access Token (classic) that has the `copilot` scope. Generate one at [github.com/settings/tokens](https://github.com/settings/tokens). onWatch polls the GitHub Copilot internal API to track Interactions, Chat, and Completions quotas with monthly reset cycle detection. Works with both free and paid plans. This feature is in beta and uses an undocumented API.
@@ -256,15 +264,15 @@ Set `OPENROUTER_API_KEY` in your `.env` with your OpenRouter API key. Get one fr
 
 ### Does onWatch work with Cline, Roo Code, Kilo Code, or Claude Code?
 
-Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, OpenRouter, Gemini CLI, Cursor, or Antigravity), not the coding tool. Any tool that uses a Synthetic, Z.ai, Anthropic, Codex, Copilot, MiniMax, OpenRouter, Gemini CLI, Cursor, or Antigravity API key -- including Cline, Roo Code, Kilo Code, Claude Code, Codex CLI, Cursor, GitHub Copilot, MiniMax Coding Plan, OpenRouter, Gemini CLI, Antigravity, and others -- will have its usage tracked automatically.
+Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, OpenRouter, Gemini CLI, Cursor, Grok, or Antigravity), not the coding tool. Any tool that uses a Synthetic, Z.ai, Anthropic, Codex, Copilot, MiniMax, OpenRouter, Gemini CLI, Cursor, Grok, or Antigravity API key -- including Cline, Roo Code, Kilo Code, Claude Code, Codex CLI, Cursor, GitHub Copilot, MiniMax Coding Plan, OpenRouter, Gemini CLI, Grok CLI, Antigravity, and others -- will have its usage tracked automatically.
 
 ### Does onWatch send any data to external servers?
 
-No. Zero telemetry. All data stays in a local SQLite file. The only outbound calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, and Antigravity quota APIs you configure (Antigravity connects to localhost only). Fully auditable on [GitHub](https://github.com/onllm-dev/onwatch) (GPL-3.0).
+No. Zero telemetry. All data stays in a local SQLite file. The only outbound calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, Grok, and Antigravity quota APIs you configure (Antigravity connects to localhost only). Fully auditable on [GitHub](https://github.com/onllm-dev/onwatch) (GPL-3.0).
 
 ### How much memory does onWatch use?
 
-<50 MB under all conditions (typically ~34 MB idle, ~43 MB under heavy load). Measured with all nine agents (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, Antigravity) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed benchmarks.
+<50 MB under all conditions (typically ~34 MB idle, ~43 MB under heavy load). Measured with providers (Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, Grok, Antigravity) polling in parallel. Lighter than a single browser tab. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed benchmarks.
 
 ---
 
@@ -281,13 +289,14 @@ No. Zero telemetry. All data stays in a local SQLite file. The only outbound cal
                               └──┬──┬──┬──┬──┬──┬──┬──┬─┘
        ┌───────────────────────┘  │  │  │  │  │  │  └───────────────────────┐
   ┌────┴─────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴─────┐
-  │ Synthetic│ │  Z.ai   │ │Anthropic│ │  Codex  │ │ Copilot │ │ MiniMax │ │ Gemini  │ │Antigrav. │
-  │  Agent   │ │  Agent  │ │  Agent  │ │  Agent  │ │  Agent  │ │  Agent  │ │  Agent  │ │  Agent   │
-  └────┬─────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬─────┘
-  ┌────┴─────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴─────┐
-  │ Synthetic│ │  Z.ai   │ │Anthropic│ │chatgpt  │ │ GitHub  │ │ MiniMax │ │ Gemini  │ │ Local    │
-  │  API     │ │  API    │ │OAuth API│ │OAuth API│ │Copilot  │ │  API    │ │CLI  API │ │ RPC      │
-  └──────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └──────────┘
+  │ Synthetic│ │  Z.ai   │ │Anthropic│ │  Codex  │ │ Copilot │ │ MiniMax │ │ Gemini  │ │ Grok  │ │Antigrav. │
+  │  Agent   │ │  Agent  │ │  Agent  │ │  Agent  │ │  Agent  │ │  Agent  │ │  Agent  │ │ Agent │ │  Agent   │
+  └────┬─────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬─┘ └────┬─────┘
+  ┌────┴─────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴─┐ ┌────┴─────┐
+  │ Synthetic│ │  Z.ai   │ │Anthropic│ │chatgpt  │ │ GitHub  │ │ MiniMax │ │ Gemini  │ │Grok  │ │ Local    │
+  │  API     │ │  API    │ │OAuth API│ │OAuth API│ │Copilot  │ │  API    │ │CLI  API │ │auth+ │ │ RPC      │
+  └──────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ │probe │ └──────────┘
+                                                                                      └──────┘
 ```
 
 All agents run as parallel goroutines. Each polls its API at the configured interval and writes snapshots. The dashboard reads from the shared store.
@@ -322,7 +331,15 @@ Additional environment variables:
 | `GEMINI_CLIENT_ID`       | Custom OAuth client ID (optional, has defaults)          |
 | `GEMINI_CLIENT_SECRET`   | Custom OAuth client secret (optional, has defaults)      |
 | `CURSOR_TOKEN`           | Cursor access token (auto-detected from Cursor Desktop)|
+| `GROK_TOKEN`             | Grok bearer from `grok login` (or auto-detected from ~/.grok/auth.json)|
+| `GROK_ENABLED`           | Enable Grok provider (default: auto when auth present; set false to disable)|
+| `GROK_HOME`              | Custom Grok home dir (default ~/.grok; auth.json and sessions live here)|
+| `KIMI_TOKEN` / `KIMI_CODE_TOKEN` | Optional static Kimi Code access token (prefer local OAuth credentials)|
+| `KIMI_CODE_ENABLED`      | Enable Kimi Code provider (default: auto when credentials present)|
+| `KIMI_CODE_CREDENTIALS`  | Path to kimi-code.json (default ~/.kimi-code/credentials/kimi-code.json)|
 | `ANTIGRAVITY_ENABLED`    | Enable Antigravity provider (auto-detects local server)|
+| `ANTIGRAVITY_SOURCE`     | Data source: `both` (default), `cli` (agy), or `ide`   |
+| `ANTIGRAVITY_CLI_PATH`   | Override path to the `agy` binary (else PATH/well-known)|
 | `ANTIGRAVITY_BASE_URL`   | Antigravity base URL (for Docker/manual config)        |
 | `ANTIGRAVITY_CSRF_TOKEN` | Antigravity CSRF token (for Docker/manual config)      |
 | `SYNTHETIC_API_KEY`      | Synthetic API key                                      |
@@ -564,6 +581,20 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilat
 ./app.sh --build --run # Build + run debug mode    (or: make run)
 ./app.sh --release     # Cross-compile all platforms (or: make release-local)
 ```
+
+### Nix
+
+If you have Nix (flakes enabled), you can build, run, and develop without touching `app.sh`:
+
+```bash
+nix build .#onwatch            # Build -> ./result/bin/onwatch (pure-Go, static)
+nix run .#onwatch -- --debug   # Build + run
+nix develop                    # Enter a shell with go, gopls, gotools, gofumpt
+```
+
+With [direnv](https://direnv.net/) installed, run `direnv allow` once and the devShell loads automatically on `cd`.
+
+The flake tracks `nixos-unstable` (pinned via `flake.lock`) because `go.mod` requires Go >= 1.25.7 and the `nixos-25.05` branch only ships Go 1.24. When you change `go.sum`, update the `vendorHash` in `flake.nix` by running `nix build .#onwatch` and pasting the `got: sha256-...` value from the mismatch error.
 
 ---
 

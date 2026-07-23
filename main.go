@@ -513,9 +513,15 @@ func run() error {
 		}
 	}
 	if cfg.CodexToken == "" {
-		if token := api.DetectCodexToken(preflightLogger); token != "" {
-			cfg.CodexToken = token
+		if creds := api.DetectCodexCredentials(preflightLogger); creds != nil && creds.AccessToken != "" {
+			cfg.CodexToken = creds.AccessToken
 			cfg.CodexAutoToken = true
+			if creds.Source == api.CredentialSourceOpenCode {
+				cfg.CodexAutoSource = "opencode"
+				cfg.OpenCodeEnabled = true
+			} else {
+				cfg.CodexAutoSource = "codex"
+			}
 		}
 	}
 
@@ -564,6 +570,32 @@ func run() error {
 		}
 	}
 
+	// Grok provider auto-detect from ~/.grok/auth.json (or $GROK_HOME). Explicit GROK_TOKEN wins in config.
+	if os.Getenv("GROK_ENABLED") != "false" {
+		if creds := api.DetectGrokCredentials(preflightLogger); creds != nil && creds.AccessToken != "" {
+			if cfg.GrokToken == "" {
+				cfg.GrokToken = creds.AccessToken
+				cfg.GrokAutoToken = true
+			}
+			cfg.GrokEnabled = true
+		}
+	}
+
+	// Kimi Code provider auto-detect from ~/.kimi-code credentials. Explicit KIMI_TOKEN wins.
+	kimiEnabledEnv := os.Getenv("KIMI_ENABLED")
+	if kimiEnabledEnv == "" {
+		kimiEnabledEnv = os.Getenv("KIMI_CODE_ENABLED")
+	}
+	if kimiEnabledEnv != "false" {
+		if creds := api.DetectKimiCredentials(preflightLogger); creds != nil && (creds.AccessToken != "" || creds.RefreshToken != "") {
+			if cfg.KimiToken == "" && creds.AccessToken != "" {
+				cfg.KimiToken = creds.AccessToken
+				cfg.KimiAutoToken = true
+			}
+			cfg.KimiEnabled = true
+		}
+	}
+
 	// Daemonize: if not in debug mode, not already the daemon child, and NOT in Docker, fork
 	// Docker containers should always run in foreground mode (logs to stdout)
 	if !cfg.DebugMode && !isDaemonChild && !cfg.IsDockerEnvironment() {
@@ -607,16 +639,24 @@ func run() error {
 	}
 
 	// Primary handler: writes to log file (or stdout for --debugstdout/Docker)
-	fileHandler := slog.NewTextHandler(logWriter, &slog.HandlerOptions{
-		Level: logLevel,
-	})
+	handlerOpts := &slog.HandlerOptions{Level: logLevel}
+	var fileHandler slog.Handler
+	if cfg.LogFormat == "json" {
+		fileHandler = slog.NewJSONHandler(logWriter, handlerOpts)
+	} else {
+		fileHandler = slog.NewTextHandler(logWriter, handlerOpts)
+	}
 
 	var logger *slog.Logger
 	if cfg.DebugMode && !cfg.DebugStdout && !cfg.IsDockerEnvironment() {
 		// --debug mode: file gets full logs, stdout gets only warn/error
-		stdoutHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelWarn,
-		})
+		stdoutOpts := &slog.HandlerOptions{Level: slog.LevelWarn}
+		var stdoutHandler slog.Handler
+		if cfg.LogFormat == "json" {
+			stdoutHandler = slog.NewJSONHandler(os.Stdout, stdoutOpts)
+		} else {
+			stdoutHandler = slog.NewTextHandler(os.Stdout, stdoutOpts)
+		}
 		logger = slog.New(dualHandler{file: fileHandler, stdout: stdoutHandler})
 	} else {
 		logger = slog.New(fileHandler)
@@ -629,6 +669,7 @@ func run() error {
 		"db_path", cfg.DBPath,
 		"debug", cfg.DebugMode,
 		"test_mode", cfg.TestMode,
+		"log_format", cfg.LogFormat,
 	)
 
 	// Warn if using default password
@@ -717,7 +758,11 @@ func run() error {
 		logger.Info("Auto-detected Anthropic token from Claude Code credentials")
 	}
 	if cfg.CodexAutoToken {
-		logger.Info("Auto-detected Codex token from Codex credentials")
+		if cfg.CodexAutoSource == "opencode" {
+			logger.Info("Auto-detected ChatGPT token from OpenCode credentials")
+		} else {
+			logger.Info("Auto-detected Codex token from Codex credentials")
+		}
 	}
 
 	// Apply provider_settings from DB (UI-configured keys/regions override .env)
@@ -829,6 +874,29 @@ func run() error {
 	if cfg.HasProvider("cursor") {
 		cursorClient = api.NewCursorClient(cfg.CursorToken, logger)
 		logger.Info("Cursor API client configured")
+	}
+
+	var grokClient *api.GrokClient
+	if cfg.HasProvider("grok") {
+		grokClient = api.NewGrokClient(cfg.GrokToken, logger)
+		logger.Info("Grok API client configured")
+	}
+
+	var kimiClient *api.KimiClient
+	if cfg.HasProvider("kimi") {
+		// Auto-detected OAuth access tokens expire quickly (~15m). Never freeze
+		// them as a static client token — that skips disk re-read + refresh and
+		// produces permanent 401s after the first expiry (kimi-code store only).
+		// Only explicit KIMI_TOKEN / KIMI_CODE_TOKEN (Docker/CI) use staticToken.
+		kimiToken := ""
+		if !cfg.KimiAutoToken {
+			kimiToken = cfg.KimiToken
+		}
+		kimiClient = api.NewKimiClient(kimiToken, logger)
+		logger.Info("Kimi Code API client configured",
+			"auto_token", cfg.KimiAutoToken,
+			"static_token", kimiToken != "",
+		)
 	}
 
 	// Create components
@@ -1007,6 +1075,16 @@ func run() error {
 		cursorTr = tracker.NewCursorTracker(db, logger)
 	}
 
+	var grokTr *tracker.GrokTracker
+	if cfg.HasProvider("grok") {
+		grokTr = tracker.NewGrokTracker(db, logger)
+	}
+
+	var kimiTr *tracker.KimiTracker
+	if cfg.HasProvider("kimi") {
+		kimiTr = tracker.NewKimiTracker(db, logger)
+	}
+
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
 		antigravitySm := agent.NewSessionManager(db, "antigravity", idleTimeout, logger)
@@ -1077,6 +1155,18 @@ func run() error {
 		})
 	}
 
+	var grokAg *agent.GrokAgent
+	if grokClient != nil {
+		grokSm := agent.NewSessionManager(db, "grok", idleTimeout, logger)
+		grokAg = agent.NewGrokAgent(grokClient, db, grokTr, cfg.PollInterval, logger, grokSm)
+	}
+
+	var kimiAg *agent.KimiAgent
+	if kimiClient != nil {
+		kimiSm := agent.NewSessionManager(db, "kimi", idleTimeout, logger)
+		kimiAg = agent.NewKimiAgent(kimiClient, db, kimiTr, cfg.PollInterval, logger, kimiSm)
+	}
+
 	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
 	if cfg.APIIntegrationsEnabled {
 		apiIntegrationsAg = agent.NewAPIIntegrationsIngestAgent(db, cfg.APIIntegrationsDir, cfg.APIIntegrationsRetention, logger)
@@ -1126,6 +1216,12 @@ func run() error {
 	}
 	if cursorAg != nil {
 		cursorAg.SetNotifier(notifier)
+	}
+	if grokAg != nil {
+		grokAg.SetNotifier(notifier)
+	}
+	if kimiAg != nil {
+		kimiAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -1189,9 +1285,53 @@ func run() error {
 			}
 			return true
 		})
+		// Auto quota-starter (Beta): enablement is read fresh from provider_settings
+		// each poll, so a dashboard toggle takes effect without a daemon restart.
+		// Falls back to the env defaults. The agent fires when it observes a window
+		// in the unstarted state (reset countdown pinned at ~the full window).
+		codexMgr.SetAutoStartCheck(func(quotaName string) bool {
+			field := ""
+			fallback := false
+			switch quotaName {
+			case "five_hour":
+				field, fallback = "auto_start_5h", cfg.CodexAutoStart5h
+			case "seven_day":
+				field, fallback = "auto_start_7d", cfg.CodexAutoStart7d
+			default:
+				return false
+			}
+			v, err := db.GetSetting("provider_settings")
+			if err == nil && v != "" {
+				var ps map[string]map[string]interface{}
+				if json.Unmarshal([]byte(v), &ps) == nil {
+					if codex, ok := ps["codex"]; ok {
+						if setting, ok := codex[field].(string); ok && setting != "" {
+							return setting == "on"
+						}
+					}
+				}
+			}
+			return fallback
+		})
 	}
 	if antigravityAg != nil {
 		antigravityAg.SetPollingCheck(func() bool { return isPollingEnabled("antigravity") })
+		// Source preference is read fresh each poll so a settings-UI change
+		// (ide/cli/both) takes effect without a daemon restart.
+		antigravityAg.SetSourceCheck(func() string {
+			v, err := db.GetSetting("provider_settings")
+			if err == nil && v != "" {
+				var ps map[string]map[string]interface{}
+				if json.Unmarshal([]byte(v), &ps) == nil {
+					if ag, ok := ps["antigravity"]; ok {
+						if src, ok := ag["source"].(string); ok && src != "" {
+							return src
+						}
+					}
+				}
+			}
+			return cfg.AntigravitySource
+		})
 	}
 	if minimaxMgr != nil {
 		minimaxMgr.SetPollingCheck(func() bool { return isPollingEnabled("minimax") })
@@ -1236,6 +1376,12 @@ func run() error {
 	}
 	if cursorAg != nil {
 		cursorAg.SetPollingCheck(func() bool { return isPollingEnabled("cursor") })
+	}
+	if grokAg != nil {
+		grokAg.SetPollingCheck(func() bool { return isPollingEnabled("grok") })
+	}
+	if kimiAg != nil {
+		kimiAg.SetPollingCheck(func() bool { return isPollingEnabled("kimi") })
 	}
 
 	// Wire reset callbacks to trackers
@@ -1297,6 +1443,16 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "cursor", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	if grokTr != nil {
+		grokTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "grok", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
+	if kimiTr != nil {
+		kimiTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "kimi", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -1330,6 +1486,12 @@ func run() error {
 	}
 	if cursorTr != nil {
 		handler.SetCursorTracker(cursorTr)
+	}
+	if grokTr != nil {
+		handler.SetGrokTracker(grokTr)
+	}
+	if kimiTr != nil {
+		handler.SetKimiTracker(kimiTr)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -1368,6 +1530,12 @@ func run() error {
 	if cursorAg != nil {
 		agentMgr.RegisterFactory("cursor", func() (agent.AgentRunner, error) { return cursorAg, nil })
 	}
+	if grokAg != nil {
+		agentMgr.RegisterFactory("grok", func() (agent.AgentRunner, error) { return grokAg, nil })
+	}
+	if kimiAg != nil {
+		agentMgr.RegisterFactory("kimi", func() (agent.AgentRunner, error) { return kimiAg, nil })
+	}
 
 	if apiIntegrationsAg != nil {
 		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
@@ -1394,7 +1562,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "moonshot", "deepseek", "gemini", "cursor"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
@@ -1875,7 +2043,9 @@ func printBanner(cfg *config.Config, version string) {
 		fmt.Println("║  API:       github.com/copilot (β)   ║")
 	}
 	if cfg.HasProvider("codex") {
-		if cfg.CodexAutoToken {
+		if cfg.CodexAutoSource == "opencode" {
+			fmt.Println("║  API:       chatgpt.com/wham (oc)    ║")
+		} else if cfg.CodexAutoToken {
 			fmt.Println("║  API:       chatgpt.com/wham (auto)  ║")
 		} else {
 			fmt.Println("║  API:       chatgpt.com/wham         ║")
@@ -1920,7 +2090,9 @@ func printBanner(cfg *config.Config, version string) {
 	}
 	if cfg.HasProvider("codex") {
 		label := "Codex Token:       "
-		if cfg.CodexAutoToken {
+		if cfg.CodexAutoSource == "opencode" {
+			label = "Codex (OpenCode):  "
+		} else if cfg.CodexAutoToken {
 			label = "Codex (auto):      "
 		}
 		fmt.Printf("%s%s\n", label, redactAPIKey(cfg.CodexToken))
@@ -1971,6 +2143,7 @@ func printHelp() {
 	fmt.Println("  --debug            Run in foreground mode (logs to file, stdout gets warn/error)")
 	fmt.Println("  --debugstdout      Run in foreground mode with all logs to stdout")
 	fmt.Println("  --test             Test mode: isolated PID/log files, won't affect production")
+	fmt.Println("  --log-format FMT   Log output format: text, txt, fmt, or json (default: text)")
 	fmt.Println()
 	fmt.Println("Environment Variables:")
 	fmt.Println("  SYNTHETIC_API_KEY       Synthetic API key")
@@ -1990,6 +2163,7 @@ func printHelp() {
 	fmt.Println("  ONWATCH_ADMIN_PASS      Dashboard admin password")
 	fmt.Println("  ONWATCH_DB_PATH         SQLite database file path")
 	fmt.Println("  ONWATCH_LOG_LEVEL       Log level: debug, info, warn, error")
+	fmt.Println("  ONWATCH_LOG_FORMAT      Log output format: text, txt, fmt, or json (default: text)")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  onwatch setup                     # Interactive setup wizard")

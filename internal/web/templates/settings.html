@@ -208,6 +208,12 @@
         <!-- Providers Panel -->
         <div class="settings-panel" id="panel-providers" role="tabpanel" hidden>
             <div class="settings-section">
+                <h3 class="settings-section-title">Dashboard Tabs</h3>
+                <p class="settings-section-desc">Only providers with <strong>Dashboard</strong> enabled appear here. Drag the handle (or use ↑/↓) to reorder tabs. Use the <strong>Tab name</strong> field to rename (emoji allowed); leave blank for the default name (e.g. Z.ai → GLM).</p>
+                <ul class="dashboard-tab-order-list" id="dashboard-tab-order" aria-label="Dashboard provider tab order and names"></ul>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
                 <h3 class="settings-section-title">Provider Controls</h3>
                 <p class="settings-section-desc">Manage telemetry (background data collection) and dashboard visibility for each provider. Hidden providers remain accessible under the "All" tab.</p>
                 <div class="settings-fields" id="provider-toggles">
@@ -302,6 +308,23 @@
         <!-- General Panel -->
         <div class="settings-panel" id="panel-general" role="tabpanel" hidden>
             <div class="settings-section">
+                <h3 class="settings-section-title">Credentials</h3>
+                <p class="settings-section-desc">Control how onWatch interacts with coding-harness OAuth tokens on disk (Claude Code, Kimi Code, Codex, etc.).</p>
+                <div class="settings-fields">
+                    <div class="settings-toggle-row">
+                        <div class="settings-toggle-info">
+                            <div class="settings-toggle-label">Auto refresh tokens</div>
+                            <div class="settings-toggle-sublabel">When enabled, onWatch may refresh OAuth tokens and write them back to harness credential files. Turn off if your CLI sessions keep expiring while onWatch is running.</div>
+                        </div>
+                        <label class="settings-toggle">
+                            <input type="checkbox" id="settings-auto-refresh-tokens" checked>
+                            <span class="settings-toggle-track"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
                 <h3 class="settings-section-title">Timezone</h3>
                 <div class="settings-fields">
                     <div class="settings-field">
@@ -309,7 +332,22 @@
                         <select id="settings-timezone" class="settings-input">
                             <option value="">Browser Default</option>
                         </select>
-                        <span class="settings-field-hint">Affects how times are displayed on the dashboard</span>
+                        <span class="settings-field-hint" id="settings-timezone-hint">Affects how times are displayed on the dashboard</span>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Quota Display</h3>
+                <p class="settings-section-desc">Choose whether quota cards show how much you've used or how much is left. Per-provider settings (e.g. Codex) override this global default.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="settings-display-mode">Display Mode</label>
+                        <select id="settings-display-mode" class="settings-input">
+                            <option value="usage">Usage (% used)</option>
+                            <option value="available">Available (% remaining)</option>
+                        </select>
+                        <span class="settings-field-hint">Applies to all providers unless overridden in the per-provider settings.</span>
                     </div>
                 </div>
             </div>

@@ -1435,3 +1435,98 @@ func TestConfig_CodexShowAvailable(t *testing.T) {
 		})
 	}
 }
+
+func TestConfig_LogFormat_DefaultsToText(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.LogFormat != "text" {
+		t.Errorf("LogFormat = %q, want %q", cfg.LogFormat, "text")
+	}
+}
+
+func TestConfig_LogFormat_LoadsFromEnv(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	os.Setenv("ONWATCH_LOG_FORMAT", "json")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.LogFormat != "json" {
+		t.Errorf("LogFormat = %q, want %q", cfg.LogFormat, "json")
+	}
+}
+
+func TestConfig_LogFormat_FlagOverridesEnv(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+	os.Setenv("ONWATCH_LOG_FORMAT", "text")
+	defer os.Clearenv()
+
+	cfg, err := loadWithArgs([]string{"--log-format", "json"})
+	if err != nil {
+		t.Fatalf("loadWithArgs() failed: %v", err)
+	}
+	if cfg.LogFormat != "json" {
+		t.Errorf("LogFormat = %q, want %q", cfg.LogFormat, "json")
+	}
+
+	// equals syntax
+	cfg, err = loadWithArgs([]string{"--log-format=json"})
+	if err != nil {
+		t.Fatalf("loadWithArgs() failed: %v", err)
+	}
+	if cfg.LogFormat != "json" {
+		t.Errorf("LogFormat (equals syntax) = %q, want %q", cfg.LogFormat, "json")
+	}
+}
+
+func TestConfig_LogFormat_AliasesAndCaseInsensitive(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"json", "json"},
+		{"JSON", "json"},
+		{"Json", "json"},
+		{"text", "text"},
+		{"TEXT", "text"},
+		{"Text", "text"},
+		{"txt", "text"},
+		{"TXT", "text"},
+		{"Txt", "text"},
+		{"fmt", "text"},
+		{"FMT", "text"},
+		{"Fmt", "text"},
+		{"invalid", "text"},
+		{"xml", "text"},
+		{"", "text"},
+	}
+
+	for _, tt := range tests {
+		t.Run("input_"+tt.input, func(t *testing.T) {
+			os.Clearenv()
+			os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
+			if tt.input != "" {
+				os.Setenv("ONWATCH_LOG_FORMAT", tt.input)
+			}
+			defer os.Clearenv()
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+			if cfg.LogFormat != tt.want {
+				t.Errorf("LogFormat for input %q = %q, want %q", tt.input, cfg.LogFormat, tt.want)
+			}
+		})
+	}
+}

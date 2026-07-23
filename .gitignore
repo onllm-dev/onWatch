@@ -85,4 +85,10 @@ onwatch-test
 
 # Claude Code session artifacts
 .omc/
+.omx/
 .playwright-mcp/
+
+# Nix
+/result
+/result-*
+.direnv/

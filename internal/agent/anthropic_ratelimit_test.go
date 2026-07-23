@@ -427,14 +427,14 @@ func TestRateLimitBackoff_Calculation(t *testing.T) {
 		failCount int
 		want      time.Duration
 	}{
-		{0, rateLimitBaseBackoff},                  // 5m
-		{1, rateLimitBaseBackoff},                  // 5m * 2^0 = 5m
-		{2, rateLimitBaseBackoff * 2},              // 5m * 2^1 = 10m
-		{3, rateLimitBaseBackoff * 4},              // 5m * 2^2 = 20m
-		{4, rateLimitBaseBackoff * 8},              // 5m * 2^3 = 40m
-		{5, rateLimitBaseBackoff * 16},             // 5m * 2^4 = 80m
-		{10, rateLimitMaxBackoff},                  // capped at 6h
-		{20, rateLimitMaxBackoff},                  // still capped
+		{0, rateLimitBaseBackoff},      // 5m
+		{1, rateLimitBaseBackoff},      // 5m * 2^0 = 5m
+		{2, rateLimitBaseBackoff * 2},  // 5m * 2^1 = 10m
+		{3, rateLimitBaseBackoff * 4},  // 5m * 2^2 = 20m
+		{4, rateLimitBaseBackoff * 8},  // 5m * 2^3 = 40m
+		{5, rateLimitBaseBackoff * 16}, // 5m * 2^4 = 80m
+		{10, rateLimitMaxBackoff},      // capped at 6h
+		{20, rateLimitMaxBackoff},      // still capped
 	}
 	for _, tt := range tests {
 		got := rateLimitBackoff(tt.failCount)

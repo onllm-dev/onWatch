@@ -578,4 +578,3 @@ func TestEnsureStatuslineBridge_DetectsUserChange(t *testing.T) {
 		t.Errorf("expected user's new command preserved, got: %s", cmd)
 	}
 }
-

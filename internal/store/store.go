@@ -490,7 +490,8 @@ func (s *Store) createTables() error {
 			prompt_credits REAL,
 			monthly_credits INTEGER,
 			raw_json TEXT,
-			model_count INTEGER DEFAULT 0
+			model_count INTEGER DEFAULT 0,
+			source TEXT NOT NULL DEFAULT 'unknown'
 		);
 
 		CREATE TABLE IF NOT EXISTS antigravity_model_values (
@@ -698,6 +699,85 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_cursor_cycles_name_start ON cursor_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_cursor_cycles_name_active ON cursor_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
 
+		-- Grok-specific tables (credits utilization, identity from ~/.grok/auth.json, single-account v1)
+		CREATE TABLE IF NOT EXISTS grok_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			account_id INTEGER NOT NULL DEFAULT 1,
+			email TEXT,
+			team_id TEXT,
+			login_method TEXT,
+			raw_json TEXT NOT NULL DEFAULT '',
+			quota_count INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS grok_quota_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			quota_name TEXT NOT NULL,
+			utilization REAL NOT NULL DEFAULT 0,
+			resets_at TEXT,
+			status TEXT NOT NULL DEFAULT '',
+			FOREIGN KEY (snapshot_id) REFERENCES grok_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS grok_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			account_id INTEGER NOT NULL DEFAULT 1,
+			quota_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			resets_at TEXT,
+			peak_utilization REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		-- Grok indexes
+		CREATE INDEX IF NOT EXISTS idx_grok_snapshots_captured ON grok_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_grok_quota_values_snapshot ON grok_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_grok_cycles_name_start ON grok_reset_cycles(quota_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_grok_cycles_name_active ON grok_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
+		CREATE INDEX IF NOT EXISTS idx_grok_snapshots_account ON grok_snapshots(account_id, captured_at);
+
+		-- Kimi Code tables (OAuth quotas from api.kimi.com/coding/v1/usages)
+		CREATE TABLE IF NOT EXISTS kimi_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			account_id INTEGER NOT NULL DEFAULT 1,
+			user_id TEXT,
+			region TEXT,
+			membership TEXT,
+			raw_json TEXT NOT NULL DEFAULT '',
+			quota_count INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS kimi_quota_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			quota_name TEXT NOT NULL,
+			utilization REAL NOT NULL DEFAULT 0,
+			resets_at TEXT,
+			status TEXT NOT NULL DEFAULT '',
+			FOREIGN KEY (snapshot_id) REFERENCES kimi_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS kimi_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			account_id INTEGER NOT NULL DEFAULT 1,
+			quota_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			resets_at TEXT,
+			peak_utilization REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_kimi_snapshots_captured ON kimi_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_kimi_quota_values_snapshot ON kimi_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_kimi_cycles_name_start ON kimi_reset_cycles(quota_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_kimi_cycles_name_active ON kimi_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
+		CREATE INDEX IF NOT EXISTS idx_kimi_snapshots_account ON kimi_snapshots(account_id, captured_at);
+
 		-- API integrations telemetry ingestion tables
 		CREATE TABLE IF NOT EXISTS api_integration_usage_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -809,6 +889,15 @@ func (s *Store) migrateSchema() error {
 			if !strings.Contains(err.Error(), "no such table") {
 				return fmt.Errorf("failed antigravity index migration: %w", err)
 			}
+		}
+	}
+
+	// Record which source (ide/cli) produced each Antigravity snapshot.
+	if _, err := s.db.Exec(`
+		ALTER TABLE antigravity_snapshots ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown'
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to add source to antigravity_snapshots: %w", err)
 		}
 	}
 
@@ -1615,6 +1704,9 @@ func (s *Store) QuerySyntheticCycleOverview(groupBy string, limit int) ([]CycleO
 	return rows, nil
 }
 
+// Setting key for OAuth auto-refresh of coding-harness credentials.
+const SettingAutoRefreshTokens = "auto_refresh_tokens"
+
 // GetSetting returns the value for a setting key. Returns "" if not found.
 func (s *Store) GetSetting(key string) (string, error) {
 	var value string
@@ -1635,6 +1727,25 @@ func (s *Store) SetSetting(key, value string) error {
 		return fmt.Errorf("store.SetSetting: %w", err)
 	}
 	return nil
+}
+
+// AutoRefreshTokensEnabled reports whether onWatch may perform OAuth token
+// refresh and write tokens back to coding-harness credential stores.
+// Defaults to true when unset (backward-compatible with existing installs).
+func (s *Store) AutoRefreshTokensEnabled() bool {
+	if s == nil {
+		return true
+	}
+	val, err := s.GetSetting(SettingAutoRefreshTokens)
+	if err != nil || val == "" {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(val)) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 // GetMenubarSettings returns persisted menubar settings, falling back to defaults.

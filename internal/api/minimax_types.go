@@ -30,6 +30,37 @@ type MiniMaxModelRemain struct {
 	WeeklyStartTime         interface{} `json:"weekly_start_time"`
 	WeeklyEndTime           interface{} `json:"weekly_end_time"`
 	WeeklyRemainsTime       int64       `json:"weekly_remains_time"`
+
+	// Percentage-based fields (newer API). For coding-plan accounts the count
+	// fields above are 0 and remaining quota is reported as a percentage here.
+	// Status: 1 = active, 2 = active but exhausted (0% left), 3 = not subscribed.
+	// Pointers distinguish "absent" from a legitimate 0.
+	CurrentIntervalRemainingPercent *int `json:"current_interval_remaining_percent"`
+	CurrentIntervalStatus           *int `json:"current_interval_status"`
+	CurrentWeeklyRemainingPercent   *int `json:"current_weekly_remaining_percent"`
+	CurrentWeeklyStatus             *int `json:"current_weekly_status"`
+}
+
+// clampPercent clamps v to [0,100].
+func clampPercent(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
+}
+
+// minimaxIntervalActive reports whether a percentage-based quota window belongs
+// to an active/subscribed plan whose percentage should be tracked. MiniMax uses:
+//   status 1 = active with quota remaining
+//   status 2 = active but exhausted (0% remaining = 100% used)
+//   status 3 = model not part of the subscription
+// Both 1 and 2 are live windows that must be recorded - status 2 is exactly when
+// the user has hit their limit and most needs the reading; status 3 is dropped.
+func minimaxIntervalActive(status *int) bool {
+	return status != nil && (*status == 1 || *status == 2)
 }
 
 // MiniMaxRemainsResponse is the full API response.
@@ -234,6 +265,19 @@ func (r MiniMaxRemainsResponse) ToSnapshot(capturedAt time.Time) *MiniMaxSnapsho
 			remain = 0
 		}
 
+		// Newer coding-plan API reports remaining quota as a percentage with
+		// zero count fields. When the interval is active (status 1 or 2) and no
+		// absolute counts are present, synthesize a 0-100 scale so usage,
+		// grouping, and reset tracking work. A status-2 window is fully consumed
+		// (0% remaining -> 100% used). Unsubscribed models (status 3, e.g.
+		// "video") keep zero counts and are dropped by GroupByPool.
+		if total == 0 && model.CurrentIntervalRemainingPercent != nil && minimaxIntervalActive(model.CurrentIntervalStatus) {
+			rp := clampPercent(*model.CurrentIntervalRemainingPercent)
+			total = 100
+			remain = rp
+			used = 100 - rp
+		}
+
 		windowStart := parseMiniMaxTimestamp(model.StartTime)
 		windowEnd := parseMiniMaxTimestamp(model.EndTime)
 
@@ -269,8 +313,9 @@ func (r MiniMaxRemainsResponse) ToSnapshot(capturedAt time.Time) *MiniMaxSnapsho
 			TimeUntilReset: untilReset,
 		}
 
-		// Parse weekly quota fields if present.
-		if model.CurrentWeeklyTotalCount > 0 || model.CurrentWeeklyUsageCount > 0 {
+		// Parse weekly quota fields if present (count-based or percentage-based).
+		weeklyPercentActive := model.CurrentWeeklyRemainingPercent != nil && minimaxIntervalActive(model.CurrentWeeklyStatus)
+		if model.CurrentWeeklyTotalCount > 0 || model.CurrentWeeklyUsageCount > 0 || weeklyPercentActive {
 			quota.HasWeeklyQuota = true
 			quota.WeeklyTotal = model.CurrentWeeklyTotalCount
 			// Same naming quirk: current_weekly_usage_count is actually remaining.
@@ -278,6 +323,13 @@ func (r MiniMaxRemainsResponse) ToSnapshot(capturedAt time.Time) *MiniMaxSnapsho
 			quota.WeeklyUsed = quota.WeeklyTotal - quota.WeeklyRemain
 			if quota.WeeklyUsed < 0 {
 				quota.WeeklyUsed = 0
+			}
+			// Percentage-based weekly quota: synthesize a 0-100 scale.
+			if quota.WeeklyTotal == 0 && weeklyPercentActive {
+				rp := clampPercent(*model.CurrentWeeklyRemainingPercent)
+				quota.WeeklyTotal = 100
+				quota.WeeklyRemain = rp
+				quota.WeeklyUsed = 100 - rp
 			}
 			if quota.WeeklyTotal > 0 {
 				quota.WeeklyUsedPercent = (float64(quota.WeeklyUsed) / float64(quota.WeeklyTotal)) * 100

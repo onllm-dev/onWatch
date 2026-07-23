@@ -9,6 +9,17 @@ import (
 	"time"
 )
 
+// CredentialSource identifies where Codex credentials were loaded from, so
+// refreshed tokens are written back to the correct file in the correct format.
+type CredentialSource int
+
+const (
+	CredentialSourceNone     CredentialSource = iota
+	CredentialSourceCodex                     // ~/.codex/auth.json or CODEX_HOME
+	CredentialSourceOpenCode                  // ~/.local/share/opencode/auth.json or OPENCODE_HOME
+	CredentialSourceEnvVar                    // CODEX_TOKEN environment variable
+)
+
 // CodexCredentials contains parsed Codex auth state.
 type CodexCredentials struct {
 	AccessToken  string
@@ -17,8 +28,10 @@ type CodexCredentials struct {
 	APIKey       string
 	AccountID    string
 	UserID       string
-	ExpiresAt    time.Time     // Token expiry time (parsed from id_token JWT)
-	ExpiresIn    time.Duration // Time until expiry (computed)
+	ExpiresAt    time.Time        // Token expiry time (parsed from id_token JWT)
+	ExpiresIn    time.Duration    // Time until expiry (computed)
+	Source       CredentialSource // Where these credentials were loaded from
+	SourcePath   string           // Absolute path to the auth file (for write-back)
 }
 
 // IsExpiringSoon returns true if the token expires within the given duration.
@@ -63,6 +76,19 @@ type codexAuthFile struct {
 	} `json:"tokens"`
 }
 
+// openCodeAuthFile is the OpenCode credential shape at
+// ~/.local/share/opencode/auth.json. Unlike Codex, "expires" is a Unix
+// timestamp in MILLISECONDS (Date.now() + expires_in*1000), not a JWT claim.
+type openCodeAuthFile struct {
+	OpenAI struct {
+		Type      string `json:"type"`
+		Refresh   string `json:"refresh"`
+		Access    string `json:"access"`
+		Expires   int64  `json:"expires"` // Unix timestamp in milliseconds
+		AccountID string `json:"accountId"`
+	} `json:"openai"`
+}
+
 // DetectCodexCredentials loads Codex credentials from CODEX_HOME/auth.json or ~/.codex/auth.json.
 // Falls back to CODEX_TOKEN for environments without a persistent Codex auth file.
 func DetectCodexCredentials(logger *slog.Logger) *CodexCredentials {
@@ -105,6 +131,8 @@ func DetectCodexCredentials(logger *slog.Logger) *CodexCredentials {
 					UserID:       ParseIDTokenUserID(idToken),
 					ExpiresAt:    expiresAt,
 					ExpiresIn:    expiresIn,
+					Source:       CredentialSourceCodex,
+					SourcePath:   authPath,
 				}
 
 				if creds.AccessToken != "" || creds.APIKey != "" {
@@ -124,13 +152,72 @@ func DetectCodexCredentials(logger *slog.Logger) *CodexCredentials {
 		logger.Debug("Codex auth path unavailable")
 	}
 
+	// OpenCode fallback: ChatGPT OAuth login stored by the OpenCode CLI.
+	// Same OpenAI OAuth backend as Codex, so the existing refresh flow works.
+	if creds := detectOpenCodeCredentials(logger); creds != nil {
+		return creds
+	}
+
 	if token := strings.TrimSpace(os.Getenv("CODEX_TOKEN")); token != "" {
 		logger.Debug("Using CODEX_TOKEN environment variable")
-		return &CodexCredentials{AccessToken: token}
+		return &CodexCredentials{AccessToken: token, Source: CredentialSourceEnvVar}
 	}
 
 	logger.Debug("No Codex credentials found")
 	return nil
+}
+
+// detectOpenCodeCredentials loads ChatGPT OAuth credentials from OpenCode's
+// auth.json. Returns nil if the file is absent, malformed, or has no token.
+func detectOpenCodeCredentials(logger *slog.Logger) *CodexCredentials {
+	authPath := OpenCodeAuthPath()
+	if authPath == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		logger.Debug("OpenCode auth file not readable", "path", authPath, "error", err)
+		return nil
+	}
+
+	var auth openCodeAuthFile
+	if err := json.Unmarshal(data, &auth); err != nil {
+		logger.Debug("OpenCode auth file parse failed", "path", authPath, "error", err)
+		return nil
+	}
+
+	accessToken := strings.TrimSpace(auth.OpenAI.Access)
+	if accessToken == "" {
+		logger.Debug("OpenCode auth file has no access token", "path", authPath)
+		return nil
+	}
+
+	var expiresAt time.Time
+	var expiresIn time.Duration
+	if auth.OpenAI.Expires > 0 {
+		expiresAt = time.UnixMilli(auth.OpenAI.Expires)
+		expiresIn = time.Until(expiresAt)
+	}
+
+	creds := &CodexCredentials{
+		AccessToken:  accessToken,
+		RefreshToken: strings.TrimSpace(auth.OpenAI.Refresh),
+		AccountID:    strings.TrimSpace(auth.OpenAI.AccountID),
+		UserID:       ParseIDTokenUserID(accessToken),
+		ExpiresAt:    expiresAt,
+		ExpiresIn:    expiresIn,
+		Source:       CredentialSourceOpenCode,
+		SourcePath:   authPath,
+	}
+
+	if !expiresAt.IsZero() {
+		logger.Debug("OpenCode credentials loaded",
+			"path", authPath,
+			"expires_in", expiresIn.Round(time.Minute),
+			"has_refresh_token", creds.RefreshToken != "")
+	}
+	return creds
 }
 
 // DetectCodexToken returns OAuth access token when available.
@@ -155,6 +242,22 @@ func codexAuthPath() string {
 		return ""
 	}
 	return filepath.Join(home, ".codex", "auth.json")
+}
+
+// OpenCodeAuthPath resolves the path to OpenCode's auth.json, honoring
+// OPENCODE_HOME, then XDG_DATA_HOME, then the default ~/.local/share/opencode.
+func OpenCodeAuthPath() string {
+	if openCodeHome := strings.TrimSpace(os.Getenv("OPENCODE_HOME")); openCodeHome != "" {
+		return filepath.Join(openCodeHome, "auth.json")
+	}
+	if xdgData := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); xdgData != "" {
+		return filepath.Join(xdgData, "opencode", "auth.json")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".local", "share", "opencode", "auth.json")
 }
 
 // WriteCodexCredentials updates the Codex credentials file with new OAuth tokens.
@@ -234,4 +337,86 @@ func WriteCodexCredentials(accessToken, refreshToken, idToken string, expiresIn 
 	}
 
 	return os.Rename(tempPath, authPath)
+}
+
+// WriteOpenCodeCredentials updates OpenCode's auth.json with refreshed OAuth
+// tokens, preserving the OpenCode format (the "openai" wrapper, "access"/
+// "refresh" field names, and "expires" as a millisecond Unix timestamp).
+//
+// IMPORTANT: Like Codex, OpenAI rotates refresh tokens (one-time use), so this
+// MUST be called after every successful refresh or future refreshes break.
+//
+// Safety: backs up to auth.json.bak, preserves unknown fields, atomic write.
+func WriteOpenCodeCredentials(accessToken, refreshToken string, expiresAt time.Time) error {
+	authPath := OpenCodeAuthPath()
+	if authPath == "" {
+		return os.ErrNotExist
+	}
+
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			data = []byte("{}")
+		} else {
+			return err
+		}
+	}
+
+	if len(data) > 2 {
+		backupPath := authPath + ".bak"
+		if err := os.WriteFile(backupPath, data, 0600); err != nil {
+			slog.Debug("Failed to create OpenCode credentials backup", "error", err)
+		}
+	}
+
+	var rawAuth map[string]interface{}
+	if err := json.Unmarshal(data, &rawAuth); err != nil {
+		rawAuth = make(map[string]interface{})
+	}
+
+	openai, ok := rawAuth["openai"].(map[string]interface{})
+	if !ok {
+		openai = make(map[string]interface{})
+		rawAuth["openai"] = openai
+	}
+
+	openai["access"] = accessToken
+	openai["refresh"] = refreshToken
+	if !expiresAt.IsZero() {
+		openai["expires"] = expiresAt.UnixMilli()
+	}
+	// Mark as an OAuth credential if the field is absent (new file).
+	if _, has := openai["type"]; !has {
+		openai["type"] = "oauth"
+	}
+
+	newData, err := json.MarshalIndent(rawAuth, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(authPath), 0700); err != nil {
+		return err
+	}
+
+	tempPath := authPath + ".tmp"
+	if err := os.WriteFile(tempPath, newData, 0600); err != nil {
+		return err
+	}
+
+	return os.Rename(tempPath, authPath)
+}
+
+// WriteCredentialsBySource writes refreshed tokens back to the correct file in
+// the correct format based on where the credentials originated. OpenCode-sourced
+// tokens are written in OpenCode format; everything else uses Codex format.
+func WriteCredentialsBySource(source CredentialSource, accessToken, refreshToken, idToken string, expiresIn int) error {
+	if source == CredentialSourceOpenCode {
+		var expiresAt time.Time
+		if expiresIn > 0 {
+			expiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second)
+		}
+		return WriteOpenCodeCredentials(accessToken, refreshToken, expiresAt)
+	}
+	return WriteCodexCredentials(accessToken, refreshToken, idToken, expiresIn)
 }

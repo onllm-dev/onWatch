@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"sort"
 	"time"
@@ -18,7 +19,78 @@ type AnthropicQuotaEntry struct {
 
 // AnthropicQuotaResponse is the full response from the Anthropic usage API.
 // Keys are dynamic (five_hour, seven_day, etc.).
+//
+// Anthropic also returns non-quota companion fields at the top level (e.g.
+// "limits" as an array, "spend" as an unrelated object, booleans). Custom
+// UnmarshalJSON keeps only null/object values that look like quota entries so
+// those metadata fields do not fail the whole decode (see #82 / #84).
 type AnthropicQuotaResponse map[string]*AnthropicQuotaEntry
+
+// UnmarshalJSON accepts the quota-object values used by the Claude usage API
+// while ignoring top-level metadata fields such as "limits" (array) and
+// "spend" (non-quota object), which Anthropic began returning in 2026.
+//
+// Compared with a minimal "skip non-objects" decoder, this also:
+//   - drops objects that share no AnthropicQuotaEntry fields (e.g. spend)
+//   - skips a single bad key instead of failing the entire response, so future
+//     companion objects cannot take down Anthropic polling again
+func (r *AnthropicQuotaResponse) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	resp := make(AnthropicQuotaResponse, len(raw))
+	for key, value := range raw {
+		trimmed := bytes.TrimSpace(value)
+		if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+			resp[key] = nil
+			continue
+		}
+		// Quota entries are JSON objects. Skip arrays/scalars (limits[],
+		// member_dashboard_available, …).
+		if trimmed[0] != '{' {
+			continue
+		}
+		// Drop companion objects that do not look like quota buckets (spend, …).
+		if !looksLikeAnthropicQuotaObject(trimmed) {
+			continue
+		}
+
+		var entry AnthropicQuotaEntry
+		if err := json.Unmarshal(trimmed, &entry); err != nil {
+			// Forward-compat: one unreadable companion/experimental object must
+			// not discard five_hour / seven_day and the rest of the payload.
+			continue
+		}
+		e := entry
+		resp[key] = &e
+	}
+
+	*r = resp
+	return nil
+}
+
+// looksLikeAnthropicQuotaObject reports whether a JSON object has at least one
+// field belonging to AnthropicQuotaEntry.
+func looksLikeAnthropicQuotaObject(val json.RawMessage) bool {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(val, &probe); err != nil {
+		return false
+	}
+	for _, field := range []string{
+		"utilization",
+		"resets_at",
+		"is_enabled",
+		"monthly_limit",
+		"used_credits",
+	} {
+		if _, ok := probe[field]; ok {
+			return true
+		}
+	}
+	return false
+}
 
 // AnthropicQuota represents a single normalized quota for storage.
 type AnthropicQuota struct {

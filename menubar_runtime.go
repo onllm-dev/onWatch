@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -18,8 +20,6 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
-	"github.com/onllm-dev/onwatch/v2/internal/tracker"
-	"github.com/onllm-dev/onwatch/v2/internal/web"
 )
 
 func menubarPIDPath(testMode bool) string {
@@ -242,23 +242,14 @@ func runMenubarCommand() error {
 	if err != nil {
 		return fmt.Errorf("failed to open database for menubar companion: %w", err)
 	}
-	defer db.Close()
-
-	tr := tracker.New(db, logger)
-	zaiTr := tracker.NewZaiTracker(db, logger)
-	h := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
-	h.SetVersion(version)
-	h.SetAnthropicTracker(tracker.NewAnthropicTracker(db, logger))
-	h.SetCopilotTracker(tracker.NewCopilotTracker(db, logger))
-	h.SetCodexTracker(tracker.NewCodexTracker(db, logger))
-	h.SetAntigravityTracker(tracker.NewAntigravityTracker(db, logger))
-	h.SetMiniMaxTracker(tracker.NewMiniMaxTracker(db, logger))
-
 	settings, err := db.GetMenubarSettings()
 	if err != nil {
+		db.Close()
 		return err
 	}
-	mbCfg := settings.ToConfig(cfg.Port, h.BuildMenubarSnapshot)
+	db.Close()
+
+	mbCfg := settings.ToConfig(cfg.Port, httpSnapshotProvider(cfg.Port))
 	mbCfg.TestMode = cfg.TestMode
 
 	pidPath := menubarPIDPath(cfg.TestMode)
@@ -282,4 +273,24 @@ func runMenubarCommand() error {
 	}
 	logger.Info("Menubar runtime stopped")
 	return nil
+}
+
+func httpSnapshotProvider(port int) menubar.SnapshotProvider {
+	url := fmt.Sprintf("http://localhost:%d/api/menubar/summary", port)
+	client := &http.Client{Timeout: 5 * time.Second}
+	return func() (*menubar.Snapshot, error) {
+		resp, err := client.Get(url)
+		if err != nil {
+			return nil, fmt.Errorf("menubar snapshot fetch failed: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("menubar snapshot request returned %s", resp.Status)
+		}
+		var snapshot menubar.Snapshot
+		if err := json.NewDecoder(resp.Body).Decode(&snapshot); err != nil {
+			return nil, fmt.Errorf("menubar snapshot decode failed: %w", err)
+		}
+		return &snapshot, nil
+	}
 }

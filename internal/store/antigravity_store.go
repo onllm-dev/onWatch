@@ -34,9 +34,13 @@ func (s *Store) InsertAntigravitySnapshot(snapshot *api.AntigravitySnapshot) (in
 	}
 	defer tx.Rollback()
 
+	source := snapshot.Source
+	if source == "" {
+		source = "unknown"
+	}
 	result, err := tx.Exec(
-		`INSERT INTO antigravity_snapshots (captured_at, email, plan_name, prompt_credits, monthly_credits, raw_json, model_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO antigravity_snapshots (captured_at, email, plan_name, prompt_credits, monthly_credits, raw_json, model_count, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		snapshot.CapturedAt.Format(time.RFC3339Nano),
 		snapshot.Email,
 		snapshot.PlanName,
@@ -44,6 +48,7 @@ func (s *Store) InsertAntigravitySnapshot(snapshot *api.AntigravitySnapshot) (in
 		snapshot.MonthlyCredits,
 		snapshot.RawJSON,
 		len(snapshot.Models),
+		source,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert antigravity snapshot: %w", err)
@@ -86,14 +91,14 @@ func (s *Store) InsertAntigravitySnapshot(snapshot *api.AntigravitySnapshot) (in
 func (s *Store) QueryLatestAntigravity() (*api.AntigravitySnapshot, error) {
 	var snapshot api.AntigravitySnapshot
 	var capturedAt string
-	var email, planName sql.NullString
+	var email, planName, source sql.NullString
 	var promptCredits sql.NullFloat64
 	var monthlyCredits sql.NullInt64
 
 	err := s.db.QueryRow(
-		`SELECT id, captured_at, email, plan_name, prompt_credits, monthly_credits, model_count
+		`SELECT id, captured_at, email, plan_name, prompt_credits, monthly_credits, model_count, source
 		FROM antigravity_snapshots ORDER BY captured_at DESC LIMIT 1`,
-	).Scan(&snapshot.ID, &capturedAt, &email, &planName, &promptCredits, &monthlyCredits, new(int))
+	).Scan(&snapshot.ID, &capturedAt, &email, &planName, &promptCredits, &monthlyCredits, new(int), &source)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -103,6 +108,9 @@ func (s *Store) QueryLatestAntigravity() (*api.AntigravitySnapshot, error) {
 	}
 
 	snapshot.CapturedAt, _ = time.Parse(time.RFC3339Nano, capturedAt)
+	if source.Valid {
+		snapshot.Source = source.String
+	}
 	if email.Valid {
 		snapshot.Email = email.String
 	}

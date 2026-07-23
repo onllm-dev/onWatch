@@ -24,6 +24,9 @@ setup() {
     export ONWATCH_INSTALL_DIR="$TEST_DIR"
     export INSTALL_DIR="$TEST_DIR"
     export BIN_DIR="${TEST_DIR}/bin"
+    # Point Grok auth at a nonexistent dir so auto-detection is deterministic
+    # regardless of whether the host has a real ~/.grok/auth.json.
+    export GROK_HOME="${TEST_DIR}/.grok-none"
     mkdir -p "$TEST_DIR/bin" "$TEST_DIR/data"
 }
 
@@ -179,10 +182,12 @@ test_anthropic_auto_rejected_manual() {
     assert_eq "ANTHROPIC_TOKEN" "manual-token"
 }
 
+# Multiple = choice 9. Provider prompt order:
+# synthetic, zai, anthropic, codex, opencode, antigravity, gemini, grok.
 test_multiple_syn_and_anth() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "5\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "9\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_multi_123" && \
     assert_unset "ZAI_API_KEY" && \
     assert_eq "ANTHROPIC_TOKEN" "anth-multi" && \
@@ -191,7 +196,7 @@ test_multiple_syn_and_anth() {
 
 test_multiple_zai_only() {
     setup && source_functions
-    run_setup "5\nN\ny\nzai_multi_456\nY\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "9\nN\ny\nzai_multi_456\nY\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_unset "SYNTHETIC_API_KEY" && \
     assert_eq "ZAI_API_KEY" "zai_multi_456" && \
     assert_unset "ANTHROPIC_TOKEN"
@@ -200,22 +205,34 @@ test_multiple_zai_only() {
 test_multiple_all_three() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "5\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "9\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_789" && \
     assert_eq "ZAI_API_KEY" "zai_all_789" && \
     assert_eq "ANTHROPIC_TOKEN" "anth_all_789" && \
     assert_unset "CODEX_TOKEN"
 }
 
-test_all_available_choice6() {
+# Grok = choice 8; enabled regardless of auth.json detection (it only changes
+# the printed hint), so this stays deterministic.
+test_grok_only() {
+    setup && source_functions
+    run_setup "8\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "GROK_ENABLED" "true" && \
+    assert_unset "SYNTHETIC_API_KEY"
+}
+
+# All available = choice 10. OpenCode/Antigravity/Gemini/Grok auto-enable and
+# consume no input.
+test_all_available_choice10() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
     detect_codex_token() { return 1; }
-    run_setup "6\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\n1\ncodex_all_avail\nadmin\ntestpass\n9211\n60\n"
+    run_setup "10\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\n1\ncodex_all_avail\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_avail" && \
     assert_eq "ZAI_API_KEY" "zai_all_avail" && \
     assert_eq "ANTHROPIC_TOKEN" "anth_all_avail" && \
-    assert_eq "CODEX_TOKEN" "codex_all_avail"
+    assert_eq "CODEX_TOKEN" "codex_all_avail" && \
+    assert_eq "GROK_ENABLED" "true"
 }
 
 test_custom_port_and_interval() {
@@ -317,8 +334,8 @@ EOF
 
 test_multiple_none_triggers_retry() {
     setup && source_functions
-    # choice=5, all N (triggers retry), then add Synthetic on retry
-    run_setup "5\nN\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
+    # choice=9 (Multiple), all 8 providers N (triggers retry), then add Synthetic
+    run_setup "9\nN\nN\nN\nN\nN\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_retry_123"
 }
 
@@ -365,7 +382,8 @@ run_test test_anthropic_auto_rejected_manual
 run_test test_multiple_syn_and_anth
 run_test test_multiple_zai_only
 run_test test_multiple_all_three
-run_test test_all_available_choice6
+run_test test_grok_only
+run_test test_all_available_choice10
 run_test test_custom_port_and_interval
 run_test test_upgrade_add_zai
 run_test test_upgrade_add_codex

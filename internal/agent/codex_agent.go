@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
@@ -15,6 +16,16 @@ import (
 
 // maxCodexAuthFailures is the number of consecutive auth failures before pausing polling.
 const maxCodexAuthFailures = 3
+
+// Auto quota-starter (Beta) rate limiting. The starter is re-evaluated every
+// poll (so a failed start is retried at the user's polling cadence), but is hard
+// capped to codexStarterMaxFires pings per quota window within a rolling
+// codexStarterRateWindow. This guarantees we never loop or waste more than a
+// handful of requests even if a start never "takes".
+const (
+	codexStarterMaxFires   = 5
+	codexStarterRateWindow = 4 * time.Hour
+)
 
 // codexTokenRefreshThreshold is how soon before expiry we proactively refresh the token.
 // Codex tokens expire weekly, so refreshing 6 hours early provides a comfortable buffer.
@@ -60,6 +71,122 @@ type CodexAgent struct {
 	authPaused               bool
 	lastFailedToken          string
 	proactiveRefreshFailures int // consecutive proactive refresh failures (non-reused-token)
+
+	// Auto quota-starter (Beta).
+	// codexAccountID is the Codex account_id (string) used for the
+	// ChatGPT-Account-ID header on starter pings. autoStartCheck reports, fresh
+	// per poll, whether auto-start is enabled for a given window ("five_hour" /
+	// "seven_day"). starterFires (guarded by starterMu) holds recent ping times
+	// per window for the rolling rate cap; it is read/written from a goroutine
+	// concurrent with poll().
+	codexAccountID string
+	autoStartCheck func(quotaName string) bool
+	starterMu      sync.Mutex
+	starterFires   map[string][]time.Time
+}
+
+// codexAutoStartWindowSeconds returns the nominal length of an auto-startable
+// Codex quota window, or 0 for windows the starter does not manage.
+func codexAutoStartWindowSeconds(quotaName string) int64 {
+	switch quotaName {
+	case "five_hour":
+		return 5 * 60 * 60
+	case "seven_day":
+		return 7 * 24 * 60 * 60
+	default:
+		return 0
+	}
+}
+
+// codexUnstartedTolerance is how close the time-until-reset must be to the full
+// window length to treat the window as "unstarted". An unstarted Codex window
+// reports reset_at = now + window (it rolls forward every poll, so the countdown
+// stays pinned at ~the full length). Once a turn is sent the window's reset_at
+// becomes fixed and the countdown starts decreasing, dropping below this band.
+const codexUnstartedTolerance = 2 * time.Minute
+
+// isUnstartedCodexWindow reports whether a quota window looks unstarted: its
+// time-until-reset is within codexUnstartedTolerance of the full window length.
+func isUnstartedCodexWindow(quotaName string, resetsAt *time.Time, now time.Time) bool {
+	windowSec := codexAutoStartWindowSeconds(quotaName)
+	if windowSec == 0 || resetsAt == nil {
+		return false
+	}
+	remaining := resetsAt.Sub(now)
+	if remaining <= 0 {
+		return false
+	}
+	full := time.Duration(windowSec) * time.Second
+	return remaining >= full-codexUnstartedTolerance
+}
+
+// SetCodexAccountID sets the Codex account_id used for the ChatGPT-Account-ID
+// header on auto quota-starter pings.
+func (a *CodexAgent) SetCodexAccountID(id string) {
+	a.codexAccountID = id
+}
+
+// SetAutoStartCheck wires a callback that reports, fresh per poll, whether the
+// auto quota-starter (Beta) is enabled for a given window. Read fresh so a
+// dashboard toggle takes effect without a daemon restart.
+func (a *CodexAgent) SetAutoStartCheck(fn func(quotaName string) bool) {
+	a.autoStartCheck = fn
+}
+
+// maybeAutoStartWindows inspects the freshly polled quotas and, for any window
+// that is enabled and observed unstarted, fires a starter ping (cooldown-guarded
+// inside SendStarterPing). Pings run in a goroutine so they never block the poll.
+func (a *CodexAgent) maybeAutoStartWindows(ctx context.Context, quotas []api.CodexQuota, now time.Time) {
+	if a.autoStartCheck == nil {
+		return
+	}
+	for _, q := range quotas {
+		if codexAutoStartWindowSeconds(q.Name) == 0 {
+			continue
+		}
+		if !isUnstartedCodexWindow(q.Name, q.ResetsAt, now) {
+			continue
+		}
+		if !a.autoStartCheck(q.Name) {
+			continue
+		}
+		quotaName := q.Name
+		go a.SendStarterPing(ctx, a.codexAccountID, quotaName)
+	}
+}
+
+// allowStarterPing enforces the rolling rate cap using a bounded ring of the
+// last codexStarterMaxFires fire timestamps for the window:
+//   - fewer than codexStarterMaxFires recorded -> always fire (append now);
+//   - otherwise fire only if the oldest of the five is more than
+//     codexStarterRateWindow ago (then drop it and append now).
+//
+// This guarantees at most codexStarterMaxFires pings per rolling
+// codexStarterRateWindow per window. The slot is reserved even if the subsequent
+// send fails, so repeated unstarted observations retry at the polling cadence but
+// can never exceed the cap.
+func (a *CodexAgent) allowStarterPing(quotaName string) bool {
+	a.starterMu.Lock()
+	defer a.starterMu.Unlock()
+	if a.starterFires == nil {
+		a.starterFires = make(map[string][]time.Time)
+	}
+	now := time.Now()
+	fires := a.starterFires[quotaName]
+
+	if len(fires) < codexStarterMaxFires {
+		a.starterFires[quotaName] = append(fires, now)
+		return true
+	}
+	// Five recorded: only fire if the oldest is older than the rate window.
+	if now.Sub(fires[0]) <= codexStarterRateWindow {
+		return false
+	}
+	next := make([]time.Time, 0, codexStarterMaxFires)
+	next = append(next, fires[1:]...)
+	next = append(next, now)
+	a.starterFires[quotaName] = next
+	return true
 }
 
 // NewCodexAgent creates a new CodexAgent with the given dependencies.
@@ -115,6 +242,38 @@ func (a *CodexAgent) SetTokenSave(fn CodexTokenSaveFunc) {
 	a.tokenSave = fn
 }
 
+// SendStarterPing sends a minimal Codex generation request to "start" a limit
+// window after a reset (auto quota-starter, Beta). Failures are logged, never
+// fatal, and never retried (to avoid API spam) - a stale/paused token simply
+// yields a logged auth error. codexAccountID is the Codex account_id used for
+// the ChatGPT-Account-ID header; quotaName is for logging only.
+//
+// This may run in a goroutine concurrent with poll(), so it must not read
+// poll-owned agent state (e.g. authPaused) without synchronization. It relies
+// only on the client, which is internally synchronized.
+func (a *CodexAgent) SendStarterPing(ctx context.Context, codexAccountID, quotaName string) {
+	if !a.allowStarterPing(quotaName) {
+		a.logger.Info("Codex auto quota-starter skipped (rate cap reached)",
+			"quota", quotaName, "account_id", a.accountID,
+			"max_fires", codexStarterMaxFires, "window", codexStarterRateWindow)
+		return
+	}
+
+	a.logger.Info("Codex auto quota-starter firing",
+		"quota", quotaName, "account_id", a.accountID, "model", api.CodexStarterModel())
+
+	pingCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	if err := a.client.SendStarterPing(pingCtx, codexAccountID); err != nil {
+		a.logger.Warn("Codex auto quota-starter ping failed",
+			"quota", quotaName, "account_id", a.accountID, "model", api.CodexStarterModel(), "error", err)
+		return
+	}
+	a.logger.Info("Codex auto quota-starter ping sent",
+		"quota", quotaName, "account_id", a.accountID, "model", api.CodexStarterModel())
+}
+
 // sendAuthErrorNotification sends an auth error notification via the notifier.
 func (a *CodexAgent) sendAuthErrorNotification(title, message string, isRecoverable bool) {
 	if a.notifier == nil {
@@ -165,67 +324,71 @@ func (a *CodexAgent) poll(ctx context.Context) {
 		if creds := a.credsRefresh(); creds != nil {
 			// Check if token is expiring soon or already expired
 			if creds.IsExpiringSoon(codexTokenRefreshThreshold) && creds.RefreshToken != "" {
-				a.logger.Info("Codex token expiring soon, attempting proactive OAuth refresh",
-					"expires_in", creds.ExpiresIn.Round(time.Second))
+				if a.store != nil && !a.store.AutoRefreshTokensEnabled() {
+					a.logger.Debug("Skipping Codex proactive OAuth refresh - auto_refresh_tokens disabled")
+				} else {
+					a.logger.Info("Codex token expiring soon, attempting proactive OAuth refresh",
+						"expires_in", creds.ExpiresIn.Round(time.Second))
 
-				newTokens, err := api.RefreshCodexToken(ctx, creds.RefreshToken)
-				if err != nil {
-					if errors.Is(err, api.ErrCodexRefreshTokenReused) {
-						// Unrecoverable - token is dead, user must re-authenticate
-						a.logger.Error("Codex refresh token already used - re-authenticate via 'codex auth'",
-							"error", err)
-						a.authPaused = true
-						a.lastFailedToken = creds.AccessToken
-						// Send auth error notification
-						a.sendAuthErrorNotification(
-							"Token Refresh Failed",
-							"Codex refresh token has been reused. Please re-authenticate via 'codex auth' to resume quota tracking.",
-							false, // not recoverable
-						)
-					} else {
-						a.proactiveRefreshFailures++
-						a.logger.Error("Proactive Codex OAuth refresh failed",
-							"error", err,
-							"consecutive_failures", a.proactiveRefreshFailures)
-						if a.proactiveRefreshFailures >= maxCodexAuthFailures {
+					newTokens, err := api.RefreshCodexToken(ctx, creds.RefreshToken)
+					if err != nil {
+						if errors.Is(err, api.ErrCodexRefreshTokenReused) {
+							// Unrecoverable - token is dead, user must re-authenticate
+							a.logger.Error("Codex refresh token already used - re-authenticate via 'codex auth'",
+								"error", err)
 							a.authPaused = true
 							a.lastFailedToken = creds.AccessToken
-							a.logger.Error("Codex proactive refresh PAUSED - too many consecutive failures",
-								"failure_count", a.proactiveRefreshFailures,
-								"action", "Re-authenticate via 'codex auth' to resume polling")
+							// Send auth error notification
 							a.sendAuthErrorNotification(
 								"Token Refresh Failed",
-								fmt.Sprintf("Codex proactive OAuth refresh failed %d times. Please re-authenticate via 'codex auth' to resume.", a.proactiveRefreshFailures),
-								false,
+								"Codex refresh token has been reused. Please re-authenticate via 'codex auth' to resume quota tracking.",
+								false, // not recoverable
 							)
+						} else {
+							a.proactiveRefreshFailures++
+							a.logger.Error("Proactive Codex OAuth refresh failed",
+								"error", err,
+								"consecutive_failures", a.proactiveRefreshFailures)
+							if a.proactiveRefreshFailures >= maxCodexAuthFailures {
+								a.authPaused = true
+								a.lastFailedToken = creds.AccessToken
+								a.logger.Error("Codex proactive refresh PAUSED - too many consecutive failures",
+									"failure_count", a.proactiveRefreshFailures,
+									"action", "Re-authenticate via 'codex auth' to resume polling")
+								a.sendAuthErrorNotification(
+									"Token Refresh Failed",
+									fmt.Sprintf("Codex proactive OAuth refresh failed %d times. Please re-authenticate via 'codex auth' to resume.", a.proactiveRefreshFailures),
+									false,
+								)
+							}
 						}
-					}
-				} else {
-					// Proactive refresh succeeded - reset failure counter
-					a.proactiveRefreshFailures = 0
-
-					// CRITICAL: Save new tokens to disk IMMEDIATELY (refresh tokens are one-time use!)
-					saveFn := a.tokenSave
-					if saveFn == nil {
-						saveFn = api.WriteCodexCredentials // fallback for backward compat
-					}
-					if err := saveFn(newTokens.AccessToken, newTokens.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
-						a.logger.Error("Failed to save refreshed Codex credentials", "error", err)
 					} else {
-						a.client.SetToken(newTokens.AccessToken)
-						a.lastToken = newTokens.AccessToken
-						a.logger.Info("Proactively refreshed Codex OAuth token",
-							"expires_in_hours", newTokens.ExpiresIn/3600)
+						// Proactive refresh succeeded - reset failure counter
+						a.proactiveRefreshFailures = 0
 
-						// Reset auth failures since we have fresh credentials
-						if a.authPaused {
-							a.authPaused = false
-							a.authFailCount = 0
-							a.lastFailedToken = ""
-							a.logger.Info("Codex auth failure pause lifted - token refreshed via OAuth")
+						// CRITICAL: Save new tokens to disk IMMEDIATELY (refresh tokens are one-time use!)
+						saveFn := a.tokenSave
+						if saveFn == nil {
+							saveFn = api.WriteCodexCredentials // fallback for backward compat
+						}
+						if err := saveFn(newTokens.AccessToken, newTokens.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
+							a.logger.Error("Failed to save refreshed Codex credentials", "error", err)
+						} else {
+							a.client.SetToken(newTokens.AccessToken)
+							a.lastToken = newTokens.AccessToken
+							a.logger.Info("Proactively refreshed Codex OAuth token",
+								"expires_in_hours", newTokens.ExpiresIn/3600)
+
+							// Reset auth failures since we have fresh credentials
+							if a.authPaused {
+								a.authPaused = false
+								a.authFailCount = 0
+								a.lastFailedToken = ""
+								a.logger.Info("Codex auth failure pause lifted - token refreshed via OAuth")
+							}
 						}
 					}
-				}
+				} // end auto_refresh_tokens enabled
 			}
 		}
 	}
@@ -326,6 +489,10 @@ func (a *CodexAgent) poll(ctx context.Context) {
 			a.logger.Error("Codex tracker processing failed", "error", err, "account_id", a.accountID)
 		}
 	}
+
+	// Auto quota-starter (Beta): start any enabled window that is observed
+	// unstarted (reset countdown pinned at ~full window length).
+	a.maybeAutoStartWindows(ctx, snapshot.Quotas, now)
 
 	if a.notifier != nil {
 		for _, q := range snapshot.Quotas {

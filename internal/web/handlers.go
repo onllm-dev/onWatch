@@ -94,6 +94,8 @@ type Handler struct {
 	moonshotTracker    *tracker.MoonshotTracker
 	deepseekTracker    *tracker.DeepSeekTracker
 	cursorTracker      *tracker.CursorTracker
+	grokTracker        *tracker.GrokTracker
+	kimiTracker        *tracker.KimiTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -143,20 +145,6 @@ type CodexProfile struct {
 	APIKey string `json:"api_key,omitempty"`
 }
 
-type codexRefreshAuthFile struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	IDToken      string `json:"id_token"`
-	AccountID    string `json:"account_id"`
-	OpenAIAPIKey string `json:"OPENAI_API_KEY"`
-	Tokens       struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		IDToken      string `json:"id_token"`
-		AccountID    string `json:"account_id"`
-	} `json:"tokens"`
-}
-
 type codexRefreshAuthCredentials struct {
 	AccessToken  string
 	RefreshToken string
@@ -182,18 +170,6 @@ func codexProfilesDir() string {
 		return ""
 	}
 	return filepath.Join(home, ".onwatch", "data", "codex-profiles")
-}
-
-// codexAuthRefreshPath returns the path to the Codex auth.json file.
-func codexAuthRefreshPath() string {
-	if codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME")); codexHome != "" {
-		return filepath.Join(codexHome, "auth.json")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ""
-	}
-	return filepath.Join(home, ".codex", "auth.json")
 }
 
 // codexCompositeExternalID returns a composite external ID for deduplication.
@@ -516,48 +492,20 @@ func (h *Handler) codexProfileRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load current auth from auth.json
-	authPath := codexAuthRefreshPath()
-	if authPath == "" {
-		respondError(w, http.StatusBadRequest, "cannot determine Codex auth.json path")
-		return
-	}
-	authData, err := os.ReadFile(authPath)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "cannot read Codex auth.json: run 'codex auth' first")
-		return
-	}
-
-	var auth codexRefreshAuthFile
-	if err := json.Unmarshal(authData, &auth); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid auth.json format")
+	// Load current auth from Codex auth.json or opencode-codex auth.json.
+	// DetectCodexCredentials unifies both shapes (Codex wins when both exist).
+	detected := api.DetectCodexCredentials(h.logger)
+	if detected == nil || strings.TrimSpace(detected.AccessToken) == "" {
+		respondError(w, http.StatusBadRequest, "cannot read auth: run 'codex auth' or 'opencode auth login' first")
 		return
 	}
 
 	creds := &codexRefreshAuthCredentials{
-		AccessToken:  strings.TrimSpace(auth.Tokens.AccessToken),
-		RefreshToken: strings.TrimSpace(auth.Tokens.RefreshToken),
-		IDToken:      strings.TrimSpace(auth.Tokens.IDToken),
-		AccountID:    strings.TrimSpace(auth.Tokens.AccountID),
-		APIKey:       strings.TrimSpace(auth.OpenAIAPIKey),
-	}
-	// Backward support for flat auth.json
-	if creds.AccessToken == "" {
-		creds.AccessToken = strings.TrimSpace(auth.AccessToken)
-	}
-	if creds.RefreshToken == "" {
-		creds.RefreshToken = strings.TrimSpace(auth.RefreshToken)
-	}
-	if creds.IDToken == "" {
-		creds.IDToken = strings.TrimSpace(auth.IDToken)
-	}
-	if creds.AccountID == "" {
-		creds.AccountID = strings.TrimSpace(auth.AccountID)
-	}
-
-	if creds.AccessToken == "" {
-		respondError(w, http.StatusBadRequest, "auth.json has no access_token - run 'codex auth' first")
-		return
+		AccessToken:  strings.TrimSpace(detected.AccessToken),
+		RefreshToken: strings.TrimSpace(detected.RefreshToken),
+		IDToken:      strings.TrimSpace(detected.IDToken),
+		AccountID:    strings.TrimSpace(detected.AccountID),
+		APIKey:       strings.TrimSpace(detected.APIKey),
 	}
 
 	// Load existing profile
@@ -827,6 +775,11 @@ func (h *Handler) SetDeepSeekTracker(t *tracker.DeepSeekTracker) {
 // SetCursorTracker sets the Cursor tracker for usage summary enrichment.
 func (h *Handler) SetCursorTracker(t *tracker.CursorTracker) {
 	h.cursorTracker = t
+}
+
+// SetGrokTracker sets the Grok tracker for usage summary enrichment.
+func (h *Handler) SetGrokTracker(t *tracker.GrokTracker) {
+	h.grokTracker = t
 }
 
 // SetAgentManager sets provider agent lifecycle controller.
@@ -1166,6 +1119,8 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "deepseek", Name: "DeepSeek", Description: "DeepSeek API balance tracking"},
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 		{Key: "cursor", Name: "Cursor", Description: "Cursor usage and quota tracking", AutoDetectable: true},
+		{Key: "grok", Name: "Grok", Description: "Grok (xAI) usage tracking", AutoDetectable: true},
+		{Key: "kimi", Name: "Kimi Code", Description: "Kimi Code CLI OAuth quota tracking", AutoDetectable: true},
 	}
 }
 
@@ -1229,6 +1184,19 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return h.config.GeminiEnabled
 	case "cursor":
 		return strings.TrimSpace(h.config.CursorToken) != "" || strings.TrimSpace(api.DetectCursorToken(h.logger)) != ""
+	case "grok":
+		if h.config.GrokEnabled || strings.TrimSpace(h.config.GrokToken) != "" {
+			return true
+		}
+		if creds := api.DetectGrokCredentials(h.logger); creds != nil && strings.TrimSpace(creds.AccessToken) != "" {
+			return true
+		}
+		return false
+	case "kimi":
+		if h.config != nil && (strings.TrimSpace(h.config.KimiToken) != "" || h.config.KimiEnabled) {
+			return true
+		}
+		return api.DetectKimiCredentials(h.logger) != nil
 	default:
 		return false
 	}
@@ -1292,9 +1260,15 @@ func (h *Handler) tryAutoDetect(provider string) bool {
 			return true
 		}
 	case "codex":
-		if token := strings.TrimSpace(api.DetectCodexToken(h.logger)); token != "" {
-			h.config.CodexToken = token
+		if creds := api.DetectCodexCredentials(h.logger); creds != nil && strings.TrimSpace(creds.AccessToken) != "" {
+			h.config.CodexToken = strings.TrimSpace(creds.AccessToken)
 			h.config.CodexAutoToken = true
+			if creds.Source == api.CredentialSourceOpenCode {
+				h.config.CodexAutoSource = "opencode"
+				h.config.OpenCodeEnabled = true
+			} else {
+				h.config.CodexAutoSource = "codex"
+			}
 			return true
 		}
 	case "antigravity":
@@ -1312,6 +1286,24 @@ func (h *Handler) tryAutoDetect(provider string) bool {
 		if token := strings.TrimSpace(api.DetectGeminiToken(h.logger)); token != "" {
 			h.config.GeminiEnabled = true
 			h.config.GeminiAutoToken = true
+			return true
+		}
+	case "grok":
+		if creds := api.DetectGrokCredentials(h.logger); creds != nil && strings.TrimSpace(creds.AccessToken) != "" {
+			if h.config.GrokToken == "" {
+				h.config.GrokToken = strings.TrimSpace(creds.AccessToken)
+				h.config.GrokAutoToken = true
+			}
+			h.config.GrokEnabled = true
+			return true
+		}
+	case "kimi":
+		if creds := api.DetectKimiCredentials(h.logger); creds != nil && (strings.TrimSpace(creds.AccessToken) != "" || strings.TrimSpace(creds.RefreshToken) != "") {
+			if h.config.KimiToken == "" && strings.TrimSpace(creds.AccessToken) != "" {
+				h.config.KimiToken = strings.TrimSpace(creds.AccessToken)
+				h.config.KimiAutoToken = true
+			}
+			h.config.KimiEnabled = true
 			return true
 		}
 	}
@@ -1351,6 +1343,8 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.CopilotToken = src.CopilotToken
 	dst.CodexToken = src.CodexToken
 	dst.CodexAutoToken = src.CodexAutoToken
+	dst.CodexAutoSource = src.CodexAutoSource
+	dst.OpenCodeEnabled = src.OpenCodeEnabled
 	dst.AntigravityBaseURL = src.AntigravityBaseURL
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
@@ -1360,6 +1354,12 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.DeepSeekAPIKey = src.DeepSeekAPIKey
 	dst.GeminiEnabled = src.GeminiEnabled
 	dst.GeminiAutoToken = src.GeminiAutoToken
+	dst.GrokToken = src.GrokToken
+	dst.GrokAutoToken = src.GrokAutoToken
+	dst.GrokEnabled = src.GrokEnabled
+	dst.KimiToken = src.KimiToken
+	dst.KimiAutoToken = src.KimiAutoToken
+	dst.KimiEnabled = src.KimiEnabled
 	dst.ZaiRegion = src.ZaiRegion
 	dst.MiniMaxRegion = src.MiniMaxRegion
 }
@@ -1397,18 +1397,42 @@ func stripProviderSecrets(providers map[string]interface{}) {
 // providerEnumFields defines valid values for enum-type provider settings.
 // Fields not listed here pass through unvalidated (free-form strings, numbers).
 var providerEnumFields = map[string]map[string][]string{
-	"codex": {
+	"global": {
 		"display_mode": {"usage", "available"},
 	},
+	"codex": {
+		"display_mode":  {"usage", "available"},
+		"auto_start_5h": {"off", "on"},
+		"auto_start_7d": {"off", "on"},
+	},
 	"anthropic": {
+		"display_mode": {"usage", "available"},
 		"source":       {"auto", "statusline", "api"},
 		"cc_detection": {"on", "off"},
 	},
+	"copilot": {
+		"display_mode": {"usage", "available"},
+	},
+	"synthetic": {
+		"display_mode": {"usage", "available"},
+	},
 	"zai": {
-		"region": {"global", "cn"},
+		"display_mode": {"usage", "available"},
+		"region":       {"global", "cn"},
 	},
 	"minimax": {
-		"region": {"global", "cn"},
+		"display_mode": {"usage", "available"},
+		"region":       {"global", "cn"},
+	},
+	"antigravity": {
+		"display_mode": {"usage", "available"},
+		"source":       {"both", "ide", "cli"},
+	},
+	"gemini": {
+		"display_mode": {"usage", "available"},
+	},
+	"cursor": {
+		"display_mode": {"usage", "available"},
 	},
 }
 
@@ -1506,6 +1530,16 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 		}
 		if token, _ := s["csrf_token"].(string); token != "" {
 			cfg.AntigravityCSRFToken = token
+		}
+		if source, _ := s["source"].(string); source != "" {
+			cfg.AntigravitySource = api.NormalizeAntigravitySource(source)
+		}
+	}
+	// OpenCode (opencode-codex) feeds the Codex provider; the UI persists a
+	// simple enabled flag, mirroring the OPENCODE_ENABLED env var.
+	if s := provSettings["opencode"]; s != nil {
+		if enabled, ok := s["enabled"].(bool); ok {
+			cfg.OpenCodeEnabled = enabled
 		}
 	}
 
@@ -1664,27 +1698,13 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	providers := h.config.AvailableProviders()
-
-	// Filter by provider_visibility dashboard flag
-	if h.store != nil {
-		if visJSON, _ := h.store.GetSetting("provider_visibility"); visJSON != "" {
-			var vis map[string]map[string]bool
-			if json.Unmarshal([]byte(visJSON), &vis) == nil {
-				filtered := make([]string, 0, len(providers))
-				for _, p := range providers {
-					if pv, ok := vis[p]; ok && !pv["dashboard"] {
-						continue
-					}
-					filtered = append(filtered, p)
-				}
-				providers = filtered
-			}
-		}
-	}
+	providers = h.filterDashboardProviders(providers)
 
 	if h.config.HasMultipleProviders() {
 		providers = append(providers, "both")
 	}
+	providers = orderDashboardProviders(providers, h.loadDashboardProvidersOrder())
+	labels := h.loadDashboardProviderLabels()
 	current := ""
 	if len(providers) > 0 {
 		current = providers[0]
@@ -1702,8 +1722,9 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"providers": providers,
-		"current":   current,
+		"providers":       providers,
+		"provider_labels": providerTabLabelsMap(providers, labels),
+		"current":         current,
 	})
 }
 
@@ -1716,38 +1737,14 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	providers := []string{}
 	currentProvider := ""
+	providerLabels := map[string]string{}
 	hasTools := false
 	toolsVisible := false
 	if h.config != nil {
-		providers = h.config.AvailableProviders()
-
-		// Filter by provider_visibility dashboard flag
-		if h.store != nil {
-			if visJSON, _ := h.store.GetSetting("provider_visibility"); visJSON != "" {
-				var vis map[string]map[string]bool
-				if json.Unmarshal([]byte(visJSON), &vis) == nil {
-					filtered := make([]string, 0, len(providers))
-					for _, p := range providers {
-						if pv, ok := vis[p]; ok && !pv["dashboard"] {
-							continue
-						}
-						filtered = append(filtered, p)
-					}
-					providers = filtered
-				}
-			}
-		}
-
+		providers = h.buildDashboardProviderTabs()
+		providerLabels = providerTabLabelsMap(providers, h.loadDashboardProviderLabels())
 		hasTools = h.config.APIIntegrationsEnabled
 		toolsVisible = hasTools && h.apiIntegrationsDashboardVisible()
-		if toolsVisible {
-			providers = append(providers, "api-integrations")
-		}
-
-		// Always add "both" (All tab) when multiple providers configured
-		if h.config.HasMultipleProviders() {
-			providers = append(providers, "both")
-		}
 		if len(providers) > 0 {
 			currentProvider = providers[0]
 		}
@@ -1789,6 +1786,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"Title":           "Dashboard",
 		"Providers":       providers,
+		"ProviderLabels":  providerLabels,
 		"CurrentProvider": currentProvider,
 		"Version":         h.version,
 		"HasSynthetic":    hasSynthetic,
@@ -1847,6 +1845,10 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentGemini(w, r)
 	case "cursor":
 		h.currentCursor(w, r)
+	case "grok":
+		h.currentGrok(w, r)
+	case "kimi":
+		h.currentKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1856,6 +1858,369 @@ func (h *Handler) currentCursor(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := h.buildCursorCurrent()
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *Handler) currentGrok(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildGrokCurrent())
+}
+
+// latestGrokSnapshot returns the most recent Grok snapshot that actually carries
+// quota values. Some polls store an empty snapshot (transient API response), so
+// falling back keeps the card/insights populated instead of flickering empty.
+func (h *Handler) latestGrokSnapshot() *api.GrokSnapshot {
+	if h.store == nil {
+		return nil
+	}
+	latest, err := h.store.QueryLatestGrok(store.DefaultGrokAccountID)
+	if err == nil && latest != nil && len(latest.Quotas) > 0 {
+		return latest
+	}
+	now := time.Now().UTC()
+	if snaps, rerr := h.store.QueryGrokRange(store.DefaultGrokAccountID, now.Add(-7*24*time.Hour), now); rerr == nil {
+		for i := len(snaps) - 1; i >= 0; i-- {
+			if len(snaps[i].Quotas) > 0 {
+				return snaps[i]
+			}
+		}
+	}
+	return latest
+}
+
+// buildGrokCurrent builds the response for the Grok provider using the dedicated store
+// and tracker. Returns a structure with "quotas" array (for the custom Grok card renderer)
+// plus identity info from the auth.json snapshot.
+func (h *Handler) buildGrokCurrent() map[string]interface{} {
+	now := time.Now().UTC()
+	response := map[string]interface{}{
+		"provider":   "grok",
+		"capturedAt": now.Format(time.RFC3339),
+		"quotas":     []interface{}{},
+	}
+
+	if h.store == nil {
+		return response
+	}
+
+	latest := h.latestGrokSnapshot()
+	if latest == nil {
+		// No data yet (agent may not have run, or first poll pending). Return empty quotas but identity if we can detect.
+		if creds := api.DetectGrokCredentials(h.logger); creds != nil {
+			response["email"] = creds.Email
+			response["team_id"] = creds.TeamID
+			response["login_method"] = creds.LoginMethod()
+		}
+		return response
+	}
+
+	// Build quotas array matching what renderGrokQuotaCards expects.
+	// Also provide displayName/label so menubar normalizeQuotas shows nice "Credits".
+	quotas := make([]map[string]interface{}, 0, len(latest.Quotas))
+	for _, q := range latest.Quotas {
+		display := q.Name
+		if q.Name == "credits" {
+			display = "Credits"
+		}
+		qm := map[string]interface{}{
+			"name":        q.Name,
+			"displayName": display,
+			"label":       display,
+			"utilization": q.Utilization,
+			"status":      q.Status,
+		}
+		if q.ResetsAt != nil {
+			// CamelCase fields match menubar normalizeQuotas + other providers;
+			// snake_case kept for dashboard renderGrokQuotaCards compatibility.
+			timeUntilReset := time.Until(*q.ResetsAt)
+			resetStr := q.ResetsAt.Format(time.RFC3339)
+			qm["resetsAt"] = resetStr
+			qm["resets_at"] = resetStr
+			qm["timeUntilReset"] = formatDuration(timeUntilReset)
+			qm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+		}
+		quotas = append(quotas, qm)
+	}
+	response["quotas"] = quotas
+
+	// Carry identity for potential future UI use (displayed in settings or menubar perhaps).
+	response["email"] = latest.Email
+	response["team_id"] = latest.TeamID
+	response["login_method"] = latest.LoginMethod
+
+	// If tracker available, we could enrich with rate/projected, but the custom renderer
+	// currently focuses on the quota cards. The summary is available for insights.
+	if h.grokTracker != nil {
+		// Optionally attach a top-level summary for the primary quota.
+		if len(latest.Quotas) > 0 {
+			primary := latest.Quotas[0]
+			sum := h.grokTracker.GetGrokSummary(store.DefaultGrokAccountID, primary.Name, latest)
+			if sum != nil {
+				sm := map[string]interface{}{
+					"current_util":     sum.CurrentUtil,
+					"current_rate":     sum.CurrentRate,
+					"projected_util":   sum.ProjectedUtil,
+					"completed_cycles": sum.CompletedCycles,
+				}
+				if sum.ResetsAt != nil {
+					timeUntilReset := time.Until(*sum.ResetsAt)
+					resetStr := sum.ResetsAt.Format(time.RFC3339)
+					sm["resetsAt"] = resetStr
+					sm["resets_at"] = resetStr
+					sm["timeUntilReset"] = formatDuration(timeUntilReset)
+					sm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+				}
+				response["summary"] = sm
+			}
+		}
+	}
+
+	return response
+}
+
+// historyGrok serves /api/history?provider=grok . Returns a flat array of points
+// keyed by quota name (e.g. {capturedAt, credits: <utilization%>}) for the chart.
+func (h *Handler) historyGrok(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	duration, err := parseTimeRange(r.URL.Query().Get("range"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	snaps, err := h.store.QueryGrokRange(store.DefaultGrokAccountID, now.Add(-duration), now)
+	if err != nil {
+		h.logger.Error("failed to query grok range for history", "error", err)
+		respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+	// Drop snapshots without quota values - some grok polls store an empty
+	// snapshot, and plotting those as 0% produces a false sawtooth on the chart.
+	withQuotas := make([]*api.GrokSnapshot, 0, len(snaps))
+	for _, s := range snaps {
+		if len(s.Quotas) > 0 {
+			withQuotas = append(withQuotas, s)
+		}
+	}
+
+	step := downsampleStep(len(withQuotas), maxChartPoints)
+	last := len(withQuotas) - 1
+	out := make([]map[string]interface{}, 0, min(len(withQuotas), maxChartPoints))
+	for i, s := range withQuotas {
+		if step > 1 && i != 0 && i != last && i%step != 0 {
+			continue
+		}
+		entry := map[string]interface{}{"capturedAt": s.CapturedAt.Format(time.RFC3339)}
+		for _, q := range s.Quotas {
+			entry[q.Name] = q.Utilization
+		}
+		out = append(out, entry)
+	}
+	respondJSON(w, http.StatusOK, out)
+}
+
+// loggingHistoryGrok serves /api/logging-history?provider=grok - per-poll rows
+// with the credits utilization for the Logging History table.
+func (h *Handler) loggingHistoryGrok(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"provider": "grok", "quotaNames": []string{}, "logs": []interface{}{}})
+		return
+	}
+	start, end, limit := h.loggingHistoryRangeAndLimit(r)
+	snaps, err := h.store.QueryGrokRange(store.DefaultGrokAccountID, start, end, limit)
+	if err != nil {
+		h.logger.Error("failed to query grok logging history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query history")
+		return
+	}
+
+	quotaNames := []string{"credits"}
+	// Only include snapshots that actually carry the credits value (some polls
+	// store an empty snapshot); the table reads crossQuotas via the shared helper.
+	capturedAt := make([]time.Time, 0, len(snaps))
+	ids := make([]int64, 0, len(snaps))
+	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snaps))
+	for _, s := range snaps {
+		var credits *api.GrokQuota
+		for i := range s.Quotas {
+			if s.Quotas[i].Name == "credits" {
+				credits = &s.Quotas[i]
+				break
+			}
+		}
+		if credits == nil {
+			continue
+		}
+		capturedAt = append(capturedAt, s.CapturedAt)
+		ids = append(ids, s.ID)
+		series = append(series, map[string]loggingHistoryCrossQuota{
+			"credits": {
+				Name:     "credits",
+				Value:    credits.Utilization,
+				Limit:    100,
+				Percent:  credits.Utilization,
+				HasValue: true,
+				HasLimit: true,
+			},
+		})
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"provider":   "grok",
+		"quotaNames": quotaNames,
+		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
+	})
+}
+
+// grokCycleToMap renders a reset cycle. The tracker only persists peak/delta when
+// a cycle closes, so for the active (open) cycle we fold in the live utilization
+// so the table shows the current peak instead of a stale value.
+func grokCycleToMap(c *store.GrokResetCycle, liveUtil float64) map[string]interface{} {
+	peak := c.PeakUtilization
+	delta := c.TotalDelta
+	if c.CycleEnd == nil && liveUtil > peak {
+		peak = liveUtil
+	}
+	m := map[string]interface{}{
+		"id":           c.ID,
+		"quotaType":    c.QuotaName,
+		"cycleStart":   c.CycleStart.Format(time.RFC3339),
+		"cycleEnd":     nil,
+		"peakRequests": peak,
+		"totalDelta":   delta,
+		"crossQuotas": []map[string]interface{}{{
+			"name":    c.QuotaName,
+			"value":   peak,
+			"limit":   100.0,
+			"percent": peak,
+			"delta":   delta,
+		}},
+	}
+	if c.CycleEnd != nil {
+		m["cycleEnd"] = c.CycleEnd.Format(time.RFC3339)
+	}
+	return m
+}
+
+// cycleOverviewGrok serves /api/cycle-overview?provider=grok .
+func (h *Handler) cycleOverviewGrok(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}, "provider": "grok"})
+		return
+	}
+	quotaType := "credits"
+	// Current utilization, used to keep the active cycle's peak up to date.
+	liveUtil := 0.0
+	if latest := h.latestGrokSnapshot(); latest != nil {
+		for _, q := range latest.Quotas {
+			if q.Name == quotaType {
+				liveUtil = q.Utilization
+				break
+			}
+		}
+	}
+	cycles := make([]map[string]interface{}, 0)
+	// QueryGrokCyclesForQuota already includes the active (open) cycle, so we don't
+	// query the active cycle separately to avoid duplicate rows.
+	if history, err := h.store.QueryGrokCyclesForQuota(store.DefaultGrokAccountID, quotaType, 50); err == nil {
+		for _, c := range history {
+			cycles = append(cycles, grokCycleToMap(c, liveUtil))
+		}
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"groupBy":    quotaType,
+		"provider":   "grok",
+		"quotaNames": []string{"credits"},
+		"cycles":     cycles,
+	})
+}
+
+// insightsGrok serves /api/insights?provider=grok .
+func (h *Handler) insightsGrok(w http.ResponseWriter, _ *http.Request, _ time.Duration) {
+	respondJSON(w, http.StatusOK, h.buildGrokInsights(h.getHiddenInsightKeys()))
+}
+
+// buildGrokInsights builds stats + forecast insights for the single Grok credits quota.
+func (h *Handler) buildGrokInsights(hidden map[string]bool) insightsResponse {
+	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
+	if h.store == nil {
+		return resp
+	}
+	latest := h.latestGrokSnapshot()
+	if latest == nil || len(latest.Quotas) == 0 {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "info",
+			Title: "Getting Started",
+			Desc:  "Keep onWatch running to collect Grok usage data. Insights appear after a few snapshots.",
+		})
+		return resp
+	}
+
+	primary := latest.Quotas[0]
+	var sum *tracker.GrokSummary
+	if h.grokTracker != nil {
+		sum = h.grokTracker.GetGrokSummary(store.DefaultGrokAccountID, primary.Name, latest)
+	}
+
+	if !hidden["utilization"] {
+		resp.Stats = append(resp.Stats, insightStat{
+			Label: "Credits Used", Value: fmt.Sprintf("%.1f%%", primary.Utilization), Sublabel: "current cycle",
+		})
+	}
+	if sum != nil {
+		if !hidden["rate"] && sum.CurrentRate > 0 {
+			resp.Stats = append(resp.Stats, insightStat{
+				Label: "Burn Rate", Value: fmt.Sprintf("%.2f%%/poll", sum.CurrentRate), Sublabel: "recent",
+			})
+		}
+		if !hidden["completed_cycles"] && sum.CompletedCycles > 0 {
+			resp.Stats = append(resp.Stats, insightStat{
+				Label: "Cycles Tracked", Value: fmt.Sprintf("%d", sum.CompletedCycles), Sublabel: fmt.Sprintf("avg %.1f%%", sum.AvgPerCycle),
+			})
+		}
+		// The tracker only persists peak on cycle close, so fold in the live value.
+		peak := sum.PeakCycle
+		if primary.Utilization > peak {
+			peak = primary.Utilization
+		}
+		if !hidden["peak"] && peak > 0 {
+			resp.Stats = append(resp.Stats, insightStat{
+				Label: "Peak Cycle", Value: fmt.Sprintf("%.1f%%", peak), Sublabel: "highest usage",
+			})
+		}
+	}
+
+	// Forecast / threshold insights
+	if primary.Utilization >= 90 && !hidden["high_usage"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "warning", Severity: "high",
+			Title: "High Credit Usage",
+			Desc:  fmt.Sprintf("Grok credits are at %.1f%% for the current cycle.", primary.Utilization),
+		})
+	} else if primary.Utilization >= 75 && !hidden["moderate_usage"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "medium",
+			Title: "Moderate Credit Usage",
+			Desc:  fmt.Sprintf("Grok credits are at %.1f%% for the current cycle.", primary.Utilization),
+		})
+	}
+	if sum != nil && sum.ProjectedUtil > 100 && sum.TimeUntilReset > 0 && !hidden["projected"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "warning", Severity: "high",
+			Title: "Projected to Exhaust",
+			Desc:  fmt.Sprintf("At the current rate, Grok credits may reach 100%% before the reset in %s.", formatDuration(sum.TimeUntilReset)),
+		})
+	}
+	if primary.ResetsAt != nil && !hidden["resets_at"] {
+		resp.Insights = append(resp.Insights, insightItem{
+			Type: "info", Severity: "info",
+			Title: "Next Reset",
+			Desc:  fmt.Sprintf("The current Grok credit cycle resets at %s.", primary.ResetsAt.Format("Jan 2, 15:04 MST")),
+		})
+	}
+	return resp
 }
 
 // currentBoth returns combined quota status for all configured providers.
@@ -1931,6 +2296,12 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") {
 		response["cursor"] = h.buildCursorCurrent()
 	}
+	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") {
+		response["grok"] = h.buildGrokCurrent()
+	}
+	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") {
+		response["kimi"] = h.buildKimiCurrent()
+	}
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -1964,6 +2335,7 @@ func (h *Handler) buildSyntheticCurrent() map[string]interface{} {
 		}
 	}
 
+	applyDisplayModeToResponse(response, h.getDisplayMode("synthetic"))
 	return response
 }
 
@@ -2012,6 +2384,7 @@ func (h *Handler) buildZaiCurrent() map[string]interface{} {
 		}
 	}
 
+	applyDisplayModeToResponse(response, h.getDisplayMode("zai"))
 	return response
 }
 
@@ -2275,6 +2648,10 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyGemini(w, r)
 	case "cursor":
 		h.historyCursor(w, r)
+	case "grok":
+		h.historyGrok(w, r)
+	case "kimi":
+		h.historyKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2635,6 +3012,58 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				cursorData = append(cursorData, entry)
 			}
 			response["cursor"] = cursorData
+		}
+	}
+
+	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") && h.store != nil {
+		snaps, err := h.store.QueryGrokRange(store.DefaultGrokAccountID, start, now)
+		if err == nil {
+			withQuotas := make([]*api.GrokSnapshot, 0, len(snaps))
+			for _, s := range snaps {
+				if len(s.Quotas) > 0 {
+					withQuotas = append(withQuotas, s)
+				}
+			}
+			step := downsampleStep(len(withQuotas), maxChartPoints)
+			last := len(withQuotas) - 1
+			grokData := make([]map[string]interface{}, 0, min(len(withQuotas), maxChartPoints))
+			for i, s := range withQuotas {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{"capturedAt": s.CapturedAt.Format(time.RFC3339)}
+				for _, q := range s.Quotas {
+					entry[q.Name] = q.Utilization
+				}
+				grokData = append(grokData, entry)
+			}
+			response["grok"] = grokData
+		}
+	}
+
+	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") && h.store != nil {
+		snaps, err := h.store.QueryKimiRange(store.DefaultKimiAccountID, start, now)
+		if err == nil {
+			withQuotas := make([]*api.KimiSnapshot, 0, len(snaps))
+			for _, s := range snaps {
+				if len(s.Quotas) > 0 {
+					withQuotas = append(withQuotas, s)
+				}
+			}
+			step := downsampleStep(len(withQuotas), maxChartPoints)
+			last := len(withQuotas) - 1
+			kimiData := make([]map[string]interface{}, 0, min(len(withQuotas), maxChartPoints))
+			for i, s := range withQuotas {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{"capturedAt": s.CapturedAt.Format(time.RFC3339)}
+				for _, q := range s.Quotas {
+					entry[q.Name] = q.Utilization
+				}
+				kimiData = append(kimiData, entry)
+			}
+			response["kimi"] = kimiData
 		}
 	}
 
@@ -3240,6 +3669,10 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesGemini(w, r)
 	case "cursor":
 		h.cyclesCursor(w, r)
+	case "grok":
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
+	case "kimi":
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3606,6 +4039,11 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryGemini(w, r)
 	case "cursor":
 		h.summaryCursor(w, r)
+	case "grok":
+		// Grok summary can be derived from the current or tracker; return minimal for now
+		respondJSON(w, http.StatusOK, map[string]interface{}{"summaries": []interface{}{}})
+	case "kimi":
+		respondJSON(w, http.StatusOK, map[string]interface{}{"summaries": []interface{}{}})
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4419,6 +4857,10 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsGemini(w, r, rangeDur)
 	case "cursor":
 		h.insightsCursor(w, r, rangeDur)
+	case "grok":
+		h.insightsGrok(w, r, rangeDur)
+	case "kimi":
+		h.insightsKimi(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4506,6 +4948,12 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") {
 		response["cursor"] = h.buildCursorInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") {
+		response["grok"] = h.buildGrokInsights(hidden)
+	}
+	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") {
+		response["kimi"] = h.buildKimiInsights(hidden)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -5185,6 +5633,7 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 		quotas = append(quotas, qMap)
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("anthropic"))
 	return response
 }
 
@@ -5236,6 +5685,7 @@ func (h *Handler) buildAnthropicCurrentFallback(response map[string]interface{})
 		quotas = append(quotas, qMap)
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("anthropic"))
 	return response
 }
 
@@ -6005,10 +6455,17 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		hiddenInsights = []string{}
 	}
 
+	// OAuth auto-refresh: default true when unset
+	autoRefreshTokens := true
+	if h.store != nil {
+		autoRefreshTokens = h.store.AutoRefreshTokensEnabled()
+	}
+
 	result := map[string]interface{}{
-		"timezone":        tz,
-		"hidden_insights": hiddenInsights,
-		"menubar":         menubarSettings,
+		"timezone":            tz,
+		"hidden_insights":     hiddenInsights,
+		"menubar":             menubarSettings,
+		"auto_refresh_tokens": autoRefreshTokens,
 	}
 
 	// SMTP settings (never return the actual password)
@@ -6044,6 +6501,14 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 				result["provider_visibility"] = vis
 			}
 		}
+
+		// Dashboard tab order + custom labels
+		if order := h.loadDashboardProvidersOrder(); len(order) > 0 {
+			result["dashboard_providers_order"] = order
+		} else {
+			result["dashboard_providers_order"] = []string{}
+		}
+		result["dashboard_provider_labels"] = h.loadDashboardProviderLabels()
 
 		toolsVisJSON, _ := h.store.GetSetting("api_integrations_visibility")
 		if toolsVisJSON != "" {
@@ -6118,6 +6583,25 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result["timezone"] = tz
+	}
+
+	// Handle auto_refresh_tokens (OAuth refresh of coding-harness credentials)
+	if raw, ok := body["auto_refresh_tokens"]; ok {
+		var enabled bool
+		if err := json.Unmarshal(raw, &enabled); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid auto_refresh_tokens value")
+			return
+		}
+		val := "true"
+		if !enabled {
+			val = "false"
+		}
+		if err := h.store.SetSetting(store.SettingAutoRefreshTokens, val); err != nil {
+			h.logger.Error("failed to save auto_refresh_tokens setting", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save setting")
+			return
+		}
+		result["auto_refresh_tokens"] = enabled
 	}
 
 	// Handle hidden_insights
@@ -6318,6 +6802,36 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result["provider_visibility"] = vis
+	}
+
+	// Dashboard tab order (Settings → Providers drag-and-drop)
+	if raw, ok := body["dashboard_providers_order"]; ok {
+		var order []string
+		if err := json.Unmarshal(raw, &order); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid dashboard_providers_order value")
+			return
+		}
+		if err := h.saveDashboardProvidersOrder(order); err != nil {
+			h.logger.Error("failed to save dashboard provider order", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save dashboard provider order")
+			return
+		}
+		result["dashboard_providers_order"] = h.loadDashboardProvidersOrder()
+	}
+
+	// Custom dashboard tab labels
+	if raw, ok := body["dashboard_provider_labels"]; ok {
+		var labels map[string]string
+		if err := json.Unmarshal(raw, &labels); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid dashboard_provider_labels value")
+			return
+		}
+		if err := h.saveDashboardProviderLabels(labels); err != nil {
+			h.logger.Error("failed to save dashboard provider labels", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save dashboard provider labels")
+			return
+		}
+		result["dashboard_provider_labels"] = h.loadDashboardProviderLabels()
 	}
 
 	if raw, ok := body["api_integrations_visibility"]; ok {
@@ -6845,6 +7359,10 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewGemini(w, r)
 	case "cursor":
 		h.cycleOverviewCursor(w, r)
+	case "grok":
+		h.cycleOverviewGrok(w, r)
+	case "kimi":
+		h.cycleOverviewKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -7261,6 +7779,7 @@ func (h *Handler) buildCopilotCurrent() map[string]interface{} {
 		quotas = append(quotas, qMap)
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("copilot"))
 	return response
 }
 
@@ -7591,25 +8110,140 @@ func (h *Handler) currentCodex(w http.ResponseWriter, r *http.Request) {
 }
 
 // getCodexDisplayMode returns the Codex display mode for a given account.
-// Priority: 1) provider_settings[codex][display_mode] from DB, 2) CODEX_SHOW_AVAILABLE env var, 3) default "usage"
+// Kept for backward compatibility with existing tests; delegates to getDisplayMode.
 func (h *Handler) getCodexDisplayMode() string {
+	return h.getDisplayMode("codex")
+}
+
+// getDisplayMode returns the display mode ("usage" or "available") for a given
+// provider key. Priority order:
+//  1. provider_settings[<providerKey>][display_mode] from DB - per-provider override
+//  2. provider_settings[global][display_mode] from DB - global override
+//  3. CODEX_SHOW_AVAILABLE env var (only when providerKey == "codex")
+//  4. ONWATCH_DISPLAY_MODE env var - global env var
+//  5. default "usage"
+//
+// "available" means: cards display % remaining; "usage" means: cards display % used.
+func (h *Handler) getDisplayMode(providerKey string) string {
 	if h.store != nil {
 		provJSON, err := h.store.GetSetting("provider_settings")
 		if err == nil && provJSON != "" {
 			var provSettings map[string]map[string]interface{}
 			if json.Unmarshal([]byte(provJSON), &provSettings) == nil {
-				if codexSettings, ok := provSettings["codex"]; ok {
-					if dm, ok := codexSettings["display_mode"].(string); ok && dm != "" {
-						return dm
+				if providerKey != "" {
+					if pSettings, ok := provSettings[providerKey]; ok {
+						if dm, ok := pSettings["display_mode"].(string); ok {
+							if dm == "usage" || dm == "available" {
+								return dm
+							}
+						}
+					}
+				}
+				if globalSettings, ok := provSettings["global"]; ok {
+					if dm, ok := globalSettings["display_mode"].(string); ok {
+						if dm == "usage" || dm == "available" {
+							return dm
+						}
 					}
 				}
 			}
 		}
 	}
-	if h.config != nil && h.config.CodexShowAvailable != "" {
-		return h.config.CodexShowAvailable
+	if h.config != nil {
+		if providerKey == "codex" && h.config.CodexShowAvailable != "" && h.config.CodexShowAvailable != "usage" {
+			return h.config.CodexShowAvailable
+		}
+		if h.config.DisplayMode == "available" {
+			return "available"
+		}
 	}
 	return "usage"
+}
+
+// applyDisplayModeToQuotaMap mutates a quota map to reflect the requested
+// display mode. When mode is "available", reads the usage percentage (trying
+// usagePercent / percent / utilization in that order) and sets
+// cardPercent / cardLabel / remainingPercent so dashboard and menubar surface
+// the remaining percentage. When mode is "usage" (or anything else), the map
+// is unchanged.
+//
+// applyDisplayModeToQuotaMap never overwrites cardPercent if already set, so
+// providers like Codex that have per-quota overrides keep their behavior.
+func applyDisplayModeToQuotaMap(qMap map[string]interface{}, mode string) {
+	if qMap == nil || mode != "available" {
+		return
+	}
+	if _, exists := qMap["cardPercent"]; exists {
+		return
+	}
+	usagePercent, ok := readUsagePercent(qMap)
+	if !ok {
+		return
+	}
+	if usagePercent < 0 {
+		usagePercent = 0
+	}
+	if usagePercent > 100 {
+		usagePercent = 100
+	}
+	remaining := 100 - usagePercent
+	qMap["cardPercent"] = remaining
+	qMap["cardLabel"] = "Remaining"
+	qMap["remainingPercent"] = remaining
+}
+
+// readUsagePercent looks up the usage percentage from a quota map. Different
+// providers store this under different keys: usagePercent (most), percent
+// (synthetic), utilization (anthropic/codex/cursor). Returns false if no
+// usage value can be located.
+func readUsagePercent(qMap map[string]interface{}) (float64, bool) {
+	for _, key := range []string{"usagePercent", "percent", "utilization"} {
+		switch v := qMap[key].(type) {
+		case float64:
+			return v, true
+		case float32:
+			return float64(v), true
+		case int:
+			return float64(v), true
+		case int64:
+			return float64(v), true
+		}
+	}
+	return 0, false
+}
+
+// applyDisplayModeToResponse walks a provider response and applies the display
+// mode to every quota map it finds. Supports the two response shapes used in
+// onWatch:
+//
+//   - Top-level quota keys: synthetic and z.ai store quotas under named keys
+//     (subscription, search, toolCalls, tokensLimit, timeLimit, sharedQuota,
+//     credits) at the top level of the response.
+//   - quotas array: most providers store a list under response["quotas"].
+//
+// This is a no-op for mode == "usage", so callers can safely invoke it
+// unconditionally.
+func applyDisplayModeToResponse(response map[string]interface{}, mode string) {
+	if response == nil || mode != "available" {
+		return
+	}
+	for _, key := range []string{"subscription", "search", "toolCalls", "tokensLimit", "timeLimit", "sharedQuota", "credits"} {
+		if quotaMap, ok := response[key].(map[string]interface{}); ok {
+			applyDisplayModeToQuotaMap(quotaMap, mode)
+		}
+	}
+	switch typed := response["quotas"].(type) {
+	case []map[string]interface{}:
+		for _, q := range typed {
+			applyDisplayModeToQuotaMap(q, mode)
+		}
+	case []interface{}:
+		for _, raw := range typed {
+			if q, ok := raw.(map[string]interface{}); ok {
+				applyDisplayModeToQuotaMap(q, mode)
+			}
+		}
+	}
 }
 
 // getCodexPaceMode returns the Codex pace mode from provider_settings.
@@ -7718,6 +8352,7 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 		}
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, displayMode)
 	return response
 }
 
@@ -7786,6 +8421,22 @@ func (h *Handler) buildAntigravityCurrent() map[string]interface{} {
 		response["promptCredits"] = latest.PromptCredits
 		response["monthlyCredits"] = latest.MonthlyCredits
 	}
+	if latest.Source != "" && latest.Source != "unknown" {
+		response["source"] = latest.Source
+	}
+
+	// The agy CLI source reports bucket rows (weekly + 5h per group); render them
+	// directly rather than collapsing into the IDE's logical model groups.
+	if latest.Source == api.AntigravitySourceCLI {
+		quotas := h.buildAntigravityCLIQuotas(latest.Models)
+		response["quotas"] = quotas
+		response["pools"] = quotas
+		if lowest := lowestAntigravityPool(quotas); lowest != nil {
+			response["lowestPool"] = lowest
+		}
+		applyDisplayModeToResponse(response, h.getDisplayMode("antigravity"))
+		return response
+	}
 
 	groups := api.GroupAntigravityModelsByLogicalQuota(latest.Models)
 	quotas := make([]map[string]interface{}, 0, len(groups))
@@ -7832,19 +8483,77 @@ func (h *Handler) buildAntigravityCurrent() map[string]interface{} {
 	response["quotas"] = quotas
 	response["pools"] = quotas
 
-	var lowestPool map[string]interface{}
+	if lowest := lowestAntigravityPool(quotas); lowest != nil {
+		response["lowestPool"] = lowest
+	}
+
+	applyDisplayModeToResponse(response, h.getDisplayMode("antigravity"))
+	return response
+}
+
+// buildAntigravityCLIQuotas renders agy CLI bucket rows (one card per bucket,
+// e.g. Gemini Weekly/5h, Claude+GPT Weekly/5h) in stable display order.
+func (h *Handler) buildAntigravityCLIQuotas(models []api.AntigravityModelQuota) []map[string]interface{} {
+	ordered := make([]api.AntigravityModelQuota, len(models))
+	copy(ordered, models)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return api.AgyBucketOrder(ordered[i].ModelID) < api.AgyBucketOrder(ordered[j].ModelID)
+	})
+
+	quotas := make([]map[string]interface{}, 0, len(ordered))
+	for _, m := range ordered {
+		usagePercent := 100 - m.RemainingPercent
+		if usagePercent < 0 {
+			usagePercent = 0
+		}
+		if usagePercent > 100 {
+			usagePercent = 100
+		}
+		qMap := map[string]interface{}{
+			"modelId":           m.ModelID,
+			"quotaGroup":        m.ModelID,
+			"label":             m.Label,
+			"displayName":       m.Label,
+			"remainingFraction": m.RemainingFraction,
+			"remainingPercent":  m.RemainingPercent,
+			"usagePercent":      usagePercent,
+			"isExhausted":       m.IsExhausted,
+			"status":            antigravityUsageStatus(usagePercent),
+			"models":            []string{m.ModelID},
+			"modelLabels":       []string{m.Label},
+			"color":             api.AgyBucketColor(m.ModelID),
+		}
+		if m.ResetTime != nil {
+			timeUntilReset := m.TimeUntilReset
+			if timeUntilReset < 0 {
+				timeUntilReset = 0
+			}
+			qMap["resetTime"] = m.ResetTime.Format(time.RFC3339)
+			qMap["timeUntilReset"] = formatDuration(timeUntilReset)
+			qMap["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+		}
+		if h.antigravityTracker != nil {
+			if summary, err := h.antigravityTracker.UsageSummary(m.ModelID); err == nil && summary != nil {
+				qMap["currentRate"] = summary.CurrentRate
+				qMap["projectedUsage"] = summary.ProjectedUsage
+			}
+		}
+		quotas = append(quotas, qMap)
+	}
+	return quotas
+}
+
+// lowestAntigravityPool returns the quota entry with the least remaining.
+func lowestAntigravityPool(quotas []map[string]interface{}) map[string]interface{} {
+	var lowest map[string]interface{}
 	lowestRemaining := 101.0
 	for _, q := range quotas {
 		if remaining, ok := q["remainingPercent"].(float64); ok && remaining < lowestRemaining {
 			lowestRemaining = remaining
-			lowestPool = q
+			lowest = q
 		}
 	}
-	if lowestPool != nil {
-		response["lowestPool"] = lowestPool
-	}
-
-	return response
+	return lowest
 }
 
 func antigravityUsageStatus(usagePercent float64) string {
@@ -8483,7 +9192,7 @@ func (h *Handler) minimaxAccountCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	acc, err := h.store.GetOrCreateProviderAccount("minimax", req.Name)
+	acc, err := h.store.CreateOrRestoreProviderAccount("minimax", req.Name)
 	if err != nil {
 		h.logger.Error("failed to create MiniMax account", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to create account")
@@ -8530,9 +9239,10 @@ func (h *Handler) minimaxAccountUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name   *string `json:"name"`
-		APIKey *string `json:"api_key"`
-		Region *string `json:"region"`
+		Name    *string `json:"name"`
+		APIKey  *string `json:"api_key"`
+		Region  *string `json:"region"`
+		Restore *bool   `json:"restore"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
@@ -8547,6 +9257,15 @@ func (h *Handler) minimaxAccountUpdate(w http.ResponseWriter, r *http.Request) {
 	if err != nil || acc == nil || acc.Provider != "minimax" {
 		respondError(w, http.StatusNotFound, "account not found")
 		return
+	}
+
+	// Restore a soft-deleted account
+	if req.Restore != nil && *req.Restore {
+		if err := h.store.UndeleteProviderAccountByID(id); err != nil {
+			h.logger.Error("failed to restore MiniMax account", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to restore account")
+			return
+		}
 	}
 
 	// Update name
@@ -8788,6 +9507,7 @@ func (h *Handler) buildMiniMaxCurrent(accountID int64) map[string]interface{} {
 		response["weeklyQuotas"] = weeklyQuotas
 	}
 	response["quotas"] = quotas
+	applyDisplayModeToResponse(response, h.getDisplayMode("minimax"))
 	return response
 }
 
@@ -8842,6 +9562,14 @@ func minimaxStatusLabel(usagePercent float64) string {
 func minimaxRepresentativeModel(snapshot *api.MiniMaxSnapshot) string {
 	if snapshot == nil || len(snapshot.Models) == 0 {
 		return ""
+	}
+	// Prefer a model with an active quota allocation; the response also lists
+	// inactive/discontinued models with zero totals that should not represent
+	// the account's cycle overview.
+	for _, m := range snapshot.Models {
+		if m.ModelName != "" && (m.Total > 0 || m.Used > 0) {
+			return m.ModelName
+		}
 	}
 	return snapshot.Models[0].ModelName
 }
@@ -9066,27 +9794,36 @@ func (h *Handler) buildMiniMaxCycleOverviewRows(groupBy string, limit int, accou
 
 	isWeeklyView := groupBy == "weekly_all"
 
-	// Map the shared quota display name ("coding_plan") to the actual representative model.
-	// Also handle empty groupBy by checking if a shared/merged model exists.
-	if groupBy == "" || minimaxIsSharedGroup(groupBy) || isWeeklyView {
-		// Check if there's a merged "MiniMax-M*" model with cycles
-		if cycle, err := h.store.QueryActiveMiniMaxCycle("MiniMax-M*", minimaxAccID); err == nil && cycle != nil {
-			groupBy = "MiniMax-M*"
-		} else if history, err := h.store.QueryMiniMaxCycleHistory("MiniMax-M*", minimaxAccID, 1); err == nil && len(history) > 0 {
-			groupBy = "MiniMax-M*"
-		}
-	}
-
 	latest, err := h.store.QueryLatestMiniMax(minimaxAccID)
 	if err != nil {
 		return nil, nil, groupBy, err
 	}
-	useSharedPath := (latest != nil && latest.IsSharedQuota()) || groupBy == "MiniMax-M*" || isWeeklyView
+
+	// Resolve the shared display name ("coding_plan") or an empty/weekly request
+	// to a concrete representative model. Only prefer the merged "MiniMax-M*"
+	// model when the CURRENT plan actually shares a quota pool - otherwise an
+	// account that switched to a single percentage-based model (e.g. "general")
+	// would keep showing stale cycles from its old per-model plan.
+	currentlyShared := latest != nil && latest.IsSharedQuota()
+	if groupBy == "" || minimaxIsSharedGroup(groupBy) || isWeeklyView {
+		if currentlyShared {
+			if cycle, err := h.store.QueryActiveMiniMaxCycle("MiniMax-M*", minimaxAccID); err == nil && cycle != nil {
+				groupBy = "MiniMax-M*"
+			} else if history, err := h.store.QueryMiniMaxCycleHistory("MiniMax-M*", minimaxAccID, 1); err == nil && len(history) > 0 {
+				groupBy = "MiniMax-M*"
+			}
+		} else if rep := minimaxRepresentativeModel(latest); rep != "" && !isWeeklyView {
+			groupBy = rep
+		}
+	}
+
+	useSharedPath := currentlyShared || groupBy == "MiniMax-M*" || isWeeklyView
 	if useSharedPath {
 		sourceModel := groupBy // use resolved groupBy (e.g. "MiniMax-M*") as primary
-		if sourceModel == "" || minimaxIsSharedGroup(sourceModel) {
-			// Resolution gave us the shared key (e.g. "coding_plan") or nothing.
-			// Fall back to a real model name so the cycle query finds data.
+		if sourceModel == "" || minimaxIsSharedGroup(sourceModel) || isWeeklyView {
+			// Resolution gave us the shared key ("coding_plan"), the weekly
+			// sentinel ("weekly_all"), or nothing. Fall back to a real model
+			// name so the cycle query finds data.
 			sourceModel = minimaxRepresentativeModel(latest)
 		}
 		if sourceModel == "" {
@@ -10263,6 +11000,10 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryGemini(w, r)
 	case "cursor":
 		h.loggingHistoryCursor(w, r)
+	case "grok":
+		h.loggingHistoryGrok(w, r)
+	case "kimi":
+		h.loggingHistoryKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}

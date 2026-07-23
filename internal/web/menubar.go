@@ -40,8 +40,10 @@ func (h *Handler) Capabilities(w http.ResponseWriter, r *http.Request) {
 }
 
 // MenubarSummary returns the normalized data contract used by the menubar UI.
+// Served to any local consumer (macOS companion, GNOME extension, browser).
+// Does not require a native companion build (menubar.IsSupported).
 func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
-	if !menubar.IsSupported() && os.Getenv("ONWATCH_TEST_MODE") != "1" {
+	if !isLoopbackRequest(r) {
 		http.NotFound(w, r)
 		return
 	}
@@ -52,6 +54,55 @@ func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, snapshot)
+}
+
+// MenubarTrayTitle returns the compact tray label (e.g. "6%·4%·1%") using the
+// same rules as the macOS menubar companion, so GNOME can stay in sync without
+// reimplementing formatting.
+func (h *Handler) MenubarTrayTitle(w http.ResponseWriter, r *http.Request) {
+	if !isLoopbackRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		h.logger.Error("failed to build menubar snapshot for tray title", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to build menubar tray title")
+		return
+	}
+	settings, err := h.menubarSettings()
+	if err != nil {
+		settings = menubar.DefaultSettings()
+	}
+	title := menubar.TrayTitle(snapshot, settings)
+	segments := menubar.TraySegments(snapshot, settings)
+	tooltip := ""
+	if snapshot != nil {
+		if snapshot.Aggregate.ProviderCount == 0 {
+			tooltip = "onWatch: no provider data"
+		} else {
+			tooltip = fmt.Sprintf("onWatch: %s across %d providers, updated %s",
+				snapshot.Aggregate.Label, snapshot.Aggregate.ProviderCount, snapshot.UpdatedAgo)
+		}
+		// Prefer per-segment tooltip when available (shows who is who).
+		if len(segments) > 0 {
+			parts := make([]string, 0, len(segments))
+			for _, seg := range segments {
+				if seg.Label != "" && seg.Text != "" {
+					parts = append(parts, seg.Label+": "+seg.Text)
+				}
+			}
+			if len(parts) > 0 {
+				tooltip = strings.Join(parts, " · ")
+			}
+		}
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"title":    title,
+		"tooltip":  tooltip,
+		"online":   snapshot != nil,
+		"segments": segments,
+	})
 }
 
 // MenubarPage renders the localhost-only browser UI used by the tray companion.
@@ -180,7 +231,11 @@ func isLoopbackRequest(r *http.Request) bool {
 }
 
 func isLocalMenubarPublicPath(path string) bool {
-	return path == "/menubar" || path == "/api/menubar/summary" || path == "/api/menubar/preferences" || path == "/api/menubar/refresh"
+	return path == "/menubar" ||
+		path == "/api/menubar/summary" ||
+		path == "/api/menubar/preferences" ||
+		path == "/api/menubar/refresh" ||
+		path == "/api/menubar/tray-title"
 }
 
 // BuildMenubarSnapshot constructs the shared menubar UI contract.
@@ -202,6 +257,8 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 
 func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidden bool) ([]menubar.ProviderCard, time.Time) {
 	normalized := settings.Normalize()
+	// Reuse dashboard tab renames (Settings → Tab name) for menubar cards.
+	labels := h.loadDashboardProviderLabels()
 
 	visibility := h.providerVisibilityMap()
 	providers := make([]menubar.ProviderCard, 0, 10)
@@ -209,7 +266,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 
 	if h.config != nil && h.config.HasProvider("synthetic") && h.providerDashboardVisible("synthetic", visibility) {
 		payload := h.buildSyntheticCurrent()
-		if card := normalizeProviderCard("synthetic", "Synthetic", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("synthetic", resolveProviderTabLabel("synthetic", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -218,7 +275,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("zai") && h.providerDashboardVisible("zai", visibility) {
 		payload := h.buildZaiCurrent()
-		if card := normalizeProviderCard("zai", "Z.ai", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("zai", resolveProviderTabLabel("zai", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -227,7 +284,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("anthropic") && h.providerDashboardVisible("anthropic", visibility) {
 		payload := h.buildAnthropicCurrent()
-		if card := normalizeProviderCard("anthropic", "Anthropic", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("anthropic", resolveProviderTabLabel("anthropic", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			if promoData, ok := payload["promo"]; ok && promoData != nil {
 				if p, ok := promoData.(*anthropicPromo); ok {
 					compactText := "Off-peak hours"
@@ -253,7 +310,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("copilot") && h.providerDashboardVisible("copilot", visibility) {
 		payload := h.buildCopilotCurrent()
-		if card := normalizeProviderCard("copilot", "Copilot", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("copilot", resolveProviderTabLabel("copilot", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -261,7 +318,9 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		}
 	}
 	if h.config != nil && h.config.HasProvider("codex") && h.providerDashboardVisible("codex", visibility) {
-		for _, usage := range h.codexUsageAccounts() {
+		codexAccounts := h.codexUsageAccounts()
+		multiCodex := len(codexAccounts) > 1
+		for _, usage := range codexAccounts {
 			accountID := codexUsageAccountID(usage)
 			providerKey := fmt.Sprintf("codex:%d", accountID)
 			if !providerDashboardVisibleForKey(visibility, providerKey, "codex") {
@@ -272,7 +331,8 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 				name = "default"
 			}
 			subtitle := "ChatGPT account"
-			if card := normalizeProviderCard(providerKey, "Codex - "+name, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			label := menubarAccountLabel("codex", labels, name, multiCodex)
+			if card := normalizeProviderCard(providerKey, label, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 				providers = append(providers, *card)
 				if captured := parseCapturedAt(usage); captured.After(latest) {
 					latest = captured
@@ -282,7 +342,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("antigravity") && h.providerDashboardVisible("antigravity", visibility) {
 		payload := h.buildAntigravityCurrent()
-		if card := normalizeProviderCard("antigravity", "Antigravity", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("antigravity", resolveProviderTabLabel("antigravity", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -290,7 +350,9 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		}
 	}
 	if h.config != nil && h.config.HasProvider("minimax") && h.providerDashboardVisible("minimax", visibility) {
-		for _, usage := range h.minimaxUsageAccounts() {
+		minimaxAccounts := h.minimaxUsageAccounts()
+		multiMiniMax := len(minimaxAccounts) > 1
+		for _, usage := range minimaxAccounts {
 			accountID := minimaxUsageAccountID(usage)
 			providerKey := fmt.Sprintf("minimax:%d", accountID)
 			if !providerDashboardVisibleForKey(visibility, providerKey, "minimax") {
@@ -301,7 +363,8 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 				name = "default"
 			}
 			subtitle := "MiniMax account"
-			if card := normalizeProviderCard(providerKey, "MiniMax - "+name, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			label := menubarAccountLabel("minimax", labels, name, multiMiniMax)
+			if card := normalizeProviderCard(providerKey, label, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 				providers = append(providers, *card)
 				if captured := parseCapturedAt(usage); captured.After(latest) {
 					latest = captured
@@ -311,7 +374,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("openrouter") && h.providerDashboardVisible("openrouter", visibility) {
 		payload := h.buildOpenRouterCurrent()
-		if card := normalizeProviderCard("openrouter", "OpenRouter", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("openrouter", resolveProviderTabLabel("openrouter", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -320,7 +383,25 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("gemini") && h.providerDashboardVisible("gemini", visibility) {
 		payload := h.buildGeminiCurrent()
-		if card := normalizeProviderCard("gemini", "Gemini", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("gemini", resolveProviderTabLabel("gemini", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			providers = append(providers, *card)
+			if captured := parseCapturedAt(payload); captured.After(latest) {
+				latest = captured
+			}
+		}
+	}
+	if h.config != nil && h.config.HasProvider("grok") && h.providerDashboardVisible("grok", visibility) {
+		payload := h.buildGrokCurrent()
+		if card := normalizeProviderCard("grok", resolveProviderTabLabel("grok", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			providers = append(providers, *card)
+			if captured := parseCapturedAt(payload); captured.After(latest) {
+				latest = captured
+			}
+		}
+	}
+	if h.config != nil && h.config.HasProvider("kimi") && h.providerDashboardVisible("kimi", visibility) {
+		payload := h.buildKimiCurrent()
+		if card := normalizeProviderCard("kimi", "Kimi Code", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -329,7 +410,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("cursor") && h.providerDashboardVisible("cursor", visibility) {
 		payload := h.buildCursorCurrent()
-		if card := normalizeProviderCard("cursor", "Cursor", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("cursor", resolveProviderTabLabel("cursor", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -342,6 +423,24 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		providers = filterMenubarProviders(providers, normalized.VisibleProviders)
 	}
 	return providers, latest
+}
+
+// menubarAccountLabel builds multi-account menubar titles using the dashboard
+// tab rename for the base provider. Single-account cards drop the "- default"
+// suffix so a renamed "❄️ Codex" is not forced to "❄️ Codex - default".
+func menubarAccountLabel(baseKey string, labels map[string]string, accountName string, multi bool) string {
+	base := resolveProviderTabLabel(baseKey, labels)
+	if base == "" {
+		base = defaultProviderTabLabel(baseKey)
+	}
+	if !multi {
+		return base
+	}
+	name := strings.TrimSpace(accountName)
+	if name == "" {
+		name = "default"
+	}
+	return base + " - " + name
 }
 
 func (h *Handler) menubarSettings() (*menubar.Settings, error) {
@@ -377,10 +476,7 @@ func (h *Handler) renderMenubarHTML(view menubar.ViewType, settings *menubar.Set
 func (h *Handler) buildMenubarProviderOptions(settings *menubar.Settings) ([]menubarProviderOption, error) {
 	normalized := settings.Normalize()
 	providers, _ := h.buildMenubarProviders(normalized, true)
-	visible := make(map[string]struct{}, len(normalized.VisibleProviders))
-	for _, id := range normalized.VisibleProviders {
-		visible[id] = struct{}{}
-	}
+	visibleKeys := append([]string(nil), normalized.VisibleProviders...)
 	options := make([]menubarProviderOption, 0, len(providers))
 	for _, provider := range providers {
 		quotaOptions := make([]menubarQuotaOption, 0, len(provider.Quotas))
@@ -390,10 +486,7 @@ func (h *Handler) buildMenubarProviderOptions(settings *menubar.Settings) ([]men
 				Label: quota.Label,
 			})
 		}
-		_, isVisible := visible[provider.ID]
-		if len(visible) == 0 {
-			isVisible = true
-		}
+		isVisible := len(visibleKeys) == 0 || menubarSettingsKeyAllows(provider.ID, visibleKeys)
 		options = append(options, menubarProviderOption{
 			ID:           provider.ID,
 			BaseProvider: provider.BaseProvider,
@@ -689,9 +782,23 @@ func sortProviderCards(cards []menubar.ProviderCard, preferred []string) {
 	for idx, key := range preferred {
 		order[key] = idx
 	}
+	rank := func(cardID string) (int, bool) {
+		if idx, ok := order[cardID]; ok {
+			return idx, true
+		}
+		// Settings UI may store base keys ("codex") while cards use
+		// account-scoped IDs ("codex:1").
+		base := providerKeyBase(cardID)
+		if base != cardID {
+			if idx, ok := order[base]; ok {
+				return idx, true
+			}
+		}
+		return 0, false
+	}
 	sort.SliceStable(cards, func(i, j int) bool {
-		leftOrder, leftOK := order[cards[i].ID]
-		rightOrder, rightOK := order[cards[j].ID]
+		leftOrder, leftOK := rank(cards[i].ID)
+		rightOrder, rightOK := rank(cards[j].ID)
 		switch {
 		case leftOK && rightOK:
 			return leftOrder < rightOrder
@@ -711,17 +818,45 @@ func filterMenubarProviders(cards []menubar.ProviderCard, visible []string) []me
 	if len(cards) == 0 || len(visible) == 0 {
 		return cards
 	}
-	allowed := make(map[string]struct{}, len(visible))
-	for _, id := range visible {
-		allowed[id] = struct{}{}
-	}
 	filtered := make([]menubar.ProviderCard, 0, len(cards))
 	for _, card := range cards {
-		if _, ok := allowed[card.ID]; ok {
+		if menubarSettingsKeyAllows(card.ID, visible) {
 			filtered = append(filtered, card)
 		}
 	}
 	return filtered
+}
+
+// menubarSettingsKeyAllows reports whether a menubar card ID is covered by a
+// settings key list (providers_order / visible_providers). Exact match wins;
+// bare base keys like "codex" also match account-scoped cards like "codex:1".
+// Distinct accounts ("codex:1" vs "codex:2") do not match each other.
+func menubarSettingsKeyAllows(cardID string, keys []string) bool {
+	for _, key := range keys {
+		if menubarProviderKeysMatch(cardID, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func menubarProviderKeysMatch(cardID, settingsKey string) bool {
+	cardID = strings.TrimSpace(cardID)
+	settingsKey = strings.TrimSpace(settingsKey)
+	if cardID == "" || settingsKey == "" {
+		return false
+	}
+	if cardID == settingsKey {
+		return true
+	}
+	cardBase := providerKeyBase(cardID)
+	settingsBase := providerKeyBase(settingsKey)
+	if cardBase != settingsBase {
+		return false
+	}
+	// Same family: bare "codex" matches any "codex:N"; specific accounts
+	// only match themselves (handled above).
+	return cardID == cardBase || settingsKey == settingsBase
 }
 
 func parseCapturedAt(payload map[string]interface{}) time.Time {

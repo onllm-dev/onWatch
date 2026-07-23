@@ -24,6 +24,11 @@ type AntigravityAgent struct {
 	sm           *SessionManager
 	notifier     *notify.NotificationEngine
 	pollingCheck func() bool
+	sourceCheck  func() string
+
+	// cliRunner manages a warm agy process for the CLI source. Created lazily
+	// the first time the CLI source is used.
+	cliRunner *api.AntigravityCLIRunner
 
 	// Manual configuration for Docker environments
 	manualBaseURL   string
@@ -51,6 +56,13 @@ func (a *AntigravityAgent) SetPollingCheck(fn func() bool) {
 // SetNotifier sets the notification engine for sending alerts.
 func (a *AntigravityAgent) SetNotifier(n *notify.NotificationEngine) {
 	a.notifier = n
+}
+
+// SetSourceCheck sets a function returning the current Antigravity source
+// preference ("ide" | "cli" | "both"). Read fresh each poll so a settings-UI
+// change takes effect without a daemon restart.
+func (a *AntigravityAgent) SetSourceCheck(fn func() string) {
+	a.sourceCheck = fn
 }
 
 // NewAntigravityAgent creates a new AntigravityAgent with the given dependencies.
@@ -111,6 +123,9 @@ func (a *AntigravityAgent) Run(ctx context.Context) error {
 	a.logger.Info("Antigravity agent started", "interval", a.interval)
 
 	defer func() {
+		if a.cliRunner != nil {
+			a.cliRunner.Stop()
+		}
 		if a.sm != nil {
 			a.sm.Close()
 		}
@@ -139,18 +154,22 @@ func (a *AntigravityAgent) poll(ctx context.Context) {
 		return
 	}
 
-	resp, err := a.client.FetchQuotas(ctx)
+	// Default to IDE when no source preference is wired (the daemon always wires
+	// one via main.go); this keeps direct agent construction backward-compatible
+	// and avoids launching agy unless a caller opts in.
+	source := api.AntigravitySourceIDE
+	if a.sourceCheck != nil {
+		source = api.NormalizeAntigravitySource(a.sourceCheck())
+	}
+
+	snapshot, err := a.fetchSnapshot(ctx, source)
 	if err != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		a.logger.Error("Failed to fetch Antigravity quotas", "error", err)
+		a.logger.Error("Failed to fetch Antigravity quotas", "source", source, "error", err)
 		return
 	}
-
-	// Convert API response to snapshot
-	now := time.Now().UTC()
-	snapshot := resp.ToSnapshot(now)
 
 	// Store snapshot
 	if _, err := a.store.InsertAntigravitySnapshot(snapshot); err != nil {
@@ -202,6 +221,47 @@ func (a *AntigravityAgent) poll(ctx context.Context) {
 			)
 		}
 	}
+}
+
+// fetchSnapshot obtains a snapshot from the preferred source. Docker/manual
+// config always uses the direct IDE client. For "both", the CLI is preferred
+// for its richer weekly+5h data and falls back to the IDE probe.
+func (a *AntigravityAgent) fetchSnapshot(ctx context.Context, source string) (*api.AntigravitySnapshot, error) {
+	if a.manualBaseURL != "" {
+		return a.fetchIDE(ctx)
+	}
+	switch source {
+	case api.AntigravitySourceCLI:
+		return a.fetchCLI(ctx)
+	case api.AntigravitySourceIDE:
+		return a.fetchIDE(ctx)
+	default: // both
+		snap, err := a.fetchCLI(ctx)
+		if err == nil {
+			return snap, nil
+		}
+		a.logger.Debug("agy CLI source unavailable, falling back to IDE", "error", err)
+		return a.fetchIDE(ctx)
+	}
+}
+
+// fetchCLI launches/reuses a managed agy process and returns its snapshot.
+func (a *AntigravityAgent) fetchCLI(ctx context.Context) (*api.AntigravitySnapshot, error) {
+	if a.cliRunner == nil {
+		a.cliRunner = api.NewAntigravityCLIRunner(a.logger)
+	}
+	return a.cliRunner.Fetch(ctx)
+}
+
+// fetchIDE probes the desktop/IDE language server (the original behavior).
+func (a *AntigravityAgent) fetchIDE(ctx context.Context) (*api.AntigravitySnapshot, error) {
+	resp, err := a.client.FetchQuotas(ctx)
+	if err != nil {
+		return nil, err
+	}
+	snap := resp.ToSnapshot(time.Now().UTC())
+	snap.Source = api.AntigravitySourceIDE
+	return snap, nil
 }
 
 // IsConnected returns true if the agent has a valid connection to the language server.

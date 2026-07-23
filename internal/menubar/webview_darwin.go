@@ -25,7 +25,8 @@ import (
 )
 
 type webViewPopover struct {
-	handle unsafe.Pointer
+	handle    unsafe.Pointer
+	loadedURL string
 }
 
 func cBool(value C.bool) bool {
@@ -51,6 +52,8 @@ func (p *webViewPopover) ShowURL(url string) error {
 }
 
 func (p *webViewPopover) ToggleURL(url string) error {
+	// Always ensure the document is warm (no-op reload when URL already loaded),
+	// then toggle visibility. Avoids the blank-shell flash of a full navigation.
 	if !p.isShown() {
 		if err := p.loadURL(url); err != nil {
 			return err
@@ -60,6 +63,11 @@ func (p *webViewPopover) ToggleURL(url string) error {
 		return fmt.Errorf("%w: status item unavailable", errNativePopoverUnavailable)
 	}
 	return nil
+}
+
+// Preload warms the popover WebView without showing it.
+func (p *webViewPopover) Preload(url string) error {
+	return p.loadURL(url)
 }
 
 func (p *webViewPopover) Close() {
@@ -84,6 +92,7 @@ func (p *webViewPopover) loadURL(url string) error {
 	rawURL := C.CString(url)
 	defer C.free(unsafe.Pointer(rawURL))
 	C.onwatch_popover_load_url(p.handle, rawURL)
+	p.loadedURL = url
 	return nil
 }
 
