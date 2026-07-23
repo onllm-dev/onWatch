@@ -202,6 +202,8 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 
 func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidden bool) ([]menubar.ProviderCard, time.Time) {
 	normalized := settings.Normalize()
+	// Reuse dashboard tab renames (Settings → Tab name) for menubar cards.
+	labels := h.loadDashboardProviderLabels()
 
 	visibility := h.providerVisibilityMap()
 	providers := make([]menubar.ProviderCard, 0, 10)
@@ -209,7 +211,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 
 	if h.config != nil && h.config.HasProvider("synthetic") && h.providerDashboardVisible("synthetic", visibility) {
 		payload := h.buildSyntheticCurrent()
-		if card := normalizeProviderCard("synthetic", "Synthetic", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("synthetic", resolveProviderTabLabel("synthetic", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -218,7 +220,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("zai") && h.providerDashboardVisible("zai", visibility) {
 		payload := h.buildZaiCurrent()
-		if card := normalizeProviderCard("zai", "Z.ai", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("zai", resolveProviderTabLabel("zai", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -227,7 +229,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("anthropic") && h.providerDashboardVisible("anthropic", visibility) {
 		payload := h.buildAnthropicCurrent()
-		if card := normalizeProviderCard("anthropic", "Anthropic", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("anthropic", resolveProviderTabLabel("anthropic", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			if promoData, ok := payload["promo"]; ok && promoData != nil {
 				if p, ok := promoData.(*anthropicPromo); ok {
 					compactText := "Off-peak hours"
@@ -253,7 +255,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("copilot") && h.providerDashboardVisible("copilot", visibility) {
 		payload := h.buildCopilotCurrent()
-		if card := normalizeProviderCard("copilot", "Copilot", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("copilot", resolveProviderTabLabel("copilot", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -261,7 +263,9 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		}
 	}
 	if h.config != nil && h.config.HasProvider("codex") && h.providerDashboardVisible("codex", visibility) {
-		for _, usage := range h.codexUsageAccounts() {
+		codexAccounts := h.codexUsageAccounts()
+		multiCodex := len(codexAccounts) > 1
+		for _, usage := range codexAccounts {
 			accountID := codexUsageAccountID(usage)
 			providerKey := fmt.Sprintf("codex:%d", accountID)
 			if !providerDashboardVisibleForKey(visibility, providerKey, "codex") {
@@ -272,7 +276,8 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 				name = "default"
 			}
 			subtitle := "ChatGPT account"
-			if card := normalizeProviderCard(providerKey, "Codex - "+name, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			label := menubarAccountLabel("codex", labels, name, multiCodex)
+			if card := normalizeProviderCard(providerKey, label, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 				providers = append(providers, *card)
 				if captured := parseCapturedAt(usage); captured.After(latest) {
 					latest = captured
@@ -282,7 +287,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("antigravity") && h.providerDashboardVisible("antigravity", visibility) {
 		payload := h.buildAntigravityCurrent()
-		if card := normalizeProviderCard("antigravity", "Antigravity", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("antigravity", resolveProviderTabLabel("antigravity", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -290,7 +295,9 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		}
 	}
 	if h.config != nil && h.config.HasProvider("minimax") && h.providerDashboardVisible("minimax", visibility) {
-		for _, usage := range h.minimaxUsageAccounts() {
+		minimaxAccounts := h.minimaxUsageAccounts()
+		multiMiniMax := len(minimaxAccounts) > 1
+		for _, usage := range minimaxAccounts {
 			accountID := minimaxUsageAccountID(usage)
 			providerKey := fmt.Sprintf("minimax:%d", accountID)
 			if !providerDashboardVisibleForKey(visibility, providerKey, "minimax") {
@@ -301,7 +308,8 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 				name = "default"
 			}
 			subtitle := "MiniMax account"
-			if card := normalizeProviderCard(providerKey, "MiniMax - "+name, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			label := menubarAccountLabel("minimax", labels, name, multiMiniMax)
+			if card := normalizeProviderCard(providerKey, label, subtitle, usage, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 				providers = append(providers, *card)
 				if captured := parseCapturedAt(usage); captured.After(latest) {
 					latest = captured
@@ -311,7 +319,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("openrouter") && h.providerDashboardVisible("openrouter", visibility) {
 		payload := h.buildOpenRouterCurrent()
-		if card := normalizeProviderCard("openrouter", "OpenRouter", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("openrouter", resolveProviderTabLabel("openrouter", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -320,7 +328,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("gemini") && h.providerDashboardVisible("gemini", visibility) {
 		payload := h.buildGeminiCurrent()
-		if card := normalizeProviderCard("gemini", "Gemini", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("gemini", resolveProviderTabLabel("gemini", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -329,7 +337,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("grok") && h.providerDashboardVisible("grok", visibility) {
 		payload := h.buildGrokCurrent()
-		if card := normalizeProviderCard("grok", "Grok", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("grok", resolveProviderTabLabel("grok", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -338,7 +346,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("cursor") && h.providerDashboardVisible("cursor", visibility) {
 		payload := h.buildCursorCurrent()
-		if card := normalizeProviderCard("cursor", "Cursor", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("cursor", resolveProviderTabLabel("cursor", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -351,6 +359,24 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		providers = filterMenubarProviders(providers, normalized.VisibleProviders)
 	}
 	return providers, latest
+}
+
+// menubarAccountLabel builds multi-account menubar titles using the dashboard
+// tab rename for the base provider. Single-account cards drop the "- default"
+// suffix so a renamed "❄️ Codex" is not forced to "❄️ Codex - default".
+func menubarAccountLabel(baseKey string, labels map[string]string, accountName string, multi bool) string {
+	base := resolveProviderTabLabel(baseKey, labels)
+	if base == "" {
+		base = defaultProviderTabLabel(baseKey)
+	}
+	if !multi {
+		return base
+	}
+	name := strings.TrimSpace(accountName)
+	if name == "" {
+		name = "default"
+	}
+	return base + " - " + name
 }
 
 func (h *Handler) menubarSettings() (*menubar.Settings, error) {

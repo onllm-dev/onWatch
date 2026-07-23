@@ -710,6 +710,62 @@ func quotaLabels(quotas []menubar.QuotaMeter) []string {
 	return labels
 }
 
+func TestMenubarAccountLabel(t *testing.T) {
+	t.Parallel()
+	labels := map[string]string{"codex": "❄️ Codex", "minimax": "Mini"}
+	if got := menubarAccountLabel("codex", labels, "default", false); got != "❄️ Codex" {
+		t.Fatalf("single = %q", got)
+	}
+	if got := menubarAccountLabel("codex", labels, "work", true); got != "❄️ Codex - work" {
+		t.Fatalf("multi = %q", got)
+	}
+	if got := menubarAccountLabel("anthropic", nil, "", false); got != "Anthropic" {
+		t.Fatalf("default = %q", got)
+	}
+}
+
+func TestBuildMenubarSnapshotUsesDashboardProviderLabels(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	capturedAt := time.Now().UTC().Truncate(time.Second)
+	reset := capturedAt.Add(2 * time.Hour)
+	if _, err := s.InsertGrokSnapshot(&api.GrokSnapshot{
+		CapturedAt: capturedAt,
+		AccountID:  1,
+		Quotas:     []api.GrokQuota{{Name: "credits", Utilization: 10, ResetsAt: &reset, Status: "healthy"}},
+	}); err != nil {
+		t.Fatalf("InsertGrokSnapshot: %v", err)
+	}
+
+	cfg := &config.Config{
+		GrokEnabled:  true,
+		GrokToken:    "g",
+		PollInterval: 60 * time.Second,
+		Port:         9211,
+		AdminUser:    "admin",
+		AdminPass:    "test",
+	}
+	h := NewHandler(s, nil, nil, nil, cfg)
+	if err := h.saveDashboardProviderLabels(map[string]string{
+		"grok": "🛰️ Grok",
+	}); err != nil {
+		t.Fatalf("saveDashboardProviderLabels: %v", err)
+	}
+
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		t.Fatalf("BuildMenubarSnapshot: %v", err)
+	}
+	grok := findMenubarProviderCard(t, snapshot, "grok")
+	if grok.Label != "🛰️ Grok" {
+		t.Fatalf("grok label = %q, want renamed", grok.Label)
+	}
+}
+
 func TestBuildMenubarSnapshotGrokResetFields(t *testing.T) {
 	s, err := store.New(":memory:")
 	if err != nil {
@@ -756,4 +812,3 @@ func TestBuildMenubarSnapshotGrokResetFields(t *testing.T) {
 		t.Fatalf("grok time_until_reset empty: %#v", grok.Quotas[0])
 	}
 }
-

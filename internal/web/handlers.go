@@ -1104,6 +1104,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "openrouter", Name: "OpenRouter", Description: "OpenRouter credits usage tracking"},
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 		{Key: "cursor", Name: "Cursor", Description: "Cursor usage and quota tracking", AutoDetectable: true},
+		{Key: "grok", Name: "Grok", Description: "Grok (xAI) usage tracking", AutoDetectable: true},
 	}
 }
 
@@ -1163,6 +1164,14 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return h.config.GeminiEnabled
 	case "cursor":
 		return strings.TrimSpace(h.config.CursorToken) != "" || strings.TrimSpace(api.DetectCursorToken(h.logger)) != ""
+	case "grok":
+		if h.config.GrokEnabled || strings.TrimSpace(h.config.GrokToken) != "" {
+			return true
+		}
+		if creds := api.DetectGrokCredentials(h.logger); creds != nil && strings.TrimSpace(creds.AccessToken) != "" {
+			return true
+		}
+		return false
 	default:
 		return false
 	}
@@ -1640,27 +1649,13 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	providers := h.config.AvailableProviders()
-
-	// Filter by provider_visibility dashboard flag
-	if h.store != nil {
-		if visJSON, _ := h.store.GetSetting("provider_visibility"); visJSON != "" {
-			var vis map[string]map[string]bool
-			if json.Unmarshal([]byte(visJSON), &vis) == nil {
-				filtered := make([]string, 0, len(providers))
-				for _, p := range providers {
-					if pv, ok := vis[p]; ok && !pv["dashboard"] {
-						continue
-					}
-					filtered = append(filtered, p)
-				}
-				providers = filtered
-			}
-		}
-	}
+	providers = h.filterDashboardProviders(providers)
 
 	if h.config.HasMultipleProviders() {
 		providers = append(providers, "both")
 	}
+	providers = orderDashboardProviders(providers, h.loadDashboardProvidersOrder())
+	labels := h.loadDashboardProviderLabels()
 	current := ""
 	if len(providers) > 0 {
 		current = providers[0]
@@ -1678,8 +1673,9 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"providers": providers,
-		"current":   current,
+		"providers":       providers,
+		"provider_labels": providerTabLabelsMap(providers, labels),
+		"current":         current,
 	})
 }
 
@@ -1692,38 +1688,14 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	providers := []string{}
 	currentProvider := ""
+	providerLabels := map[string]string{}
 	hasTools := false
 	toolsVisible := false
 	if h.config != nil {
-		providers = h.config.AvailableProviders()
-
-		// Filter by provider_visibility dashboard flag
-		if h.store != nil {
-			if visJSON, _ := h.store.GetSetting("provider_visibility"); visJSON != "" {
-				var vis map[string]map[string]bool
-				if json.Unmarshal([]byte(visJSON), &vis) == nil {
-					filtered := make([]string, 0, len(providers))
-					for _, p := range providers {
-						if pv, ok := vis[p]; ok && !pv["dashboard"] {
-							continue
-						}
-						filtered = append(filtered, p)
-					}
-					providers = filtered
-				}
-			}
-		}
-
+		providers = h.buildDashboardProviderTabs()
+		providerLabels = providerTabLabelsMap(providers, h.loadDashboardProviderLabels())
 		hasTools = h.config.APIIntegrationsEnabled
 		toolsVisible = hasTools && h.apiIntegrationsDashboardVisible()
-		if toolsVisible {
-			providers = append(providers, "api-integrations")
-		}
-
-		// Always add "both" (All tab) when multiple providers configured
-		if h.config.HasMultipleProviders() {
-			providers = append(providers, "both")
-		}
 		if len(providers) > 0 {
 			currentProvider = providers[0]
 		}
@@ -1761,6 +1733,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"Title":           "Dashboard",
 		"Providers":       providers,
+		"ProviderLabels":  providerLabels,
 		"CurrentProvider": currentProvider,
 		"Version":         h.version,
 		"HasSynthetic":    hasSynthetic,
@@ -6299,6 +6272,14 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Dashboard tab order + custom labels
+		if order := h.loadDashboardProvidersOrder(); len(order) > 0 {
+			result["dashboard_providers_order"] = order
+		} else {
+			result["dashboard_providers_order"] = []string{}
+		}
+		result["dashboard_provider_labels"] = h.loadDashboardProviderLabels()
+
 		toolsVisJSON, _ := h.store.GetSetting("api_integrations_visibility")
 		if toolsVisJSON != "" {
 			var toolsVis map[string]bool
@@ -6591,6 +6572,36 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result["provider_visibility"] = vis
+	}
+
+	// Dashboard tab order (Settings → Providers drag-and-drop)
+	if raw, ok := body["dashboard_providers_order"]; ok {
+		var order []string
+		if err := json.Unmarshal(raw, &order); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid dashboard_providers_order value")
+			return
+		}
+		if err := h.saveDashboardProvidersOrder(order); err != nil {
+			h.logger.Error("failed to save dashboard provider order", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save dashboard provider order")
+			return
+		}
+		result["dashboard_providers_order"] = h.loadDashboardProvidersOrder()
+	}
+
+	// Custom dashboard tab labels
+	if raw, ok := body["dashboard_provider_labels"]; ok {
+		var labels map[string]string
+		if err := json.Unmarshal(raw, &labels); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid dashboard_provider_labels value")
+			return
+		}
+		if err := h.saveDashboardProviderLabels(labels); err != nil {
+			h.logger.Error("failed to save dashboard provider labels", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save dashboard provider labels")
+			return
+		}
+		result["dashboard_provider_labels"] = h.loadDashboardProviderLabels()
 	}
 
 	if raw, ok := body["api_integrations_visibility"]; ok {
