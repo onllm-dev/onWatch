@@ -18,7 +18,7 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 
 **Compatibility & Docs**
 
-[![Version](https://img.shields.io/badge/Version-v2.12.5-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.12.5)
+[![Version](https://img.shields.io/badge/Version-v2.13.0-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.13.0)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
@@ -170,6 +170,8 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **Cursor** -- Individual, Team, and Enterprise account tracking with auto-detected credentials from Cursor Desktop SQLite or macOS Keychain/Linux keyring, OAuth token auto-refresh, burn rate forecasts, and on-demand spend tracking
 - **Kimi Code** -- Moonshot Kimi Code CLI OAuth quotas via `GET /coding/v1/usages` (auto-detect `~/.kimi-code/credentials`). Weekly + window limits with reset countdown. See [Kimi Setup](docs/KIMI_SETUP.md).
 - **Grok** -- xAI Grok Build / SuperGrok credits tracking via local `~/.grok/auth.json` (or `$GROK_HOME`), optional `grok agent stdio` RPC, and grok.com gRPC-web bearer probe (no browser cookie import). Primary "Credits" utilization against plan limit with reset countdown. Informational local session token stats also captured.
+- **Moonshot** -- Balance-based tracking for the Moonshot (Kimi) open-platform API. Available, Voucher, and Cash balance cards with drop-rate trends. Set `MOONSHOT_API_KEY`. See [Moonshot Setup](docs/MOONSHOT_SETUP.md).
+- **DeepSeek** -- Balance-based tracking for the DeepSeek platform API. Total, Granted, and Topped-Up balance cards with drop-rate trends. Set `DEEPSEEK_API_KEY`. See [DeepSeek Setup](docs/DEEPSEEK_SETUP.md).
 - **API Integrations** -- Local JSONL ingestion for custom API-driven workflows and automations. Track per-integration token volume, request counts, recent activity, costs, trends, and accumulated usage across separate API keys and providers.
 - **All** -- Side-by-side view of all configured providers
 - **Prometheus metrics endpoint (Beta)** -- Exposes `/metrics` for Prometheus/Grafana/Alertmanager integrations, with optional bearer token protection via `ONWATCH_METRICS_TOKEN`
@@ -337,6 +339,8 @@ Additional environment variables:
 | `KIMI_TOKEN` / `KIMI_CODE_TOKEN` | Optional static Kimi Code access token (prefer local OAuth credentials)|
 | `KIMI_CODE_ENABLED`      | Enable Kimi Code provider (default: auto when credentials present)|
 | `KIMI_CODE_CREDENTIALS`  | Path to kimi-code.json (default ~/.kimi-code/credentials/kimi-code.json)|
+| `MOONSHOT_API_KEY`       | Moonshot (Kimi) open-platform API key (enables balance tracking)|
+| `DEEPSEEK_API_KEY`       | DeepSeek platform API key (enables balance tracking)   |
 | `ANTIGRAVITY_ENABLED`    | Enable Antigravity provider (auto-detects local server)|
 | `ANTIGRAVITY_SOURCE`     | Data source: `both` (default), `cli` (agy), or `ide`   |
 | `ANTIGRAVITY_CLI_PATH`   | Override path to the `agy` binary (else PATH/well-known)|
