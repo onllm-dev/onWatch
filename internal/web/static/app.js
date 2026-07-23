@@ -1017,8 +1017,10 @@ const copilotChartColorFallback = [
 
 const antigravityChartColorMap = {
   antigravity_claude_gpt: { border: '#D97757', bg: 'rgba(217, 119, 87, 0.08)' },
+  antigravity_gemini: { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },
+  // Legacy Pro/Flash keys (pre shared-pool) map to the same color
   antigravity_gemini_pro: { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },
-  antigravity_gemini_flash: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.08)' },
+  antigravity_gemini_flash: { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },
   // agy CLI bucket rows (weekly + 5h per group)
   'gemini-weekly': { border: '#10B981', bg: 'rgba(16, 185, 129, 0.08)' },
   'gemini-5h': { border: '#34D399', bg: 'rgba(52, 211, 153, 0.08)' },
@@ -1130,8 +1132,7 @@ const renewalCategories = {
   ],
   antigravity: [
     { label: 'Claude+GPT', groupBy: 'antigravity_claude_gpt' },
-    { label: 'Gemini Pro', groupBy: 'antigravity_gemini_pro' },
-    { label: 'Gemini Flash', groupBy: 'antigravity_gemini_flash' }
+    { label: 'Gemini', groupBy: 'antigravity_gemini' }
   ],
   minimax: [
     { label: '5-Hour', groupBy: 'coding_plan' },
@@ -1169,8 +1170,9 @@ const overviewQuotaDisplayNames = {
   completions: 'Completions',
   coding_plan: 'Coding',
   antigravity_claude_gpt: 'Claude + GPT Quota',
-  antigravity_gemini_pro: 'Gemini Pro Quota',
-  antigravity_gemini_flash: 'Gemini Flash Quota',
+  antigravity_gemini: 'Gemini Quota',
+  antigravity_gemini_pro: 'Gemini Quota',
+  antigravity_gemini_flash: 'Gemini Quota',
   credits: 'Credits',
   total_usage: 'Total Usage',
   auto_usage: 'Auto + Composer',
@@ -7580,11 +7582,10 @@ function renderSessionsTable() {
         <td>${c.durationStr}</td>
         <td>${fmtWithDelta(session.startSubRequests, session.maxSubRequests)}</td>
         <td>${fmtWithDelta(session.startSearchRequests, session.maxSearchRequests)}</td>
-        <td>${fmtWithDelta(session.startToolRequests, session.maxToolRequests)}</td>
       </tr>`;
 
       const detailRow = `<tr class="session-detail-row ${isExpanded ? 'expanded' : ''}" data-detail-for="${session.id}">
-        <td colspan="7">
+        <td colspan="6">
           <div class="session-detail-content">
             <div class="session-detail-grid">
               <div class="detail-item">
@@ -7592,12 +7593,8 @@ function renderSessionsTable() {
                 <span class="detail-value">${fmtPct(session.startSubRequests)} &rarr; ${fmtPct(session.maxSubRequests)} (${fmtDelta(session.startSubRequests, session.maxSubRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Gemini Pro Quota</span>
+                <span class="detail-label">Gemini Quota</span>
                 <span class="detail-value">${fmtPct(session.startSearchRequests)} &rarr; ${fmtPct(session.maxSearchRequests)} (${fmtDelta(session.startSearchRequests, session.maxSearchRequests)})</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Gemini Flash Quota</span>
-                <span class="detail-value">${fmtPct(session.startToolRequests)} &rarr; ${fmtPct(session.maxToolRequests)} (${fmtDelta(session.startToolRequests, session.maxToolRequests)})</span>
               </div>
               <div class="detail-item">
                 <span class="detail-label">Snapshots</span>
@@ -10772,8 +10769,7 @@ const _overrideQuotasByProvider = {
   ],
   antigravity: [
     { key: 'antigravity_claude_gpt', label: 'Claude + GPT Quota' },
-    { key: 'antigravity_gemini_pro', label: 'Gemini Pro Quota' },
-    { key: 'antigravity_gemini_flash', label: 'Gemini Flash Quota' },
+    { key: 'antigravity_gemini', label: 'Gemini Quota' },
   ],
   gemini: [
     { key: 'gemini-3-pro-preview', label: 'Gemini 3 Pro' },

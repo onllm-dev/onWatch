@@ -92,20 +92,20 @@ func TestQueryAntigravityModelIDsForGroup(t *testing.T) {
 		t.Fatalf("expected 2 claude+gpt IDs, got %d (%v)", len(claudeGPT), claudeGPT)
 	}
 
-	geminiPro, err := s.QueryAntigravityModelIDsForGroup(api.AntigravityQuotaGroupGeminiPro)
+	gemini, err := s.QueryAntigravityModelIDsForGroup(api.AntigravityQuotaGroupGemini)
 	if err != nil {
-		t.Fatalf("failed querying gemini pro IDs: %v", err)
+		t.Fatalf("failed querying gemini IDs: %v", err)
 	}
-	if len(geminiPro) != 1 || geminiPro[0] != "gemini-3-pro" {
-		t.Fatalf("expected [gemini-3-pro], got %v", geminiPro)
+	if len(gemini) != 2 {
+		t.Fatalf("expected 2 shared gemini IDs (pro+flash), got %d (%v)", len(gemini), gemini)
 	}
-
-	geminiFlash, err := s.QueryAntigravityModelIDsForGroup(api.AntigravityQuotaGroupGeminiFlash)
+	// Legacy pro/flash keys normalize onto the shared Gemini pool.
+	geminiViaLegacy, err := s.QueryAntigravityModelIDsForGroup(api.AntigravityQuotaGroupGeminiPro)
 	if err != nil {
-		t.Fatalf("failed querying gemini flash IDs: %v", err)
+		t.Fatalf("failed querying via legacy pro key: %v", err)
 	}
-	if len(geminiFlash) != 1 || geminiFlash[0] != "gemini-3-flash" {
-		t.Fatalf("expected [gemini-3-flash], got %v", geminiFlash)
+	if len(geminiViaLegacy) != 2 {
+		t.Fatalf("expected legacy pro key to resolve to shared gemini pool, got %v", geminiViaLegacy)
 	}
 }
 
@@ -193,26 +193,20 @@ func TestQueryAntigravityCycleOverview_GroupedCrossQuotas(t *testing.T) {
 		t.Fatalf("expected claude group delta ~20%%, got %.2f", claudeGroup.Delta)
 	}
 
-	geminiProGroup, ok := crossByName[api.AntigravityQuotaGroupGeminiPro]
+	// Shared Gemini pool: start rem avg (0.90+0.95)/2=0.925 → usage 7.5%;
+	// end rem avg (0.85+0.90)/2=0.875 → usage 12.5%; delta 5%.
+	geminiGroup, ok := crossByName[api.AntigravityQuotaGroupGemini]
 	if !ok {
-		t.Fatalf("missing cross quota for %s", api.AntigravityQuotaGroupGeminiPro)
+		t.Fatalf("missing cross quota for %s", api.AntigravityQuotaGroupGemini)
 	}
-	if geminiProGroup.Percent < 14.9 || geminiProGroup.Percent > 15.1 {
-		t.Fatalf("expected gemini pro usage ~15%%, got %.2f", geminiProGroup.Percent)
+	if geminiGroup.Percent < 12.4 || geminiGroup.Percent > 12.6 {
+		t.Fatalf("expected shared gemini usage ~12.5%%, got %.2f", geminiGroup.Percent)
 	}
-	if geminiProGroup.Delta < 4.9 || geminiProGroup.Delta > 5.1 {
-		t.Fatalf("expected gemini pro delta ~5%%, got %.2f", geminiProGroup.Delta)
+	if geminiGroup.StartPercent < 7.4 || geminiGroup.StartPercent > 7.6 {
+		t.Fatalf("expected shared gemini start ~7.5%%, got %.2f", geminiGroup.StartPercent)
 	}
-
-	geminiFlashGroup, ok := crossByName[api.AntigravityQuotaGroupGeminiFlash]
-	if !ok {
-		t.Fatalf("missing cross quota for %s", api.AntigravityQuotaGroupGeminiFlash)
-	}
-	if geminiFlashGroup.Percent < 9.9 || geminiFlashGroup.Percent > 10.1 {
-		t.Fatalf("expected gemini flash usage ~10%%, got %.2f", geminiFlashGroup.Percent)
-	}
-	if geminiFlashGroup.Delta < 4.9 || geminiFlashGroup.Delta > 5.1 {
-		t.Fatalf("expected gemini flash delta ~5%%, got %.2f", geminiFlashGroup.Delta)
+	if geminiGroup.Delta < 4.9 || geminiGroup.Delta > 5.1 {
+		t.Fatalf("expected shared gemini delta ~5%%, got %.2f", geminiGroup.Delta)
 	}
 }
 

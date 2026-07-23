@@ -367,9 +367,9 @@ func TestAntigravityQuotaGroupForModel(t *testing.T) {
 	}{
 		{name: "Claude model", modelID: "claude-4-5-sonnet", want: AntigravityQuotaGroupClaudeGPT},
 		{name: "GPT model", modelID: "gpt-5", want: AntigravityQuotaGroupClaudeGPT},
-		{name: "Gemini Pro model", modelID: "gemini-3-pro", want: AntigravityQuotaGroupGeminiPro},
-		{name: "Gemini Flash model", modelID: "gemini-3-flash", want: AntigravityQuotaGroupGeminiFlash},
-		{name: "Label fallback Gemini Flash", modelID: "unknown", label: "Gemini Flash Lite", want: AntigravityQuotaGroupGeminiFlash},
+		{name: "Gemini Pro model", modelID: "gemini-3-pro", want: AntigravityQuotaGroupGemini},
+		{name: "Gemini Flash model", modelID: "gemini-3-flash", want: AntigravityQuotaGroupGemini},
+		{name: "Label fallback Gemini Flash", modelID: "unknown", label: "Gemini Flash Lite", want: AntigravityQuotaGroupGemini},
 		{name: "Unknown defaults to Claude+GPT", modelID: "other", label: "Other", want: AntigravityQuotaGroupClaudeGPT},
 	}
 
@@ -420,18 +420,15 @@ func TestGroupAntigravityModelsByLogicalQuota(t *testing.T) {
 	}
 
 	groups := GroupAntigravityModelsByLogicalQuota(models)
-	if len(groups) != 3 {
-		t.Fatalf("expected 3 groups, got %d", len(groups))
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
 	}
 
 	if groups[0].GroupKey != AntigravityQuotaGroupClaudeGPT {
 		t.Fatalf("expected first group %q, got %q", AntigravityQuotaGroupClaudeGPT, groups[0].GroupKey)
 	}
-	if groups[1].GroupKey != AntigravityQuotaGroupGeminiPro {
-		t.Fatalf("expected second group %q, got %q", AntigravityQuotaGroupGeminiPro, groups[1].GroupKey)
-	}
-	if groups[2].GroupKey != AntigravityQuotaGroupGeminiFlash {
-		t.Fatalf("expected third group %q, got %q", AntigravityQuotaGroupGeminiFlash, groups[2].GroupKey)
+	if groups[1].GroupKey != AntigravityQuotaGroupGemini {
+		t.Fatalf("expected second group %q, got %q", AntigravityQuotaGroupGemini, groups[1].GroupKey)
 	}
 
 	claudeGPT := groups[0]
@@ -451,19 +448,26 @@ func TestGroupAntigravityModelsByLogicalQuota(t *testing.T) {
 		t.Fatalf("expected Claude+GPT color #D97757, got %q", claudeGPT.Color)
 	}
 
-	geminiFlash := groups[2]
-	if geminiFlash.RemainingFraction < 0.199 || geminiFlash.RemainingFraction > 0.201 {
-		t.Fatalf("expected Gemini Flash remaining fraction ~0.20, got %.4f", geminiFlash.RemainingFraction)
+	// Pro (0.60) + Flash (0.20) share one Gemini pool → average remaining 0.40 / usage 60.
+	gemini := groups[1]
+	if gemini.DisplayName != "Gemini Quota" {
+		t.Fatalf("expected Gemini display name, got %q", gemini.DisplayName)
 	}
-	if geminiFlash.UsagePercent < 79.9 || geminiFlash.UsagePercent > 80.1 {
-		t.Fatalf("expected Gemini Flash usage percent ~80, got %.4f", geminiFlash.UsagePercent)
+	if gemini.RemainingFraction < 0.399 || gemini.RemainingFraction > 0.401 {
+		t.Fatalf("expected shared Gemini remaining fraction ~0.40, got %.4f", gemini.RemainingFraction)
+	}
+	if gemini.UsagePercent < 59.9 || gemini.UsagePercent > 60.1 {
+		t.Fatalf("expected shared Gemini usage percent ~60, got %.4f", gemini.UsagePercent)
+	}
+	if len(gemini.ModelIDs) != 2 {
+		t.Fatalf("expected both Gemini Pro and Flash in shared pool, got %v", gemini.ModelIDs)
 	}
 }
 
 func TestGroupAntigravityModelsByLogicalQuota_EmptyStillReturnsFixedGroups(t *testing.T) {
 	groups := GroupAntigravityModelsByLogicalQuota(nil)
-	if len(groups) != 3 {
-		t.Fatalf("expected 3 fixed groups, got %d", len(groups))
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 fixed groups, got %d", len(groups))
 	}
 	for _, g := range groups {
 		if g.RemainingFraction != 1.0 {
@@ -472,5 +476,17 @@ func TestGroupAntigravityModelsByLogicalQuota_EmptyStillReturnsFixedGroups(t *te
 		if g.UsagePercent != 0 {
 			t.Fatalf("expected default usage 0 for %s, got %.4f", g.GroupKey, g.UsagePercent)
 		}
+	}
+}
+
+func TestNormalizeAntigravityQuotaGroup(t *testing.T) {
+	if got := NormalizeAntigravityQuotaGroup(AntigravityQuotaGroupGeminiPro); got != AntigravityQuotaGroupGemini {
+		t.Fatalf("pro alias = %q, want %q", got, AntigravityQuotaGroupGemini)
+	}
+	if got := NormalizeAntigravityQuotaGroup(AntigravityQuotaGroupGeminiFlash); got != AntigravityQuotaGroupGemini {
+		t.Fatalf("flash alias = %q, want %q", got, AntigravityQuotaGroupGemini)
+	}
+	if got := NormalizeAntigravityQuotaGroup(AntigravityQuotaGroupClaudeGPT); got != AntigravityQuotaGroupClaudeGPT {
+		t.Fatalf("claude group should pass through, got %q", got)
 	}
 }

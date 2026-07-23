@@ -424,17 +424,14 @@ func TestCodexFloat64_UnmarshalJSON_InvalidValue(t *testing.T) {
 
 func TestAntigravityQuotaGroupOrder_ReturnsCopy(t *testing.T) {
 	order := AntigravityQuotaGroupOrder()
-	if len(order) != 3 {
-		t.Fatalf("expected 3 groups, got %d", len(order))
+	if len(order) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(order))
 	}
 	if order[0] != AntigravityQuotaGroupClaudeGPT {
 		t.Errorf("order[0] = %q, want %q", order[0], AntigravityQuotaGroupClaudeGPT)
 	}
-	if order[1] != AntigravityQuotaGroupGeminiPro {
-		t.Errorf("order[1] = %q, want %q", order[1], AntigravityQuotaGroupGeminiPro)
-	}
-	if order[2] != AntigravityQuotaGroupGeminiFlash {
-		t.Errorf("order[2] = %q, want %q", order[2], AntigravityQuotaGroupGeminiFlash)
+	if order[1] != AntigravityQuotaGroupGemini {
+		t.Errorf("order[1] = %q, want %q", order[1], AntigravityQuotaGroupGemini)
 	}
 
 	// Verify it returns a copy - mutation should not affect the original
@@ -1836,8 +1833,8 @@ func TestGroupAntigravityModelsByLogicalQuota_ExhaustedGroup(t *testing.T) {
 	}
 
 	groups := GroupAntigravityModelsByLogicalQuota(models)
-	if len(groups) != 3 {
-		t.Fatalf("expected 3 groups, got %d", len(groups))
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
 	}
 
 	// Find the Claude+GPT group

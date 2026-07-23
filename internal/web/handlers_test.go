@@ -3115,8 +3115,8 @@ func TestHandler_Current_BothIncludesAnthropicAndAntigravity(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected antigravity quotas array, got %T", ag["quotas"])
 	}
-	if len(quotas) != 3 {
-		t.Fatalf("expected 3 antigravity quota groups, got %d", len(quotas))
+	if len(quotas) != 2 {
+		t.Fatalf("expected 2 antigravity quota groups (Claude+GPT, Gemini), got %d", len(quotas))
 	}
 }
 
@@ -10755,14 +10755,19 @@ func TestNormalizeAntigravityGroupBy(t *testing.T) {
 		expect string
 	}{
 		{
-			name:   "passes through canonical group",
-			input:  api.AntigravityQuotaGroupGeminiPro,
-			expect: api.AntigravityQuotaGroupGeminiPro,
+			name:   "passes through canonical gemini group",
+			input:  api.AntigravityQuotaGroupGemini,
+			expect: api.AntigravityQuotaGroupGemini,
 		},
 		{
-			name:   "maps model id to group",
+			name:   "maps legacy pro group to shared gemini",
+			input:  api.AntigravityQuotaGroupGeminiPro,
+			expect: api.AntigravityQuotaGroupGemini,
+		},
+		{
+			name:   "maps model id to shared gemini group",
 			input:  "gemini-2.5-flash",
-			expect: api.AntigravityQuotaGroupGeminiFlash,
+			expect: api.AntigravityQuotaGroupGemini,
 		},
 		{
 			name:   "falls back for unknown",

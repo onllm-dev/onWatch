@@ -10607,15 +10607,16 @@ func (h *Handler) cycleOverviewCodex(w http.ResponseWriter, r *http.Request) {
 }
 
 func normalizeAntigravityGroupBy(groupBy string) string {
+	groupBy = api.NormalizeAntigravityQuotaGroup(groupBy)
 	switch groupBy {
-	case api.AntigravityQuotaGroupClaudeGPT, api.AntigravityQuotaGroupGeminiPro, api.AntigravityQuotaGroupGeminiFlash:
+	case api.AntigravityQuotaGroupClaudeGPT, api.AntigravityQuotaGroupGemini:
 		return groupBy
 	}
 
 	if groupBy != "" {
 		mapped := api.AntigravityQuotaGroupForModel(groupBy, groupBy)
 		switch mapped {
-		case api.AntigravityQuotaGroupClaudeGPT, api.AntigravityQuotaGroupGeminiPro, api.AntigravityQuotaGroupGeminiFlash:
+		case api.AntigravityQuotaGroupClaudeGPT, api.AntigravityQuotaGroupGemini:
 			return mapped
 		}
 	}

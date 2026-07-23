@@ -9,27 +9,34 @@ import (
 )
 
 const (
-	AntigravityQuotaGroupClaudeGPT   = "antigravity_claude_gpt"
+	AntigravityQuotaGroupClaudeGPT = "antigravity_claude_gpt"
+	// AntigravityQuotaGroupGemini is the single shared Gemini pool (Pro + Flash).
+	// Antigravity's GetUserStatus and RetrieveUserQuotaSummary both treat Gemini Pro
+	// and Flash as one shared weekly/5h bucket; splitting them produced duplicate cards.
+	AntigravityQuotaGroupGemini = "antigravity_gemini"
+
+	// Legacy group keys kept for normalize/display of historical UI groupBy values.
 	AntigravityQuotaGroupGeminiPro   = "antigravity_gemini_pro"
 	AntigravityQuotaGroupGeminiFlash = "antigravity_gemini_flash"
 )
 
 var antigravityQuotaGroupOrder = []string{
 	AntigravityQuotaGroupClaudeGPT,
-	AntigravityQuotaGroupGeminiPro,
-	AntigravityQuotaGroupGeminiFlash,
+	AntigravityQuotaGroupGemini,
 }
 
 var antigravityQuotaGroupDisplayNames = map[string]string{
 	AntigravityQuotaGroupClaudeGPT:   "Claude + GPT Quota",
-	AntigravityQuotaGroupGeminiPro:   "Gemini Pro Quota",
-	AntigravityQuotaGroupGeminiFlash: "Gemini Flash Quota",
+	AntigravityQuotaGroupGemini:      "Gemini Quota",
+	AntigravityQuotaGroupGeminiPro:   "Gemini Quota", // legacy alias
+	AntigravityQuotaGroupGeminiFlash: "Gemini Quota", // legacy alias
 }
 
 var antigravityQuotaGroupColors = map[string]string{
 	AntigravityQuotaGroupClaudeGPT:   "#D97757",
-	AntigravityQuotaGroupGeminiPro:   "#10B981",
-	AntigravityQuotaGroupGeminiFlash: "#3B82F6",
+	AntigravityQuotaGroupGemini:      "#10B981",
+	AntigravityQuotaGroupGeminiPro:   "#10B981", // legacy alias
+	AntigravityQuotaGroupGeminiFlash: "#10B981", // legacy alias
 }
 
 // AntigravityGroupedQuota represents one canonical logical quota group.
@@ -73,14 +80,24 @@ func AntigravityQuotaGroupForModel(modelID, label string) string {
 	text := modelLower + " " + labelLower
 
 	switch {
-	case strings.Contains(text, "gemini") && strings.Contains(text, "flash"):
-		return AntigravityQuotaGroupGeminiFlash
 	case strings.Contains(text, "gemini"):
-		return AntigravityQuotaGroupGeminiPro
+		// Pro and Flash share one Antigravity quota pool.
+		return AntigravityQuotaGroupGemini
 	case strings.Contains(text, "claude"), strings.Contains(text, "gpt"):
 		return AntigravityQuotaGroupClaudeGPT
 	default:
 		return AntigravityQuotaGroupClaudeGPT
+	}
+}
+
+// NormalizeAntigravityQuotaGroup maps legacy Pro/Flash group keys onto the
+// canonical shared Gemini pool key.
+func NormalizeAntigravityQuotaGroup(groupKey string) string {
+	switch groupKey {
+	case AntigravityQuotaGroupGeminiPro, AntigravityQuotaGroupGeminiFlash:
+		return AntigravityQuotaGroupGemini
+	default:
+		return groupKey
 	}
 }
 
