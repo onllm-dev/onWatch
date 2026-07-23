@@ -333,28 +333,41 @@
   }
 
   let refreshTimer = null;
+  let lastSettings = null;
+
+  async function refreshSnapshot() {
+    const settings = lastSettings || (await bridge.getSettings()) || {};
+    lastSettings = settings;
+    try {
+      const snapshot = await bridge.getSnapshot();
+      render(snapshot, settings);
+    } catch (error) {
+      renderError(error);
+    }
+  }
 
   async function init() {
     const settings = await bridge.getSettings();
+    lastSettings = settings || {};
     try {
       const snapshot = await bridge.getSnapshot();
-      render(snapshot, settings || {});
-      const intervalSeconds = Number(settings && settings.refresh_seconds ? settings.refresh_seconds : 60);
+      render(snapshot, lastSettings);
+      const intervalSeconds = Number(lastSettings && lastSettings.refresh_seconds ? lastSettings.refresh_seconds : 60);
       if (refreshTimer) {
         clearInterval(refreshTimer);
       }
-      refreshTimer = setInterval(async () => {
-        try {
-          const nextSnapshot = await bridge.getSnapshot();
-          render(nextSnapshot, settings || {});
-        } catch (error) {
-          renderError(error);
-        }
+      refreshTimer = setInterval(() => {
+        refreshSnapshot();
       }, Math.max(intervalSeconds, 10) * 1000);
     } catch (error) {
       renderError(error);
     }
   }
+
+  // Called by the native popover host when re-opening a warm WebView (no full reload).
+  window.__onwatchMenubarRefresh = function () {
+    refreshSnapshot();
+  };
 
   document.addEventListener('DOMContentLoaded', init);
 }());

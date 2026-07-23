@@ -35,11 +35,13 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
 @property(nonatomic, strong) id globalMouseMonitor;
 @property(nonatomic, strong) id localMouseMonitor;
 @property(nonatomic, strong) id appDeactivationObserver;
+@property(nonatomic, copy) NSString *loadedURLString;
 @property(nonatomic, assign) CGFloat width;
 @property(nonatomic, assign) CGFloat height;
 - (instancetype)initWithWidth:(CGFloat)width height:(CGFloat)height;
 - (void)applyHeight:(CGFloat)height;
 - (void)loadURLString:(NSString *)urlString;
+- (void)softRefreshIfLoaded;
 - (BOOL)show;
 - (BOOL)toggle;
 - (void)close;
@@ -307,8 +309,26 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
   return [host isEqualToString:@"localhost"] || [host isEqualToString:@"127.0.0.1"];
 }
 
+- (void)softRefreshIfLoaded {
+  // Ask the warm page to re-fetch snapshot without a full document navigation.
+  // Full reloads on every open were the main cause of the popover flash.
+  if (!self.loadedURLString.length || !self.webView) {
+    return;
+  }
+  [self.webView evaluateJavaScript:@"window.__onwatchMenubarRefresh && window.__onwatchMenubarRefresh()"
+                 completionHandler:nil];
+}
+
 - (void)loadURLString:(NSString *)urlString {
   if (!urlString.length) {
+    return;
+  }
+
+  // Keep the WKWebView document warm. Re-loading on every open paints a blank
+  // shell first (flash), then re-inits JS. Same URL → skip navigation (soft
+  // refresh happens in -show so the panel never opens onto a reloading page).
+  if (self.loadedURLString.length && [self.loadedURLString isEqualToString:urlString] &&
+      self.webView.URL != nil) {
     return;
   }
 
@@ -317,7 +337,10 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
     return;
   }
 
-  NSURLRequest *request = [NSURLRequest requestWithURL:url];
+  self.loadedURLString = [urlString copy];
+  NSURLRequest *request = [NSURLRequest requestWithURL:url
+                                           cachePolicy:NSURLRequestUseProtocolCachePolicy
+                                       timeoutInterval:30.0];
   [self.webView loadRequest:request];
 }
 
@@ -332,6 +355,10 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
   }
 
   if (![self isShown]) {
+    // Soft-refresh after the panel is on screen so we never show a blank reload.
+    if (self.loadedURLString.length && self.webView.URL != nil) {
+      [self softRefreshIfLoaded];
+    }
     [self.panel makeKeyAndOrderFront:nil];
   }
   [self startTransientCloseMonitoring];
