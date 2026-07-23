@@ -78,6 +78,11 @@ func (c *trayController) onReady() {
 		logger.Warn("native macOS menubar host unavailable, using browser fallback", "error", err)
 	} else {
 		c.popover = popover
+		// Warm the WebView so the first tray click does not flash a blank page
+		// while /menubar navigates. Subsequent opens reuse the loaded document.
+		if err := popover.Preload(c.menubarURL()); err != nil {
+			logger.Debug("menubar popover preload failed", "error", err)
+		}
 	}
 
 	dashboardItem := systray.AddMenuItem("Open Dashboard", "Open the local onWatch dashboard")

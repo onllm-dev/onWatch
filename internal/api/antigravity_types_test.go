@@ -28,6 +28,25 @@ func TestAntigravityDisplayName(t *testing.T) {
 	}
 }
 
+func TestAgyBucketOrder_5hBeforeWeekly(t *testing.T) {
+	if AgyBucketOrder("gemini-5h") >= AgyBucketOrder("gemini-weekly") {
+		t.Fatalf("gemini-5h order=%d should be before gemini-weekly order=%d",
+			AgyBucketOrder("gemini-5h"), AgyBucketOrder("gemini-weekly"))
+	}
+	if AgyBucketOrder("3p-5h") >= AgyBucketOrder("3p-weekly") {
+		t.Fatalf("3p-5h order=%d should be before 3p-weekly order=%d",
+			AgyBucketOrder("3p-5h"), AgyBucketOrder("3p-weekly"))
+	}
+	// Families stay grouped: both Gemini buckets before both Claude+GPT buckets.
+	if AgyBucketOrder("gemini-weekly") >= AgyBucketOrder("3p-5h") {
+		t.Fatalf("gemini-weekly order=%d should be before 3p-5h order=%d",
+			AgyBucketOrder("gemini-weekly"), AgyBucketOrder("3p-5h"))
+	}
+	if AgyBucketOrder("unknown-bucket") != 1000 {
+		t.Fatalf("unknown bucket order = %d, want 1000", AgyBucketOrder("unknown-bucket"))
+	}
+}
+
 func TestAntigravityUserStatusResponse_ActiveModelIDs(t *testing.T) {
 	resp := AntigravityUserStatusResponse{
 		UserStatus: &AntigravityUserStatus{

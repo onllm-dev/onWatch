@@ -412,10 +412,7 @@ func (h *Handler) renderMenubarHTML(view menubar.ViewType, settings *menubar.Set
 func (h *Handler) buildMenubarProviderOptions(settings *menubar.Settings) ([]menubarProviderOption, error) {
 	normalized := settings.Normalize()
 	providers, _ := h.buildMenubarProviders(normalized, true)
-	visible := make(map[string]struct{}, len(normalized.VisibleProviders))
-	for _, id := range normalized.VisibleProviders {
-		visible[id] = struct{}{}
-	}
+	visibleKeys := append([]string(nil), normalized.VisibleProviders...)
 	options := make([]menubarProviderOption, 0, len(providers))
 	for _, provider := range providers {
 		quotaOptions := make([]menubarQuotaOption, 0, len(provider.Quotas))
@@ -425,10 +422,7 @@ func (h *Handler) buildMenubarProviderOptions(settings *menubar.Settings) ([]men
 				Label: quota.Label,
 			})
 		}
-		_, isVisible := visible[provider.ID]
-		if len(visible) == 0 {
-			isVisible = true
-		}
+		isVisible := len(visibleKeys) == 0 || menubarSettingsKeyAllows(provider.ID, visibleKeys)
 		options = append(options, menubarProviderOption{
 			ID:           provider.ID,
 			BaseProvider: provider.BaseProvider,
@@ -724,9 +718,23 @@ func sortProviderCards(cards []menubar.ProviderCard, preferred []string) {
 	for idx, key := range preferred {
 		order[key] = idx
 	}
+	rank := func(cardID string) (int, bool) {
+		if idx, ok := order[cardID]; ok {
+			return idx, true
+		}
+		// Settings UI may store base keys ("codex") while cards use
+		// account-scoped IDs ("codex:1").
+		base := providerKeyBase(cardID)
+		if base != cardID {
+			if idx, ok := order[base]; ok {
+				return idx, true
+			}
+		}
+		return 0, false
+	}
 	sort.SliceStable(cards, func(i, j int) bool {
-		leftOrder, leftOK := order[cards[i].ID]
-		rightOrder, rightOK := order[cards[j].ID]
+		leftOrder, leftOK := rank(cards[i].ID)
+		rightOrder, rightOK := rank(cards[j].ID)
 		switch {
 		case leftOK && rightOK:
 			return leftOrder < rightOrder
@@ -746,17 +754,45 @@ func filterMenubarProviders(cards []menubar.ProviderCard, visible []string) []me
 	if len(cards) == 0 || len(visible) == 0 {
 		return cards
 	}
-	allowed := make(map[string]struct{}, len(visible))
-	for _, id := range visible {
-		allowed[id] = struct{}{}
-	}
 	filtered := make([]menubar.ProviderCard, 0, len(cards))
 	for _, card := range cards {
-		if _, ok := allowed[card.ID]; ok {
+		if menubarSettingsKeyAllows(card.ID, visible) {
 			filtered = append(filtered, card)
 		}
 	}
 	return filtered
+}
+
+// menubarSettingsKeyAllows reports whether a menubar card ID is covered by a
+// settings key list (providers_order / visible_providers). Exact match wins;
+// bare base keys like "codex" also match account-scoped cards like "codex:1".
+// Distinct accounts ("codex:1" vs "codex:2") do not match each other.
+func menubarSettingsKeyAllows(cardID string, keys []string) bool {
+	for _, key := range keys {
+		if menubarProviderKeysMatch(cardID, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func menubarProviderKeysMatch(cardID, settingsKey string) bool {
+	cardID = strings.TrimSpace(cardID)
+	settingsKey = strings.TrimSpace(settingsKey)
+	if cardID == "" || settingsKey == "" {
+		return false
+	}
+	if cardID == settingsKey {
+		return true
+	}
+	cardBase := providerKeyBase(cardID)
+	settingsBase := providerKeyBase(settingsKey)
+	if cardBase != settingsBase {
+		return false
+	}
+	// Same family: bare "codex" matches any "codex:N"; specific accounts
+	// only match themselves (handled above).
+	return cardID == cardBase || settingsKey == settingsBase
 }
 
 func parseCapturedAt(payload map[string]interface{}) time.Time {

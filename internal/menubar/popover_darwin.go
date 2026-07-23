@@ -14,6 +14,9 @@ var errNativePopoverUnavailable = errors.New("native macOS menubar host unavaila
 type menubarPopover interface {
 	ShowURL(string) error
 	ToggleURL(string) error
+	// Preload warms the WebView document without showing the panel.
+	// Optional: implementations may no-op if preload is unsupported.
+	Preload(string) error
 	Close()
 	Destroy()
 }

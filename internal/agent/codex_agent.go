@@ -324,67 +324,71 @@ func (a *CodexAgent) poll(ctx context.Context) {
 		if creds := a.credsRefresh(); creds != nil {
 			// Check if token is expiring soon or already expired
 			if creds.IsExpiringSoon(codexTokenRefreshThreshold) && creds.RefreshToken != "" {
-				a.logger.Info("Codex token expiring soon, attempting proactive OAuth refresh",
-					"expires_in", creds.ExpiresIn.Round(time.Second))
+				if a.store != nil && !a.store.AutoRefreshTokensEnabled() {
+					a.logger.Debug("Skipping Codex proactive OAuth refresh - auto_refresh_tokens disabled")
+				} else {
+					a.logger.Info("Codex token expiring soon, attempting proactive OAuth refresh",
+						"expires_in", creds.ExpiresIn.Round(time.Second))
 
-				newTokens, err := api.RefreshCodexToken(ctx, creds.RefreshToken)
-				if err != nil {
-					if errors.Is(err, api.ErrCodexRefreshTokenReused) {
-						// Unrecoverable - token is dead, user must re-authenticate
-						a.logger.Error("Codex refresh token already used - re-authenticate via 'codex auth'",
-							"error", err)
-						a.authPaused = true
-						a.lastFailedToken = creds.AccessToken
-						// Send auth error notification
-						a.sendAuthErrorNotification(
-							"Token Refresh Failed",
-							"Codex refresh token has been reused. Please re-authenticate via 'codex auth' to resume quota tracking.",
-							false, // not recoverable
-						)
-					} else {
-						a.proactiveRefreshFailures++
-						a.logger.Error("Proactive Codex OAuth refresh failed",
-							"error", err,
-							"consecutive_failures", a.proactiveRefreshFailures)
-						if a.proactiveRefreshFailures >= maxCodexAuthFailures {
+					newTokens, err := api.RefreshCodexToken(ctx, creds.RefreshToken)
+					if err != nil {
+						if errors.Is(err, api.ErrCodexRefreshTokenReused) {
+							// Unrecoverable - token is dead, user must re-authenticate
+							a.logger.Error("Codex refresh token already used - re-authenticate via 'codex auth'",
+								"error", err)
 							a.authPaused = true
 							a.lastFailedToken = creds.AccessToken
-							a.logger.Error("Codex proactive refresh PAUSED - too many consecutive failures",
-								"failure_count", a.proactiveRefreshFailures,
-								"action", "Re-authenticate via 'codex auth' to resume polling")
+							// Send auth error notification
 							a.sendAuthErrorNotification(
 								"Token Refresh Failed",
-								fmt.Sprintf("Codex proactive OAuth refresh failed %d times. Please re-authenticate via 'codex auth' to resume.", a.proactiveRefreshFailures),
-								false,
+								"Codex refresh token has been reused. Please re-authenticate via 'codex auth' to resume quota tracking.",
+								false, // not recoverable
 							)
+						} else {
+							a.proactiveRefreshFailures++
+							a.logger.Error("Proactive Codex OAuth refresh failed",
+								"error", err,
+								"consecutive_failures", a.proactiveRefreshFailures)
+							if a.proactiveRefreshFailures >= maxCodexAuthFailures {
+								a.authPaused = true
+								a.lastFailedToken = creds.AccessToken
+								a.logger.Error("Codex proactive refresh PAUSED - too many consecutive failures",
+									"failure_count", a.proactiveRefreshFailures,
+									"action", "Re-authenticate via 'codex auth' to resume polling")
+								a.sendAuthErrorNotification(
+									"Token Refresh Failed",
+									fmt.Sprintf("Codex proactive OAuth refresh failed %d times. Please re-authenticate via 'codex auth' to resume.", a.proactiveRefreshFailures),
+									false,
+								)
+							}
 						}
-					}
-				} else {
-					// Proactive refresh succeeded - reset failure counter
-					a.proactiveRefreshFailures = 0
-
-					// CRITICAL: Save new tokens to disk IMMEDIATELY (refresh tokens are one-time use!)
-					saveFn := a.tokenSave
-					if saveFn == nil {
-						saveFn = api.WriteCodexCredentials // fallback for backward compat
-					}
-					if err := saveFn(newTokens.AccessToken, newTokens.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
-						a.logger.Error("Failed to save refreshed Codex credentials", "error", err)
 					} else {
-						a.client.SetToken(newTokens.AccessToken)
-						a.lastToken = newTokens.AccessToken
-						a.logger.Info("Proactively refreshed Codex OAuth token",
-							"expires_in_hours", newTokens.ExpiresIn/3600)
+						// Proactive refresh succeeded - reset failure counter
+						a.proactiveRefreshFailures = 0
 
-						// Reset auth failures since we have fresh credentials
-						if a.authPaused {
-							a.authPaused = false
-							a.authFailCount = 0
-							a.lastFailedToken = ""
-							a.logger.Info("Codex auth failure pause lifted - token refreshed via OAuth")
+						// CRITICAL: Save new tokens to disk IMMEDIATELY (refresh tokens are one-time use!)
+						saveFn := a.tokenSave
+						if saveFn == nil {
+							saveFn = api.WriteCodexCredentials // fallback for backward compat
+						}
+						if err := saveFn(newTokens.AccessToken, newTokens.RefreshToken, newTokens.IDToken, newTokens.ExpiresIn); err != nil {
+							a.logger.Error("Failed to save refreshed Codex credentials", "error", err)
+						} else {
+							a.client.SetToken(newTokens.AccessToken)
+							a.lastToken = newTokens.AccessToken
+							a.logger.Info("Proactively refreshed Codex OAuth token",
+								"expires_in_hours", newTokens.ExpiresIn/3600)
+
+							// Reset auth failures since we have fresh credentials
+							if a.authPaused {
+								a.authPaused = false
+								a.authFailCount = 0
+								a.lastFailedToken = ""
+								a.logger.Info("Codex auth failure pause lifted - token refreshed via OAuth")
+							}
 						}
 					}
-				}
+				} // end auto_refresh_tokens enabled
 			}
 		}
 	}

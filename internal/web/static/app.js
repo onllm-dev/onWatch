@@ -8910,6 +8910,12 @@ async function loadSettings() {
       updateBrowserDefaultTimezoneText();
     }
 
+    // Auto refresh OAuth tokens (default on)
+    const autoRefresh = document.getElementById('settings-auto-refresh-tokens');
+    if (autoRefresh) {
+      autoRefresh.checked = data.auto_refresh_tokens !== false;
+    }
+
     // SMTP
     if (data.smtp) {
       const s = data.smtp;
@@ -9388,14 +9394,19 @@ async function fetchMenubarProviders() {
     if (res.ok) {
       const data = await res.json();
       const profiles = Array.isArray(data.profiles) ? data.profiles : [];
-      if (profiles.length > 1) {
+      // Always use account-scoped keys (codex:1) so settings match menubar card
+      // IDs. A bare "codex" key used to drop single-account Codex after save
+      // (visible_providers filter is exact-match against "codex:N" cards).
+      if (profiles.length >= 1) {
         profiles.forEach(profile => {
           const key = `codex:${profile.id}`;
           items.push({
             key,
-            name: `Codex - ${escapeHtml(profile.name)}`,
-            meta: 'Per-account Codex usage',
-            dashboardVisible: true,
+            name: profiles.length > 1 ? `Codex - ${escapeHtml(profile.name)}` : (codexStatus?.name || 'Codex'),
+            meta: profiles.length > 1
+              ? 'Per-account Codex usage'
+              : `${codexStatus?.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${codexStatus?.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+            dashboardVisible: codexStatus ? codexStatus.dashboardVisible !== false : true,
           });
         });
         return items;
@@ -9406,6 +9417,8 @@ async function fetchMenubarProviders() {
   }
 
   if (codexStatus) {
+    // Last resort when profiles API is unavailable; backend also accepts bare
+    // "codex" as matching any codex:N card.
     items.push({
       key: 'codex',
       name: codexStatus.name || 'Codex',
@@ -10682,6 +10695,12 @@ function gatherSettings() {
   const tzSelect = document.getElementById('settings-timezone');
   if (tzSelect) {
     settings.timezone = normalizeTz(tzSelect.value);
+  }
+
+  // Auto refresh OAuth tokens (coding harness credentials)
+  const autoRefresh = document.getElementById('settings-auto-refresh-tokens');
+  if (autoRefresh) {
+    settings.auto_refresh_tokens = !!autoRefresh.checked;
   }
 
   // Global display mode goes under provider_settings.global. Other provider

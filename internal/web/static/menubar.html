@@ -371,6 +371,16 @@
             mask-image: url("/static/icons/synthetic.svg");
         }
 
+        .provider-icon-grok {
+            -webkit-mask-image: url("/static/icons/grok.svg");
+            mask-image: url("/static/icons/grok.svg");
+        }
+
+        .provider-icon-kimi {
+            -webkit-mask-image: url("/static/icons/kimi.svg");
+            mask-image: url("/static/icons/kimi.svg");
+        }
+
         .status-warning .provider-icon {
             color: var(--warning);
         }
@@ -2668,6 +2678,10 @@
                     return "provider-icon-zai";
                 case "synthetic":
                     return "provider-icon-synthetic";
+                case "grok":
+                    return "provider-icon-grok";
+                case "kimi":
+                    return "provider-icon-kimi";
                 default:
                     return "provider-icon-openai";
                 }

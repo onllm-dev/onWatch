@@ -324,15 +324,18 @@ type AntigravityQuotaSummaryResponse struct {
 
 // agyBucketMeta provides stable display ordering and colors for known buckets.
 // Unknown bucket IDs still render via parser fallbacks.
+//
+// Order prefers 5h buckets before weekly: the shorter window is usually hit
+// first, so it leads each family on the dashboard card strip.
 var agyBucketMeta = map[string]struct {
 	short string
 	color string
 	order int
 }{
-	"gemini-weekly": {"Gemini Weekly", "#10B981", 0},
-	"gemini-5h":     {"Gemini 5h", "#34D399", 1},
-	"3p-weekly":     {"Claude + GPT Weekly", "#D97757", 2},
-	"3p-5h":         {"Claude + GPT 5h", "#E8A38C", 3},
+	"gemini-5h":     {"Gemini 5h", "#34D399", 0},
+	"gemini-weekly": {"Gemini Weekly", "#10B981", 1},
+	"3p-5h":         {"Claude + GPT 5h", "#E8A38C", 2},
+	"3p-weekly":     {"Claude + GPT Weekly", "#D97757", 3},
 }
 
 // AgyBucketColor returns a stable card color for a bucket ID.

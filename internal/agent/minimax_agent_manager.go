@@ -33,7 +33,7 @@ type MiniMaxAgentManager struct {
 	notifier            *notify.NotificationEngine
 	pollingCheck        func() bool                // Global MiniMax polling check
 	accountPollingCheck func(accountID int64) bool // Per-account polling check
-	region              string                      // Default region for API base URL
+	region              string                     // Default region for API base URL
 
 	mu        sync.RWMutex
 	instances map[int64]*MiniMaxAgentInstance // db account id -> instance

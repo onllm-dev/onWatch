@@ -1869,7 +1869,14 @@ func (h *Handler) buildGrokCurrent() map[string]interface{} {
 			"status":      q.Status,
 		}
 		if q.ResetsAt != nil {
-			qm["resets_at"] = q.ResetsAt.Format(time.RFC3339)
+			// CamelCase fields match menubar normalizeQuotas + other providers;
+			// snake_case kept for dashboard renderGrokQuotaCards compatibility.
+			timeUntilReset := time.Until(*q.ResetsAt)
+			resetStr := q.ResetsAt.Format(time.RFC3339)
+			qm["resetsAt"] = resetStr
+			qm["resets_at"] = resetStr
+			qm["timeUntilReset"] = formatDuration(timeUntilReset)
+			qm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
 		quotas = append(quotas, qm)
 	}
@@ -1888,16 +1895,21 @@ func (h *Handler) buildGrokCurrent() map[string]interface{} {
 			primary := latest.Quotas[0]
 			sum := h.grokTracker.GetGrokSummary(store.DefaultGrokAccountID, primary.Name, latest)
 			if sum != nil {
-				response["summary"] = map[string]interface{}{
+				sm := map[string]interface{}{
 					"current_util":     sum.CurrentUtil,
-					"resets_at":        nil,
 					"current_rate":     sum.CurrentRate,
 					"projected_util":   sum.ProjectedUtil,
 					"completed_cycles": sum.CompletedCycles,
 				}
 				if sum.ResetsAt != nil {
-					(response["summary"].(map[string]interface{}))["resets_at"] = sum.ResetsAt.Format(time.RFC3339)
+					timeUntilReset := time.Until(*sum.ResetsAt)
+					resetStr := sum.ResetsAt.Format(time.RFC3339)
+					sm["resetsAt"] = resetStr
+					sm["resets_at"] = resetStr
+					sm["timeUntilReset"] = formatDuration(timeUntilReset)
+					sm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 				}
+				response["summary"] = sm
 			}
 		}
 	}
@@ -6213,10 +6225,17 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		hiddenInsights = []string{}
 	}
 
+	// OAuth auto-refresh: default true when unset
+	autoRefreshTokens := true
+	if h.store != nil {
+		autoRefreshTokens = h.store.AutoRefreshTokensEnabled()
+	}
+
 	result := map[string]interface{}{
-		"timezone":        tz,
-		"hidden_insights": hiddenInsights,
-		"menubar":         menubarSettings,
+		"timezone":            tz,
+		"hidden_insights":     hiddenInsights,
+		"menubar":             menubarSettings,
+		"auto_refresh_tokens": autoRefreshTokens,
 	}
 
 	// SMTP settings (never return the actual password)
@@ -6334,6 +6353,25 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result["timezone"] = tz
+	}
+
+	// Handle auto_refresh_tokens (OAuth refresh of coding-harness credentials)
+	if raw, ok := body["auto_refresh_tokens"]; ok {
+		var enabled bool
+		if err := json.Unmarshal(raw, &enabled); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid auto_refresh_tokens value")
+			return
+		}
+		val := "true"
+		if !enabled {
+			val = "false"
+		}
+		if err := h.store.SetSetting(store.SettingAutoRefreshTokens, val); err != nil {
+			h.logger.Error("failed to save auto_refresh_tokens setting", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save setting")
+			return
+		}
+		result["auto_refresh_tokens"] = enabled
 	}
 
 	// Handle hidden_insights
