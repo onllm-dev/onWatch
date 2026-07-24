@@ -2281,7 +2281,7 @@ function renderOpenCodeQuotaCards(quotas, containerId) {
     const resetId = `reset-opencode-${q.name}`;
     const countdownId = `countdown-opencode-${q.name}`;
 
-    const cardLabel = q.format === 'currency' ? '$' + (q.used || 0).toFixed(2) + ' / $' + (q.limitValue || 0).toFixed(2) : (q.used || 0) + ' / ' + (q.limitValue || 0);
+    const cardLabel = q.format === 'currency' ? '$' + (q.used || 0).toFixed(2) + ' / $' + (q.limit || 0).toFixed(2) : (q.used || 0) + ' / ' + (q.limit || 0);
 
     return `<article class="quota-card opencode-card" data-quota="${q.name}" data-provider="opencode" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
@@ -2305,7 +2305,7 @@ function renderOpenCodeQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        <span class="reset-time" id="${resetId}">${q.resetsAt ? 'Resets: ' + formatDateTime(q.resetsAt) : ''}</span>
+        <span class="reset-time" id="${resetId}"${q.resetsAt ? ` data-reset-at="${q.resetsAt}"` : ''}>${q.resetsAt ? formatResetTime(q.resetsAt) : ''}</span>
       </footer>
     </article>`;
   }).join('');
@@ -2317,7 +2317,7 @@ function updateOpenCodeCard(quota) {
   State.currentQuotas[key] = {
     percent: quota.utilization || 0,
     used: quota.used || 0,
-    limit: quota.limitValue || 0,
+    limit: quota.limit || 0,
     status: quota.status || 'healthy',
     renewsAt: quota.resetsAt,
     timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
@@ -2351,7 +2351,7 @@ function updateOpenCodeCard(quota) {
     }
   }
   if (fractionEl) {
-    const cardLabel = quota.format === 'currency' ? '$' + (quota.used || 0).toFixed(2) + ' / $' + (quota.limitValue || 0).toFixed(2) : (quota.used || 0) + ' / ' + (quota.limitValue || 0);
+    const cardLabel = quota.format === 'currency' ? '$' + (quota.used || 0).toFixed(2) + ' / $' + (quota.limit || 0).toFixed(2) : (quota.used || 0) + ' / ' + (quota.limit || 0);
     fractionEl.textContent = cardLabel;
   }
   if (statusEl) {
@@ -2359,7 +2359,15 @@ function updateOpenCodeCard(quota) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) resetEl.textContent = quota.resetsAt ? `Resets: ${formatDateTime(quota.resetsAt)}` : '';
+  if (resetEl) {
+    if (quota.resetsAt) {
+      resetEl.setAttribute('data-reset-at', quota.resetsAt);
+      resetEl.textContent = formatResetTime(quota.resetsAt);
+    } else {
+      resetEl.removeAttribute('data-reset-at');
+      resetEl.textContent = '';
+    }
+  }
   if (countdownEl) {
     if (quota.timeUntilResetSeconds > 0) {
       countdownEl.textContent = formatDuration(quota.timeUntilResetSeconds);
@@ -3910,10 +3918,13 @@ async function fetchCurrent() {
       } else if (provider === 'opencode') {
         if (data.quotas) {
           const container = document.getElementById('quota-grid-opencode');
-          if (container && container.children.length === 0) {
+          const hasCards = container && container.querySelector('.opencode-card') !== null;
+          if (container && !hasCards) {
             renderOpenCodeQuotaCards(data.quotas, 'quota-grid-opencode');
           }
-          data.quotas.forEach(q => updateOpenCodeCard(q));
+          if (Array.isArray(data.quotas) && data.quotas.length > 0) {
+            data.quotas.forEach(q => updateOpenCodeCard(q));
+          }
         }
       } else if (provider === 'openrouter') {
         if (data.credits) {
@@ -5270,7 +5281,7 @@ async function fetchHistory(range) {
       return;
     }
 
-    if (provider === 'cursor' || provider === 'opencode') {
+    if (provider === 'cursor') {
       const quotaKeys = new Set();
       historyRows.forEach(d => {
         if (Array.isArray(d.quotas)) d.quotas.forEach(q => quotaKeys.add(q.name));
