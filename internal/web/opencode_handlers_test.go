@@ -170,3 +170,40 @@ func TestBuildOpenCodeSummary_WithTracker(t *testing.T) {
 		t.Fatalf("currentUtil = %v, want 30", got)
 	}
 }
+
+func TestBuildOpenCodeCurrent_QuotaUsesLimitKey(t *testing.T) {
+	// The dashboard JS reads `limit` (not `limitValue`). Lock that contract so a
+	// future rename does not silently break the cards (regression: PR #102 frontend
+	// showed "/ 0" because JS read a non-existent limitValue key).
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Now().UTC()
+	reset := now.Add(5 * time.Hour)
+	insertTestOpenCodeSnapshot(t, s, now, []api.OpenCodeQuota{
+		{Name: "five_hour", Utilization: 15, Used: 15, Limit: 100, Format: api.OpenCodeQuotaFormatPercent, ResetsAt: &reset},
+	})
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithOpenCode())
+	current := h.buildOpenCodeCurrent()
+
+	quotas, ok := current["quotas"].([]interface{})
+	if !ok || len(quotas) == 0 {
+		t.Fatalf("quotas = %#v, want at least one quota", current["quotas"])
+	}
+	for _, raw := range quotas {
+		q, ok := raw.(map[string]interface{})
+		if !ok {
+			t.Fatalf("quota entry is not a map: %#v", raw)
+		}
+		if _, hasLimit := q["limit"]; !hasLimit {
+			t.Fatalf("quota map missing 'limit' key: %v", q)
+		}
+		if _, hasLimitValue := q["limitValue"]; hasLimitValue {
+			t.Fatalf("quota map must not use 'limitValue' key: %v", q)
+		}
+	}
+}
