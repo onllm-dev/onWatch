@@ -31,7 +31,7 @@ It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copil
 
 **Beta:** onWatch is currently in active development. Features and APIs may change as we refine the product.
 
-[![Star History Chart](https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline)](https://star-history.com/#onllm-dev/onwatch&Timeline)
+[![Star History Chart](https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline)](https://star-history.dera.page/#onllm-dev/onwatch&Timeline)
 
 ![Anthropic Dashboard - Light Mode](./docs/screenshots/anthropic-light.png)
 
