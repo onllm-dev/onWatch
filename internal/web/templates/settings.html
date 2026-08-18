@@ -2,18 +2,22 @@
 <div class="settings-page">
     <header class="settings-header">
         <div class="settings-header-left">
-            <a href="{{.BasePath}}/" class="settings-back" aria-label="Back to dashboard" title="Back to dashboard">
+            <a href="{{.BasePath}}/" class="settings-back" aria-label="Back to dashboard" title="Back to dashboard" data-i18n-aria-label="a11y.back_dashboard" data-i18n-title="a11y.back_dashboard">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M19 12H5M12 19l-7-7 7-7"/>
                 </svg>
             </a>
             <div>
-                <h1 class="settings-title">Settings <span class="beta-tag">Beta</span></h1>
-                <p class="settings-subtitle">Configure notifications, providers, and preferences</p>
+                <h1 class="settings-title"><span data-i18n="settings.title">Settings</span> <span class="beta-tag" data-i18n="settings.beta">Beta</span></h1>
+                <p class="settings-subtitle" data-i18n="settings.subtitle">Configure notifications, providers, and preferences</p>
             </div>
         </div>
         <div class="settings-header-right">
-            <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+            <select class="language-selector" data-language-selector aria-label="Language" data-i18n-aria-label="a11y.language">
+                <option value="zh-CN">简体中文</option>
+                <option value="en">English</option>
+            </select>
+            <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme" data-i18n-aria-label="a11y.toggle_theme">
                 <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="5"/>
                     <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
@@ -26,69 +30,69 @@
     </header>
 
     <main class="settings-main">
-        <div class="settings-tabs" role="tablist" aria-label="Settings sections">
-            <button class="settings-tab active" data-tab="email" role="tab" aria-selected="true" aria-controls="panel-email">Email (SMTP)</button>
-            <button class="settings-tab" data-tab="notifications" role="tab" aria-selected="false" aria-controls="panel-notifications">Notifications</button>
-            <button class="settings-tab" data-tab="providers" role="tab" aria-selected="false" aria-controls="panel-providers">Providers</button>
-            <button class="settings-tab" data-tab="menubar" role="tab" aria-selected="false" aria-controls="panel-menubar" hidden>Menubar</button>
-            <button class="settings-tab" data-tab="general" role="tab" aria-selected="false" aria-controls="panel-general">General</button>
+        <div class="settings-tabs" role="tablist" aria-label="Settings sections" data-i18n-aria-label="a11y.settings_sections">
+            <button class="settings-tab active" data-tab="email" role="tab" aria-selected="true" aria-controls="panel-email" data-i18n="settings.email_tab">Email (SMTP)</button>
+            <button class="settings-tab" data-tab="notifications" role="tab" aria-selected="false" aria-controls="panel-notifications" data-i18n="settings.notifications_tab">Notifications</button>
+            <button class="settings-tab" data-tab="providers" role="tab" aria-selected="false" aria-controls="panel-providers" data-i18n="settings.providers_tab">Providers</button>
+            <button class="settings-tab" data-tab="menubar" role="tab" aria-selected="false" aria-controls="panel-menubar" hidden data-i18n="settings.menubar_tab">Menubar</button>
+            <button class="settings-tab" data-tab="general" role="tab" aria-selected="false" aria-controls="panel-general" data-i18n="settings.general_tab">General</button>
         </div>
 
         <!-- Email (SMTP) Panel -->
         <div class="settings-panel active" id="panel-email" role="tabpanel">
             <div class="settings-section">
-                <h3 class="settings-section-title">SMTP Configuration</h3>
-                <p class="settings-section-desc">Configure your mail server to enable email notifications.</p>
+                <h3 class="settings-section-title" data-i18n="settings.smtp_config">SMTP Configuration</h3>
+                <p class="settings-section-desc" data-i18n="settings.smtp_desc">Configure your mail server to enable email notifications.</p>
                 <div class="settings-fields">
                     <div class="settings-field">
-                        <label for="smtp-host">SMTP Host</label>
+                        <label for="smtp-host" data-i18n="settings.smtp_host">SMTP Host</label>
                         <input type="text" id="smtp-host" class="settings-input" placeholder="smtp.gmail.com">
                     </div>
                     <div class="settings-field settings-field-half">
-                        <label for="smtp-port">Port</label>
+                        <label for="smtp-port" data-i18n="settings.port">Port</label>
                         <input type="number" id="smtp-port" class="settings-input" placeholder="587" min="1" max="65535">
                     </div>
                     <div class="settings-field settings-field-half">
-                        <label for="smtp-protocol">Protocol</label>
+                        <label for="smtp-protocol" data-i18n="settings.protocol">Protocol</label>
                         <select id="smtp-protocol" class="settings-input">
-                            <option value="auto" selected>Auto (Recommended)</option>
+                            <option value="auto" selected data-i18n="settings.auto_recommended">Auto (Recommended)</option>
                             <option value="starttls">STARTTLS</option>
                             <option value="tls">SSL/TLS</option>
-                            <option value="none">None (Plaintext)</option>
+                            <option value="none" data-i18n="settings.none_plaintext">None (Plaintext)</option>
                         </select>
-                        <span class="settings-field-hint">Auto prefers STARTTLS when available and falls back to implicit TLS when the server expects encryption from the start. Use None only for plaintext SMTP.</span>
+                        <span class="settings-field-hint" data-i18n="settings.smtp_protocol_hint">Auto prefers STARTTLS when available and falls back to implicit TLS when the server expects encryption from the start. Use None only for plaintext SMTP.</span>
                     </div>
                     <div class="settings-field">
-                        <label for="smtp-username">Username</label>
+                        <label for="smtp-username" data-i18n="settings.username">Username</label>
                         <input type="text" id="smtp-username" class="settings-input" placeholder="user@example.com" autocomplete="off">
                     </div>
                     <div class="settings-field">
-                        <label for="smtp-password">Password</label>
-                        <input type="password" id="smtp-password" class="settings-input" placeholder="App password or SMTP password" autocomplete="new-password">
+                        <label for="smtp-password" data-i18n="settings.password">Password</label>
+                        <input type="password" id="smtp-password" class="settings-input" placeholder="App password or SMTP password" autocomplete="new-password" data-i18n-placeholder="settings.smtp_password_placeholder">
                     </div>
                     <div class="settings-field">
-                        <label for="smtp-from-address">From Address</label>
+                        <label for="smtp-from-address" data-i18n="settings.from_address">From Address</label>
                         <input type="email" id="smtp-from-address" class="settings-input" placeholder="alerts@example.com">
                     </div>
                     <div class="settings-field">
-                        <label for="smtp-from-name">From Name</label>
+                        <label for="smtp-from-name" data-i18n="settings.from_name">From Name</label>
                         <input type="text" id="smtp-from-name" class="settings-input" placeholder="onWatch Alerts">
                     </div>
                     <div class="settings-field">
-                        <label for="smtp-to">Recipients</label>
+                        <label for="smtp-to" data-i18n="settings.recipients">Recipients</label>
                         <input type="text" id="smtp-to" class="settings-input" placeholder="admin@example.com, team@example.com">
-                        <span class="settings-field-hint">Comma-separated email addresses</span>
+                        <span class="settings-field-hint" data-i18n="settings.recipients_hint">Comma-separated email addresses</span>
                     </div>
                 </div>
                 <div class="settings-actions">
                     <button class="settings-test-btn" id="smtp-test-btn" type="button">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                        Send Test Email
+                        <span data-i18n="settings.send_test_email">Send Test Email</span>
                     </button>
                     <span class="settings-test-result" id="smtp-test-result"></span>
                 </div>
                 <details class="smtp-diagnostics-details" hidden>
-                    <summary>Connection Diagnostics</summary>
+                    <summary data-i18n="settings.connection_diagnostics">Connection Diagnostics</summary>
                     <pre class="smtp-diagnostics-output" id="smtp-diagnostics"></pre>
                 </details>
             </div>
@@ -97,13 +101,13 @@
         <!-- Notifications Panel -->
         <div class="settings-panel" id="panel-notifications" role="tabpanel" hidden>
             <div class="settings-section">
-                <h3 class="settings-section-title">Delivery Channels</h3>
-                <p class="settings-section-desc">Choose how to receive quota alerts.</p>
+                <h3 class="settings-section-title" data-i18n="settings.delivery_channels">Delivery Channels</h3>
+                <p class="settings-section-desc" data-i18n="settings.delivery_desc">Choose how to receive quota alerts.</p>
                 <div class="settings-fields">
                     <div class="settings-toggle-row">
                         <div class="settings-toggle-info">
                             <div class="settings-toggle-label">Email (SMTP)</div>
-                            <div class="settings-toggle-sublabel">Send alerts via email - requires SMTP configuration</div>
+                            <div class="settings-toggle-sublabel" data-i18n="settings.email_alerts_desc">Send alerts via email - requires SMTP configuration</div>
                         </div>
                         <label class="settings-toggle">
                             <input type="checkbox" id="channel-email" checked>
@@ -112,8 +116,8 @@
                     </div>
                     <div class="settings-toggle-row">
                         <div class="settings-toggle-info">
-                            <div class="settings-toggle-label">Push Notifications</div>
-                            <div class="settings-toggle-sublabel" id="push-status-label">Checking browser support...</div>
+                            <div class="settings-toggle-label" data-i18n="settings.push_notifications">Push Notifications</div>
+                            <div class="settings-toggle-sublabel" id="push-status-label" data-i18n="settings.checking_browser">Checking browser support...</div>
                         </div>
                         <div class="settings-toggle-actions-wrap">
                             <label class="settings-toggle">
@@ -122,7 +126,7 @@
                             </label>
                             <button class="settings-test-btn settings-test-btn-sm" id="push-subscribe-btn" type="button" hidden>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                                Enable
+                                <span data-i18n="settings.enable">Enable</span>
                             </button>
                         </div>
                     </div>
@@ -130,29 +134,29 @@
                 <div class="settings-actions" id="push-test-actions" hidden>
                     <button class="settings-test-btn" id="push-test-btn" type="button">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                        Send Test Push
+                        <span data-i18n="settings.send_test_push">Send Test Push</span>
                     </button>
                     <span class="settings-test-result" id="push-test-result"></span>
                 </div>
                 <details class="push-diagnostics-details" id="push-diagnostics-section" hidden>
-                    <summary>Push Diagnostics</summary>
-                    <pre class="push-diagnostics-output" id="push-diagnostics">Collecting...</pre>
+                    <summary data-i18n="settings.push_diagnostics">Push Diagnostics</summary>
+                    <pre class="push-diagnostics-output" id="push-diagnostics" data-i18n="settings.collecting">Collecting...</pre>
                 </details>
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Global Thresholds</h3>
-                <p class="settings-section-desc">Default thresholds that apply to all quotas unless overridden.</p>
+                <h3 class="settings-section-title" data-i18n="settings.global_thresholds">Global Thresholds</h3>
+                <p class="settings-section-desc" data-i18n="settings.global_thresholds_desc">Default thresholds that apply to all quotas unless overridden.</p>
                 <div class="settings-fields">
                     <div class="settings-field settings-field-half">
-                        <label for="threshold-warning">Warning Threshold (%)</label>
+                        <label for="threshold-warning" data-i18n="settings.warning_threshold">Warning Threshold (%)</label>
                         <div class="threshold-input-group">
                             <input type="range" id="threshold-warning-slider" class="threshold-slider" min="0" max="100" value="80">
                             <input type="number" id="threshold-warning" class="settings-input settings-input-sm" min="0" max="100" value="80">
                         </div>
                     </div>
                     <div class="settings-field settings-field-half">
-                        <label for="threshold-critical">Critical Threshold (%)</label>
+                        <label for="threshold-critical" data-i18n="settings.critical_threshold">Critical Threshold (%)</label>
                         <div class="threshold-input-group">
                             <input type="range" id="threshold-critical-slider" class="threshold-slider" min="0" max="100" value="95">
                             <input type="number" id="threshold-critical" class="settings-input settings-input-sm" min="0" max="100" value="95">
@@ -162,45 +166,45 @@
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Notification Types</h3>
+                <h3 class="settings-section-title" data-i18n="settings.notification_types">Notification Types</h3>
                 <div class="settings-fields">
                     <label class="settings-checkbox-row">
                         <input type="checkbox" id="notify-warning" checked>
-                        <span>Warning alerts (quota crosses warning threshold)</span>
+                        <span data-i18n="settings.warning_alerts">Warning alerts (quota crosses warning threshold)</span>
                     </label>
                     <label class="settings-checkbox-row">
                         <input type="checkbox" id="notify-critical" checked>
-                        <span>Critical alerts (quota crosses critical threshold)</span>
+                        <span data-i18n="settings.critical_alerts">Critical alerts (quota crosses critical threshold)</span>
                     </label>
                     <label class="settings-checkbox-row">
                         <input type="checkbox" id="notify-reset" checked>
-                        <span>Reset notifications (quota cycle resets)</span>
+                        <span data-i18n="settings.reset_notifications">Reset notifications (quota cycle resets)</span>
                     </label>
                     <label class="settings-checkbox-row">
                         <input type="checkbox" id="notify-auth-error">
-                        <span>Auth error alerts (token refresh failures)</span>
+                        <span data-i18n="settings.auth_error_alerts">Auth error alerts (token refresh failures)</span>
                     </label>
                 </div>
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Cooldown</h3>
-                <p class="settings-section-desc">Minimum time between repeated notifications for the same quota and level.</p>
+                <h3 class="settings-section-title" data-i18n="settings.cooldown">Cooldown</h3>
+                <p class="settings-section-desc" data-i18n="settings.cooldown_desc">Minimum time between repeated notifications for the same quota and level.</p>
                 <div class="settings-fields">
                     <div class="settings-field settings-field-half">
-                        <label for="notify-cooldown">Cooldown (minutes)</label>
+                        <label for="notify-cooldown" data-i18n="settings.cooldown_minutes">Cooldown (minutes)</label>
                         <input type="number" id="notify-cooldown" class="settings-input" min="1" value="30" placeholder="30">
                     </div>
                 </div>
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Per-Quota Overrides</h3>
-                <p class="settings-section-desc">Override global thresholds for specific quotas.</p>
+                <h3 class="settings-section-title" data-i18n="settings.overrides">Per-Quota Overrides</h3>
+                <p class="settings-section-desc" data-i18n="settings.overrides_desc">Override global thresholds for specific quotas.</p>
                 <div id="override-list" class="override-list"></div>
                 <button class="settings-add-btn" id="add-override-btn" type="button">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                    Add Override
+                    <span data-i18n="settings.add_override">Add Override</span>
                 </button>
             </div>
         </div>
@@ -208,14 +212,14 @@
         <!-- Providers Panel -->
         <div class="settings-panel" id="panel-providers" role="tabpanel" hidden>
             <div class="settings-section">
-                <h3 class="settings-section-title">Dashboard Tabs</h3>
-                <p class="settings-section-desc">Only providers with <strong>Dashboard</strong> enabled appear here. Drag the handle (or use ↑/↓) to reorder tabs. Use the <strong>Tab name</strong> field to rename (emoji allowed); leave blank for the default name (e.g. Z.ai → GLM).</p>
+                <h3 class="settings-section-title" data-i18n="settings.dashboard_tabs">Dashboard Tabs</h3>
+                <p class="settings-section-desc" data-i18n="settings.dashboard_tabs_desc">Only providers with Dashboard enabled appear here. Drag the handle (or use ↑/↓) to reorder tabs. Use the Tab name field to rename; leave blank for the default name.</p>
                 <ul class="dashboard-tab-order-list" id="dashboard-tab-order" aria-label="Dashboard provider tab order and names"></ul>
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Provider Controls</h3>
-                <p class="settings-section-desc">Manage telemetry (background data collection) and dashboard visibility for each provider. Hidden providers remain accessible under the "All" tab.</p>
+                <h3 class="settings-section-title" data-i18n="settings.provider_controls">Provider Controls</h3>
+                <p class="settings-section-desc" data-i18n="settings.provider_controls_desc">Manage telemetry and dashboard visibility for each provider. Hidden providers remain accessible under the All tab.</p>
                 <div class="settings-fields" id="provider-toggles">
                     <!-- Populated dynamically by JS -->
                 </div>
@@ -226,8 +230,8 @@
         <div class="modal-overlay" id="provider-settings-modal" role="dialog" aria-modal="true" aria-labelledby="provider-settings-title" hidden>
             <div class="modal-content" style="max-width:540px">
                 <header class="modal-header">
-                    <h2 class="modal-title" id="provider-settings-title">Provider Settings</h2>
-                    <button class="modal-close" id="provider-settings-close" aria-label="Close modal">
+                    <h2 class="modal-title" id="provider-settings-title" data-i18n="settings.provider_settings">Provider Settings</h2>
+                    <button class="modal-close" id="provider-settings-close" aria-label="Close modal" data-i18n-aria-label="a11y.close_modal">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 6L6 18M6 6l12 12"/>
                         </svg>
@@ -238,10 +242,10 @@
                 </div>
                 <div id="provider-settings-feedback" class="settings-feedback" style="padding:0 24px 16px" hidden></div>
                 <div class="modal-footer">
-                    <button class="modal-footer-btn modal-footer-btn-secondary" id="provider-settings-cancel" type="button">Cancel</button>
+                    <button class="modal-footer-btn modal-footer-btn-secondary" id="provider-settings-cancel" type="button" data-i18n="settings.cancel">Cancel</button>
                     <button class="modal-footer-btn modal-footer-btn-primary" id="provider-settings-save" type="button">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                        Save
+                        <span data-i18n="settings.save">Save</span>
                     </button>
                 </div>
             </div>
@@ -252,16 +256,16 @@
             <div class="settings-section menubar-section" id="menubar-settings-shell" hidden>
                 <div class="menubar-section-heading">
                     <div>
-                        <h3 class="settings-section-title">Menubar Companion</h3>
-                        <p class="settings-section-desc">Control the macOS menubar companion, its default view, thresholds, and provider ordering.</p>
+                        <h3 class="settings-section-title" data-i18n="settings.menubar_companion">Menubar Companion</h3>
+                        <p class="settings-section-desc" data-i18n="settings.menubar_desc">Control the macOS menubar companion, its default view, thresholds, and provider ordering.</p>
                     </div>
                 </div>
 
                 <div class="settings-fields">
                     <div class="settings-toggle-row">
                         <div class="settings-toggle-info">
-                            <div class="settings-toggle-label">Enable Menubar</div>
-                            <div class="settings-toggle-sublabel">Starts the macOS menubar companion after the local dashboard server is ready.</div>
+                            <div class="settings-toggle-label" data-i18n="settings.enable_menubar">Enable Menubar</div>
+                            <div class="settings-toggle-sublabel" data-i18n="settings.enable_menubar_desc">Starts the macOS menubar companion after the local dashboard server is ready.</div>
                         </div>
                         <label class="settings-toggle">
                             <input type="checkbox" id="menubar-enabled" checked>
@@ -269,27 +273,27 @@
                         </label>
                     </div>
                     <div class="settings-field settings-field-half">
-                        <label for="menubar-default-view">Default View</label>
+                        <label for="menubar-default-view" data-i18n="settings.default_view">Default View</label>
                         <select id="menubar-default-view" class="settings-input">
-                            <option value="standard">Standard</option>
-                            <option value="detailed">Detailed</option>
+                            <option value="standard" data-i18n="settings.standard">Standard</option>
+                            <option value="detailed" data-i18n="settings.detailed">Detailed</option>
                         </select>
                     </div>
                     <div class="settings-field settings-field-half">
-                        <label for="menubar-refresh">Refresh Interval</label>
+                        <label for="menubar-refresh" data-i18n="settings.refresh_interval">Refresh Interval</label>
                         <select id="menubar-refresh" class="settings-input">
-                            <option value="30">30 seconds</option>
-                            <option value="60">1 minute</option>
-                            <option value="120">2 minutes</option>
-                            <option value="300">5 minutes</option>
+                            <option value="30" data-i18n="settings.seconds_30">30 seconds</option>
+                            <option value="60" data-i18n="settings.minute">1 minute</option>
+                            <option value="120" data-i18n="settings.minutes_2">2 minutes</option>
+                            <option value="300" data-i18n="settings.minutes_5">5 minutes</option>
                         </select>
                     </div>
                     <div class="settings-field settings-field-half">
-                        <label for="menubar-warning">Warning Threshold (%)</label>
+                        <label for="menubar-warning" data-i18n="settings.warning_threshold">Warning Threshold (%)</label>
                         <input type="number" id="menubar-warning" class="settings-input" min="0" max="100" value="70">
                     </div>
                     <div class="settings-field settings-field-half">
-                        <label for="menubar-critical">Critical Threshold (%)</label>
+                        <label for="menubar-critical" data-i18n="settings.critical_threshold">Critical Threshold (%)</label>
                         <input type="number" id="menubar-critical" class="settings-input" min="0" max="100" value="90">
                     </div>
                 </div>
@@ -298,8 +302,8 @@
             <div class="settings-divider" id="menubar-order-divider" hidden></div>
 
             <div class="settings-section menubar-section" id="menubar-order-shell" hidden>
-                <h3 class="settings-section-title">Provider Order</h3>
-                <p class="settings-section-desc">Drag providers to choose their order inside the menubar companion. Use Show/Hide to control menubar-only visibility, which is saved in preferences and persists after restart. Codex accounts appear as separate providers when multiple accounts exist.</p>
+                <h3 class="settings-section-title" data-i18n="settings.provider_order">Provider Order</h3>
+                <p class="settings-section-desc" data-i18n="settings.provider_order_desc">Drag providers to choose their order inside the menubar companion. Show or hide providers for the menubar only; the preference persists after restart.</p>
                 <ul class="menubar-order-list" id="menubar-provider-order" aria-label="Menubar provider order"></ul>
             </div>
 
@@ -308,13 +312,27 @@
         <!-- General Panel -->
         <div class="settings-panel" id="panel-general" role="tabpanel" hidden>
             <div class="settings-section">
-                <h3 class="settings-section-title">Credentials</h3>
-                <p class="settings-section-desc">Control how onWatch interacts with coding-harness OAuth tokens on disk (Claude Code, Kimi Code, Codex, etc.).</p>
+                <h3 class="settings-section-title" data-i18n="settings.language">Language</h3>
+                <p class="settings-section-desc" data-i18n="settings.language_desc">Choose the dashboard language. This preference is saved in this browser.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="settings-language" data-i18n="settings.display_language">Display Language</label>
+                        <select id="settings-language" class="settings-input" data-language-selector aria-label="Language" data-i18n-aria-label="a11y.language">
+                            <option value="zh-CN">简体中文</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title" data-i18n="settings.credentials">Credentials</h3>
+                <p class="settings-section-desc" data-i18n="settings.credentials_desc">Control how onWatch interacts with coding-harness OAuth tokens on disk.</p>
                 <div class="settings-fields">
                     <div class="settings-toggle-row">
                         <div class="settings-toggle-info">
-                            <div class="settings-toggle-label">Auto refresh tokens</div>
-                            <div class="settings-toggle-sublabel">When enabled, onWatch may refresh OAuth tokens and write them back to harness credential files. Turn off if your CLI sessions keep expiring while onWatch is running.</div>
+                            <div class="settings-toggle-label" data-i18n="settings.auto_refresh_tokens">Auto refresh tokens</div>
+                            <div class="settings-toggle-sublabel" data-i18n="settings.auto_refresh_tokens_desc">When enabled, onWatch may refresh OAuth tokens and write them back to harness credential files. Turn this off if CLI sessions expire while onWatch is running.</div>
                         </div>
                         <label class="settings-toggle">
                             <input type="checkbox" id="settings-auto-refresh-tokens" checked>
@@ -325,66 +343,66 @@
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Timezone</h3>
+                <h3 class="settings-section-title" data-i18n="settings.timezone">Timezone</h3>
                 <div class="settings-fields">
                     <div class="settings-field">
-                        <label for="settings-timezone">Display Timezone</label>
+                        <label for="settings-timezone" data-i18n="settings.display_timezone">Display Timezone</label>
                         <select id="settings-timezone" class="settings-input">
-                            <option value="">Browser Default</option>
+                            <option value="" data-i18n="time.browser_default">Browser Default</option>
                         </select>
-                        <span class="settings-field-hint" id="settings-timezone-hint">Affects how times are displayed on the dashboard</span>
+                        <span class="settings-field-hint" id="settings-timezone-hint" data-i18n="settings.timezone_hint">Affects how times are displayed on the dashboard</span>
                     </div>
                 </div>
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Quota Display</h3>
-                <p class="settings-section-desc">Choose whether quota cards show how much you've used or how much is left. Per-provider settings (e.g. Codex) override this global default.</p>
+                <h3 class="settings-section-title" data-i18n="settings.quota_display">Quota Display</h3>
+                <p class="settings-section-desc" data-i18n="settings.quota_display_desc">Choose whether quota cards show how much you have used or how much is left. Per-provider settings override this default.</p>
                 <div class="settings-fields">
                     <div class="settings-field">
-                        <label for="settings-display-mode">Display Mode</label>
+                        <label for="settings-display-mode" data-i18n="settings.display_mode">Display Mode</label>
                         <select id="settings-display-mode" class="settings-input">
-                            <option value="usage">Usage (% used)</option>
-                            <option value="available">Available (% remaining)</option>
+                            <option value="usage" data-i18n="settings.usage_mode">Usage (% used)</option>
+                            <option value="available" data-i18n="settings.available_mode">Available (% remaining)</option>
                         </select>
-                        <span class="settings-field-hint">Applies to all providers unless overridden in the per-provider settings.</span>
+                        <span class="settings-field-hint" data-i18n="settings.display_mode_hint">Applies to all providers unless overridden in per-provider settings.</span>
                     </div>
                 </div>
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Layout Density</h3>
-                <p class="settings-section-desc">Choose how compact the dashboard cards appear.</p>
+                <h3 class="settings-section-title" data-i18n="settings.layout_density">Layout Density</h3>
+                <p class="settings-section-desc" data-i18n="settings.layout_density_desc">Choose how compact the dashboard cards appear.</p>
                 <div class="settings-fields">
                     <div class="settings-field">
-                        <label for="settings-layout-density">Density</label>
+                        <label for="settings-layout-density" data-i18n="settings.density">Density</label>
                         <select id="settings-layout-density" class="settings-input">
-                            <option value="compact">Compact</option>
-                            <option value="normal" selected>Default</option>
-                            <option value="wide">Wide</option>
+                            <option value="compact" data-i18n="settings.compact">Compact</option>
+                            <option value="normal" selected data-i18n="settings.default">Default</option>
+                            <option value="wide" data-i18n="settings.wide">Wide</option>
                         </select>
                     </div>
                 </div>
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Password</h3>
-                <p class="settings-section-desc">Change the dashboard login password.</p>
+                <h3 class="settings-section-title" data-i18n="settings.password_section">Password</h3>
+                <p class="settings-section-desc" data-i18n="settings.password_desc">Change the dashboard login password.</p>
                 <div class="settings-fields">
                     <div class="settings-field">
-                        <label for="settings-current-password">Current Password</label>
+                        <label for="settings-current-password" data-i18n="settings.current_password">Current Password</label>
                         <input type="password" id="settings-current-password" class="settings-input" autocomplete="current-password">
                     </div>
                     <div class="settings-field settings-field-half">
-                        <label for="settings-new-password">New Password</label>
+                        <label for="settings-new-password" data-i18n="settings.new_password">New Password</label>
                         <input type="password" id="settings-new-password" class="settings-input" minlength="6" autocomplete="new-password">
                     </div>
                     <div class="settings-field settings-field-half">
-                        <label for="settings-confirm-password">Confirm Password</label>
+                        <label for="settings-confirm-password" data-i18n="settings.confirm_password">Confirm Password</label>
                         <input type="password" id="settings-confirm-password" class="settings-input" minlength="6" autocomplete="new-password">
                     </div>
                 </div>
-                <button class="settings-save-btn settings-save-btn-secondary" id="password-save-btn" type="button">Update Password</button>
+                <button class="settings-save-btn settings-save-btn-secondary" id="password-save-btn" type="button" data-i18n="settings.update_password">Update Password</button>
                 <div id="settings-password-feedback" class="settings-feedback" hidden></div>
             </div>
         </div>
@@ -394,7 +412,7 @@
             <div id="settings-feedback" class="settings-feedback" hidden></div>
             <button class="settings-save-btn" id="settings-save-btn" type="button">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                Save Settings
+                <span data-i18n="settings.save_settings">Save Settings</span>
             </button>
         </div>
     </main>
@@ -402,13 +420,13 @@
     <footer class="app-footer">
         <div class="footer-content">
             <span class="footer-brand"><a href="https://onwatch.onllm.dev" class="footer-link" target="_blank" rel="noopener">onWatch v{{.Version}}</a></span>
-            <span class="footer-heart">Built with &#10084;&#65039; by <a href="https://onllm.dev" class="footer-link" target="_blank" rel="noopener">onllm.dev</a></span>
+            <span class="footer-heart" data-i18n="dashboard.built_by">Built with love by onllm.dev</span>
             <div class="footer-links">
                 <a href="https://onllm.dev" class="footer-link" target="_blank" rel="noopener">onllm.dev</a>
                 <span class="footer-sep">&#183;</span>
                 <a href="https://github.com/onllm-dev/onwatch" class="footer-link" target="_blank" rel="noopener">GitHub</a>
                 <span class="footer-sep">&#183;</span>
-                <a href="https://buymeacoffee.com/prakersh" class="footer-link footer-support" target="_blank" rel="noopener" title="Support onWatch">Support onWatch</a>
+                <a href="https://buymeacoffee.com/prakersh" class="footer-link footer-support" target="_blank" rel="noopener" title="Support onWatch" data-i18n="dashboard.support" data-i18n-title="dashboard.support">Support onWatch</a>
             </div>
         </div>
     </footer>

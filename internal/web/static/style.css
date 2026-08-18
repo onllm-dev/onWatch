@@ -518,6 +518,32 @@ button, input, select { font-family: inherit; }
 [data-theme="light"] .theme-toggle .icon-sun { display: none; }
 [data-theme="light"] .theme-toggle .icon-moon { display: block; }
 
+.language-selector {
+  height: 38px;
+  min-width: 104px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font: 500 12px var(--font-sans);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+
+.language-selector:hover,
+.language-selector:focus-visible {
+  border-color: var(--accent-teal);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.language-selector-login {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+}
+
 /* ═══════════════════════════════════════════
    6. MAIN CONTENT
    ═══════════════════════════════════════════ */

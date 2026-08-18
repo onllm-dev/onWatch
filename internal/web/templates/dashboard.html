@@ -1,14 +1,14 @@
 {{define "content"}}
 <div class="app" data-poll-interval="{{.PollIntervalSec}}">
     <header class="app-header">
-        <a href="#" class="header-brand" id="scroll-top" aria-label="Scroll to top">
+        <a href="#" class="header-brand" id="scroll-top" aria-label="Scroll to top" data-i18n-aria-label="a11y.scroll_top">
             <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
             </svg>
             <span class="brand-text">onWatch</span>
         </a>
         {{if gt (len .Providers) 1}}
-        <div class="provider-tabs" id="provider-tabs" role="tablist" aria-label="Select provider">
+        <div class="provider-tabs" id="provider-tabs" role="tablist" aria-label="Select provider" data-i18n-aria-label="a11y.select_provider">
             {{range .Providers}}
             {{$iconFile := .}}{{if eq . "codex"}}{{$iconFile = "openai"}}{{else if eq . "both"}}{{$iconFile = "all"}}{{end}}
             {{$iconURL := printf "%s/static/icons/%s.svg" $.BasePath $iconFile}}
@@ -23,67 +23,71 @@
         {{end}}
         <div class="codex-profile-dropdown" id="codex-profile-dropdown" style="display: none;">
             <button class="codex-profile-trigger" id="codex-profile-trigger" aria-haspopup="listbox" aria-expanded="false">
-                <span class="codex-profile-label" id="codex-profile-label">Profile</span>
+                <span class="codex-profile-label" id="codex-profile-label" data-i18n="account.profile">Profile</span>
                 <svg class="codex-profile-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
-            <ul class="codex-profile-menu" id="codex-profile-menu" role="listbox" aria-label="Select Codex profile"></ul>
+            <ul class="codex-profile-menu" id="codex-profile-menu" role="listbox" aria-label="Select Codex profile" data-i18n-aria-label="a11y.select_codex_profile"></ul>
         </div>
         <div class="codex-profile-dropdown" id="minimax-profile-dropdown" style="display: none;">
             <button class="codex-profile-trigger" id="minimax-profile-trigger" aria-haspopup="listbox" aria-expanded="false">
-                <span class="codex-profile-label" id="minimax-profile-label">Account</span>
+                <span class="codex-profile-label" id="minimax-profile-label" data-i18n="account.account">Account</span>
                 <svg class="codex-profile-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
-            <ul class="codex-profile-menu" id="minimax-profile-menu" role="listbox" aria-label="Select MiniMax account"></ul>
+            <ul class="codex-profile-menu" id="minimax-profile-menu" role="listbox" aria-label="Select MiniMax account" data-i18n-aria-label="a11y.select_minimax_account"></ul>
         </div>
         <div class="codex-profile-dropdown" id="opencode-profile-dropdown" style="display: none;">
             <button class="codex-profile-trigger" id="opencode-profile-trigger" aria-haspopup="listbox" aria-expanded="false">
-                <span class="codex-profile-label" id="opencode-profile-label">Account</span>
+                <span class="codex-profile-label" id="opencode-profile-label" data-i18n="account.account">Account</span>
                 <svg class="codex-profile-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
-            <ul class="codex-profile-menu" id="opencode-profile-menu" role="listbox" aria-label="Select OpenCode account"></ul>
+            <ul class="codex-profile-menu" id="opencode-profile-menu" role="listbox" aria-label="Select OpenCode account" data-i18n-aria-label="a11y.select_opencode_account"></ul>
         </div>
         <div class="header-actions">
-            <button class="header-btn" id="refresh-btn" aria-label="Refresh data" title="Refresh now">
+            <button class="header-btn" id="refresh-btn" aria-label="Refresh data" title="Refresh now" data-i18n-aria-label="a11y.refresh" data-i18n-title="dashboard.refresh_now">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             </button>
             <div class="header-meta">
                 <span class="last-updated" id="last-updated" title="">Updated --:--:--</span>
-                <span class="status-indicator" id="status-dot" aria-label="Connection status"></span>
+                <span class="status-indicator" id="status-dot" aria-label="Connection status" data-i18n-aria-label="a11y.connection_status"></span>
             </div>
         </div>
         <!-- Notification Center -->
         <div class="notification-center" id="notification-center">
-            <button class="notification-bell" id="notification-bell" aria-label="Notifications" aria-expanded="false" aria-haspopup="true" title="Notifications">
+            <button class="notification-bell" id="notification-bell" aria-label="Notifications" aria-expanded="false" aria-haspopup="true" title="Notifications" data-i18n-aria-label="notifications.title" data-i18n-title="notifications.title">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                     <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                 </svg>
                 <span class="notification-badge" id="notification-badge" style="display: none;" aria-live="polite">0</span>
             </button>
-            <div class="notification-dropdown" id="notification-dropdown" role="menu" aria-label="Notifications">
+            <div class="notification-dropdown" id="notification-dropdown" role="menu" aria-label="Notifications" data-i18n-aria-label="notifications.title">
                 <div class="notification-header">
-                    <span class="notification-title">Notifications</span>
-                    <button class="notification-dismiss-all" id="dismiss-all-alerts" title="Dismiss all" aria-label="Clear all notifications">
+                    <span class="notification-title" data-i18n="notifications.title">Notifications</span>
+                    <button class="notification-dismiss-all" id="dismiss-all-alerts" title="Dismiss all" aria-label="Clear all notifications" data-i18n-title="notifications.dismiss_all" data-i18n-aria-label="notifications.clear_all_aria">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 6L6 18M6 6l12 12"/>
                         </svg>
-                        Clear all
+                        <span data-i18n="notifications.clear_all">Clear all</span>
                     </button>
                 </div>
                 <div class="notification-list" id="notification-list">
-                    <div class="notification-empty">No notifications</div>
+                    <div class="notification-empty" data-i18n="notifications.empty">No notifications</div>
                 </div>
             </div>
         </div>
 
         <div class="header-controls">
-            <a href="{{.BasePath}}/settings" class="header-btn" id="settings-btn" aria-label="Settings" title="Settings">
+            <select class="language-selector" data-language-selector aria-label="Language" data-i18n-aria-label="a11y.language">
+                <option value="zh-CN">简体中文</option>
+                <option value="en">English</option>
+            </select>
+            <a href="{{.BasePath}}/settings" class="header-btn" id="settings-btn" aria-label="Settings" title="Settings" data-i18n-aria-label="dashboard.settings" data-i18n-title="dashboard.settings">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="3"/>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
                 </svg>
             </a>
-            <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+            <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme" data-i18n-aria-label="a11y.toggle_theme">
                 <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="5"/>
                     <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
@@ -92,7 +96,7 @@
                     <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
                 </svg>
             </button>
-            <a href="{{.BasePath}}/logout" class="header-btn" id="logout-btn" aria-label="Logout" title="Logout">
+            <a href="{{.BasePath}}/logout" class="header-btn" id="logout-btn" aria-label="Logout" title="Logout" data-i18n-aria-label="a11y.logout" data-i18n-title="a11y.logout">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </a>
         </div>
@@ -100,12 +104,12 @@
 
     <main id="main-content" class="main-content">
         <div class="welcome-banner">
-            <h1 class="welcome-title">Dashboard</h1>
+            <h1 class="welcome-title" data-i18n="dashboard.title">Dashboard</h1>
         </div>
 
         {{if eq .CurrentProvider "both"}}
         <div class="all-providers-view" id="all-providers-container" data-provider="both">
-            <p class="insight-text">Loading provider cards...</p>
+            <p class="insight-text" data-i18n="dashboard.loading_cards">Loading provider cards...</p>
         </div>
         {{else if eq .CurrentProvider "copilot"}}
         <!-- Copilot quota cards (dynamically populated by JS) -->
@@ -352,11 +356,11 @@
                             <circle cx="12" cy="12" r="10"/>
                             <path d="M12 16v-4M12 8h.01"/>
                         </svg>
-                        All Time Statistics
+                        <span data-i18n="dashboard.all_time_statistics">All Time Statistics</span>
                     </h3>
                 </header>
                 <div class="insights-stats" id="api-integrations-all-time-stats">
-                    <p class="insight-text">Loading statistics...</p>
+                    <p class="insight-text" data-i18n="dashboard.loading_statistics">Loading statistics...</p>
                 </div>
             </section>
 
@@ -367,11 +371,11 @@
                             <path d="M3 12h18"/>
                             <path d="M12 3v18"/>
                         </svg>
-                        Recent Usage Insights
+                        <span data-i18n="dashboard.recent_usage_insights">Recent Usage Insights</span>
                     </h3>
                 </header>
                 <div class="insights-stats" id="api-integrations-recent-stats">
-                    <p class="insight-text">Loading statistics...</p>
+                    <p class="insight-text" data-i18n="dashboard.loading_statistics">Loading statistics...</p>
                 </div>
             </section>
         </div>
@@ -383,12 +387,12 @@
                         <circle cx="12" cy="12" r="10"/>
                         <path d="M12 16v-4M12 8h.01"/>
                     </svg>
-                    Usage Insights
+                    <span data-i18n="dashboard.usage_insights">Usage Insights</span>
                 </h3>
             </header>
             <div class="insights-stats" id="insights-stats"></div>
             <div class="insights-cards" id="insights-cards">
-                <p class="insight-text">Loading insights...</p>
+                <p class="insight-text" data-i18n="dashboard.loading_insights">Loading insights...</p>
             </div>
         </section>
         {{end}}
@@ -401,7 +405,7 @@
                         <path d="M3 3v18h18"/>
                         <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
                     </svg>
-                    {{if eq .CurrentProvider "api-integrations"}}API Integration Usage{{else}}Usage Graphs{{end}}
+                    <span data-i18n="{{if eq .CurrentProvider "api-integrations"}}dashboard.api_integration_usage{{else}}dashboard.usage_graphs{{end}}">{{if eq .CurrentProvider "api-integrations"}}API Integration Usage{{else}}Usage Graphs{{end}}</span>
                 </h3>
                 <div class="chart-controls">
                     {{if eq .CurrentProvider "api-integrations"}}
@@ -434,11 +438,11 @@
                     <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 2v20M2 12h20"/>
                     </svg>
-                    Ingest Health
+                    <span data-i18n="dashboard.ingest_health">Ingest Health</span>
                 </h3>
             </header>
             <div class="api-integrations-health-summary" id="api-integrations-health-summary">
-                <p class="insight-text">Loading API integrations health...</p>
+                <p class="insight-text" data-i18n="dashboard.loading_health">Loading API integrations health...</p>
             </div>
             <div class="api-integrations-health-alerts" id="api-integrations-health-alerts"></div>
             <div class="table-wrapper">
@@ -464,7 +468,7 @@
                         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
                         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
                     </svg>
-                    Setup Guide
+                    <span data-i18n="dashboard.setup_guide">Setup Guide</span>
                 </h3>
             </header>
             <div class="provider-insights-box">
@@ -510,14 +514,14 @@
                         <circle cx="9" cy="7" r="4"/>
                         <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
                     </svg>
-                    Session History
+                    <span data-i18n="table.sessions">Session History</span>
                 </h3>
                 <div class="table-controls">
-                    <select class="page-size-select" id="sessions-page-size" aria-label="Rows per page">
+                    <select class="page-size-select" id="sessions-page-size" aria-label="Rows per page" data-i18n-aria-label="a11y.rows_per_page">
                         <option value="10">10</option>
                         <option value="20">20</option>
                         <option value="30">30</option>
-                        <option value="0">All</option>
+                        <option value="0" data-i18n="table.all">All</option>
                     </select>
                 </div>
             </header>
@@ -525,10 +529,10 @@
                 <table class="data-table" id="sessions-table" data-provider="{{.CurrentProvider}}">
                     <thead>
                         <tr>
-                            {{if ne .CurrentProvider "minimax"}}<th data-sort-key="id" role="button" tabindex="0">Session <span class="sort-arrow"></span></th>{{end}}
-                            <th data-sort-key="start" role="button" tabindex="0">Started <span class="sort-arrow"></span></th>
-                            <th data-sort-key="end" role="button" tabindex="0">Ended <span class="sort-arrow"></span></th>
-                            <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
+                            {{if ne .CurrentProvider "minimax"}}<th data-sort-key="id" role="button" tabindex="0"><span data-i18n="table.session">Session</span> <span class="sort-arrow"></span></th>{{end}}
+                            <th data-sort-key="start" role="button" tabindex="0"><span data-i18n="table.started">Started</span> <span class="sort-arrow"></span></th>
+                            <th data-sort-key="end" role="button" tabindex="0"><span data-i18n="table.ended">Ended</span> <span class="sort-arrow"></span></th>
+                            <th data-sort-key="duration" role="button" tabindex="0"><span data-i18n="table.duration">Duration</span> <span class="sort-arrow"></span></th>
                             {{if eq .CurrentProvider "anthropic"}}
                             <th data-sort-key="sub" role="button" tabindex="0" id="anth-session-col-0">5-Hour <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0" id="anth-session-col-1">Weekly <span class="sort-arrow"></span></th>
@@ -580,30 +584,30 @@
                     <tbody id="sessions-tbody">
                         <tr>
                             {{if eq .CurrentProvider "zai"}}
-                            <td colspan="5" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="5" class="empty-state" data-i18n="table.no_sessions">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "codex"}}
-                            <td colspan="6" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="6" class="empty-state" data-i18n="table.no_sessions">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "minimax"}}
-                            <td colspan="6" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="6" class="empty-state" data-i18n="table.no_sessions">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "antigravity"}}
-                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="7" class="empty-state" data-i18n="table.no_sessions">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "gemini"}}
-                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="7" class="empty-state" data-i18n="table.no_sessions">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "openrouter"}}
-                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="7" class="empty-state" data-i18n="table.no_sessions">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "moonshot"}}
-                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="7" class="empty-state" data-i18n="table.no_sessions">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "deepseek"}}
-                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="7" class="empty-state" data-i18n="table.no_sessions">No sessions recorded yet.</td>
                             {{else}}
-                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            <td colspan="7" class="empty-state" data-i18n="table.no_sessions">No sessions recorded yet.</td>
                             {{end}}
                         </tr>
                     </tbody>
                 </table>
             </div>
             <div class="table-footer">
-                <span class="table-info" id="sessions-info">Showing 0-0 of 0</span>
+                <span class="table-info" id="sessions-info" data-i18n="table.showing_empty">Showing 0-0 of 0</span>
                 <div class="table-pagination" id="sessions-pagination"></div>
             </div>
         </section>
@@ -617,12 +621,12 @@
                         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
                         <path d="M3 3v5h5"/>
                     </svg>
-                    {{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Usage Samples{{else}}Logging History{{end}}
+                    <span data-i18n="{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}dashboard.usage_samples{{else}}dashboard.logging_history{{end}}">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Usage Samples{{else}}Logging History{{end}}</span>
                 </h3>
                 <div class="cycles-filters-inline">
                     <div class="filter-group">
-                        <span class="filter-label">Range</span>
-                        <div class="filter-pills" id="cycle-range-pills" role="group" aria-label="Time range">
+                        <span class="filter-label" data-i18n="time.range">Range</span>
+                        <div class="filter-pills" id="cycle-range-pills" role="group" aria-label="Time range" data-i18n-aria-label="a11y.time_range">
                             <button class="filter-pill" data-range="3600000">1h</button>
                             <button class="filter-pill active" data-range="259200000">3d</button>
                             <button class="filter-pill" data-range="604800000">7d</button>
@@ -631,16 +635,16 @@
                         </div>
                     </div>
                     <div class="filter-group">
-                        <span class="filter-label">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Bucket{{else}}Group{{end}}</span>
-                        <div class="filter-pills" id="cycles-bucket-pills" role="group" aria-label="Polling grouping window">
+                        <span class="filter-label" data-i18n="{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}table.bucket{{else}}table.group{{end}}">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Bucket{{else}}Group{{end}}</span>
+                        <div class="filter-pills" id="cycles-bucket-pills" role="group" aria-label="Polling grouping window" data-i18n-aria-label="a11y.polling_grouping">
                             <!-- Populated dynamically from poll interval -->
                         </div>
                     </div>
-                    <select class="page-size-select" id="cycles-page-size" aria-label="Rows per page">
+                    <select class="page-size-select" id="cycles-page-size" aria-label="Rows per page" data-i18n-aria-label="a11y.rows_per_page">
                         <option value="10">10</option>
                         <option value="20">20</option>
                         <option value="30">30</option>
-                        <option value="0">All</option>
+                        <option value="0" data-i18n="table.all">All</option>
                     </select>
                 </div>
             </header>
@@ -648,23 +652,23 @@
                 <table class="data-table" id="cycles-table">
                     <thead id="cycles-thead">
                         <tr>
-                            <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
-                            <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
-                            <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
-                            <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-                            <th data-sort-key="totalDelta" role="button" tabindex="0">Total Δ <span class="sort-arrow"></span></th>
+                            <th data-sort-key="id" role="button" tabindex="0"><span data-i18n="table.cycle">Cycle</span> <span class="sort-arrow"></span></th>
+                            <th data-sort-key="start" role="button" tabindex="0"><span data-i18n="table.start">Start</span> <span class="sort-arrow"></span></th>
+                            <th data-sort-key="end" role="button" tabindex="0"><span data-i18n="table.end">End</span> <span class="sort-arrow"></span></th>
+                            <th data-sort-key="duration" role="button" tabindex="0"><span data-i18n="table.duration">Duration</span> <span class="sort-arrow"></span></th>
+                            <th data-sort-key="totalDelta" role="button" tabindex="0"><span data-i18n="table.total_delta">Total Δ</span> <span class="sort-arrow"></span></th>
                         </tr>
                     </thead>
                     <tbody id="cycles-tbody">
                         <tr>
-                            <td colspan="5" class="empty-state">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}No usage samples yet. Tracking begins after the first successful sync.{{else}}No polling data yet. Tracking begins on first poll.{{end}}</td>
+                            <td colspan="5" class="empty-state" data-i18n="{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}table.no_samples_yet{{else}}table.no_polling_yet{{end}}">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}No usage samples yet. Tracking begins after the first successful sync.{{else}}No polling data yet. Tracking begins on first poll.{{end}}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
             <div class="table-footer">
-                <span class="table-info" id="cycles-info">Showing 0-0 of 0</span>
-                <span class="table-legend">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Δ = change since previous sample{{else}}⚡ = consumption rate per hour{{end}}</span>
+                <span class="table-info" id="cycles-info" data-i18n="table.showing_empty">Showing 0-0 of 0</span>
+                <span class="table-legend" data-i18n="{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}table.delta_legend{{else}}table.rate_legend{{end}}">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Δ = change since previous sample{{else}}⚡ = consumption rate per hour{{end}}</span>
                 <div class="table-pagination" id="cycles-pagination"></div>
             </div>
         </section>
@@ -675,32 +679,32 @@
                     <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 20V10M18 20V4M6 20v-4"/>
                     </svg>
-                    {{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Billing Cycle Overview{{else}}Cycle Overview{{end}}
+                    <span data-i18n="{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}dashboard.billing_cycle_overview{{else}}table.cycle_overview{{end}}">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Billing Cycle Overview{{else}}Cycle Overview{{end}}</span>
                 </h3>
                 <div class="cycles-filters-inline">
                     <div class="filter-group">
-                        <span class="filter-label">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Quota{{else}}Period{{end}}</span>
-                        <div class="filter-pills" id="overview-period-pills" role="group" aria-label="Renewal period"></div>
+                        <span class="filter-label" data-i18n="{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}table.quota{{else}}table.period{{end}}">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Quota{{else}}Period{{end}}</span>
+                        <div class="filter-pills" id="overview-period-pills" role="group" aria-label="Renewal period" data-i18n-aria-label="a11y.renewal_period"></div>
                     </div>
-                    <select class="page-size-select" id="overview-page-size" aria-label="Rows per page">
+                    <select class="page-size-select" id="overview-page-size" aria-label="Rows per page" data-i18n-aria-label="a11y.rows_per_page">
                         <option value="10">10</option>
                         <option value="20">20</option>
                         <option value="30">30</option>
-                        <option value="0">All</option>
+                        <option value="0" data-i18n="table.all">All</option>
                     </select>
                 </div>
             </header>
             <div class="table-wrapper">
                 <table class="data-table" id="overview-table">
-                    <thead id="overview-thead"><tr><th>Loading...</th></tr></thead>
+                    <thead id="overview-thead"><tr><th data-i18n="table.loading">Loading...</th></tr></thead>
                     <tbody id="overview-tbody">
-                        <tr><td class="empty-state">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Select a quota to compare monthly billing cycles.{{else}}Select a renewal period to view cross-quota data.{{end}}</td></tr>
+                        <tr><td class="empty-state" data-i18n="{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}table.select_quota{{else}}table.select_period{{end}}">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Select a quota to compare monthly billing cycles.{{else}}Select a renewal period to view cross-quota data.{{end}}</td></tr>
                     </tbody>
                 </table>
             </div>
             <div class="table-footer">
-                <span class="table-info" id="overview-info">Showing 0-0 of 0</span>
-                <span class="table-legend">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Monthly cycle comparison by quota{{else}}⚡ = consumption rate per hour{{end}}</span>
+                <span class="table-info" id="overview-info" data-i18n="table.showing_empty">Showing 0-0 of 0</span>
+                <span class="table-legend" data-i18n="{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}table.monthly_comparison{{else}}table.rate_legend{{end}}">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Monthly cycle comparison by quota{{else}}⚡ = consumption rate per hour{{end}}</span>
                 <div class="table-pagination" id="overview-pagination"></div>
             </div>
         </section>
@@ -715,13 +719,13 @@
                     Update to v<span id="update-version"></span>
                 </button>
             </span>
-            <span class="footer-heart">Built with &#10084;&#65039; by <a href="https://onllm.dev" class="footer-link" target="_blank" rel="noopener">onllm.dev</a></span>
+            <span class="footer-heart" data-i18n="dashboard.built_by">Built with love by onllm.dev</span>
             <div class="footer-links">
                 <a href="https://onllm.dev" class="footer-link" target="_blank" rel="noopener">onllm.dev</a>
                 <span class="footer-sep">&#183;</span>
                 <a href="https://github.com/onllm-dev/onwatch" class="footer-link" target="_blank" rel="noopener">GitHub</a>
                 <span class="footer-sep">&#183;</span>
-                <a href="https://buymeacoffee.com/prakersh" class="footer-link footer-support" target="_blank" rel="noopener" title="Support onWatch">Support onWatch</a>
+                <a href="https://buymeacoffee.com/prakersh" class="footer-link footer-support" target="_blank" rel="noopener" title="Support onWatch" data-i18n="dashboard.support" data-i18n-title="dashboard.support">Support onWatch</a>
             </div>
         </div>
     </footer>
@@ -732,8 +736,8 @@
 <div class="modal-overlay" id="detail-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
     <div class="modal-content">
         <header class="modal-header">
-            <h2 class="modal-title" id="modal-title">Quota Details</h2>
-            <button class="modal-close" id="modal-close" aria-label="Close modal">
+            <h2 class="modal-title" id="modal-title" data-i18n="dashboard.quota_details">Quota Details</h2>
+            <button class="modal-close" id="modal-close" aria-label="Close modal" data-i18n-aria-label="a11y.close_modal">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M18 6L6 18M6 6l12 12"/>
                 </svg>

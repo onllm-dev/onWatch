@@ -3358,7 +3358,7 @@ func TestHandler_SettingsPage_RendersHTML(t *testing.T) {
 		t.Errorf("expected text/html, got %s", ct)
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "<option value=\"auto\" selected>Auto (Recommended)</option>") {
+	if !strings.Contains(body, "<option value=\"auto\" selected") || !strings.Contains(body, ">Auto (Recommended)</option>") {
 		t.Error("expected settings page to default SMTP protocol to auto mode")
 	}
 	if !strings.Contains(body, "Use None only for plaintext SMTP.") {

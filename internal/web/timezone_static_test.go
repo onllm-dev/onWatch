@@ -62,7 +62,7 @@ func TestAppJS_TimezoneAwareDashboardTimestamps(t *testing.T) {
 	if strings.Contains(appJS, "Resets: ${formatDateTime") || strings.Contains(appJS, "'Resets: ' + formatDateTime") {
 		t.Fatal("reset labels must use formatResetTime instead of bare formatDateTime")
 	}
-	if !strings.Contains(appJS, "Browser Default (") {
-		t.Fatal("Browser Default timezone option must show the detected browser timezone")
+	if !strings.Contains(appJS, "tr('time.browser_default_tz'") || !strings.Contains(appJS, "getBrowserTimezone()") {
+		t.Fatal("Browser Default timezone option must use the translated label and detected browser timezone")
 	}
 }

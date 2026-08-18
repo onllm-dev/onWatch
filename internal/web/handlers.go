@@ -42,6 +42,13 @@ var loginErrors = map[string]string{
 	LoginErrorRateLimit: "Too many login attempts. Please try again later.",
 }
 
+var loginErrorI18nKeys = map[string]string{
+	LoginErrorInvalid:   "login.error.invalid",
+	LoginErrorExpired:   "login.error.expired",
+	LoginErrorRequired:  "login.error.required",
+	LoginErrorRateLimit: "login.error.ratelimit",
+}
+
 // Notifier defines the interface for the notification engine.
 // The concrete implementation lives in internal/notify.
 type Notifier interface {
@@ -7193,6 +7200,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"Title":    "Login",
 		"Error":    errorMsg,
+		"ErrorKey": loginErrorI18nKeys[errorCode],
 		"Version":  h.version,
 		"BasePath": h.getBasePath(),
 	}

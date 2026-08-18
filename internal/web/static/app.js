@@ -4,6 +4,20 @@ const BASE_PATH = (document.querySelector('meta[name="base-path"]') || {}).conte
 const API_BASE = BASE_PATH;
 const REFRESH_INTERVAL = 120000;
 
+function tr(key, params) {
+  if (window.onWatchI18n && typeof window.onWatchI18n.t === 'function') {
+    return window.onWatchI18n.t(key, params);
+  }
+  return key;
+}
+
+function getActiveLocale() {
+  if (window.onWatchI18n && typeof window.onWatchI18n.getLocale === 'function') {
+    return window.onWatchI18n.getLocale();
+  }
+  return 'en-US';
+}
+
 // ── Lazy Loading via IntersectionObserver ──
 const _lazyLoaded = new Set();
 function lazyLoadOnVisible(selector, callback) {
@@ -317,7 +331,7 @@ function populateCodexProfileTabs() {
   const allItem = document.createElement('li');
   allItem.className = 'codex-profile-item' + (State.codexAccount === 'all' ? ' active' : '');
   allItem.dataset.accountId = 'all';
-  allItem.textContent = 'All accounts';
+  allItem.textContent = tr('account.all_accounts');
   allItem.setAttribute('role', 'option');
   allItem.setAttribute('aria-selected', State.codexAccount === 'all' ? 'true' : 'false');
   allItem.addEventListener('click', () => {
@@ -363,9 +377,12 @@ function updateProfileTabsActive() {
   const menu = document.getElementById('codex-profile-menu');
   if (!menu) return;
 
+  const allItem = menu.querySelector('[data-account-id="all"]');
+  if (allItem) allItem.textContent = tr('account.all_accounts');
+
   if (label) {
     if (State.codexAccount === 'all') {
-      label.textContent = 'All accounts';
+      label.textContent = tr('account.all_accounts');
     } else {
       const activeProfile = State.codexProfiles.find(p => p.id === State.codexAccount);
       if (activeProfile) label.textContent = activeProfile.name;
@@ -515,7 +532,7 @@ function populateMiniMaxAccountTabs() {
   const allItem = document.createElement('li');
   allItem.className = 'codex-profile-item' + (State.minimaxAccount === 'all' ? ' active' : '');
   allItem.dataset.accountId = 'all';
-  allItem.textContent = 'All accounts';
+  allItem.textContent = tr('account.all_accounts');
   allItem.setAttribute('role', 'option');
   allItem.setAttribute('aria-selected', State.minimaxAccount === 'all' ? 'true' : 'false');
   allItem.addEventListener('click', () => {
@@ -560,9 +577,12 @@ function updateMiniMaxAccountTabsActive() {
   const menu = document.getElementById('minimax-profile-menu');
   if (!menu) return;
 
+  const allItem = menu.querySelector('[data-account-id="all"]');
+  if (allItem) allItem.textContent = tr('account.all_accounts');
+
   if (label) {
     if (State.minimaxAccount === 'all') {
-      label.textContent = 'All accounts';
+      label.textContent = tr('account.all_accounts');
     } else {
       const active = State.minimaxAccounts && State.minimaxAccounts.find(a => a.id === State.minimaxAccount);
       if (active) label.textContent = active.name;
@@ -662,7 +682,7 @@ function populateOpenCodeAccountTabs() {
   dropdown.style.display = getCurrentProvider() === 'opencode' && State.openCodeAccounts.length > 1 ? '' : 'none';
   menu.innerHTML = '';
   const choices = State.openCodeAccounts.length > 1
-    ? [{ account_id: 'all', name: 'All accounts' }, ...State.openCodeAccounts]
+    ? [{ account_id: 'all', name: tr('account.all_accounts') }, ...State.openCodeAccounts]
     : State.openCodeAccounts;
   choices.forEach(account => {
     const li = document.createElement('li');
@@ -676,7 +696,7 @@ function populateOpenCodeAccountTabs() {
     li.addEventListener('click', () => { switchOpenCodeAccount(account.account_id); closeOpenCodeAccountDropdown(); });
     menu.appendChild(li);
   });
-  const active = State.openCodeAccount === 'all' ? { name: 'All accounts' } : State.openCodeAccounts.find(a => a.account_id === State.openCodeAccount);
+  const active = State.openCodeAccount === 'all' ? { name: tr('account.all_accounts') } : State.openCodeAccounts.find(a => a.account_id === State.openCodeAccount);
   if (label && active) label.textContent = active.name;
 }
 
@@ -932,11 +952,18 @@ function updateChartVisibility() {
 }
 
 const statusConfig = {
-  healthy: { label: 'Healthy', icon: 'M20 6L9 17l-5-5' },
-  warning: { label: 'Warning', icon: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01' },
-  danger: { label: 'Danger', icon: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01' },
-  critical: { label: 'Critical', icon: 'M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z' }
+  healthy: { label: tr('status.healthy'), icon: 'M20 6L9 17l-5-5' },
+  warning: { label: tr('status.warning'), icon: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01' },
+  danger: { label: tr('status.critical'), icon: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01' },
+  critical: { label: tr('status.critical'), icon: 'M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z' }
 };
+
+function refreshStatusConfigLabels() {
+  statusConfig.healthy.label = tr('status.healthy');
+  statusConfig.warning.label = tr('status.warning');
+  statusConfig.danger.label = tr('status.critical');
+  statusConfig.critical.label = tr('status.critical');
+}
 
 const quotaNames = {
   subscription: 'Subscription Quota',
@@ -1681,7 +1708,7 @@ async function loadAnthropicModalCycles(quotaName) {
       const durationMins = Math.round((end - start) / 60000);
       const isActive = !cycle.cycleEnd;
       return `<tr>
-        <td>#${cycle.id}${isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>#${cycle.id}${isActive ? ` <span class="badge">${tr('status.active')}</span>` : ''}</td>
         <td>${formatDurationMins(durationMins)}</td>
         <td>${formatNumber(cycle.peakUtilization || 0)}%</td>
         <td>${formatNumber(cycle.totalDelta || 0)}%</td>
@@ -2094,7 +2121,7 @@ async function loadCopilotModalCycles(quotaName) {
       const durationMins = Math.round((end - start) / 60000);
       const isActive = !cycle.cycleEnd;
       return `<tr>
-        <td>#${cycle.id}${isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>#${cycle.id}${isActive ? ` <span class="badge">${tr('status.active')}</span>` : ''}</td>
         <td>${formatDurationMins(durationMins)}</td>
         <td>${formatNumber(cycle.peakUsed || 0)}</td>
         <td>${formatNumber(cycle.totalDelta || 0)}</td>
@@ -2712,7 +2739,7 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
   if (!container) return;
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
   if (visibleQuotas.length === 0) {
-    container.innerHTML = '<p class="empty-state">No Codex quota data available yet.</p>';
+    container.innerHTML = `<p class="empty-state">${tr('dashboard.no_provider_quota', { provider: 'Codex' })}</p>`;
     return;
   }
 
@@ -3044,7 +3071,7 @@ async function loadCodexModalCycles(quotaName) {
       const durationMins = Math.round((end - start) / 60000);
       const isActive = !cycle.cycleEnd;
       return `<tr>
-        <td>#${cycle.id}${isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>#${cycle.id}${isActive ? ` <span class="badge">${tr('status.active')}</span>` : ''}</td>
         <td>${formatDurationMins(durationMins)}</td>
         <td>${formatNumber(cycle.peakUtilization || 0)}%</td>
         <td>${formatNumber(cycle.totalDelta || 0)}%</td>
@@ -3056,7 +3083,7 @@ async function loadCodexModalCycles(quotaName) {
 // ── Utilities ──
 
 function formatDuration(seconds) {
-  if (seconds < 0) return 'Resetting...';
+  if (seconds < 0) return tr('time.resetting');
   const totalHours = Math.floor(seconds / 3600);
   const d = Math.floor(totalHours / 24);
   const h = totalHours % 24;
@@ -3079,11 +3106,11 @@ function formatDurationMins(durationMins) {
 }
 
 function formatNumber(num) {
-  return num.toLocaleString('en-US', { maximumFractionDigits: 1 });
+  return num.toLocaleString(getActiveLocale(), { maximumFractionDigits: 1 });
 }
 
 function formatCurrencyUSD(num) {
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat(getActiveLocale(), {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: num < 1 ? 4 : 2,
@@ -3103,7 +3130,7 @@ function formatDateTime(isoString) {
   if (typeof getEffectiveTimezone === 'function') {
     opts.timeZone = getEffectiveTimezone();
   }
-  return d.toLocaleString('en-US', opts);
+  return d.toLocaleString(getActiveLocale(), opts);
 }
 
 // Compact UTC offset for header/clock labels, e.g. "UTC+8" / "UTC-05:00".
@@ -3132,7 +3159,7 @@ function formatClockTime(value) {
   const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : undefined;
   const opts = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
   if (tz) opts.timeZone = tz;
-  const time = d.toLocaleTimeString('en-US', opts);
+  const time = d.toLocaleTimeString(getActiveLocale(), opts);
   const offset = tz ? formatTimezoneOffsetLabel(tz, d) : '';
   return offset ? `${time} ${offset}` : time;
 }
@@ -3163,10 +3190,10 @@ function formatResetTime(isoString) {
 
   const resetDay = zonedDateKey(d, tz);
   const today = zonedDateKey(new Date(), tz);
-  const localTime = d.toLocaleTimeString('en-US', timeOpts);
-  const localDate = resetDay === today ? '' : `${d.toLocaleDateString('en-US', dateOpts)}, `;
+  const localTime = d.toLocaleTimeString(getActiveLocale(), timeOpts);
+  const localDate = resetDay === today ? '' : `${d.toLocaleDateString(getActiveLocale(), dateOpts)}, `;
   const offset = tz ? formatTimezoneOffsetLabel(tz, d) : '';
-  return `Reset at ${localDate}${localTime}${offset ? ' ' + offset : ''}`;
+  return tr('time.reset_at', { time: `${localDate}${localTime}${offset ? ' ' + offset : ''}` });
 }
 
 function setResetTimeElement(el, isoString) {
@@ -3188,11 +3215,11 @@ function setLastUpdated(value = new Date()) {
   lastUpdated.dataset.lastUpdatedAt = d.toISOString();
   // Compact header label: "Updated 04:59:43 UTC+8" (full IANA zone in tooltip).
   const clock = formatClockTime(d);
-  lastUpdated.textContent = `Updated ${clock}`;
+  lastUpdated.textContent = tr('time.updated', { time: clock });
   const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : '';
   lastUpdated.title = tz
-    ? `Last updated at ${clock} (${tz})`
-    : `Last updated at ${clock}`;
+    ? tr('time.last_updated_tz', { time: clock, timezone: tz })
+    : tr('time.last_updated', { time: clock });
 }
 
 function refreshTimezoneSensitiveText() {
@@ -3223,7 +3250,7 @@ function formatChartXAxisLabel(isoOrLabel, range) {
     : { hour: '2-digit', minute: '2-digit' };
 
   if (tz) opts.timeZone = tz;
-  return d.toLocaleString('en-US', opts);
+  return d.toLocaleString(getActiveLocale(), opts);
 }
 
 
@@ -3372,14 +3399,14 @@ function updateBadgeText(badge) {
     badge.textContent = `${label} (${tzAbbr(tz)})`;
     badge.title = tz;
   } else {
-    badge.textContent = `Browser Default (${label} ${tzAbbr(tz)})`;
-    badge.title = `Browser default: ${tz}`;
+    badge.textContent = tr('time.browser_default_tz', { timezone: `${label} ${tzAbbr(tz)}` });
+    badge.title = tr('time.browser_default_tz', { timezone: tz });
   }
 }
 
 function timezonePickerEntries() {
   return [
-    { tz: '', label: 'Browser Default', browserDefault: true },
+    { tz: '', label: tr('time.browser_default'), browserDefault: true },
     ...TZ_LIST
   ];
 }
@@ -3884,10 +3911,16 @@ function updateKimiQuotaCards(quotas, containerId) {
 }
 const opencodeQuotaOrder = ['five_hour', 'weekly', 'monthly'];
 const opencodeDisplayNames = {
-  five_hour: '5-Hour Quota',
-  weekly: 'Weekly Quota',
-  monthly: 'Monthly Quota'
+  five_hour: tr('quota.five_hour'),
+  weekly: tr('quota.weekly'),
+  monthly: tr('quota.monthly')
 };
+
+function refreshOpenCodeDisplayNames() {
+  opencodeDisplayNames.five_hour = tr('quota.five_hour');
+  opencodeDisplayNames.weekly = tr('quota.weekly');
+  opencodeDisplayNames.monthly = tr('quota.monthly');
+}
 const opencodeChartColorMap = {
   five_hour: { border: '#10a37f', bg: 'rgba(16, 163, 127, 0.08)' },
   weekly: { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.08)' },
@@ -3903,7 +3936,7 @@ function renderOpenCodeQuotaCards(quotas, containerId) {
   if (!container) return;
 
   if (!Array.isArray(quotas) || quotas.length === 0) {
-    container.innerHTML = '<p class="empty-state">No OpenCode data available</p>';
+    container.innerHTML = `<p class="empty-state">${tr('opencode.no_data')}</p>`;
     return;
   }
 
@@ -3923,11 +3956,11 @@ function renderOpenCodeQuotaCards(quotas, containerId) {
 
     const cardLabel = q.format === 'currency' ? '$' + (q.used || 0).toFixed(2) + ' / $' + (q.limit || 0).toFixed(2) : (q.used || 0) + ' / ' + (q.limit || 0);
 
-    return `<article class="quota-card opencode-card" data-quota="${q.name}" data-provider="opencode" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+    return `<article class="quota-card opencode-card" data-quota="${q.name}" data-provider="opencode" role="button" tabindex="0" aria-label="${escapeHtml(tr('dashboard.view_details', { name: displayName }))}" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
-          ${displayName}
+          ${escapeHtml(displayName)}
         </h2>
         <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
@@ -4923,7 +4956,7 @@ function renderInsightsRangePills() {
   const selector = document.createElement('div');
   selector.className = 'range-selector insights-range-selector';
   selector.setAttribute('role', 'group');
-  selector.setAttribute('aria-label', 'Insights time range');
+  selector.setAttribute('aria-label', tr('a11y.insights_time_range'));
 
   const ranges = [
     { value: '1d', label: '1d' },
@@ -6469,10 +6502,10 @@ function getAPIIntegrationsHealthStatus(health = State.apiIntegrationsHealth) {
 
 function getAPIIntegrationsStatusMeta(health = State.apiIntegrationsHealth) {
   const status = getAPIIntegrationsHealthStatus(health);
-  if (status === 'disabled') return { label: 'Disabled', badgeStatus: 'critical' };
-  if (status === 'alert') return { label: 'Alert', badgeStatus: 'warning' };
-  if (status === 'running') return { label: 'Running', badgeStatus: 'healthy' };
-  return { label: 'Idle', badgeStatus: 'danger' };
+  if (status === 'disabled') return { label: tr('status.disabled'), badgeStatus: 'critical' };
+  if (status === 'alert') return { label: tr('status.alert'), badgeStatus: 'warning' };
+  if (status === 'running') return { label: tr('status.running'), badgeStatus: 'healthy' };
+  return { label: tr('common.idle'), badgeStatus: 'danger' };
 }
 
 function renderAPIIntegrationsCards() {
@@ -7636,7 +7669,7 @@ function renderCyclesTable() {
 
   if (pageData.length === 0) {
     const emptyMsg = isLoggingHistory
-      ? (provider === 'cursor' ? 'No Cursor usage samples in this range.' : 'No logging data in this range.')
+      ? (provider === 'cursor' ? tr('table.no_usage_samples') : tr('table.no_logging_data'))
       : (provider === 'cursor' ? 'No Cursor billing-cycle samples in this range.' : 'No polling data in this range.');
     tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">${emptyMsg}</td></tr>`;
   } else {
@@ -7722,7 +7755,7 @@ function renderCyclesTable() {
   if (infoEl) {
     const showStart = totalRows > 0 ? startIdx + 1 : 0;
     const showEnd = pageSize > 0 ? Math.min(startIdx + pageSize, totalRows) : totalRows;
-    infoEl.textContent = `Showing ${showStart}-${showEnd} of ${totalRows}`;
+    infoEl.textContent = tr('table.showing', { start: showStart, end: showEnd, total: totalRows });
   }
 
   // Pagination buttons
@@ -7849,14 +7882,14 @@ function renderSessionsTable() {
 
   if (infoEl) {
     if (total === 0) {
-      infoEl.textContent = 'No results';
+      infoEl.textContent = tr('table.no_results');
     } else {
-      infoEl.textContent = `Showing ${startIdx + 1}-${Math.min(startIdx + pageData.length, total)} of ${total}`;
+      infoEl.textContent = tr('table.showing', { start: startIdx + 1, end: Math.min(startIdx + pageData.length, total), total });
     }
   }
 
   if (total === 0) {
-    tbody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state">No sessions recorded yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state">${tr('table.no_sessions')}</td></tr>`;
   } else if (isBoth) {
     // Both: show Provider, Session, Start, End, Duration, Snapshots
     tbody.innerHTML = pageData.map(session => {
@@ -7864,8 +7897,8 @@ function renderSessionsTable() {
       return `<tr class="session-row">
         <td><span class="badge">${session._provider || '-'}</span></td>
         <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
-        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
         <td>${session.snapshotCount || 0}</td>
       </tr>`;
@@ -7877,8 +7910,8 @@ function renderSessionsTable() {
       const isExpanded = State.expandedSessionId === session.id;
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
         <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
-        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
         <td>${session.snapshotCount || 0}</td>
       </tr>`;
@@ -7932,8 +7965,8 @@ function renderSessionsTable() {
       };
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
         <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
-        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
         <td>${fmtWithDelta(session.startSubRequests, session.maxSubRequests)}</td>
         <td>${fmtWithDelta(session.startSearchRequests, session.maxSearchRequests)}</td>
@@ -7994,8 +8027,8 @@ function renderSessionsTable() {
       };
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
         <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
-        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
         <td>${fmtWithDelta(session.startSubRequests, session.maxSubRequests)}</td>
         <td>${fmtWithDelta(session.startSearchRequests, session.maxSearchRequests)}</td>
@@ -8049,8 +8082,8 @@ function renderSessionsTable() {
       const quotaTotal = _minimaxQuotaTotal();
       const peakPct = quotaTotal > 0 ? ((peakUsed / quotaTotal) * 100).toFixed(1) + '%' : '';
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
-        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '<span class="badge badge-active">Active</span>'}</td>
+        <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : `<span class="badge badge-active">${tr('status.active')}</span>`}</td>
         <td>${c.durationStr}</td>
         <td>${formatNumber(peakUsed)}${peakPct ? ' (' + peakPct + ')' : ''}</td>
         <td>${formatNumber(sessionDelta)}</td>
@@ -8133,8 +8166,8 @@ function renderSessionsTable() {
 
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
         <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
-        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
         <td>${fmtWithDelta(session.startSubRequests, session.maxSubRequests)}</td>
         <td>${fmtWithDelta(session.startSearchRequests, session.maxSearchRequests)}</td>
@@ -8195,8 +8228,8 @@ function renderSessionsTable() {
 
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
         <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
-        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
         <td>${fmtWithDelta(session.startSubRequests, session.maxSubRequests)}</td>
         <td>${fmtWithDelta(session.startSearchRequests, session.maxSearchRequests)}</td>
@@ -8244,8 +8277,8 @@ function renderSessionsTable() {
       const isExpanded = State.expandedSessionId === session.id;
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
         <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
-        <td>${c.start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Active'}</td>
+        <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
         <td>${formatNumber(session.maxSubRequests)}</td>
         <td>${formatNumber(session.maxSearchRequests)}</td>
@@ -8956,7 +8989,7 @@ function renderOverviewTable() {
     const colCount = (showAccount ? 1 : 0) + (showDurationDelta ? 5 : 3) + quotaNames.length;
     const emptyMsg = overviewProv === 'cursor'
       ? 'No completed monthly billing cycles found for this quota yet.'
-      : 'No completed cycles found for this period.';
+      : tr('table.no_completed_cycles');
     tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">${emptyMsg}</td></tr>`;
   } else {
     tbody.innerHTML = pageData.map(row => {
@@ -9020,7 +9053,7 @@ function renderOverviewTable() {
   if (info) {
     const showStart = totalRows > 0 ? startIdx + 1 : 0;
     const showEnd = pageSize > 0 ? Math.min(startIdx + pageSize, totalRows) : totalRows;
-    info.textContent = `Showing ${showStart}-${showEnd} of ${totalRows}`;
+    info.textContent = tr('table.showing', { start: showStart, end: showEnd, total: totalRows });
   }
 
   // Pagination buttons
@@ -9557,10 +9590,10 @@ function updateBrowserDefaultTimezoneText() {
   const browserTz = getBrowserTimezone();
   const select = document.getElementById('settings-timezone');
   const defaultOption = select?.querySelector('option[value=""]');
-  if (defaultOption) defaultOption.textContent = `Browser Default (${browserTz})`;
+  if (defaultOption) defaultOption.textContent = tr('time.browser_default_tz', { timezone: browserTz });
   const hint = document.getElementById('settings-timezone-hint');
   if (hint) {
-    hint.textContent = `Affects dashboard times. Browser Default currently resolves to ${browserTz}.`;
+    hint.textContent = `${tr('settings.timezone_hint')} (${browserTz})`;
   }
 }
 
@@ -9977,6 +10010,7 @@ const DEFAULT_PROVIDER_TAB_LABELS = {
 
 function defaultProviderTabLabel(key) {
   if (!key) return '';
+  if (key === 'both') return tr('table.all');
   if (DEFAULT_PROVIDER_TAB_LABELS[key]) return DEFAULT_PROVIDER_TAB_LABELS[key];
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
@@ -10077,7 +10111,7 @@ async function populateDashboardTabOrder() {
 
   const providers = await fetchDashboardTabOrderProviders();
   if (providers.length === 0) {
-    list.innerHTML = '<li class="dashboard-tab-order-item"><div class="dashboard-tab-order-fields"><span class="dashboard-tab-order-key">No providers available</span></div></li>';
+    list.innerHTML = `<li class="dashboard-tab-order-item"><div class="dashboard-tab-order-fields"><span class="dashboard-tab-order-key">${tr('settings.no_providers')}</span></div></li>`;
     State.dashboardProvidersOrder = [];
     return;
   }
@@ -10254,7 +10288,7 @@ async function populateMenubarProviderOrder() {
   const providers = await fetchMenubarProviders();
   State.menubarProviders = providers.slice();
   if (providers.length === 0) {
-    list.innerHTML = '<li class="menubar-order-item"><div class="menubar-order-copy"><span class="menubar-order-name">No providers available</span><span class="menubar-order-meta">Configure providers first to control menubar ordering.</span></div></li>';
+    list.innerHTML = `<li class="menubar-order-item"><div class="menubar-order-copy"><span class="menubar-order-name">${tr('settings.no_providers')}</span><span class="menubar-order-meta">${tr('settings.configure_providers_first')}</span></div></li>`;
     return;
   }
 
@@ -10293,7 +10327,7 @@ async function populateMenubarProviderOrder() {
       <div class="menubar-order-controls">
         <label class="menubar-order-toggle">
           <input type="checkbox" data-role="menubar-visible" data-provider="${provider.key}" ${visible ? 'checked' : ''}>
-          <span>${visible ? 'Show' : 'Hide'}</span>
+          <span>${visible ? tr('common.show') : tr('common.hide')}</span>
         </label>
       </div>
     </li>
@@ -10337,7 +10371,7 @@ async function populateMenubarProviderOrder() {
         rowToggle.checked = isVisible;
         const label = rowToggle.nextElementSibling;
         if (label) {
-          label.textContent = isVisible ? 'Show' : 'Hide';
+          label.textContent = isVisible ? tr('common.show') : tr('common.hide');
         }
       });
 
@@ -10400,13 +10434,13 @@ function syncMenubarProviderOrder() {
 function providerStatusBadge(configured, autoDetectable, isPolling) {
   if (!configured) {
     return autoDetectable
-      ? '<span class="badge">Auto-detect</span>'
-      : '<span class="badge">Not configured</span>';
+      ? `<span class="badge">${tr('common.auto_detect')}</span>`
+      : `<span class="badge">${tr('common.not_configured')}</span>`;
   }
   if (isPolling) {
-    return '<span class="badge">Polling</span>';
+    return `<span class="badge">${tr('common.polling')}</span>`;
   }
-  return '<span class="badge">Idle</span>';
+  return `<span class="badge">${tr('common.idle')}</span>`;
 }
 
 function updateProviderVisibilityState(provider, role, enabled) {
@@ -10423,16 +10457,16 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
   const row = document.createElement('div');
   row.className = 'settings-toggle-row settings-toggle-row-dual';
   const badge = isDeleted
-    ? '<span class="status-badge deleted" style="background:var(--md-error,#b3261e);color:#fff;padding:2px 8px;border-radius:12px;font-size:0.7rem;margin-left:8px">Deleted</span>'
+    ? `<span class="status-badge deleted" style="background:var(--md-error,#b3261e);color:#fff;padding:2px 8px;border-radius:12px;font-size:0.7rem;margin-left:8px">${tr('common.deleted')}</span>`
     : providerStatusBadge(configured, autoDetectable, isPolling);
-  const telemetryDisabled = isDeleted ? 'disabled title="Telemetry unavailable - profile deleted"' : '';
+  const telemetryDisabled = isDeleted ? `disabled title="${tr('common.telemetry_deleted')}"` : '';
   // Determine base provider key for settings (codex:123 → codex)
   // Gear icon only on top-level providers, not sub-profile rows (codex:xxx)
   const isSubProfile = key.includes(':');
   const baseKey = isSubProfile ? key.split(':')[0] : key;
   const hasSettings = !isSubProfile && providerSettingsConfig[baseKey] != null;
   const gearHTML = hasSettings ? `
-      <button class="provider-settings-btn" data-provider-key="${baseKey}" title="Configure ${name}" aria-label="Configure ${name}">
+      <button class="provider-settings-btn" data-provider-key="${baseKey}" title="${escapeHTML(tr('common.configure', { name }))}" aria-label="${escapeHTML(tr('common.configure', { name }))}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -10445,17 +10479,17 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
     </div>
     <div class="settings-toggle-group">
       <div class="settings-toggle-item">
-        <div class="settings-toggle-item-label">Telemetry</div>
-        <div class="settings-toggle-item-hint">${isDeleted ? 'Unavailable - profile deleted' : 'Track usage data in background'}</div>
-        <label class="settings-toggle" title="${isDeleted ? 'Telemetry unavailable - profile deleted' : 'Telemetry'}">
+        <div class="settings-toggle-item-label">${tr('common.telemetry')}</div>
+        <div class="settings-toggle-item-hint">${isDeleted ? tr('common.unavailable_deleted') : tr('common.track_background')}</div>
+        <label class="settings-toggle" title="${isDeleted ? tr('common.telemetry_deleted') : tr('common.telemetry')}">
           <input type="checkbox" data-provider="${key}" data-role="polling" ${vis.polling !== false && !isDeleted ? 'checked' : ''} ${telemetryDisabled}>
           <span class="settings-toggle-track"></span>
         </label>
       </div>
       <div class="settings-toggle-item">
-        <div class="settings-toggle-item-label">Dashboard</div>
-        <div class="settings-toggle-item-hint">${isDeleted ? 'Show historical data' : 'Show as individual tab'}</div>
-        <label class="settings-toggle" title="Dashboard">
+        <div class="settings-toggle-item-label">${tr('common.dashboard')}</div>
+        <div class="settings-toggle-item-hint">${isDeleted ? tr('common.show_history') : tr('common.show_tab')}</div>
+        <label class="settings-toggle" title="${tr('common.dashboard')}">
           <input type="checkbox" data-provider="${key}" data-role="dashboard" ${vis.dashboard !== false ? 'checked' : ''}>
           <span class="settings-toggle-track"></span>
         </label>
@@ -10484,7 +10518,7 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
         const data = await res.json();
         if (!res.ok || data.success === false) {
           input.checked = !enabled;
-          const msg = data && data.message ? data.message : 'Failed to update provider.';
+          const msg = data && data.message ? data.message : tr('common.failed_provider_update');
           showSettingsFeedback(feedback, `${name}: ${msg}`, 'error');
           return;
         }
@@ -10494,7 +10528,7 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
           // Keep global codex visibility in sync when account toggles are used.
           updateProviderVisibilityState('codex', role, enabled);
         }
-        showSettingsFeedback(feedback, `${name} ${role} ${enabled ? 'enabled' : 'disabled'}.`, 'success');
+        showSettingsFeedback(feedback, `${name} ${role === 'polling' ? tr('common.telemetry') : tr('common.dashboard')} ${enabled ? tr('common.enabled') : tr('common.disabled')}.`, 'success');
 
         // Dashboard Tabs list only shows visible tabs — refresh when visibility changes.
         if (role === 'dashboard') {
@@ -10507,7 +10541,7 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
         }
       } catch (e) {
         input.checked = !enabled;
-        showSettingsFeedback(document.getElementById('settings-feedback'), `${name}: Network error.`, 'error');
+        showSettingsFeedback(document.getElementById('settings-feedback'), `${name}: ${tr('common.network_error')}`, 'error');
       } finally {
         input.disabled = false;
       }
@@ -10533,13 +10567,13 @@ function createAPIIntegrationsToggleRow(visibility, health) {
   row.innerHTML = `
     <div class="settings-toggle-info">
       <div class="settings-toggle-label">API Integrations <span class="badge">${statusMeta.label}</span></div>
-      <div class="settings-toggle-sublabel">Local JSONL API telemetry tracking for your own automated integrations.</div>
+      <div class="settings-toggle-sublabel">${tr('settings.api_integrations_desc')}</div>
     </div>
     <div class="settings-toggle-group">
       <div class="settings-toggle-item">
-        <div class="settings-toggle-item-label">Dashboard</div>
-        <div class="settings-toggle-item-hint">Show as a dedicated dashboard tab</div>
-        <label class="settings-toggle" title="Dashboard">
+        <div class="settings-toggle-item-label">${tr('common.dashboard')}</div>
+        <div class="settings-toggle-item-hint">${tr('settings.api_integrations_tab')}</div>
+        <label class="settings-toggle" title="${tr('common.dashboard')}">
           <input type="checkbox" data-provider="api-integrations" data-role="api-integrations-dashboard" ${(visibility?.dashboard ?? true) ? 'checked' : ''}>
           <span class="settings-toggle-track"></span>
         </label>
@@ -10561,16 +10595,16 @@ function createAPIIntegrationsToggleRow(visibility, health) {
       const data = await res.json();
       if (!res.ok) {
         input.checked = !enabled;
-        showSettingsFeedback(feedback, data.error || 'Failed to update API Integrations visibility.', 'error');
+        showSettingsFeedback(feedback, data.error || tr('settings.api_integrations_update_failed'), 'error');
         return;
       }
       State.apiIntegrationsVisibility = data.api_integrations_visibility || { dashboard: enabled };
       syncDashboardTabOrderFromDOM();
       await populateDashboardTabOrder();
-      showSettingsFeedback(feedback, `API Integrations dashboard ${enabled ? 'enabled' : 'disabled'}.`, 'success');
+      showSettingsFeedback(feedback, tr('settings.api_integrations_state', { state: enabled ? tr('common.enabled') : tr('common.disabled') }), 'success');
     } catch (e) {
       input.checked = !enabled;
-      showSettingsFeedback(feedback, 'API Integrations visibility update failed.', 'error');
+      showSettingsFeedback(feedback, tr('settings.api_integrations_update_failed'), 'error');
     } finally {
       input.disabled = false;
     }
@@ -10689,21 +10723,27 @@ const providerSettingsConfig = {
   },
 };
 
+function translatedAuthStatus(status) {
+  const allowed = new Set(['active', 'healthy', 'warning', 'critical', 'disabled', 'pending', 'needs_reauth', 'unauthorized', 'error', 'valid']);
+  const normalized = allowed.has(status) ? status : 'error';
+  return tr(`status.${normalized}`);
+}
+
 async function renderOpenCodeAccountSettings(bodyEl, config) {
   bodyEl.innerHTML = `<div class="opencode-modal-accounts">
-    <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px">${config.desc}</p>
+    <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px">${tr('opencode.accounts_desc')}</p>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <h4 style="margin:0;font-size:13px;color:var(--text-secondary)">Accounts</h4>
-      <button id="opencode-add-account-btn" class="provider-settings-action">+ Add Account</button>
+      <h4 style="margin:0;font-size:13px;color:var(--text-secondary)">${tr('opencode.accounts')}</h4>
+      <button id="opencode-add-account-btn" class="provider-settings-action">+ ${tr('opencode.add_account')}</button>
     </div>
-    <div id="opencode-accounts-list">Loading...</div>
+    <div id="opencode-accounts-list">${tr('status.loading')}</div>
     <div id="opencode-add-form" hidden style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-inset)">
       <div class="settings-fields">
-        <div class="settings-field"><label>Display Name</label><input id="opencode-new-name" class="settings-input" maxlength="80" placeholder="Work" /></div>
-        <div class="settings-field"><label>Workspace ID</label><input id="opencode-new-workspace" class="settings-input" maxlength="256" placeholder="wrk_..." /></div>
-        <div class="settings-field"><label>Auth Cookie</label><input id="opencode-new-cookie" type="password" class="settings-input" autocomplete="new-password" placeholder="Cookie value" /></div>
+        <div class="settings-field"><label>${tr('opencode.display_name')}</label><input id="opencode-new-name" class="settings-input" maxlength="80" placeholder="Work" /></div>
+        <div class="settings-field"><label>${tr('opencode.workspace_id')}</label><input id="opencode-new-workspace" class="settings-input" maxlength="256" placeholder="wrk_..." /></div>
+        <div class="settings-field"><label>${tr('opencode.auth_cookie')}</label><input id="opencode-new-cookie" type="password" class="settings-input" autocomplete="new-password" placeholder="Cookie" /></div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:8px"><button id="opencode-save-new" class="provider-settings-action">Save</button><button id="opencode-cancel-new" class="provider-settings-action">Cancel</button></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><button id="opencode-save-new" class="provider-settings-action">${tr('settings.save')}</button><button id="opencode-cancel-new" class="provider-settings-action">${tr('settings.cancel')}</button></div>
     </div>
   </div>`;
   const addButton = document.getElementById('opencode-add-account-btn');
@@ -10714,10 +10754,10 @@ async function renderOpenCodeAccountSettings(bodyEl, config) {
     const name = document.getElementById('opencode-new-name')?.value.trim();
     const workspace_id = document.getElementById('opencode-new-workspace')?.value.trim();
     const auth_cookie = document.getElementById('opencode-new-cookie')?.value.trim();
-    if (!name || !workspace_id || !auth_cookie) { alert('Name, workspace ID, and auth cookie are required.'); return; }
+    if (!name || !workspace_id || !auth_cookie) { alert(tr('opencode.required')); return; }
     const res = await authFetch(`${API_BASE}/api/opencode/accounts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, workspace_id, auth_cookie, enabled: true }) });
     if (res.ok) { await loadOpenCodeAccounts(); await openProviderSettingsModal('opencode'); }
-    else { const data = await res.json().catch(() => ({})); alert(data.error || 'Failed to add account'); }
+    else { const data = await res.json().catch(() => ({})); alert(data.error || tr('opencode.failed_add')); }
   });
 
   const list = document.getElementById('opencode-accounts-list');
@@ -10725,15 +10765,15 @@ async function renderOpenCodeAccountSettings(bodyEl, config) {
     const res = await authFetch(`${API_BASE}/api/opencode/accounts`);
     const data = res.ok ? await res.json() : { accounts: [] };
     const accounts = Array.isArray(data.accounts) ? data.accounts : [];
-    if (!accounts.length) { list.innerHTML = '<p class="empty-state">No OpenCode accounts configured.</p>'; return; }
+    if (!accounts.length) { list.innerHTML = `<p class="empty-state">${tr('opencode.no_accounts')}</p>`; return; }
     list.innerHTML = accounts.map(account => `<div class="opencode-account-item" data-account-id="${account.account_id}" style="padding:10px 0;border-bottom:1px solid var(--border-light)">
       <div class="opencode-account-view" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <div><div style="font-weight:500">${escapeHtml(account.name)}</div><div style="font-size:12px;color:var(--text-secondary)">${escapeHtml(account.workspace_id)} - ${escapeHtml(account.auth_status)} - ${account.has_auth_cookie ? 'Cookie configured' : 'Cookie missing'}</div></div>
-        <div style="display:flex;gap:6px"><button data-action="edit" class="provider-settings-action">Edit</button><button data-action="toggle" class="provider-settings-action">${account.enabled ? 'Disable' : 'Enable'}</button><button data-action="delete" class="provider-settings-action">Delete</button></div>
+        <div><div style="font-weight:500">${escapeHtml(account.name)}</div><div style="font-size:12px;color:var(--text-secondary)">${escapeHtml(account.workspace_id)} - ${translatedAuthStatus(account.auth_status)} - ${account.has_auth_cookie ? tr('opencode.cookie_configured') : tr('opencode.cookie_missing')}</div></div>
+        <div style="display:flex;gap:6px"><button data-action="edit" class="provider-settings-action">${tr('common.edit')}</button><button data-action="toggle" class="provider-settings-action">${account.enabled ? tr('opencode.disable') : tr('settings.enable')}</button><button data-action="delete" class="provider-settings-action">${tr('common.delete')}</button></div>
       </div>
       <div class="opencode-account-edit" hidden>
-        <div class="settings-fields"><input data-field="name" class="settings-input" value="${escapeHtml(account.name)}" maxlength="80"><input data-field="workspace" class="settings-input" value="${escapeHtml(account.workspace_id)}" maxlength="256"><input data-field="cookie" type="password" class="settings-input" autocomplete="new-password" placeholder="Leave blank to keep current Cookie"></div>
-        <div style="display:flex;gap:6px;margin-top:8px"><button data-action="save" class="provider-settings-action">Save</button><button data-action="cancel" class="provider-settings-action">Cancel</button></div>
+        <div class="settings-fields"><input data-field="name" class="settings-input" value="${escapeHtml(account.name)}" maxlength="80"><input data-field="workspace" class="settings-input" value="${escapeHtml(account.workspace_id)}" maxlength="256"><input data-field="cookie" type="password" class="settings-input" autocomplete="new-password" placeholder="${tr('opencode.cookie_hint')}"></div>
+        <div style="display:flex;gap:6px;margin-top:8px"><button data-action="save" class="provider-settings-action">${tr('settings.save')}</button><button data-action="cancel" class="provider-settings-action">${tr('settings.cancel')}</button></div>
       </div>
     </div>`).join('');
     list.querySelectorAll('.opencode-account-item').forEach((item, index) => {
@@ -10746,7 +10786,7 @@ async function renderOpenCodeAccountSettings(bodyEl, config) {
         if (action === 'edit') { view.hidden = true; edit.hidden = false; return; }
         if (action === 'cancel') { edit.hidden = true; view.hidden = false; return; }
         if (action === 'delete') {
-          if (!confirm(`Delete ${account.name}? Historical quota data will be preserved, but the Cookie will be erased.`)) return;
+          if (!confirm(tr('opencode.delete_confirm_name', { name: account.name }))) return;
           const response = await authFetch(`${API_BASE}/api/opencode/accounts?id=${account.account_id}`, { method: 'DELETE' });
           if (response.ok) { await loadOpenCodeAccounts(); await openProviderSettingsModal('opencode'); }
           return;
@@ -10759,10 +10799,10 @@ async function renderOpenCodeAccountSettings(bodyEl, config) {
         }
         const response = await authFetch(`${API_BASE}/api/opencode/accounts?id=${account.account_id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (response.ok) { await loadOpenCodeAccounts(); await openProviderSettingsModal('opencode'); }
-        else { const error = await response.json().catch(() => ({})); alert(error.error || 'Failed to update account'); }
+        else { const error = await response.json().catch(() => ({})); alert(error.error || tr('opencode.failed_update')); }
       });
     });
-  } catch (_) { list.innerHTML = '<p class="empty-state">Failed to load OpenCode accounts.</p>'; }
+  } catch (_) { list.innerHTML = `<p class="empty-state">${tr('opencode.failed_load')}</p>`; }
 }
 
 async function openProviderSettingsModal(providerKey) {
@@ -10775,7 +10815,7 @@ async function openProviderSettingsModal(providerKey) {
   const feedbackEl = document.getElementById('provider-settings-feedback');
   if (!modal || !bodyEl) return;
 
-  titleEl.textContent = config.title + ' Settings';
+  titleEl.textContent = `${config.title} ${tr('settings.title')}`;
   if (feedbackEl) { feedbackEl.hidden = true; feedbackEl.textContent = ''; }
 
   const saved = (State.providerSettings && State.providerSettings[providerKey]) || {};
@@ -10821,8 +10861,8 @@ async function openProviderSettingsModal(providerKey) {
 
   // For Codex, include profile management section
   if (providerKey === 'codex') {
-    let profilesHTML = '<div class="codex-modal-profiles"><h4 style="margin:0 0 12px;font-size:13px;color:var(--text-secondary)">Saved Profiles</h4>';
-    profilesHTML += '<div id="codex-profiles-list">Loading...</div>';
+    let profilesHTML = `<div class="codex-modal-profiles"><h4 style="margin:0 0 12px;font-size:13px;color:var(--text-secondary)">${tr('codex.saved_profiles')}</h4>`;
+    profilesHTML += `<div id="codex-profiles-list">${tr('status.loading')}</div>`;
     profilesHTML += '</div>';
 
     // Build the full body with profiles section first, then settings fields
@@ -10836,7 +10876,7 @@ async function openProviderSettingsModal(providerKey) {
         const data = await res.json();
         const profiles = Array.isArray(data.profiles) ? data.profiles : [];
         if (profiles.length === 0) {
-          profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin:0">No profiles saved. Save your first profile using the CLI: <code>onwatch codex profile save &lt;name&gt;</code></p>';
+          profilesList.innerHTML = `<p style="color:var(--text-secondary);font-size:13px;margin:0">${tr('codex.no_profiles')} <code>onwatch codex profile save &lt;name&gt;</code></p>`;
         } else {
           let html = '';
           profiles.forEach(profile => {
@@ -10844,13 +10884,13 @@ async function openProviderSettingsModal(providerKey) {
             html += `<div class="codex-profile-item" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-light)">`;
             html += `<div>`;
             html += `<div style="font-weight:500">${escapeHtml(profile.name)}</div>`;
-            html += `<div style="font-size:12px;color:var(--text-secondary)">${isDeleted ? 'Deleted' : 'Active'}</div>`;
+            html += `<div style="font-size:12px;color:var(--text-secondary)">${isDeleted ? tr('common.deleted') : tr('status.active')}</div>`;
             html += `</div>`;
             html += `<div style="display:flex;gap:8px">`;
             if (!isDeleted) {
-              html += `<button class="codex-profile-action-btn" data-action="refresh" data-name="${escapeHtml(profile.name)}" title="Refresh from current auth.json" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Refresh</button>`;
+              html += `<button class="codex-profile-action-btn" data-action="refresh" data-name="${escapeHtml(profile.name)}" title="${tr('codex.refresh_title')}" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">${tr('common.refresh')}</button>`;
             }
-            html += `<button class="codex-profile-action-btn" data-action="delete" data-name="${escapeHtml(profile.name)}" title="Delete profile" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:${isDeleted ? 'var(--text-disabled)' : 'var(--md-error,#b3261e)'}">Delete</button>`;
+            html += `<button class="codex-profile-action-btn" data-action="delete" data-name="${escapeHtml(profile.name)}" title="${tr('codex.delete_title')}" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:${isDeleted ? 'var(--text-disabled)' : 'var(--md-error,#b3261e)'}">${tr('common.delete')}</button>`;
             html += `</div></div>`;
           });
           profilesList.innerHTML = html;
@@ -10874,44 +10914,44 @@ async function openProviderSettingsModal(providerKey) {
                   await openProviderSettingsModal('codex');
                 } else {
                   const errData = await res.json().catch(() => ({}));
-                  alert(`${action === 'refresh' ? 'Refresh' : 'Delete'} failed: ${errData.error || res.statusText}`);
+                  alert(tr('common.failed_action', { action: action === 'refresh' ? tr('common.refresh') : tr('common.delete'), error: errData.error || res.statusText }));
                   btn.disabled = false;
-                  btn.textContent = action === 'refresh' ? 'Refresh' : 'Delete';
+                  btn.textContent = action === 'refresh' ? tr('common.refresh') : tr('common.delete');
                 }
               } catch (err) {
-                alert(`${action === 'refresh' ? 'Refresh' : 'Delete'} failed: ${err.message}`);
+                alert(tr('common.failed_action', { action: action === 'refresh' ? tr('common.refresh') : tr('common.delete'), error: err.message }));
                 btn.disabled = false;
-                btn.textContent = action === 'refresh' ? 'Refresh' : 'Delete';
+                btn.textContent = action === 'refresh' ? tr('common.refresh') : tr('common.delete');
               }
             });
           });
         }
       } else {
-        profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load profiles</p>';
+        profilesList.innerHTML = `<p style="color:var(--text-secondary);font-size:13px">${tr('codex.failed_load')}</p>`;
       }
     } catch (e) {
-      profilesList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load profiles</p>';
+      profilesList.innerHTML = `<p style="color:var(--text-secondary);font-size:13px">${tr('codex.failed_load')}</p>`;
     }
   } else if (providerKey === 'opencode') {
     await renderOpenCodeAccountSettings(bodyEl, config);
   } else if (providerKey === 'minimax') {
     // MiniMax: account management UI (fully UI-driven, unlike Codex file-based profiles)
     let accountsHTML = '<div class="minimax-modal-accounts">';
-    accountsHTML += '<p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px">' + config.desc + '</p>';
+    accountsHTML += `<p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px">${tr('minimax.accounts_desc')}</p>`;
     accountsHTML += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
-    accountsHTML += '<h4 style="margin:0;font-size:13px;color:var(--text-secondary)">Accounts</h4>';
-    accountsHTML += '<button id="minimax-add-account-btn" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">+ Add Account</button>';
+    accountsHTML += `<h4 style="margin:0;font-size:13px;color:var(--text-secondary)">${tr('minimax.accounts')}</h4>`;
+    accountsHTML += `<button id="minimax-add-account-btn" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">+ ${tr('minimax.add_account')}</button>`;
     accountsHTML += '</div>';
-    accountsHTML += '<div id="minimax-accounts-list">Loading...</div>';
+    accountsHTML += `<div id="minimax-accounts-list">${tr('status.loading')}</div>`;
     accountsHTML += '<div id="minimax-add-form" hidden style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-inset)">';
     accountsHTML += '<div class="settings-fields">';
-    accountsHTML += '<div class="settings-field"><label for="minimax-new-name">Account Name</label><input type="text" id="minimax-new-name" class="settings-input" placeholder="e.g. work, personal" /></div>';
-    accountsHTML += '<div class="settings-field"><label for="minimax-new-key">API Key</label><input type="password" id="minimax-new-key" class="settings-input" placeholder="MiniMax API key" autocomplete="off" /></div>';
-    accountsHTML += '<div class="settings-field"><label for="minimax-new-region">Region</label><select id="minimax-new-region" class="settings-input"><option value="global">Global</option><option value="cn">China</option></select></div>';
+    accountsHTML += `<div class="settings-field"><label for="minimax-new-name">${tr('minimax.account_name')}</label><input type="text" id="minimax-new-name" class="settings-input" placeholder="${tr('minimax.name_placeholder')}" /></div>`;
+    accountsHTML += `<div class="settings-field"><label for="minimax-new-key">${tr('minimax.api_key')}</label><input type="password" id="minimax-new-key" class="settings-input" placeholder="${tr('minimax.key_placeholder')}" autocomplete="off" /></div>`;
+    accountsHTML += `<div class="settings-field"><label for="minimax-new-region">${tr('minimax.region')}</label><select id="minimax-new-region" class="settings-input"><option value="global">${tr('minimax.global')}</option><option value="cn">${tr('minimax.china')}</option></select></div>`;
     accountsHTML += '</div>';
     accountsHTML += '<div style="display:flex;gap:8px;margin-top:8px">';
-    accountsHTML += '<button id="minimax-save-new-btn" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">Save</button>';
-    accountsHTML += '<button id="minimax-cancel-new-btn" style="padding:4px 12px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Cancel</button>';
+    accountsHTML += `<button id="minimax-save-new-btn" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">${tr('common.save')}</button>`;
+    accountsHTML += `<button id="minimax-cancel-new-btn" style="padding:4px 12px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">${tr('common.cancel')}</button>`;
     accountsHTML += '</div></div>';
     accountsHTML += '</div>';
 
@@ -10927,7 +10967,7 @@ async function openProviderSettingsModal(providerKey) {
         const name = document.getElementById('minimax-new-name')?.value?.trim();
         const apiKey = document.getElementById('minimax-new-key')?.value?.trim();
         const region = document.getElementById('minimax-new-region')?.value || 'global';
-        if (!name) { alert('Account name is required'); return; }
+        if (!name) { alert(tr('minimax.name_required')); return; }
         try {
           const res = await authFetch(`${API_BASE}/api/minimax/accounts`, {
             method: 'POST',
@@ -10938,9 +10978,9 @@ async function openProviderSettingsModal(providerKey) {
             await openProviderSettingsModal('minimax');
           } else {
             const err = await res.json().catch(() => ({}));
-            alert('Failed to create account: ' + (err.error || res.statusText));
+            alert(tr('minimax.failed_create', { error: err.error || res.statusText }));
           }
-        } catch (e) { alert('Failed to create account: ' + e.message); }
+        } catch (e) { alert(tr('minimax.failed_create', { error: e.message })); }
       });
     }
 
@@ -10952,23 +10992,23 @@ async function openProviderSettingsModal(providerKey) {
         const data = await res.json();
         const accounts = Array.isArray(data.accounts) ? data.accounts : [];
         if (accounts.length === 0) {
-          accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin:0">No accounts configured. Add your first MiniMax account above.</p>';
+          accountsList.innerHTML = `<p style="color:var(--text-secondary);font-size:13px;margin:0">${tr('minimax.no_accounts')}</p>`;
         } else {
           let html = '';
           accounts.forEach(account => {
             const isDeleted = !!account.deletedAt;
-            const regionLabel = account.region === 'cn' ? 'China' : 'Global';
+            const regionLabel = account.region === 'cn' ? tr('minimax.china') : tr('minimax.global');
             html += `<div class="minimax-account-item" style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-light)">`;
             html += `<div style="flex:1">`;
             html += `<div style="font-weight:500">${escapeHtml(account.name)}</div>`;
-            html += `<div style="font-size:12px;color:var(--text-secondary)">${isDeleted ? 'Deleted' : regionLabel + ' - ' + (account.hasKey ? 'Key configured' : 'No key set')}</div>`;
+            html += `<div style="font-size:12px;color:var(--text-secondary)">${isDeleted ? tr('common.deleted') : regionLabel + ' - ' + (account.hasKey ? tr('minimax.key_configured') : tr('minimax.no_key'))}</div>`;
             html += `</div>`;
             html += `<div style="display:flex;gap:8px;align-items:center">`;
             if (!isDeleted) {
-              html += `<button class="minimax-acct-btn" data-action="edit" data-id="${account.id}" data-name="${escapeHtml(account.name)}" data-region="${account.region || 'global'}" data-has-key="${account.hasKey}" title="Edit account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Edit</button>`;
-              html += `<button class="minimax-acct-btn" data-action="delete" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="Delete account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--md-error,#b3261e)">Delete</button>`;
+              html += `<button class="minimax-acct-btn" data-action="edit" data-id="${account.id}" data-name="${escapeHtml(account.name)}" data-region="${account.region || 'global'}" data-has-key="${account.hasKey}" title="${tr('minimax.edit_title')}" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">${tr('common.edit')}</button>`;
+              html += `<button class="minimax-acct-btn" data-action="delete" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="${tr('minimax.delete_title')}" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--md-error,#b3261e)">${tr('common.delete')}</button>`;
             } else {
-              html += `<button class="minimax-acct-btn" data-action="restore" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="Restore account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--accent-teal,#0d9488)">Restore</button>`;
+              html += `<button class="minimax-acct-btn" data-action="restore" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="${tr('minimax.restore_title')}" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--accent-teal,#0d9488)">${tr('common.restore')}</button>`;
             }
             html += `</div></div>`;
           });
@@ -10980,13 +11020,13 @@ async function openProviderSettingsModal(providerKey) {
               const action = btn.dataset.action;
               const id = btn.dataset.id;
               if (action === 'delete') {
-                if (!confirm(`Delete account "${btn.dataset.name}"? Historical data will be preserved.`)) return;
+                if (!confirm(tr('minimax.delete_confirm', { name: btn.dataset.name }))) return;
                 btn.disabled = true; btn.textContent = '...';
                 try {
                   const res = await authFetch(`${API_BASE}/api/minimax/accounts?id=${id}`, { method: 'DELETE' });
                   if (res.ok) { await openProviderSettingsModal('minimax'); }
-                  else { const e = await res.json().catch(() => ({})); alert('Delete failed: ' + (e.error || res.statusText)); btn.disabled = false; btn.textContent = 'Delete'; }
-                } catch (e) { alert('Delete failed: ' + e.message); btn.disabled = false; btn.textContent = 'Delete'; }
+                  else { const e = await res.json().catch(() => ({})); alert(tr('minimax.failed_delete', { error: e.error || res.statusText })); btn.disabled = false; btn.textContent = tr('common.delete'); }
+                } catch (e) { alert(tr('minimax.failed_delete', { error: e.message })); btn.disabled = false; btn.textContent = tr('common.delete'); }
               } else if (action === 'restore') {
                 btn.disabled = true; btn.textContent = '...';
                 try {
@@ -10996,8 +11036,8 @@ async function openProviderSettingsModal(providerKey) {
                     body: JSON.stringify({ restore: true }),
                   });
                   if (res.ok) { await openProviderSettingsModal('minimax'); }
-                  else { const e = await res.json().catch(() => ({})); alert('Restore failed: ' + (e.error || res.statusText)); btn.disabled = false; btn.textContent = 'Restore'; }
-                } catch (e) { alert('Restore failed: ' + e.message); btn.disabled = false; btn.textContent = 'Restore'; }
+                  else { const e = await res.json().catch(() => ({})); alert(tr('common.failed_action', { action: tr('common.restore'), error: e.error || res.statusText })); btn.disabled = false; btn.textContent = tr('common.restore'); }
+                } catch (e) { alert(tr('common.failed_action', { action: tr('common.restore'), error: e.message })); btn.disabled = false; btn.textContent = tr('common.restore'); }
               } else if (action === 'edit') {
                 // Show inline edit form
                 const item = btn.closest('.minimax-account-item');
@@ -11007,13 +11047,13 @@ async function openProviderSettingsModal(providerKey) {
                 const hasKey = btn.dataset.hasKey === 'true';
                 item.innerHTML = `<div style="width:100%">
                   <div class="settings-fields" style="gap:8px">
-                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">Name</label><input type="text" class="settings-input minimax-edit-name" value="${escapeHtml(currentName)}" /></div>
-                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">API Key</label><input type="password" class="settings-input minimax-edit-key" placeholder="${hasKey ? 'Key configured - leave blank to keep' : 'Enter API key'}" autocomplete="off" /></div>
-                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">Region</label><select class="settings-input minimax-edit-region"><option value="global"${currentRegion !== 'cn' ? ' selected' : ''}>Global</option><option value="cn"${currentRegion === 'cn' ? ' selected' : ''}>China</option></select></div>
+                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">${tr('minimax.account_name')}</label><input type="text" class="settings-input minimax-edit-name" value="${escapeHtml(currentName)}" /></div>
+                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">${tr('minimax.api_key')}</label><input type="password" class="settings-input minimax-edit-key" placeholder="${hasKey ? tr('minimax.key_hint') : tr('minimax.key_placeholder')}" autocomplete="off" /></div>
+                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">${tr('minimax.region')}</label><select class="settings-input minimax-edit-region"><option value="global"${currentRegion !== 'cn' ? ' selected' : ''}>${tr('minimax.global')}</option><option value="cn"${currentRegion === 'cn' ? ' selected' : ''}>${tr('minimax.china')}</option></select></div>
                   </div>
                   <div style="display:flex;gap:8px;margin-top:8px">
-                    <button class="minimax-edit-save" data-id="${id}" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">Save</button>
-                    <button class="minimax-edit-cancel" style="padding:4px 12px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Cancel</button>
+                    <button class="minimax-edit-save" data-id="${id}" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">${tr('common.save')}</button>
+                    <button class="minimax-edit-cancel" style="padding:4px 12px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">${tr('common.cancel')}</button>
                   </div>
                 </div>`;
                 item.querySelector('.minimax-edit-cancel')?.addEventListener('click', () => openProviderSettingsModal('minimax'));
@@ -11035,18 +11075,18 @@ async function openProviderSettingsModal(providerKey) {
                       body: JSON.stringify(body),
                     });
                     if (res.ok) { await openProviderSettingsModal('minimax'); }
-                    else { const err = await res.json().catch(() => ({})); alert('Update failed: ' + (err.error || res.statusText)); saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
-                  } catch (e) { alert('Update failed: ' + e.message); saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+                    else { const err = await res.json().catch(() => ({})); alert(tr('minimax.failed_update', { error: err.error || res.statusText })); saveBtn.disabled = false; saveBtn.textContent = tr('common.save'); }
+                  } catch (e) { alert(tr('minimax.failed_update', { error: e.message })); saveBtn.disabled = false; saveBtn.textContent = tr('common.save'); }
                 });
               }
             });
           });
         }
       } else {
-        accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load accounts</p>';
+        accountsList.innerHTML = `<p style="color:var(--text-secondary);font-size:13px">${tr('minimax.failed_load')}</p>`;
       }
     } catch (e) {
-      accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load accounts</p>';
+      accountsList.innerHTML = `<p style="color:var(--text-secondary);font-size:13px">${tr('minimax.failed_load')}</p>`;
     }
   } else {
     bodyEl.innerHTML = buildFieldsHTML();
@@ -11077,7 +11117,7 @@ async function saveProviderSettings() {
 
   const feedbackEl = document.getElementById('provider-settings-feedback');
   const saveBtn = document.getElementById('provider-settings-save');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = tr('settings.saving'); }
 
   // Gather values from the modal form
   const provData = {};
@@ -11128,18 +11168,18 @@ async function saveProviderSettings() {
       State.providerSettings[providerKey] = provData;
     }
     const savedMsg = !anyChange
-      ? 'Settings saved.'
+      ? tr('settings.saved')
       : (restartNeeded
-        ? 'Settings saved. Restart daemon to apply changes.'
-        : 'Settings saved. Changes apply automatically - no restart needed.');
+        ? tr('settings.saved_restart')
+        : tr('settings.saved_live'));
     // Reflect live-applied changes (e.g. Codex auto-start badges) immediately.
     if (providerKey === 'codex') syncCodexAutoStartBadges();
     showSettingsFeedback(feedbackEl, savedMsg, 'success');
     setTimeout(closeProviderSettingsModal, 1200);
   } catch (e) {
-    showSettingsFeedback(feedbackEl, e.message || 'Failed to save settings.', 'error');
+    showSettingsFeedback(feedbackEl, e.message || tr('settings.save_failed'), 'error');
   } finally {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save'; }
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ${tr('settings.save')}`; }
   }
 }
 
@@ -11353,7 +11393,7 @@ function setupSettingsSave() {
 
   saveBtn.addEventListener('click', async () => {
     saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving...';
+    saveBtn.textContent = tr('settings.saving');
     if (feedback) { feedback.hidden = true; }
 
     const settings = gatherSettings();
@@ -11361,17 +11401,17 @@ function setupSettingsSave() {
     // Client-side validation
     if (settings.notifications) {
       if (settings.notifications.warning_threshold >= settings.notifications.critical_threshold) {
-        showSettingsFeedback(feedback, 'Warning threshold must be less than critical threshold.', 'error');
+        showSettingsFeedback(feedback, tr('settings.threshold_order'), 'error');
         saveBtn.disabled = false;
-        saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
+        saveBtn.innerHTML = settingsSaveButtonHTML();
         return;
       }
     }
     if (settings.menubar) {
       if (settings.menubar.warning_percent >= settings.menubar.critical_percent) {
-        showSettingsFeedback(feedback, 'Menubar warning threshold must be less than critical threshold.', 'error');
+        showSettingsFeedback(feedback, tr('settings.menubar_threshold_order'), 'error');
         saveBtn.disabled = false;
-        saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
+        saveBtn.innerHTML = settingsSaveButtonHTML();
         return;
       }
     }
@@ -11384,7 +11424,7 @@ function setupSettingsSave() {
       });
       const data = await resp.json();
       if (!resp.ok) {
-        showSettingsFeedback(feedback, data.error || 'Failed to save settings.', 'error');
+        showSettingsFeedback(feedback, data.error || tr('settings.save_failed'), 'error');
       } else {
         if (Object.prototype.hasOwnProperty.call(data, 'timezone')) {
           activeTimezone = normalizeTz(data.timezone || '');
@@ -11404,15 +11444,19 @@ function setupSettingsSave() {
         if (data.dashboard_provider_labels && typeof data.dashboard_provider_labels === 'object') {
           State.dashboardProviderLabels = { ...data.dashboard_provider_labels };
         }
-        showSettingsFeedback(feedback, 'Settings saved successfully. Reload the dashboard to apply tab order and names.', 'success');
+        showSettingsFeedback(feedback, tr('settings.saved_reload'), 'success');
       }
     } catch (e) {
-      showSettingsFeedback(feedback, 'Network error. Please try again.', 'error');
+      showSettingsFeedback(feedback, tr('common.network_error'), 'error');
     } finally {
       saveBtn.disabled = false;
-      saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
+      saveBtn.innerHTML = settingsSaveButtonHTML();
     }
   });
+}
+
+function settingsSaveButtonHTML() {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ${tr('settings.save_settings')}`;
 }
 
 function showSettingsFeedback(el, msg, type) {
@@ -11430,14 +11474,14 @@ function setupSMTPTest() {
 
   testBtn.addEventListener('click', async () => {
     testBtn.disabled = true;
-    testBtn.textContent = 'Sending...';
+    testBtn.textContent = tr('settings.sending');
     if (result) { result.textContent = ''; result.className = 'settings-test-result'; }
 
     try {
       const resp = await authFetch('/api/settings/smtp/test', { method: 'POST' });
       const data = await resp.json();
       if (result) {
-        result.textContent = data.message || (data.success ? 'Test email sent.' : 'Test failed.');
+        result.textContent = data.message || (data.success ? tr('settings.test_email_sent') : tr('settings.test_failed'));
         result.className = 'settings-test-result ' + (data.success ? 'success' : 'error');
       }
       // Show diagnostics if available
@@ -11448,12 +11492,12 @@ function setupSMTPTest() {
       }
     } catch (e) {
       if (result) {
-        result.textContent = 'Network error.';
+        result.textContent = tr('common.network_error');
         result.className = 'settings-test-result error';
       }
     } finally {
       testBtn.disabled = false;
-      testBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Send Test Email';
+      testBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> ${tr('settings.send_test_email')}`;
     }
   });
 }
@@ -11476,20 +11520,20 @@ function setupPushNotifications() {
   // still requires actual HTTPS for push notifications to work reliably
   var isHttps = location.protocol === 'https:';
   if (!isHttps) {
-    statusLabel.textContent = 'Push notifications require HTTPS';
+    statusLabel.textContent = tr('settings.push_requires_https');
     if (channelToggle) { channelToggle.disabled = true; }
     if (subscribeBtn) { subscribeBtn.disabled = true; subscribeBtn.hidden = true; }
     // Add warning message below status
     var warning = document.createElement('div');
     warning.className = 'push-http-warning';
-    warning.textContent = 'Requires HTTPS connection. Push notifications are unavailable over HTTP.';
+    warning.textContent = tr('settings.push_https_unavailable');
     warning.style.cssText = 'color: #dc2626; font-size: 11px; margin-top: 4px;';
     statusLabel.parentNode.appendChild(warning);
     return;
   }
 
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    statusLabel.textContent = 'Push notifications not supported in this browser';
+    statusLabel.textContent = tr('settings.push_unsupported');
     if (channelToggle) { channelToggle.disabled = true; }
     return;
   }
@@ -11499,25 +11543,25 @@ function setupPushNotifications() {
     return reg.pushManager.getSubscription();
   }).then(function(sub) {
     if (sub) {
-      statusLabel.textContent = 'Subscribed - push notifications active';
+      statusLabel.textContent = tr('settings.push_subscribed');
       if (subscribeBtn) { subscribeBtn.hidden = true; }
       if (testActions) { testActions.hidden = false; }
     } else {
-      statusLabel.textContent = 'Not subscribed - click Enable to subscribe';
+      statusLabel.textContent = tr('settings.push_not_subscribed');
       if (subscribeBtn) { subscribeBtn.hidden = false; }
     }
   }).catch(function() {
-    statusLabel.textContent = 'Service worker registration failed';
+    statusLabel.textContent = tr('settings.push_registration_failed');
   });
 
   // Subscribe button
   if (subscribeBtn) {
     subscribeBtn.addEventListener('click', async function() {
       subscribeBtn.disabled = true;
-      subscribeBtn.textContent = 'Enabling...';
+      subscribeBtn.textContent = tr('settings.enabling');
       try {
         var vapidResp = await authFetch('/api/push/vapid');
-        if (!vapidResp.ok) throw new Error('Failed to get VAPID key');
+        if (!vapidResp.ok) throw new Error(tr('settings.failed_vapid'));
         var vapidData = await vapidResp.json();
         var applicationServerKey = urlBase64ToUint8Array(vapidData.public_key);
 
@@ -11536,17 +11580,17 @@ function setupPushNotifications() {
             keys: { p256dh: subJSON.keys.p256dh, auth: subJSON.keys.auth }
           })
         });
-        if (!saveResp.ok) throw new Error('Failed to save subscription');
+        if (!saveResp.ok) throw new Error(tr('settings.failed_subscription'));
 
-        statusLabel.textContent = 'Subscribed - push notifications active';
+        statusLabel.textContent = tr('settings.push_subscribed');
         subscribeBtn.hidden = true;
         if (testActions) testActions.hidden = false;
         if (channelToggle) channelToggle.checked = true;
       } catch (e) {
-        statusLabel.textContent = 'Failed: ' + (e.message || 'unknown error');
+        statusLabel.textContent = tr('settings.failed_detail', { error: e.message || tr('settings.unknown_error') });
       } finally {
         subscribeBtn.disabled = false;
-        subscribeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg> Enable';
+        subscribeBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg> ${tr('settings.enable')}`;
       }
     });
   }
@@ -11567,11 +11611,11 @@ function setupPushNotifications() {
               body: JSON.stringify({ endpoint: endpoint })
             });
           }
-          statusLabel.textContent = 'Not subscribed - click Enable to subscribe';
+          statusLabel.textContent = tr('settings.push_not_subscribed');
           if (subscribeBtn) subscribeBtn.hidden = false;
           if (testActions) testActions.hidden = true;
         } catch (e) {
-          statusLabel.textContent = 'Failed to unsubscribe';
+          statusLabel.textContent = tr('settings.unsubscribe_failed');
           channelToggle.checked = true;
         }
       }
@@ -11582,24 +11626,24 @@ function setupPushNotifications() {
   if (testBtn) {
     testBtn.addEventListener('click', async function() {
       testBtn.disabled = true;
-      testBtn.textContent = 'Sending...';
+      testBtn.textContent = tr('settings.sending');
       if (testResult) { testResult.textContent = ''; testResult.className = 'settings-test-result'; }
 
       try {
         var resp = await authFetch('/api/push/test', { method: 'POST' });
         var data = await resp.json();
         if (testResult) {
-          testResult.textContent = data.message || (data.success ? 'Test push sent.' : 'Test failed.');
+          testResult.textContent = data.message || (data.success ? tr('settings.test_push_sent') : tr('settings.test_failed'));
           testResult.className = 'settings-test-result ' + (data.success ? 'success' : 'error');
         }
       } catch (e) {
         if (testResult) {
-          testResult.textContent = 'Network error.';
+          testResult.textContent = tr('common.network_error');
           testResult.className = 'settings-test-result error';
         }
       } finally {
         testBtn.disabled = false;
-        testBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg> Send Test Push';
+        testBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg> ${tr('settings.send_test_push')}`;
       }
     });
   }
@@ -11688,20 +11732,20 @@ function setupSettingsPassword() {
     const confirmPass = document.getElementById('settings-confirm-password')?.value;
 
     if (!currentPass || !newPass) {
-      showSettingsFeedback(feedback, 'Please fill in all password fields.', 'error');
+      showSettingsFeedback(feedback, tr('settings.password_fields_required'), 'error');
       return;
     }
     if (newPass !== confirmPass) {
-      showSettingsFeedback(feedback, 'New passwords do not match.', 'error');
+      showSettingsFeedback(feedback, tr('settings.passwords_mismatch'), 'error');
       return;
     }
     if (newPass.length < 6) {
-      showSettingsFeedback(feedback, 'New password must be at least 6 characters.', 'error');
+      showSettingsFeedback(feedback, tr('settings.password_min_length'), 'error');
       return;
     }
 
     saveBtn.disabled = true;
-    saveBtn.textContent = 'Updating...';
+    saveBtn.textContent = tr('settings.updating');
 
     try {
       const resp = await authFetch('/api/password', {
@@ -11711,16 +11755,16 @@ function setupSettingsPassword() {
       });
       const data = await resp.json();
       if (!resp.ok) {
-        showSettingsFeedback(feedback, data.error || 'Failed to update password.', 'error');
+        showSettingsFeedback(feedback, data.error || tr('settings.password_update_failed'), 'error');
       } else {
-        showSettingsFeedback(feedback, 'Password updated! Redirecting to login...', 'success');
+        showSettingsFeedback(feedback, tr('settings.password_updated'), 'success');
         setTimeout(() => { window.location.href = BASE_PATH + '/login'; }, 1500);
       }
     } catch (e) {
-      showSettingsFeedback(feedback, 'Network error.', 'error');
+      showSettingsFeedback(feedback, tr('common.network_error'), 'error');
     } finally {
       saveBtn.disabled = false;
-      saveBtn.textContent = 'Update Password';
+      saveBtn.textContent = tr('settings.update_password');
     }
   });
 }
@@ -11913,11 +11957,11 @@ function formatRelativeTime(dateStr) {
   const diffHr = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHr / 24);
 
-  if (diffMin < 1) return 'Just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString();
+  if (diffMin < 1) return tr('notifications.just_now');
+  if (diffMin < 60) return tr('notifications.minutes_ago', { count: diffMin });
+  if (diffHr < 24) return tr('notifications.hours_ago', { count: diffHr });
+  if (diffDay < 7) return tr('notifications.days_ago', { count: diffDay });
+  return date.toLocaleDateString(getActiveLocale());
 }
 
 function renderNotificationItem(alert) {
@@ -11940,7 +11984,7 @@ function renderNotificationItem(alert) {
           <span class="notification-time">${formatRelativeTime(alert.createdAt)}</span>
         </div>
       </div>
-      <button class="notification-dismiss" data-dismiss-id="${alert.id}" title="Dismiss" aria-label="Dismiss notification">
+      <button class="notification-dismiss" data-dismiss-id="${alert.id}" title="${tr('notifications.dismiss')}" aria-label="${tr('notifications.dismiss_aria')}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M18 6L6 18M6 6l12 12"/>
         </svg>
@@ -11975,7 +12019,7 @@ async function updateNotificationCenter() {
 
   // Update list
   if (alerts.length === 0) {
-    list.innerHTML = '<div class="notification-empty">No notifications</div>';
+    list.innerHTML = `<div class="notification-empty">${tr('notifications.empty')}</div>`;
   } else {
     list.innerHTML = alerts.map(renderNotificationItem).join('');
 
@@ -12066,6 +12110,36 @@ function initNotificationCenter() {
 }
 
 // ── Init ──
+
+document.addEventListener('onwatch:languagechange', () => {
+  refreshStatusConfigLabels();
+  refreshOpenCodeDisplayNames();
+  refreshTimezoneSensitiveText();
+  updateBrowserDefaultTimezoneText();
+  updateProfileTabsActive();
+  updateMiniMaxAccountTabsActive();
+  populateOpenCodeAccountTabs();
+  updateNotificationCenter();
+
+  const settingsSave = document.getElementById('settings-save-btn');
+  if (settingsSave && !settingsSave.disabled) settingsSave.innerHTML = settingsSaveButtonHTML();
+
+  const providerModal = document.getElementById('provider-settings-modal');
+  if (providerModal && !providerModal.hidden && providerModal.dataset.providerKey) {
+    openProviderSettingsModal(providerModal.dataset.providerKey);
+  }
+
+  if (document.querySelector('.settings-page')) {
+    populateProviderToggles(State.providerVisibility || {});
+    populateDashboardTabOrder();
+    populateMenubarProviderOrder();
+  }
+
+  if (document.querySelector('.main-content') && !document.querySelector('.settings-page')) {
+    refreshAll();
+    updateChartTheme();
+  }
+});
 
 document.addEventListener('DOMContentLoaded', async () => {
   // Register service worker for PWA + push (all pages)

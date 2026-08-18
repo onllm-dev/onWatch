@@ -245,6 +245,7 @@ func TestServer_EmbeddedAssets(t *testing.T) {
 	}{
 		{"/static/style.css", "onWatch"},
 		{"/static/app.js", "onWatch"},
+		{"/static/i18n.js", "onwatch-language"},
 		{"/static/app.js", "const codexChartColorMap ="},
 		{"/static/app.js", "if (data.codex) merged = merged.concat"},
 		{"/static/app.js", "...renewalCategories.codex || []"},
