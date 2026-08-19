@@ -1,8 +1,6 @@
 package store
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
@@ -145,48 +143,11 @@ func decodeOpenCodeCredentialKey(encoded string) ([]byte, error) {
 }
 
 func (s *Store) encryptOpenCodeCookie(accountID int64, plaintext string) (string, error) {
-	block, err := aes.NewCipher(s.openCodeCredentialKey)
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", err
-	}
-	aad := []byte(fmt.Sprintf("opencode-account:%d", accountID))
-	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), aad)
-	return "v1:" + base64.RawStdEncoding.EncodeToString(sealed), nil
+	return s.encryptCredential(fmt.Sprintf("opencode-account:%d", accountID), plaintext)
 }
 
 func (s *Store) decryptOpenCodeCookie(accountID int64, encoded string) (string, error) {
-	if !strings.HasPrefix(encoded, "v1:") {
-		return "", errors.New("unsupported credential format")
-	}
-	raw, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(encoded, "v1:"))
-	if err != nil {
-		return "", errors.New("invalid encrypted credential")
-	}
-	block, err := aes.NewCipher(s.openCodeCredentialKey)
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	if len(raw) < gcm.NonceSize() {
-		return "", errors.New("invalid encrypted credential")
-	}
-	aad := []byte(fmt.Sprintf("opencode-account:%d", accountID))
-	plaintext, err := gcm.Open(nil, raw[:gcm.NonceSize()], raw[gcm.NonceSize():], aad)
-	if err != nil {
-		return "", errors.New("credential authentication failed")
-	}
-	return string(plaintext), nil
+	return s.decryptCredential(fmt.Sprintf("opencode-account:%d", accountID), encoded)
 }
 
 func (s *Store) backupBeforeOpenCodeMigration() error {

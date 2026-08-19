@@ -183,6 +183,35 @@ func TestAppJSLocalizesPrimaryDynamicSettingsAndDashboardText(t *testing.T) {
 	}
 }
 
+func TestProviderSettingsCoverCredentialAndDiscoveryProviders(t *testing.T) {
+	t.Parallel()
+
+	appJS := readStaticAppJS(t)
+	for _, marker := range []string{
+		"moonshot: {",
+		"deepseek: {",
+		"cursor: {",
+		"grok: {",
+		"kimi: {",
+		"desc: tr('provider_settings.moonshot_desc')",
+		"desc: tr('provider_settings.deepseek_desc')",
+		"desc: tr('provider_settings.cursor_credentials_desc')",
+		"desc: tr('provider_settings.grok_credentials_desc')",
+		"desc: tr('provider_settings.kimi_credentials_desc')",
+	} {
+		if !strings.Contains(appJS, marker) {
+			t.Errorf("provider settings UI missing %q", marker)
+		}
+	}
+
+	for _, provider := range []string{"moonshot", "deepseek"} {
+		pattern := regexp.MustCompile(provider + `:\s*\{[\s\S]*?fields:\s*\[[\s\S]*?id:\s*'api_key'[\s\S]*?type:\s*'password'[\s\S]*?sensitive:\s*true`)
+		if !pattern.MatchString(appJS) {
+			t.Errorf("%s provider settings must use a sensitive API key password field", provider)
+		}
+	}
+}
+
 func TestI18nDictionariesCoverRuntimeAndTemplateKeys(t *testing.T) {
 	t.Parallel()
 

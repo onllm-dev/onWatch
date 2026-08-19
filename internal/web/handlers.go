@@ -1408,6 +1408,77 @@ func stripProviderSecrets(providers map[string]interface{}) {
 	}
 }
 
+// encryptProviderSecrets replaces plaintext provider credentials with
+// AES-GCM ciphertext before provider_settings is written to SQLite.
+func encryptProviderSecrets(st *store.Store, providers map[string]interface{}) error {
+	for provider, provMap := range providers {
+		m, ok := provMap.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for field := range providerSecretKeys {
+			value, ok := m[field].(string)
+			if !ok || value == "" || strings.HasPrefix(value, "v1:") {
+				continue
+			}
+			ciphertext, err := st.EncryptProviderSecret(provider, field, value)
+			if err != nil {
+				return fmt.Errorf("encrypt provider setting %s.%s: %w", provider, field, err)
+			}
+			m[field] = ciphertext
+		}
+	}
+	return nil
+}
+
+// decryptProviderSecrets returns an in-memory settings copy with secrets
+// decrypted. Legacy plaintext secrets are encrypted in the persisted copy.
+func decryptProviderSecrets(st *store.Store, providers map[string]interface{}, logger *slog.Logger) (map[string]map[string]interface{}, bool) {
+	runtimeJSON, err := json.Marshal(providers)
+	if err != nil {
+		return map[string]map[string]interface{}{}, false
+	}
+	var runtimeSettings map[string]map[string]interface{}
+	if json.Unmarshal(runtimeJSON, &runtimeSettings) != nil {
+		return map[string]map[string]interface{}{}, false
+	}
+
+	migrated := false
+	for provider, runtimeMap := range runtimeSettings {
+		storedMap, _ := providers[provider].(map[string]interface{})
+		for field := range providerSecretKeys {
+			value, ok := runtimeMap[field].(string)
+			if !ok || value == "" {
+				continue
+			}
+			if strings.HasPrefix(value, "v1:") {
+				plaintext, decryptErr := st.DecryptProviderSecret(provider, field, value)
+				if decryptErr != nil {
+					runtimeMap[field] = ""
+					if logger != nil {
+						logger.Error("failed to decrypt provider credential", "provider", provider, "field", field, "error", decryptErr)
+					}
+					continue
+				}
+				runtimeMap[field] = plaintext
+				continue
+			}
+
+			ciphertext, encryptErr := st.EncryptProviderSecret(provider, field, value)
+			if encryptErr != nil {
+				runtimeMap[field] = ""
+				if logger != nil {
+					logger.Error("failed to migrate provider credential", "provider", provider, "field", field, "error", encryptErr)
+				}
+				continue
+			}
+			storedMap[field] = ciphertext
+			migrated = true
+		}
+	}
+	return runtimeSettings, migrated
+}
+
 // providerEnumFields defines valid values for enum-type provider settings.
 // Fields not listed here pass through unvalidated (free-form strings, numbers).
 var providerEnumFields = map[string]map[string][]string{
@@ -1489,9 +1560,19 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 	if err != nil || provJSON == "" {
 		return
 	}
-	var provSettings map[string]map[string]interface{}
-	if json.Unmarshal([]byte(provJSON), &provSettings) != nil {
+	var storedSettings map[string]interface{}
+	if json.Unmarshal([]byte(provJSON), &storedSettings) != nil {
 		return
+	}
+	provSettings, migrated := decryptProviderSecrets(st, storedSettings, logger)
+	if migrated {
+		if migratedJSON, marshalErr := json.Marshal(storedSettings); marshalErr != nil {
+			if logger != nil {
+				logger.Error("failed to encode migrated provider credentials", "error", marshalErr)
+			}
+		} else if saveErr := st.SetSetting("provider_settings", string(migratedJSON)); saveErr != nil && logger != nil {
+			logger.Error("failed to save migrated provider credentials", "error", saveErr)
+		}
 	}
 
 	if s := provSettings["synthetic"]; s != nil {
@@ -6982,6 +7063,11 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			if newOK && existOK {
 				// Merge fields: new values override, missing keys preserved
 				for fk, fv := range newMap {
+					if providerSecretKeys[fk] {
+						if value, ok := fv.(string); ok && value == "" {
+							continue
+						}
+					}
 					existingMap[fk] = fv
 				}
 				existing[k] = existingMap
@@ -6991,6 +7077,11 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		// Sanitize known enum fields before persisting
 		sanitizeProviderSettings(existing)
+		if err := encryptProviderSecrets(h.store, existing); err != nil {
+			h.logger.Error("failed to encrypt provider settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save provider settings")
+			return
+		}
 		merged, _ := json.Marshal(existing)
 		if err := h.store.SetSetting("provider_settings", string(merged)); err != nil {
 			h.logger.Error("failed to save provider settings", "error", err)

@@ -10915,6 +10915,20 @@ function createProviderSettingsConfig() {
       { id: 'api_key', label: tr('provider_settings.api_key'), type: 'password', placeholder: tr('provider_settings.not_configured'), hint: tr('provider_settings.synthetic_key_hint'), sensitive: true },
     ],
   },
+  moonshot: {
+    title: 'Moonshot',
+    desc: tr('provider_settings.moonshot_desc'),
+    fields: [
+      { id: 'api_key', label: tr('provider_settings.api_key'), type: 'password', placeholder: tr('provider_settings.not_configured'), hint: tr('provider_settings.moonshot_key_hint'), sensitive: true },
+    ],
+  },
+  deepseek: {
+    title: 'DeepSeek',
+    desc: tr('provider_settings.deepseek_desc'),
+    fields: [
+      { id: 'api_key', label: tr('provider_settings.api_key'), type: 'password', placeholder: tr('provider_settings.not_configured'), hint: tr('provider_settings.deepseek_key_hint'), sensitive: true },
+    ],
+  },
   antigravity: {
     title: 'Antigravity',
     desc: tr('provider_settings.antigravity_desc'),
@@ -10931,6 +10945,21 @@ function createProviderSettingsConfig() {
   gemini: {
     title: 'Gemini',
     desc: tr('provider_settings.gemini_desc'),
+    fields: [],
+  },
+  cursor: {
+    title: 'Cursor',
+    desc: tr('provider_settings.cursor_credentials_desc'),
+    fields: [],
+  },
+  grok: {
+    title: 'Grok',
+    desc: tr('provider_settings.grok_credentials_desc'),
+    fields: [],
+  },
+  kimi: {
+    title: 'Kimi Code',
+    desc: tr('provider_settings.kimi_credentials_desc'),
     fields: [],
   },
   opencode: {

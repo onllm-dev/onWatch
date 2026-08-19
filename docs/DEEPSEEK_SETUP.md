@@ -17,7 +17,7 @@ Trends show the balance **drop rate** over time so you can see how fast credits 
 ## Setup
 
 1. Create an API key in the [DeepSeek platform console](https://platform.deepseek.com/api_keys).
-2. Provide it to onWatch via environment variable (or your `.env` file):
+2. Configure it in **Settings -> Providers -> DeepSeek**, or provide it via an environment variable (or your `.env` file):
 
    ```bash
    DEEPSEEK_API_KEY=sk-...
@@ -25,7 +25,9 @@ Trends show the balance **drop rate** over time so you can see how fast credits 
 
 3. Restart onWatch. The **DeepSeek** tab appears automatically once the key is set.
 
+Keys saved from the dashboard override `DEEPSEEK_API_KEY`. They are encrypted in SQLite with AES-256-GCM, and settings API responses only report whether a key is configured. The encryption key comes from `ONWATCH_CREDENTIAL_KEY` or the generated `<database>.credential-key` sidecar. Back up that sidecar together with the database; losing it makes dashboard-stored credentials unrecoverable.
+
 ## Notes
 
-- The provider is **opt-in**: it only activates when `DEEPSEEK_API_KEY` is set.
+- The provider is **opt-in**: it only activates when a dashboard or environment API key is set.
 - The API key is used only as a `Bearer` token against `api.deepseek.com` and is **never logged** (redacted in debug output).

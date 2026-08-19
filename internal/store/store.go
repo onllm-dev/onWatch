@@ -19,9 +19,9 @@ import (
 
 // Store provides SQLite storage for onWatch
 type Store struct {
-	db                    *sql.DB
-	dbPath                string
-	openCodeCredentialKey []byte
+	db            *sql.DB
+	dbPath        string
+	credentialKey []byte
 }
 
 // Session represents an agent session
@@ -200,7 +200,7 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("failed to initialize credential encryption: %w", err)
 	}
 
-	s := &Store{db: db, dbPath: dbPath, openCodeCredentialKey: credentialKey}
+	s := &Store{db: db, dbPath: dbPath, credentialKey: credentialKey}
 	if err := s.createTables(); err != nil {
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
