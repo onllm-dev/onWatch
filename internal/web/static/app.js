@@ -18,6 +18,13 @@ function getActiveLocale() {
   return 'en-US';
 }
 
+function localizedRangeLabel(value) {
+  if (window.onWatchI18n && typeof window.onWatchI18n.compactDuration === 'function') {
+    return window.onWatchI18n.compactDuration(value);
+  }
+  return value;
+}
+
 // ── Lazy Loading via IntersectionObserver ──
 const _lazyLoaded = new Set();
 function lazyLoadOnVisible(selector, callback) {
@@ -975,11 +982,11 @@ const quotaNames = {
 // freshnessLabel returns a human-readable label for per-quota data freshness.
 function freshnessLabel(quota) {
   const age = quota.ageSeconds || 0;
-  const src = quota.source === 'statusline' ? 'Live' : 'API';
-  if (age < 60) return `${src} - just now`;
-  if (age < 3600) return `${src} - ${Math.floor(age / 60)}m ago`;
-  if (age < 86400) return `${src} - ${Math.floor(age / 3600)}h ago`;
-  return `${src} - ${Math.floor(age / 86400)}d ago`;
+  const src = quota.source === 'statusline' ? tr('common.live') : 'API';
+  if (age < 60) return `${src} - ${tr('notifications.just_now')}`;
+  if (age < 3600) return `${src} - ${tr('notifications.minutes_ago', { count: Math.floor(age / 60) })}`;
+  if (age < 86400) return `${src} - ${tr('notifications.hours_ago', { count: Math.floor(age / 3600) })}`;
+  return `${src} - ${tr('notifications.days_ago', { count: Math.floor(age / 86400) })}`;
 }
 
 // Anthropic display names (mirrors backend anthropicDisplayNames)
@@ -1035,9 +1042,9 @@ function getCodexSessionLabel(index) {
   const names = State.codexQuotaNames || [];
   const key = names[index];
   if (key) {
-    return codexDisplayNames[key] || key;
+    return localizedQuotaLabel(key, codexDisplayNames[key] || key);
   }
-  return index === 0 ? codexSessionLabels.sub : codexSessionLabels.search;
+  return index === 0 ? tr('quota.five_hour_short') : tr('quota.weekly_all');
 }
 
 function updateCodexSessionHeaders() {
@@ -1181,6 +1188,21 @@ const minimaxDisplayNames = {
   'weekly_Music': 'Weekly Music',
   'weekly_Speech': 'Weekly Speech',
 };
+
+function localizedMiniMaxLabel(name, fallback = '') {
+  const value = String(name || '');
+  const weekly = /^(weekly[_ ]|wkly[_ ])/i.test(value);
+  const category = value.replace(/^(weekly[_ ]|wkly[_ ])/i, '').toLowerCase();
+  const keys = {
+    coding: 'minimax.quota_coding',
+    image: 'minimax.quota_image',
+    music: 'minimax.quota_music',
+    speech: 'minimax.quota_speech',
+    coding_plan: 'quota.coding_plan',
+  };
+  const label = keys[category] ? tr(keys[category]) : (minimaxDisplayNames[value] || fallback || value);
+  return weekly ? tr('minimax.weekly_category', { category: label }) : label;
+}
 
 const minimaxChartColorMap = {
   'Coding': { border: '#F97316', bg: 'rgba(249, 115, 22, 0.08)' },
@@ -1340,10 +1362,10 @@ function getQuotaDisplayName(quotaKey, provider) {
   // Check for provider-specific override
   if (provider && providerQuotaDisplayOverrides[provider]) {
     const override = providerQuotaDisplayOverrides[provider][quotaKey];
-    if (override) return override;
+    if (override) return localizedQuotaLabel(quotaKey, override);
   }
   // Fall back to generic display name
-  return overviewQuotaDisplayNames[quotaKey] || quotaKey;
+  return localizedQuotaLabel(quotaKey, overviewQuotaDisplayNames[quotaKey] || quotaKey);
 };
 
 // ── Anthropic Dynamic Card Rendering ──
@@ -1406,14 +1428,18 @@ function formatPromoCountdown(minutes) {
   if (minutes >= 1440) {
     const d = Math.floor(minutes / 1440);
     const h = Math.floor((minutes % 1440) / 60);
-    return h > 0 ? d + 'd ' + h + 'h' : d + 'd';
+    return h > 0
+      ? `${localizedRangeLabel(d + 'd')} ${localizedRangeLabel(h + 'h')}`
+      : localizedRangeLabel(d + 'd');
   }
   if (minutes >= 60) {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
-    return m > 0 ? h + 'h ' + m + 'm' : h + 'h';
+    return m > 0
+      ? `${localizedRangeLabel(h + 'h')} ${localizedRangeLabel(m + 'm')}`
+      : localizedRangeLabel(h + 'h');
   }
-  return minutes + 'm';
+  return localizedRangeLabel(minutes + 'm');
 }
 
 // Build the full promo label text with countdown.
@@ -1421,10 +1447,10 @@ function formatPromoCountdown(minutes) {
 // <countdown to next peak start>" so users always know how long the current
 // state lasts.
 function promoLabelWithCountdown(promo) {
-  const label = isAnthropicPeakHours(promo) ? 'Peak hours' : 'Off-peak hours';
+  const label = tr(isAnthropicPeakHours(promo) ? 'promo.peak_hours' : 'promo.off_peak_hours');
   const mins = promoMinutesUntilTransition(promo);
   const countdown = formatPromoCountdown(mins);
-  return countdown ? label + ' till ' + countdown : label;
+  return countdown ? tr('promo.until_transition', { label, duration: countdown }) : label;
 }
 
 // Store current promo for card rendering
@@ -1454,7 +1480,11 @@ function promoTagHTML() {
   const isPeak = isAnthropicPeakHours(_anthropicPromo);
   const cls = isPeak ? 'promo-peak' : 'promo-offpeak';
   const text = promoLabelWithCountdown(_anthropicPromo);
-  return `<a class="promo-tag-inline ${cls}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escapeHTML(_anthropicPromo.description)}">${text}</a>`;
+  const descriptionKey = _anthropicPromo.id === 'peak-hours-2026'
+    ? 'promo.description_peak_hours_2026'
+    : '';
+  const description = descriptionKey ? tr(descriptionKey) : _anthropicPromo.description;
+  return `<a class="promo-tag-inline ${cls}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escapeHTML(description)}">${text}</a>`;
 }
 
 function renderAnthropicQuotaCards(quotas, containerId) {
@@ -1464,10 +1494,10 @@ function renderAnthropicQuotaCards(quotas, containerId) {
   // Build cards for each quota
   container.innerHTML = quotas.map((q, i) => {
     const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
-    const displayName = q.displayName || anthropicDisplayNames[q.name] || q.name;
+    const displayName = localizedQuotaLabel(q.name, q.displayName || anthropicDisplayNames[q.name] || q.name);
     const displayPct = q.cardPercent != null ? q.cardPercent : (q.utilization || 0);
     const utilPct = displayPct.toFixed(1);
-    const cardLabel = q.cardLabel || 'Utilization';
+    const cardLabel = localizedCardLabel(q.cardLabel);
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-anth-${q.name}`;
@@ -1476,7 +1506,7 @@ function renderAnthropicQuotaCards(quotas, containerId) {
     const statusId = `status-anth-${q.name}`;
     const resetId = `reset-anth-${q.name}`;
 
-    return `<article class="quota-card anthropic-card${q.isStale ? ' stale-card' : ''}" data-quota="${q.name}" data-provider="anthropic" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+    return `<article class="quota-card anthropic-card${q.isStale ? ' stale-card' : ''}" data-quota="${q.name}" data-provider="anthropic" role="button" tabindex="0" aria-label="${escapeHTML(tr('dashboard.view_details', { name: displayName }))}" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
@@ -1589,42 +1619,42 @@ function openAnthropicModal(quotaName, providerOverride) {
   const bodyEl = document.getElementById('modal-body');
   if (!modal || !bodyEl) return;
 
-  const displayName = data.displayName || anthropicDisplayNames[quotaName] || quotaName;
+  const displayName = localizedQuotaLabel(quotaName, data.displayName || anthropicDisplayNames[quotaName] || quotaName);
   titleEl.textContent = displayName;
 
   const statusCfg = statusConfig[data.status] || statusConfig.healthy;
   const timeLeft = data.timeUntilResetSeconds > 0 ? formatDuration(data.timeUntilResetSeconds) : 'N/A';
   const sourceKpi = data.source ? `
       <div class="modal-kpi">
-        <div class="modal-kpi-value">${data.source === 'statusline' ? '\u{1F7E2} Live' : '\u{1F310} API'}</div>
-        <div class="modal-kpi-label">Source${data.ageSeconds ? ' \u00B7 ' + freshnessLabel({source: data.source, ageSeconds: data.ageSeconds}) : ''}</div>
+        <div class="modal-kpi-value">${data.source === 'statusline' ? `\u{1F7E2} ${tr('common.live')}` : '\u{1F310} API'}</div>
+        <div class="modal-kpi-label">${tr('common.source')}${data.ageSeconds ? ' \u00B7 ' + freshnessLabel({source: data.source, ageSeconds: data.ageSeconds}) : ''}</div>
       </div>` : '';
 
   bodyEl.innerHTML = `
     <div class="modal-kpi-row">
       <div class="modal-kpi">
         <div class="modal-kpi-value">${data.percent.toFixed(1)}%</div>
-        <div class="modal-kpi-label">Utilization</div>
+        <div class="modal-kpi-label">${tr('table.utilization')}</div>
       </div>
       <div class="modal-kpi">
         <div class="modal-kpi-value"><span class="status-badge" data-status="${data.status}"><svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>${statusCfg.label}</span></div>
-        <div class="modal-kpi-label">Status</div>
+        <div class="modal-kpi-label">${tr('api_integrations.status')}</div>
       </div>
       <div class="modal-kpi">
         <div class="modal-kpi-value">${timeLeft}</div>
-        <div class="modal-kpi-label">Until Reset</div>
+        <div class="modal-kpi-label">${tr('table.until_reset')}</div>
       </div>
       ${sourceKpi}
     </div>
-    <h3 class="modal-section-title">Usage History</h3>
+    <h3 class="modal-section-title">${tr('table.usage_history')}</h3>
     <div class="modal-chart-container">
       <canvas id="modal-chart"></canvas>
     </div>
-    <h3 class="modal-section-title">Recent Cycles</h3>
+    <h3 class="modal-section-title">${tr('table.recent_cycles')}</h3>
     <div class="table-wrapper">
       <table class="data-table" id="modal-cycles-table">
-        <thead><tr><th>Cycle</th><th>Duration</th><th>Peak %</th><th>Total %</th></tr></thead>
-        <tbody id="modal-cycles-tbody"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody>
+        <thead><tr><th>${tr('table.cycle')}</th><th>${tr('table.duration')}</th><th>${tr('table.peak')} %</th><th>${tr('table.total')} %</th></tr></thead>
+        <tbody id="modal-cycles-tbody"><tr><td colspan="4" class="empty-state">${tr('status.loading')}</td></tr></tbody>
       </table>
     </div>
   `;
@@ -1662,7 +1692,7 @@ async function loadAnthropicModalChart(quotaName) {
       type: 'line',
       data: {
         datasets: [(() => { const c = anthropicChartColorMap[quotaName] || { border: '#D97706', bg: 'rgba(217, 119, 6, 0.08)' }; return {
-          label: anthropicDisplayNames[quotaName] || quotaName,
+          label: localizedQuotaLabel(quotaName, anthropicDisplayNames[quotaName] || quotaName),
           data: processed.data,
           borderColor: c.border,
           backgroundColor: c.bg,
@@ -1699,7 +1729,7 @@ async function loadAnthropicModalCycles(quotaName) {
     if (!tbody) return;
     const recent = cycles.slice(0, 5);
     if (recent.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No cycles yet.</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">${tr('table.no_cycles_short')}</td></tr>`;
       return;
     }
     tbody.innerHTML = recent.map(cycle => {
@@ -1726,10 +1756,10 @@ function renderCopilotQuotaCards(quotas, containerId) {
   // Build cards for each quota
   container.innerHTML = quotas.map((q, i) => {
     const icon = copilotQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
-    const displayName = q.displayName || copilotDisplayNames[q.name] || q.name;
+    const displayName = localizedQuotaLabel(q.name, q.displayName || copilotDisplayNames[q.name] || q.name);
     const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
     const usagePct = displayPct.toFixed(1);
-    const cardLabel = q.cardLabel || 'Usage';
+    const cardLabel = localizedCardLabel(q.cardLabel);
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-copilot-${q.name}`;
@@ -1742,13 +1772,13 @@ function renderCopilotQuotaCards(quotas, containerId) {
     // Format the usage fraction (remaining / entitlement or ∞ for unlimited)
     let fractionText = '';
     if (q.unlimited) {
-      fractionText = '∞ Unlimited';
+      fractionText = `∞ ${tr('common.unlimited')}`;
     } else {
       const used = q.entitlement - q.remaining;
       fractionText = `${formatNumber(used)} / ${formatNumber(q.entitlement)}`;
     }
 
-    return `<article class="quota-card copilot-card" data-quota="${q.name}" data-provider="copilot" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+    return `<article class="quota-card copilot-card" data-quota="${q.name}" data-provider="copilot" role="button" tabindex="0" aria-label="${escapeHTML(tr('dashboard.view_details', { name: displayName }))}" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
@@ -1834,7 +1864,7 @@ function updateCopilotCard(quota) {
   }
   if (fractionEl) {
     if (quota.unlimited) {
-      fractionEl.textContent = '∞ Unlimited';
+      fractionEl.textContent = `∞ ${tr('common.unlimited')}`;
     } else {
       const used = quota.entitlement - quota.remaining;
       fractionEl.textContent = `${formatNumber(used)} / ${formatNumber(quota.entitlement)}`;
@@ -1866,7 +1896,7 @@ function minimaxSharedSubtitle(sharedModels) {
   const labels = sharedModels
     .map(name => String(name || '').replace(/^MiniMax-/, ''))
     .filter(Boolean);
-  return labels.length > 0 ? `Shared: ${labels.join(', ')}` : '';
+  return labels.length > 0 ? tr('minimax.shared_models', { models: labels.join(', ') }) : '';
 }
 
 function renderMiniMaxQuotaCards(quotas, containerId) {
@@ -1875,11 +1905,11 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
 
   container.innerHTML = quotas.map((q, i) => {
     const cardKey = minimaxCardKey(q.name);
-    const displayName = q.displayName || minimaxDisplayNames[q.name] || q.name;
+    const displayName = localizedMiniMaxLabel(q.name, q.displayName);
     const subtitle = minimaxSharedSubtitle(q.sharedModels);
     const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
     const usagePct = displayPct.toFixed(1);
-    const cardLabel = q.cardLabel || 'Usage';
+    const cardLabel = localizedCardLabel(q.cardLabel);
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-minimax-${cardKey}`;
@@ -1891,7 +1921,7 @@ function renderMiniMaxQuotaCards(quotas, containerId) {
     const subtitleId = `subtitle-minimax-${cardKey}`;
 
     const isWeekly = q.isWeekly || false;
-    const weeklyBadge = isWeekly ? ' <span class="weekly-badge">Weekly</span>' : '';
+    const weeklyBadge = isWeekly ? ` <span class="weekly-badge">${tr('quota.weekly')}</span>` : '';
 
     return `<article class="quota-card minimax-card${isWeekly ? ' minimax-weekly' : ''}" data-quota="${q.name}" data-provider="minimax" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
@@ -1991,7 +2021,7 @@ function openCopilotModal(quotaName, providerOverride) {
   const bodyEl = document.getElementById('modal-body');
   if (!modal || !bodyEl) return;
 
-  const displayName = data.displayName || copilotDisplayNames[quotaName] || quotaName;
+  const displayName = localizedQuotaLabel(quotaName, data.displayName || copilotDisplayNames[quotaName] || quotaName);
   titleEl.textContent = displayName;
 
   const usagePct = data.unlimited ? 0 : (data.percent || 0).toFixed(1);
@@ -2000,29 +2030,29 @@ function openCopilotModal(quotaName, providerOverride) {
   bodyEl.innerHTML = `
     <div class="modal-stats-grid">
       <div class="modal-stat">
-        <span class="modal-stat-label">Usage</span>
+        <span class="modal-stat-label">${tr('insights.current_usage')}</span>
         <span class="modal-stat-value">${usagePct}%</span>
       </div>
       <div class="modal-stat">
-        <span class="modal-stat-label">Used / Total</span>
+        <span class="modal-stat-label">${tr('table.used_total')}</span>
         <span class="modal-stat-value">${data.unlimited ? '∞' : formatNumber(used) + ' / ' + formatNumber(data.limit)}</span>
       </div>
       <div class="modal-stat">
-        <span class="modal-stat-label">Status</span>
+        <span class="modal-stat-label">${tr('api_integrations.status')}</span>
         <span class="modal-stat-value" data-status="${data.status}">${(statusConfig[data.status] || statusConfig.healthy).label}</span>
       </div>
       <div class="modal-stat">
-        <span class="modal-stat-label">Resets In</span>
+        <span class="modal-stat-label">${tr('insights.resets_in')}</span>
         <span class="modal-stat-value">${data.timeUntilResetSeconds > 0 ? formatDuration(data.timeUntilResetSeconds) : '--'}</span>
       </div>
     </div>
     <div class="modal-chart-container">
       <canvas id="modal-chart" height="200"></canvas>
     </div>
-    <h4 class="modal-section-title">Recent Cycles</h4>
+    <h4 class="modal-section-title">${tr('table.recent_cycles')}</h4>
     <table class="modal-cycles-table">
-      <thead><tr><th>Cycle</th><th>Duration</th><th>Peak Used</th><th>Total Delta</th></tr></thead>
-      <tbody id="modal-cycles-tbody"><tr><td colspan="4">Loading...</td></tr></tbody>
+      <thead><tr><th>${tr('table.cycle')}</th><th>${tr('table.duration')}</th><th>${tr('table.peak_used')}</th><th>${tr('table.total_delta')}</th></tr></thead>
+      <tbody id="modal-cycles-tbody"><tr><td colspan="4">${tr('status.loading')}</td></tr></tbody>
     </table>
   `;
 
@@ -2075,7 +2105,7 @@ async function loadCopilotModalChart(quotaName) {
       type: 'line',
       data: {
         datasets: [(() => { const c = copilotChartColorMap[quotaName] || { border: '#6e40c9', bg: 'rgba(110, 64, 201, 0.08)' }; return {
-          label: copilotDisplayNames[quotaName] || quotaName,
+          label: localizedQuotaLabel(quotaName, copilotDisplayNames[quotaName] || quotaName),
           data: processed.data,
           borderColor: c.border,
           backgroundColor: c.bg,
@@ -2112,7 +2142,7 @@ async function loadCopilotModalCycles(quotaName) {
     if (!tbody) return;
     const recent = cycles.slice(0, 5);
     if (recent.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No cycles yet.</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">${tr('table.no_cycles_short')}</td></tr>`;
       return;
     }
     tbody.innerHTML = recent.map(cycle => {
@@ -2166,7 +2196,7 @@ function updateAntigravitySourceBadge(source) {
     badge.hidden = true;
     return;
   }
-  badge.textContent = `Source: ${label}`;
+  badge.textContent = `${tr('common.source')}: ${label}`;
   badge.hidden = false;
 }
 
@@ -2179,7 +2209,7 @@ function renderAntigravityQuotaCards(quotas, containerId) {
     const displayName = q.displayName || q.label || q.modelId;
     const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
     const usagePct = displayPct.toFixed(1);
-    const cardLabel = q.cardLabel || 'Usage';
+    const cardLabel = localizedCardLabel(q.cardLabel);
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-antigravity-${q.modelId}`;
@@ -2191,14 +2221,14 @@ function renderAntigravityQuotaCards(quotas, containerId) {
 
     // Format the remaining percent (leave as-is - separate fallback computation)
     const remainingPct = (q.remainingPercent || 0).toFixed(1);
-    const fractionText = q.cardPercent != null ? `${cardLabel}` : `${remainingPct}% remaining`;
+    const fractionText = q.cardPercent != null ? `${cardLabel}` : `${tr('insights.remaining')}: ${remainingPct}%`;
 
-    return `<article class="quota-card antigravity-card" data-quota="${q.modelId}" data-provider="antigravity" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+    return `<article class="quota-card antigravity-card" data-quota="${q.modelId}" data-provider="antigravity" role="button" tabindex="0" aria-label="${escapeHTML(tr('dashboard.view_details', { name: displayName }))}" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
           ${displayName}
-          ${q.isExhausted ? '<span class="exhausted-badge">Exhausted</span>' : ''}
+          ${q.isExhausted ? `<span class="exhausted-badge">${tr('common.exhausted')}</span>` : ''}
         </h2>
         <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
@@ -2281,8 +2311,8 @@ function updateAntigravityCard(quota) {
     // remainingPercent stays as-is - separate computation, not the display toggle
     const remainingPct = (quota.remainingPercent || 0).toFixed(1);
     fractionEl.textContent = quota.cardPercent != null
-      ? (quota.cardLabel || 'Usage')
-      : `${remainingPct}% remaining`;
+      ? localizedCardLabel(quota.cardLabel)
+      : `${tr('insights.remaining')}: ${remainingPct}%`;
   }
   if (statusEl) {
     const config = statusConfig[status] || statusConfig.healthy;
@@ -2308,7 +2338,7 @@ function renderGeminiQuotaCards(quotas, containerId) {
   if (!container) return;
 
   if (!quotas || quotas.length === 0) {
-    container.innerHTML = '<p class="empty-state">No Gemini quota data available.</p>';
+    container.innerHTML = `<p class="empty-state" data-empty-provider="Gemini">${tr('dashboard.no_provider_quota', { provider: 'Gemini' })}</p>`;
     return;
   }
 
@@ -2317,7 +2347,7 @@ function renderGeminiQuotaCards(quotas, containerId) {
     const membersText = q.members && q.members.length > 0 ? q.members.join(', ') : '';
     const displayPct = q.cardPercent != null ? q.cardPercent : (q.usagePercent || 0);
     const usagePct = displayPct.toFixed(1);
-    const cardLabel = q.cardLabel || 'Usage';
+    const cardLabel = localizedCardLabel(q.cardLabel);
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-gemini-${q.modelId}`;
@@ -2329,14 +2359,14 @@ function renderGeminiQuotaCards(quotas, containerId) {
 
     // remainingPercent is a separate computation - leave as-is
     const remainingPct = (q.remainingPercent || (q.remainingFraction != null ? q.remainingFraction * 100 : 0)).toFixed(1);
-    const fractionText = q.cardPercent != null ? cardLabel : `${remainingPct}% remaining`;
+    const fractionText = q.cardPercent != null ? cardLabel : `${tr('insights.remaining')}: ${remainingPct}%`;
 
-    return `<article class="quota-card gemini-card" data-quota="${q.modelId}" data-provider="gemini" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+    return `<article class="quota-card gemini-card" data-quota="${q.modelId}" data-provider="gemini" role="button" tabindex="0" aria-label="${escapeHTML(tr('dashboard.view_details', { name: displayName }))}" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
           ${displayName}
-          ${q.isExhausted ? '<span class="exhausted-badge">Exhausted</span>' : ''}
+          ${q.isExhausted ? `<span class="exhausted-badge">${tr('common.exhausted')}</span>` : ''}
         </h2>
         <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
@@ -2377,7 +2407,7 @@ function renderCursorQuotaCards(quotas, containerId) {
   if (!container) return;
 
   if (!Array.isArray(quotas) || quotas.length === 0) {
-    container.innerHTML = '<p class="empty-state">No Cursor data available</p>';
+    container.innerHTML = `<p class="empty-state" data-empty-provider="Cursor">${tr('dashboard.no_provider_quota', { provider: 'Cursor' })}</p>`;
     return;
   }
 
@@ -2430,8 +2460,8 @@ function updateGeminiCard(q) {
     // remainingPercent is a separate computation - leave as-is
     const remainingPct = (q.remainingPercent || (q.remainingFraction != null ? q.remainingFraction * 100 : 0)).toFixed(1);
     fractionEl.textContent = q.cardPercent != null
-      ? (q.cardLabel || 'Usage')
-      : `${remainingPct}% remaining`;
+      ? localizedCardLabel(q.cardLabel)
+      : `${tr('insights.remaining')}: ${remainingPct}%`;
   }
   if (statusEl) {
     const config = statusConfig[status] || statusConfig.healthy;
@@ -2464,7 +2494,7 @@ function renderOpenRouterCard(credits, containerId) {
   const statusCfg = statusConfig[status] || statusConfig.healthy;
   const hasLimit = credits.limit != null && credits.limit > 0;
   const usageStr = '$' + (credits.usage || 0).toFixed(4);
-  const limitStr = hasLimit ? '$' + credits.limit.toFixed(4) : 'Unlimited';
+  const limitStr = hasLimit ? '$' + credits.limit.toFixed(4) : tr('common.unlimited');
   const remainStr = credits.remaining != null ? '$' + credits.remaining.toFixed(4) : '--';
 
   container.innerHTML = `<article class="quota-card openrouter-card" data-quota="credits" data-provider="openrouter" style="animation-delay: 0ms">
@@ -2474,7 +2504,7 @@ function renderOpenRouterCard(credits, containerId) {
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           Credits
         </h2>
-        ${credits.isFreeTier ? '<div class="quota-subtitle">Free Tier</div>' : ''}
+        ${credits.isFreeTier ? `<div class="quota-subtitle">${tr('common.free_tier')}</div>` : ''}
       </div>
       <span class="countdown" id="countdown-openrouter-credits" style="display: none">--:--</span>
     </header>
@@ -2492,7 +2522,7 @@ function renderOpenRouterCard(credits, containerId) {
         <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
         ${statusCfg.label}
       </span>
-      <span class="reset-time" id="reset-openrouter-credits">${hasLimit ? 'Remaining: ' + remainStr : ''}</span>
+        <span class="reset-time" id="reset-openrouter-credits">${hasLimit ? `${tr('insights.remaining')}: ${remainStr}` : ''}</span>
     </footer>
   </article>`;
 }
@@ -2513,7 +2543,7 @@ function updateOpenRouterCard(credits) {
   const status = getQuotaStatus(credits.percent || 0);
   const hasLimit = credits.limit != null && credits.limit > 0;
   const usageStr = '$' + (credits.usage || 0).toFixed(4);
-  const limitStr = hasLimit ? '$' + credits.limit.toFixed(4) : 'Unlimited';
+  const limitStr = hasLimit ? '$' + credits.limit.toFixed(4) : tr('common.unlimited');
   const remainStr = credits.remaining != null ? '$' + credits.remaining.toFixed(4) : '--';
 
   const progressEl = document.getElementById('progress-openrouter-credits');
@@ -2540,7 +2570,7 @@ function updateOpenRouterCard(credits) {
     statusEl.setAttribute('data-status', status);
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
-  if (resetEl) resetEl.textContent = hasLimit ? 'Remaining: ' + remainStr : '';
+  if (resetEl) resetEl.textContent = hasLimit ? `${tr('insights.remaining')}: ${remainStr}` : '';
 }
 
 function getQuotaStatus(percent) {
@@ -2569,29 +2599,29 @@ function openAntigravityModal(groupKey, providerOverride) {
   bodyEl.innerHTML = `
     <div class="modal-stats-grid">
       <div class="modal-stat">
-        <span class="modal-stat-label">Usage</span>
+        <span class="modal-stat-label">${tr('insights.current_usage')}</span>
         <span class="modal-stat-value">${usagePct}%</span>
       </div>
       <div class="modal-stat">
-        <span class="modal-stat-label">Remaining</span>
+        <span class="modal-stat-label">${tr('insights.remaining')}</span>
         <span class="modal-stat-value">${remainingPct}%</span>
       </div>
       <div class="modal-stat">
-        <span class="modal-stat-label">Status</span>
+        <span class="modal-stat-label">${tr('api_integrations.status')}</span>
         <span class="modal-stat-value" data-status="${data.status}">${(statusConfig[data.status] || statusConfig.healthy).label}</span>
       </div>
       <div class="modal-stat">
-        <span class="modal-stat-label">Resets In</span>
+        <span class="modal-stat-label">${tr('insights.resets_in')}</span>
         <span class="modal-stat-value">${data.timeUntilResetSeconds > 0 ? formatDuration(data.timeUntilResetSeconds) : '--'}</span>
       </div>
     </div>
     <div class="modal-chart-container">
       <canvas id="modal-chart" height="200"></canvas>
     </div>
-    <h4 class="modal-section-title">Recent Cycles</h4>
+    <h4 class="modal-section-title">${tr('table.recent_cycles')}</h4>
     <table class="modal-cycles-table">
-      <thead><tr><th>Cycle</th><th>Duration</th><th>Peak Used</th><th>Total Delta</th></tr></thead>
-      <tbody id="modal-cycles-tbody"><tr><td colspan="4">Loading...</td></tr></tbody>
+      <thead><tr><th>${tr('table.cycle')}</th><th>${tr('table.duration')}</th><th>${tr('table.peak_used')}</th><th>${tr('table.total_delta')}</th></tr></thead>
+      <tbody id="modal-cycles-tbody"><tr><td colspan="4">${tr('status.loading')}</td></tr></tbody>
     </table>
   `;
 
@@ -2649,8 +2679,8 @@ async function loadAntigravityModalChart(groupKey) {
         maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
-          x: { type: 'time', time: { unit: timeUnit, displayFormats: { minute: 'HH:mm', hour: ['7d', '30d', '15d', '24h', '3d'].includes(rangeKey) ? 'MMM d, HH:mm' : 'HH:mm', day: 'MMM d' } }, grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' }, title: { display: true, text: 'Time' } },
-          y: { beginAtZero: true, max: 100, title: { display: true, text: 'Usage %' } }
+          x: { type: 'time', time: { unit: timeUnit, displayFormats: { minute: 'HH:mm', hour: ['7d', '30d', '15d', '24h', '3d'].includes(rangeKey) ? 'MMM d, HH:mm' : 'HH:mm', day: 'MMM d' } }, grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, maxTicksLimit: 6, source: 'auto' }, title: { display: true, text: tr('table.time') } },
+          y: { beginAtZero: true, max: 100, title: { display: true, text: tr('table.usage_percent') } }
         }
       }
     });
@@ -2666,7 +2696,7 @@ async function loadAntigravityModalCycles(groupKey) {
     if (!tbody || !data.cycles) return;
 
     if (data.cycles.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No cycles recorded yet</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">${tr('table.no_cycles')}</td></tr>`;
       return;
     }
 
@@ -2698,9 +2728,9 @@ function codexAutoStartBadge(quotaName) {
   const key = quotaName === 'five_hour' ? 'auto_start_5h'
     : (quotaName === 'seven_day' ? 'auto_start_7d' : null);
   if (!key || ps[key] !== 'on') return '';
-  return `<span class="auto-start-badge" title="Auto-start is on (Beta): when this window resets, onWatch sends a tiny Codex request to start the window automatically.">
+  return `<span class="auto-start-badge" title="${escapeHTML(tr('codex.auto_start_hint'))}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-    Auto-start
+    ${tr('codex.auto_start')}
   </span>`;
 }
 
@@ -2739,16 +2769,16 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
   if (!container) return;
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
   if (visibleQuotas.length === 0) {
-    container.innerHTML = `<p class="empty-state">${tr('dashboard.no_provider_quota', { provider: 'Codex' })}</p>`;
+    container.innerHTML = `<p class="empty-state" data-empty-provider="Codex">${tr('dashboard.no_provider_quota', { provider: 'Codex' })}</p>`;
     return;
   }
 
   container.innerHTML = visibleQuotas.map((q, i) => {
     const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
-    const displayName = q.displayName || codexDisplayNames[q.name] || q.name;
+    const displayName = localizedQuotaLabel(q.name, q.displayName || codexDisplayNames[q.name] || q.name);
     const cardPercent = q.cardPercent != null ? q.cardPercent : (q.utilization || 0);
     const utilPct = cardPercent.toFixed(1);
-    const cardLabel = q.cardLabel || 'Utilization';
+    const cardLabel = localizedCardLabel(q.cardLabel);
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const countdownId = `countdown-codex-${q.name}`;
@@ -2757,7 +2787,7 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
     const statusId = `status-codex-${q.name}`;
     const resetId = `reset-codex-${q.name}`;
 
-    return `<article class="quota-card codex-card" data-quota="${q.name}" data-provider="codex" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
+    return `<article class="quota-card codex-card" data-quota="${q.name}" data-provider="codex" role="button" tabindex="0" aria-label="${escapeHTML(tr('dashboard.view_details', { name: displayName }))}" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
@@ -2800,7 +2830,7 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
 
 function formatCodexPlan(planType) {
   const normalized = normalizeCodexPlanType(planType);
-  if (!normalized) return 'Unknown Plan';
+  if (!normalized) return tr('codex.unknown_plan');
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
@@ -2820,7 +2850,8 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
   if (visibleQuotas.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = 'No Codex quota data available for this account yet.';
+    empty.dataset.emptyProvider = 'Codex';
+    empty.textContent = tr('dashboard.no_provider_quota', { provider: 'Codex' });
     container.appendChild(empty);
     return;
   }
@@ -2829,10 +2860,10 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
   cardsDiv.className = 'codex-account-cards';
   cardsDiv.innerHTML = visibleQuotas.map((q, i) => {
     const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
-    const displayName = q.displayName || codexDisplayNames[q.name] || q.name;
+    const displayName = localizedQuotaLabel(q.name, q.displayName || codexDisplayNames[q.name] || q.name);
     const cardPercent = q.cardPercent != null ? q.cardPercent : (q.utilization || 0);
     const utilPct = cardPercent.toFixed(1);
-    const cardLabel = q.cardLabel || 'Utilization';
+    const cardLabel = localizedCardLabel(q.cardLabel);
     const status = q.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const cardKey = `codex-${safeAccountId}-${q.name}`;
@@ -2874,13 +2905,13 @@ function renderCodexAccountSections(accounts) {
 
   container.innerHTML = '';
   if (!Array.isArray(accounts) || accounts.length === 0) {
-    container.innerHTML = '<p class="empty-state">No Codex account usage found yet.</p>';
+    container.innerHTML = `<p class="empty-state">${tr('common.no_account_usage')}</p>`;
     return;
   }
 
   accounts.forEach((account) => {
     const accountId = account.accountId || account.id || 1;
-    const accountName = account.accountName || account.name || `Account ${accountId}`;
+    const accountName = account.accountName || account.name || defaultAccountName(accountId);
     const section = document.createElement('section');
     section.className = 'codex-account-section';
     section.dataset.accountId = String(accountId);
@@ -2893,7 +2924,7 @@ function updateCodexCard(quota) {
   const key = `codex-${quota.name}`;
   const prev = State.currentQuotas[key];
   const cardPercent = quota.cardPercent != null ? quota.cardPercent : (quota.utilization || 0);
-  const cardLabel = quota.cardLabel || 'Utilization';
+  const cardLabel = localizedCardLabel(quota.cardLabel);
   State.currentQuotas[key] = {
     percent: cardPercent,
     usage: quota.utilization || 0,
@@ -2958,12 +2989,12 @@ function openCodexModal(quotaName, providerOverride) {
   const bodyEl = document.getElementById('modal-body');
   if (!modal || !bodyEl) return;
 
-  const displayName = data.displayName || codexDisplayNames[quotaName] || quotaName;
+  const displayName = localizedQuotaLabel(quotaName, data.displayName || codexDisplayNames[quotaName] || quotaName);
   titleEl.textContent = displayName;
 
   const statusCfg = statusConfig[data.status] || statusConfig.healthy;
   const timeLeft = data.timeUntilResetSeconds > 0 ? formatDuration(data.timeUntilResetSeconds) : 'N/A';
-  const modalLabel = data.cardLabel || 'Utilization';
+  const modalLabel = localizedCardLabel(data.cardLabel);
 
   bodyEl.innerHTML = `
     <div class="modal-kpi-row">
@@ -2973,22 +3004,22 @@ function openCodexModal(quotaName, providerOverride) {
       </div>
       <div class="modal-kpi">
         <div class="modal-kpi-value"><span class="status-badge" data-status="${data.status}"><svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>${statusCfg.label}</span></div>
-        <div class="modal-kpi-label">Status</div>
+        <div class="modal-kpi-label">${tr('api_integrations.status')}</div>
       </div>
       <div class="modal-kpi">
         <div class="modal-kpi-value">${timeLeft}</div>
-        <div class="modal-kpi-label">Until Reset</div>
+        <div class="modal-kpi-label">${tr('table.until_reset')}</div>
       </div>
     </div>
-    <h3 class="modal-section-title">Usage History</h3>
+    <h3 class="modal-section-title">${tr('table.usage_history')}</h3>
     <div class="modal-chart-container">
       <canvas id="modal-chart"></canvas>
     </div>
-    <h3 class="modal-section-title">Recent Cycles</h3>
+    <h3 class="modal-section-title">${tr('table.recent_cycles')}</h3>
     <div class="table-wrapper">
       <table class="data-table" id="modal-cycles-table">
-        <thead><tr><th>Cycle</th><th>Duration</th><th>Peak %</th><th>Total %</th></tr></thead>
-        <tbody id="modal-cycles-tbody"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody>
+        <thead><tr><th>${tr('table.cycle')}</th><th>${tr('table.duration')}</th><th>${tr('table.peak')} %</th><th>${tr('table.total')} %</th></tr></thead>
+        <tbody id="modal-cycles-tbody"><tr><td colspan="4" class="empty-state">${tr('status.loading')}</td></tr></tbody>
       </table>
     </div>
   `;
@@ -3025,7 +3056,7 @@ async function loadCodexModalChart(quotaName) {
       type: 'line',
       data: {
         datasets: [(() => { const c = codexChartColorMap[quotaName] || { border: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.08)' }; return {
-          label: codexDisplayNames[quotaName] || quotaName,
+          label: localizedQuotaLabel(quotaName, codexDisplayNames[quotaName] || quotaName),
           data: processed.data,
           borderColor: c.border,
           backgroundColor: c.bg,
@@ -3062,7 +3093,7 @@ async function loadCodexModalCycles(quotaName) {
     if (!tbody) return;
     const recent = cycles.slice(0, 5);
     if (recent.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No cycles yet.</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">${tr('table.no_cycles_short')}</td></tr>`;
       return;
     }
     tbody.innerHTML = recent.map(cycle => {
@@ -3107,6 +3138,75 @@ function formatDurationMins(durationMins) {
 
 function formatNumber(num) {
   return num.toLocaleString(getActiveLocale(), { maximumFractionDigits: 1 });
+}
+
+const QUOTA_LABEL_KEYS = Object.freeze({
+  five_hour: 'quota.five_hour_short',
+  seven_day: 'quota.weekly_all',
+  seven_day_sonnet: 'quota.weekly_sonnet',
+  code_review: 'quota.review_requests',
+  monthly_limit: 'quota.monthly_short',
+  monthly: 'quota.monthly_short',
+  weekly: 'quota.weekly_short',
+  weekly_all: 'quota.weekly_short',
+  extra_usage: 'quota.extra',
+  subscription: 'quota.subscription',
+  toolcall: 'quota.tool_calls',
+  tokens: 'quota.tokens',
+  time: 'quota.time',
+  premium_interactions: 'quota.premium',
+  chat: 'quota.chat',
+  completions: 'quota.completions',
+  credits: 'quota.credits',
+  total_usage: 'quota.total_usage',
+  auto_usage: 'quota.auto_composer',
+  api_usage: 'quota.api_usage',
+  on_demand: 'quota.on_demand',
+  coding_plan: 'quota.coding_plan',
+  tokensLimit: 'quota.tokens_limit',
+  timeLimit: 'quota.time_limit',
+  toolCalls: 'quota.tool_calls',
+  search: 'quota.search_hourly',
+  '5h': 'quota.five_hour_short',
+  total: 'table.total',
+  usage: 'insights.total_usage',
+  usageDaily: 'insights.daily_usage',
+  percent: 'table.usage_percent',
+  total_balance: 'insights.total_balance',
+  granted_balance: 'insights.granted',
+  topped_up_balance: 'insights.topped_up',
+  antigravity_claude_gpt: 'table.claude_gpt_quota',
+  antigravity_gemini_pro: 'table.gemini_pro_quota',
+  antigravity_gemini_flash: 'table.gemini_flash_quota',
+});
+
+function localizedQuotaLabel(key, fallback = '') {
+  const translationKey = QUOTA_LABEL_KEYS[key];
+  return translationKey ? tr(translationKey) : fallback;
+}
+
+function localizedCardLabel(label, fallbackKey = 'table.utilization') {
+  const value = String(label || '').trim();
+  if (!value) return tr(fallbackKey);
+  const keys = {
+    Usage: 'table.utilization',
+    Utilization: 'table.utilization',
+    'Usage %': 'table.usage_percent',
+    Remaining: 'insights.remaining',
+  };
+  return keys[value] ? tr(keys[value]) : value;
+}
+
+function localizedDatasetLabel(config) {
+  const aliases = {
+    subscriptionPercent: 'subscription',
+    searchPercent: 'search',
+    toolCallsPercent: 'toolCalls',
+    tokensPercent: 'tokensLimit',
+    timePercent: 'timeLimit',
+  };
+  const key = config.hiddenKey || aliases[config.key] || config.key;
+  return localizedQuotaLabel(key, config.label || key);
 }
 
 function formatCurrencyUSD(num) {
@@ -3658,7 +3758,7 @@ function updateCard(quotaType, data, suffix) {
     } else if (data.timeUntilReset === 'N/A') {
       countdownEl.style.display = 'none';
     } else {
-      countdownEl.textContent = '< 1m';
+      countdownEl.textContent = tr('common.less_than', { value: localizedRangeLabel('1m') });
       countdownEl.style.display = '';
     }
   }
@@ -3743,7 +3843,7 @@ function renderGrokQuotaCards(quotas, containerId) {
       </header>
       <div class="progress-stats">
         <span class="usage-percent" id="percent-grok-${name}">${pctStr}%</span>
-        <span class="usage-fraction" id="fraction-grok-${name}">utilization</span>
+        <span class="usage-fraction" id="fraction-grok-${name}">${tr('table.utilization')}</span>
       </div>
       <div class="progress-wrapper">
         <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
@@ -3806,7 +3906,7 @@ function updateGrokQuotaCards(quotas, containerId) {
 // Kimi Code quota renderer (weekly / 5h / total style quotas).
 function kimiDisplayName(name) {
   const map = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
-  return map[name] || name;
+  return localizedQuotaLabel(name, map[name] || name);
 }
 
 function renderKimiQuotaCards(quotas, containerId) {
@@ -3819,7 +3919,7 @@ function renderKimiQuotaCards(quotas, containerId) {
     const pctStr = pct.toFixed(1);
     const status = q.status || getQuotaStatus(pct);
     const name = (q.name || 'seven_day');
-    const label = q.displayName || q.label || kimiDisplayName(name);
+    const label = localizedQuotaLabel(name, q.displayName || q.label || kimiDisplayName(name));
     const resetsAt = q.resets_at || q.resetsAt || '';
     const cdSecs = resetsAt ? Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)) : 0;
     const cdText = cdSecs > 0 ? formatDuration(cdSecs) : '--:--';
@@ -3842,7 +3942,7 @@ function renderKimiQuotaCards(quotas, containerId) {
       </header>
       <div class="progress-stats">
         <span class="usage-percent" id="percent-kimi-${name}">${pctStr}%</span>
-        <span class="usage-fraction" id="fraction-kimi-${name}">utilization</span>
+        <span class="usage-fraction" id="fraction-kimi-${name}">${tr('table.utilization')}</span>
       </div>
       <div class="progress-wrapper">
         <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
@@ -4342,11 +4442,15 @@ function syncAccountsOverviewLayout() {
   }
 }
 
+function defaultAccountName(id) {
+  return tr('account.default_name', { id });
+}
+
 // MiniMax quota labels mirror Anthropic's naming: "5h Limit" / "Weekly Limit".
 // Multiple non-general model pools keep the model name to stay unambiguous.
 function minimaxWindowLabel(q) {
   const isWeekly = q.isWeekly || /^(wkly|weekly)_/.test(q.name || '');
-  const base = isWeekly ? 'Weekly Limit' : '5h Limit';
+  const base = isWeekly ? tr('quota.weekly') : tr('quota.five_hour');
   const model = String(q.name || '').replace(/^(wkly|weekly)_/, '');
   return (model && model !== 'general') ? `${base} (${model})` : base;
 }
@@ -4365,7 +4469,7 @@ function accountOverviewQuotas(provider, account) {
   }
   if (provider === 'opencode') {
     return (account.quotas || []).map(q => ({
-      label: q.displayName || opencodeDisplayNames[q.name] || q.name,
+      label: localizedQuotaLabel(q.name, q.displayName || opencodeDisplayNames[q.name] || q.name),
       quotaName: q.name,
       percent: typeof q.utilization === 'number' ? q.utilization : 0,
       status: q.status || 'healthy',
@@ -4374,7 +4478,7 @@ function accountOverviewQuotas(provider, account) {
   }
   const visible = filterCodexQuotasForPlan(account.quotas || [], account.planType);
   return visible.map(q => ({
-    label: q.displayName || codexDisplayNames[q.name] || q.name,
+    label: localizedQuotaLabel(q.name, q.displayName || codexDisplayNames[q.name] || q.name),
     quotaName: q.name,
     percent: typeof q.cardPercent === 'number' ? q.cardPercent : (q.utilization || 0),
     status: q.status || 'healthy',
@@ -4385,16 +4489,23 @@ function accountOverviewQuotas(provider, account) {
 // Build the HTML for a single compact account summary card.
 function accountOverviewCardHTML(provider, account, idx) {
   const accountId = account.accountId || account.id || idx + 1;
-  const accountName = account.accountName || account.name || `Account ${accountId}`;
+  const accountName = account.accountName || account.name || defaultAccountName(accountId);
   const authStatus = provider === 'opencode' ? (account.authStatus || account.auth_status || 'pending') : '';
-  const authLabels = { valid: 'Valid', pending: 'Pending', needs_reauth: 'Needs re-auth', unauthorized: 'Unauthorized', error: 'Error', disabled: 'Disabled' };
+  const authLabels = {
+    valid: tr('status.valid'),
+    pending: tr('status.pending'),
+    needs_reauth: tr('status.needs_reauth'),
+    unauthorized: tr('status.unauthorized'),
+    error: tr('status.error'),
+    disabled: tr('status.disabled'),
+  };
   const badge = provider === 'codex' && account.planType
     ? formatCodexPlan(account.planType)
     : (provider === 'opencode' ? (authLabels[authStatus] || authStatus) : '');
   const badgeStatus = provider === 'opencode' ? ` data-auth-status="${escapeHTML(authStatus)}"` : '';
   const rows = accountOverviewQuotas(provider, account);
   const quotaHTML = rows.length === 0
-    ? '<p class="empty-state">No quota data yet.</p>'
+    ? `<p class="empty-state">${tr('common.no_quota_data')}</p>`
     : rows.map(r => {
         const pct = Math.max(0, Math.min(100, r.percent)).toFixed(1);
         const reset = r.resetAt ? formatResetTime(r.resetAt) : '';
@@ -4413,13 +4524,13 @@ function accountOverviewCardHTML(provider, account, idx) {
         </div>`;
       }).join('');
 
-  return `<article class="account-overview-card" data-account-id="${accountId}" data-provider="${provider}" role="button" tabindex="0" aria-label="Open ${escapeHTML(accountName)} details">
+  return `<article class="account-overview-card" data-account-id="${accountId}" data-provider="${provider}" role="button" tabindex="0" aria-label="${escapeHTML(tr('account.open_details', { name: accountName }))}">
     <header class="account-overview-header">
       <span class="account-overview-name">${escapeHTML(accountName)}</span>
       ${badge ? `<span class="account-overview-badge"${badgeStatus}>${escapeHTML(badge)}</span>` : ''}
     </header>
     <div class="account-overview-quotas">${quotaHTML}</div>
-    <span class="account-overview-cta">View details &rarr;</span>
+    <span class="account-overview-cta">${tr('common.view_details')}</span>
   </article>`;
 }
 
@@ -4429,7 +4540,7 @@ function renderAccountsOverview(provider, accounts) {
   if (!container) return;
 
   if (!Array.isArray(accounts) || accounts.length === 0) {
-    container.innerHTML = '<p class="empty-state">No account usage found yet.</p>';
+    container.innerHTML = `<p class="empty-state">${tr('common.no_account_usage')}</p>`;
     return;
   }
 
@@ -4509,8 +4620,8 @@ function buildOverviewWindows(provider, accounts) {
       }
       return max;
     };
-    const windows = [{ key: '5h', label: '5h Limit', extract: (d) => maxOver(d, k => !k.startsWith('Wkly ')) }];
-    if (hasWeekly) windows.push({ key: 'weekly', label: 'Weekly Limit', extract: (d) => maxOver(d, k => k.startsWith('Wkly ')) });
+    const windows = [{ key: '5h', label: tr('quota.five_hour'), extract: (d) => maxOver(d, k => !k.startsWith('Wkly ')) }];
+    if (hasWeekly) windows.push({ key: 'weekly', label: tr('quota.weekly'), extract: (d) => maxOver(d, k => k.startsWith('Wkly ')) });
     return windows;
   }
   // Codex: one window per distinct quota name across accounts. History entries
@@ -4518,7 +4629,7 @@ function buildOverviewWindows(provider, accounts) {
   const seen = new Map();
   for (const a of accounts) {
     for (const q of filterCodexQuotasForPlan(a.quotas || [], a.planType)) {
-      if (!seen.has(q.name)) seen.set(q.name, q.displayName || codexDisplayNames[q.name] || q.name);
+      if (!seen.has(q.name)) seen.set(q.name, localizedQuotaLabel(q.name, q.displayName || codexDisplayNames[q.name] || q.name));
     }
   }
   return [...seen.entries()].map(([key, label]) => ({ key, label, extract: (d) => (typeof d[key] === 'number' ? d[key] : null) }));
@@ -4578,7 +4689,7 @@ async function renderMultiAccountChart(provider, range, requestSeq) {
   const datasets = [];
   let colorIdx = 0;
   histories.forEach((h) => {
-    const accName = h.acc.accountName || h.acc.name || `Account ${h.acc.accountId || h.acc.id}`;
+    const accName = h.acc.accountName || h.acc.name || defaultAccountName(h.acc.accountId || h.acc.id);
     windows.forEach((win, w) => {
       const points = h.data
         .map(d => ({ x: new Date(d.capturedAt), y: win.extract(d) }))
@@ -4655,7 +4766,7 @@ function updateAnthropicSessionHeaders() {
   for (let i = 0; i < 3; i++) {
     const el = document.getElementById(`anth-session-col-${i}`);
     if (el && quotas[i]) {
-      const shortName = anthropicDisplayNames[quotas[i]] || quotas[i];
+      const shortName = localizedQuotaLabel(quotas[i], anthropicDisplayNames[quotas[i]] || quotas[i]);
       // Remove trailing " Limit" for compact table headers
       const label = shortName.replace(/ Limit$/, '');
       el.innerHTML = `${label} % <span class="sort-arrow"></span>`;
@@ -4667,12 +4778,86 @@ function updateAnthropicSessionHeaders() {
 function getAnthropicSessionLabel(idx) {
   const quotas = State.anthropicSessionQuotas;
   if (quotas && quotas[idx]) {
-    const name = anthropicDisplayNames[quotas[idx]] || quotas[idx];
+    const name = localizedQuotaLabel(quotas[idx], anthropicDisplayNames[quotas[idx]] || quotas[idx]);
     return name.replace(/ Limit$/, '');
   }
   // Fallback labels if quota data hasn't loaded yet
   const fallbacks = ['5-Hour', 'Weekly', 'Weekly Sonnet'];
   return fallbacks[idx] || `Quota ${idx + 1}`;
+}
+
+const INSIGHT_TEXT_KEYS = Object.freeze({
+  'Getting Started': 'insights.getting_started',
+  'Collecting Insights': 'insights.collecting',
+  'Service Unavailable': 'insights.service_unavailable',
+  'Data Coverage': 'insights.data_coverage',
+  'Coverage': 'insights.coverage',
+  'Trend': 'insights.trend',
+  'Usage Trend (7d)': 'insights.usage_trend_7d',
+  '24h Trend': 'insights.trend_24h',
+  '7-Day Usage': 'insights.usage_7d',
+  'Weekly Pace': 'insights.weekly_pace',
+  'Burn Rate Analysis': 'insights.burn_rate_analysis',
+  'Projected to Exhaust': 'insights.projected_exhaust',
+  'Projected Usage': 'insights.projected_usage',
+  'Quota Efficiency': 'insights.quota_efficiency',
+  'Quota Reset': 'insights.quota_reset',
+  'Next Reset': 'insights.next_reset',
+  'Time Budget': 'insights.time_budget',
+  'Token Rate': 'insights.token_rate',
+  'Tokens Per Call': 'insights.tokens_per_call',
+  'Top Tool': 'insights.top_tool',
+  'Plan Capacity': 'insights.plan_capacity',
+  'Usage Spread': 'insights.usage_spread',
+  'High Variance': 'insights.high_variance',
+  'Consistent': 'insights.consistent',
+  'Free Tier': 'insights.free_tier',
+  'High Credit Usage': 'insights.high_credit_usage',
+  'Moderate Credit Usage': 'insights.moderate_credit_usage',
+  'Peak Hours': 'insights.peak_hours',
+  'Avg Cycle Utilization': 'insights.avg_cycle',
+  'Average Utilization': 'insights.average_utilization',
+  'Review Request Pace': 'insights.review_pace',
+  '5-Hour vs Weekly': 'insights.five_vs_weekly',
+  'Range': 'insights.range',
+  'Plan': 'insights.plan',
+  'Sessions': 'insights.sessions',
+  'Cycles Tracked': 'insights.cycles_tracked',
+  'Current Usage': 'insights.current_usage',
+  'Current Status': 'insights.current_status',
+  'Peak Utilization': 'insights.peak_utilization',
+  'Peak Cycle': 'insights.peak_cycle',
+  'Burn Rate': 'insights.burn_rate',
+  'Usage Rate': 'insights.usage_rate',
+  'Daily Usage': 'insights.daily_usage',
+  'Total Usage': 'insights.total_usage',
+  'Active Models': 'insights.active_models',
+  'Tool Calls': 'insights.tool_calls',
+  'Tokens Used': 'insights.tokens_used',
+  'Tokens Left': 'insights.tokens_left',
+  'Remaining': 'insights.remaining',
+  'Resets In': 'insights.resets_in',
+  'Exhausts By': 'insights.exhausts_by',
+  'Credits Used': 'insights.credits_used',
+  'Total Balance': 'insights.total_balance',
+  'Granted': 'insights.granted',
+  'Topped Up': 'insights.topped_up',
+  'Spend Rate': 'insights.spend_rate',
+  'Membership': 'insights.membership',
+  'Available': 'insights.available',
+  'Cash': 'insights.cash',
+  'Voucher': 'insights.voucher',
+});
+
+function localizedInsightText(text) {
+  const value = String(text || '');
+  const key = INSIGHT_TEXT_KEYS[value];
+  if (key) return tr(key);
+  if (/^Keep onWatch running to collect enough .* history/i.test(value)) return tr('insights.collect_history_desc');
+  if (/^Keep onWatch running (?:to collect|to build up)/i.test(value)) return tr('insights.getting_started_desc');
+  if (/API is currently reporting that the service is not available/i.test(value)) return tr('insights.service_unavailable_desc');
+  if (value.startsWith('High Utilization: ')) return `${tr('status.warning')}: ${value.slice('High Utilization: '.length)}`;
+  return value;
 }
 
 // ── Deep Insights (Interactive Cards) ──
@@ -4777,8 +4962,8 @@ async function fetchDeepInsights() {
             ? buildEnrichedStatHTML(s)
             : `<div class="insight-stat">
                 <div class="insight-stat-value">${escapeHTML(s.value)}</div>
-                <div class="insight-stat-label">${escapeHTML(s.label)}</div>
-                ${s.sublabel ? `<div class="insight-stat-sublabel">${escapeHTML(s.sublabel)}</div>` : ''}
+                <div class="insight-stat-label">${escapeHTML(localizedInsightText(s.label))}</div>
+                ${s.sublabel ? `<div class="insight-stat-sublabel">${escapeHTML(localizedInsightText(s.sublabel))}</div>` : ''}
               </div>`
         ).join('') : '';
         statsEl.querySelectorAll('.insight-card').forEach(card => {
@@ -4804,7 +4989,7 @@ async function fetchDeepInsights() {
     if (getCurrentProvider() !== requestProvider) return;
     if (requestProvider === 'both') return;
     if (statsEl) statsEl.innerHTML = '';
-    cardsEl.innerHTML = '<p class="insight-text">Unable to load insights.</p>';
+    cardsEl.innerHTML = `<p class="insight-text">${tr('api_integrations.unable_insights')}</p>`;
   }
 }
 
@@ -4815,12 +5000,12 @@ function ensureAPIIntegrationsInsightsControls() {
   const controls = document.createElement('div');
   controls.className = 'api-integrations-insights-controls';
   controls.innerHTML = `
-    <span class="api-integrations-insights-controls-label">Active Window</span>
-    <select class="page-size-select" id="api-integrations-active-window-select" aria-label="Active API integrations window">
-      <option value="24h">24h</option>
-      <option value="3d">3d</option>
-      <option value="8d">8d</option>
-      <option value="30d">30d</option>
+    <span class="api-integrations-insights-controls-label">${tr('api_integrations.active_window')}</span>
+    <select class="page-size-select" id="api-integrations-active-window-select" aria-label="${tr('a11y.api_integrations_window')}">
+      <option value="24h" data-i18n-duration="24h">${localizedRangeLabel('24h')}</option>
+      <option value="3d" data-i18n-duration="3d">${localizedRangeLabel('3d')}</option>
+      <option value="8d" data-i18n-duration="8d">${localizedRangeLabel('8d')}</option>
+      <option value="30d" data-i18n-duration="30d">${localizedRangeLabel('30d')}</option>
     </select>
   `;
   const select = controls.querySelector('#api-integrations-active-window-select');
@@ -4845,8 +5030,8 @@ function renderAPIIntegrationsInsights() {
   const entries = getAPIIntegrationEntries();
   const history = State.apiIntegrationsHistory || {};
   if (entries.length === 0) {
-    allTimeEl.innerHTML = '<p class="insight-text">Run your integrations to populate all-time totals here.</p>';
-    recentEl.innerHTML = '<p class="insight-text">Recent activity appears here after data is ingested.</p>';
+    allTimeEl.innerHTML = `<p class="insight-text">${tr('api_integrations.empty_all_time')}</p>`;
+    recentEl.innerHTML = `<p class="insight-text">${tr('api_integrations.empty_recent')}</p>`;
     return;
   }
 
@@ -4916,13 +5101,13 @@ function renderAPIIntegrationsInsights() {
   const recentAvgTokensPerCall = recentRequestCount > 0 ? recentWindowTokens / recentRequestCount : 0;
 
   allTimeEl.innerHTML = [
-    { label: 'Tracked Integrations', value: formatNumber(entries.length), sublabel: 'Integrations seen since records started' },
-    { label: 'Providers', value: formatNumber(totalProviders.size), sublabel: 'Distinct providers across all integrations' },
-    { label: 'Total Tokens', value: formatNumber(totals.totalTokens), sublabel: 'Accumulated token volume' },
-    { label: 'Input Tokens', value: formatNumber(totals.inputTokens), sublabel: 'Prompt-side tokens across all time' },
-    { label: 'Output Tokens', value: formatNumber(totals.outputTokens), sublabel: 'Completion-side tokens across all time' },
-    { label: 'API Calls', value: formatNumber(totals.requestCount), sublabel: 'Recorded requests since this dataset started' },
-    { label: 'Average Tokens per Call', value: avgTokensPerCall > 0 ? formatNumber(avgTokensPerCall.toFixed(1)) : '0.0', sublabel: 'Average request size across all recorded calls' },
+    { label: tr('api_integrations.tracked_integrations'), value: formatNumber(entries.length), sublabel: tr('api_integrations.seen_since_start') },
+    { label: tr('api_integrations.providers'), value: formatNumber(totalProviders.size), sublabel: tr('api_integrations.distinct_providers') },
+    { label: tr('api_integrations.total_tokens'), value: formatNumber(totals.totalTokens), sublabel: tr('api_integrations.accumulated_volume') },
+    { label: tr('api_integrations.input_tokens'), value: formatNumber(totals.inputTokens), sublabel: tr('api_integrations.prompt_all_time') },
+    { label: tr('api_integrations.output_tokens'), value: formatNumber(totals.outputTokens), sublabel: tr('api_integrations.completion_all_time') },
+    { label: tr('api_integrations.api_calls'), value: formatNumber(totals.requestCount), sublabel: tr('api_integrations.requests_since_start') },
+    { label: tr('api_integrations.average_tokens_call'), value: avgTokensPerCall > 0 ? formatNumber(avgTokensPerCall.toFixed(1)) : '0.0', sublabel: tr('api_integrations.average_recorded_call') },
   ].map((stat) => `
     <div class="insight-stat">
       <div class="insight-stat-value">${stat.value}</div>
@@ -4932,14 +5117,14 @@ function renderAPIIntegrationsInsights() {
   `).join('');
 
   recentEl.innerHTML = [
-    { label: `Active Integrations (${State.apiIntegrationsActiveWindow})`, value: formatNumber(totals.activeIntegrations), sublabel: 'Integrations used inside the active window' },
-    { label: 'Tokens in Visible Range', value: formatNumber(recentWindowTokens), sublabel: 'Total token volume in the selected chart range' },
-    { label: 'Input Tokens in Range', value: formatNumber(recentInputTokens), sublabel: 'Prompt-side tokens in the selected range' },
-    { label: 'Output Tokens in Range', value: formatNumber(recentOutputTokens), sublabel: 'Completion-side tokens in the selected range' },
-    { label: 'API Calls in Range', value: formatNumber(recentRequestCount), sublabel: 'Recorded requests in the selected chart range' },
-    { label: 'Usage Change vs Earlier Half', value: `${trendDelta >= 0 ? '+' : '-'}${Math.abs(trendPct).toFixed(1)}%`, sublabel: `Compared with the earlier half of the visible window (${trendDelta >= 0 ? 'up' : 'down'} ${formatNumber(Math.abs(trendDelta))} tokens)` },
-    { label: 'Average Tokens per Call in Range', value: recentAvgTokensPerCall > 0 ? formatNumber(recentAvgTokensPerCall.toFixed(1)) : '0.0', sublabel: 'Average request size inside the visible window' },
-    { label: 'Busiest Integration in Range', value: busiestRecentIntegration ? escapeHTML(busiestRecentIntegration) : '--', sublabel: busiestRecentTokens > 0 ? `${formatNumber(busiestRecentTokens)} tokens in the selected range` : 'Waiting for more recent activity' },
+    { label: tr('api_integrations.active_integrations', { window: State.apiIntegrationsActiveWindow }), value: formatNumber(totals.activeIntegrations), sublabel: tr('api_integrations.used_active_window') },
+    { label: tr('api_integrations.tokens_visible_range'), value: formatNumber(recentWindowTokens), sublabel: tr('api_integrations.total_selected_range') },
+    { label: tr('api_integrations.input_tokens_range'), value: formatNumber(recentInputTokens), sublabel: tr('api_integrations.prompt_selected_range') },
+    { label: tr('api_integrations.output_tokens_range'), value: formatNumber(recentOutputTokens), sublabel: tr('api_integrations.completion_selected_range') },
+    { label: tr('api_integrations.api_calls_range'), value: formatNumber(recentRequestCount), sublabel: tr('api_integrations.requests_selected_range') },
+    { label: tr('api_integrations.usage_change'), value: `${trendDelta >= 0 ? '+' : '-'}${Math.abs(trendPct).toFixed(1)}%`, sublabel: tr('api_integrations.compared_earlier', { direction: tr(trendDelta >= 0 ? 'api_integrations.up' : 'api_integrations.down'), tokens: formatNumber(Math.abs(trendDelta)) }) },
+    { label: tr('api_integrations.average_tokens_range'), value: recentAvgTokensPerCall > 0 ? formatNumber(recentAvgTokensPerCall.toFixed(1)) : '0.0', sublabel: tr('api_integrations.average_visible_window') },
+    { label: tr('api_integrations.busiest_range'), value: busiestRecentIntegration ? escapeHTML(busiestRecentIntegration) : '--', sublabel: busiestRecentTokens > 0 ? tr('api_integrations.tokens_selected_range', { tokens: formatNumber(busiestRecentTokens) }) : tr('api_integrations.waiting_recent') },
   ].map((stat) => `
     <div class="insight-stat">
       <div class="insight-stat-value">${stat.value}</div>
@@ -4957,15 +5142,16 @@ function renderInsightsRangePills() {
   selector.className = 'range-selector insights-range-selector';
   selector.setAttribute('role', 'group');
   selector.setAttribute('aria-label', tr('a11y.insights_time_range'));
+  selector.setAttribute('data-i18n-aria-label', 'a11y.insights_time_range');
 
   const ranges = [
-    { value: '1d', label: '1d' },
-    { value: '7d', label: '7d' },
-    { value: '30d', label: '30d' },
+    { value: '1d', label: localizedRangeLabel('1d') },
+    { value: '7d', label: localizedRangeLabel('7d') },
+    { value: '30d', label: localizedRangeLabel('30d') },
   ];
 
   selector.innerHTML = ranges.map(r =>
-    `<button class="range-btn ${r.value === State.insightsRange ? 'active' : ''}" data-insights-range="${r.value}">${r.label}</button>`
+    `<button class="range-btn ${r.value === State.insightsRange ? 'active' : ''}" data-insights-range="${r.value}" data-i18n-duration="${r.value}">${r.label}</button>`
   ).join('');
 
   selector.addEventListener('click', (e) => {
@@ -5019,7 +5205,7 @@ function renderBothInsights(data, statsEl, cardsEl) {
   }
 
   if (activeProviders.has('copilot') && data.copilot) {
-    html += renderProviderBox('copilot', 'Copilot <span class="beta-badge">Beta</span>', data.copilot);
+    html += renderProviderBox('copilot', `Copilot <span class="beta-badge">${tr('settings.beta')}</span>`, data.copilot);
   }
 
 	if (activeProviders.has('antigravity') && data.antigravity) {
@@ -5037,7 +5223,7 @@ function renderBothInsights(data, statsEl, cardsEl) {
 	if (activeProviders.has('codex')) {
     if (Array.isArray(data.codexAccounts) && data.codexAccounts.length > 0) {
       data.codexAccounts.forEach(acc => {
-        const label = `Codex · ${acc.accountName || `Account ${acc.accountId || ''}`.trim()}`;
+        const label = `Codex · ${acc.accountName || defaultAccountName(acc.accountId || '')}`;
         html += renderProviderBox('codex', label, acc);
       });
     } else if (data.codex) {
@@ -5045,7 +5231,7 @@ function renderBothInsights(data, statsEl, cardsEl) {
     }
   }
 
-  cardsEl.innerHTML = html || '<p class="insight-text">No insights available.</p>';
+  cardsEl.innerHTML = html || `<p class="insight-text">${tr('insights.no_available')}</p>`;
 
   // Attach events to all insight cards within both boxes
   cardsEl.querySelectorAll('.insight-card').forEach(card => {
@@ -5061,7 +5247,7 @@ function renderBothInsights(data, statsEl, cardsEl) {
 
 function buildEnrichedStatHTML(s) {
   const icon = insightIcons[s.severity] || insightIcons.info;
-  const hideBtn = s.key ? `<button class="insight-eye-btn" data-key="${s.key}" aria-label="Hide this insight" title="Hide this insight">
+  const hideBtn = s.key ? `<button class="insight-eye-btn" data-key="${s.key}" aria-label="${tr('insights.hide')}" title="${tr('insights.hide')}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
     </button>` : '';
   const chevron = s.desc ? `<svg class="insight-card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>` : '';
@@ -5069,35 +5255,35 @@ function buildEnrichedStatHTML(s) {
   return `<div class="insight-card severity-${s.severity || 'info'}" data-key="${s.key || ''}" role="button" tabindex="0">
     <div class="insight-card-header">
       <svg class="insight-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
-      <span class="insight-card-title">${escapeHTML(s.label)}</span>
+      <span class="insight-card-title">${escapeHTML(localizedInsightText(s.label))}</span>
       <span class="insight-card-values">
         <span class="insight-card-metric">${escapeHTML(displayMetric)}</span>
-        ${s.sublabel ? `<span class="insight-card-sublabel">${escapeHTML(s.sublabel)}</span>` : ''}
+        ${s.sublabel ? `<span class="insight-card-sublabel">${escapeHTML(localizedInsightText(s.sublabel))}</span>` : ''}
       </span>
       ${hideBtn}
       ${chevron}
     </div>
-    ${s.desc ? `<div class="insight-card-detail"><div class="insight-card-desc">${escapeHTML(s.desc)}</div></div>` : ''}
+    ${s.desc ? `<div class="insight-card-detail"><div class="insight-card-desc">${escapeHTML(localizedInsightText(s.desc))}</div></div>` : ''}
   </div>`;
 }
 
 function buildInsightCardsHTML(insights) {
-  if (insights.length === 0) return '<p class="insight-text">Keep tracking to see deep analytics.</p>';
+  if (insights.length === 0) return `<p class="insight-text">${tr('insights.keep_tracking')}</p>`;
   return insights.map((i, idx) => {
     const icon = insightTitleIcons[i.title] || (i.quotaType && quotaIcons[i.quotaType]) || insightIcons[i.severity] || insightIcons.info;
-    const hideBtn = i.key ? `<button class="insight-eye-btn" data-key="${i.key}" aria-label="Hide this insight" title="Hide this insight">
+    const hideBtn = i.key ? `<button class="insight-eye-btn" data-key="${i.key}" aria-label="${tr('insights.hide')}" title="${tr('insights.hide')}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>` : '';
     return `<div class="insight-card severity-${i.severity}" data-insight-idx="${idx}" data-key="${i.key || ''}" role="button" tabindex="0">
       <div class="insight-card-header">
         <svg class="insight-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
-        <span class="insight-card-title">${i.title}</span>
-        ${i.metric || i.sublabel ? `<span class="insight-card-values">${i.metric ? `<span class="insight-card-metric">${i.metric}</span>` : ''}${i.sublabel ? `<span class="insight-card-sublabel">${i.sublabel}</span>` : ''}</span>` : ''}
+        <span class="insight-card-title">${escapeHTML(localizedInsightText(i.title))}</span>
+        ${i.metric || i.sublabel ? `<span class="insight-card-values">${i.metric ? `<span class="insight-card-metric">${escapeHTML(i.metric)}</span>` : ''}${i.sublabel ? `<span class="insight-card-sublabel">${escapeHTML(localizedInsightText(i.sublabel))}</span>` : ''}</span>` : ''}
         ${hideBtn}
         <svg class="insight-card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
       </div>
       <div class="insight-card-detail">
-        <div class="insight-card-desc">${i.description}</div>
+        <div class="insight-card-desc">${escapeHTML(localizedInsightText(i.description))}</div>
       </div>
     </div>`;
   }).join('');
@@ -5116,7 +5302,7 @@ function renderInsightCards(container, insights) {
       });
     });
   } else {
-    container.innerHTML = '<p class="insight-text">Keep tracking to see deep analytics.</p>';
+    container.innerHTML = `<p class="insight-text">${tr('insights.keep_tracking')}</p>`;
   }
 }
 
@@ -5157,7 +5343,7 @@ function renderHiddenInsightsBadge() {
       <line x1="1" y1="1" x2="23" y2="23"/>
     </svg>
     <span>${hiddenCount} hidden</span>
-    <button class="hidden-badge-show" title="Show all hidden insights">Show all</button>
+    <button class="hidden-badge-show" title="${tr('common.show')}">${tr('common.show')}</button>
   `;
 
   badge.querySelector('.hidden-badge-show').addEventListener('click', async () => {
@@ -5263,15 +5449,15 @@ function initChart() {
     defaultDatasets = []; // OpenCode datasets are dynamic
   } else if (provider === 'zai') {
     defaultDatasets = [
-      { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
-      { label: 'Time Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('timeLimit') },
-      { label: 'Tool Calls', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('toolCalls') }
+      { label: tr('quota.tokens_limit'), data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
+      { label: tr('quota.time_limit'), data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('timeLimit') },
+      { label: tr('quota.tool_calls'), data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('toolCalls') }
     ];
   } else {
     defaultDatasets = [
-      { label: 'Subscription', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('subscription') },
-      { label: 'Search', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('search') },
-      { label: 'Tool Calls', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('toolCalls') }
+      { label: tr('quota.subscription'), data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('subscription') },
+      { label: tr('quota.search_hourly'), data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('search') },
+      { label: tr('quota.tool_calls'), data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('toolCalls') }
     ];
   }
   const quotaMap = provider === 'zai'
@@ -5341,7 +5527,7 @@ function initChart() {
                   return `${ctx.dataset.label}: ${formatCurrencyUSD(Number(ctx.parsed.y || 0))}`;
                 }
                 if (metric === 'tokenPerCall') {
-                  return `${ctx.dataset.label}: ${formatNumber(Number(ctx.parsed.y || 0).toFixed(1))} tokens/call`;
+                  return `${ctx.dataset.label}: ${formatNumber(Number(ctx.parsed.y || 0).toFixed(1))} ${tr('api_integrations.tokens_per_call')}`;
                 }
                 return `${ctx.dataset.label}: ${formatNumber(Number(ctx.parsed.y || 0))}`;
               }
@@ -5371,7 +5557,7 @@ function initChart() {
           },
           title: {
             display: isAPIIntegrations,
-            text: isAPIIntegrations ? 'Tokens per Call' : '',
+            text: isAPIIntegrations ? tr('api_integrations.tokens_per_call') : '',
             color: colors.text,
           },
           min: 0,
@@ -5546,7 +5732,7 @@ async function fetchHistory(range) {
         const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] != null ? d[key] : null }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
         const mainDataset = {
-          label: anthropicDisplayNames[key] || key,
+          label: localizedQuotaLabel(key, anthropicDisplayNames[key] || key),
           data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
@@ -5585,7 +5771,7 @@ async function fetchHistory(range) {
         });
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
         const mainDataset = {
-          label: copilotDisplayNames[key] || key,
+          label: localizedQuotaLabel(key, copilotDisplayNames[key] || key),
           data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
@@ -5622,7 +5808,7 @@ async function fetchHistory(range) {
         });
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
         datasets.push({
-          label: cursorDisplayNames[key] || key,
+          label: localizedQuotaLabel(key, cursorDisplayNames[key] || key),
           data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
@@ -5657,7 +5843,7 @@ async function fetchHistory(range) {
         const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
         const mainDataset = {
-          label: minimaxDisplayNames[key] || key,
+          label: localizedMiniMaxLabel(key),
           data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
@@ -5739,7 +5925,7 @@ async function fetchHistory(range) {
         const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
         datasets.push({
-          label: openrouterDisplayNames[key] || key,
+          label: localizedQuotaLabel(key, openrouterDisplayNames[key] || key),
           data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
@@ -5806,7 +5992,7 @@ async function fetchHistory(range) {
         const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
         datasets.push({
-          label: kimiDisplay[key] || key,
+          label: localizedQuotaLabel(key, kimiDisplay[key] || key),
           data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
@@ -5840,7 +6026,7 @@ async function fetchHistory(range) {
       configs.forEach(cfg => {
         const rawData = flattenedRows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] || 0 }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
-        datasets.push({ label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, hidden: State.hiddenQuotas.has(cfg.hiddenKey), spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) });
+        datasets.push({ label: localizedDatasetLabel(cfg), data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, hidden: State.hiddenQuotas.has(cfg.hiddenKey), spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) });
       });
       State.chart.data.datasets = datasets;
       updateTimeScale(State.chart, range);
@@ -5865,7 +6051,7 @@ async function fetchHistory(range) {
         const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
         const mainDataset = {
-          label: codexDisplayNames[key] || key,
+          label: localizedQuotaLabel(key, codexDisplayNames[key] || key),
           data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
@@ -5895,7 +6081,7 @@ async function fetchHistory(range) {
       configs.forEach(cfg => {
         const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
-        const mainDataset = { label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, hidden: State.hiddenQuotas.has(cfg.hiddenKey), spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
+        const mainDataset = { label: localizedDatasetLabel(cfg), data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, hidden: State.hiddenQuotas.has(cfg.hiddenKey), spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
         datasets.push(mainDataset);
       });
       State.chart.data.datasets = datasets;
@@ -5909,7 +6095,7 @@ async function fetchHistory(range) {
       configs.forEach(cfg => {
         const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
-        const mainDataset = { label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, hidden: State.hiddenQuotas.has(cfg.hiddenKey), spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
+        const mainDataset = { label: localizedDatasetLabel(cfg), data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, hidden: State.hiddenQuotas.has(cfg.hiddenKey), spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) };
         datasets.push(mainDataset);
       });
       State.chart.data.datasets = datasets;
@@ -6067,14 +6253,14 @@ function normalizeBothQuotas(provider, payload) {
     return {
       ...quota,
       cardPercent: percent,
-      displayName: quota.displayName
+      displayName: localizedQuotaLabel(quota.name, quota.displayName
         || codexDisplayNames[quota.name]
         || anthropicDisplayNames[quota.name]
         || copilotDisplayNames[quota.name]
-        || minimaxDisplayNames[quota.name]
+        || localizedMiniMaxLabel(quota.name)
         || geminiDisplayNames[quota.name]
-        || getQuotaDisplayName(quota.name, provider),
-      cardLabel: quota.cardLabel || 'Utilization',
+        || getQuotaDisplayName(quota.name, provider)),
+      cardLabel: quota.cardLabel || tr('table.utilization'),
       status: quota.status || 'healthy',
       timeUntilResetSeconds: quota.timeUntilResetSeconds || 0,
       resetsAt: quota.resetsAt || quota.renewsAt || quota.resets_at || quota.resetAt || '',
@@ -6144,7 +6330,7 @@ function buildAllProviderEntries() {
       entries.push({
         provider: 'api-integrations',
         cardKey: sanitizeProviderCardKey('api-integrations-summary'),
-        title: 'API Integrations',
+        title: tr('dashboard.api_integrations_label'),
         summary,
         health: payload.health || null,
         summaryOnly: true,
@@ -6170,7 +6356,7 @@ function buildAllProviderEntries() {
           provider: 'codex',
           cardKey: sanitizeProviderCardKey('codex'),
           title: 'Codex',
-          badge: `${groupAccounts.length} accounts`,
+          badge: tr('account.count', { count: groupAccounts.length }),
           accountsGroup: groupAccounts,
         });
         return;
@@ -6179,7 +6365,7 @@ function buildAllProviderEntries() {
       currentAccounts.forEach((account, idx) => {
         const accountID = account.accountId || account.id || idx + 1;
         if (!isProviderTelemetryEnabled('codex', accountID)) return;
-        const accountName = account.accountName || account.name || `Account ${idx + 1}`;
+        const accountName = account.accountName || account.name || defaultAccountName(idx + 1);
         const cardKey = sanitizeProviderCardKey(`codex-${accountID}`);
         const insightPayload = insightAccounts.find(acc => String(acc.accountId || '') === String(accountID))
           || insights.codex
@@ -6188,7 +6374,7 @@ function buildAllProviderEntries() {
         entries.push({
           provider: 'codex',
           cardKey,
-          title: `Codex - Account: ${accountName}`,
+          title: `Codex - ${tr('account.account')}: ${accountName}`,
           badge: toTitleCase(account.planType || ''),
           planType: account.planType || '',
           quotas: normalizeBothQuotas('codex', account),
@@ -6235,7 +6421,7 @@ function buildAllProviderEntries() {
           provider: 'minimax',
           cardKey: sanitizeProviderCardKey('minimax'),
           title: bothProviderNames.minimax || 'MiniMax',
-          badge: `${groupAccounts.length} accounts`,
+          badge: tr('account.count', { count: groupAccounts.length }),
           accountsGroup: groupAccounts,
         });
         return;
@@ -6244,7 +6430,7 @@ function buildAllProviderEntries() {
       currentAccounts.forEach((account, idx) => {
         const accountID = account.accountId || account.id || idx + 1;
         if (!isProviderTelemetryEnabled('minimax', accountID)) return;
-        const accountName = account.accountName || account.name || `Account ${idx + 1}`;
+        const accountName = account.accountName || account.name || defaultAccountName(idx + 1);
         const cardKey = sanitizeProviderCardKey(`minimax-${accountID}`);
         const insightPayload = insightAccounts.find(acc => String(acc.accountId || '') === String(accountID))
           || insights.minimax
@@ -6291,14 +6477,14 @@ function buildAllProviderEntries() {
 
 function renderProviderKPIHTML(quotas, provider) {
   if (!Array.isArray(quotas) || quotas.length === 0) {
-    return '<p class="insight-text">No KPI data available yet.</p>';
+    return `<p class="insight-text">${tr('common.no_kpi_data')}</p>`;
   }
   return quotas.map((quota) => {
     const percent = Number(quota.cardPercent ?? 0);
     const status = quota.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
-    const displayName = quota.displayName || quota.name || 'Quota';
-    const label = quota.cardLabel || 'Utilization';
+    const displayName = localizedQuotaLabel(quota.name, quota.displayName || quota.name || tr('table.quota'));
+    const label = localizedCardLabel(quota.cardLabel);
     const subtitle = quota.subtitle || minimaxSharedSubtitle(quota.sharedModels);
     const usageFraction = Number.isFinite(Number(quota.used)) && Number.isFinite(Number(quota.total)) && Number(quota.total) > 0
       ? `${formatNumber(quota.used)} / ${formatNumber(quota.total)}`
@@ -6373,7 +6559,7 @@ function renderAPIIntegrationsSummaryCard(entry, collapsed) {
         <span>${escapeHTML(entry.title)}</span>
         <span class="provider-card-badge">${statusMeta.label}</span>
       </div>
-      <button class="provider-card-collapse-btn" type="button" data-card-key="${entry.cardKey}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${escapeHTML(entry.title)}">
+      <button class="provider-card-collapse-btn" type="button" data-card-key="${entry.cardKey}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? tr('common.show') : tr('common.hide')} ${escapeHTML(entry.title)}">
         <svg class="provider-card-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="m9 6 6 6-6 6"/>
         </svg>
@@ -6381,10 +6567,10 @@ function renderAPIIntegrationsSummaryCard(entry, collapsed) {
     </header>
     <div class="provider-card-body">
       <div class="api-integrations-summary-grid">
-        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Tracked Integrations:</span><span class="api-integrations-stat-value">${formatNumber(Number(summary.integrationCount || 0))}</span></div>
-        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Requests:</span><span class="api-integrations-stat-value">${formatNumber(Number(summary.requestCount || 0))}</span></div>
-        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Tokens:</span><span class="api-integrations-stat-value">${formatNumber(Number(summary.totalTokens || 0))}</span></div>
-        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Status:</span><span class="status-badge" data-status="${statusMeta.badgeStatus}">${statusMeta.label}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">${tr('api_integrations.tracked_integrations')}:</span><span class="api-integrations-stat-value">${formatNumber(Number(summary.integrationCount || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">${tr('api_integrations.requests')}:</span><span class="api-integrations-stat-value">${formatNumber(Number(summary.requestCount || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">${tr('api_integrations.tokens')}:</span><span class="api-integrations-stat-value">${formatNumber(Number(summary.totalTokens || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">${tr('api_integrations.status')}:</span><span class="status-badge" data-status="${statusMeta.badgeStatus}">${statusMeta.label}</span></div>
       </div>
     </div>
   </section>`;
@@ -6451,7 +6637,7 @@ function renderProviderInsightsHTML(provider, payload) {
     const severity = (stat.metric && stat.severity) ? stat.severity : 'info';
     items.push(`<article class="insight-card provider-mini-insight severity-${severity}">
       <div class="insight-card-header">
-        <span class="insight-card-title">${escapeHTML(stat.label || 'Metric')}</span>
+        <span class="insight-card-title">${escapeHTML(localizedInsightText(stat.label || tr('api_integrations.metric')))}</span>
         <span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(displayValue)}</span></span>
       </div>
       ${stat.sublabel ? `<div class="provider-mini-insight-note">${escapeHTML(compactInsightText(stat.sublabel, 48))}</div>` : ''}
@@ -6462,10 +6648,10 @@ function renderProviderInsightsHTML(provider, payload) {
     const note = compactInsightText(insight.sublabel || insight.description || '', 72);
     items.push(`<article class="insight-card provider-mini-insight severity-${escapeHTML(insight.severity || 'info')}">
       <div class="insight-card-header">
-        <span class="insight-card-title">${escapeHTML(insight.title || 'Insight')}</span>
+        <span class="insight-card-title">${escapeHTML(localizedInsightText(insight.title || tr('api_integrations.insight')))}</span>
         ${insight.metric ? `<span class="insight-card-values"><span class="insight-card-metric">${escapeHTML(insight.metric)}</span></span>` : ''}
       </div>
-      ${note ? `<div class="provider-mini-insight-note">${escapeHTML(note)}</div>` : ''}
+      ${note ? `<div class="provider-mini-insight-note">${escapeHTML(localizedInsightText(note))}</div>` : ''}
     </article>`);
   });
 
@@ -6514,7 +6700,7 @@ function renderAPIIntegrationsCards() {
 
   const entries = getAPIIntegrationEntries();
   if (entries.length === 0) {
-    container.innerHTML = '<p class="insight-text">No API integration usage yet.</p>';
+    container.innerHTML = `<p class="insight-text">${tr('api_integrations.no_usage')}</p>`;
     return;
   }
 
@@ -6531,16 +6717,16 @@ function renderAPIIntegrationsCards() {
         <div class="quota-title-block">
           <h2 class="quota-title">${escapeHTML(entry.integration)}</h2>
           <div class="api-integrations-header-meta">
-            <span class="api-integrations-provider-pill"><strong>Providers:</strong> ${escapeHTML(providerSummary || 'No providers yet')}</span>
+            <span class="api-integrations-provider-pill"><strong>${tr('api_integrations.providers')}:</strong> ${escapeHTML(providerSummary || tr('api_integrations.no_providers'))}</span>
           </div>
         </div>
         <span class="countdown">${entry.lastCapturedAt ? escapeHTML(formatDateTime(entry.lastCapturedAt)) : '--'}</span>
       </header>
       <div class="api-integrations-card-stats">
-        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Requests: </span><span class="api-integrations-stat-value">${formatNumber(Number(entry.requestCount || 0))}</span></div>
-        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Total Tokens: </span><span class="api-integrations-stat-value">${formatNumber(Number(entry.totalTokens || 0))}</span></div>
-        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Input / Output: </span><span class="api-integrations-stat-value">${formatNumber(promptTokens)} / ${formatNumber(completionTokens)}</span></div>
-        <div class="api-integrations-stat"><span class="api-integrations-stat-label">Cost (where available): </span><span class="api-integrations-stat-value">${entry.totalCostUsd != null ? formatCurrencyUSD(Number(entry.totalCostUsd || 0)) : '--'}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">${tr('api_integrations.requests')}: </span><span class="api-integrations-stat-value">${formatNumber(Number(entry.requestCount || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">${tr('api_integrations.total_tokens')}: </span><span class="api-integrations-stat-value">${formatNumber(Number(entry.totalTokens || 0))}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">${tr('api_integrations.input_output')}: </span><span class="api-integrations-stat-value">${formatNumber(promptTokens)} / ${formatNumber(completionTokens)}</span></div>
+        <div class="api-integrations-stat"><span class="api-integrations-stat-label">${tr('api_integrations.cost_available')}: </span><span class="api-integrations-stat-value">${entry.totalCostUsd != null ? formatCurrencyUSD(Number(entry.totalCostUsd || 0)) : '--'}</span></div>
       </div>
     </article>`;
   }).join('');
@@ -6554,21 +6740,21 @@ function renderAPIIntegrationsHealth() {
 
   const health = State.apiIntegrationsHealth;
   if (!health) {
-    summaryEl.innerHTML = '<p class="insight-text">Loading API integrations health...</p>';
+    summaryEl.innerHTML = `<p class="insight-text">${tr('api_integrations.loading_health')}</p>`;
     alertsEl.innerHTML = '';
-    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No API integration ingest state yet.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="3" class="empty-state">${tr('api_integrations.no_ingest_state')}</td></tr>`;
     return;
   }
 
   const statusMeta = getAPIIntegrationsStatusMeta(health);
   summaryEl.innerHTML = `
     <div class="api-integrations-health-grid">
-      <div class="api-integrations-health-item"><span class="api-integrations-health-label">Status: </span><span class="status-badge" data-status="${statusMeta.badgeStatus}">${statusMeta.label}</span></div>
-      <div class="api-integrations-health-item"><span class="api-integrations-health-label">Tracked Files: </span><span class="api-integrations-health-value">${formatNumber((Array.isArray(health.files) ? health.files : []).length)}</span></div>
-      <div class="api-integrations-health-item"><span class="api-integrations-health-label">Alerts: </span><span class="api-integrations-health-value">${formatNumber((Array.isArray(health.alerts) ? health.alerts : []).length)}</span></div>
+      <div class="api-integrations-health-item"><span class="api-integrations-health-label">${tr('api_integrations.status')}: </span><span class="status-badge" data-status="${statusMeta.badgeStatus}">${statusMeta.label}</span></div>
+      <div class="api-integrations-health-item"><span class="api-integrations-health-label">${tr('api_integrations.tracked_files')}: </span><span class="api-integrations-health-value">${formatNumber((Array.isArray(health.files) ? health.files : []).length)}</span></div>
+      <div class="api-integrations-health-item"><span class="api-integrations-health-label">${tr('api_integrations.alerts')}: </span><span class="api-integrations-health-value">${formatNumber((Array.isArray(health.alerts) ? health.alerts : []).length)}</span></div>
     </div>
     <div class="api-integrations-health-copy">
-      <p><strong>Rotating files:</strong> Move or rename the active <code>.jsonl</code> file, then let your script create a new one. That starts a fresh source log for new events. Historical charts remain in the database until you clear or replace the stored onWatch data.</p>
+      <p><strong>${tr('api_integrations.rotating_files')}:</strong> ${tr('api_integrations.rotating_files_desc')}</p>
     </div>
   `;
 
@@ -6577,16 +6763,16 @@ function renderAPIIntegrationsHealth() {
     ? alerts.slice(0, 3).map((alert) => `
       <article class="insight-card provider-mini-insight severity-${escapeHTML(alert.severity || 'warning')}">
         <div class="insight-card-header">
-          <span class="insight-card-title">${escapeHTML(alert.title || 'Alert')}</span>
+          <span class="insight-card-title">${escapeHTML(localizedInsightText(alert.title || tr('status.alert')))}</span>
         </div>
-        <div class="provider-mini-insight-note">${escapeHTML(alert.message || '')}</div>
+        <div class="provider-mini-insight-note">${escapeHTML(localizedInsightText(alert.message || ''))}</div>
       </article>
     `).join('')
     : '';
 
   const files = Array.isArray(health.files) ? health.files : [];
   if (files.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No API integration ingest state yet.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="3" class="empty-state">${tr('api_integrations.no_ingest_state')}</td></tr>`;
     return;
   }
   tbody.innerHTML = files.map((file) => `
@@ -6730,7 +6916,7 @@ function buildFixedDatasetsForRows(rows, range, configs) {
     const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
     const processed = processDataWithGaps(rawData, range);
     datasets.push({
-      label: cfg.label,
+      label: localizedDatasetLabel(cfg),
       data: processed.data,
       borderColor: cfg.color,
       backgroundColor: cfg.bg,
@@ -6761,7 +6947,9 @@ function buildDynamicDatasetsForRows(rows, range, labelMap, colorMap, colorFallb
     const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
     const processed = processDataWithGaps(rawData, range);
     datasets.push({
-      label: (labelMap[key] || getQuotaDisplayName(key, providerKey) || key),
+      label: providerKey === 'minimax'
+        ? localizedMiniMaxLabel(key)
+        : localizedQuotaLabel(key, labelMap[key] || getQuotaDisplayName(key, providerKey) || key),
       data: processed.data,
       borderColor: color.border,
       backgroundColor: color.bg,
@@ -6892,7 +7080,7 @@ function renderAllProvidersView() {
   destroyProviderCardCharts();
 
   if (entries.length === 0) {
-    container.innerHTML = '<p class="insight-text">No provider data available yet.</p>';
+    container.innerHTML = `<p class="insight-text">${tr('common.no_provider_data')}</p>`;
     return;
   }
 
@@ -6906,7 +7094,7 @@ function renderAllProvidersView() {
           <canvas id="provider-chart-${entry.cardKey}"></canvas>
         </div>`
       : `<div class="provider-chart provider-chart-empty">
-          <p class="insight-text">Collecting data...</p>
+          <p class="insight-text">${tr('common.collecting_data')}</p>
         </div>`;
     if (entry.summaryOnly) {
       return renderAPIIntegrationsSummaryCard(entry, collapsed);
@@ -6916,7 +7104,7 @@ function renderAllProvidersView() {
           <span>${escapeHTML(entry.title)}</span>
           ${badge}${promo}
         </div>
-        <button class="provider-card-collapse-btn" type="button" data-card-key="${entry.cardKey}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${escapeHTML(entry.title)}">
+        <button class="provider-card-collapse-btn" type="button" data-card-key="${entry.cardKey}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${escapeHTML(tr(collapsed ? 'a11y.expand_provider' : 'a11y.collapse_provider', { name: entry.title }))}">
           <svg class="provider-card-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="m9 6 6 6-6 6"/>
           </svg>
@@ -6971,8 +7159,8 @@ function renderAllProvidersView() {
       card.classList.toggle('collapsed');
       const collapsed = card.classList.contains('collapsed');
       btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      const title = card.querySelector('.provider-card-title span')?.textContent || 'provider card';
-      btn.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${title}`);
+      const title = card.querySelector('.provider-card-title span')?.textContent || tr('a11y.provider_card');
+      btn.setAttribute('aria-label', tr(collapsed ? 'a11y.expand_provider' : 'a11y.collapse_provider', { name: title }));
       collapsedState[cardKey] = collapsed;
       saveProviderCardCollapseState(collapsedState);
     });
@@ -6997,7 +7185,7 @@ function renderAllProvidersView() {
     const datasets = buildProviderCardDatasets(entry.provider, rows, chartRange);
     if (!datasets.length) {
       chartHost.classList.add('provider-chart-empty');
-      chartHost.innerHTML = '<p class="insight-text">Collecting data...</p>';
+      chartHost.innerHTML = `<p class="insight-text">${tr('common.collecting_data')}</p>`;
       return;
     }
 
@@ -7063,7 +7251,7 @@ function updateBothCharts(data, range = '6h') {
         if (history.length === 0) return;
         slots.push({
           id: `codex-${accountID}`,
-          label: `Codex · ${account.accountName || `Account ${idx + 1}`}`,
+          label: `Codex · ${account.accountName || defaultAccountName(idx + 1)}`,
           provider: 'codex',
           rows: history,
           accountKey: accountID,
@@ -7076,7 +7264,7 @@ function updateBothCharts(data, range = '6h') {
 
   container.classList.add('both-charts');
   if (slots.length === 0) {
-    container.innerHTML = '<p class="insight-text">No chart data available.</p>';
+    container.innerHTML = `<p class="insight-text">${tr('common.no_chart_data')}</p>`;
     return;
   }
 
@@ -7096,7 +7284,7 @@ function updateBothCharts(data, range = '6h') {
       const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
       const processed = processDataWithGaps(rawData, range);
       datasets.push({
-        label: cfg.label,
+        label: localizedDatasetLabel(cfg),
         data: processed.data,
         borderColor: cfg.color,
         backgroundColor: cfg.bg,
@@ -7125,7 +7313,9 @@ function updateBothCharts(data, range = '6h') {
       const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
       const processed = processDataWithGaps(rawData, range);
       datasets.push({
-        label: (labelMap[key] || getQuotaDisplayName(key, providerKey) || key),
+        label: providerKey === 'minimax'
+          ? localizedMiniMaxLabel(key)
+          : localizedQuotaLabel(key, labelMap[key] || getQuotaDisplayName(key, providerKey) || key),
         data: processed.data,
         borderColor: color.border,
         backgroundColor: color.bg,
@@ -7538,7 +7728,7 @@ function renderCyclesTable() {
   const deltaUsesPercent = usePercent && provider !== 'minimax' && provider !== 'moonshot' && provider !== 'deepseek';
   const isLoggingHistory = State.isLoggingHistory === true;
   const showAccount = isAccountsOverviewMode(provider);
-  const accountTh = showAccount ? '<th data-sort-key="account" role="button" tabindex="0">Account <span class="sort-arrow"></span></th>' : '';
+  const accountTh = showAccount ? `<th data-sort-key="account" role="button" tabindex="0">${tr('table.account')} <span class="sort-arrow"></span></th>` : '';
 
   // Build dynamic header
   let headerHtml;
@@ -7548,17 +7738,17 @@ function renderCyclesTable() {
       <tr>
         ${accountTh}
         <th data-sort-key="id" role="button" tabindex="0"># <span class="sort-arrow"></span></th>
-        <th data-sort-key="start" role="button" tabindex="0">Time <span class="sort-arrow"></span></th>`;
+        <th data-sort-key="start" role="button" tabindex="0">${tr('table.time')} <span class="sort-arrow"></span></th>`;
   } else {
     // Cycle-based: full header with Start, End, Duration, Total Δ
     headerHtml = `
       <tr>
         ${accountTh}
-        <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
-        <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
-        <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
-        <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-        <th data-sort-key="totalDelta" role="button" tabindex="0">Total Δ${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
+        <th data-sort-key="id" role="button" tabindex="0">${tr('table.cycle')} <span class="sort-arrow"></span></th>
+        <th data-sort-key="start" role="button" tabindex="0">${tr('table.start')} <span class="sort-arrow"></span></th>
+        <th data-sort-key="end" role="button" tabindex="0">${tr('table.end')} <span class="sort-arrow"></span></th>
+        <th data-sort-key="duration" role="button" tabindex="0">${tr('table.duration')} <span class="sort-arrow"></span></th>
+        <th data-sort-key="totalDelta" role="button" tabindex="0">${tr('table.total_delta')}${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
   }
 
   quotaNames.forEach(qn => {
@@ -7707,7 +7897,7 @@ function renderCyclesTable() {
         if (bucketMinutes > 1) {
           cycleLabel = start ? formatDateTime(start) : '--';
         } else if (isActive) {
-          cycleLabel = '<span class="badge">Active</span>';
+          cycleLabel = `<span class="badge">${tr('table.active')}</span>`;
         } else {
           cycleLabel = `${row.cycleId}`;
         }
@@ -7716,7 +7906,7 @@ function renderCyclesTable() {
           ${accountTd}
           <td>${cycleLabel}</td>
           <td>${start ? formatDateTime(start) : '--'}</td>
-          <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>
+          <td>${end ? formatDateTime(end) : `<span class="badge">${tr('table.active')}</span>`}</td>
           <td>${duration}</td>
           <td>${fmtCyclesWithRate(row.totalDelta, durationHrs, suffix)}</td>`;
       }
@@ -7896,7 +8086,7 @@ function renderSessionsTable() {
       const c = session._computed;
       return `<tr class="session-row">
         <td><span class="badge">${session._provider || '-'}</span></td>
-        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${session.id.slice(0, 8)}${c.isActive ? ` <span class="badge">${tr('table.active')}</span>` : ''}</td>
         <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
         <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
@@ -7909,7 +8099,7 @@ function renderSessionsTable() {
       const c = session._computed;
       const isExpanded = State.expandedSessionId === session.id;
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
-        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${session.id.slice(0, 8)}${c.isActive ? ` <span class="badge">${tr('table.active')}</span>` : ''}</td>
         <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
         <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
@@ -7920,19 +8110,19 @@ function renderSessionsTable() {
           <div class="session-detail-content">
             <div class="session-detail-grid">
               <div class="detail-item">
-                <span class="detail-label">Poll Interval</span>
+                <span class="detail-label">${tr('table.poll_interval')}</span>
                 <span class="detail-value">${session.pollInterval ? Math.round(session.pollInterval / 1000) : '-'}s</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots</span>
+                <span class="detail-label">${tr('table.snapshots')}</span>
                 <span class="detail-value">${session.snapshotCount || 0}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-label">${tr('table.snapshots_per_minute')}</span>
                 <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Duration</span>
+                <span class="detail-label">${tr('table.duration')}</span>
                 <span class="detail-value">${c.durationStr}</span>
               </div>
             </div>
@@ -7964,7 +8154,7 @@ function renderSessionsTable() {
         return `${pct} <span class="delta">(${delta})</span>`;
       };
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
-        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${session.id.slice(0, 8)}${c.isActive ? ` <span class="badge">${tr('table.active')}</span>` : ''}</td>
         <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
         <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
@@ -7989,15 +8179,15 @@ function renderSessionsTable() {
                 <span class="detail-value">${fmtPct(session.startToolRequests)} &rarr; ${fmtPct(session.maxToolRequests)} (${fmtDelta(session.startToolRequests, session.maxToolRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots</span>
+                <span class="detail-label">${tr('table.snapshots')}</span>
                 <span class="detail-value">${session.snapshotCount || 0}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-label">${tr('table.snapshots_per_minute')}</span>
                 <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Duration</span>
+                <span class="detail-label">${tr('table.duration')}</span>
                 <span class="detail-value">${c.durationStr}</span>
               </div>
             </div>
@@ -8026,7 +8216,7 @@ function renderSessionsTable() {
         return `${pct} <span class="delta">(${delta})</span>`;
       };
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
-        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${session.id.slice(0, 8)}${c.isActive ? ` <span class="badge">${tr('table.active')}</span>` : ''}</td>
         <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
         <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
@@ -8046,15 +8236,15 @@ function renderSessionsTable() {
                 <span class="detail-value">${fmtPct(session.startSearchRequests)} &rarr; ${fmtPct(session.maxSearchRequests)} (${fmtDelta(session.startSearchRequests, session.maxSearchRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots</span>
+                <span class="detail-label">${tr('table.snapshots')}</span>
                 <span class="detail-value">${session.snapshotCount || 0}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-label">${tr('table.snapshots_per_minute')}</span>
                 <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Duration</span>
+                <span class="detail-label">${tr('table.duration')}</span>
                 <span class="detail-value">${c.durationStr}</span>
               </div>
             </div>
@@ -8103,40 +8293,40 @@ function renderSessionsTable() {
           <div class="session-detail-content">
             <div class="session-detail-grid">
               <div class="detail-item">
-                <span class="detail-label">Quota Pool</span>
+                <span class="detail-label">${tr('table.quota_pool')}</span>
                 <span class="detail-value">MiniMax Coding Plan</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Start Used</span>
+                <span class="detail-label">${tr('table.start_used')}</span>
                 <span class="detail-value">${formatNumber(startUsed)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Peak Used</span>
+                <span class="detail-label">${tr('table.peak_used')}</span>
                 <span class="detail-value">${formatNumber(peakUsed)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Session Delta</span>
+                <span class="detail-label">${tr('table.session_delta')}</span>
                 <span class="detail-value">${formatNumber(sessionDelta)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Burn Rate</span>
+                <span class="detail-label">${tr('insights.burn_rate')}</span>
                 <span class="detail-value">${hourlyRate > 0 ? `${formatNumber(hourlyRate)}/hr` : '0/hr'}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-label">${tr('table.snapshots_per_minute')}</span>
                 <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
               </div>
               ${hasWeekly ? `
               <div class="detail-item" style="grid-column: 1 / -1; border-top: 1px solid var(--border-default, #e0e0e0); padding-top: 8px; margin-top: 4px;">
-                <span class="detail-label" style="font-weight: 600;">Weekly Quota</span>
+                <span class="detail-label" style="font-weight: 600;">${tr('quota.weekly')}</span>
                 <span class="detail-value">${formatNumber(weeklyPeak)} / ${formatNumber(weeklyTotal)}${weeklyPct ? ' (' + weeklyPct + ')' : ''}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Weekly Start</span>
+                <span class="detail-label">${tr('table.weekly_start')}</span>
                 <span class="detail-value">${formatNumber(weeklyStart)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Weekly Delta</span>
+                <span class="detail-label">${tr('table.weekly_delta')}</span>
                 <span class="detail-value">${formatNumber(weeklyDelta)}</span>
               </div>` : ''}
             </div>
@@ -8165,7 +8355,7 @@ function renderSessionsTable() {
       };
 
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
-        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${session.id.slice(0, 8)}${c.isActive ? ` <span class="badge">${tr('table.active')}</span>` : ''}</td>
         <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
         <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
@@ -8179,27 +8369,27 @@ function renderSessionsTable() {
           <div class="session-detail-content">
             <div class="session-detail-grid">
               <div class="detail-item">
-                <span class="detail-label">Claude + GPT Quota</span>
+                <span class="detail-label">Claude + GPT ${tr('table.quota')}</span>
                 <span class="detail-value">${fmtPct(session.startSubRequests)} &rarr; ${fmtPct(session.maxSubRequests)} (${fmtDelta(session.startSubRequests, session.maxSubRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Gemini Pro Quota</span>
+                <span class="detail-label">Gemini Pro ${tr('table.quota')}</span>
                 <span class="detail-value">${fmtPct(session.startSearchRequests)} &rarr; ${fmtPct(session.maxSearchRequests)} (${fmtDelta(session.startSearchRequests, session.maxSearchRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Gemini Flash Quota</span>
+                <span class="detail-label">Gemini Flash ${tr('table.quota')}</span>
                 <span class="detail-value">${fmtPct(session.startToolRequests)} &rarr; ${fmtPct(session.maxToolRequests)} (${fmtDelta(session.startToolRequests, session.maxToolRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots</span>
+                <span class="detail-label">${tr('table.snapshots')}</span>
                 <span class="detail-value">${session.snapshotCount || 0}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-label">${tr('table.snapshots_per_minute')}</span>
                 <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Duration</span>
+                <span class="detail-label">${tr('table.duration')}</span>
                 <span class="detail-value">${c.durationStr}</span>
               </div>
             </div>
@@ -8227,7 +8417,7 @@ function renderSessionsTable() {
       };
 
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
-        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${session.id.slice(0, 8)}${c.isActive ? ` <span class="badge">${tr('table.active')}</span>` : ''}</td>
         <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
         <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
@@ -8241,27 +8431,27 @@ function renderSessionsTable() {
           <div class="session-detail-content">
             <div class="session-detail-grid">
               <div class="detail-item">
-                <span class="detail-label">Model Quota 1</span>
+                <span class="detail-label">${tr('table.model_quota', { number: 1 })}</span>
                 <span class="detail-value">${fmtPct(session.startSubRequests)} &rarr; ${fmtPct(session.maxSubRequests)} (${fmtDelta(session.startSubRequests, session.maxSubRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Model Quota 2</span>
+                <span class="detail-label">${tr('table.model_quota', { number: 2 })}</span>
                 <span class="detail-value">${fmtPct(session.startSearchRequests)} &rarr; ${fmtPct(session.maxSearchRequests)} (${fmtDelta(session.startSearchRequests, session.maxSearchRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Model Quota 3</span>
+                <span class="detail-label">${tr('table.model_quota', { number: 3 })}</span>
                 <span class="detail-value">${fmtPct(session.startToolRequests)} &rarr; ${fmtPct(session.maxToolRequests)} (${fmtDelta(session.startToolRequests, session.maxToolRequests)})</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots</span>
+                <span class="detail-label">${tr('table.snapshots')}</span>
                 <span class="detail-value">${session.snapshotCount || 0}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-label">${tr('table.snapshots_per_minute')}</span>
                 <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Duration</span>
+                <span class="detail-label">${tr('table.duration')}</span>
                 <span class="detail-value">${c.durationStr}</span>
               </div>
             </div>
@@ -8276,7 +8466,7 @@ function renderSessionsTable() {
       const c = session._computed;
       const isExpanded = State.expandedSessionId === session.id;
       const mainRow = `<tr class="session-row" role="button" tabindex="0" data-session-id="${session.id}">
-        <td>${session.id.slice(0, 8)}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>${session.id.slice(0, 8)}${c.isActive ? ` <span class="badge">${tr('table.active')}</span>` : ''}</td>
         <td>${c.start.toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
         <td>${session.endedAt ? new Date(session.endedAt).toLocaleString(getActiveLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('status.active')}</td>
         <td>${c.durationStr}</td>
@@ -8289,35 +8479,35 @@ function renderSessionsTable() {
           <div class="session-detail-content">
             <div class="session-detail-grid">
               <div class="detail-item">
-                <span class="detail-label">Sub Max</span>
+                <span class="detail-label">${tr('table.sub_max')}</span>
                 <span class="detail-value">${formatNumber(session.maxSubRequests)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Search Max</span>
+                <span class="detail-label">${tr('table.search_max')}</span>
                 <span class="detail-value">${formatNumber(session.maxSearchRequests)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Tool Max</span>
+                <span class="detail-label">${tr('table.tool_max')}</span>
                 <span class="detail-value">${formatNumber(session.maxToolRequests)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Total Consumption</span>
+                <span class="detail-label">${tr('table.total_consumption')}</span>
                 <span class="detail-value">${formatNumber(c.totalConsumption)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Rate</span>
+                <span class="detail-label">${tr('table.rate')}</span>
                 <span class="detail-value">${formatNumber(c.consumptionRate)}/hr</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots/min</span>
+                <span class="detail-label">${tr('table.snapshots_per_minute')}</span>
                 <span class="detail-value">${c.snapshotsPerMin.toFixed(2)}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Poll Interval</span>
+                <span class="detail-label">${tr('table.poll_interval')}</span>
                 <span class="detail-value">${session.pollInterval ? Math.round(session.pollInterval / 1000) : '-'}s</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">Snapshots</span>
+                <span class="detail-label">${tr('table.snapshots')}</span>
                 <span class="detail-value">${session.snapshotCount || 0}</span>
               </div>
             </div>
@@ -8417,31 +8607,31 @@ function openModal(quotaType, providerOverride) {
     <div class="modal-kpi-row">
       <div class="modal-kpi">
         <div class="modal-kpi-value">${pctUsed}%</div>
-        <div class="modal-kpi-label">Usage</div>
+        <div class="modal-kpi-label">${tr('insights.current_usage')}</div>
       </div>
       <div class="modal-kpi">
         <div class="modal-kpi-value">${formatNumber(data.usage)}</div>
-        <div class="modal-kpi-label">Used</div>
+        <div class="modal-kpi-label">${tr('table.used')}</div>
       </div>
       <div class="modal-kpi">
         <div class="modal-kpi-value">${formatNumber(remaining)}</div>
-        <div class="modal-kpi-label">Remaining</div>
+        <div class="modal-kpi-label">${tr('insights.remaining')}</div>
       </div>
       <div class="modal-kpi">
         <div class="modal-kpi-value">${timeLeft}</div>
-        <div class="modal-kpi-label">Until Reset</div>
+        <div class="modal-kpi-label">${tr('table.until_reset')}</div>
       </div>
     </div>
-    <h3 class="modal-section-title">Usage History</h3>
+    <h3 class="modal-section-title">${tr('table.usage_history')}</h3>
     <div class="modal-chart-container">
       <canvas id="modal-chart"></canvas>
     </div>
-    ${data.insight ? `<h3 class="modal-section-title">Insight</h3><div class="modal-insight">${data.insight}</div>` : ''}
-    <h3 class="modal-section-title">Recent Cycles</h3>
+    ${data.insight ? `<h3 class="modal-section-title">${tr('api_integrations.insight')}</h3><div class="modal-insight">${escapeHTML(localizedInsightText(data.insight))}</div>` : ''}
+    <h3 class="modal-section-title">${tr('table.recent_cycles')}</h3>
     <div class="table-wrapper">
       <table class="data-table" id="modal-cycles-table">
-        <thead><tr><th>Cycle</th><th>Duration</th><th>Peak</th><th>Total</th><th>Rate</th></tr></thead>
-        <tbody id="modal-cycles-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+        <thead><tr><th>${tr('table.cycle')}</th><th>${tr('table.duration')}</th><th>${tr('table.peak')}</th><th>${tr('table.total')}</th><th>${tr('table.rate')}</th></tr></thead>
+        <tbody id="modal-cycles-tbody"><tr><td colspan="5" class="empty-state">${tr('status.loading')}</td></tr></tbody>
       </table>
     </div>
   `;
@@ -8563,14 +8753,14 @@ async function loadModalCycles(quotaType, effectiveProvider) {
 
     const recent = cycles.slice(0, 5);
     if (recent.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No cycles yet.</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${tr('table.no_cycles_short')}</td></tr>`;
       return;
     }
 
     tbody.innerHTML = recent.map(cycle => {
       const c = getCycleComputedFields(cycle);
       return `<tr>
-        <td>#${cycle.id}${c.isActive ? ' <span class="badge">Active</span>' : ''}</td>
+        <td>#${cycle.id}${c.isActive ? ` <span class="badge">${tr('table.active')}</span>` : ''}</td>
         <td>${c.durationStr}</td>
         <td>${formatNumber(cycle.peakRequests)}</td>
         <td>${formatNumber(cycle.totalDelta)}</td>
@@ -8649,8 +8839,9 @@ function setupCycleFilters() {
     // Set default bucket to 1x poll interval
     State.cyclesBucket = buckets[0];
     bucketPills.innerHTML = buckets.map((mins, i) => {
-      const label = mins >= 60 ? `${mins / 60}h` : `${mins}m`;
-      return `<button class="filter-pill${i === 0 ? ' active' : ''}" data-bucket-minutes="${mins}">${label}</button>`;
+      const label = localizedRangeLabel(mins >= 60 ? `${mins / 60}h` : `${mins}m`);
+      const duration = mins >= 60 ? `${mins / 60}h` : `${mins}m`;
+      return `<button class="filter-pill${i === 0 ? ' active' : ''}" data-bucket-minutes="${mins}" data-i18n-duration="${duration}">${label}</button>`;
     }).join('');
 
     bucketPills.addEventListener('click', (e) => {
@@ -8687,7 +8878,7 @@ function initCollapsibleSections() {
     const applyCollapsedState = (collapsed) => {
       section.classList.toggle('section-collapsed', collapsed);
       toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      if (text) text.textContent = collapsed ? 'Expand' : 'Collapse';
+      if (text) text.textContent = collapsed ? tr('common.show') : tr('common.hide');
     };
 
     applyCollapsedState(Boolean(stored[sectionID]));
@@ -8756,7 +8947,7 @@ async function setupOverviewControls() {
 
   const categories = getOverviewCategories();
   if (categories.length === 0) {
-    pillsContainer.innerHTML = '<span class="filter-label">No categories available</span>';
+    pillsContainer.innerHTML = `<span class="filter-label">${tr('common.no_categories')}</span>`;
     State.overviewGroupBy = null;
     return;
   }
@@ -8767,7 +8958,7 @@ async function setupOverviewControls() {
   }
 
   pillsContainer.innerHTML = categories.map((cat) =>
-    `<button class="filter-pill ${cat.groupBy === State.overviewGroupBy ? 'active' : ''}" data-group-by="${cat.groupBy}">${cat.label}</button>`
+    `<button class="filter-pill ${cat.groupBy === State.overviewGroupBy ? 'active' : ''}" data-group-by="${cat.groupBy}">${localizedQuotaLabel(cat.groupBy, cat.label)}</button>`
   ).join('');
 
   // Click handler for pills
@@ -8902,19 +9093,19 @@ function renderOverviewTable() {
   // columns add no signal there, so omit them for this provider.
   const showDurationDelta = overviewProv !== 'minimax';
   const showAccount = isAccountsOverviewMode(getCurrentProvider());
-  const accountTh = showAccount ? '<th data-sort-key="account" role="button" tabindex="0">Account <span class="sort-arrow"></span></th>' : '';
+  const accountTh = showAccount ? `<th data-sort-key="account" role="button" tabindex="0">${tr('table.account')} <span class="sort-arrow"></span></th>` : '';
 
   // Build dynamic header
   let headerHtml = `
     <tr>
       ${accountTh}
-      <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
-      <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
-      <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>`;
+      <th data-sort-key="id" role="button" tabindex="0">${tr('table.cycle')} <span class="sort-arrow"></span></th>
+      <th data-sort-key="start" role="button" tabindex="0">${tr('table.start')} <span class="sort-arrow"></span></th>
+      <th data-sort-key="end" role="button" tabindex="0">${tr('table.end')} <span class="sort-arrow"></span></th>`;
   if (showDurationDelta) {
     headerHtml += `
-      <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-      <th data-sort-key="totalDelta" role="button" tabindex="0">Total Delta${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
+      <th data-sort-key="duration" role="button" tabindex="0">${tr('table.duration')} <span class="sort-arrow"></span></th>
+      <th data-sort-key="totalDelta" role="button" tabindex="0">${tr('table.total_delta')}${deltaUsesPercent ? ' %' : ''} <span class="sort-arrow"></span></th>`;
   }
 
   quotaNames.forEach(qn => {
@@ -9004,14 +9195,14 @@ function renderOverviewTable() {
 
       // For active cycles (no end, or cycleId is -1 or 'active'), show "Active" badge
       const isActive = !end || row.cycleId === -1 || row.cycleId === 'active';
-      const cycleLabel = isActive ? '<span class="badge">Active</span>' : `${row.cycleId}`;
+      const cycleLabel = isActive ? `<span class="badge">${tr('table.active')}</span>` : `${row.cycleId}`;
       const accountTd = showAccount ? `<td>${escapeHTML(row._account || '')}</td>` : '';
 
       let html = `<tr>
         ${accountTd}
         <td>${cycleLabel}</td>
         <td>${start ? formatDateTime(start) : '--'}</td>
-        <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>`;
+        <td>${end ? formatDateTime(end) : `<span class="badge">${tr('table.active')}</span>`}</td>`;
       if (showDurationDelta) {
         html += `
         <td>${duration}</td>
@@ -9309,24 +9500,24 @@ async function applyUpdate() {
   if (!btn) return;
 
   const origText = btn.textContent;
-  btn.textContent = 'Updating...';
+  btn.textContent = tr('common.updating');
   btn.disabled = true;
 
   try {
     const res = await authFetch('/api/update/apply', { method: 'POST' });
     if (!res.ok) {
       const data = await res.json();
-      btn.textContent = 'Update failed';
+      btn.textContent = tr('common.update_failed');
       btn.disabled = false;
       // update failed - error shown in UI
       setTimeout(() => { btn.textContent = origText; }, 3000);
       return;
     }
-    btn.textContent = 'Restarting...';
+    btn.textContent = tr('common.restarting');
     // Poll until server comes back with new version
     setTimeout(() => pollForRestart(), 3000);
   } catch (e) {
-    btn.textContent = 'Update failed';
+    btn.textContent = tr('common.update_failed');
     btn.disabled = false;
     setTimeout(() => { btn.textContent = origText; }, 3000);
   }
@@ -9489,7 +9680,10 @@ async function loadSettings() {
       setVal('smtp-to', s.to);
       if (s.password_set) {
         const pwdInput = document.getElementById('smtp-password');
-        if (pwdInput) pwdInput.placeholder = '********** (saved)';
+        if (pwdInput) {
+          pwdInput.setAttribute('data-i18n-placeholder', 'settings.saved_secret_placeholder');
+          pwdInput.placeholder = tr('settings.saved_secret_placeholder');
+        }
       }
     }
 
@@ -9625,6 +9819,13 @@ function populateTimezoneSelect() {
   });
 }
 
+function localizedProviderDescription(key, fallback = '') {
+  const baseKey = String(key || '').split(':')[0];
+  const translationKey = `provider.${baseKey}.description`;
+  const translated = tr(translationKey);
+  return translated === translationKey ? fallback : translated;
+}
+
 // createCodexProviderSection creates a consolidated Codex card with sub-profiles.
 function createCodexProviderSection(profiles, codexStatus, baseVisibility) {
   // Single account - render as a regular provider row (same as other providers)
@@ -9636,7 +9837,7 @@ function createCodexProviderSection(profiles, codexStatus, baseVisibility) {
     return createProviderToggleRow({
       key: 'codex',
       name: 'Codex',
-      desc: codexStatus?.description || 'OpenAI Codex usage tracking',
+      desc: localizedProviderDescription('codex', codexStatus?.description),
       vis,
       configured: codexStatus ? codexStatus.configured !== false : true,
       autoDetectable: codexStatus ? !!codexStatus.autoDetectable : true,
@@ -9659,7 +9860,7 @@ function createCodexProviderSection(profiles, codexStatus, baseVisibility) {
   const headerRow = createProviderToggleRow({
     key: 'codex',
     name: 'Codex',
-    desc: `${profiles.length} accounts configured`,
+    desc: tr('settings.accounts_configured', { count: profiles.length }),
     vis: headerVis,
     configured: codexStatus ? codexStatus.configured !== false : true,
     autoDetectable: codexStatus ? !!codexStatus.autoDetectable : true,
@@ -9682,8 +9883,8 @@ function createCodexProviderSection(profiles, codexStatus, baseVisibility) {
       key,
       name: escapeHtml(profile.name),
       desc: isDeleted
-        ? 'Profile deleted - credentials removed'
-        : `ChatGPT account: ${escapeHtml(profile.name)}`,
+        ? tr('settings.profile_deleted')
+        : tr('settings.chatgpt_account', { name: escapeHtml(profile.name) }),
       vis,
       configured: !isDeleted,
       autoDetectable: true,
@@ -9710,7 +9911,7 @@ function createMiniMaxProviderSection(accounts, minimaxStatus, baseVisibility) {
     return createProviderToggleRow({
       key: 'minimax',
       name: 'MiniMax',
-      desc: minimaxStatus?.description || 'MiniMax Coding Plan usage tracking',
+      desc: localizedProviderDescription('minimax', minimaxStatus?.description),
       vis,
       configured: minimaxStatus ? minimaxStatus.configured !== false : true,
       autoDetectable: false,
@@ -9729,7 +9930,7 @@ function createMiniMaxProviderSection(accounts, minimaxStatus, baseVisibility) {
   const headerRow = createProviderToggleRow({
     key: 'minimax',
     name: 'MiniMax',
-    desc: `${accounts.length} accounts configured`,
+    desc: tr('settings.accounts_configured', { count: accounts.length }),
     vis: headerVis,
     configured: minimaxStatus ? minimaxStatus.configured !== false : true,
     autoDetectable: false,
@@ -9751,8 +9952,8 @@ function createMiniMaxProviderSection(accounts, minimaxStatus, baseVisibility) {
       key,
       name: escapeHtml(account.name),
       desc: isDeleted
-        ? 'Account deleted'
-        : `MiniMax account: ${escapeHtml(account.name)}${account.region ? ' (' + account.region + ')' : ''}`,
+        ? tr('settings.account_deleted')
+        : `${tr('settings.minimax_account', { name: escapeHtml(account.name) })}${account.region ? ' (' + account.region + ')' : ''}`,
       vis,
       configured: !isDeleted && account.hasKey,
       autoDetectable: false,
@@ -9791,14 +9992,14 @@ async function populateProviderToggles(visibility) {
 
   if (providers.length === 0) {
     providers = [
-      { key: 'anthropic', name: 'Anthropic', description: 'Claude Code usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
-      { key: 'synthetic', name: 'Synthetic', description: 'Synthetic API quota monitoring', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
-      { key: 'zai', name: 'Z.ai', description: 'Z.ai API usage tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
-      { key: 'copilot', name: 'Copilot', description: 'GitHub Copilot premium request tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
-      { key: 'codex', name: 'Codex', description: 'OpenAI Codex usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
-      { key: 'antigravity', name: 'Antigravity', description: 'Antigravity model usage tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
-      { key: 'minimax', name: 'MiniMax', description: 'MiniMax Coding Plan usage tracking', configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
-      { key: 'gemini', name: 'Gemini', description: 'Google Gemini CLI quota tracking', configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'anthropic', name: 'Anthropic', description: tr('provider.anthropic.description'), configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'synthetic', name: 'Synthetic', description: tr('provider.synthetic.description'), configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'zai', name: 'Z.ai', description: tr('provider.zai.description'), configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'copilot', name: 'Copilot', description: tr('provider.copilot.description'), configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'codex', name: 'Codex', description: tr('provider.codex.description'), configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'antigravity', name: 'Antigravity', description: tr('provider.antigravity.description'), configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'minimax', name: 'MiniMax', description: tr('provider.minimax.description'), configured: false, autoDetectable: false, pollingEnabled: true, dashboardVisible: true, isPolling: false },
+      { key: 'gemini', name: 'Gemini', description: tr('provider.gemini.description'), configured: false, autoDetectable: true, pollingEnabled: true, dashboardVisible: true, isPolling: false },
     ];
   }
 
@@ -9827,7 +10028,7 @@ async function populateProviderToggles(visibility) {
       container.appendChild(createProviderToggleRow({
         key: p.key,
         name: p.name,
-        desc: p.description,
+        desc: localizedProviderDescription(p.key, p.description),
         vis,
         configured: p.configured !== false,
         autoDetectable: !!p.autoDetectable,
@@ -9869,7 +10070,7 @@ async function populateProviderToggles(visibility) {
     container.appendChild(createProviderToggleRow({
       key: 'codex',
       name: fallbackCodex.name || 'Codex',
-      desc: fallbackCodex.description || 'OpenAI Codex usage tracking',
+      desc: localizedProviderDescription('codex', fallbackCodex.description),
       vis,
       configured: fallbackCodex.configured !== false,
       autoDetectable: !!fallbackCodex.autoDetectable,
@@ -9910,7 +10111,7 @@ async function populateProviderToggles(visibility) {
     container.appendChild(createProviderToggleRow({
       key: 'minimax',
       name: fallbackMinimax.name || 'MiniMax',
-      desc: fallbackMinimax.description || 'MiniMax Coding Plan usage tracking',
+      desc: localizedProviderDescription('minimax', fallbackMinimax.description),
       vis,
       configured: fallbackMinimax.configured !== false,
       autoDetectable: false,
@@ -9944,7 +10145,7 @@ async function fetchMenubarProviders() {
     .map(p => ({
       key: p.key,
       name: p.name,
-      meta: `${p.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${p.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+      meta: `${p.pollingEnabled === false ? tr('settings.telemetry_off') : tr('settings.telemetry_on')} · ${p.dashboardVisible === false ? tr('settings.dashboard_hidden') : tr('settings.dashboard_visible')}`,
       dashboardVisible: p.dashboardVisible !== false,
     }));
 
@@ -9963,8 +10164,8 @@ async function fetchMenubarProviders() {
             key,
             name: profiles.length > 1 ? `Codex - ${escapeHtml(profile.name)}` : (codexStatus?.name || 'Codex'),
             meta: profiles.length > 1
-              ? 'Per-account Codex usage'
-              : `${codexStatus?.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${codexStatus?.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+              ? tr('settings.codex_account_usage')
+              : `${codexStatus?.pollingEnabled === false ? tr('settings.telemetry_off') : tr('settings.telemetry_on')} · ${codexStatus?.dashboardVisible === false ? tr('settings.dashboard_hidden') : tr('settings.dashboard_visible')}`,
             dashboardVisible: codexStatus ? codexStatus.dashboardVisible !== false : true,
           });
         });
@@ -9981,7 +10182,7 @@ async function fetchMenubarProviders() {
     items.push({
       key: 'codex',
       name: codexStatus.name || 'Codex',
-      meta: `${codexStatus.pollingEnabled === false ? 'Telemetry Off' : 'Telemetry On'} · ${codexStatus.dashboardVisible === false ? 'Hidden from dashboard' : 'Visible in dashboard'}`,
+      meta: `${codexStatus.pollingEnabled === false ? tr('settings.telemetry_off') : tr('settings.telemetry_on')} · ${codexStatus.dashboardVisible === false ? tr('settings.dashboard_hidden') : tr('settings.dashboard_visible')}`,
       dashboardVisible: codexStatus.dashboardVisible !== false,
     });
   }
@@ -10011,6 +10212,7 @@ const DEFAULT_PROVIDER_TAB_LABELS = {
 function defaultProviderTabLabel(key) {
   if (!key) return '';
   if (key === 'both') return tr('table.all');
+  if (key === 'api-integrations') return tr('dashboard.api_integrations_label');
   if (DEFAULT_PROVIDER_TAB_LABELS[key]) return DEFAULT_PROVIDER_TAB_LABELS[key];
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
@@ -10076,7 +10278,7 @@ async function fetchDashboardTabOrderProviders() {
     .map((p) => ({
       key: p.key,
       defaultName: p.name || defaultProviderTabLabel(p.key),
-      meta: 'Shown as a dashboard tab',
+      meta: tr('settings.shown_dashboard_tab'),
       dashboardVisible: true,
     }));
 
@@ -10087,7 +10289,7 @@ async function fetchDashboardTabOrderProviders() {
       items.push({
         key: 'api-integrations',
         defaultName: defaultProviderTabLabel('api-integrations'),
-        meta: 'Dashboard tools tab',
+        meta: tr('settings.dashboard_tools_tab'),
         dashboardVisible: true,
       });
     }
@@ -10098,7 +10300,7 @@ async function fetchDashboardTabOrderProviders() {
     items.push({
       key: 'both',
       defaultName: defaultProviderTabLabel('both'),
-      meta: 'Combined multi-provider view',
+      meta: tr('settings.combined_view'),
       dashboardVisible: true,
     });
   }
@@ -10139,23 +10341,23 @@ async function populateDashboardTabOrder() {
     const canDown = index < ordered.length - 1;
     return `
     <li class="dashboard-tab-order-item" draggable="true" tabindex="0" data-provider="${provider.key}">
-      <div class="menubar-order-handle" aria-hidden="true" title="Drag to reorder"><span></span><span></span><span></span></div>
+      <div class="menubar-order-handle" aria-hidden="true" title="${tr('settings.drag_reorder')}"><span></span><span></span><span></span></div>
       <div class="dashboard-tab-order-fields">
         <span class="dashboard-tab-order-key">
           <span class="dashboard-tab-order-default">${escapeHTML(placeholder)}</span>
           <code class="dashboard-tab-order-id">${escapeHTML(provider.key)}</code>
         </span>
         <label class="dashboard-tab-rename">
-          <span class="dashboard-tab-rename-label">${pencilIcon} Tab name</span>
+          <span class="dashboard-tab-rename-label">${pencilIcon} ${tr('common.tab_name')}</span>
           <input type="text" class="dashboard-tab-order-label" data-provider="${provider.key}"
             maxlength="48" value="${escapeHTML(custom)}"
             placeholder="${escapeHTML(placeholder)}"
-            aria-label="Rename tab for ${escapeHTML(placeholder)} (leave blank for default)">
+            aria-label="${escapeHTML(tr('settings.rename_tab', { name: placeholder }))}">
         </label>
       </div>
       <div class="dashboard-tab-order-move">
-        <button type="button" data-dashboard-move="up" data-provider="${provider.key}" ${canUp ? '' : 'disabled'} aria-label="Move ${escapeHTML(placeholder)} up" title="Move up">${arrowUp}</button>
-        <button type="button" data-dashboard-move="down" data-provider="${provider.key}" ${canDown ? '' : 'disabled'} aria-label="Move ${escapeHTML(placeholder)} down" title="Move down">${arrowDown}</button>
+        <button type="button" data-dashboard-move="up" data-provider="${provider.key}" ${canUp ? '' : 'disabled'} aria-label="${escapeHTML(tr('settings.move_up', { name: placeholder }))}" title="${tr('settings.move_up_short')}">${arrowUp}</button>
+        <button type="button" data-dashboard-move="down" data-provider="${provider.key}" ${canDown ? '' : 'disabled'} aria-label="${escapeHTML(tr('settings.move_down', { name: placeholder }))}" title="${tr('settings.move_down_short')}">${arrowDown}</button>
       </div>
     </li>`;
   }).join('');
@@ -10443,6 +10645,20 @@ function providerStatusBadge(configured, autoDetectable, isPolling) {
   return `<span class="badge">${tr('common.idle')}</span>`;
 }
 
+function refreshProviderTabLabels() {
+  document.querySelectorAll('#provider-tabs .provider-tab[data-provider]').forEach((tab) => {
+    const label = tab.querySelector('.provider-tab-label');
+    if (!label) return;
+    const current = label.textContent.trim();
+    if (tab.dataset.provider === 'both' && ['All', 'both', '全部'].includes(current)) {
+      label.textContent = tr('table.all');
+    }
+    if (tab.dataset.provider === 'api-integrations' && ['API Integrations', 'api-integrations', 'API 集成'].includes(current)) {
+      label.textContent = tr('dashboard.api_integrations_label');
+    }
+  });
+}
+
 function updateProviderVisibilityState(provider, role, enabled) {
   if (!State.providerVisibility || typeof State.providerVisibility !== 'object') {
     State.providerVisibility = {};
@@ -10566,7 +10782,7 @@ function createAPIIntegrationsToggleRow(visibility, health) {
   const statusMeta = getAPIIntegrationsStatusMeta(health);
   row.innerHTML = `
     <div class="settings-toggle-info">
-      <div class="settings-toggle-label">API Integrations <span class="badge">${statusMeta.label}</span></div>
+      <div class="settings-toggle-label">${tr('dashboard.api_integrations_label')} <span class="badge">${statusMeta.label}</span></div>
       <div class="settings-toggle-sublabel">${tr('settings.api_integrations_desc')}</div>
     </div>
     <div class="settings-toggle-group">
@@ -10617,111 +10833,115 @@ function createAPIIntegrationsToggleRow(visibility, health) {
 
 // Configuration for each provider's settings fields.
 // Each entry defines the form fields shown in the modal.
-const providerSettingsConfig = {
+function createProviderSettingsConfig() {
+  return {
   anthropic: {
     title: 'Anthropic',
-    desc: 'Configure how onWatch collects Anthropic usage data. Changes take effect after daemon restart.',
+    desc: tr('provider_settings.anthropic_desc'),
     fields: [
-      { id: 'source', label: 'Data Source', type: 'select', options: [
-        { value: 'auto', text: 'Auto (statusline + API fallback)' },
-        { value: 'statusline', text: 'Statusline Only (zero API calls)' },
-        { value: 'api', text: 'API Only (no statusline)' },
-      ], default: 'auto', hint: 'Auto uses Claude Code\'s statusline for live data and polls the API every N cycles for supplementary quotas.' },
-      { id: 'api_poll_cycle_interval', label: 'API Poll Cycle Interval', type: 'number', min: 1, max: 100, default: 10, hint: 'Full API poll every N cycles (e.g., 10 = every 10th poll). Only applies in Auto mode.' },
-      { id: 'staleness_minutes', label: 'Statusline Staleness (minutes)', type: 'number', min: 1, max: 60, default: 5, hint: 'How old the statusline data can be before falling back to API polling.' },
-      { id: 'cc_detection', label: 'Claude Code Detection', type: 'select', options: [
-        { value: 'on', text: 'On (skip OAuth refresh when CC is running)' },
-        { value: 'off', text: 'Off (always attempt OAuth refresh)' },
-      ], default: 'on', hint: 'When enabled, onWatch skips OAuth token refresh while Claude Code is running to prevent login disruption.' },
+      { id: 'source', label: tr('provider_settings.data_source'), type: 'select', options: [
+        { value: 'auto', text: tr('provider_settings.auto_statusline') },
+        { value: 'statusline', text: tr('provider_settings.statusline_only') },
+        { value: 'api', text: tr('provider_settings.api_only') },
+      ], default: 'auto', hint: tr('provider_settings.anthropic_source_hint') },
+      { id: 'api_poll_cycle_interval', label: tr('provider_settings.api_poll_interval'), type: 'number', min: 1, max: 100, default: 10, hint: tr('provider_settings.api_poll_interval_hint') },
+      { id: 'staleness_minutes', label: tr('provider_settings.statusline_staleness'), type: 'number', min: 1, max: 60, default: 5, hint: tr('provider_settings.statusline_staleness_hint') },
+      { id: 'cc_detection', label: tr('provider_settings.cc_detection'), type: 'select', options: [
+        { value: 'on', text: tr('provider_settings.cc_detection_on') },
+        { value: 'off', text: tr('provider_settings.cc_detection_off') },
+      ], default: 'on', hint: tr('provider_settings.cc_detection_hint') },
     ],
   },
   codex: {
     title: 'Codex',
-    desc: 'Configure Codex profile discovery and display. Display changes take effect immediately; directory changes require a daemon restart.',
+    desc: tr('provider_settings.codex_desc'),
     fields: [
-      { id: 'profiles_dir', label: 'Profiles Directory', type: 'text', placeholder: 'Auto-detected (default)', hint: 'Override the auto-detected Codex profiles directory. Leave blank to use the default.' },
-      { id: 'display_mode', label: 'Quota Display', type: 'select', options: [
-        { value: '', text: 'Use global default' },
-        { value: 'usage', text: 'Usage (show utilization %)' },
-        { value: 'available', text: 'Available (show remaining %)' },
-      ], default: '', noRestart: true, hint: 'Override the global Quota Display setting (Settings → General) for Codex only. Choose "Use global default" to follow the global setting.' },
-      { id: 'pace_mode', label: 'Weekly Pace Mode', type: 'select', options: [
-        { value: 'calendar', text: 'Calendar (7-day)' },
-        { value: '6-day', text: '6-day (Mon-Sat)' },
-        { value: '5-day', text: '5-day (Mon-Fri)' },
-      ], default: 'calendar', noRestart: true, hint: 'Distributes 100% expected pace across selected work days only. Non-work days show "off day - pace paused".' },
-      { id: 'auto_start_5h', label: 'Auto-start 5h window (Beta)', type: 'select', options: [
-        { value: 'off', text: 'Off' },
-        { value: 'on', text: 'On' },
-      ], default: 'off', noRestart: true, hint: 'Beta: when the 5-hour window resets, onWatch sends a tiny Codex request to start the window so the fresh limit begins immediately. This consumes a small amount of quota each reset. Applies on the next reset - no daemon restart needed.' },
-      { id: 'auto_start_7d', label: 'Auto-start weekly window (Beta)', type: 'select', options: [
-        { value: 'off', text: 'Off' },
-        { value: 'on', text: 'On' },
-      ], default: 'off', noRestart: true, hint: 'Beta: when the weekly (7-day) window resets, onWatch sends a tiny Codex request to start the window so you keep the full reserve even if you do not use Codex right away. Consumes a small amount of quota. Applies on the next reset - no daemon restart needed.' },
+      { id: 'profiles_dir', label: tr('provider_settings.profiles_dir'), type: 'text', placeholder: tr('provider_settings.auto_detected_default'), hint: tr('provider_settings.profiles_dir_hint') },
+      { id: 'display_mode', label: tr('provider_settings.quota_display'), type: 'select', options: [
+        { value: '', text: tr('provider_settings.use_global_default') },
+        { value: 'usage', text: tr('provider_settings.usage_utilization') },
+        { value: 'available', text: tr('provider_settings.available_remaining') },
+      ], default: '', noRestart: true, hint: tr('provider_settings.quota_display_hint') },
+      { id: 'pace_mode', label: tr('provider_settings.weekly_pace'), type: 'select', options: [
+        { value: 'calendar', text: tr('provider_settings.calendar_7d') },
+        { value: '6-day', text: tr('provider_settings.workdays_6d') },
+        { value: '5-day', text: tr('provider_settings.workdays_5d') },
+      ], default: 'calendar', noRestart: true, hint: tr('provider_settings.weekly_pace_hint') },
+      { id: 'auto_start_5h', label: tr('provider_settings.auto_start_5h'), type: 'select', options: [
+        { value: 'off', text: tr('provider_settings.off') },
+        { value: 'on', text: tr('provider_settings.on') },
+      ], default: 'off', noRestart: true, hint: tr('provider_settings.auto_start_5h_hint') },
+      { id: 'auto_start_7d', label: tr('provider_settings.auto_start_weekly'), type: 'select', options: [
+        { value: 'off', text: tr('provider_settings.off') },
+        { value: 'on', text: tr('provider_settings.on') },
+      ], default: 'off', noRestart: true, hint: tr('provider_settings.auto_start_weekly_hint') },
     ],
   },
   copilot: {
     title: 'Copilot',
-    desc: 'Configure GitHub Copilot quota tracking. Changes take effect after daemon restart.',
+    desc: tr('provider_settings.copilot_desc'),
     fields: [
-      { id: 'token', label: 'GitHub PAT', type: 'password', placeholder: 'Not configured', hint: 'GitHub Personal Access Token with the copilot scope. Overrides COPILOT_TOKEN from .env.', sensitive: true },
+      { id: 'token', label: tr('provider_settings.github_pat'), type: 'password', placeholder: tr('provider_settings.not_configured'), hint: tr('provider_settings.copilot_token_hint'), sensitive: true },
     ],
   },
   zai: {
     title: 'Z.ai',
-    desc: 'Configure Z.ai (ZhipuAI) quota tracking. Changes take effect after daemon restart.',
+    desc: tr('provider_settings.zai_desc'),
     fields: [
-      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'Z.ai API key. Overrides ZAI_API_KEY from .env.', sensitive: true },
-      { id: 'region', label: 'Region', type: 'select', options: [
-        { value: 'global', text: 'Global (api.z.ai)' },
-        { value: 'cn', text: 'China (open.bigmodel.cn)' },
-      ], default: 'global', hint: 'Selects the API endpoint. Overrides ZAI_REGION from .env.' },
+      { id: 'api_key', label: tr('provider_settings.api_key'), type: 'password', placeholder: tr('provider_settings.not_configured'), hint: tr('provider_settings.zai_key_hint'), sensitive: true },
+      { id: 'region', label: tr('provider_settings.region'), type: 'select', options: [
+        { value: 'global', text: tr('provider_settings.global_endpoint') },
+        { value: 'cn', text: tr('provider_settings.china_endpoint') },
+      ], default: 'global', hint: tr('provider_settings.zai_region_hint') },
     ],
   },
   minimax: {
     title: 'MiniMax',
-    desc: 'Manage MiniMax accounts and API keys. Add multiple accounts to track separate subscriptions.',
+    desc: tr('minimax.accounts_desc'),
     fields: [],
     hasAccountManagement: true,
   },
   openrouter: {
     title: 'OpenRouter',
-    desc: 'Configure OpenRouter usage tracking. Changes take effect after daemon restart.',
+    desc: tr('provider_settings.openrouter_desc'),
     fields: [
-      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'OpenRouter API key. Overrides OPENROUTER_API_KEY from .env.', sensitive: true },
+      { id: 'api_key', label: tr('provider_settings.api_key'), type: 'password', placeholder: tr('provider_settings.not_configured'), hint: tr('provider_settings.openrouter_key_hint'), sensitive: true },
     ],
   },
   synthetic: {
     title: 'Synthetic',
-    desc: 'Configure Synthetic quota tracking. Changes take effect after daemon restart.',
+    desc: tr('provider_settings.synthetic_desc'),
     fields: [
-      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'Synthetic API key (must start with syn_). Overrides SYNTHETIC_API_KEY from .env.', sensitive: true },
+      { id: 'api_key', label: tr('provider_settings.api_key'), type: 'password', placeholder: tr('provider_settings.not_configured'), hint: tr('provider_settings.synthetic_key_hint'), sensitive: true },
     ],
   },
   antigravity: {
     title: 'Antigravity',
-    desc: 'Choose where quota data comes from. All Antigravity variants share one Google-account quota, so onWatch shows a single card and labels the active source.',
+    desc: tr('provider_settings.antigravity_desc'),
     fields: [
-      { id: 'source', label: 'Data Source', type: 'select', options: [
-        { value: 'both', text: 'Both (prefer agy CLI, fall back to IDE)' },
-        { value: 'cli', text: 'agy CLI only (richer weekly + 5h data)' },
-        { value: 'ide', text: 'IDE only (desktop language server)' },
-      ], default: 'both', noRestart: true, hint: 'The agy CLI exposes richer weekly + 5-hour quota data but auto-launches a managed agy process. IDE uses the running Antigravity desktop app. Equivalent to ANTIGRAVITY_SOURCE.' },
-      { id: 'base_url', label: 'Base URL', type: 'text', placeholder: 'Auto-detected', hint: 'Override the auto-detected Antigravity server URL (e.g. for Docker). Equivalent to ANTIGRAVITY_BASE_URL.' },
-      { id: 'csrf_token', label: 'CSRF Token', type: 'password', placeholder: 'Auto-detected', hint: 'Override the CSRF token for the Antigravity server. Equivalent to ANTIGRAVITY_CSRF_TOKEN.', sensitive: true },
+      { id: 'source', label: tr('provider_settings.data_source'), type: 'select', options: [
+        { value: 'both', text: tr('provider_settings.both_sources') },
+        { value: 'cli', text: tr('provider_settings.cli_only') },
+        { value: 'ide', text: tr('provider_settings.ide_only') },
+      ], default: 'both', noRestart: true, hint: tr('provider_settings.antigravity_source_hint') },
+      { id: 'base_url', label: tr('provider_settings.base_url'), type: 'text', placeholder: tr('provider_settings.auto_detected'), hint: tr('provider_settings.antigravity_url_hint') },
+      { id: 'csrf_token', label: tr('provider_settings.csrf_token'), type: 'password', placeholder: tr('provider_settings.auto_detected'), hint: tr('provider_settings.antigravity_csrf_hint'), sensitive: true },
     ],
   },
   gemini: {
     title: 'Gemini',
-    desc: 'Gemini is auto-detected from your local credentials. Use the telemetry toggle to enable or disable tracking.',
+    desc: tr('provider_settings.gemini_desc'),
     fields: [],
   },
   opencode: {
     title: 'OpenCode Go',
-    desc: 'Manage OpenCode Go workspaces. Cookies are encrypted at rest and are never returned by the API.',
+    desc: tr('provider_settings.opencode_desc'),
     fields: [],
   },
-};
+  };
+}
+
+let providerSettingsConfig = createProviderSettingsConfig();
 
 function translatedAuthStatus(status) {
   const allowed = new Set(['active', 'healthy', 'warning', 'critical', 'disabled', 'pending', 'needs_reauth', 'unauthorized', 'error', 'valid']);
@@ -10739,9 +10959,9 @@ async function renderOpenCodeAccountSettings(bodyEl, config) {
     <div id="opencode-accounts-list">${tr('status.loading')}</div>
     <div id="opencode-add-form" hidden style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-inset)">
       <div class="settings-fields">
-        <div class="settings-field"><label>${tr('opencode.display_name')}</label><input id="opencode-new-name" class="settings-input" maxlength="80" placeholder="Work" /></div>
+        <div class="settings-field"><label>${tr('opencode.display_name')}</label><input id="opencode-new-name" class="settings-input" maxlength="80" placeholder="${tr('opencode.name_placeholder')}" /></div>
         <div class="settings-field"><label>${tr('opencode.workspace_id')}</label><input id="opencode-new-workspace" class="settings-input" maxlength="256" placeholder="wrk_..." /></div>
-        <div class="settings-field"><label>${tr('opencode.auth_cookie')}</label><input id="opencode-new-cookie" type="password" class="settings-input" autocomplete="new-password" placeholder="Cookie" /></div>
+        <div class="settings-field"><label>${tr('opencode.auth_cookie')}</label><input id="opencode-new-cookie" type="password" class="settings-input" autocomplete="new-password" placeholder="${tr('opencode.cookie_placeholder')}" /></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:8px"><button id="opencode-save-new" class="provider-settings-action">${tr('settings.save')}</button><button id="opencode-cancel-new" class="provider-settings-action">${tr('settings.cancel')}</button></div>
     </div>
@@ -10843,7 +11063,7 @@ async function openProviderSettingsModal(providerKey) {
         html += `<input type="number" id="ps-${providerKey}-${f.id}" class="settings-input" min="${f.min || ''}" max="${f.max || ''}" value="${val}" />`;
       } else if (f.type === 'password') {
         const isSet = saved[f.id + '_set'] === true;
-        const placeholder = isSet ? 'Key is configured - leave blank to keep' : (f.placeholder || '');
+        const placeholder = isSet ? tr('settings.key_configured_hint') : (f.placeholder || '');
         html += `<input type="password" id="ps-${providerKey}-${f.id}" class="settings-input" placeholder="${placeholder}" autocomplete="off" />`;
       } else {
         const val = saved[f.id] || '';
@@ -11144,7 +11364,7 @@ async function saveProviderSettings() {
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Save failed');
+      throw new Error(errData.error || tr('settings.save_failed_short'));
     }
     const data = await res.json();
     // Determine restart requirement from the fields the user actually changed.
@@ -11217,7 +11437,7 @@ function setupProviderReload() {
   wrap.innerHTML = `
     <button class="settings-test-btn" id="providers-reload-btn" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg>
-      Reload Providers From .env
+      ${tr('settings.reload_providers')}
     </button>
     <span class="settings-test-result" id="providers-reload-result"></span>
   `;
@@ -11229,7 +11449,7 @@ function setupProviderReload() {
 
   btn.addEventListener('click', async () => {
     btn.disabled = true;
-    btn.textContent = 'Reloading...';
+    btn.textContent = tr('settings.reloading');
     if (result) {
       result.textContent = '';
       result.className = 'settings-test-result';
@@ -11239,25 +11459,25 @@ function setupProviderReload() {
       const data = await res.json();
       if (!res.ok || !data.success) {
         if (result) {
-          result.textContent = (data && data.error) || 'Reload failed.';
+          result.textContent = (data && data.error) || tr('settings.reload_failed');
           result.className = 'settings-test-result error';
         }
       } else {
         await populateProviderToggles(State.providerVisibility || {});
         await populateDashboardTabOrder();
         if (result) {
-          result.textContent = 'Provider configuration reloaded.';
+          result.textContent = tr('settings.reload_success');
           result.className = 'settings-test-result success';
         }
       }
     } catch (e) {
       if (result) {
-        result.textContent = 'Network error.';
+        result.textContent = tr('common.network_error');
         result.className = 'settings-test-result error';
       }
     } finally {
       btn.disabled = false;
-      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg> Reload Providers From .env';
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg> ${tr('settings.reload_providers')}`;
     }
   });
 }
@@ -11655,23 +11875,24 @@ async function collectPushDiagnostics() {
   if (!diagEl) return;
 
   var lines = [];
-  lines.push('Protocol: ' + location.protocol);
-  lines.push('Secure context: ' + (window.isSecureContext ? 'Yes' : 'No'));
-  lines.push('Service Worker support: ' + ('serviceWorker' in navigator ? 'Yes' : 'No'));
-  lines.push('PushManager support: ' + ('PushManager' in window ? 'Yes' : 'No'));
-  lines.push('Notification support: ' + ('Notification' in window ? 'Yes' : 'No'));
+  const yesNo = (value) => tr(value ? 'diagnostics.yes' : 'diagnostics.no');
+  lines.push(`${tr('diagnostics.protocol')}: ${location.protocol}`);
+  lines.push(`${tr('diagnostics.secure_context')}: ${yesNo(window.isSecureContext)}`);
+  lines.push(`${tr('diagnostics.service_worker_support')}: ${yesNo('serviceWorker' in navigator)}`);
+  lines.push(`${tr('diagnostics.push_manager_support')}: ${yesNo('PushManager' in window)}`);
+  lines.push(`${tr('diagnostics.notification_support')}: ${yesNo('Notification' in window)}`);
 
   if ('Notification' in window) {
-    lines.push('Notification permission: ' + Notification.permission);
+    lines.push(`${tr('diagnostics.notification_permission')}: ${localizedAuthPermission(Notification.permission)}`);
   }
 
-  lines.push('User agent: ' + navigator.userAgent);
+  lines.push(`${tr('diagnostics.user_agent')}: ${navigator.userAgent}`);
 
   // Check Safari
   var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
   if (isSafari) {
     var match = navigator.userAgent.match(/Version\/(\d+\.\d+)/);
-    lines.push('Safari version: ' + (match ? match[1] : 'unknown'));
+    lines.push(`${tr('diagnostics.safari_version')}: ${match ? match[1] : tr('diagnostics.unknown')}`);
   }
 
   // Check VAPID key availability
@@ -11679,12 +11900,12 @@ async function collectPushDiagnostics() {
     var resp = await authFetch('/api/push/vapid');
     if (resp.ok) {
       var data = await resp.json();
-      lines.push('VAPID key: ' + (data.public_key ? 'Available (' + data.public_key.substring(0, 12) + '...)' : 'Missing'));
+      lines.push(`${tr('diagnostics.vapid_key')}: ${data.public_key ? `${tr('diagnostics.available')} (${data.public_key.substring(0, 12)}...)` : tr('diagnostics.missing')}`);
     } else {
-      lines.push('VAPID key: Unavailable (HTTP ' + resp.status + ')');
+      lines.push(`${tr('diagnostics.vapid_key')}: ${tr('diagnostics.unavailable')} (HTTP ${resp.status})`);
     }
   } catch (e) {
-    lines.push('VAPID key: Error fetching');
+    lines.push(`${tr('diagnostics.vapid_key')}: ${tr('diagnostics.fetch_error')}`);
   }
 
   // Check service worker registration & subscription
@@ -11692,21 +11913,40 @@ async function collectPushDiagnostics() {
     try {
       var reg = await navigator.serviceWorker.getRegistration(BASE_PATH + '/sw.js');
       if (reg) {
-        lines.push('SW registered: Yes (scope: ' + reg.scope + ')');
-        lines.push('SW state: ' + (reg.active ? 'active' : reg.installing ? 'installing' : reg.waiting ? 'waiting' : 'none'));
+        lines.push(`${tr('diagnostics.sw_registered')}: ${tr('diagnostics.yes')} (${tr('diagnostics.scope')}: ${reg.scope})`);
+        lines.push(`${tr('diagnostics.sw_state')}: ${localizedWorkerState(reg.active ? 'active' : reg.installing ? 'installing' : reg.waiting ? 'waiting' : 'none')}`);
         var sub = await reg.pushManager.getSubscription();
-        lines.push('Push subscription: ' + (sub ? 'Active' : 'None'));
+        lines.push(`${tr('diagnostics.push_subscription')}: ${tr(sub ? 'diagnostics.active' : 'diagnostics.none')}`);
       } else {
-        lines.push('SW registered: No');
+        lines.push(`${tr('diagnostics.sw_registered')}: ${tr('diagnostics.no')}`);
       }
     } catch (e) {
-      lines.push('SW check error: ' + e.message);
+      lines.push(`${tr('diagnostics.check_error')}: ${e.message}`);
     }
   }
 
   diagEl.textContent = lines.join('\n');
   const section = document.getElementById('push-diagnostics-section');
   if (section) section.hidden = false;
+}
+
+function localizedAuthPermission(permission) {
+  const key = {
+    granted: 'diagnostics.permission_granted',
+    denied: 'diagnostics.permission_denied',
+    default: 'diagnostics.permission_default',
+  }[permission];
+  return key ? tr(key) : permission;
+}
+
+function localizedWorkerState(state) {
+  const key = {
+    active: 'diagnostics.active',
+    installing: 'diagnostics.state_installing',
+    waiting: 'diagnostics.state_waiting',
+    none: 'diagnostics.none',
+  }[state];
+  return key ? tr(key) : state;
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -11840,11 +12080,11 @@ function _updateOverrideQuotas(row) {
   const quotas = _overrideQuotasByProvider[provider] || [];
   const prevQuota = quotaSelect.value;
 
-  quotaSelect.innerHTML = '<option value="">Select quota...</option>';
+  quotaSelect.innerHTML = `<option value="">${tr('settings.select_quota')}</option>`;
   quotas.forEach(q => {
     const opt = document.createElement('option');
     opt.value = q.key;
-    opt.textContent = q.label;
+    opt.textContent = localizedQuotaLabel(q.key, q.label);
     if (q.key === prevQuota) opt.selected = true;
     quotaSelect.appendChild(opt);
   });
@@ -11853,18 +12093,18 @@ function _updateOverrideQuotas(row) {
   absInput.value = isAbs ? 'true' : 'false';
   if (isAbs) {
     warnInput.removeAttribute('max');
-    warnInput.placeholder = 'Warn';
-    warnInput.title = 'Warning threshold (absolute value)';
+    warnInput.placeholder = tr('settings.warn');
+    warnInput.title = tr('settings.warning_absolute');
     critInput.removeAttribute('max');
-    critInput.placeholder = 'Crit';
-    critInput.title = 'Critical threshold (absolute value)';
+    critInput.placeholder = tr('settings.crit');
+    critInput.title = tr('settings.critical_absolute');
   } else {
     warnInput.setAttribute('max', '100');
-    warnInput.placeholder = 'Warn%';
-    warnInput.title = 'Warning threshold (%)';
+    warnInput.placeholder = `${tr('settings.warn')}%`;
+    warnInput.title = tr('settings.warning_threshold');
     critInput.setAttribute('max', '100');
-    critInput.placeholder = 'Crit%';
-    critInput.title = 'Critical threshold (%)';
+    critInput.placeholder = `${tr('settings.crit')}%`;
+    critInput.title = tr('settings.critical_threshold');
   }
 }
 
@@ -11897,16 +12137,16 @@ function addOverrideRow(quotaKey, provider, warning, critical, isAbsolute, disab
       <option value="zai" ${provider === 'zai' ? 'selected' : ''}>Z.ai</option>
     </select>
     <select class="settings-input override-quota" style="flex:2">
-      <option value="">Select quota...</option>
+      <option value="">${tr('settings.select_quota')}</option>
     </select>
-    <input type="number" class="settings-input settings-input-sm override-warning" value="${warning}" min="0" placeholder="Warn%">
-    <input type="number" class="settings-input settings-input-sm override-critical" value="${critical}" min="0" placeholder="Crit%">
-    <label class="override-toggle" title="Send warning notifications"><input type="checkbox" class="override-enable-warning" ${!disableWarning ? 'checked' : ''}> Warn</label>
-    <label class="override-toggle" title="Send critical notifications"><input type="checkbox" class="override-enable-critical" ${!disableCrit ? 'checked' : ''}> Crit</label>
-    <label class="override-toggle" title="Send reset notifications"><input type="checkbox" class="override-enable-reset" ${!disableReset ? 'checked' : ''}> Reset</label>
+    <input type="number" class="settings-input settings-input-sm override-warning" value="${warning}" min="0" placeholder="${tr('settings.warn')}%">
+    <input type="number" class="settings-input settings-input-sm override-critical" value="${critical}" min="0" placeholder="${tr('settings.crit')}%">
+    <label class="override-toggle" title="${tr('settings.send_warning')}"><input type="checkbox" class="override-enable-warning" ${!disableWarning ? 'checked' : ''}> ${tr('settings.warn')}</label>
+    <label class="override-toggle" title="${tr('settings.send_critical')}"><input type="checkbox" class="override-enable-critical" ${!disableCrit ? 'checked' : ''}> ${tr('settings.crit')}</label>
+    <label class="override-toggle" title="${tr('settings.send_reset')}"><input type="checkbox" class="override-enable-reset" ${!disableReset ? 'checked' : ''}> ${tr('settings.reset')}</label>
     <input type="hidden" class="override-provider" value="${provider || 'anthropic'}">
     <input type="hidden" class="override-is-absolute" value="${isAbsolute ? 'true' : 'false'}">
-    <button class="override-remove" title="Remove override" type="button">
+    <button class="override-remove" title="${tr('settings.remove_override')}" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
     </button>
   `;
@@ -12112,6 +12352,8 @@ function initNotificationCenter() {
 // ── Init ──
 
 document.addEventListener('onwatch:languagechange', () => {
+  providerSettingsConfig = createProviderSettingsConfig();
+  refreshProviderTabLabels();
   refreshStatusConfigLabels();
   refreshOpenCodeDisplayNames();
   refreshTimezoneSensitiveText();
@@ -12120,6 +12362,10 @@ document.addEventListener('onwatch:languagechange', () => {
   updateMiniMaxAccountTabsActive();
   populateOpenCodeAccountTabs();
   updateNotificationCenter();
+  document.querySelectorAll('[data-empty-provider]').forEach((element) => {
+    element.textContent = tr('dashboard.no_provider_quota', { provider: element.dataset.emptyProvider });
+  });
+  setupOverviewControls();
 
   const settingsSave = document.getElementById('settings-save-btn');
   if (settingsSave && !settingsSave.disabled) settingsSave.innerHTML = settingsSaveButtonHTML();
@@ -12142,6 +12388,7 @@ document.addEventListener('onwatch:languagechange', () => {
 });
 
 document.addEventListener('DOMContentLoaded', async () => {
+  refreshProviderTabLabels();
   // Register service worker for PWA + push (all pages)
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register(BASE_PATH + '/sw.js').catch(function() {});
@@ -12285,26 +12532,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       const sessionsHead = document.querySelector('#sessions-table thead tr');
       if (sessionsHead) {
         sessionsHead.innerHTML = `
-          <th data-sort-key="provider" role="button" tabindex="0">Provider <span class="sort-arrow"></span></th>
-          <th data-sort-key="id" role="button" tabindex="0">Session <span class="sort-arrow"></span></th>
-          <th data-sort-key="start" role="button" tabindex="0">Started <span class="sort-arrow"></span></th>
-          <th data-sort-key="end" role="button" tabindex="0">Ended <span class="sort-arrow"></span></th>
-          <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-          <th data-sort-key="snapshots" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
+          <th data-sort-key="provider" role="button" tabindex="0">${tr('table.provider')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="id" role="button" tabindex="0">${tr('table.session')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="start" role="button" tabindex="0">${tr('table.started')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="end" role="button" tabindex="0">${tr('table.ended')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="duration" role="button" tabindex="0">${tr('table.duration')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="snapshots" role="button" tabindex="0">${tr('table.snapshots')} <span class="sort-arrow"></span></th>
         `;
       }
       // Update cycles table for "both" - add provider column
       const cyclesHead = document.querySelector('#cycles-table thead tr');
       if (cyclesHead) {
         cyclesHead.innerHTML = `
-          <th data-sort-key="provider" role="button" tabindex="0">Provider <span class="sort-arrow"></span></th>
-          <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
-          <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
-          <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>
-          <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
-          <th data-sort-key="peak" role="button" tabindex="0">Peak <span class="sort-arrow"></span></th>
-          <th data-sort-key="total" role="button" tabindex="0">Total <span class="sort-arrow"></span></th>
-          <th data-sort-key="rate" role="button" tabindex="0">Rate <span class="sort-arrow"></span></th>
+          <th data-sort-key="provider" role="button" tabindex="0">${tr('table.provider')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="id" role="button" tabindex="0">${tr('table.cycle')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="start" role="button" tabindex="0">${tr('table.start')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="end" role="button" tabindex="0">${tr('table.end')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="duration" role="button" tabindex="0">${tr('table.duration')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="peak" role="button" tabindex="0">${tr('table.peak')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="total" role="button" tabindex="0">${tr('table.total')} <span class="sort-arrow"></span></th>
+          <th data-sort-key="rate" role="button" tabindex="0">${tr('table.rate')} <span class="sort-arrow"></span></th>
         `;
       }
       // Re-attach sort event listeners (headers were replaced, losing original listeners)

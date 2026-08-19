@@ -238,3 +238,86 @@ func TestI18nDictionariesCoverRuntimeAndTemplateKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestSimplifiedChineseCoversLegacyVisibleEnglish(t *testing.T) {
+	t.Parallel()
+
+	templates := readEmbeddedFile(t, "templates/dashboard.html") + readEmbeddedFile(t, "templates/settings.html")
+	appJS := readStaticAppJS(t)
+
+	templateForbidden := []string{
+		">Tokens per Request<",
+		">Source File<",
+		">How Custom API Integrations Work<",
+		`aria-label="Dashboard provider tab order and names"`,
+		`aria-label="API integrations chart metric"`,
+		`data-range="1h">1h</button>`,
+	}
+	for _, marker := range templateForbidden {
+		if strings.Contains(templates, marker) {
+			t.Errorf("templates still contain unlocalized visible text %q", marker)
+		}
+	}
+	templateRequired := []string{
+		`data-i18n="time.updated_placeholder"`,
+		`data-i18n-placeholder="settings.from_name_placeholder"`,
+		`data-i18n-duration="1h"`,
+	}
+	for _, marker := range templateRequired {
+		if !strings.Contains(templates, marker) {
+			t.Errorf("templates missing complete localization marker %q", marker)
+		}
+	}
+
+	appForbidden := []string{
+		"desc: 'Configure how onWatch collects Anthropic usage data.",
+		"description: 'Claude Code usage tracking'",
+		"Reload Providers From .env",
+		"<option value=\"\">Select quota...</option>",
+		"title=\"Send warning notifications\"",
+		">Provider <span class=\"sort-arrow\"",
+		`<div class="settings-toggle-label">API Integrations`,
+		`aria-label="Open ${escapeHTML(accountName)} details"`,
+		`quota.source === 'statusline' ? 'Live' : 'API'`,
+		`data.source === 'statusline' ? '\u{1F7E2} Live' : '\u{1F310} API'`,
+		`fractionText = '∞ Unlimited'`,
+		`fractionEl.textContent = '∞ Unlimited'`,
+		`const label = isAnthropicPeakHours(promo) ? 'Peak hours' : 'Off-peak hours'`,
+		`aria-label="${collapsed ? 'Expand' : 'Collapse'}`,
+		"pwdInput.placeholder = '********** (saved)'",
+		`opt.textContent = q.label`,
+		`title="Auto-start is on`,
+		`aria-label="View ${displayName} details"`,
+		`% remaining`,
+		`>Total Delta`,
+		"'Key is configured - leave blank to keep'",
+	}
+	for _, marker := range appForbidden {
+		if strings.Contains(appJS, marker) {
+			t.Errorf("app.js still contains unlocalized visible text %q", marker)
+		}
+	}
+
+	required := []string{
+		"localizedProviderDescription(",
+		"createProviderSettingsConfig()",
+		"localizedCardLabel(",
+		"localizedDatasetLabel(",
+		"localizedRangeLabel(",
+		"localizedMiniMaxLabel(",
+		"if (key === 'api-integrations') return tr('dashboard.api_integrations_label')",
+		"tr('settings.reload_providers')",
+		"tr('settings.select_quota')",
+		"tr('table.provider')",
+		"tr('common.unlimited')",
+		"tr('promo.until_transition'",
+		"tr(collapsed ? 'a11y.expand_provider' : 'a11y.collapse_provider'",
+		"tr('settings.saved_secret_placeholder')",
+		"setAttribute('data-i18n-placeholder', 'settings.saved_secret_placeholder')",
+	}
+	for _, marker := range required {
+		if !strings.Contains(appJS, marker) {
+			t.Errorf("app.js missing complete localization marker %q", marker)
+		}
+	}
+}
