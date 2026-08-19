@@ -321,3 +321,23 @@ func TestSimplifiedChineseCoversLegacyVisibleEnglish(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodeAccountFormExplainsCredentialSources(t *testing.T) {
+	t.Parallel()
+
+	appJS := readStaticAppJS(t)
+	if strings.Contains(appJS, `placeholder="wrk_..."`) {
+		t.Fatal("OpenCode workspace placeholder must show a complete example instead of an ellipsis")
+	}
+
+	required := []string{
+		"tr('opencode.workspace_placeholder')",
+		"tr('opencode.workspace_hint')",
+		"tr('opencode.cookie_source_hint')",
+	}
+	for _, marker := range required {
+		if !strings.Contains(appJS, marker) {
+			t.Errorf("OpenCode account form missing credential guidance marker %q", marker)
+		}
+	}
+}

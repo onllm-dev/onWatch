@@ -10960,8 +10960,8 @@ async function renderOpenCodeAccountSettings(bodyEl, config) {
     <div id="opencode-add-form" hidden style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-inset)">
       <div class="settings-fields">
         <div class="settings-field"><label>${tr('opencode.display_name')}</label><input id="opencode-new-name" class="settings-input" maxlength="80" placeholder="${tr('opencode.name_placeholder')}" /></div>
-        <div class="settings-field"><label>${tr('opencode.workspace_id')}</label><input id="opencode-new-workspace" class="settings-input" maxlength="256" placeholder="wrk_..." /></div>
-        <div class="settings-field"><label>${tr('opencode.auth_cookie')}</label><input id="opencode-new-cookie" type="password" class="settings-input" autocomplete="new-password" placeholder="${tr('opencode.cookie_placeholder')}" /></div>
+        <div class="settings-field"><label>${tr('opencode.workspace_id')}</label><input id="opencode-new-workspace" class="settings-input" maxlength="256" placeholder="${tr('opencode.workspace_placeholder')}" /><span class="settings-field-hint">${tr('opencode.workspace_hint')}</span></div>
+        <div class="settings-field"><label>${tr('opencode.auth_cookie')}</label><input id="opencode-new-cookie" type="password" class="settings-input" autocomplete="new-password" placeholder="${tr('opencode.cookie_placeholder')}" /><span class="settings-field-hint">${tr('opencode.cookie_source_hint')}</span></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:8px"><button id="opencode-save-new" class="provider-settings-action">${tr('settings.save')}</button><button id="opencode-cancel-new" class="provider-settings-action">${tr('settings.cancel')}</button></div>
     </div>
