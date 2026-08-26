@@ -24,6 +24,8 @@ import {PanelHostController} from './panelHost.js';
 
 const REFRESH_MS_DEFAULT = 15_000;
 const ICON_SIZE = 14;
+/** Delay before opening the quota panel on tray hover (avoids accidental triggers). */
+const HOVER_OPEN_DELAY_MS = 750;
 
 /**
  * Build a native color for ColorizeEffect.tint.
@@ -74,6 +76,7 @@ class OnWatchIndicator extends PanelMenu.Button {
         this._port = resolvePort();
         this._host = new PanelHostController(extensionDir);
         this._refreshId = 0;
+        this._hoverOpenId = 0;
         this._giconCache = new Map();
         this._icons = [];
         // Native color object (from theme node or from_string) — never a plain {}
@@ -117,6 +120,7 @@ class OnWatchIndicator extends PanelMenu.Button {
         });
         this.connect('button-press-event', (_a, event) => {
             if (event.get_button() === Clutter.BUTTON_PRIMARY) {
+                this._cancelHoverOpen();
                 this._openPanel('click');
                 return Clutter.EVENT_STOP;
             }
@@ -135,6 +139,7 @@ class OnWatchIndicator extends PanelMenu.Button {
             GLib.source_remove(this._refreshId);
             this._refreshId = 0;
         }
+        this._cancelHoverOpen();
         this._host?.destroy();
         this._host = null;
         this._giconCache?.clear();
@@ -142,9 +147,25 @@ class OnWatchIndicator extends PanelMenu.Button {
         super.destroy();
     }
 
+    _cancelHoverOpen() {
+        if (this._hoverOpenId) {
+            GLib.source_remove(this._hoverOpenId);
+            this._hoverOpenId = 0;
+        }
+    }
+
     _onHoverChanged() {
-        if (this.hover)
-            this._openPanel('hover');
+        this._cancelHoverOpen();
+        if (!this.hover)
+            return;
+
+        // Wait briefly so a quick pass over the tray does not pop the panel.
+        this._hoverOpenId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, HOVER_OPEN_DELAY_MS, () => {
+            this._hoverOpenId = 0;
+            if (this.hover)
+                this._openPanel('hover');
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     /**
