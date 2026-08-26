@@ -51,7 +51,7 @@ Dependencies for the panel host: `python3`, `gir1.2-gtk-3.0`, `gir1.2-webkit2-4.
 ## Runtime behaviour
 
 1. Indicator polls `GET /api/menubar/tray-title` every 15s → label `6%·4%·1%` (same rules as macOS `TrayTitle`).
-2. **Hover** or **left-click** the indicator → `panel_host.py` shows a WebKit window at `http://127.0.0.1:<port>/menubar`.
+2. **Hover** the indicator for **750ms** (or **left-click**) → `panel_host.py` shows a WebKit window at `http://127.0.0.1:<port>/menubar`. Leaving the tray before 750ms cancels the open (avoids accidental triggers). Click still opens immediately.
 3. Pointer **leaves the panel window for 0.5s** → host hides (no re-render; same page stays loaded).
 4. **Escape** or panel **X** (native `onwatchAction` close) → hide.
 5. Right-click indicator → shell menu: Show Quota Panel / Open Dashboard.
