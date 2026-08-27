@@ -22,8 +22,9 @@ A single dashboard tab must not touch two OAuth token chains (refresh rotation w
 
 ### Token refresh policy
 
-- If the kimi-code **access token is still valid** (`expires_at` with a 60s skew), onWatch **never** refreshes — it reuses the token the CLI already wrote.
-- Refresh runs only when access is **expired**. Then onWatch may call:
+- If a **kimi-code process is running**, onWatch **never** calls OAuth refresh. The live CLI owns the refresh-token chain; rotating it from onWatch would kick the session out. Instead onWatch re-reads `kimi-code.json` (including when the file mtime/size changes) and adopts the access token the CLI last wrote.
+- If the kimi-code **access token is still valid** (`expires_at` with a 60s skew) and no live CLI needs to be deferred to, onWatch **never** refreshes — it reuses the token already on disk.
+- Refresh runs only when access is **expired**, **no kimi-code process is running**, and Settings → Auto refresh tokens is on. Then onWatch may call:
 
 ```http
 POST https://auth.kimi.com/api/oauth/token
@@ -32,7 +33,7 @@ grant_type=refresh_token&refresh_token=...&client_id=17e5f671-d194-4dfb-9706-551
 
 and rewrite **the same kimi-code credentials file** (mode `0600`).
 
-- On HTTP 401 with a still-unexpired access token, onWatch re-reads disk once (CLI may have rotated tokens) but **does not** force-refresh.
+- On HTTP 401, onWatch re-reads disk once (CLI may have persisted a rotated access token). Force-refresh happens only when kimi-code is **not** running.
 
 ## Enable
 
