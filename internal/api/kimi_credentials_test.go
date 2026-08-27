@@ -108,6 +108,36 @@ func TestKimiCredentials_ExpiredSkew(t *testing.T) {
 	}
 }
 
+func TestLoadKimiCredentialsCached_ReloadsWhenFileChanges(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KIMI_CODE_HOME", "")
+	t.Setenv("KIMI_CODE_CREDENTIALS", "")
+	t.Setenv("KIMI_CREDENTIALS", "")
+	path := writeKimiCred(t, filepath.Join(home, ".kimi-code"), "tok-a", "ref-a", float64(time.Now().Unix()+600))
+	InvalidateKimiCredentialsCache()
+	first := LoadKimiCredentialsCached(nil, false)
+	if first == nil || first.AccessToken != "tok-a" {
+		t.Fatalf("first load = %+v", first)
+	}
+	payload := map[string]interface{}{
+		"access_token":  "tok-b-from-live-cli",
+		"refresh_token": "ref-b",
+		"token_type":    "Bearer",
+		"scope":         "kimi-code",
+		"expires_at":    float64(time.Now().Unix() + 800),
+		"expires_in":    900,
+	}
+	data, _ := json.Marshal(payload)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second := LoadKimiCredentialsCached(nil, false)
+	if second == nil || second.AccessToken != "tok-b-from-live-cli" {
+		t.Fatalf("cache did not adopt updated disk token: %+v", second)
+	}
+}
+
 func TestKimiSourceLabel(t *testing.T) {
 	if got := kimiSourceLabel("/home/u/.kimi-code/credentials/kimi-code.json"); got != "kimi-code" {
 		t.Fatalf("got %s", got)

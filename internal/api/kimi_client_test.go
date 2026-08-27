@@ -132,6 +132,7 @@ func TestKimiClientFetchSnapshot_ForceRefreshOn401UnexpiredAccess(t *testing.T) 
 	c := NewKimiClient("", nil,
 		WithKimiBaseURL(srv.URL),
 		WithKimiOAuthHost(srv.URL),
+		WithKimiCLIRunning(func() bool { return false }),
 	)
 	snap, err := c.FetchSnapshot(context.Background())
 	if err != nil {
@@ -153,5 +154,138 @@ func TestKimiClientFetchSnapshot_ForceRefreshOn401UnexpiredAccess(t *testing.T) 
 	}
 	if !strings.Contains(string(saved), "fresh-access") || !strings.Contains(string(saved), "refresh-2") {
 		t.Fatalf("credentials not updated on disk: %s", saved)
+	}
+}
+
+func kimiUsagesOK(w http.ResponseWriter, used string) {
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"usage": map[string]string{"limit": "100", "used": used, "remaining": "90", "resetTime": "2026-07-15T00:00:00Z"},
+	})
+}
+
+func setupKimiCodeCreds(t *testing.T, access, refresh string, expiresAt float64) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KIMI_CODE_HOME", "")
+	t.Setenv("KIMI_CODE_CREDENTIALS", "")
+	t.Setenv("KIMI_CREDENTIALS", "")
+	InvalidateKimiCredentialsCache()
+	return writeKimiCred(t, filepath.Join(home, ".kimi-code"), access, refresh, expiresAt)
+}
+
+func TestKimiClientFetchSnapshot_LiveCLIAdoptsDiskSkipsOAuth(t *testing.T) {
+	var refreshHits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/usages", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer disk-access" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		kimiUsagesOK(w, "7")
+	})
+	mux.HandleFunc("/api/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		refreshHits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	setupKimiCodeCreds(t, "disk-access", "refresh-1", float64(time.Now().Unix()-120))
+	c := NewKimiClient("", nil,
+		WithKimiBaseURL(srv.URL),
+		WithKimiOAuthHost(srv.URL),
+		WithKimiCLIRunning(func() bool { return true }),
+		WithKimiRefreshAllowed(func() bool { return true }),
+	)
+	snap, err := c.FetchSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("FetchSnapshot: %v", err)
+	}
+	if refreshHits.Load() != 0 {
+		t.Fatalf("OAuth must not run while kimi-code is live, hits=%d", refreshHits.Load())
+	}
+	if len(snap.Quotas) == 0 || snap.Quotas[0].Used != 7 {
+		t.Fatalf("snapshot quotas = %+v", snap.Quotas)
+	}
+}
+
+func TestKimiClientFetchSnapshot_LiveCLI401AdoptsUpdatedDiskNotOAuth(t *testing.T) {
+	var refreshHits atomic.Int32
+	var credPath string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/usages", func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		switch auth {
+		case "Bearer stale-access":
+			// CLI persisted a rotated access token after this 401.
+			raw, _ := json.Marshal(map[string]interface{}{
+				"access_token":  "fresh-access",
+				"refresh_token": "refresh-1",
+				"token_type":    "Bearer",
+				"scope":         "kimi-code",
+				"expires_at":    float64(time.Now().Unix() + 600),
+				"expires_in":    900,
+			})
+			_ = os.WriteFile(credPath, raw, 0o600)
+			w.WriteHeader(http.StatusUnauthorized)
+		case "Bearer fresh-access":
+			kimiUsagesOK(w, "11")
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	})
+	mux.HandleFunc("/api/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		refreshHits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	credPath = setupKimiCodeCreds(t, "stale-access", "refresh-1", float64(time.Now().Unix()-120))
+	c := NewKimiClient("", nil,
+		WithKimiBaseURL(srv.URL),
+		WithKimiOAuthHost(srv.URL),
+		WithKimiCLIRunning(func() bool { return true }),
+		WithKimiRefreshAllowed(func() bool { return true }),
+	)
+	snap, err := c.FetchSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("FetchSnapshot: %v", err)
+	}
+	if refreshHits.Load() != 0 {
+		t.Fatalf("OAuth must not run while kimi-code is live, hits=%d", refreshHits.Load())
+	}
+	if len(snap.Quotas) == 0 || snap.Quotas[0].Used != 11 {
+		t.Fatalf("snapshot quotas = %+v", snap.Quotas)
+	}
+}
+
+func TestKimiClientFetchSnapshot_LiveCLI401DoesNotOAuth(t *testing.T) {
+	var refreshHits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/usages", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/api/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		refreshHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	setupKimiCodeCreds(t, "stale-access", "refresh-1", float64(time.Now().Unix()-120))
+	c := NewKimiClient("", nil,
+		WithKimiBaseURL(srv.URL),
+		WithKimiOAuthHost(srv.URL),
+		WithKimiCLIRunning(func() bool { return true }),
+		WithKimiRefreshAllowed(func() bool { return true }),
+	)
+	_, err := c.FetchSnapshot(context.Background())
+	if err != ErrKimiUnauthorized {
+		t.Fatalf("want unauthorized, got %v", err)
+	}
+	if refreshHits.Load() != 0 {
+		t.Fatalf("OAuth must not run while kimi-code is live, hits=%d", refreshHits.Load())
 	}
 }

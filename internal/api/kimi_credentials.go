@@ -266,14 +266,44 @@ var (
 	kimiCredMu    sync.Mutex
 	kimiCredCache *KimiCredentials
 	kimiCredAt    time.Time
+	kimiCredID    kimiFileID
 )
 
+type kimiFileID struct {
+	path string
+	size int64
+	mod  time.Time
+}
+
+func statKimiFileID(path string) (kimiFileID, bool) {
+	if path == "" {
+		return kimiFileID{}, false
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return kimiFileID{}, false
+	}
+	return kimiFileID{path: path, size: st.Size(), mod: st.ModTime()}, true
+}
+
+func kimiCacheFreshLocked() bool {
+	if kimiCredCache == nil || time.Since(kimiCredAt) >= 30*time.Second {
+		return false
+	}
+	id, ok := statKimiFileID(kimiCredCache.Path)
+	if !ok {
+		return kimiCredID.path == ""
+	}
+	return id == kimiCredID
+}
+
 // LoadKimiCredentialsCached returns credentials, re-reading disk at most every 30s
-// unless force is true.
+// unless force is true or the credentials file mtime/size changed (live kimi-code
+// wrote a new access token).
 func LoadKimiCredentialsCached(logger *slog.Logger, force bool) *KimiCredentials {
 	kimiCredMu.Lock()
 	defer kimiCredMu.Unlock()
-	if !force && kimiCredCache != nil && time.Since(kimiCredAt) < 30*time.Second {
+	if !force && kimiCacheFreshLocked() {
 		cp := *kimiCredCache
 		return &cp
 	}
@@ -281,7 +311,13 @@ func LoadKimiCredentialsCached(logger *slog.Logger, force bool) *KimiCredentials
 	kimiCredCache = creds
 	kimiCredAt = time.Now()
 	if creds == nil {
+		kimiCredID = kimiFileID{}
 		return nil
+	}
+	if id, ok := statKimiFileID(creds.Path); ok {
+		kimiCredID = id
+	} else {
+		kimiCredID = kimiFileID{path: creds.Path}
 	}
 	cp := *creds
 	return &cp
@@ -293,4 +329,5 @@ func InvalidateKimiCredentialsCache() {
 	defer kimiCredMu.Unlock()
 	kimiCredCache = nil
 	kimiCredAt = time.Time{}
+	kimiCredID = kimiFileID{}
 }
