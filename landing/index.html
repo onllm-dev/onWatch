@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>onWatch - Know your AI quota before it runs out</title>
-<meta name="description" content="Open-source quota monitoring for AI coding tools. Tracks 15 providers - Anthropic, Codex, Antigravity, Z.ai, Cursor, Copilot, MiniMax and more - with history, reset-cycle detection, burn-rate projections and live countdowns. Single Go binary, under 50 MB RAM, zero telemetry.">
+<meta name="description" content="Open-source quota monitoring for AI coding tools. Tracks 16 providers - Anthropic, Codex, Antigravity, Z.ai, Cursor, Copilot, MiniMax and more - with history, reset-cycle detection, burn-rate projections and live countdowns. Single Go binary, under 50 MB RAM, zero telemetry.">
 <meta name="author" content="onllm.dev">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://onwatch.onllm.dev">
 
 <meta property="og:title" content="onWatch - Know your AI quota before it runs out">
-<meta property="og:description" content="Quota monitoring for AI coding tools across 15 providers. History, reset-cycle detection, burn-rate projections, live countdowns. Single binary, zero telemetry, all data stays on your machine.">
+<meta property="og:description" content="Quota monitoring for AI coding tools across 16 providers. History, reset-cycle detection, burn-rate projections, live countdowns. Single binary, zero telemetry, all data stays on your machine.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://onwatch.onllm.dev">
 <meta property="og:site_name" content="onWatch">
@@ -21,7 +21,7 @@
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="onWatch - Know your AI quota before it runs out">
-<meta name="twitter:description" content="Quota monitoring for AI coding tools across 15 providers. Single binary, under 50 MB RAM, zero telemetry.">
+<meta name="twitter:description" content="Quota monitoring for AI coding tools across 16 providers. Single binary, under 50 MB RAM, zero telemetry.">
 <meta name="twitter:image" content="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/anthropic-dark.png">
 
 <meta name="theme-color" content="#0F1117" media="(prefers-color-scheme: dark)">
@@ -61,7 +61,7 @@
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "Monitoring",
   "operatingSystem": "macOS, Linux, Windows",
-  "description": "Open-source quota monitoring for AI coding tools. Tracks usage across 15 providers with historical trends, reset-cycle detection, burn-rate projections and live countdowns. Runs as a local background agent with zero telemetry.",
+  "description": "Open-source quota monitoring for AI coding tools. Tracks usage across 16 providers with historical trends, reset-cycle detection, burn-rate projections and live countdowns. Runs as a local background agent with zero telemetry.",
   "url": "https://onwatch.onllm.dev",
   "downloadUrl": "https://github.com/onllm-dev/onwatch/releases",
   "softwareVersion": "2.13.7",
@@ -94,7 +94,7 @@
       "name": "Which AI providers does onWatch track?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Fifteen: Anthropic, OpenAI Codex, Antigravity, Z.ai, Synthetic, GitHub Copilot, MiniMax, Cursor, Kimi Code, Grok, Moonshot, DeepSeek, OpenRouter, OpenCode Go, and Gemini CLI (legacy). onWatch also ingests local JSONL telemetry from your own API-driven scripts through API Integrations."
+        "text": "Sixteen: Anthropic, OpenAI Codex, Antigravity, Z.ai, Synthetic, GitHub Copilot, MiniMax, Cursor, Kimi Code, Grok, OpenRouter, OpenCode Go, Ollama Cloud, Moonshot, DeepSeek, and Gemini CLI (legacy). onWatch also ingests local JSONL telemetry from your own API-driven scripts through API Integrations."
       }
     },
     {
@@ -746,7 +746,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
         <p class="lede rv" style="animation-delay:.2s">
           Your provider shows one number: what you have used right now. onWatch keeps
           the history behind it - burn rate, reset cycles, per-session attribution -
-          across <strong style="color:var(--fg);font-weight:600">15 providers</strong> in a single local dashboard.
+          across <strong style="color:var(--fg);font-weight:600">16 providers</strong> in a single local dashboard.
           One Go binary, under 50 MB, nothing leaves your machine.
         </p>
 
@@ -892,7 +892,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
   <div class="wrap">
     <div class="sec-hd rv">
       <span class="label">02 <span class="dot">/</span> Coverage</span>
-      <h2 class="sec-title">Fifteen providers.<br>One dashboard.</h2>
+      <h2 class="sec-title">Sixteen providers.<br>One dashboard.</h2>
       <p>onWatch tracks the account behind the tool, not the tool itself. Configure a key or let it
          auto-detect an existing CLI session, and a tab appears with that provider's real quota
          buckets - the same windows the provider bills against.</p>
@@ -996,12 +996,20 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
               <div class="pcard-ft"><span>12</span><span class="auth">Cookie + workspace</span></div>
       </article>
 
+      <article class="pcard" style="--accent:#C7D2E0">
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Ollama Cloud</h3></div>
+        <ul><li>monthly usage</li><li>per-model</li><li>extra spend</li></ul>
+        <p>Included monthly usage in USD from the ollama.com API, with plan-derived caps,
+           per-model request counts and pay-as-you-go spend.</p>
+              <div class="pcard-ft"><span>13</span><span class="auth">API key</span></div>
+      </article>
+
       <article class="pcard" style="--accent:#22C7A9">
         <div class="pcard-hd"><span class="pcard-dot"></span><h3>Moonshot</h3></div>
         <ul><li>available</li><li>voucher</li><li>cash</li></ul>
         <p>Balance-based tracking for the Moonshot open platform, with drop-rate trends that
            turn a falling balance into a runway estimate.</p>
-              <div class="pcard-ft"><span>13</span><span class="auth">API key</span></div>
+              <div class="pcard-ft"><span>14</span><span class="auth">API key</span></div>
       </article>
 
       <article class="pcard" style="--accent:#536DFE">
@@ -1009,7 +1017,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
         <ul><li>total</li><li>granted</li><li>topped-up</li></ul>
         <p>Balance-based tracking for the DeepSeek platform API, separating granted credit from
            money you actually paid.</p>
-              <div class="pcard-ft"><span>14</span><span class="auth">API key</span></div>
+              <div class="pcard-ft"><span>15</span><span class="auth">API key</span></div>
       </article>
 
       <article class="pcard" style="--accent:#5A6069">
@@ -1018,7 +1026,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
         <p>Kept working for existing setups, but no longer the recommended path - Google's CLI has
            been superseded by Antigravity. New installs should use the <code style="font-family:var(--font-mono);font-size:.9em">agy</code>
            source on the Antigravity provider instead.</p>
-              <div class="pcard-ft"><span>15</span><span class="auth">OAuth, auto-detected</span></div>
+              <div class="pcard-ft"><span>16</span><span class="auth">OAuth, auto-detected</span></div>
       </article>
 
       <article class="pcard" style="--accent:var(--signal)">

@@ -145,6 +145,7 @@ ZAI_API_KEY=your_zai_key
 ANTHROPIC_TOKEN=your_anthropic_token      # Auto-detected from Claude Code if not set
 CODEX_TOKEN=your_codex_token              # Recommended for Codex-only setups
 COPILOT_TOKEN=ghp_your_github_token       # GitHub PAT with 'copilot' scope (Beta)
+OLLAMA_API_KEY=your_ollama_cloud_key      # Ollama Cloud usage from ollama.com/settings/keys
 ```
 
 All configured providers run simultaneously. Configure any combination.
