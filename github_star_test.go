@@ -100,12 +100,15 @@ func TestOfferGitHubStar(t *testing.T) {
 		}
 	})
 
-	t.Run("EOF is not consent", func(t *testing.T) {
+	t.Run("unattended (EOF) takes the default yes", func(t *testing.T) {
 		gh := &fakeGH{loggedIn: true}
 		marker := filepath.Join(t.TempDir(), ".star-prompted")
 		offerGitHubStar(bufio.NewReader(strings.NewReader("")), gh.run, marker)
-		if gh.starCalls() != 0 {
-			t.Fatal("EOF must not star")
+		if gh.starCalls() != 1 {
+			t.Fatalf("unattended run must star by default, calls: %v", gh.calls)
+		}
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatal("marker must be written so it is a one-time action")
 		}
 	})
 

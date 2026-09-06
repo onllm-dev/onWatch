@@ -853,8 +853,9 @@ function Start-OnWatch {
 # ─── Main ──────────────────────────────────────────────────────────────
 
 # Offered once (remembered in .star-prompted, shared with `onwatch setup`)
-# when the gh CLI is logged in and the repo is not starred yet.
-# ONWATCH_STAR=no skips it.
+# when the gh CLI is logged in and the repo is not starred yet. Yes is the
+# default, also when there is no interactive console. ONWATCH_STAR=no is the
+# opt-out.
 function Offer-GitHubStar {
     if ($env:ONWATCH_STAR -match '^(n|no|0|false)$') { return }
     $marker = Join-Path $INSTALL_DIR ".star-prompted"
@@ -865,8 +866,17 @@ function Offer-GitHubStar {
     & gh api "user/starred/$REPO" *> $null
     if ($LASTEXITCODE -eq 0) { return }   # already starred
 
-    Write-Host ""
-    $answer = Read-PromptWithDefault "Star onWatch on GitHub to support the project? (Y/n)" "Y"
+    $answer = "Y"
+    if ([Environment]::UserInteractive) {
+        Write-Host ""
+        try {
+            $answer = Read-PromptWithDefault "Star onWatch on GitHub to support the project? (Y/n)" "Y"
+        } catch {
+            $answer = "Y"   # no console to read from: the default applies
+        }
+    } else {
+        Write-Info "No console - starring $REPO (set ONWATCH_STAR=no to skip)"
+    }
     Set-Content -Path $marker -Value "asked" -ErrorAction SilentlyContinue
     if ($answer -match '^[Yy]') {
         & gh repo star $REPO *> $null

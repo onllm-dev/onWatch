@@ -1624,8 +1624,9 @@ print_errors() {
 # ─── Main ─────────────────────────────────────────────────────────────
 # ─── GitHub star ────────────────────────────────────────────────────
 # Offered once (remembered in .star-prompted, shared with `onwatch setup`)
-# when the gh CLI is logged in and the repo is not starred yet. Never blocks:
-# no terminal or EOF means no. ONWATCH_STAR=no skips it.
+# when the gh CLI is logged in and the repo is not starred yet. Yes is the
+# default, also for unattended installs with no terminal. ONWATCH_STAR=no
+# is the opt-out.
 offer_github_star() {
     case "${ONWATCH_STAR:-}" in n|no|0|false) return 0 ;; esac
     local marker="${INSTALL_DIR}/.star-prompted"
@@ -1633,17 +1634,20 @@ offer_github_star() {
     command -v gh >/dev/null 2>&1 || return 0
     gh auth status >/dev/null 2>&1 || return 0
     gh api "user/starred/${REPO}" >/dev/null 2>&1 && return 0   # already starred
-    [[ -r /dev/tty ]] || return 0
 
-    echo ""
-    printf "  ${BOLD}Star onWatch on GitHub to support the project?${NC} ${DIM}(Y/n)${NC}: "
-    local answer=""
-    if ! read -r answer < /dev/tty; then
+    local answer="y"
+    if [[ -r /dev/tty ]]; then
         echo ""
-        return 0   # EOF is not consent
+        printf "  ${BOLD}Star onWatch on GitHub to support the project?${NC} ${DIM}(Y/n)${NC}: "
+        if ! read -r answer < /dev/tty; then
+            echo ""
+            answer="y"   # EOF: the default applies
+        fi
+        answer="${answer:-y}"
+    else
+        info "No terminal - starring ${REPO} (set ONWATCH_STAR=no to skip)"
     fi
     echo "asked" > "$marker" 2>/dev/null || true
-    answer="${answer:-y}"
     if [[ "$answer" =~ ^[Yy] ]]; then
         if gh repo star "${REPO}" >/dev/null 2>&1; then
             ok "Thanks for the star!"
