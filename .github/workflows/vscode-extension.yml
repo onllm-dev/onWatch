@@ -1,0 +1,119 @@
+name: VS Code Extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extensions/vscode/**"
+      - ".github/workflows/vscode-extension.yml"
+    tags:
+      - "vscode-v*"
+  pull_request:
+    paths:
+      - "extensions/vscode/**"
+      - ".github/workflows/vscode-extension.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: extensions/vscode
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Lint, test, package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extensions/vscode/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package
+        run: npx vsce package --no-dependencies
+
+      - name: Upload .vsix
+        uses: actions/upload-artifact@v4
+        with:
+          name: onwatch-vsix
+          path: extensions/vscode/*.vsix
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/vscode-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extensions/vscode/package-lock.json
+
+      - name: Check tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#vscode-v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Tag version ($TAG) does not match package.json version ($PKG)" >&2
+            exit 1
+          fi
+          echo "Version $PKG matches tag $GITHUB_REF_NAME"
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Package
+        run: npx vsce package --no-dependencies
+
+      - name: Publish to Visual Studio Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --no-dependencies --packagePath ./*.vsix
+
+      - name: Publish to Open VSX
+        # The secrets context cannot be used in `if`, so it is exposed through env first.
+        if: ${{ env.OVSX_PAT != '' }}
+        run: npx ovsx publish --packagePath ./*.vsix
+
+      - name: Create GitHub release with .vsix
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#vscode-v}"
+          gh release create "$GITHUB_REF_NAME" ./*.vsix \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "VS Code extension v$VERSION" \
+            --notes "onWatch VS Code extension v$VERSION. See extensions/vscode/CHANGELOG.md for details. Install with: code --install-extension onwatch-$VERSION.vsix"

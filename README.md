@@ -203,6 +203,8 @@ Configure it in **Settings > Menubar**. You can enable or disable the companion,
 
 The tray is currently in beta. Feedback is highly appreciated at [github.com/onllm-dev/onwatch/issues](https://github.com/onllm-dev/onwatch/issues).
 
+**VS Code extension** -- Shows your tightest quota in the VS Code status bar (`82%`, with time to reset at critical), colored by your theme at warning and critical. Hover for a per-provider breakdown; click to open the quick view or the full dashboard inside VS Code. The extension is a thin client for the daemon and follows the same menubar preferences (provider order, visibility, thresholds), so it stays in sync with the dashboard. Zero telemetry. Install `onllm-dev.onwatch` from the Marketplace or Open VSX, or build it from [extensions/vscode](extensions/vscode). Full setup, settings and troubleshooting live in [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md).
+
 **Email notifications (Beta)** -- Configure SMTP to receive alerts when quotas cross warning or critical thresholds, or when quotas reset. Per-quota threshold overrides for fine-grained control. SMTP passwords are encrypted at rest with AES-GCM.
 
 **Push notifications (Beta)** -- Receive browser push notifications when quotas cross thresholds. onWatch is a PWA (Progressive Web App) - install it from your browser for a native app experience. Uses Web Push protocol (VAPID) with zero external dependencies. Configure delivery channels (email, push, or both) per your preference.
