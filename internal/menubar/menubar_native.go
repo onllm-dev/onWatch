@@ -1,4 +1,4 @@
-//go:build menubar && darwin
+//go:build menubar && (darwin || linux || windows)
 
 package menubar
 
@@ -6,8 +6,9 @@ import "sync/atomic"
 
 var running atomic.Bool
 
-// Init starts the real menubar companion. The implementation lives in
-// companion_darwin.go to keep macOS-specific UI code isolated.
+// Init starts the real menubar companion. The shared controller lives in
+// companion.go; platform-specific pieces (icon rendering, popover host,
+// refresh signalling) live in the *_darwin/_linux/_windows files.
 func Init(cfg *Config) error {
 	if cfg == nil {
 		cfg = DefaultConfig()

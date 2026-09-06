@@ -5,6 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION=$(cat "$SCRIPT_DIR/VERSION")
 BINARY="onwatch"
 DARWIN_FULL_TAGS="menubar,desktop,production"
+# Linux/Windows tray is pure Go (fyne.io/systray over D-Bus / Win32), so the
+# menubar tag needs no cgo there and keeps static cross-compilation intact.
+DESKTOP_TAGS="menubar"
 DARWIN_CGO_LDFLAGS="-framework UniformTypeIdentifiers -Wl,-no_warn_duplicate_libraries"
 
 # --- Colors ---
@@ -194,6 +197,7 @@ build_native_binary() {
     fi
 
     go build \
+        -tags "$DESKTOP_TAGS" \
         -ldflags="-s -w -X main.version=$VERSION" \
         -o "$output" .
 }
@@ -267,6 +271,7 @@ do_release() {
         local output="dist/onwatch-${os}-${arch}${ext}"
         info "  Building ${output}..."
         CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
+            -tags "$DESKTOP_TAGS" \
             -ldflags="-s -w -X main.version=$VERSION" \
             -o "$SCRIPT_DIR/$output" .
     done

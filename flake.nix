@@ -25,6 +25,10 @@
             "-w"
             "-X main.version=${version}"
           ];
+          # The Linux tray companion is pure Go (D-Bus StatusNotifierItem), so
+          # it compiles into the static binary. macOS needs cgo for its menubar
+          # and is left out of the Nix build.
+          tags = lib.optionals pkgs.stdenv.isLinux [ "menubar" ];
           env.CGO_ENABLED = 0;
         };
       in

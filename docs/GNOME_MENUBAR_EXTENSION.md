@@ -1,5 +1,12 @@
 # GNOME Menubar Extension (shared panel with macOS)
 
+> **Native tray available too.** Since the Linux tray port, every Linux
+> release binary carries a pure-Go StatusNotifierItem tray (see
+> [TRAY_LINUX_WINDOWS.md](TRAY_LINUX_WINDOWS.md)). It works on GNOME with an
+> AppIndicator extension enabled. This GNOME Shell extension remains the
+> better fit on stock GNOME Wayland, where it draws the quota text directly in
+> the top bar and shows the panel on hover.
+
 ## Goal
 
 macOS-like menubar UX on GNOME **without re-implementing the panel UI**.
@@ -71,6 +78,7 @@ GNOME Wayland: no tray hover in SNI, XWayland cannot see pointer over the shell 
 
 ## Decision log
 
-- Linux native GTK companion path abandoned.
+- Linux native GTK companion path abandoned (cgo, WebKitGTK runtime dependency).
+- Pure-Go StatusNotifierItem tray added later as the out-of-the-box Linux path; this extension stays for GNOME Wayland hover UX.
 - Panel = HTTP to existing `/menubar` only.
 - Tray title computed server-side for parity with macOS.

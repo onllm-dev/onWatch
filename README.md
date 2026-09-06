@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh |
 
 This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a systemd service (Linux) or a launchd agent (macOS, offered during install), and adds `onwatch` to your PATH.
 
-On macOS, the installer downloads the standard binary with menubar support.
+The installer downloads the standard binary, which includes the menubar companion on macOS and the system tray on Linux desktops.
 
 ### Homebrew (macOS & Linux)
 
@@ -194,14 +194,14 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 
 **Custom API Integrations setup** -- Use a small wrapper around your own API calls to append normalised JSONL events into `~/.onwatch/api-integrations/`, then open the API Integrations tab to monitor cumulative and recent usage. Full setup instructions live in [docs/API_INTEGRATIONS_SETUP.md](docs/API_INTEGRATIONS_SETUP.md).
 
-**Menubar (macOS, Beta)** -- The macOS build includes a menubar companion with two preset views:
+**Menubar / system tray (macOS, Linux, Windows - Beta)** -- Every desktop build includes a tray companion. macOS shows the selected quota percentages next to a template icon and opens a native popover. Linux and Windows bake the percentage into a status-colored tray icon and open the same quick view in a frameless window. Two preset views:
 
 - **Standard** -- Provider cards with circular quota meters and reset metadata
 - **Detailed** -- Expanded provider cards with sparkline trends and full quota breakdowns
 
-Configure it in **Settings > Menubar**. You can enable or disable the companion, pick the default view, change refresh and threshold settings, and drag providers into the order you want.
+Configure it in **Settings > Menubar**. You can enable or disable the companion, pick the default view, change refresh and threshold settings, choose which quotas the icon shows, and drag providers into the order you want. Platform notes for Linux and Windows live in [docs/TRAY_LINUX_WINDOWS.md](docs/TRAY_LINUX_WINDOWS.md); GNOME users can also use the [GNOME Shell extension](docs/GNOME_MENUBAR_EXTENSION.md).
 
-Menubar is currently in beta. Feedback is highly appreciated at [github.com/onllm-dev/onwatch/issues](https://github.com/onllm-dev/onwatch/issues).
+The tray is currently in beta. Feedback is highly appreciated at [github.com/onllm-dev/onwatch/issues](https://github.com/onllm-dev/onwatch/issues).
 
 **Email notifications (Beta)** -- Configure SMTP to receive alerts when quotas cross warning or critical thresholds, or when quotas reset. Per-quota threshold overrides for fine-grained control. SMTP passwords are encrypted at rest with AES-GCM.
 
@@ -384,7 +384,9 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
 | `/api/cycle-overview`           | GET         | Cross-quota correlation at peak usage          |
 | `/api/summary`                  | GET         | Usage summaries                                |
 | `/api/capabilities`             | GET         | Build/runtime capabilities (platform, menubar) |
-| `/api/menubar/summary`          | GET         | Normalized menubar snapshot payload            |
+| `/api/menubar/summary`          | GET         | Normalized menubar snapshot payload (public on loopback, dashboard auth elsewhere) |
+| `/api/menubar/tray-title`       | GET         | Compact tray title and per-provider segments   |
+| `/api/menubar/preferences`      | GET/PUT     | Menubar settings (providers, order, thresholds, tray display) |
 | `/api/menubar/test`             | GET         | Browser-testable menubar page in test mode     |
 | `/api/sessions`                 | GET         | Session history                                |
 | `/api/insights`                 | GET         | Usage insights                                 |
@@ -472,7 +474,7 @@ On Linux, this role is played by the systemd unit that `install.sh` creates.
 └── data/
     ├── onwatch.db       # SQLite database (WAL mode)
     ├── .onwatch.log     # Main daemon log file (background mode)
-    └── menubar.log      # Menubar companion log file (macOS menubar builds)
+    └── menubar.log      # Menubar / tray companion log file (desktop builds)
 ```
 
 Log files are stored next to the database (default `~/.onwatch/data/`).
@@ -619,7 +621,7 @@ The `docker-compose.yml` includes memory limits (64M limit, 32M reservation), lo
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilation, and testing.
 
 ```bash
-./app.sh --build       # Production binary (macOS includes menubar) (or: make build)
+./app.sh --build       # Production binary with menubar/tray companion (or: make build)
 ./app.sh --test        # Tests with race detection (or: make test)
 ./app.sh --build --run # Build + run debug mode    (or: make run)
 ./app.sh --release     # Cross-compile all platforms (or: make release-local)

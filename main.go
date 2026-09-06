@@ -139,6 +139,9 @@ func printMenubarHelp() {
 func menubarHelpText() string {
 	return "" +
 		"onWatch Menubar Companion\n\n" +
+		"Native tray icon for macOS, Linux (StatusNotifierItem) and Windows.\n" +
+		"The daemon starts it automatically in a desktop session; run it by\n" +
+		"hand when the daemon runs as a system service or on another host.\n\n" +
 		"Usage: onwatch menubar [OPTIONS]\n\n" +
 		"Options:\n" +
 		"  --port PORT    Dashboard port to connect to (default: 9211)\n" +
@@ -1775,15 +1778,21 @@ func run() error {
 		}
 	}()
 
-	if runtime.GOOS == "darwin" && menubar.IsSupported() {
-		go func() {
-			if waitForServerReady(cfg.Port, 10*time.Second) {
-				if err := startMenubarCompanion(cfg, logger); err != nil {
-					logger.Warn("failed to start menubar companion", "error", err)
-				}
+	go func() {
+		if !waitForServerReady(cfg.Port, 10*time.Second) {
+			return
+		}
+		if !cfg.TestMode {
+			if err := writePortFile(cfg.Port); err != nil {
+				logger.Debug("failed to write port discovery file", "error", err)
 			}
-		}()
-	}
+		}
+		if menubar.IsSupported() && menubar.SessionAvailable() {
+			if err := startMenubarCompanion(cfg, logger); err != nil {
+				logger.Warn("failed to start menubar companion", "error", err)
+			}
+		}
+	}()
 
 	// Periodically return freed memory to the OS. On macOS, MADV_FREE pages
 	// are reclaimable but still counted in RSS. FreeOSMemory forces MADV_DONTNEED.

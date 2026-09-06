@@ -62,6 +62,9 @@ func TestCapabilitiesIncludesMenubarFields(t *testing.T) {
 	if _, ok := response["menubar_supported"]; !ok {
 		t.Fatal("expected menubar_supported in response")
 	}
+	if _, ok := response["menubar_session"]; !ok {
+		t.Fatal("expected menubar_session in response")
+	}
 	if _, ok := response["menubar_running"]; !ok {
 		t.Fatal("expected menubar_running in response")
 	}
@@ -267,13 +270,34 @@ func TestMenubarTrayTitleLoopback(t *testing.T) {
 		t.Fatalf("expected segments field, got %#v", body)
 	}
 
-	// Non-loopback blocked
+	// Non-loopback is served by the handler; SessionAuthMiddleware decides
+	// whether the remote caller must authenticate first.
 	req2 := httptest.NewRequest(http.MethodGet, "/api/menubar/tray-title", nil)
 	req2.RemoteAddr = "192.168.1.50:12345"
 	rr2 := httptest.NewRecorder()
 	h.MenubarTrayTitle(rr2, req2)
-	if rr2.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for non-loopback, got %d", rr2.Code)
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for non-loopback at handler level, got %d", rr2.Code)
+	}
+}
+
+func TestMenubarSummaryServesRemoteCallers(t *testing.T) {
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	req.RemoteAddr = "192.168.1.50:12345"
+	rr := httptest.NewRecorder()
+	h.MenubarSummary(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var snapshot map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if _, ok := snapshot["providers"]; !ok {
+		t.Fatalf("expected providers in snapshot, got %#v", snapshot)
 	}
 }
 
@@ -369,7 +393,7 @@ func TestMenubarRefreshRequiresPost(t *testing.T) {
 	}
 }
 
-func TestMenubarRefreshRequiresLoopback(t *testing.T) {
+func TestMenubarRefreshServesRemoteCallers(t *testing.T) {
 	h, s := newMenubarTestHandler(t)
 	defer s.Close()
 
@@ -379,8 +403,8 @@ func TestMenubarRefreshRequiresLoopback(t *testing.T) {
 
 	h.MenubarRefresh(rr, req)
 
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 }
 
@@ -407,7 +431,7 @@ func TestMenubarRefreshLoopbackReturnsOK(t *testing.T) {
 	}
 }
 
-func TestMenubarPageRequiresLoopback(t *testing.T) {
+func TestMenubarPageServesRemoteCallers(t *testing.T) {
 	h, s := newMenubarTestHandler(t)
 	defer s.Close()
 
@@ -417,8 +441,8 @@ func TestMenubarPageRequiresLoopback(t *testing.T) {
 
 	h.MenubarPage(rr, req)
 
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 }
 
