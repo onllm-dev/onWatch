@@ -27,8 +27,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Test (race, tray tag)
-        env:
-          CGO_ENABLED: "0"
+        # -race needs cgo for the test binary; the build jobs below still use CGO_ENABLED=0.
         run: |
           go vet -tags menubar ./...
           go test -race -tags menubar -count=1 ./...
