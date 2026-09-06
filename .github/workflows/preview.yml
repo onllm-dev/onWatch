@@ -106,6 +106,8 @@ jobs:
           cache: npm
           cache-dependency-path: extensions/vscode/package-lock.json
       - run: npm ci
+      - name: Stamp version from tag (base major.minor.patch)
+        run: npm run version:sync -- "${GITHUB_REF_NAME}"
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test

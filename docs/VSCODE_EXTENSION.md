@@ -139,8 +139,11 @@ Check `onwatch.statusBar.visibility`. With `whenAnyProviderNearLimit`, the item 
 
 ## Releasing
 
-The extension has its own release pipeline in `.github/workflows/vscode-extension.yml`, separate from the daemon's `release.yml`:
+The extension carries the onWatch daemon's version and ships with every daemon release. There is no separate extension release.
 
-1. Bump `version` in `extensions/vscode/package.json` and add a `CHANGELOG.md` entry.
-2. Commit and tag `vscode-v<version>` (for example `vscode-v2.14.0`), then push the tag. The extension version tracks the onWatch daemon version; the Marketplace never accepts a version twice, so each publish needs a higher patch number.
-3. The workflow verifies the tag matches `package.json`, runs lint, typecheck, tests and build, packages the `.vsix`, publishes to the Marketplace (`VSCE_PAT` secret) and Open VSX (`OVSX_TOKEN` secret, skipped when empty), and attaches the `.vsix` to a GitHub release for the tag.
+1. The daemon release pipeline (`release.yml`) runs `npm run version:sync` in `extensions/vscode`, which stamps `package.json` from the repo `VERSION` file, then lints, tests, builds and packages `onwatch-vscode-<version>.vsix` and attaches it to the GitHub release next to the binaries.
+2. Preview builds (`preview.yml`, tags like `v2.14.0-beta.1`) do the same with the tag's `major.minor.patch`; the beta suffix appears only in the file name because the Marketplace accepts plain three-part versions only.
+3. Marketplace publishing is manual for now: download the `.vsix` from the release, open https://marketplace.visualstudio.com/manage/publishers/onllm-dev and upload it. The Marketplace never accepts a version twice, so upload a given version once.
+4. `.github/workflows/vscode-extension.yml` is CI only (lint, typecheck, test, build, package) for changes under `extensions/vscode`.
+
+Add a `CHANGELOG.md` entry under the daemon version whenever the extension changes.
