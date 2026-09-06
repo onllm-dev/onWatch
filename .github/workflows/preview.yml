@@ -1,0 +1,180 @@
+name: Preview Release
+
+# Builds a tester pre-release from any branch. Trigger by pushing a tag such
+# as v2.13.8-preview.1; the workflow file is read from the tagged commit, so
+# it works without merging to main. Pre-releases never become "latest", so
+# `onwatch update`, install.sh and install.ps1 keep serving the stable build.
+# Testers install with `install.sh --version <tag>` or download the assets.
+# No Docker push, no Homebrew update.
+
+on:
+  push:
+    tags:
+      - "v*-preview*"
+      - "v*-beta*"
+      - "v*-rc*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test (race, tray tag)
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go vet -tags menubar ./...
+          go test -race -tags menubar -count=1 ./...
+
+  build-standard:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            binary: onwatch-linux-amd64
+          - goos: linux
+            goarch: arm64
+            binary: onwatch-linux-arm64
+          - goos: windows
+            goarch: amd64
+            binary: onwatch-windows-amd64.exe
+    runs-on: ubuntu-latest
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          go build -tags menubar -ldflags="-s -w -X main.version=${VERSION}" -o ${{ matrix.binary }} .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: ${{ matrix.binary }}
+
+  build-macos:
+    needs: test
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    runs-on: macos-15
+    name: Build macOS ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          CGO_ENABLED=1 GOOS=darwin GOARCH=${{ matrix.goarch }} \
+            CGO_LDFLAGS="-framework UniformTypeIdentifiers -Wl,-no_warn_duplicate_libraries" \
+            go build -tags menubar,desktop,production \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o onwatch-darwin-${{ matrix.goarch }} .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: onwatch-darwin-${{ matrix.goarch }}
+          path: onwatch-darwin-${{ matrix.goarch }}
+
+  build-vscode:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Build VS Code extension
+    defaults:
+      run:
+        working-directory: extensions/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extensions/vscode/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Package
+        run: |
+          PREVIEW="${GITHUB_REF_NAME#v}"
+          npx vsce package --no-dependencies -o "onwatch-vscode-${PREVIEW}.vsix"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: onwatch-vscode-vsix
+          path: extensions/vscode/*.vsix
+
+  prerelease:
+    needs: [build-standard, build-macos, build-vscode]
+    runs-on: ubuntu-latest
+    name: Pre-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          ls -lh
+      - name: Release notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VSIX="$(basename dist/*.vsix)"
+          cat > notes.md <<NOTES
+          Preview build for testers. Not a stable release: \`onwatch update\` and the installers keep serving the latest stable version.
+
+          ## What is in this preview
+
+          - Native system tray for Linux (StatusNotifierItem) and Windows, pure Go, no extra packages. See docs/TRAY_LINUX_WINDOWS.md.
+          - macOS menubar with the same shared controller (provider rows, Open Quick View, Refresh Now).
+          - VS Code extension (\`${VSIX}\`): provider mark, limit and percent in the status bar, per-provider tables on hover, quick view on click.
+          - Daemon writes \`~/.onwatch/port\` for client discovery; menubar API served to authenticated remote callers.
+
+          ## Install
+
+          macOS / Linux:
+
+              curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash -s -- --version ${TAG}
+
+          Windows: download \`onwatch-windows-amd64.exe\`, place it where your current onwatch.exe lives, run \`onwatch stop\` then \`onwatch\`.
+
+          VS Code: download \`${VSIX}\`, then \`code --install-extension ${VSIX}\` (or Extensions view, "Install from VSIX").
+
+          Go back to stable at any time with \`onwatch update\` or the normal installer.
+
+          ## What to look for
+
+          - Linux: does the icon appear on your desktop (KDE, GNOME with AppIndicator, XFCE, Cinnamon)? Does the number and color match the dashboard? Does clicking open the quick view window?
+          - Windows: icon in the notification area, quick view opening next to the taskbar in Edge, menu items working.
+          - VS Code: label, hover tables, notifications on threshold crossings.
+
+          Report at https://github.com/onllm-dev/onWatch/issues/117 (VS Code) or https://github.com/onllm-dev/onWatch/issues/98 (Linux tray). Checksums in \`SHA256SUMS\`.
+          NOTES
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete "${GITHUB_REF_NAME}" --yes 2>/dev/null || true
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --prerelease \
+            --title "onWatch ${GITHUB_REF_NAME} (preview)" \
+            --notes-file notes.md
