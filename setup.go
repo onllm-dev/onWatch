@@ -72,12 +72,14 @@ func runSetup() error {
 			fmt.Printf("  %sinfo%s  Existing .env found -- all providers configured\n", colorBlue, colorReset)
 			fmt.Printf("  %sTo reconfigure, delete %s and run setup again.%s\n", colorDim, envFile, colorReset)
 			offerAutostart(reader)
+			offerGitHubStar(reader, runGH, starMarkerPath(installDir))
 			return nil
 		}
 		if anyProviderConfigured(existing) {
 			err := addMissingProviders(reader, envFile, existing)
 			if err == nil {
 				offerAutostart(reader)
+				offerGitHubStar(reader, runGH, starMarkerPath(installDir))
 			}
 			return err
 		}
@@ -98,6 +100,7 @@ func runSetup() error {
 
 	printSummary(cfg)
 	offerAutostart(reader)
+	offerGitHubStar(reader, runGH, starMarkerPath(installDir))
 	printNextSteps()
 
 	return nil

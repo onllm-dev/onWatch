@@ -479,6 +479,8 @@ macOS has no systemd equivalent, so onWatch manages a per-user LaunchAgent at `~
 
 Auto-start is opt-in. `install.sh`, `onwatch setup`, and `onwatch update` each offer it once when the agent is missing; declining writes `~/.onwatch/.autostart-declined` so the offer is not repeated. `ONWATCH_AUTOSTART=yes|no` answers the installer prompt non-interactively.
 
+The GitHub star prompt follows the same pattern: `install.sh`, `install.ps1` and `onwatch setup` offer it once when `gh auth status` succeeds and `gh api user/starred/onllm-dev/onwatch` says the repo is not starred yet; answering writes `~/.onwatch/.star-prompted` so it is never asked again, and `ONWATCH_STAR=no` skips it. EOF or a missing terminal is treated as no.
+
 ### Key Source Files
 
 | File | Purpose |

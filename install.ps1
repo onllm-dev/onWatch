@@ -852,6 +852,32 @@ function Start-OnWatch {
 
 # ─── Main ──────────────────────────────────────────────────────────────
 
+# Offered once (remembered in .star-prompted, shared with `onwatch setup`)
+# when the gh CLI is logged in and the repo is not starred yet.
+# ONWATCH_STAR=no skips it.
+function Offer-GitHubStar {
+    if ($env:ONWATCH_STAR -match '^(n|no|0|false)$') { return }
+    $marker = Join-Path $INSTALL_DIR ".star-prompted"
+    if (Test-Path $marker) { return }
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return }
+    & gh auth status *> $null
+    if ($LASTEXITCODE -ne 0) { return }
+    & gh api "user/starred/$REPO" *> $null
+    if ($LASTEXITCODE -eq 0) { return }   # already starred
+
+    Write-Host ""
+    $answer = Read-PromptWithDefault "Star onWatch on GitHub to support the project? (Y/n)" "Y"
+    Set-Content -Path $marker -Value "asked" -ErrorAction SilentlyContinue
+    if ($answer -match '^[Yy]') {
+        & gh repo star $REPO *> $null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "Thanks for the star!"
+        } else {
+            Write-Warn "Could not star the repo - try: gh repo star $REPO"
+        }
+    }
+}
+
 function Main {
     Write-Host ""
     Write-Host "  ${BOLD}onWatch Installer${NC}"
@@ -892,6 +918,8 @@ function Main {
     # Start the service
     Write-Host ""
     Start-OnWatch
+
+    Offer-GitHubStar
 
     Write-Host ""
     Write-Host "  ${GREEN}${BOLD}Installation complete${NC}"

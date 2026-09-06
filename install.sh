@@ -1622,6 +1622,37 @@ print_errors() {
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────
+# ─── GitHub star ────────────────────────────────────────────────────
+# Offered once (remembered in .star-prompted, shared with `onwatch setup`)
+# when the gh CLI is logged in and the repo is not starred yet. Never blocks:
+# no terminal or EOF means no. ONWATCH_STAR=no skips it.
+offer_github_star() {
+    case "${ONWATCH_STAR:-}" in n|no|0|false) return 0 ;; esac
+    local marker="${INSTALL_DIR}/.star-prompted"
+    [[ -f "$marker" ]] && return 0
+    command -v gh >/dev/null 2>&1 || return 0
+    gh auth status >/dev/null 2>&1 || return 0
+    gh api "user/starred/${REPO}" >/dev/null 2>&1 && return 0   # already starred
+    [[ -r /dev/tty ]] || return 0
+
+    echo ""
+    printf "  ${BOLD}Star onWatch on GitHub to support the project?${NC} ${DIM}(Y/n)${NC}: "
+    local answer=""
+    if ! read -r answer < /dev/tty; then
+        echo ""
+        return 0   # EOF is not consent
+    fi
+    echo "asked" > "$marker" 2>/dev/null || true
+    answer="${answer:-y}"
+    if [[ "$answer" =~ ^[Yy] ]]; then
+        if gh repo star "${REPO}" >/dev/null 2>&1; then
+            ok "Thanks for the star!"
+        else
+            warn "Could not star the repo - try: gh repo star ${REPO}"
+        fi
+    fi
+}
+
 main() {
     parse_args "$@"
 
@@ -1672,6 +1703,8 @@ main() {
     # Start the service
     echo ""
     start_service || true
+
+    offer_github_star
 
     printf "\n  ${GREEN}${BOLD}Installation complete${NC}\n\n"
 }
