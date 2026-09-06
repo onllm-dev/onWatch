@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark" class="js">
+<html lang="en" data-theme="light" class="js">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,11 +24,23 @@
 <meta name="twitter:description" content="Quota monitoring for AI coding tools across 15 providers. Single binary, under 50 MB RAM, zero telemetry.">
 <meta name="twitter:image" content="https://raw.githubusercontent.com/onllm-dev/onwatch/main/docs/screenshots/anthropic-dark.png">
 
-<meta name="theme-color" content="#08090B" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#F4F2ED" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1117" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F0F2F5" media="(prefers-color-scheme: light)">
 
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230E1013'/><circle cx='16' cy='16' r='9' fill='none' stroke='%23FF6B4A' stroke-width='2.5'/><path d='M16 10.5V16l4 2.5' stroke='%23E8E6E1' stroke-width='2.5' stroke-linecap='round' fill='none'/></svg>">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='16' fill='%230D9488'/><g transform='translate(4 4)' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round'><path d='M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07'/></g></svg>">
 
+<script>
+  /* Runs before first paint - same guard as the dashboard's theme-init.js. */
+  (function(){
+    try {
+      var saved = localStorage.getItem('onwatch-theme');
+      var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', saved || (dark ? 'dark' : 'light'));
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@75..125,400..900&family=Archivo:wght@400..700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -138,35 +150,41 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Graphite substrate - warm-shifted, never pure black */
-  --ink-950:#08090B;
-  --ink-900:#0B0D10;
-  --ink-850:#0E1013;
-  --ink-800:#141719;
-  --ink-750:#191D21;
-  --ink-700:#22262B;
+  /* Surfaces - lifted verbatim from the dashboard's style.css */
+  --ink-950:#F0F2F5;   /* page      */
+  --ink-900:#F7F8FA;   /* alt band  */
+  --ink-850:#FFFFFF;   /* card      */
+  --ink-800:#F3F4F6;   /* inset     */
+  --ink-750:#EDEFF2;
+  --ink-700:#E5E7EB;
 
-  --fg:#E8E6E1;          /* warm off-white - reads softer than #FFF */
-  --fg-dim:#A5A9B0;
-  --fg-mute:#6E747D;
-  --fg-faint:#474C54;
+  --fg:#1A1D21;
+  --fg-dim:#4B5563;
+  --fg-mute:#6B7280;
+  --fg-faint:#9CA3AF;
 
-  --rule:rgba(232,230,225,.09);
-  --rule-strong:rgba(232,230,225,.16);
+  --rule:#E5E7EB;
+  --rule-strong:#D1D5DB;
 
-  /* Signal palette - mirrors the app's real status thresholds */
-  --signal:#FF6B4A;      /* ember - primary accent */
-  --signal-dim:rgba(255,107,74,.14);
-  --signal-glow:rgba(255,107,74,.30);
-  --healthy:#3DD68C;
-  --warning:#F5B942;
-  --danger:#FF6B4A;
-  --critical:#E5484D;
-  --cool:#4CC2E0;        /* secondary readout accent */
+  /* Accent: teal, the app's primary */
+  --signal:#0D9488;
+  --signal-dim:rgba(13,148,136,.10);
+  --signal-glow:rgba(13,148,136,.28);
+  --on-signal:#FFFFFF;
+
+  /* Status - same thresholds the quota cards use */
+  --healthy:#10B981;
+  --warning:#F59E0B;
+  --danger:#EF4444;
+  --critical:#DC2626;
+  --cool:#3B82F6;
 
   --surface:var(--ink-850);
   --surface-raised:var(--ink-800);
   --page:var(--ink-950);
+
+  --shade:rgba(26,29,33,.92);   /* lightbox scrim  */
+  --on-shade:#F1F3F5;           /* text on scrim   */
 
   --font-display:'Anybody','Archivo',system-ui,sans-serif;
   --font-body:'Archivo',system-ui,-apple-system,sans-serif;
@@ -175,17 +193,37 @@
   --gut:clamp(1.25rem,4vw,3.5rem);
   --maxw:1320px;
   --ease:cubic-bezier(.22,1,.36,1);
-  --grain:.035;
 }
 
-html[data-theme="light"]{
-  --ink-950:#F4F2ED; --ink-900:#EFEDE7; --ink-850:#FFFFFF;
-  --ink-800:#FBFAF7; --ink-750:#F2F0EA; --ink-700:#E6E3DB;
-  --fg:#14161A; --fg-dim:#43484F; --fg-mute:#6B7079; --fg-faint:#A8ADB5;
-  --rule:rgba(20,22,26,.11); --rule-strong:rgba(20,22,26,.20);
-  --signal:#E2482A; --signal-dim:rgba(226,72,42,.10); --signal-glow:rgba(226,72,42,.22);
-  --healthy:#159A63; --warning:#B77B0B; --critical:#C9282D; --cool:#1E7E9B;
-  --grain:.02;
+html[data-theme="dark"]{
+  --ink-950:#0F1117;
+  --ink-900:#13161D;
+  --ink-850:#1A1D24;
+  --ink-800:#161921;
+  --ink-750:#21242C;
+  --ink-700:#252830;
+
+  --fg:#F1F3F5;
+  --fg-dim:#ABB5C2;
+  --fg-mute:#8891A0;
+  --fg-faint:#666E7C;
+
+  --rule:#2A2E37;
+  --rule-strong:#2F3440;
+
+  --signal:#14B8A6;
+  --signal-dim:rgba(20,184,166,.12);
+  --signal-glow:rgba(20,184,166,.32);
+  --on-signal:#0F1117;
+
+  --healthy:#34D399;
+  --warning:#FBBF24;
+  --danger:#F87171;
+  --critical:#EF4444;
+  --cool:#60A5FA;
+
+  --shade:rgba(15,17,23,.96);
+  --on-shade:#F1F3F5;
 }
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -204,14 +242,8 @@ body{
   transition:background .4s var(--ease),color .4s var(--ease);
 }
 
-/* Film grain - keeps large dark fields from banding */
-body::after{
-  content:''; position:fixed; inset:0; z-index:9999; pointer-events:none;
-  opacity:var(--grain); mix-blend-mode:overlay;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
-}
 
-::selection{background:var(--signal);color:#0B0D10}
+::selection{background:var(--signal);color:var(--on-signal)}
 :focus-visible{outline:2px solid var(--signal);outline-offset:3px;border-radius:2px}
 
 a{color:inherit;text-decoration:none}
@@ -274,8 +306,7 @@ h3{font-family:var(--font-display);font-variation-settings:'wdth' 100,'wght' 650
 /* ── Header ────────────────────────────────────────────────────── */
 header{
   position:sticky; top:0; z-index:200;
-  background:color-mix(in srgb,var(--page) 88%,transparent);
-  backdrop-filter:blur(14px) saturate(150%);
+  background:var(--page);
   border-bottom:1px solid var(--rule);
 }
 .nav{display:flex;align-items:center;gap:1.5rem;height:60px}
@@ -327,12 +358,12 @@ header{
 }
 
 .eyebrow{display:flex;align-items:center;gap:.7rem;margin-bottom:1.5rem}
-.pulse{width:6px;height:6px;border-radius:50%;background:var(--healthy);
+.pulse{width:6px;height:6px;border-radius:50%;background:var(--signal);
   box-shadow:0 0 0 0 var(--healthy);animation:pulse 2.4s infinite}
 @keyframes pulse{
-  0%{box-shadow:0 0 0 0 rgba(61,214,140,.5)}
-  70%{box-shadow:0 0 0 9px rgba(61,214,140,0)}
-  100%{box-shadow:0 0 0 0 rgba(61,214,140,0)}
+  0%{box-shadow:0 0 0 0 var(--signal-glow)}
+  70%{box-shadow:0 0 0 9px transparent}
+  100%{box-shadow:0 0 0 0 transparent}
 }
 .hero h1{margin-bottom:1.6rem}
 .hero .lede{margin-bottom:2.1rem}
@@ -362,10 +393,10 @@ header{
 .panel{
   background:linear-gradient(170deg,var(--surface-raised),var(--surface));
   border:1px solid var(--rule-strong);
-  box-shadow:0 30px 70px -30px rgba(0,0,0,.6);
+  box-shadow:0 18px 44px -26px rgba(26,29,33,.28);
   position:relative;
 }
-html[data-theme="light"] .panel{box-shadow:0 24px 54px -28px rgba(20,22,26,.28)}
+html[data-theme="dark"] .panel{box-shadow:0 30px 70px -30px rgba(0,0,0,.55)}
 .panel-hd{
   display:flex;align-items:center;justify-content:space-between;
   padding:.7rem .95rem;border-bottom:1px solid var(--rule);
@@ -418,18 +449,34 @@ html[data-theme="light"] .panel{box-shadow:0 24px 54px -28px rgba(20,22,26,.28)}
 /* ── Sections ──────────────────────────────────────────────────── */
 section{position:relative}
 .sec{padding-block:clamp(3.4rem,6.2vw,5.6rem)}
-.sec-hd{margin-bottom:clamp(2.2rem,4vw,3.4rem);max-width:62ch}
-.sec-hd .label{display:block;margin-bottom:1rem}
-.sec-hd p{margin-top:1.1rem;color:var(--fg-dim);font-size:1.02rem;max-width:58ch}
+.sec-hd{
+  margin-bottom:clamp(2.2rem,4vw,3.4rem);
+  display:grid; grid-template-columns:minmax(0,1.02fr) minmax(0,.98fr);
+  gap:clamp(1.4rem,3.5vw,3.5rem); align-items:end;
+}
+.sec-hd .label{grid-column:1/-1;display:block;margin-bottom:.4rem}
+.sec-hd p{margin:0 0 .3rem;color:var(--fg-dim);font-size:1.02rem;max-width:52ch}
+@media(max-width:900px){
+  .sec-hd{grid-template-columns:1fr;gap:1rem;align-items:start}
+  .sec-hd p{margin-top:.3rem}
+}
 
 /* ── Provider grid ─────────────────────────────────────────────── */
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));
   border-top:1px solid var(--rule);border-left:1px solid var(--rule)}
 .pcard{
-  padding:1.25rem 1.15rem 1.35rem;border-right:1px solid var(--rule);
+  padding:1.25rem 1.15rem 0;border-right:1px solid var(--rule);
   border-bottom:1px solid var(--rule);position:relative;
+  display:flex; flex-direction:column;
   transition:background .3s var(--ease);
 }
+.pcard-ft{
+  margin-top:auto; padding:.7rem 0 .9rem; border-top:1px solid var(--rule);
+  display:flex; align-items:center; justify-content:space-between;
+  font-family:var(--font-mono); font-size:.6rem; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--fg-faint);
+}
+.pcard-ft .auth{color:var(--fg-mute)}
 .pcard::before{
   content:'';position:absolute;left:0;top:-1px;height:2px;width:0;
   background:var(--accent,var(--signal));transition:width .45s var(--ease);
@@ -445,14 +492,14 @@ section{position:relative}
 }
 .pcard .tag.beta{color:var(--cool);border-color:color-mix(in srgb,var(--cool) 40%,transparent)}
 .pcard .tag.legacy{color:var(--fg-faint)}
-.pcard .idx{margin-left:auto;font-family:var(--font-mono);font-size:.6rem;color:var(--fg-faint)}
+.pcard .tag{margin-left:auto}
 .pcard ul{list-style:none;margin-top:.85rem;display:flex;flex-wrap:wrap;gap:.3rem}
 .pcard li{
   font-family:var(--font-mono);font-size:.635rem;color:var(--fg-dim);
-  padding:.16rem .42rem;background:var(--ink-800);border:1px solid var(--rule);
+  padding:.16rem .42rem;background:var(--ink-750);border:1px solid var(--rule);
 }
-html[data-theme="light"] .pcard li{background:var(--ink-750)}
-.pcard p{margin-top:.75rem;font-size:.815rem;color:var(--fg-mute);line-height:1.55}
+html[data-theme="dark"] .pcard li{background:var(--ink-800)}
+.pcard p{margin:.75rem 0 1.1rem;font-size:.815rem;color:var(--fg-mute);line-height:1.55}
 
 /* ── Diff table (provider shows / onWatch adds) ────────────────── */
 .diff{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--rule-strong)}
@@ -508,7 +555,8 @@ html[data-theme="light"] .pcard li{background:var(--ink-750)}
 .code-block .c{color:var(--fg-faint)}
 .code-block .cp{position:absolute;top:.65rem;right:.65rem;padding:.28rem .55rem;
   border:1px solid var(--rule-strong);font-family:var(--font-mono);font-size:.62rem;
-  letter-spacing:.1em;color:var(--fg-mute);transition:all .2s}
+  letter-spacing:.1em;color:var(--fg-mute);transition:all .2s;
+  background:var(--surface);box-shadow:-10px 0 12px 6px var(--surface);z-index:1}
 .code-block .cp:hover{border-color:var(--signal);color:var(--signal)}
 .code-block .cp.ok{color:var(--healthy);border-color:var(--healthy)}
 .after-install{margin-top:1.1rem;font-size:.85rem;color:var(--fg-mute)}
@@ -522,15 +570,19 @@ html[data-theme="light"] .pcard li{background:var(--ink-750)}
   font-size:2.1rem;line-height:1;letter-spacing:-.03em}
 .tstat span{display:block;margin-top:.45rem;font-family:var(--font-mono);font-size:.63rem;
   letter-spacing:.13em;text-transform:uppercase;color:var(--fg-mute)}
+.tstat .live{display:none;align-items:center;gap:.32rem;margin-top:.5rem;color:var(--signal)}
+.tstat .live[data-on="1"]{display:inline-flex}
+.tstat .live i{width:5px;height:5px;border-radius:50%;background:var(--signal);
+  box-shadow:0 0 0 0 var(--signal-glow);animation:pulse 2.4s infinite}
 .trust-panels{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;align-items:start}
 @media(max-width:900px){.trust-panels{grid-template-columns:1fr}}
 .tpanel{border:1px solid var(--rule-strong);padding:1.2rem}
 .tpanel h3{font-size:.95rem;margin-bottom:.9rem}
 .chips{display:flex;flex-wrap:wrap;gap:.35rem}
 .chip{font-family:var(--font-mono);font-size:.66rem;padding:.24rem .5rem;
-  border:1px solid var(--rule);color:var(--fg-dim);background:var(--ink-900)}
+  border:1px solid var(--rule);color:var(--fg-dim);background:var(--ink-750)}
 .chip b{color:var(--signal);font-weight:500;margin-left:.3rem}
-html[data-theme="light"] .chip{background:var(--ink-750)}
+html[data-theme="dark"] .chip{background:var(--ink-800)}
 .tnote{margin-top:1.4rem;font-size:.78rem;color:var(--fg-faint);line-height:1.6;max-width:78ch}
 #star-history-chart{width:100%;height:auto;display:block;filter:saturate(.85)}
 
@@ -542,27 +594,27 @@ html[data-theme="light"] .chip{background:var(--ink-750)}
   transition:transform .6s var(--ease),opacity .3s;opacity:.86}
 .shot:hover img{transform:scale(1.03);opacity:1}
 .shot figcaption{position:absolute;left:0;bottom:0;right:0;padding:.7rem .85rem;
-  background:linear-gradient(to top,rgba(8,9,11,.92),transparent);
-  font-family:var(--font-mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#E8E6E1}
+  background:linear-gradient(to top,var(--shade),transparent);
+  font-family:var(--font-mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--on-shade)}
 .gal-filters{display:flex;gap:.5rem;margin-bottom:1.4rem;flex-wrap:wrap}
 .gal-filters button{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.1em;
   text-transform:uppercase;padding:.35rem .7rem;border:1px solid var(--rule);color:var(--fg-mute);transition:all .2s}
 .gal-filters button[aria-pressed="true"]{border-color:var(--signal);color:var(--signal);background:var(--signal-dim)}
 
 /* Lightbox */
-.lb{position:fixed;inset:0;z-index:1000;background:rgba(8,9,11,.96);
+.lb{position:fixed;inset:0;z-index:1000;background:var(--shade);
   display:none;align-items:center;justify-content:center;padding:2.5rem 1rem 4rem}
 .lb.on{display:flex}
 .lb img{max-width:100%;max-height:100%;object-fit:contain;border:1px solid var(--rule-strong)}
 .lb-close{position:absolute;top:1rem;right:1rem;width:38px;height:38px;
-  border:1px solid var(--rule-strong);color:#E8E6E1;display:grid;place-items:center}
+  border:1px solid var(--rule-strong);color:var(--on-shade);display:grid;place-items:center}
 .lb-close:hover{border-color:var(--signal);color:var(--signal)}
 .lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:64px;
-  border:1px solid var(--rule-strong);color:#E8E6E1;display:grid;place-items:center;font-size:1.2rem}
+  border:1px solid var(--rule-strong);color:var(--on-shade);display:grid;place-items:center;font-size:1.2rem}
 .lb-nav:hover{border-color:var(--signal);color:var(--signal)}
 .lb-prev{left:1rem} .lb-next{right:1rem}
 .lb-cap{position:absolute;bottom:1.2rem;left:0;right:0;text-align:center;
-  font-family:var(--font-mono);font-size:.68rem;color:#A5A9B0;letter-spacing:.1em}
+  font-family:var(--font-mono);font-size:.68rem;color:var(--fg-mute);letter-spacing:.1em}
 
 /* ── FAQ ───────────────────────────────────────────────────────── */
 .faq{border-top:1px solid var(--rule)}
@@ -592,7 +644,7 @@ html[data-theme="light"] .chip{background:var(--ink-750)}
 .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.68rem 1.3rem;border:1px solid var(--rule-strong);
   font-family:var(--font-mono);font-size:.74rem;letter-spacing:.1em;text-transform:uppercase;transition:all .22s}
 .btn:hover{border-color:var(--signal);color:var(--signal);background:var(--signal-dim)}
-.btn.primary{background:var(--signal);border-color:var(--signal);color:#0B0D10;font-weight:700}
+.btn.primary{background:var(--signal);border-color:var(--signal);color:var(--on-signal);font-weight:700}
 .btn.primary:hover{background:transparent;color:var(--signal)}
 
 footer{border-top:1px solid var(--rule);padding-block:2.6rem 3rem;margin-top:clamp(3rem,7vw,6rem)}
@@ -603,6 +655,28 @@ footer{border-top:1px solid var(--rule);padding-block:2.6rem 3rem;margin-top:cla
 @media(max-width:640px){.foot-meta{text-align:left}}
 
 /* ── Reveal animation ──────────────────────────────────────────── */
+/* ── Reveal control for long grids on small screens ──────────── */
+.reveal-btn{
+  display:none; width:100%; margin-top:-1px; padding:.85rem 1rem;
+  border:1px solid var(--rule-strong); background:var(--surface);
+  font-family:var(--font-mono); font-size:.7rem; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--fg-dim); transition:all .2s;
+}
+.reveal-btn:hover{border-color:var(--signal);color:var(--signal)}
+
+@media(max-width:760px){
+  .sec{padding-block:clamp(2.6rem,7vw,3.4rem)}
+  /* Thumbnails open in a lightbox anyway, so two-up reads fine and halves
+     the tallest section on the page. */
+  .shots{grid-template-columns:1fr 1fr}
+  .shot figcaption{font-size:.55rem;padding:.5rem .55rem;letter-spacing:.06em}
+  .spec{padding:1.15rem 1rem}
+  .pcard{padding:1.05rem 1rem 0}
+  .stats{margin-top:1.6rem}
+  #star-history-chart{max-height:250px;object-fit:contain}
+  .tpanel{padding:1rem}
+}
+
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 .rv{opacity:1}
 html.js .rv{opacity:0}
@@ -617,10 +691,10 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
   <div class="wrap nav">
     <a href="#" class="brand" aria-label="onWatch home">
       <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-        <circle cx="16" cy="16" r="12" stroke="currentColor" stroke-width="2" opacity=".28"/>
-        <circle cx="16" cy="16" r="12" stroke="var(--signal)" stroke-width="2"
-                stroke-dasharray="75.4" stroke-dashoffset="52" stroke-linecap="round" transform="rotate(-90 16 16)"/>
-        <path d="M16 9.5V16l4.5 2.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="16" cy="16" r="15" fill="var(--signal)"/>
+        <g transform="translate(4 4)" fill="none" stroke="var(--on-signal)" stroke-width="2" stroke-linecap="round">
+          <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
+        </g>
       </svg>
       on<em>Watch</em>
     </a>
@@ -758,133 +832,201 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
   </div>
 </section>
 
+<!-- ══ TRUST ═════════════════════════════════════════════════════ -->
+<section class="sec" id="trust" style="background:var(--ink-900);border-block:1px solid var(--rule)">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="label">01 <span class="dot">/</span> Field data</span>
+      <h2 class="sec-title">Who is already<br>running it.</h2>
+      <p>Stars and downloads are counted live from GitHub. Country and organization spread
+         come from a periodic snapshot of public profile metadata. None of it comes from
+         onWatch, which collects nothing about you.</p>
+    </div>
+
+    <div class="trust-grid rv">
+      <div class="tstat"><b id="trust-stars">--</b><span>GitHub stars</span>
+        <span class="live" data-live><i></i>live</span></div>
+      <div class="tstat"><b id="trust-countries">--</b><span>Countries represented</span></div>
+      <div class="tstat"><b id="trust-downloads">--</b><span>Downloads</span>
+        <span class="live" data-live><i></i>live</span></div>
+      <div class="tstat"><b id="trust-orgs">--</b><span>With an org listed</span></div>
+    </div>
+
+    <p class="tnote" id="trust-downloads-split" style="margin:-1.2rem 0 2rem"></p>
+
+    <div class="trust-panels rv">
+      <div class="tpanel">
+        <h3>Where stargazers are</h3>
+        <div class="chips" id="trust-country-chips"><span class="chip">loading</span></div>
+      </div>
+      <div class="tpanel">
+        <h3>Organizations stargazers list</h3>
+        <div class="chips" id="trust-org-chips"><span class="chip">loading</span></div>
+      </div>
+    </div>
+
+    <div class="trust-panels rv" style="grid-template-columns:1fr;margin-top:1.4rem">
+      <div class="tpanel">
+        <h3>Star growth</h3>
+        <a href="https://star-history.dera.page/#onllm-dev/onwatch&Timeline" target="_blank" rel="noopener noreferrer">
+          <img id="star-history-chart"
+               src="https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline"
+               data-light-src="https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline"
+               data-dark-src="https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline&theme=dark"
+               alt="onWatch star history over time" loading="lazy">
+        </a>
+      </div>
+    </div>
+
+    <p class="tnote" id="trust-note">Snapshot context unavailable.</p>
+    <p class="tnote" id="trust-as-of" style="margin-top:.4rem"></p>
+  </div>
+</section>
+
 <!-- ══ PROVIDERS ═════════════════════════════════════════════════ -->
 <section class="sec" id="providers">
   <div class="wrap">
     <div class="sec-hd rv">
-      <span class="label">01 <span class="dot">/</span> Coverage</span>
+      <span class="label">02 <span class="dot">/</span> Coverage</span>
       <h2 class="sec-title">Fifteen providers.<br>One dashboard.</h2>
       <p>onWatch tracks the account behind the tool, not the tool itself. Configure a key or let it
          auto-detect an existing CLI session, and a tab appears with that provider's real quota
          buckets - the same windows the provider bills against.</p>
     </div>
 
-    <div class="pgrid rv">
+    <div class="pgrid rv" id="grid-providers">
 
       <article class="pcard" style="--accent:#D97757">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Anthropic</h3><span class="idx">01</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Anthropic</h3></div>
         <ul><li>5-hour</li><li>weekly all-model</li><li>per-model weekly</li><li>monthly</li><li>extra usage</li></ul>
         <p>OAuth auto-refresh with rate-limit bypass through token rotation. Reads Claude Code's own
            statusline when available to avoid the usage API entirely.</p>
+              <div class="pcard-ft"><span>01</span><span class="auth">OAuth, auto-detected</span></div>
       </article>
 
       <article class="pcard" style="--accent:#4F46E5">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Codex</h3><span class="idx">02</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Codex</h3></div>
         <ul><li>5-hour</li><li>weekly</li><li>review requests</li></ul>
         <p>Multi-account tracking for several ChatGPT logins, plus an optional auto quota-starter
            that opens an unstarted 5-hour or weekly window for you.</p>
+              <div class="pcard-ft"><span>02</span><span class="auth">OAuth, auto-detected</span></div>
       </article>
 
       <article class="pcard" style="--accent:#8B5CF6">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Antigravity</h3><span class="idx">03</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Antigravity</h3></div>
         <ul><li>Claude pool</li><li>Gemini pool</li><li>GPT pool</li></ul>
         <p>Source switchable between the desktop IDE probe, the <code style="font-family:var(--font-mono);font-size:.9em">agy</code> CLI
            with richer weekly and 5-hour buckets, or both. All variants share one Google-account quota.</p>
+              <div class="pcard-ft"><span>03</span><span class="auth">Local IDE / agy probe</span></div>
       </article>
 
       <article class="pcard" style="--accent:#0EA5E9">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Z.ai</h3><span class="idx">04</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Z.ai</h3></div>
         <ul><li>tokens</li><li>time</li><li>tool calls</li><li>credit windows</li></ul>
         <p>GLM Coding Plan, including the Lite tier's 5-hour and weekly credit windows with
            per-tool usage breakdowns and tokens-per-call efficiency.</p>
+              <div class="pcard-ft"><span>04</span><span class="auth">API key</span></div>
       </article>
 
       <article class="pcard" style="--accent:#6366F1">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Synthetic</h3><span class="idx">05</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Synthetic</h3></div>
         <ul><li>subscription</li><li>search</li><li>tool calls</li></ul>
         <p>The original provider onWatch was built for. Full cycle history, session attribution
            and rate projections across all three quota types.</p>
+              <div class="pcard-ft"><span>05</span><span class="auth">API key</span></div>
       </article>
 
       <article class="pcard" style="--accent:#6E7681">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>GitHub Copilot</h3><span class="tag beta">Beta</span><span class="idx">06</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>GitHub Copilot</h3><span class="tag beta">Beta</span></div>
         <ul><li>premium interactions</li><li>chat</li><li>completions</li></ul>
         <p>Monthly reset tracking so you can see how fast premium interactions are going
            before the month turns over.</p>
+              <div class="pcard-ft"><span>06</span><span class="auth">Token</span></div>
       </article>
 
       <article class="pcard" style="--accent:#F59E0B">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>MiniMax</h3><span class="idx">07</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>MiniMax</h3></div>
         <ul><li>shared pool</li><li>5-hour rolling</li></ul>
         <p>Coding Plan pool shared across M2, M2.1 and M2.5, with multi-account support for
            tracking several subscriptions from one dashboard.</p>
+              <div class="pcard-ft"><span>07</span><span class="auth">API key</span></div>
       </article>
 
       <article class="pcard" style="--accent:#3DD68C">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Cursor</h3><span class="idx">08</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Cursor</h3></div>
         <ul><li>total usage</li><li>auto + composer</li><li>API usage</li><li>credits</li><li>on-demand</li></ul>
         <p>Individual, Team and Enterprise accounts. Credentials auto-detected from Cursor Desktop's
            SQLite store or the system keychain, with burn-rate forecasts and on-demand spend.</p>
+              <div class="pcard-ft"><span>08</span><span class="auth">Auto-detected</span></div>
       </article>
 
       <article class="pcard" style="--accent:#4CC2E0">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Kimi Code</h3><span class="idx">09</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Kimi Code</h3></div>
         <ul><li>weekly</li><li>window limits</li></ul>
         <p>Moonshot Kimi Code CLI over OAuth, auto-detected from the local credential store,
            with membership level mapped to a readable plan name.</p>
+              <div class="pcard-ft"><span>09</span><span class="auth">OAuth, auto-detected</span></div>
       </article>
 
-      <article class="pcard" style="--accent:#E8E6E1">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Grok</h3><span class="idx">10</span></div>
+      <article class="pcard" style="--accent:#8891A0">
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Grok</h3></div>
         <ul><li>credits</li><li>session tokens</li></ul>
         <p>xAI Build and SuperGrok credit utilization read from the local CLI auth file.
            No browser cookie import required.</p>
+              <div class="pcard-ft"><span>10</span><span class="auth">Local auth file</span></div>
       </article>
 
       <article class="pcard" style="--accent:#7C7CFF">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>OpenRouter</h3><span class="idx">11</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>OpenRouter</h3></div>
         <ul><li>credits</li></ul>
         <p>Credit balance and burn rate for the aggregation layer, alongside every direct
            provider account in the same view.</p>
+              <div class="pcard-ft"><span>11</span><span class="auth">API key</span></div>
       </article>
 
       <article class="pcard" style="--accent:#FF8A3D">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>OpenCode Go</h3><span class="idx">12</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>OpenCode Go</h3></div>
         <ul><li>5-hour</li><li>weekly</li><li>monthly</li></ul>
         <p>Subscription quotas from the authenticated OpenCode Go dashboard, with full cycle
            history and insights.</p>
+              <div class="pcard-ft"><span>12</span><span class="auth">Cookie + workspace</span></div>
       </article>
 
       <article class="pcard" style="--accent:#22C7A9">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Moonshot</h3><span class="idx">13</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Moonshot</h3></div>
         <ul><li>available</li><li>voucher</li><li>cash</li></ul>
         <p>Balance-based tracking for the Moonshot open platform, with drop-rate trends that
            turn a falling balance into a runway estimate.</p>
+              <div class="pcard-ft"><span>13</span><span class="auth">API key</span></div>
       </article>
 
       <article class="pcard" style="--accent:#536DFE">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>DeepSeek</h3><span class="idx">14</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>DeepSeek</h3></div>
         <ul><li>total</li><li>granted</li><li>topped-up</li></ul>
         <p>Balance-based tracking for the DeepSeek platform API, separating granted credit from
            money you actually paid.</p>
+              <div class="pcard-ft"><span>14</span><span class="auth">API key</span></div>
       </article>
 
       <article class="pcard" style="--accent:#5A6069">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Gemini CLI</h3><span class="tag legacy">Legacy</span><span class="idx">15</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>Gemini CLI</h3><span class="tag legacy">Legacy</span></div>
         <ul><li>per-model</li><li>24-hour cycles</li></ul>
         <p>Kept working for existing setups, but no longer the recommended path - Google's CLI has
            been superseded by Antigravity. New installs should use the <code style="font-family:var(--font-mono);font-size:.9em">agy</code>
            source on the Antigravity provider instead.</p>
+              <div class="pcard-ft"><span>15</span><span class="auth">OAuth, auto-detected</span></div>
       </article>
 
       <article class="pcard" style="--accent:var(--signal)">
-        <div class="pcard-hd"><span class="pcard-dot"></span><h3>API Integrations</h3><span class="idx">+</span></div>
+        <div class="pcard-hd"><span class="pcard-dot"></span><h3>API Integrations</h3></div>
         <ul><li>tokens</li><li>requests</li><li>cost</li></ul>
         <p>Not a provider - a local JSONL drop-box. Wrap your own API calls, append normalised
            events, and your bespoke scripts get the same charts as everything else.</p>
+              <div class="pcard-ft"><span>EXTRA</span><span class="auth">Local JSONL files</span></div>
       </article>
 
     </div>
+    <button class="reveal-btn" data-reveal="providers" hidden></button>
   </div>
 </section>
 
@@ -892,7 +1034,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
 <section class="sec" id="why" style="background:var(--ink-900);border-block:1px solid var(--rule)">
   <div class="wrap">
     <div class="sec-hd rv">
-      <span class="label">02 <span class="dot">/</span> The gap</span>
+      <span class="label">03 <span class="dot">/</span> The gap</span>
       <h2 class="sec-title">A snapshot is not<br>a measurement.</h2>
       <p>Every provider tells you where you are. None of them tell you how fast you got there,
          whether this cycle is worse than the last one, or which session burned it.</p>
@@ -933,13 +1075,13 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
 <section class="sec" id="features">
   <div class="wrap">
     <div class="sec-hd rv">
-      <span class="label">03 <span class="dot">/</span> Instrumentation</span>
+      <span class="label">04 <span class="dot">/</span> Instrumentation</span>
       <h2 class="sec-title">Everything it does,<br>on your machine.</h2>
       <p>A background agent polls, a local database remembers, and a Material Design 3 dashboard
          renders it. No account, no cloud, no build step.</p>
     </div>
 
-    <div class="specs rv">
+    <div class="specs rv" id="grid-features">
       <div class="spec">
         <span class="n">3.01</span>
         <h3>Live dashboard</h3>
@@ -1014,6 +1156,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
            Self-update built in, and it starts at login if you want it to.</p>
       </div>
     </div>
+    <button class="reveal-btn" data-reveal="features" hidden></button>
   </div>
 </section>
 
@@ -1021,7 +1164,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
 <section class="sec" id="how" style="background:var(--ink-900);border-block:1px solid var(--rule)">
   <div class="wrap">
     <div class="sec-hd rv">
-      <span class="label">04 <span class="dot">/</span> Architecture</span>
+      <span class="label">05 <span class="dot">/</span> Architecture</span>
       <h2 class="sec-title">Four moving parts.</h2>
       <p>Deliberately boring. A poll loop, a file, a server, and whatever you choose to point at it.</p>
     </div>
@@ -1065,7 +1208,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
 <section class="sec" id="install">
   <div class="wrap">
     <div class="sec-hd rv">
-      <span class="label">05 <span class="dot">/</span> Install</span>
+      <span class="label">06 <span class="dot">/</span> Install</span>
       <h2 class="sec-title">One binary.<br>No runtime.</h2>
       <p>Pick your platform. The installer drops the binary in <code style="font-family:var(--font-mono);font-size:.9em">~/.onwatch/</code>,
          writes a config, and optionally registers a service.</p>
@@ -1143,7 +1286,7 @@ onwatch start      <span class="c"># background agent + dashboard on :9191</span
 <section class="sec" id="screenshots" style="background:var(--ink-900);border-block:1px solid var(--rule)">
   <div class="wrap">
     <div class="sec-hd rv">
-      <span class="label">06 <span class="dot">/</span> Interface</span>
+      <span class="label">07 <span class="dot">/</span> Interface</span>
       <h2 class="sec-title">What you actually get.</h2>
       <p>Screens follow the theme you picked in the header. Click any of them to open it full size.</p>
     </div>
@@ -1159,58 +1302,14 @@ onwatch start      <span class="c"># background agent + dashboard on :9191</span
   </div>
 </section>
 
-<!-- ══ TRUST ═════════════════════════════════════════════════════ -->
-<section class="sec" id="trust">
-  <div class="wrap">
-    <div class="sec-hd rv">
-      <span class="label">07 <span class="dot">/</span> Field data</span>
-      <h2 class="sec-title">Who is already<br>running it.</h2>
-      <p>Aggregated from public GitHub stargazer metadata. A periodic snapshot, not live tracking -
-         onWatch itself collects nothing about you.</p>
-    </div>
-
-    <div class="trust-grid rv">
-      <div class="tstat"><b id="trust-stars">--</b><span>GitHub stars</span></div>
-      <div class="tstat"><b id="trust-countries">--</b><span>Countries represented</span></div>
-      <div class="tstat"><b id="trust-ghcr">--</b><span>Container pulls</span></div>
-      <div class="tstat"><b id="trust-orgs">--</b><span>With an org listed</span></div>
-    </div>
-
-    <div class="trust-panels rv">
-      <div class="tpanel">
-        <h3>Where they are</h3>
-        <div class="chips" id="trust-country-chips"><span class="chip">loading</span></div>
-      </div>
-      <div class="tpanel">
-        <h3>Organizations they list</h3>
-        <div class="chips" id="trust-org-chips"><span class="chip">loading</span></div>
-      </div>
-    </div>
-
-    <div class="trust-panels rv" style="grid-template-columns:1fr;margin-top:1.4rem">
-      <div class="tpanel">
-        <h3>Star growth</h3>
-        <a href="https://star-history.dera.page/#onllm-dev/onwatch&Timeline" target="_blank" rel="noopener noreferrer">
-          <img id="star-history-chart"
-               src="https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline"
-               data-light-src="https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline"
-               data-dark-src="https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline&theme=dark"
-               alt="onWatch star history over time" loading="lazy">
-        </a>
-      </div>
-    </div>
-
-    <p class="tnote" id="trust-note">Snapshot context unavailable.</p>
-    <p class="tnote" id="trust-as-of" style="margin-top:.4rem"></p>
-  </div>
-</section>
-
 <!-- ══ FAQ ═══════════════════════════════════════════════════════ -->
-<section class="sec" id="faq" style="background:var(--ink-900);border-block:1px solid var(--rule)">
+<section class="sec" id="faq">
   <div class="wrap">
     <div class="sec-hd rv">
       <span class="label">08 <span class="dot">/</span> Questions</span>
       <h2 class="sec-title">Reasonable doubts.</h2>
+      <p>The things worth asking before you leave a background agent running
+         against your provider accounts.</p>
     </div>
 
     <div class="faq rv">
@@ -1300,10 +1399,10 @@ onwatch start      <span class="c"># background agent + dashboard on :9191</span
     <div>
       <a href="#" class="brand" style="margin-bottom:.9rem">
         <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <circle cx="16" cy="16" r="12" stroke="currentColor" stroke-width="2" opacity=".28"/>
-          <circle cx="16" cy="16" r="12" stroke="var(--signal)" stroke-width="2"
-                  stroke-dasharray="75.4" stroke-dashoffset="52" stroke-linecap="round" transform="rotate(-90 16 16)"/>
-          <path d="M16 9.5V16l4.5 2.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="16" cy="16" r="15" fill="var(--signal)"/>
+          <g transform="translate(4 4)" fill="none" stroke="var(--on-signal)" stroke-width="2" stroke-linecap="round">
+            <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
+          </g>
         </svg>
         on<em>Watch</em>
       </a>
@@ -1348,9 +1447,11 @@ function applyTheme(t){
   if (sh){ var s = t === 'dark' ? sh.dataset.darkSrc : sh.dataset.lightSrc; if (s) sh.src = s; }
   syncShots();
 }
-var stored = null;
-try { stored = localStorage.getItem('onwatch-theme'); } catch(e){}
-applyTheme(stored || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+// The head script already resolved and applied the theme before first paint.
+// Re-resolving it here would repaint the whole page a second time - and with
+// different default logic, could flip it outright. Just sync the dependent
+// bits (toggle icon, themed images) to whatever it decided.
+applyTheme(root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
 var tt = document.getElementById('theme-toggle');
 if (tt) tt.addEventListener('click', function(){
   var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
@@ -1374,7 +1475,9 @@ if (reduce || !('IntersectionObserver' in window)){
   // Fail-open: nothing should stay invisible because an observer misbehaved.
   setTimeout(function(){
     rvs.forEach(function(el){
-      if (!el.classList.contains('in')) el.style.opacity = 1;
+      if (el.classList.contains('in')) return;
+      el.style.opacity = 1;
+      io.unobserve(el);   // else scrolling here later replays fadeUp from 0
     });
   }, 2600);
 }
@@ -1503,6 +1606,40 @@ document.querySelectorAll('.rail').forEach(function(rail){
   o.observe(rail);
 });
 
+/* ── Progressive disclosure for long grids on phones ────────────
+   Sixteen provider cards and twelve feature cards stack to roughly six
+   screens on a phone. Below 760px only the first few render and the button
+   states the real total, so nothing is hidden silently.                   */
+function setupReveal(gridId, limit, noun){
+  var grid = document.getElementById('grid-' + gridId);
+  var btn = document.querySelector('[data-reveal="' + gridId + '"]');
+  if (!grid || !btn) return;
+  var items = Array.prototype.slice.call(grid.children);
+  var mq = window.matchMedia('(max-width: 760px)');
+  var expanded = false;
+
+  function apply(){
+    var clip = mq.matches && !expanded;
+    items.forEach(function(el, i){ el.style.display = (clip && i >= limit) ? 'none' : ''; });
+    btn.hidden = !mq.matches;
+    btn.style.display = mq.matches ? 'block' : 'none';
+    btn.textContent = expanded
+      ? 'Show fewer'
+      : 'Show all ' + items.length + ' ' + noun;
+  }
+
+  btn.addEventListener('click', function(){
+    expanded = !expanded;
+    apply();
+    if (!expanded) grid.scrollIntoView({ block: 'start' });
+  });
+  if (mq.addEventListener) mq.addEventListener('change', function(){ expanded = false; apply(); });
+  else if (mq.addListener) mq.addListener(function(){ expanded = false; apply(); });
+  apply();
+}
+setupReveal('providers', 6, 'providers');
+setupReveal('features', 6, 'features');
+
 /* ── Screenshot gallery ────────────────────────────────────────── */
 var SHOTS = [
   { base:'all',            cat:'dashboard', cap:'All providers, side by side', themed:true },
@@ -1598,16 +1735,47 @@ document.addEventListener('keydown', function(e){
   else if (e.key === 'ArrowRight') navLb(1);
 });
 
-/* ── Live star count (header) ──────────────────────────────────── */
-fetch('https://api.github.com/repos/onllm-dev/onwatch')
-  .then(function(r){ return r.ok ? r.json() : null; })
-  .then(function(d){
-    if (!d || typeof d.stargazers_count !== 'number') return;
-    var el = document.getElementById('hero-star-count');
-    if (el) el.textContent = d.stargazers_count >= 1000
-      ? (d.stargazers_count / 1000).toFixed(1) + 'k' : String(d.stargazers_count);
-  })
-  .catch(function(){});
+/* ── Live stats ────────────────────────────────────────────────
+   onllm.dev proxies the GitHub API and the GHCR package page, caching for
+   five minutes. Going through it rather than api.github.com directly means
+   visitors never hit GitHub's unauthenticated rate limit, and the download
+   counts arrive in the same round trip as the star count.
+
+   Only the figures that can be counted live come from here. Country and
+   organization spread are derived from stargazer profile analysis, which is
+   too slow to do per page view, so those stay in the trust-proof snapshot.
+   If the endpoint is unreachable, the snapshot backfills all of it.         */
+var STATS_ENDPOINT = 'https://onllm.dev/api/github-stats.php';
+var STATS_REPO = 'onllm-dev/onWatch';
+var liveApplied = false;
+
+function renderDownloads(containers, binaries){
+  var total = containers + binaries;
+  setText('trust-downloads', fmtCompact(total));
+  setText('trust-downloads-split',
+    fmtNum(containers) + ' container pulls plus ' + fmtNum(binaries) +
+    ' release binaries, ' + fmtNum(total) + ' combined.');
+}
+
+function applyLiveStats(st){
+  if (!st || !isInt(st.stars) || !isInt(st.release_downloads) || !isInt(st.ghcr_downloads)) {
+    return false;
+  }
+  setText('trust-stars', fmtNum(st.stars));
+  renderDownloads(st.ghcr_downloads, st.release_downloads);
+  var hdr = document.getElementById('hero-star-count');
+  if (hdr) hdr.textContent = fmtCompact(st.stars);
+  document.querySelectorAll('[data-live]').forEach(function(el){
+    el.setAttribute('data-on', '1');
+  });
+  liveApplied = true;
+  return true;
+}
+
+fetch(STATS_ENDPOINT, { cache: 'no-cache' })
+  .then(function(r){ if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+  .then(function(d){ applyLiveStats(d && d[STATS_REPO]); })
+  .catch(function(){ /* snapshot values stand */ });
 
 /* ── Latest version (footer + hero badge) ──────────────────────── */
 fetch('https://api.github.com/repos/onllm-dev/onwatch/releases/latest')
@@ -1635,7 +1803,10 @@ var DISCLAIMER = 'Figures come from a periodic snapshot of public GitHub stargaz
 function isInt(v){ return typeof v === 'number' && isFinite(v) && v >= 0 && Math.floor(v) === v; }
 function isStr(v){ return typeof v === 'string' && v.trim().length > 0; }
 function fmtNum(n){ return n.toLocaleString('en-US'); }
-function fmtCompact(n){ return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
+function fmtCompact(n){
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+}
 function setText(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; }
 
 function sanitizeEntries(raw){
@@ -1655,7 +1826,7 @@ function validate(raw){
   var asOf = typeof raw.as_of === 'string' ? new Date(raw.as_of + 'T00:00:00Z') : null;
   if (!asOf || isNaN(asOf.getTime())) return null;
   if (!isInt(raw.stars_snapshot) || !isInt(raw.countries_count)) return null;
-  if (!isInt(raw.container_downloads_snapshot)) return null;
+  if (!isInt(raw.container_downloads_snapshot) || !isInt(raw.binary_downloads_snapshot)) return null;
   if (!isStr(raw.methodology) || !isStr(raw.disclaimer)) return null;
   var countries = sanitizeEntries(raw.top_countries);
   var orgs = sanitizeEntries(raw.org_examples);
@@ -1669,6 +1840,7 @@ function validate(raw){
     stars: raw.stars_snapshot,
     countriesCount: raw.countries_count,
     containers: raw.container_downloads_snapshot,
+    binaries: raw.binary_downloads_snapshot,
     countries: countries.filter(function(c){ return c.name !== 'Unknown'; }),
     unknown: countries.filter(function(c){ return c.name === 'Unknown'; })[0] || null,
     orgTotal: totalRow ? totalRow.count : 0,
@@ -1678,7 +1850,10 @@ function validate(raw){
 }
 
 function renderNeutral(msg){
-  ['trust-stars','trust-countries','trust-ghcr','trust-orgs'].forEach(function(id){ setText(id, '--'); });
+  var ids = liveApplied ? ['trust-countries','trust-orgs']
+                       : ['trust-stars','trust-countries','trust-downloads','trust-orgs'];
+  ids.forEach(function(id){ setText(id, '--'); });
+  if (!liveApplied) setText('trust-downloads-split', '');
   ['trust-country-chips','trust-org-chips'].forEach(function(id){
     var el = document.getElementById(id);
     if (el) el.innerHTML = '<span class="chip">unavailable</span>';
@@ -1687,22 +1862,35 @@ function renderNeutral(msg){
   setText('trust-as-of', '');
 }
 
+var narrow = window.matchMedia('(max-width: 760px)').matches;
+var COUNTRY_CHIPS = narrow ? 12 : 22;
+var ORG_CHIPS = narrow ? 12 : 26;
+
 function render(d){
-  setText('trust-stars', fmtNum(d.stars));
   setText('trust-countries', fmtNum(d.countriesCount));
-  setText('trust-ghcr', fmtCompact(d.containers));
   setText('trust-orgs', fmtNum(d.orgTotal));
+  if (!liveApplied){
+    setText('trust-stars', fmtNum(d.stars));
+    renderDownloads(d.containers, d.binaries);
+  }
 
   var chips = document.getElementById('trust-country-chips');
   if (chips){
     chips.innerHTML = '';
-    d.countries.slice(0, 22).forEach(function(c){
+    d.countries.slice(0, COUNTRY_CHIPS).forEach(function(c){
       var s = document.createElement('span');
       s.className = 'chip';
       s.appendChild(document.createTextNode(c.name));
       var b = document.createElement('b'); b.textContent = c.count;
       s.appendChild(b); chips.appendChild(s);
     });
+    var hidden = d.countries.length - COUNTRY_CHIPS;
+    if (hidden > 0){
+      var more = document.createElement('span');
+      more.className = 'chip'; more.style.opacity = '.7';
+      more.textContent = '+' + hidden + ' more countries';
+      chips.appendChild(more);
+    }
     if (d.unknown){
       var u = document.createElement('span');
       u.className = 'chip'; u.style.opacity = '.65';
@@ -1718,20 +1906,33 @@ function render(d){
     if (!d.orgExamples.length){
       orgs.innerHTML = '<span class="chip">none listed</span>';
     } else {
-      d.orgExamples.slice(0, 26).forEach(function(o){
+      d.orgExamples.slice(0, ORG_CHIPS).forEach(function(o){
         var s2 = document.createElement('span');
         s2.className = 'chip';
         s2.appendChild(document.createTextNode(o.name));
         if (o.count > 1){ var b = document.createElement('b'); b.textContent = o.count; s2.appendChild(b); }
         orgs.appendChild(s2);
       });
+      var moreOrgs = d.orgExamples.length - ORG_CHIPS;
+      if (moreOrgs > 0){
+        var mo = document.createElement('span');
+        mo.className = 'chip'; mo.style.opacity = '.7';
+        mo.textContent = '+' + moreOrgs + ' more';
+        orgs.appendChild(mo);
+      }
     }
   }
 
   var ageDays = (Date.now() - d.asOf.getTime()) / 86400000;
+  var note = 'Country and organization come from the self-reported location and company '
+           + 'fields on stargazers\u2019 public GitHub profiles, so they describe who starred '
+           + 'the project rather than who runs it. ' + d.disclaimer;
+  if (liveApplied){
+    note = 'Stars and downloads are counted live. ' + note;
+  }
   setText('trust-note', ageDays > TRUST_STALE_DAYS
-    ? 'This snapshot is more than ' + TRUST_STALE_DAYS + ' days old and may be out of date. ' + d.disclaimer
-    : d.disclaimer);
+    ? 'This snapshot is more than ' + TRUST_STALE_DAYS + ' days old and may be out of date. ' + note
+    : note);
   setText('trust-as-of', 'Snapshot as of ' + d.asOf.toLocaleDateString('en-US',
     { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) + '.');
 }

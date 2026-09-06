@@ -220,6 +220,33 @@ def fetch_container_downloads(owner: str, repo: str, package: str) -> Optional[i
     return int(match.group(1))
 
 
+def fetch_release_downloads(owner: str, repo: str) -> Optional[int]:
+    """Total download count across every asset of every published release.
+
+    Combined with the GHCR container count this is the honest "how many people
+    actually pulled this" figure - neither half tells the story on its own,
+    since Docker users never touch the release assets and vice versa.
+    """
+    cmd = [
+        "api", "--paginate", f"repos/{owner}/{repo}/releases?per_page=100",
+        "--jq", "[.[] | .assets[] | .download_count] | add",
+    ]
+    try:
+        proc = subprocess.run(["gh", *cmd], capture_output=True, text=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+
+    total = 0
+    seen = False
+    for line in proc.stdout.split():
+        try:
+            total += int(line)
+            seen = True
+        except ValueError:
+            continue
+    return total if seen else None
+
+
 def pretty_country_name(name: str) -> str:
     remap = {
         "United States of America": "United States",
@@ -654,7 +681,11 @@ def select_org_examples(counter: collections.Counter) -> List[dict]:
 
 
 def make_payload(
-    owner: str, repo: str, package: str, container_downloads_fallback: int = 0
+    owner: str,
+    repo: str,
+    package: str,
+    container_downloads_fallback: int = 0,
+    binary_downloads_fallback: int = 0,
 ) -> Tuple[dict, dict]:
     stargazer_count, profiles = fetch_stargazers(owner, repo)
     if not profiles:
@@ -708,6 +739,11 @@ def make_payload(
     if container_downloads is None:
         container_downloads = container_downloads_fallback
 
+    binary_downloads = fetch_release_downloads(owner, repo)
+    binary_downloads_used_fallback = binary_downloads is None
+    if binary_downloads is None:
+        binary_downloads = binary_downloads_fallback
+
     payload = {
         "as_of": dt.date.today().isoformat(),
         "stars_snapshot": stargazer_count,
@@ -715,6 +751,7 @@ def make_payload(
         "top_countries": top_countries,
         "org_examples": org_examples,
         "container_downloads_snapshot": container_downloads,
+        "binary_downloads_snapshot": binary_downloads,
         "methodology": (
             "Aggregated from public GitHub stargazer profile metadata. "
             "Country spread resolves location text to countries; Unknown equals total stars minus known-country matches."
@@ -734,6 +771,8 @@ def make_payload(
         "untriangulated_nonblank_count": untriangulated_nonblank_count,
         "container_downloads_snapshot": container_downloads,
         "container_downloads_used_fallback": container_downloads_used_fallback,
+        "binary_downloads_snapshot": binary_downloads,
+        "binary_downloads_used_fallback": binary_downloads_used_fallback,
     }
     return payload, stats
 
@@ -754,14 +793,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     out_path = Path(args.output)
     container_downloads_fallback = 0
+    binary_downloads_fallback = 0
     if out_path.exists():
         try:
             previous = json.loads(out_path.read_text(encoding="utf-8"))
             container_downloads_fallback = int(previous.get("container_downloads_snapshot") or 0)
+            binary_downloads_fallback = int(previous.get("binary_downloads_snapshot") or 0)
         except (json.JSONDecodeError, ValueError, OSError):
             pass
 
-    payload, stats = make_payload(args.owner, args.repo, args.package, container_downloads_fallback)
+    payload, stats = make_payload(
+        args.owner, args.repo, args.package,
+        container_downloads_fallback, binary_downloads_fallback,
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 

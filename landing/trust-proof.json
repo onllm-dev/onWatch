@@ -566,7 +566,8 @@
       "count": 1
     }
   ],
-  "container_downloads_snapshot": 32551,
+  "container_downloads_snapshot": 34341,
+  "binary_downloads_snapshot": 14919,
   "methodology": "Aggregated from public GitHub stargazer profile metadata. Country spread resolves location text to countries; Unknown equals total stars minus known-country matches.",
   "disclaimer": "Public profile metadata only. Organization names are examples and do not imply endorsement."
 }
