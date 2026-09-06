@@ -46,6 +46,9 @@ jobs:
           - goos: windows
             goarch: amd64
             binary: onwatch-windows-amd64.exe
+          - goos: windows
+            goarch: arm64
+            binary: onwatch-windows-arm64.exe
     runs-on: ubuntu-latest
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     steps:
@@ -156,7 +159,7 @@ jobs:
 
               curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash -s -- --version ${TAG}
 
-          Windows: download \`onwatch-windows-amd64.exe\`, place it where your current onwatch.exe lives, run \`onwatch stop\` then \`onwatch\`.
+          Windows: download \`onwatch-windows-amd64.exe\` (\`onwatch-windows-arm64.exe\` on Windows on ARM), place it where your current onwatch.exe lives, run \`onwatch stop\` then \`onwatch\`.
 
           VS Code: download \`${VSIX}\`, then \`code --install-extension ${VSIX}\` (or Extensions view, "Install from VSIX").
 
