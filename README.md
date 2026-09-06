@@ -349,7 +349,7 @@ Additional environment variables:
 | `OPENCODE_GO_AUTH_COOKIE` | OpenCode Go `auth` cookie value (enables quota tracking)|
 | `OLLAMA_API_KEY`         | Ollama Cloud API key from ollama.com/settings/keys (enables usage tracking)|
 | `OLLAMA_MONTHLY_LIMIT`   | Ollama included usage cap in USD (0 = derive from plan)|
-| `OLLAMA_RESET_DAY`       | Ollama reset day of month, 1-31 (0 = account anniversary)|
+| `OLLAMA_RESET_DAY`       | Ollama reset day of month, 1-31 (0 = learn from the first observed reset, starting from the account anniversary)|
 | `ANTIGRAVITY_ENABLED`    | Enable Antigravity provider (auto-detects local server)|
 | `ANTIGRAVITY_SOURCE`     | Data source: `both` (default), `cli` (agy), or `ide`   |
 | `ANTIGRAVITY_CLI_PATH`   | Override path to the `agy` binary (else PATH/well-known)|

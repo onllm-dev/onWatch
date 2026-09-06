@@ -29,7 +29,7 @@ POST https://ollama.com/api/me
 Neither endpoint returns the monthly dollar cap or the reset time, so onWatch derives both:
 
 - **Cap** - taken from your plan tier (see the table below), or from `OLLAMA_MONTHLY_LIMIT` if you set it. On the Free plan the cap is unknown (its "starter usage" is not published), so the card shows dollars used without a percentage unless you set `OLLAMA_MONTHLY_LIMIT`.
-- **Reset** - anchored to your account creation day of month. Ollama Cloud resets the Free allowance monthly from signup; paid plans reset on the subscription start day. If your paid subscription started on a different day of the month than your account, set `OLLAMA_RESET_DAY`.
+- **Reset** - anchored to your account creation day of month at first. Ollama Cloud resets the Free allowance monthly from signup; paid plans reset on the subscription start day. onWatch learns the real day on its own: the first time included usage drops between two polls, that moment is recorded as the reset anchor and used from then on (it survives restarts). Set `OLLAMA_RESET_DAY` only if you want to pin the day explicitly; it disables learning.
 
 Both web search and cloud model calls draw from the same included usage. Snapshots are stored locally in SQLite like every other provider.
 
@@ -58,6 +58,8 @@ OLLAMA_API_KEY=your_ollama_cloud_api_key
 ```
 
 ### Option B - `onwatch setup`
+
+The wizard checks the key against ollama.com before saving it and shows your plan tier. A rejected key is re-prompted; a network failure keeps the key.
 
 Run the interactive wizard and choose **Ollama Cloud only** (or add it under **Multiple** / **All available**):
 
@@ -110,7 +112,7 @@ Plan-derived caps (from https://ollama.com/pricing):
 | Team | 1,000 |
 
 - Set `OLLAMA_MONTHLY_LIMIT` on the Free plan to get a percentage on the card, or to override the plan default.
-- Set `OLLAMA_RESET_DAY` when your billing cycle resets on a different day than your account anniversary.
+- Set `OLLAMA_RESET_DAY` only to pin the reset day explicitly. Without it onWatch starts from your account anniversary and corrects itself after the first observed reset.
 
 ---
 
@@ -145,7 +147,7 @@ The Free plan cap is not published, so onWatch shows dollars used without a perc
 
 ### Reset day looks wrong
 
-By default the reset is anchored to your account creation day of month. If your paid subscription started on a different day, set `OLLAMA_RESET_DAY` to the correct day (1-31) and restart onWatch.
+Until the first real reset has been observed, the date is a guess anchored to your account creation day of month. It corrects itself automatically once included usage drops at the true reset. To fix it immediately, set `OLLAMA_RESET_DAY` to the correct day (1-31) and restart onWatch.
 
 ---
 
