@@ -264,6 +264,7 @@ do_release() {
         "linux:amd64:"
         "linux:arm64:"
         "windows:amd64:.exe"
+        "windows:arm64:.exe"
     )
 
     for target in "${targets[@]}"; do

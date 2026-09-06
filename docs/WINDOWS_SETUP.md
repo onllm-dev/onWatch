@@ -40,7 +40,7 @@ If you prefer full control or the installer doesn't work for your environment, f
 ### Step 1: Download the Binary
 
 1. Go to the [Releases](https://github.com/onllm-dev/onwatch/releases) page
-2. Download `onwatch-windows-amd64.exe`
+2. Download `onwatch-windows-amd64.exe` (or `onwatch-windows-arm64.exe` on a Windows on ARM device such as a Snapdragon laptop or Surface Pro X)
 3. Create the installation directory:
 
 ```powershell

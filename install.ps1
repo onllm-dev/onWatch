@@ -12,7 +12,21 @@ $INSTALL_DIR = if ($env:ONWATCH_INSTALL_DIR) { $env:ONWATCH_INSTALL_DIR } else {
 $BIN_DIR = Join-Path $INSTALL_DIR "bin"
 $DATA_DIR = Join-Path $INSTALL_DIR "data"
 $REPO = "onllm-dev/onwatch"
-$ASSET_NAME = "onwatch-windows-amd64.exe"
+# Pick the release asset for this machine. OSArchitecture reports the real
+# OS architecture even from an emulated x64 PowerShell on Windows on ARM.
+function Get-OnwatchArch {
+    try {
+        $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+        if ($osArch -eq "Arm64") { return "arm64" }
+        if ($osArch -eq "X64") { return "amd64" }
+    } catch { }
+    $procArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+    if ($procArch -eq "ARM64") { return "arm64" }
+    return "amd64"
+}
+$ARCH = Get-OnwatchArch
+$PLATFORM = "windows-$ARCH"
+$ASSET_NAME = "onwatch-$PLATFORM.exe"
 
 # ─── Colors (ANSI escape sequences for modern terminals) ───────────────
 $ESC = [char]27
@@ -337,7 +351,7 @@ function Install-Binary {
     $dest = Join-Path $BIN_DIR "onwatch.exe"
     $tempDest = Join-Path $env:TEMP "onwatch-download-$PID.exe"
 
-    Write-Info "Downloading onwatch for ${BOLD}windows-amd64${NC}..."
+    Write-Info "Downloading onwatch for ${BOLD}$PLATFORM${NC}..."
     Write-Info "  URL:  $url"
     Write-Info "  Dest: $dest"
 
@@ -844,7 +858,7 @@ function Main {
     Write-Host "  ${DIM}https://github.com/$REPO${NC}"
     Write-Host ""
 
-    Write-Info "Platform: ${BOLD}windows-amd64${NC}"
+    Write-Info "Platform: ${BOLD}$PLATFORM${NC}"
 
     # Create directories
     New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null

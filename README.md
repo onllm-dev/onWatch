@@ -78,7 +78,7 @@ For manual setup or troubleshooting, see the [Windows Setup Guide](docs/WINDOWS_
 
 ### Manual Installation
 
-**Download binaries** from the [Releases](https://github.com/onllm-dev/onwatch/releases) page. Binaries are available for macOS (ARM64, AMD64), Linux (AMD64, ARM64), and Windows (AMD64).
+**Download binaries** from the [Releases](https://github.com/onllm-dev/onwatch/releases) page. Binaries are available for macOS (ARM64, AMD64), Linux (AMD64, ARM64), and Windows (AMD64, ARM64).
 
 **Or build from source** (requires Go 1.25+):
 

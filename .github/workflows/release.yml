@@ -48,6 +48,9 @@ jobs:
           - goos: windows
             goarch: amd64
             binary: onwatch-windows-amd64.exe
+          - goos: windows
+            goarch: arm64
+            binary: onwatch-windows-arm64.exe
 
     runs-on: ubuntu-latest
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}

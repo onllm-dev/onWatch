@@ -115,6 +115,7 @@ This produces binaries in `dist/`:
 | Linux AMD64 | `onwatch-linux-amd64` |
 | Linux ARM64 | `onwatch-linux-arm64` |
 | Windows AMD64 | `onwatch-windows-amd64.exe` |
+| Windows ARM64 | `onwatch-windows-arm64.exe` |
 
 Manual cross-compilation:
 
