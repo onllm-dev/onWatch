@@ -1,5 +1,6 @@
 // Pure data model and formatting for the onWatch status bar.
 // This module must not import "vscode" so it can be unit-tested under Node.
+import { providerIcon } from "./icons";
 
 export type Severity = "healthy" | "warning" | "danger" | "critical";
 export type ColorTier = "none" | "warning" | "critical";
@@ -204,22 +205,22 @@ export function tightestQuota(providers: ProviderCard[]): TightestQuota | undefi
 }
 
 export function formatPercent(percent: number): string {
-  if (!Number.isFinite(percent)) {
-    return "--";
+  if (typeof percent !== "number" || !Number.isFinite(percent)) {
+    return "-";
   }
   return `${Math.round(Math.max(0, percent))}%`;
 }
 
-/** "2h 14m" -> "2h14m". */
-export function compactDuration(text: string | undefined): string | undefined {
-  if (!text) {
+/** "2h 14m" -> "2h14m" (used in notification text). */
+export function compactDuration(text: string | undefined | null): string | undefined {
+  if (typeof text !== "string") {
     return undefined;
   }
   const compact = text.replace(/\s+/g, "");
   return compact.length > 0 ? compact : undefined;
 }
 
-/** Compact duration from now until an RFC3339 timestamp, or undefined when past or invalid. */
+/** Duration from now until an RFC3339 timestamp in the daemon's spaced style ("2h 14m"), or undefined when past or invalid. */
 export function durationUntil(iso: string | undefined, nowMs: number): string | undefined {
   if (!iso) {
     return undefined;
@@ -240,76 +241,137 @@ export function durationUntil(iso: string | undefined, nowMs: number): string | 
   const hours = Math.floor((totalMinutes % 1440) / 60);
   const minutes = totalMinutes % 60;
   if (days > 0) {
-    return hours > 0 ? `${days}d${hours}h` : `${days}d`;
+    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
   }
   if (hours > 0) {
-    return minutes > 0 ? `${hours}h${minutes}m` : `${hours}h`;
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   }
   return `${minutes}m`;
 }
 
+/** The daemon's own countdown text verbatim ("Resetting..." included), else computed from reset_at. */
 export function resetIn(quota: QuotaMeter, nowMs: number): string | undefined {
-  return compactDuration(quota.time_until_reset) ?? durationUntil(quota.reset_at, nowMs);
+  const text = typeof quota.time_until_reset === "string" ? quota.time_until_reset.trim() : "";
+  if (text !== "") {
+    return text;
+  }
+  return durationUntil(quota.reset_at, nowMs);
 }
 
-const SHORT_LABEL_MAX = 11;
+const COMPACT_LABEL_MAX = 14;
+const DROPPED_WORDS = new Set(["limit", "limits", "all-model", "all-models", "requests", "window", "usage"]);
 
-/** Short label for the status bar: full label when short, otherwise the most specific word. */
-export function shortProviderLabel(provider: ProviderCard): string {
-  const label = (provider.label || provider.base_provider || provider.id || "").trim();
-  if (label.length <= SHORT_LABEL_MAX) {
-    return label;
+/**
+ * Compact quota name for the status bar: "5-Hour Limit" -> "5h", "Weekly All-Model" -> "Weekly",
+ * "Weekly Fable" -> "Fable weekly", "Claude + GPT Weekly" -> "Claude+GPT wk". Never longer than 14 chars.
+ */
+export function compactQuotaLabel(label: string | undefined, key: string | undefined): string {
+  let text = (label ?? "").trim();
+  if (text === "") {
+    return (key ?? "").trim();
   }
-  const words = label.split(/\s+/).filter((w) => w.length > 0);
+  text = text.replace(/(\d+)[- ]?hours?\b/gi, "$1h");
+  text = text.replace(/\bwkly\b/gi, "Weekly");
+  text = text.replace(/\ball\s+models?\b/gi, "all-model");
+  text = text.replace(/\s*\+\s*/g, "+");
+  let words = text.split(/\s+/).filter((w) => w !== "" && !DROPPED_WORDS.has(w.toLowerCase()));
   if (words.length > 1) {
-    // "GitHub Copilot" -> "Copilot"; "Antigravity Extended" -> "Antigravity".
-    const candidate = words[0].length > 7 ? words[0] : words[words.length - 1];
-    if (candidate.length <= SHORT_LABEL_MAX) {
-      return candidate;
+    words = words.filter((w) => w.toLowerCase() !== "general");
+  }
+  if (words.length === 2 && words[0].toLowerCase() === "weekly") {
+    words = [words[1], "weekly"];
+  }
+  if (words.length === 1 && /^[a-z]/.test(words[0])) {
+    words[0] = words[0].charAt(0).toUpperCase() + words[0].slice(1);
+  }
+  let out = words.join(" ");
+  if (out.length > COMPACT_LABEL_MAX) {
+    out = out.replace(/\s+weekly$/i, " wk");
+  }
+  if (out.length > COMPACT_LABEL_MAX) {
+    out = out.slice(0, COMPACT_LABEL_MAX);
+  }
+  return out;
+}
+
+function quotaLabel(quota: QuotaMeter): string {
+  return (quota.label || quota.key || "").trim();
+}
+
+/** `<mark> <compact quota> <percent>`, plus ` · <countdown>` when the quota is critical. */
+function formatQuotaLabel(provider: ProviderCard, quota: QuotaMeter | undefined, nowMs: number): string {
+  const icon = providerIcon(provider.base_provider, provider.id);
+  if (!quota) {
+    return `${icon} -`;
+  }
+  const parts = [icon];
+  const compact = compactQuotaLabel(quota.label, quota.key);
+  if (compact !== "") {
+    parts.push(compact);
+  }
+  parts.push(formatPercent(quota.percent));
+  let text = parts.join(" ");
+  if (quota.status === "critical") {
+    const reset = resetIn(quota, nowMs);
+    if (reset) {
+      // The middle dot is intentional here (requested by the issue author); everywhere else use "-".
+      text += ` · ${reset}`;
     }
   }
-  return label.slice(0, SHORT_LABEL_MAX);
+  return text;
 }
 
 export function formatCombinedLabel(tightest: TightestQuota | undefined, nowMs: number): string {
   if (!tightest) {
-    return "$(pulse) --";
+    return `${providerIcon("all", "all")} -`;
   }
-  const base = `$(pulse) ${formatPercent(tightest.quota.percent)}`;
-  if (tightest.quota.status === "critical") {
-    const reset = resetIn(tightest.quota, nowMs);
-    if (reset) {
-      // The middle dot is intentional here (requested by the issue author); everywhere else use "-".
-      return `${base} · ${reset}`;
-    }
-  }
-  return base;
+  return formatQuotaLabel(tightest.provider, tightest.quota, nowMs);
 }
 
-export function formatProviderLabel(provider: ProviderCard): string {
-  const quota = providerTightestQuota(provider);
-  return `${shortProviderLabel(provider)} ${quota ? formatPercent(quota.percent) : "--"}`;
+export function formatProviderLabel(provider: ProviderCard, nowMs: number): string {
+  return formatQuotaLabel(provider, providerTightestQuota(provider), nowMs);
 }
 
 function escapeMarkdown(text: string): string {
   return text.replace(/([\\`*_{}[\]()#+!|<>~])/g, "\\$1");
 }
 
-export function formatProviderTooltipLine(provider: ProviderCard, nowMs: number): string {
-  const quota = providerTightestQuota(provider);
-  const name = `**${escapeMarkdown(provider.label || provider.id)}**`;
-  if (!quota) {
-    return `${statusIcon(provider.status)} ${name} - no quota data`;
+function formatCount(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function usedCell(quota: QuotaMeter): string {
+  if (typeof quota.percent !== "number" || !Number.isFinite(quota.percent)) {
+    return "-";
   }
-  const parts = [`${statusIcon(quota.status)} ${name} ${formatPercent(quota.percent)}`];
-  if (quota.label) {
-    parts.push(escapeMarkdown(quota.label));
+  let cell = formatPercent(quota.percent);
+  const { used, limit } = quota;
+  if (typeof used === "number" && typeof limit === "number" && Number.isFinite(used) && Number.isFinite(limit) && limit > 0) {
+    cell += ` (${formatCount(used)}/${formatCount(limit)})`;
   }
-  const reset = resetIn(quota, nowMs);
-  if (reset) {
-    parts.push(`resets in ${reset}`);
+  return colorTier(quota.status) !== "none" ? `**${cell}**` : cell;
+}
+
+/** One provider: a heading with its mark, then a table with one row per limit. */
+export function formatProviderSection(provider: ProviderCard, nowMs: number): string {
+  const name = escapeMarkdown((provider.label || provider.id || "").trim());
+  let heading = `### ${providerIcon(provider.base_provider, provider.id)} ${name}`;
+  const subtitle = (provider.subtitle ?? "").trim();
+  if (subtitle !== "") {
+    heading += ` &nbsp; _${escapeMarkdown(subtitle)}_`;
   }
-  return parts.join(" - ");
+  if (provider.quotas.length === 0) {
+    return `${heading}\n_No quota data_`;
+  }
+  const lines = [heading, "| Limit | Used | Resets in |", "|:--|--:|--:|"];
+  for (const quota of provider.quotas) {
+    let label = `${statusIcon(quota.status)} ${escapeMarkdown(quotaLabel(quota))}`;
+    if (quota.is_stale) {
+      label += " $(history)";
+    }
+    lines.push(`| ${label} | ${usedCell(quota)} | ${resetIn(quota, nowMs) ?? "-"} |`);
+  }
+  return lines.join("\n");
 }
 
 export function formatAgo(deltaMs: number): string {
@@ -332,7 +394,7 @@ export function formatAgo(deltaMs: number): string {
 }
 
 export const TOOLTIP_LINKS =
-  "[Open dashboard](command:onwatch.openDashboard) - [Quick view](command:onwatch.openQuickView) - [Refresh](command:onwatch.refresh)";
+  "[Quick view](command:onwatch.openQuickView) · [Dashboard](command:onwatch.openDashboard) · [Refresh](command:onwatch.refresh)";
 
 export interface TooltipContext {
   fetchedAt: number;
@@ -342,16 +404,17 @@ export interface TooltipContext {
 
 function footer(ctx: TooltipContext): string {
   let updated = `Updated ${formatAgo(ctx.nowMs - ctx.fetchedAt)}`;
-  if (ctx.daemonUpdatedAgo) {
-    updated += ` (daemon data ${ctx.daemonUpdatedAgo})`;
+  const daemon = (ctx.daemonUpdatedAgo ?? "").trim();
+  if (daemon !== "") {
+    updated += ` (daemon: ${escapeMarkdown(daemon)})`;
   }
-  return `${updated} - ${TOOLTIP_LINKS}`;
+  return `${updated} · ${TOOLTIP_LINKS}`;
 }
 
+/** Provider sections in daemon order, a rule, then the freshness and action links. */
 export function formatTooltip(providers: ProviderCard[], ctx: TooltipContext): string {
-  const lines = providers.length > 0 ? providers.map((p) => formatProviderTooltipLine(p, ctx.nowMs)) : ["No providers to show."];
-  lines.push(footer(ctx));
-  return lines.join("\n\n");
+  const body = providers.length > 0 ? providers.map((p) => formatProviderSection(p, ctx.nowMs)).join("\n\n") : "No providers to show.";
+  return `${body}\n\n---\n\n${footer(ctx)}`;
 }
 
 export type DaemonState =
@@ -442,7 +505,7 @@ export function buildStatusBarItems(state: DaemonState, opts: StatusBarOptions):
   const nearOnly = opts.visibility === "whenAnyProviderNearLimit";
 
   if (state.kind === "loading") {
-    return nearOnly ? [] : [{ id: "combined", text: "$(pulse) ...", tier: "none", command: "onwatch.openQuickView", tooltip: "onWatch: contacting daemon..." }];
+    return nearOnly ? [] : [{ id: "combined", text: `${providerIcon("all", "all")} ...`, tier: "none", command: "onwatch.openQuickView", tooltip: "onWatch: contacting daemon..." }];
   }
   if (state.kind !== "ok") {
     return [problemItem(state)];
@@ -457,7 +520,7 @@ export function buildStatusBarItems(state: DaemonState, opts: StatusBarOptions):
       const quota = providerTightestQuota(p);
       return {
         id: `provider:${p.id}`,
-        text: formatProviderLabel(p),
+        text: formatProviderLabel(p, opts.nowMs),
         tier: colorTier(quota?.status ?? p.status),
         command: "onwatch.openQuickView",
         tooltip: formatTooltip([p], ctx),

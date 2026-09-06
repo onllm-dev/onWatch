@@ -6,10 +6,11 @@ All notable changes to the onWatch VS Code extension are documented here.
 
 Initial release.
 
-- Combined status bar item showing the tightest quota across enabled providers, with time to reset at critical.
+- Combined status bar item showing the provider mark, compact limit name and percent of the tightest quota across enabled providers, with time to reset at critical.
+- Provider marks shipped as a contributed icon font built from the dashboard's monochrome logos.
 - Per-provider mode (`onwatch.statusBar.mode`).
 - Theme-aware warning and critical colors.
-- Markdown tooltip with one line per provider and quick links to the dashboard, quick view and refresh.
+- Markdown tooltip with one section per provider: a table of every limit with status, percent used, used/limit and time to reset, plus quick links to the quick view, dashboard and refresh.
 - Quick view and dashboard open in Simple Browser with an external browser fallback.
 - Follows the daemon's menubar preferences (visibility, order, thresholds, refresh cadence), with explicit extension settings as overrides.
 - Auto-discovery of the daemon via `~/.onwatch/port`, `ONWATCH_PORT`, then port 9211.

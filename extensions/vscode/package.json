@@ -199,9 +199,131 @@
           "markdownDescription": "Username for HTTP Basic auth when the daemon has authentication enabled. The password is stored in VS Code's secret storage; set it with `onWatch: Set Daemon Credentials`. Not needed for a daemon on `127.0.0.1`."
         }
       }
+    },
+    "icons": {
+      "onwatch-all": {
+        "description": "onWatch All providers mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E001"
+        }
+      },
+      "onwatch-anthropic": {
+        "description": "onWatch Anthropic mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E002"
+        }
+      },
+      "onwatch-antigravity": {
+        "description": "onWatch Antigravity mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E003"
+        }
+      },
+      "onwatch-api-integrations": {
+        "description": "onWatch API Integrations mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E004"
+        }
+      },
+      "onwatch-copilot": {
+        "description": "onWatch GitHub Copilot mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E005"
+        }
+      },
+      "onwatch-cursor": {
+        "description": "onWatch Cursor mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E006"
+        }
+      },
+      "onwatch-deepseek": {
+        "description": "onWatch DeepSeek mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E007"
+        }
+      },
+      "onwatch-gemini": {
+        "description": "onWatch Gemini mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E008"
+        }
+      },
+      "onwatch-grok": {
+        "description": "onWatch Grok mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E009"
+        }
+      },
+      "onwatch-kimi": {
+        "description": "onWatch Kimi mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00A"
+        }
+      },
+      "onwatch-minimax": {
+        "description": "onWatch MiniMax mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00B"
+        }
+      },
+      "onwatch-moonshot": {
+        "description": "onWatch Moonshot mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00C"
+        }
+      },
+      "onwatch-openai": {
+        "description": "onWatch OpenAI mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00D"
+        }
+      },
+      "onwatch-opencode": {
+        "description": "onWatch OpenCode mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00E"
+        }
+      },
+      "onwatch-openrouter": {
+        "description": "onWatch OpenRouter mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00F"
+        }
+      },
+      "onwatch-synthetic": {
+        "description": "onWatch Synthetic mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E010"
+        }
+      },
+      "onwatch-zai": {
+        "description": "onWatch Z.ai mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E011"
+        }
+      }
     }
   },
   "scripts": {
+    "icons": "node scripts/build-icons.mjs",
     "build": "node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",
     "lint": "eslint src test",
@@ -218,6 +340,8 @@
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.24.0",
     "eslint": "^9.14.0",
+    "fantasticon": "4.1.0",
+    "oslllo-svg-fixer": "6.0.1",
     "ovsx": "^0.10.0",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.13.0",
