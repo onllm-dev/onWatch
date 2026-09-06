@@ -401,12 +401,12 @@ func (s *Store) QueryOllamaLatestPerQuota() ([]OllamaLatestQuota, error) {
 
 	var results []OllamaLatestQuota
 	for rows.Next() {
-		var name, format, accountType, planName string
+		var name, format, plan, accountName string
 		var used, limitValue, utilization float64
 		var resetsAt sql.NullString
 		var capturedAt string
 
-		if err := rows.Scan(&name, &used, &limitValue, &utilization, &format, &resetsAt, &capturedAt, &accountType, &planName); err != nil {
+		if err := rows.Scan(&name, &used, &limitValue, &utilization, &format, &resetsAt, &capturedAt, &plan, &accountName); err != nil {
 			return nil, fmt.Errorf("failed to scan latest quota: %w", err)
 		}
 
@@ -416,8 +416,8 @@ func (s *Store) QueryOllamaLatestPerQuota() ([]OllamaLatestQuota, error) {
 			Limit:       limitValue,
 			Utilization: utilization,
 			Format:      format,
-			Plan:        accountType,
-			AccountName: planName,
+			Plan:        plan,
+			AccountName: accountName,
 		}
 		q.CapturedAt, _ = time.Parse(time.RFC3339Nano, capturedAt)
 		if resetsAt.Valid && resetsAt.String != "" {

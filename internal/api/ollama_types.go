@@ -177,11 +177,9 @@ func OllamaNextReset(anchor, now time.Time) time.Time {
 	h, m, s := anchor.Clock()
 	candidate := ollamaAnchoredDate(now.Year(), now.Month(), day, h, m, s)
 	if !candidate.After(now) {
-		next := now.AddDate(0, 1, 0)
-		// AddDate can roll a 31st into the following month; normalise on the 1st.
+		// Step to the next month via its 1st so a 31st never rolls over twice.
 		firstOfNext := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
 		candidate = ollamaAnchoredDate(firstOfNext.Year(), firstOfNext.Month(), day, h, m, s)
-		_ = next
 	}
 	return candidate
 }
