@@ -174,7 +174,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete "${GITHUB_REF_NAME}" --yes 2>/dev/null || true
+          # --prerelease keeps it out of releases/latest; --latest=false is
+          # belt and braces so the "Latest" badge can never move to a beta.
           gh release create "${GITHUB_REF_NAME}" dist/* \
             --prerelease \
+            --latest=false \
             --title "onWatch ${GITHUB_REF_NAME} (preview)" \
             --notes-file notes.md
