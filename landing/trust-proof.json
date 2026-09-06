@@ -1,70 +1,114 @@
 {
-  "as_of": "2026-03-28",
-  "stars_snapshot": 479,
-  "countries_count": 57,
+  "as_of": "2026-09-05",
+  "stars_snapshot": 728,
+  "countries_count": 68,
   "top_countries": [
     {
       "name": "United States",
-      "count": 22
-    },
-    {
-      "name": "China",
-      "count": 12
+      "count": 52
     },
     {
       "name": "Germany",
+      "count": 23
+    },
+    {
+      "name": "China",
+      "count": 21
+    },
+    {
+      "name": "Canada",
       "count": 12
     },
     {
       "name": "India",
-      "count": 9
+      "count": 12
     },
     {
       "name": "Spain",
-      "count": 9
-    },
-    {
-      "name": "Canada",
-      "count": 8
+      "count": 12
     },
     {
       "name": "Brazil",
-      "count": 7
-    },
-    {
-      "name": "France",
-      "count": 6
+      "count": 11
     },
     {
       "name": "Indonesia",
-      "count": 6
+      "count": 8
+    },
+    {
+      "name": "United Kingdom",
+      "count": 8
+    },
+    {
+      "name": "France",
+      "count": 7
     },
     {
       "name": "Italy",
       "count": 6
     },
     {
-      "name": "United Kingdom",
+      "name": "Thailand",
       "count": 6
+    },
+    {
+      "name": "Vietnam",
+      "count": 6
+    },
+    {
+      "name": "Russia",
+      "count": 5
+    },
+    {
+      "name": "Austria",
+      "count": 4
     },
     {
       "name": "Colombia",
       "count": 4
     },
     {
-      "name": "Russia",
+      "name": "Greece",
       "count": 4
     },
     {
-      "name": "Austria",
-      "count": 3
+      "name": "Hong Kong",
+      "count": 4
     },
     {
-      "name": "Hong Kong",
-      "count": 3
+      "name": "Israel",
+      "count": 4
+    },
+    {
+      "name": "Morocco",
+      "count": 4
+    },
+    {
+      "name": "Netherlands",
+      "count": 4
     },
     {
       "name": "Philippines",
+      "count": 4
+    },
+    {
+      "name": "Turkey",
+      "count": 4
+    },
+    {
+      "name": "Belgium",
+      "count": 3
+    },
+    {
+      "name": "Mexico",
+      "count": 3
+    },
+    {
+      "name": "Montserrat",
+      "count": 3
+    },
+    {
+      "name": "Poland",
       "count": 3
     },
     {
@@ -72,12 +116,24 @@
       "count": 3
     },
     {
+      "name": "Romania",
+      "count": 3
+    },
+    {
       "name": "South Korea",
       "count": 3
     },
     {
-      "name": "Thailand",
+      "name": "Taiwan",
       "count": 3
+    },
+    {
+      "name": "Uruguay",
+      "count": 3
+    },
+    {
+      "name": "Australia",
+      "count": 2
     },
     {
       "name": "Azerbaijan",
@@ -85,10 +141,6 @@
     },
     {
       "name": "Bangladesh",
-      "count": 2
-    },
-    {
-      "name": "Belgium",
       "count": 2
     },
     {
@@ -100,19 +152,27 @@
       "count": 2
     },
     {
-      "name": "Latvia",
+      "name": "Japan",
       "count": 2
     },
     {
-      "name": "Morocco",
+      "name": "Kazakhstan",
       "count": 2
     },
     {
-      "name": "Poland",
+      "name": "Mali",
       "count": 2
     },
     {
-      "name": "Romania",
+      "name": "Malta",
+      "count": 2
+    },
+    {
+      "name": "Nepal",
+      "count": 2
+    },
+    {
+      "name": "New Zealand",
       "count": 2
     },
     {
@@ -120,11 +180,15 @@
       "count": 2
     },
     {
-      "name": "Taiwan",
-      "count": 2
+      "name": "Albania",
+      "count": 1
     },
     {
       "name": "Argentina",
+      "count": 1
+    },
+    {
+      "name": "Bulgaria",
       "count": 1
     },
     {
@@ -144,19 +208,15 @@
       "count": 1
     },
     {
+      "name": "Estonia",
+      "count": 1
+    },
+    {
       "name": "Finland",
       "count": 1
     },
     {
-      "name": "Greece",
-      "count": 1
-    },
-    {
-      "name": "Israel",
-      "count": 1
-    },
-    {
-      "name": "Japan",
+      "name": "Georgia",
       "count": 1
     },
     {
@@ -164,15 +224,11 @@
       "count": 1
     },
     {
-      "name": "Kazakhstan",
+      "name": "Latvia",
       "count": 1
     },
     {
-      "name": "Malta",
-      "count": 1
-    },
-    {
-      "name": "Mexico",
+      "name": "Malaysia",
       "count": 1
     },
     {
@@ -180,15 +236,7 @@
       "count": 1
     },
     {
-      "name": "Nepal",
-      "count": 1
-    },
-    {
-      "name": "Netherlands",
-      "count": 1
-    },
-    {
-      "name": "New Zealand",
+      "name": "Nigeria",
       "count": 1
     },
     {
@@ -216,11 +264,7 @@
       "count": 1
     },
     {
-      "name": "Turkey",
-      "count": 1
-    },
-    {
-      "name": "Uruguay",
+      "name": "Ukraine",
       "count": 1
     },
     {
@@ -228,22 +272,22 @@
       "count": 1
     },
     {
-      "name": "Vietnam",
+      "name": "Venezuela, Bolivarian Republic of",
       "count": 1
     },
     {
       "name": "Unknown",
-      "count": 301
+      "count": 428
     }
   ],
   "org_examples": [
     {
       "name": "__total_users_with_org_metadata",
-      "count": 114
+      "count": 207
     },
     {
       "name": "Microsoft",
-      "count": 1
+      "count": 2
     },
     {
       "name": "Coriolis Technologies",
@@ -259,14 +303,6 @@
     },
     {
       "name": "Salesforce",
-      "count": 1
-    },
-    {
-      "name": "Rackspace Technology",
-      "count": 1
-    },
-    {
-      "name": "Khan Academy",
       "count": 1
     },
     {
@@ -286,11 +322,55 @@
       "count": 1
     },
     {
+      "name": "The Experimental Humanities Collaborative Network",
+      "count": 2
+    },
+    {
+      "name": "4170 Trading",
+      "count": 1
+    },
+    {
+      "name": "ABCD 365 Consulting",
+      "count": 1
+    },
+    {
+      "name": "All About Fly Fishing",
+      "count": 1
+    },
+    {
       "name": "ALL SEEING EYES",
       "count": 1
     },
     {
+      "name": "AZ Pro IT Services",
+      "count": 1
+    },
+    {
+      "name": "BB - UAN",
+      "count": 1
+    },
+    {
+      "name": "Beijing University of Technology",
+      "count": 1
+    },
+    {
+      "name": "BioFit Performance",
+      "count": 1
+    },
+    {
       "name": "Braum Consulting",
+      "count": 1
+    },
+    {
+      "name": "China University of Geosciences",
+      "count": 1
+    },
+    {
+      "name": "Coder Nostra",
+      "count": 1
+    },
+    {
+      "name": "County of San Diego",
       "count": 1
     },
     {
@@ -302,7 +382,35 @@
       "count": 1
     },
     {
+      "name": "Digital League",
+      "count": 1
+    },
+    {
+      "name": "Digital Nomad",
+      "count": 1
+    },
+    {
+      "name": "EMC \"Egyptian Maintenance \"\u200b - Petroleum Sector",
+      "count": 1
+    },
+    {
+      "name": "eNe Solu\u00e7\u00f5es",
+      "count": 1
+    },
+    {
+      "name": "Engineering Manager",
+      "count": 1
+    },
+    {
+      "name": "Expedia Group",
+      "count": 1
+    },
+    {
       "name": "Gadjah Mada University",
+      "count": 1
+    },
+    {
+      "name": "GEICO FEDERAL CREDIT UNION",
       "count": 1
     },
     {
@@ -310,7 +418,23 @@
       "count": 1
     },
     {
+      "name": "Hesea Tecnologia E Sistemas",
+      "count": 1
+    },
+    {
+      "name": "HexTech Security",
+      "count": 1
+    },
+    {
+      "name": "Hub Group",
+      "count": 1
+    },
+    {
       "name": "Hunan Unversity",
+      "count": 1
+    },
+    {
+      "name": "INDUSTRIAS BANDALA & CLARK",
       "count": 1
     },
     {
@@ -330,15 +454,31 @@
       "count": 1
     },
     {
+      "name": "Monash University",
+      "count": 1
+    },
+    {
+      "name": "North China University of Science and Technology",
+      "count": 1
+    },
+    {
+      "name": "Northrop Grumman",
+      "count": 1
+    },
+    {
+      "name": "Omni Ecosystems",
+      "count": 1
+    },
+    {
       "name": "Politechnika \u0141\u00f3dzka",
       "count": 1
     },
     {
-      "name": "Polytechnic University of the Philippines",
+      "name": "Project Mirage",
       "count": 1
     },
     {
-      "name": "Project Mirage",
+      "name": "PT Merchia Studio Kreasi",
       "count": 1
     },
     {
@@ -366,15 +506,35 @@
       "count": 1
     },
     {
-      "name": "The Byford Law Firm, PLLC",
+      "name": "Steiner + Associates",
       "count": 1
     },
     {
-      "name": "UAB Integry Systems",
+      "name": "Taiwan Semiconductor Manufacturing",
+      "count": 1
+    },
+    {
+      "name": "TAPTAP VIETNAM",
+      "count": 1
+    },
+    {
+      "name": "The Adeptus Mechanicus",
+      "count": 1
+    },
+    {
+      "name": "The Goddard School",
+      "count": 1
+    },
+    {
+      "name": "Ubon Ratchathani Rajabhat University",
       "count": 1
     },
     {
       "name": "UChicago PME",
+      "count": 1
+    },
+    {
+      "name": "Unchained Development O\u00fc",
       "count": 1
     },
     {
@@ -390,7 +550,15 @@
       "count": 1
     },
     {
-      "name": "XSI Labs",
+      "name": "VertiGIS Hamburg",
+      "count": 1
+    },
+    {
+      "name": "Worcester Polytechnic Institute",
+      "count": 1
+    },
+    {
+      "name": "Xpansiv Data Systems",
       "count": 1
     },
     {
@@ -398,6 +566,7 @@
       "count": 1
     }
   ],
+  "container_downloads_snapshot": 32551,
   "methodology": "Aggregated from public GitHub stargazer profile metadata. Country spread resolves location text to countries; Unknown equals total stars minus known-country matches.",
   "disclaimer": "Public profile metadata only. Organization names are examples and do not imply endorsement."
 }

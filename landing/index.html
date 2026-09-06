@@ -3242,11 +3242,11 @@ a:hover { text-decoration: underline; }
                 <article class="trust-list-card" aria-label="Star growth over time" style="display:flex;flex-direction:column;">
                     <h3 class="trust-list-title">Star growth</h3>
                     <div style="flex:1;display:flex;overflow:hidden;border-radius:var(--radius-md);border:1px solid var(--border-light);background:var(--surface-inset);">
-                        <a href="https://star-history.com/#onllm-dev/onwatch&Timeline" target="_blank" rel="noopener noreferrer" style="display:flex;flex:1;align-items:center;">
+                        <a href="https://star-history.dera.page/#onllm-dev/onwatch&Timeline" target="_blank" rel="noopener noreferrer" style="display:flex;flex:1;align-items:center;">
                             <img id="star-history-chart"
-                                 src="https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline"
-                                 data-light-src="https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline"
-                                 data-dark-src="https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline&theme=dark"
+                                 src="https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline"
+                                 data-light-src="https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline"
+                                 data-dark-src="https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline&theme=dark"
                                  alt="onWatch star history chart" style="width:100%;height:auto;display:block;" loading="lazy">
                         </a>
                     </div>
@@ -4186,29 +4186,6 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
         .catch(function() { /* keep placeholder */ });
 })();
 
-/* Fetch GHCR container download count (via CORS proxy, scraped from GitHub package page) */
-(function() {
-    var ghcrUrl = 'https://github.com/onllm-dev/onWatch/pkgs/container/onwatch';
-    fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(ghcrUrl))
-        .then(function(r) { return r.text(); })
-        .then(function(html) {
-            var m = html.match(/Total downloads<\/span>\s*<h3\s+title="(\d+)">/s);
-            if (!m) {
-                m = html.match(/Total downloads<\/span>\s*<h3[^>]*>([\d,\.]+[KkMm]?)<\/h3>/s);
-                if (!m) return;
-                var raw = m[1].replace(/,/g, '').toLowerCase();
-                var count = raw.endsWith('k') ? Math.round(parseFloat(raw) * 1000) : raw.endsWith('m') ? Math.round(parseFloat(raw) * 1e6) : parseInt(raw, 10);
-            } else {
-                var count = parseInt(m[1], 10);
-            }
-            var el = document.getElementById('hero-ghcr-count');
-            if (el && count > 0) {
-                el.textContent = count >= 1000 ? (count / 1000).toFixed(1) + 'k' : count;
-            }
-        })
-        .catch(function() { /* keep placeholder */ });
-})();
-
 /* Fetch star count from GitHub API */
 (function() {
     fetch('https://api.github.com/repos/onllm-dev/onwatch')
@@ -4246,6 +4223,7 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
         countries_count: true,
         top_countries: true,
         org_examples: true,
+        container_downloads_snapshot: true,
         methodology: true,
         disclaimer: true
     };
@@ -4528,13 +4506,17 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
         setTrustText('trust-countries-count', '--');
         setTrustText('trust-org-count', '--');
         setTrustText('trust-unknown-count', '--');
+        var ghcrEl = document.getElementById('hero-ghcr-count');
+        if (ghcrEl) ghcrEl.textContent = '--';
         setTrustText('trust-as-of', asOfText ? ('Snapshot context as of ' + asOfText) : 'Snapshot context unavailable');
         trustCountryAllEntries = [];
         trustOrgAllEntries = [];
         renderTrustInteractiveLists();
         setTrustText('trust-disclaimer', TRUST_DISCLAIMER_COPY);
-        setTrustNote('trust-stale-note', TRUST_DISCLAIMER_COPY, !(options && options.stale));
-        setTrustNote('trust-neutral-note', TRUST_DISCLAIMER_COPY, false);
+        var isStale = !!(options && options.stale);
+        var noteMessage = (options && options.message) || TRUST_DISCLAIMER_COPY;
+        setTrustNote('trust-stale-note', noteMessage, !isStale);
+        setTrustNote('trust-neutral-note', noteMessage, isStale);
     }
 
     function validateTrustPayload(raw) {
@@ -4558,6 +4540,7 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
         if (!asOfDate) return null;
         if (!isNonNegativeInteger(known.stars_snapshot)) return null;
         if (!isNonNegativeInteger(known.countries_count)) return null;
+        if (!isNonNegativeInteger(known.container_downloads_snapshot)) return null;
         if (!isNonEmptyString(known.methodology)) return null;
         if (!isNonEmptyString(known.disclaimer)) return null;
 
@@ -4579,9 +4562,15 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
             topCountries: topCountries,
             orgUsersTotal: orgUsersTotal,
             orgExamples: orgExamples,
+            containerDownloadsSnapshot: known.container_downloads_snapshot,
             methodology: known.methodology.trim(),
             disclaimer: known.disclaimer.trim()
         };
+    }
+
+    function formatCompactCount(value) {
+        if (!Number.isFinite(value)) return '--';
+        return value >= 1000 ? (value / 1000).toFixed(1) + 'k' : String(value);
     }
 
     function renderValidatedTrust(data) {
@@ -4610,6 +4599,9 @@ function renderTrustOrgSocialProof(id, entries, emptyText) {
             return entry.name.toLowerCase() === 'unknown';
         });
         setTrustText('trust-unknown-count', unknownEntry ? formatTrustNumber(unknownEntry.count) : '0');
+
+        var ghcrEl = document.getElementById('hero-ghcr-count');
+        if (ghcrEl) ghcrEl.textContent = formatCompactCount(data.containerDownloadsSnapshot);
 
         var formattedAsOf = formatTrustDate(data.asOfDate.toISOString());
         setTrustText('trust-as-of', formattedAsOf ? ('Snapshot context as of ' + formattedAsOf) : 'Snapshot context date unavailable');
