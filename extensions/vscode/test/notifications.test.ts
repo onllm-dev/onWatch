@@ -32,7 +32,7 @@ describe("NotificationTracker", () => {
     expect(fired).toHaveLength(1);
     expect(fired[0]).toMatchObject({ providerId: "anthropic", quotaKey: "five_hour", tier: "critical", percent: 95, resetAt: RESET_A });
     expect(fired[0].message).toBe("onWatch: Claude 5h window is at 95% (critical) - resets in 59m");
-    expect(fired[0].message).not.toMatch(/—/);
+    expect(fired[0].message).not.toMatch(/\u2014/);
     // stays critical: silent
     expect(t.evaluate([claude(97, "critical")], "critical")).toEqual([]);
     expect(t.evaluate([claude(99, "critical")], "critical")).toEqual([]);
