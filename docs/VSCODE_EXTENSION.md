@@ -101,7 +101,7 @@ All settings are under `onwatch.*`.
 | `notify` | `off` / `critical` / `warningAndCritical` | `critical` | Show a non-modal warning notification with an "Open dashboard" action when a quota enters that severity. Fires once per provider, quota and reset window - never repeatedly while it stays there. |
 | `auth.username` | string | `""` | Username for HTTP Basic auth. The password is only in VS Code secret storage. |
 
-Provider IDs match what the daemon reports on `/api/menubar/summary`: `anthropic`, `codex`, `copilot`, `gemini`, `antigravity`, `cursor`, `kimi`, `grok`, `moonshot`, `deepseek`, `openrouter`, `opencode`, `minimax`, `synthetic`, `zai`. Multi-profile providers appear as `codex:<profile>`.
+Provider IDs match what the daemon reports on `/api/menubar/summary`: `anthropic`, `codex`, `copilot`, `gemini`, `antigravity`, `cursor`, `kimi`, `grok`, `moonshot`, `deepseek`, `openrouter`, `opencode`, `ollama`, `minimax`, `synthetic`, `zai`. Multi-profile providers appear as `codex:<profile>`.
 
 ## Privacy
 
