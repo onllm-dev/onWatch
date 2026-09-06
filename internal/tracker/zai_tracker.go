@@ -205,8 +205,8 @@ func (t *ZaiTracker) processTimeQuota(snapshot *api.ZaiSnapshot) error {
 	}
 
 	if cycle == nil {
-		// First snapshot - create new cycle (no nextReset for TIME_LIMIT)
-		_, err := t.store.CreateZaiCycle(quotaType, snapshot.CapturedAt, nil)
+		// First snapshot. Legacy TIME_LIMIT has no nextReset; credit windows do.
+		_, err := t.store.CreateZaiCycle(quotaType, snapshot.CapturedAt, snapshot.TimeNextResetTime)
 		if err != nil {
 			return fmt.Errorf("failed to create cycle: %w", err)
 		}
@@ -233,7 +233,7 @@ func (t *ZaiTracker) processTimeQuota(snapshot *api.ZaiSnapshot) error {
 		}
 
 		// Create new cycle
-		if _, err := t.store.CreateZaiCycle(quotaType, snapshot.CapturedAt, nil); err != nil {
+		if _, err := t.store.CreateZaiCycle(quotaType, snapshot.CapturedAt, snapshot.TimeNextResetTime); err != nil {
 			return fmt.Errorf("failed to create new cycle: %w", err)
 		}
 		if err := t.store.UpdateZaiCycle(quotaType, int64(currentValue), 0); err != nil {

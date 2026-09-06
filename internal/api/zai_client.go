@@ -140,16 +140,22 @@ func (c *ZaiClient) FetchQuotas(ctx context.Context) (*ZaiQuotaResponse, error) 
 	if len(quotaResp.Limits) > 0 {
 		timeUsage := float64(0)
 		tokensUsage := float64(0)
+		var creditWindows int
 		for _, limit := range quotaResp.Limits {
-			if limit.Type == "TIME_LIMIT" {
+			switch limit.Type {
+			case ZaiLimitTypeTime:
 				timeUsage = limit.CurrentValue
-			} else if limit.Type == "TOKENS_LIMIT" {
+			case ZaiLimitTypeTokens:
 				tokensUsage = limit.CurrentValue
+			case ZaiLimitTypeCredit:
+				creditWindows++
 			}
 		}
 		c.logger.Debug("Z.ai quotas fetched successfully",
 			"time_usage", timeUsage,
 			"tokens_usage", tokensUsage,
+			"credit_windows", creditWindows,
+			"level", quotaResp.Level,
 		)
 	}
 

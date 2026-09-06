@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
 // MigrationResult contains the results of a cycle migration
@@ -294,7 +296,7 @@ func (s *Store) getBadAnthropicCycles(quotaName string) ([]*AnthropicResetCycle,
 	switch {
 	case quotaName == "five_hour":
 		maxHours = 6
-	case quotaName == "seven_day" || quotaName == "seven_day_sonnet":
+	case quotaName == "seven_day" || quotaName == "seven_day_sonnet" || api.IsAnthropicScopedQuota(quotaName):
 		maxHours = 8 * 24 // 8 days
 	case quotaName == "monthly_limit":
 		maxHours = 32 * 24 // 32 days

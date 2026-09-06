@@ -159,5 +159,7 @@ func (a *ZaiAgent) poll(ctx context.Context) {
 		"tokens_used", snapshot.TokensCurrentValue,
 		"tokens_percentage", snapshot.TokensPercentage,
 		"tokens_window", snapshot.TokensLimit,
+		"time_limit_type", snapshot.TimeLimitType,
+		"tokens_limit_type", snapshot.TokensLimitType,
 	)
 }

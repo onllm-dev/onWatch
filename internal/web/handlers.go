@@ -2455,9 +2455,15 @@ func buildZaiTokensQuotaResponse(snapshot *api.ZaiSnapshot) map[string]interface
 		status = "warning"
 	}
 
+	name, description := "Tokens Limit", "Token consumption budget"
+	if snapshot.TokensLimitType == api.ZaiLimitTypeCredit {
+		// GLM Coding Plan Lite reports credit windows instead of tokens (#122).
+		name, description = "Weekly Credits", "Credit budget for the weekly window"
+	}
+
 	result := map[string]interface{}{
-		"name":        "Tokens Limit",
-		"description": "Token consumption budget",
+		"name":        name,
+		"description": description,
 		"usage":       currentUsage,
 		"limit":       budget,
 		"percent":     percent,
@@ -2493,9 +2499,15 @@ func buildZaiTimeQuotaResponse(snapshot *api.ZaiSnapshot) map[string]interface{}
 		status = "warning"
 	}
 
-	return map[string]interface{}{
-		"name":                  "Time Limit",
-		"description":           "Tool call time budget",
+	name, description := "Time Limit", "Tool call time budget"
+	if snapshot.TimeLimitType == api.ZaiLimitTypeCredit {
+		// GLM Coding Plan Lite reports credit windows instead of prompts (#122).
+		name, description = "5-Hour Credits", "Credit budget for the 5-hour window"
+	}
+
+	result := map[string]interface{}{
+		"name":                  name,
+		"description":           description,
 		"usage":                 currentUsage,
 		"limit":                 budget,
 		"percent":               percent,
@@ -2504,6 +2516,16 @@ func buildZaiTimeQuotaResponse(snapshot *api.ZaiSnapshot) map[string]interface{}
 		"timeUntilReset":        "N/A",
 		"timeUntilResetSeconds": 0,
 	}
+
+	// Legacy TIME_LIMIT carries no reset time; credit windows do.
+	if snapshot.TimeNextResetTime != nil {
+		timeUntilReset := time.Until(*snapshot.TimeNextResetTime)
+		result["renewsAt"] = snapshot.TimeNextResetTime.Format(time.RFC3339)
+		result["timeUntilReset"] = formatDuration(timeUntilReset)
+		result["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+	}
+
+	return result
 }
 
 func buildZaiToolCallsResponse(snapshot *api.ZaiSnapshot) map[string]interface{} {
@@ -5766,10 +5788,15 @@ func anthropicQuotaDisplayOrder(name string) int {
 	case "seven_day_sonnet":
 		return 2
 	case "monthly_limit":
-		return 3
-	case "extra_usage":
 		return 4
+	case "extra_usage":
+		return 5
 	default:
+		// Per-model weekly buckets promoted from limits[] sit with the other
+		// weekly quotas rather than at the end - one of them is often binding.
+		if api.IsAnthropicScopedQuota(name) {
+			return 3
+		}
 		return 100
 	}
 }
@@ -11293,11 +11320,18 @@ func anthropicLoggingQuotaOrder(names []string) []string {
 			delete(present, n)
 		}
 	}
+	scoped := make([]string, 0, len(present))
 	extra := make([]string, 0, len(present))
 	for n := range present {
+		if api.IsAnthropicScopedQuota(n) {
+			scoped = append(scoped, n)
+			continue
+		}
 		extra = append(extra, n)
 	}
+	sort.Strings(scoped)
 	sort.Strings(extra)
+	ordered = append(ordered, scoped...)
 	ordered = append(ordered, extra...)
 	return ordered
 }

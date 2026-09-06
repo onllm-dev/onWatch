@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -16,6 +17,37 @@ type AnthropicQuotaEntry struct {
 	MonthlyLimit *float64 `json:"monthly_limit,omitempty"`
 	UsedCredits  *float64 `json:"used_credits,omitempty"`
 }
+
+// AnthropicLimit is one entry of the top-level "limits" array Anthropic began
+// returning in 2026. Entries with kind=session / kind=weekly_all duplicate the
+// five_hour / seven_day quota objects, but kind=weekly_scoped carries per-model
+// weekly usage that has no populated top-level equivalent on some plans (#121).
+type AnthropicLimit struct {
+	Kind     string               `json:"kind"`
+	Group    string               `json:"group"`
+	Percent  *float64             `json:"percent"`
+	Severity string               `json:"severity"`
+	ResetsAt *string              `json:"resets_at"`
+	IsActive *bool                `json:"is_active"`
+	Scope    *AnthropicLimitScope `json:"scope"`
+}
+
+// AnthropicLimitScope narrows a limit to a model (and, in future, a surface).
+type AnthropicLimitScope struct {
+	Model *AnthropicLimitModel `json:"model"`
+}
+
+// AnthropicLimitModel identifies the model a scoped limit applies to. In
+// observed payloads "id" is null, so display_name is the only discriminator.
+type AnthropicLimitModel struct {
+	ID          *string `json:"id"`
+	DisplayName *string `json:"display_name"`
+}
+
+// anthropicScopedQuotaPrefix marks quota keys synthesised from a weekly_scoped
+// limit. Only promoteScopedWeeklyLimits writes this prefix, so widening the
+// quota whitelist to cover it cannot let experimental top-level keys back in.
+const anthropicScopedQuotaPrefix = "seven_day_scoped_"
 
 // AnthropicQuotaResponse is the full response from the Anthropic usage API.
 // Keys are dynamic (five_hour, seven_day, etc.).
@@ -67,8 +99,108 @@ func (r *AnthropicQuotaResponse) UnmarshalJSON(data []byte) error {
 		resp[key] = &e
 	}
 
+	// Second pass: limits[] was skipped above as a non-object. Parse it on its
+	// own so a malformed array still cannot take down five_hour / seven_day.
+	promoteScopedWeeklyLimits(resp, raw["limits"])
+
 	*r = resp
 	return nil
+}
+
+// promoteScopedWeeklyLimits copies per-model weekly buckets out of the
+// top-level "limits" array into quota entries. On plans where Anthropic reports
+// them only there - leaving seven_day_opus / seven_day_sonnet null - this is the
+// only path by which the currently binding limit reaches the tracker (#121).
+//
+// Keys are derived from the model's display name rather than enumerated, so a
+// bucket scoped to Sonnet, Opus or Fable each gets its own quota without a code
+// change. A populated top-level key wins: limits[] is the fallback, not an
+// override.
+func promoteScopedWeeklyLimits(resp AnthropicQuotaResponse, raw json.RawMessage) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return
+	}
+	for _, item := range items {
+		var limit AnthropicLimit
+		if err := json.Unmarshal(item, &limit); err != nil {
+			// One unreadable entry must not discard the rest of the array.
+			continue
+		}
+		if limit.Kind != "weekly_scoped" || limit.Percent == nil {
+			continue
+		}
+		if limit.Scope == nil || limit.Scope.Model == nil || limit.Scope.Model.DisplayName == nil {
+			continue
+		}
+		slug := anthropicModelSlug(*limit.Scope.Model.DisplayName)
+		if slug == "" {
+			continue
+		}
+		// seven_day_sonnet and friends stay authoritative where the account
+		// still gets them.
+		if e := resp["seven_day_"+slug]; e != nil && e.Utilization != nil {
+			continue
+		}
+		key := anthropicScopedQuotaPrefix + slug
+		if e := resp[key]; e != nil && e.Utilization != nil {
+			continue
+		}
+		percent := *limit.Percent
+		entry := &AnthropicQuotaEntry{Utilization: &percent}
+		if limit.ResetsAt != nil && *limit.ResetsAt != "" {
+			resetsAt := *limit.ResetsAt
+			entry.ResetsAt = &resetsAt
+		}
+		resp[key] = entry
+	}
+}
+
+// anthropicModelSlug converts a model display name into a quota key fragment:
+// runs of non-alphanumeric characters collapse to a single underscore.
+func anthropicModelSlug(displayName string) string {
+	var b strings.Builder
+	pendingSep := false
+	for _, r := range strings.ToLower(displayName) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			if pendingSep && b.Len() > 0 {
+				b.WriteByte('_')
+			}
+			pendingSep = false
+			b.WriteRune(r)
+		default:
+			pendingSep = true
+		}
+	}
+	return b.String()
+}
+
+// anthropicScopedModelLabel reverses anthropicModelSlug for display:
+// seven_day_scoped_claude_fable -> "Claude Fable".
+func anthropicScopedModelLabel(key string) (string, bool) {
+	slug, ok := strings.CutPrefix(key, anthropicScopedQuotaPrefix)
+	if !ok || slug == "" {
+		return "", false
+	}
+	words := strings.Split(slug, "_")
+	for i, w := range words {
+		if w == "" {
+			return "", false
+		}
+		words[i] = strings.ToUpper(w[:1]) + w[1:]
+	}
+	return strings.Join(words, " "), true
+}
+
+// IsAnthropicScopedQuota reports whether a quota key was synthesised from a
+// weekly_scoped entry in limits[].
+func IsAnthropicScopedQuota(key string) bool {
+	_, ok := anthropicScopedModelLabel(key)
+	return ok
 }
 
 // looksLikeAnthropicQuotaObject reports whether a JSON object has at least one
@@ -121,6 +253,11 @@ func AnthropicDisplayName(key string) string {
 	if name, ok := anthropicDisplayNames[key]; ok {
 		return name
 	}
+	// Per-model weekly buckets are dynamic, so their label is derived from the
+	// key instead of being listed above.
+	if model, ok := anthropicScopedModelLabel(key); ok {
+		return "Weekly " + model
+	}
 	return key
 }
 
@@ -128,8 +265,10 @@ func AnthropicDisplayName(key string) string {
 // Used by both the write path (to filter out experimental keys before storage)
 // and read paths (to hide historical rows written before the whitelist existed).
 func IsKnownAnthropicQuota(key string) bool {
-	_, ok := anthropicDisplayNames[key]
-	return ok
+	if _, ok := anthropicDisplayNames[key]; ok {
+		return true
+	}
+	return IsAnthropicScopedQuota(key)
 }
 
 // ActiveQuotaNames returns sorted names of quotas that are active (non-null utilization,
@@ -149,7 +288,7 @@ func (r AnthropicQuotaResponse) ActiveQuotaNames() []string {
 			continue
 		}
 		// Whitelist known quota keys; skip experimental/unknown keys.
-		if _, ok := anthropicDisplayNames[key]; !ok {
+		if !IsKnownAnthropicQuota(key) {
 			continue
 		}
 		names = append(names, key)

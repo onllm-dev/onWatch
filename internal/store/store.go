@@ -298,6 +298,8 @@ func (s *Store) createTables() error {
 			time_remaining REAL NOT NULL,
 			time_percentage INTEGER NOT NULL,
 			time_usage_details TEXT NOT NULL DEFAULT '',
+			time_limit_type TEXT NOT NULL DEFAULT '',
+			time_next_reset TEXT,
 			tokens_limit INTEGER NOT NULL,
 			tokens_unit INTEGER NOT NULL,
 			tokens_number INTEGER NOT NULL,
@@ -305,7 +307,8 @@ func (s *Store) createTables() error {
 			tokens_current_value REAL NOT NULL,
 			tokens_remaining REAL NOT NULL,
 			tokens_percentage INTEGER NOT NULL,
-			tokens_next_reset TEXT
+			tokens_next_reset TEXT,
+			tokens_limit_type TEXT NOT NULL DEFAULT ''
 		);
 
 		CREATE TABLE IF NOT EXISTS zai_hourly_usage (
@@ -912,6 +915,26 @@ func (s *Store) migrateSchema() error {
 			// Table might not exist yet (new install) - ignore
 			if !strings.Contains(err.Error(), "no such table") {
 				return fmt.Errorf("failed to add time_usage_details to zai_snapshots: %w", err)
+			}
+		}
+	}
+
+	// Record which upstream limit type filled each Z.ai slot (issue #122).
+	// Existing rows default to '' and keep their legacy TIME_LIMIT /
+	// TOKENS_LIMIT meaning.
+	for _, col := range []string{
+		"time_limit_type TEXT NOT NULL DEFAULT ''",
+		"tokens_limit_type TEXT NOT NULL DEFAULT ''",
+		"time_next_reset TEXT",
+	} {
+		if _, err := s.db.Exec(fmt.Sprintf(
+			`ALTER TABLE zai_snapshots ADD COLUMN %s`, col,
+		)); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				// Table might not exist yet (new install) - ignore
+				if !strings.Contains(err.Error(), "no such table") {
+					return fmt.Errorf("failed to add %s to zai_snapshots: %w", col, err)
+				}
 			}
 		}
 	}

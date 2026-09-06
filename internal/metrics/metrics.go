@@ -440,6 +440,10 @@ func (m *Metrics) scrapeZai(s *store.Store, staleThreshold time.Duration) {
 	if zaiQuotaDeclared(snap.TimeLimit, snap.TimeUsage, snap.TimeCurrentValue, snap.TimeRemaining, snap.TimePercentage) {
 		labels := prometheus.Labels{"provider": method, "quota_type": "time", "account_id": defaultAccountID}
 		m.quotaUtilization.With(labels).Set(float64(snap.TimePercentage))
+		// Legacy TIME_LIMIT reports no reset; credit windows do (issue #122).
+		if snap.TimeNextResetTime != nil && !snap.TimeNextResetTime.IsZero() {
+			m.quotaResetTimestamp.With(labels).Set(float64(snap.TimeNextResetTime.Unix()))
+		}
 	}
 }
 

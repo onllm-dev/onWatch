@@ -862,6 +862,28 @@ const anthropicDisplayNames = {
   extra_usage: 'Extra Usage'
 };
 
+// Per-model weekly buckets (limits[].kind=weekly_scoped) are keyed dynamically
+// by model, so their label is derived from the key rather than listed above.
+// Mirrors AnthropicDisplayName / anthropicScopedModelLabel in the backend.
+const ANTHROPIC_SCOPED_QUOTA_PREFIX = 'seven_day_scoped_';
+
+function isAnthropicScopedQuota(key) {
+  return typeof key === 'string' &&
+    key.startsWith(ANTHROPIC_SCOPED_QUOTA_PREFIX) &&
+    key.length > ANTHROPIC_SCOPED_QUOTA_PREFIX.length;
+}
+
+function anthropicQuotaLabel(key) {
+  if (anthropicDisplayNames[key]) return anthropicDisplayNames[key];
+  if (!isAnthropicScopedQuota(key)) return key;
+  const model = key.slice(ANTHROPIC_SCOPED_QUOTA_PREFIX.length)
+    .split('_')
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+  return model ? `Weekly ${model}` : key;
+}
+
 // Anthropic quota icons (mapped by key)
 const anthropicQuotaIcons = {
   five_hour: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',       // clock
@@ -883,6 +905,16 @@ const anthropicChartColorFallback = [
   { border: '#14B8A6', bg: 'rgba(20, 184, 166, 0.08)' },
   { border: '#EC4899', bg: 'rgba(236, 72, 153, 0.08)' }
 ];
+
+// Z.ai card headings depend on the plan: credit-based accounts report
+// "5-Hour Credits" / "Weekly Credits" where the legacy coding plan reports
+// "Time Limit" / "Tokens Limit" (issue #122). Chart legends, modals and the
+// quota list reuse whatever the current payload called the card so the whole
+// page agrees.
+function zaiQuotaLabel(quotaKey, fallback) {
+  const name = State.currentQuotas && State.currentQuotas[quotaKey] && State.currentQuotas[quotaKey].name;
+  return name || fallback;
+}
 
 // ── Copilot display names (mirrors backend CopilotDisplayName) ──
 const copilotDisplayNames = {
@@ -953,9 +985,18 @@ function sortQuotaKeysForProvider(keys, provider) {
     return sorted.sort();
   }
   const rank = new Map(preferred.map((name, index) => [name, index]));
+  // Dynamic per-model weekly quotas rank just after Weekly Sonnet instead of
+  // falling to the tail - one of them is often the binding limit.
+  const rankOf = (key) => {
+    if (rank.has(key)) return rank.get(key);
+    if (provider === 'anthropic' && isAnthropicScopedQuota(key)) {
+      return (rank.has('seven_day_sonnet') ? rank.get('seven_day_sonnet') : 0) + 0.5;
+    }
+    return Number.MAX_SAFE_INTEGER;
+  };
   return sorted.sort((left, right) => {
-    const leftRank = rank.has(left) ? rank.get(left) : Number.MAX_SAFE_INTEGER;
-    const rightRank = rank.has(right) ? rank.get(right) : Number.MAX_SAFE_INTEGER;
+    const leftRank = rankOf(left);
+    const rightRank = rankOf(right);
     if (leftRank !== rightRank) return leftRank - rightRank;
     return String(left).localeCompare(String(right));
   });
@@ -1215,6 +1256,7 @@ function getQuotaDisplayName(quotaKey, provider) {
     const override = providerQuotaDisplayOverrides[provider][quotaKey];
     if (override) return override;
   }
+  if (isAnthropicScopedQuota(quotaKey)) return anthropicQuotaLabel(quotaKey);
   // Fall back to generic display name
   return overviewQuotaDisplayNames[quotaKey] || quotaKey;
 };
@@ -1337,7 +1379,7 @@ function renderAnthropicQuotaCards(quotas, containerId) {
   // Build cards for each quota
   container.innerHTML = quotas.map((q, i) => {
     const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
-    const displayName = q.displayName || anthropicDisplayNames[q.name] || q.name;
+    const displayName = q.displayName || anthropicQuotaLabel(q.name);
     const displayPct = q.cardPercent != null ? q.cardPercent : (q.utilization || 0);
     const utilPct = displayPct.toFixed(1);
     const cardLabel = q.cardLabel || 'Utilization';
@@ -1462,7 +1504,7 @@ function openAnthropicModal(quotaName, providerOverride) {
   const bodyEl = document.getElementById('modal-body');
   if (!modal || !bodyEl) return;
 
-  const displayName = data.displayName || anthropicDisplayNames[quotaName] || quotaName;
+  const displayName = data.displayName || anthropicQuotaLabel(quotaName);
   titleEl.textContent = displayName;
 
   const statusCfg = statusConfig[data.status] || statusConfig.healthy;
@@ -1535,7 +1577,7 @@ async function loadAnthropicModalChart(quotaName) {
       type: 'line',
       data: {
         datasets: [(() => { const c = anthropicChartColorMap[quotaName] || { border: '#D97706', bg: 'rgba(217, 119, 6, 0.08)' }; return {
-          label: anthropicDisplayNames[quotaName] || quotaName,
+          label: anthropicQuotaLabel(quotaName),
           data: processed.data,
           borderColor: c.border,
           backgroundColor: c.bg,
@@ -3477,6 +3519,13 @@ function updateCard(quotaType, data, suffix) {
   State.currentQuotas[key] = data;
 
   const idSuffix = suffix ? `${quotaType}-${suffix}` : quotaType;
+  // Cards whose heading can change with the plan (Z.ai credit windows report
+  // "5-Hour Credits" / "Weekly Credits" instead of Time / Tokens) carry a
+  // title span; everything else keeps its static heading.
+  const titleEl = document.getElementById(`title-${idSuffix}`);
+  if (titleEl && data.name && titleEl.textContent !== data.name) {
+    titleEl.textContent = data.name;
+  }
   const progressEl = document.getElementById(`progress-${idSuffix}`);
   const fractionEl = document.getElementById(`fraction-${idSuffix}`);
   const percentEl = document.getElementById(`percent-${idSuffix}`);
@@ -5114,8 +5163,8 @@ function initChart() {
     defaultDatasets = []; // OpenCode datasets are dynamic
   } else if (provider === 'zai') {
     defaultDatasets = [
-      { label: 'Tokens Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
-      { label: 'Time Limit', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('timeLimit') },
+      { label: zaiQuotaLabel('tokensLimit', 'Tokens Limit'), data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
+      { label: zaiQuotaLabel('timeLimit', 'Time Limit'), data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-search').trim() || '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('timeLimit') },
       { label: 'Tool Calls', data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('toolCalls') }
     ];
   } else {
@@ -5735,8 +5784,8 @@ async function fetchHistory(range) {
       const style = getComputedStyle(document.documentElement);
       const datasets = [];
       const configs = [
-        { label: 'Tokens', key: 'tokensPercent', hiddenKey: 'tokensLimit', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
-        { label: 'Time', key: 'timePercent', hiddenKey: 'timeLimit', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
+        { label: zaiQuotaLabel('tokensLimit', 'Tokens'), key: 'tokensPercent', hiddenKey: 'tokensLimit', color: style.getPropertyValue('--chart-subscription').trim() || '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+        { label: zaiQuotaLabel('timeLimit', 'Time'), key: 'timePercent', hiddenKey: 'timeLimit', color: style.getPropertyValue('--chart-search').trim() || '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
         { label: 'Tool Calls', key: 'toolCallsPercent', hiddenKey: 'toolCalls', color: style.getPropertyValue('--chart-toolcalls').trim() || '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
       ];
       configs.forEach(cfg => {
@@ -5880,8 +5929,8 @@ function normalizeBothQuotas(provider, payload) {
 
   if (provider === 'zai') {
     const map = [
-      { key: 'tokensLimit', label: 'Tokens Limit' },
-      { key: 'timeLimit', label: 'Time Limit' },
+      { key: 'tokensLimit', label: zaiQuotaLabel('tokensLimit', 'Tokens Limit') },
+      { key: 'timeLimit', label: zaiQuotaLabel('timeLimit', 'Time Limit') },
       { key: 'toolCalls', label: 'Tool Calls' },
     ];
     return map
@@ -8246,7 +8295,11 @@ function openModal(quotaType, providerOverride) {
   const data = State.currentQuotas[quotaKey];
   if (!data) return;
 
-  const zaiQuotaNames = { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit', toolCalls: 'Tool Calls' };
+  const zaiQuotaNames = {
+    tokensLimit: zaiQuotaLabel('tokensLimit', 'Tokens Limit'),
+    timeLimit: zaiQuotaLabel('timeLimit', 'Time Limit'),
+    toolCalls: 'Tool Calls',
+  };
   const names = effectiveProvider === 'zai' ? zaiQuotaNames : quotaNames;
   titleEl.textContent = names[quotaType] || quotaType;
 
@@ -8348,7 +8401,9 @@ async function loadModalChart(quotaType, effectiveProvider) {
       type: 'line',
       data: {
         datasets: [{
-          label: (provider === 'zai' ? { tokensLimit: 'Tokens Limit', timeLimit: 'Time Limit', toolCalls: 'Tool Calls' } : quotaNames)[quotaType] || quotaType,
+          label: (provider === 'zai'
+            ? { tokensLimit: zaiQuotaLabel('tokensLimit', 'Tokens Limit'), timeLimit: zaiQuotaLabel('timeLimit', 'Time Limit'), toolCalls: 'Tool Calls' }
+            : quotaNames)[quotaType] || quotaType,
           data: processed.data,
           borderColor: colorMap[quotaType] || '#3B82F6',
           backgroundColor: bgMap[quotaType] || 'rgba(59,130,246,0.08)',

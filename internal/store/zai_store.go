@@ -39,22 +39,26 @@ func (s *Store) InsertZaiSnapshot(snapshot *api.ZaiSnapshot) (int64, error) {
 	} else {
 		tokensNextReset = nil
 	}
+	var timeNextReset interface{}
+	if snapshot.TimeNextResetTime != nil {
+		timeNextReset = snapshot.TimeNextResetTime.Format(time.RFC3339Nano)
+	}
 
 	result, err := s.db.Exec(
 		`INSERT INTO zai_snapshots
 		(provider, captured_at, time_limit, time_unit, time_number, time_usage,
-		 time_current_value, time_remaining, time_percentage, time_usage_details,
+		 time_current_value, time_remaining, time_percentage, time_usage_details, time_limit_type, time_next_reset,
 		 tokens_limit, tokens_unit, tokens_number, tokens_usage,
-		 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset, tokens_limit_type)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"zai",
 		snapshot.CapturedAt.Format(time.RFC3339Nano),
 		snapshot.TimeLimit, snapshot.TimeUnit, snapshot.TimeNumber,
 		snapshot.TimeUsage, snapshot.TimeCurrentValue, snapshot.TimeRemaining, snapshot.TimePercentage,
-		snapshot.TimeUsageDetails,
+		snapshot.TimeUsageDetails, snapshot.TimeLimitType, timeNextReset,
 		snapshot.TokensLimit, snapshot.TokensUnit, snapshot.TokensNumber,
 		snapshot.TokensUsage, snapshot.TokensCurrentValue, snapshot.TokensRemaining, snapshot.TokensPercentage,
-		tokensNextReset,
+		tokensNextReset, snapshot.TokensLimitType,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert zai snapshot: %w", err)
@@ -72,21 +76,21 @@ func (s *Store) InsertZaiSnapshot(snapshot *api.ZaiSnapshot) (int64, error) {
 func (s *Store) QueryLatestZai() (*api.ZaiSnapshot, error) {
 	var snapshot api.ZaiSnapshot
 	var capturedAt string
-	var tokensNextReset sql.NullString
+	var tokensNextReset, timeNextReset sql.NullString
 
 	err := s.db.QueryRow(
 		`SELECT id, captured_at, time_limit, time_unit, time_number, time_usage,
-		 time_current_value, time_remaining, time_percentage, time_usage_details,
+		 time_current_value, time_remaining, time_percentage, time_usage_details, time_limit_type, time_next_reset,
 		 tokens_limit, tokens_unit, tokens_number, tokens_usage,
-		 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset
+		 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset, tokens_limit_type
 		FROM zai_snapshots ORDER BY captured_at DESC LIMIT 1`,
 	).Scan(
 		&snapshot.ID, &capturedAt, &snapshot.TimeLimit, &snapshot.TimeUnit, &snapshot.TimeNumber,
 		&snapshot.TimeUsage, &snapshot.TimeCurrentValue, &snapshot.TimeRemaining, &snapshot.TimePercentage,
-		&snapshot.TimeUsageDetails,
+		&snapshot.TimeUsageDetails, &snapshot.TimeLimitType, &timeNextReset,
 		&snapshot.TokensLimit, &snapshot.TokensUnit, &snapshot.TokensNumber,
 		&snapshot.TokensUsage, &snapshot.TokensCurrentValue, &snapshot.TokensRemaining, &snapshot.TokensPercentage,
-		&tokensNextReset,
+		&tokensNextReset, &snapshot.TokensLimitType,
 	)
 
 	if err == sql.ErrNoRows {
@@ -101,6 +105,10 @@ func (s *Store) QueryLatestZai() (*api.ZaiSnapshot, error) {
 		t, _ := time.Parse(time.RFC3339Nano, tokensNextReset.String)
 		snapshot.TokensNextResetTime = &t
 	}
+	if timeNextReset.Valid && timeNextReset.String != "" {
+		t, _ := time.Parse(time.RFC3339Nano, timeNextReset.String)
+		snapshot.TimeNextResetTime = &t
+	}
 
 	return &snapshot, nil
 }
@@ -108,23 +116,23 @@ func (s *Store) QueryLatestZai() (*api.ZaiSnapshot, error) {
 // QueryZaiRange returns Z.ai snapshots within a time range with optional limit.
 func (s *Store) QueryZaiRange(start, end time.Time, limit ...int) ([]*api.ZaiSnapshot, error) {
 	query := `SELECT id, captured_at, time_limit, time_unit, time_number, time_usage,
-		 time_current_value, time_remaining, time_percentage, time_usage_details,
+		 time_current_value, time_remaining, time_percentage, time_usage_details, time_limit_type, time_next_reset,
 		 tokens_limit, tokens_unit, tokens_number, tokens_usage,
-		 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset
+		 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset, tokens_limit_type
 		FROM zai_snapshots
 		WHERE captured_at BETWEEN ? AND ?
 		ORDER BY captured_at ASC`
 	args := []interface{}{start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)}
 	if len(limit) > 0 && limit[0] > 0 {
 		query = `SELECT id, captured_at, time_limit, time_unit, time_number, time_usage,
-			 time_current_value, time_remaining, time_percentage, time_usage_details,
+			 time_current_value, time_remaining, time_percentage, time_usage_details, time_limit_type, time_next_reset,
 			 tokens_limit, tokens_unit, tokens_number, tokens_usage,
-			 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset
+			 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset, tokens_limit_type
 			FROM (
 				SELECT id, captured_at, time_limit, time_unit, time_number, time_usage,
-					 time_current_value, time_remaining, time_percentage, time_usage_details,
+					 time_current_value, time_remaining, time_percentage, time_usage_details, time_limit_type, time_next_reset,
 					 tokens_limit, tokens_unit, tokens_number, tokens_usage,
-					 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset
+					 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset, tokens_limit_type
 				FROM zai_snapshots
 				WHERE captured_at BETWEEN ? AND ?
 				ORDER BY captured_at DESC
@@ -143,15 +151,15 @@ func (s *Store) QueryZaiRange(start, end time.Time, limit ...int) ([]*api.ZaiSna
 	for rows.Next() {
 		var snapshot api.ZaiSnapshot
 		var capturedAt string
-		var tokensNextReset sql.NullString
+		var tokensNextReset, timeNextReset sql.NullString
 
 		err := rows.Scan(
 			&snapshot.ID, &capturedAt, &snapshot.TimeLimit, &snapshot.TimeUnit, &snapshot.TimeNumber,
 			&snapshot.TimeUsage, &snapshot.TimeCurrentValue, &snapshot.TimeRemaining, &snapshot.TimePercentage,
-			&snapshot.TimeUsageDetails,
+			&snapshot.TimeUsageDetails, &snapshot.TimeLimitType, &timeNextReset,
 			&snapshot.TokensLimit, &snapshot.TokensUnit, &snapshot.TokensNumber,
 			&snapshot.TokensUsage, &snapshot.TokensCurrentValue, &snapshot.TokensRemaining, &snapshot.TokensPercentage,
-			&tokensNextReset,
+			&tokensNextReset, &snapshot.TokensLimitType,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan zai snapshot: %w", err)
@@ -161,6 +169,10 @@ func (s *Store) QueryZaiRange(start, end time.Time, limit ...int) ([]*api.ZaiSna
 		if tokensNextReset.Valid && tokensNextReset.String != "" {
 			t, _ := time.Parse(time.RFC3339Nano, tokensNextReset.String)
 			snapshot.TokensNextResetTime = &t
+		}
+		if timeNextReset.Valid && timeNextReset.String != "" {
+			t, _ := time.Parse(time.RFC3339Nano, timeNextReset.String)
+			snapshot.TimeNextResetTime = &t
 		}
 
 		snapshots = append(snapshots, &snapshot)
