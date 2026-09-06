@@ -2,9 +2,9 @@
 
 All notable changes to the onWatch VS Code extension are documented here.
 
-## 0.1.0
+## 2.14.0
 
-Initial release.
+Initial release. The extension shares the onWatch daemon's version number from here on.
 
 - Combined status bar item showing the provider mark, compact limit name and percent of the tightest quota across enabled providers, with time to reset at critical.
 - Provider marks shipped as a contributed icon font built from the dashboard's monochrome logos.
