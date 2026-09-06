@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	settingDashboardProvidersOrder  = "dashboard_providers_order"
-	settingDashboardProviderLabels  = "dashboard_provider_labels"
-	maxDashboardProviderLabelRunes  = 48
+	settingDashboardProvidersOrder = "dashboard_providers_order"
+	settingDashboardProviderLabels = "dashboard_provider_labels"
+	maxDashboardProviderLabelRunes = 48
 )
 
 // defaultProviderTabLabel returns the built-in dashboard tab title for a provider key.
@@ -42,6 +42,8 @@ func defaultProviderTabLabel(key string) string {
 		return "Kimi"
 	case "opencode":
 		return "OpenCode"
+	case "ollama":
+		return "Ollama"
 	case "moonshot":
 		return "Moonshot"
 	case "deepseek":

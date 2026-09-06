@@ -1858,6 +1858,56 @@ button, input, select { font-family: inherit; }
   font-size: 0.85em;
 }
 
+/* Ollama per-model usage breakdown */
+.ollama-model-breakdown {
+  margin-top: 16px;
+}
+.ollama-model-breakdown:empty {
+  display: none;
+}
+.ollama-model-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 8px;
+}
+.ollama-model-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ollama-model-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.06));
+  border-radius: 8px;
+  font-size: 14px;
+}
+.ollama-model-name {
+  flex: 1;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ollama-model-reqs {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ollama-model-cost {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 56px;
+  text-align: right;
+}
+
 /* Rate indicator with lightning bolt */
 .rate-indicator {
   color: var(--text-muted);

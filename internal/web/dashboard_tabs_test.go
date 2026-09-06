@@ -120,4 +120,7 @@ func TestDefaultProviderTabLabel(t *testing.T) {
 	if defaultProviderTabLabel("opencode") != "OpenCode" {
 		t.Fatal(defaultProviderTabLabel("opencode"))
 	}
+	if defaultProviderTabLabel("ollama") != "Ollama" {
+		t.Fatal(defaultProviderTabLabel("ollama"))
+	}
 }

@@ -406,6 +406,15 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 			}
 		}
 	}
+	if h.config != nil && h.config.HasProvider("ollama") && h.providerDashboardVisible("ollama", visibility) {
+		payload := h.buildOllamaCurrent()
+		if card := normalizeProviderCard("ollama", resolveProviderTabLabel("ollama", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			providers = append(providers, *card)
+			if captured := parseCapturedAt(payload); captured.After(latest) {
+				latest = captured
+			}
+		}
+	}
 	if h.config != nil && h.config.HasProvider("cursor") && h.providerDashboardVisible("cursor", visibility) {
 		payload := h.buildCursorCurrent()
 		if card := normalizeProviderCard("cursor", resolveProviderTabLabel("cursor", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
@@ -971,10 +980,24 @@ func timeAgo(at time.Time) string {
 }
 
 func displayValue(item map[string]interface{}, percent float64) string {
+	// Currency quotas with an unknown cap (Ollama Free plan) have no
+	// meaningful percent; show the dollars used instead of a misleading 0%.
+	if unknown, ok := item["limitUnknown"].(bool); ok && unknown && stringValue(item, "format") == "currency" {
+		return formatUsdShort(firstFloat(item, "used", "usage")) + " used"
+	}
 	if v := stringValue(item, "cardLabel"); v == "Remaining" {
 		return fmt.Sprintf("%.0f%%", percent)
 	}
 	return fmt.Sprintf("%.0f%%", percent)
+}
+
+// formatUsdShort keeps sub-cent amounts visible ($0.001) and rounds the rest
+// to cents.
+func formatUsdShort(v float64) string {
+	if v > 0 && v < 0.01 {
+		return fmt.Sprintf("$%.3f", v)
+	}
+	return fmt.Sprintf("$%.2f", v)
 }
 
 func firstString(item map[string]interface{}, keys ...string) string {

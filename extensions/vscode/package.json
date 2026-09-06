@@ -285,39 +285,46 @@
           "fontCharacter": "\\E00C"
         }
       },
+      "onwatch-ollama": {
+        "description": "onWatch ollama mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00D"
+        }
+      },
       "onwatch-openai": {
         "description": "onWatch OpenAI mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E00D"
+          "fontCharacter": "\\E00E"
         }
       },
       "onwatch-opencode": {
         "description": "onWatch OpenCode mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E00E"
+          "fontCharacter": "\\E00F"
         }
       },
       "onwatch-openrouter": {
         "description": "onWatch OpenRouter mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E00F"
+          "fontCharacter": "\\E010"
         }
       },
       "onwatch-synthetic": {
         "description": "onWatch Synthetic mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E010"
+          "fontCharacter": "\\E011"
         }
       },
       "onwatch-zai": {
         "description": "onWatch Z.ai mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E011"
+          "fontCharacter": "\\E012"
         }
       }
     }

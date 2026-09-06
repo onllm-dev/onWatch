@@ -11,9 +11,10 @@
   "kimi": 57354,
   "minimax": 57355,
   "moonshot": 57356,
-  "openai": 57357,
-  "opencode": 57358,
-  "openrouter": 57359,
-  "synthetic": 57360,
-  "zai": 57361
+  "ollama": 57357,
+  "openai": 57358,
+  "opencode": 57359,
+  "openrouter": 57360,
+  "synthetic": 57361,
+  "zai": 57362
 }
