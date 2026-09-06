@@ -147,9 +147,58 @@ jobs:
           name: onwatch-darwin-arm64
           path: onwatch-darwin-arm64
 
-  # Create GitHub release with all binaries
+  # Package the VS Code extension at the daemon's version. It is attached to
+  # the release as a download only; Marketplace publishing stays manual.
+  build-vscode:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Build VS Code extension
+    defaults:
+      run:
+        working-directory: extensions/vscode
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extensions/vscode/package-lock.json
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat ../../VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Install
+        run: npm ci
+
+      - name: Stamp daemon version
+        run: npm run version:sync
+
+      - name: Lint, typecheck, test
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+
+      - name: Build and package
+        run: |
+          npm run build
+          npx vsce package --no-dependencies -o "onwatch-vscode-${{ steps.version.outputs.version }}.vsix"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onwatch-vscode-vsix
+          path: extensions/vscode/*.vsix
+
+  # Create GitHub release with all binaries and the VS Code extension
   release:
-    needs: [build-standard, build-macos-amd64, build-macos-arm64]
+    needs: [build-standard, build-macos-amd64, build-macos-arm64, build-vscode]
     runs-on: ubuntu-latest
     name: Release
 

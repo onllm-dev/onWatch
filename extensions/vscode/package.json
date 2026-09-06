@@ -332,7 +332,8 @@
     "package": "vsce package --no-dependencies",
     "publish": "vsce publish --no-dependencies",
     "publish:ovsx": "ovsx publish --no-dependencies",
-    "vscode:prepublish": "npm run build"
+    "vscode:prepublish": "npm run build",
+    "version:sync": "node scripts/sync-version.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
