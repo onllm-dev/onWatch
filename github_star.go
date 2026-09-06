@@ -38,8 +38,9 @@ func starMarkerPath(installDir string) string {
 }
 
 // offerGitHubStar asks, once, whether to star the repository - only when the
-// gh CLI is logged in and the repo is not starred yet. A bare Enter means
-// yes; EOF or no terminal means no. ONWATCH_STAR=no skips it entirely.
+// gh CLI is logged in and the repo is not starred yet. Yes is the default: a
+// bare Enter, EOF or a missing terminal all star (unattended installs
+// included). ONWATCH_STAR=no is the opt-out.
 func offerGitHubStar(reader *bufio.Reader, run ghRunner, markerPath string) {
 	switch strings.ToLower(os.Getenv("ONWATCH_STAR")) {
 	case "n", "no", "0", "false":
@@ -59,8 +60,7 @@ func offerGitHubStar(reader *bufio.Reader, run ghRunner, markerPath string) {
 	fmt.Printf("  %sStar onWatch on GitHub to support the project?%s %s(Y/n)%s: ", colorBold, colorReset, colorDim, colorReset)
 	line, err := reader.ReadString('\n')
 	if err != nil && line == "" {
-		fmt.Println()
-		return // EOF is not consent
+		fmt.Println() // no terminal: the default answer applies
 	}
 	_ = os.WriteFile(markerPath, []byte("asked\n"), 0o644)
 
