@@ -1530,3 +1530,20 @@ func TestConfig_LogFormat_AliasesAndCaseInsensitive(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenRotatingLogFile_CreatesMissingParentDir(t *testing.T) {
+	// A fresh install has no ~/.onwatch/data yet. The log opener must create
+	// the directory instead of failing with "path not found" (issue #117,
+	// Windows first-run report).
+	logPath := filepath.Join(t.TempDir(), ".onwatch", "data", ".onwatch.log")
+
+	f, err := OpenRotatingLogFile(logPath)
+	if err != nil {
+		t.Fatalf("OpenRotatingLogFile() error: %v", err)
+	}
+	f.Close()
+
+	if _, err := os.Stat(logPath); err != nil {
+		t.Fatalf("log file not created: %v", err)
+	}
+}

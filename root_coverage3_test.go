@@ -133,7 +133,16 @@ func TestRun_DaemonChildStartupError(t *testing.T) {
 	t.Setenv("ANTIGRAVITY_ENABLED", "")
 	t.Setenv("ANTIGRAVITY_BASE_URL", "")
 	t.Setenv("ANTIGRAVITY_CSRF_TOKEN", "")
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// The data directory is created on demand now, so block it with a regular
+	// file to keep exercising the "logging setup fails" path.
+	if err := os.MkdirAll(filepath.Join(home, ".onwatch"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".onwatch", "data"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	setTestArgs(t, []string{"onwatch"})
 

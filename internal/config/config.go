@@ -540,7 +540,7 @@ func (c *Config) applyDefaults() {
 		c.AdminUser = "admin"
 	}
 	if c.AdminPass == "" {
-		c.AdminPass = "changeme"
+		c.AdminPass = DefaultAdminPass
 	}
 	if c.DBPath == "" {
 		// Check if running in Docker and use /data/onwatch.db as default
@@ -941,6 +941,12 @@ func redactAPIKey(key string, expectedPrefix string) string {
 // If the active file reaches 50MB, the chain is rotated before opening:
 // path.2 -> path.3, path.1 -> path.2, path -> path.1.
 func OpenRotatingLogFile(path string) (*os.File, error) {
+	// A fresh install has no data directory yet; the daemon only creates it
+	// later, after logging is up. Create it here so first start never fails
+	// with "path not found" (seen on Windows in issue #117).
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, fmt.Errorf("failed to create log directory %s: %w", filepath.Dir(path), err)
+	}
 	if info, err := os.Stat(path); err == nil {
 		if info.Size() >= maxLogFileBytes {
 			oldest := fmt.Sprintf("%s.%d", path, maxLogBackups)
@@ -1029,7 +1035,14 @@ func (c *Config) IsDockerEnvironment() bool {
 	return false
 }
 
-// IsDefaultPassword returns true if the default password "changeme" is being used.
+// DefaultAdminPass is the dashboard password used when ONWATCH_ADMIN_PASS is
+// not set. It is printed on first start so nobody is locked out of a fresh
+// install.
+const DefaultAdminPass = "changeme"
+
+// IsDefaultPassword returns true if ONWATCH_ADMIN_PASS is unset or still the
+// default. It says nothing about the password stored in the database, which
+// a user may have changed from the dashboard.
 func (c *Config) IsDefaultPassword() bool {
-	return c.AdminPass == "changeme"
+	return c.AdminPass == DefaultAdminPass
 }

@@ -179,6 +179,15 @@ onwatch
 
 Open your browser to **http://localhost:9211** and log in with your configured credentials.
 
+On the very first start the command prints the dashboard URL and, when no
+password is configured, the default login (`admin` / `changeme`). Change it in
+**Settings -> Security** or set `ONWATCH_ADMIN_PASS` in `.env`. The `.env`
+value is applied as long as the stored password is still the default; once you
+change the password in the dashboard, the dashboard one wins.
+
+The dashboard listens on all interfaces by default so it can be reached from
+other machines. Add `ONWATCH_HOST=127.0.0.1` to `.env` to keep it local.
+
 ---
 
 ## Retrieving Tokens
@@ -346,6 +355,15 @@ If the app starts but no quota cards update:
 2. Configure a provider key (or use auto-detect providers)
 3. Open **Settings -> Providers** and enable telemetry for that provider
 4. Restart or click provider reload in Settings
+
+### Cannot Log In to the Dashboard
+
+If you never set `ONWATCH_ADMIN_PASS`, the login is `admin` / `changeme`. If
+you set it in `.env` after the first start and the stored password was still
+the default, the new value is picked up on the next start. If you changed the
+password in **Settings -> Security** and forgot it, stop onWatch, delete
+`%USERPROFILE%\.onwatch\data\onwatch.db` (this also deletes usage history)
+and start again.
 
 ### Binary Flashes and Closes Immediately
 

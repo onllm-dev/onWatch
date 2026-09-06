@@ -354,9 +354,9 @@ Additional environment variables:
 | `ZAI_BASE_URL`           | Z.ai base URL (default: `https://api.z.ai/api`)        |
 | `ZAI_REGION`             | Z.ai region: `global` (default) or `cn`                 |
 | `ONWATCH_ADMIN_USER`     | Dashboard username (default: `admin`)                  |
-| `ONWATCH_ADMIN_PASS`     | Initial dashboard password (default: `changeme`)       |
+| `ONWATCH_ADMIN_PASS`     | Dashboard password (default: `changeme`). Applied on first start and whenever the stored password is still the default; a password changed in Settings wins after that |
 | `ONWATCH_LOG_LEVEL`      | Log level: debug, info, warn, error                    |
-| `ONWATCH_HOST`           | Bind address (default: `0.0.0.0`)                      |
+| `ONWATCH_HOST`           | Bind address (default: `0.0.0.0`, reachable from your network). Set `127.0.0.1` to keep the dashboard local |
 | `ONWATCH_AUTH_MODE`      | `local` (default) or `trusted_proxy` (SSO via reverse proxy, see [docs/TRUSTED_PROXY_AUTH.md](docs/TRUSTED_PROXY_AUTH.md)) |
 | `ONWATCH_TRUSTED_PROXY_CIDRS` | Comma-separated CIDRs/IPs allowed to assert identity headers (required for `trusted_proxy`) |
 | `ONWATCH_TRUSTED_USER_HEADER` | Identity header set by the proxy (default: `X-Forwarded-User`) |

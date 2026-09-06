@@ -177,11 +177,9 @@ func stopPreviousInstance(port int, testMode bool) {
 		}
 
 		if pid > 0 && pid != myPID {
-			if proc, err := os.FindProcess(pid); err == nil {
-				if err := proc.Signal(syscall.SIGTERM); err == nil {
-					fmt.Printf("Stopped previous instance (PID %d) via PID file\n", pid)
-					stopped = true
-				}
+			if stopProcess(pid) {
+				fmt.Printf("Stopped previous instance (PID %d) via PID file\n", pid)
+				stopped = true
 			}
 		}
 		os.Remove(pidFile)
@@ -199,11 +197,9 @@ func stopPreviousInstance(port int, testMode bool) {
 						if foundPID == myPID {
 							continue
 						}
-						if proc, err := os.FindProcess(foundPID); err == nil {
-							if err := proc.Signal(syscall.SIGTERM); err == nil {
-								fmt.Printf("Stopped previous instance (PID %d) on port %d\n", foundPID, filePort)
-								stopped = true
-							}
+						if stopProcess(foundPID) {
+							fmt.Printf("Stopped previous instance (PID %d) on port %d\n", foundPID, filePort)
+							stopped = true
 						}
 					}
 				}
@@ -223,11 +219,9 @@ func stopPreviousInstance(port int, testMode bool) {
 					if pid == myPID {
 						continue
 					}
-					if proc, err := os.FindProcess(pid); err == nil {
-						if err := proc.Signal(syscall.SIGTERM); err == nil {
-							fmt.Printf("Stopped previous instance (PID %d) on port %d\n", pid, port)
-							stopped = true
-						}
+					if stopProcess(pid) {
+						fmt.Printf("Stopped previous instance (PID %d) on port %d\n", pid, port)
+						stopped = true
 					}
 				}
 			}
@@ -279,6 +273,69 @@ func isOnwatchProcess(pid int) bool {
 
 func ensurePIDDir() error {
 	return os.MkdirAll(pidDir, 0755)
+}
+
+// stopProcess asks the process to exit: SIGTERM on Unix, TerminateProcess on
+// Windows, where Go cannot deliver signals and proc.Signal(SIGTERM) always
+// fails. Returns false when the process is gone or cannot be reached.
+func stopProcess(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return terminateProcess(proc) == nil
+}
+
+// defaultAdminPass mirrors config.DefaultAdminPass for the helpers below.
+const defaultAdminPass = config.DefaultAdminPass
+
+// passSource says where the effective dashboard password came from.
+type passSource int
+
+const (
+	// passFromDB: the stored password wins (it was set from the dashboard, or
+	// the .env value is the default too).
+	passFromDB passSource = iota
+	// passFromEnvInitial: nothing stored yet - first start, store .env value.
+	passFromEnvInitial
+	// passFromEnvReplacesDefault: the stored password is still the default
+	// and .env carries a real one - adopt it instead of locking the user out.
+	passFromEnvReplacesDefault
+)
+
+// resolveAdminPassHash picks the effective password hash. dbHash is the hash
+// stored in the database ("" when none), envPass the ONWATCH_ADMIN_PASS value.
+func resolveAdminPassHash(dbHash, envPass string) (string, passSource) {
+	if dbHash == "" {
+		return sha256hex(envPass), passFromEnvInitial
+	}
+	if dbHash == sha256hex(defaultAdminPass) && envPass != defaultAdminPass {
+		return sha256hex(envPass), passFromEnvReplacesDefault
+	}
+	return dbHash, passFromDB
+}
+
+// dashboardExposedToNetwork reports whether the bind address accepts
+// connections from other machines.
+func dashboardExposedToNetwork(host string) bool {
+	switch strings.Trim(host, "[]") {
+	case "127.0.0.1", "localhost", "::1":
+		return false
+	}
+	return true
+}
+
+// loginHint is printed by the foreground parent on the very first start so a
+// new user knows how to get into the dashboard. Once a database exists the
+// password may have been changed, so nothing is printed.
+func loginHint(defaultPass, dbExists bool, user string) string {
+	if !defaultPass || dbExists {
+		return ""
+	}
+	return fmt.Sprintf("Login: %s / %s (default - change it in Settings > Security or set ONWATCH_ADMIN_PASS in .env)", user, defaultAdminPass)
 }
 
 // sha256hex returns the SHA-256 hex hash of a string.
@@ -564,6 +621,11 @@ func daemonize(cfg *config.Config) error {
 	logFile.Close()
 
 	fmt.Printf("Daemon started (PID %d), logs: %s\n", childPID, logPath)
+	fmt.Printf("Dashboard: http://localhost:%d\n", cfg.Port)
+	_, dbErr := os.Stat(cfg.DBPath)
+	if hint := loginHint(cfg.IsDefaultPassword(), dbErr == nil, cfg.AdminUser); hint != "" {
+		fmt.Println(hint)
+	}
 	return nil
 }
 
@@ -811,11 +873,6 @@ func run() error {
 		"log_format", cfg.LogFormat,
 	)
 
-	// Warn if using default password
-	if cfg.IsDefaultPassword() {
-		logger.Warn("⚠️  USING DEFAULT PASSWORD - set ONWATCH_ADMIN_PASS in .env for production")
-	}
-
 	// Print startup banner (only in debug/foreground mode)
 	if cfg.DebugMode {
 		printBanner(cfg, version)
@@ -851,19 +908,39 @@ func run() error {
 		logger.Warn("Failed to initialize encryption salt", "error", err)
 	}
 
-	// Password precedence: DB-stored hash takes priority over .env
+	// Password precedence: a password set from the dashboard (stored in the
+	// DB) wins over .env. While the stored one is still the default, a real
+	// ONWATCH_ADMIN_PASS replaces it so nobody is locked out (issue #117).
 	dbHash, hashErr := db.GetUser(cfg.AdminUser)
-	if hashErr == nil && dbHash != "" {
-		// DB has stored password - use it
-		cfg.AdminPassHash = dbHash
+	if hashErr != nil {
+		dbHash = ""
+	}
+	hash, src := resolveAdminPassHash(dbHash, cfg.AdminPass)
+	cfg.AdminPassHash = hash
+	switch src {
+	case passFromDB:
 		logger.Info("Using database-stored password for auth")
-	} else {
-		// No DB password - hash the .env password and store it
-		cfg.AdminPassHash = sha256hex(cfg.AdminPass)
+	case passFromEnvInitial:
 		if storeErr := db.UpsertUser(cfg.AdminUser, cfg.AdminPassHash); storeErr != nil {
 			logger.Warn("Failed to store initial password hash", "error", storeErr)
 		}
 		logger.Info("Stored initial password hash in database")
+	case passFromEnvReplacesDefault:
+		if storeErr := db.UpsertUser(cfg.AdminUser, cfg.AdminPassHash); storeErr != nil {
+			logger.Warn("Failed to store password hash from ONWATCH_ADMIN_PASS", "error", storeErr)
+		}
+		logger.Info("Replaced default dashboard password with ONWATCH_ADMIN_PASS")
+	}
+	if cfg.AdminPassHash == sha256hex(defaultAdminPass) {
+		logger.Warn("USING DEFAULT PASSWORD - dashboard login is " + cfg.AdminUser + " / " + defaultAdminPass +
+			" - set ONWATCH_ADMIN_PASS in .env or change it in Settings > Security")
+		if dashboardExposedToNetwork(cfg.Host) {
+			bind := cfg.Host
+			if bind == "" {
+				bind = "0.0.0.0"
+			}
+			logger.Warn("Dashboard is reachable from your network (bind address " + bind + ") - set ONWATCH_HOST=127.0.0.1 to keep it local")
+		}
 	}
 
 	// Close any orphaned sessions from previous runs (e.g., process was killed)
@@ -1884,17 +1961,15 @@ func runStop(testMode bool) error {
 		}
 
 		if pid > 0 && pid != myPID {
-			if proc, err := os.FindProcess(pid); err == nil {
-				if err := proc.Signal(syscall.SIGTERM); err == nil {
-					if port > 0 {
-						fmt.Printf("Stopped %s (PID %d) on port %d\n", label, pid, port)
-					} else {
-						fmt.Printf("Stopped %s (PID %d)\n", label, pid)
-					}
-					stopped = true
+			if stopProcess(pid) {
+				if port > 0 {
+					fmt.Printf("Stopped %s (PID %d) on port %d\n", label, pid, port)
 				} else {
-					fmt.Printf("Process %d not running (stale PID file)\n", pid)
+					fmt.Printf("Stopped %s (PID %d)\n", label, pid)
 				}
+				stopped = true
+			} else {
+				fmt.Printf("Process %d not running (stale PID file)\n", pid)
 			}
 		}
 		os.Remove(pidFile)
@@ -1910,11 +1985,9 @@ func runStop(testMode bool) error {
 						if foundPID == myPID {
 							continue
 						}
-						if proc, err := os.FindProcess(foundPID); err == nil {
-							if err := proc.Signal(syscall.SIGTERM); err == nil {
-								fmt.Printf("Stopped %s (PID %d) on port %d\n", label, foundPID, port)
-								stopped = true
-							}
+						if stopProcess(foundPID) {
+							fmt.Printf("Stopped %s (PID %d) on port %d\n", label, foundPID, port)
+							stopped = true
 						}
 					}
 				}
@@ -1937,11 +2010,9 @@ func runStop(testMode bool) error {
 					if pid == myPID {
 						continue
 					}
-					if proc, err := os.FindProcess(pid); err == nil {
-						if err := proc.Signal(syscall.SIGTERM); err == nil {
-							fmt.Printf("Stopped %s (PID %d) on port %d\n", label, pid, port)
-							stopped = true
-						}
+					if stopProcess(pid) {
+						fmt.Printf("Stopped %s (PID %d) on port %d\n", label, pid, port)
+						stopped = true
 					}
 				}
 			}
@@ -2043,69 +2114,68 @@ func runStatus(testMode bool) error {
 		}
 
 		if pid > 0 && pid != myPID {
-			if proc, err := os.FindProcess(pid); err == nil {
-				// On Unix, signal 0 checks if process exists without killing it
-				if err := proc.Signal(syscall.Signal(0)); err == nil {
-					fmt.Printf("%s is running (PID %d)\n", label, pid)
+			// processAlive is per platform: signal 0 on Unix, an open process
+			// handle on Windows (where Go cannot send signals at all).
+			if processAlive(pid) {
+				fmt.Printf("%s is running (PID %d)\n", label, pid)
 
-					// If we have port from PID file, show it directly
-					if port > 0 {
-						fmt.Printf("  Dashboard: http://localhost:%d\n", port)
-					} else if !testMode {
-						// Check which port it's listening on (skip in test mode)
-						for _, checkPort := range []int{9211, 8932, 8080, 9000} {
-							if pids := findOnwatchOnPortFn(checkPort); len(pids) > 0 {
-								for _, p := range pids {
-									if p == pid {
-										fmt.Printf("  Dashboard: http://localhost:%d\n", checkPort)
-										break
-									}
+				// If we have port from PID file, show it directly
+				if port > 0 {
+					fmt.Printf("  Dashboard: http://localhost:%d\n", port)
+				} else if !testMode {
+					// Check which port it's listening on (skip in test mode)
+					for _, checkPort := range []int{9211, 8932, 8080, 9000} {
+						if pids := findOnwatchOnPortFn(checkPort); len(pids) > 0 {
+							for _, p := range pids {
+								if p == pid {
+									fmt.Printf("  Dashboard: http://localhost:%d\n", checkPort)
+									break
 								}
 							}
 						}
 					}
-
-					fmt.Printf("  PID file:  %s\n", pidFile)
-					menubarPID := readRuntimePID(menubarPIDPath(testMode))
-					if processRunning(menubarPID) {
-						fmt.Printf("  Menubar:   running (PID %d)\n", menubarPID)
-					}
-
-					home, _ := os.UserHomeDir()
-					dbCandidates := []string{}
-					if home != "" {
-						dbCandidates = append(dbCandidates, filepath.Join(home, ".onwatch", "data", "onwatch.db"))
-					}
-					dbCandidates = append(dbCandidates, "./onwatch.db")
-					dbPath := ""
-					var dbSize int64
-					for _, candidate := range dbCandidates {
-						if info, err := os.Stat(candidate); err == nil {
-							dbPath = candidate
-							dbSize = info.Size()
-							break
-						}
-					}
-
-					mainLogName := ".onwatch.log"
-					menubarNames := menubarLogNames(false)
-					if testMode {
-						mainLogName = ".onwatch-test.log"
-						menubarNames = menubarLogNames(true)
-					}
-					if logPath, logSize, ok := firstExistingFile(statusLogCandidates(dbPath, mainLogName)); ok {
-						fmt.Printf("  Log file:  %s (%s)\n", logPath, humanSize(logSize))
-					}
-					if logPath, logSize, ok := firstExistingFile(statusLogCandidates(dbPath, menubarNames...)); ok {
-						fmt.Printf("  Menubar log: %s (%s)\n", logPath, humanSize(logSize))
-					}
-					if dbPath != "" {
-						fmt.Printf("  Database:  %s (%s)\n", dbPath, humanSize(dbSize))
-					}
-					printAutostartLine()
-
-					return nil
 				}
+
+				fmt.Printf("  PID file:  %s\n", pidFile)
+				menubarPID := readRuntimePID(menubarPIDPath(testMode))
+				if processRunning(menubarPID) {
+					fmt.Printf("  Menubar:   running (PID %d)\n", menubarPID)
+				}
+
+				home, _ := os.UserHomeDir()
+				dbCandidates := []string{}
+				if home != "" {
+					dbCandidates = append(dbCandidates, filepath.Join(home, ".onwatch", "data", "onwatch.db"))
+				}
+				dbCandidates = append(dbCandidates, "./onwatch.db")
+				dbPath := ""
+				var dbSize int64
+				for _, candidate := range dbCandidates {
+					if info, err := os.Stat(candidate); err == nil {
+						dbPath = candidate
+						dbSize = info.Size()
+						break
+					}
+				}
+
+				mainLogName := ".onwatch.log"
+				menubarNames := menubarLogNames(false)
+				if testMode {
+					mainLogName = ".onwatch-test.log"
+					menubarNames = menubarLogNames(true)
+				}
+				if logPath, logSize, ok := firstExistingFile(statusLogCandidates(dbPath, mainLogName)); ok {
+					fmt.Printf("  Log file:  %s (%s)\n", logPath, humanSize(logSize))
+				}
+				if logPath, logSize, ok := firstExistingFile(statusLogCandidates(dbPath, menubarNames...)); ok {
+					fmt.Printf("  Menubar log: %s (%s)\n", logPath, humanSize(logSize))
+				}
+				if dbPath != "" {
+					fmt.Printf("  Database:  %s (%s)\n", dbPath, humanSize(dbSize))
+				}
+				printAutostartLine()
+
+				return nil
 			}
 			// Stale PID file
 			fmt.Printf("%s is not running (stale PID file for PID %d)\n", label, pid)

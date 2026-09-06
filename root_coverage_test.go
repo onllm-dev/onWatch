@@ -757,8 +757,14 @@ func TestDaemonize_SuccessAndLogOpenError(t *testing.T) {
 		t.Setenv("GO_WANT_DAEMON_HELPER", "1")
 		os.Args = []string{oldArgs[0], "-test.run=TestDaemonizeHelperProcess"}
 
+		// The log directory is created on demand now; a regular file in its
+		// place is the one thing that still makes opening the log fail.
+		blocker := filepath.Join(t.TempDir(), "blocker")
+		if err := os.WriteFile(blocker, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
 		cfg := &config.Config{
-			DBPath:   filepath.Join(t.TempDir(), "missing", "nested", "onwatch.db"),
+			DBPath:   filepath.Join(blocker, "nested", "onwatch.db"),
 			Port:     9211,
 			TestMode: true,
 		}
