@@ -5792,9 +5792,10 @@ func anthropicQuotaDisplayOrder(name string) int {
 	case "extra_usage":
 		return 5
 	default:
-		// Per-model weekly buckets promoted from limits[] sit with the other
-		// weekly quotas rather than at the end - one of them is often binding.
-		if api.IsAnthropicScopedQuota(name) {
+		// Per-model weekly buckets sit with the other weekly quotas rather than
+		// at the end - one of them is often binding. Covers both the keys
+		// promoted from limits[] and any the statusline reports directly.
+		if api.IsAnthropicPerModelWeekly(name) {
 			return 3
 		}
 		return 100

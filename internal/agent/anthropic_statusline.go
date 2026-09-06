@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,9 +41,115 @@ const bridgeSnippet = `bash -c 'I=$(cat);D=$HOME/.onwatch/data;mkdir -p "$D" 2>/
 const bridgeMarker = "anthropic-statusline.json"
 
 // StatuslineRateLimits is the rate_limits portion of the Claude Code statusline JSON.
+//
+// five_hour and seven_day are the two windows observed in practice, so they get
+// named fields. Anything else Claude Code reports - a per-model weekly window,
+// say - lands in Extra under the key it used. Decoding into a fixed struct
+// would drop those silently, which is the same hardcoded-shape failure that
+// hid Anthropic's per-model weekly limits in issue #121.
 type StatuslineRateLimits struct {
-	FiveHour *StatuslineWindow `json:"five_hour,omitempty"`
-	SevenDay *StatuslineWindow `json:"seven_day,omitempty"`
+	FiveHour *StatuslineWindow
+	SevenDay *StatuslineWindow
+	Extra    map[string]*StatuslineWindow
+}
+
+// statuslineWindowKeyFiveHour and statuslineWindowKeySevenDay are the two
+// window names with dedicated fields; every other key flows through Extra.
+const (
+	statuslineWindowKeyFiveHour = "five_hour"
+	statuslineWindowKeySevenDay = "seven_day"
+)
+
+// UnmarshalJSON keeps every entry that structurally looks like a rate-limit
+// window, whatever it is called. Membership is decided by shape rather than by
+// a list of known names: a name list is exactly what makes a new window
+// invisible until someone ships a release.
+func (rl *StatuslineRateLimits) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for key, val := range raw {
+		w := decodeStatuslineWindow(val)
+		if w == nil {
+			continue
+		}
+		switch key {
+		case statuslineWindowKeyFiveHour:
+			rl.FiveHour = w
+		case statuslineWindowKeySevenDay:
+			rl.SevenDay = w
+		default:
+			if rl.Extra == nil {
+				rl.Extra = make(map[string]*StatuslineWindow)
+			}
+			rl.Extra[key] = w
+		}
+	}
+	return nil
+}
+
+// MarshalJSON writes the windows back out under their original keys. Without
+// it the audit trail in AnthropicSnapshot.RawJSON would lose everything in
+// Extra - the same way the API path's stored "raw" response loses limits[].
+func (rl StatuslineRateLimits) MarshalJSON() ([]byte, error) {
+	out := make(map[string]*StatuslineWindow, len(rl.Extra)+2)
+	for key, w := range rl.Extra {
+		out[key] = w
+	}
+	if rl.FiveHour != nil {
+		out[statuslineWindowKeyFiveHour] = rl.FiveHour
+	}
+	if rl.SevenDay != nil {
+		out[statuslineWindowKeySevenDay] = rl.SevenDay
+	}
+	return json.Marshal(out)
+}
+
+// decodeStatuslineWindow returns a window only if the value is an object
+// carrying used_percentage. A string, a number or an unrelated nested object
+// under rate_limits must not become a quota card.
+func decodeStatuslineWindow(val json.RawMessage) *StatuslineWindow {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(val, &probe); err != nil {
+		return nil
+	}
+	if _, ok := probe["used_percentage"]; !ok {
+		return nil
+	}
+	var w StatuslineWindow
+	if err := json.Unmarshal(val, &w); err != nil {
+		return nil
+	}
+	return &w
+}
+
+// orderedWindows returns every window sorted by name, with five_hour and
+// seven_day first so the familiar cards keep their positions. Map iteration is
+// randomised, so without this the quota order would change between polls.
+func (rl *StatuslineRateLimits) orderedWindows() []statuslineNamedWindow {
+	out := make([]statuslineNamedWindow, 0, len(rl.Extra)+2)
+	if rl.FiveHour != nil {
+		out = append(out, statuslineNamedWindow{statuslineWindowKeyFiveHour, rl.FiveHour})
+	}
+	if rl.SevenDay != nil {
+		out = append(out, statuslineNamedWindow{statuslineWindowKeySevenDay, rl.SevenDay})
+	}
+	extra := make([]string, 0, len(rl.Extra))
+	for key := range rl.Extra {
+		extra = append(extra, key)
+	}
+	sort.Strings(extra)
+	for _, key := range extra {
+		out = append(out, statuslineNamedWindow{key, rl.Extra[key]})
+	}
+	return out
+}
+
+// statuslineNamedWindow pairs a window with the key Claude Code reported it under.
+type statuslineNamedWindow struct {
+	Name   string
+	Window *StatuslineWindow
 }
 
 // StatuslineWindow represents a single rate limit window from the statusline.
@@ -114,14 +221,8 @@ func isValidStatuslineData(rl *StatuslineRateLimits) bool {
 		return false
 	}
 	hasValid := false
-	if rl.FiveHour != nil {
-		if !isValidStatuslineWindow(rl.FiveHour) {
-			return false
-		}
-		hasValid = true
-	}
-	if rl.SevenDay != nil {
-		if !isValidStatuslineWindow(rl.SevenDay) {
+	for _, nw := range rl.orderedWindows() {
+		if !isValidStatuslineWindow(nw.Window) {
 			return false
 		}
 		hasValid = true
@@ -137,25 +238,13 @@ func statuslineToSnapshot(rl *StatuslineRateLimits, capturedAt time.Time) *api.A
 		CapturedAt: capturedAt,
 	}
 
-	if rl.FiveHour != nil {
+	for _, nw := range rl.orderedWindows() {
 		q := api.AnthropicQuota{
-			Name:        "five_hour",
-			Utilization: rl.FiveHour.UsedPercentage,
+			Name:        nw.Name,
+			Utilization: nw.Window.UsedPercentage,
 		}
-		if rl.FiveHour.ResetsAt > 0 {
-			t := time.Unix(rl.FiveHour.ResetsAt, 0).UTC()
-			q.ResetsAt = &t
-		}
-		snapshot.Quotas = append(snapshot.Quotas, q)
-	}
-
-	if rl.SevenDay != nil {
-		q := api.AnthropicQuota{
-			Name:        "seven_day",
-			Utilization: rl.SevenDay.UsedPercentage,
-		}
-		if rl.SevenDay.ResetsAt > 0 {
-			t := time.Unix(rl.SevenDay.ResetsAt, 0).UTC()
+		if nw.Window.ResetsAt > 0 {
+			t := time.Unix(nw.Window.ResetsAt, 0).UTC()
 			q.ResetsAt = &t
 		}
 		snapshot.Quotas = append(snapshot.Quotas, q)

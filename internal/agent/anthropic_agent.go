@@ -91,10 +91,16 @@ type AnthropicAgent struct {
 	statuslineStaleness time.Duration // max age before falling back to API
 
 	// Hybrid polling: in auto mode, do a full API poll every N cycles to get
-	// supplementary quotas (seven_day_sonnet, extra_usage, etc.) that the
-	// statusline doesn't provide. 0 = disabled.
+	// supplementary quotas (seven_day_sonnet, per-model weekly, extra_usage)
+	// that the statusline doesn't provide. 0 = disabled.
 	apiPollCycleInterval int // API poll every N cycles (default: 10)
 	pollCycleCount       int // current cycle counter
+
+	// lastAPIPoll is when the OAuth usage API was last called. It is seeded
+	// from the newest stored API snapshot on first use, so the schedule
+	// survives a restart instead of starting over from zero.
+	lastAPIPoll     time.Time
+	lastAPIPollRead bool // lastAPIPoll has been seeded from the store
 
 	// apiPollingDisabled is set in "statusline only" mode. When true the agent
 	// never calls the OAuth usage API - not even as a fallback when the
@@ -170,6 +176,65 @@ func (a *AnthropicAgent) EnableStatuslineBridge() {
 // 0 disables periodic API polling. Default is 10 (every 10th cycle).
 func (a *AnthropicAgent) SetAPIPollCycleInterval(n int) {
 	a.apiPollCycleInterval = n
+}
+
+// apiPollInterval is how long a stored API reading stays fresh enough to skip
+// the next supplementary poll.
+func (a *AnthropicAgent) apiPollInterval() time.Duration {
+	if a.apiPollCycleInterval <= 0 {
+		return 0
+	}
+	return time.Duration(a.apiPollCycleInterval) * a.interval
+}
+
+// beginSupplementalAPIPoll reports whether the OAuth usage API is due, and
+// claims the slot when it is.
+//
+// The schedule is driven by the age of the newest stored API reading rather
+// than by a counter held in memory. A counter restarts at zero on every daemon
+// start, which used to leave per-model weekly quotas - often the binding limit
+// - unreachable for a full interval after any restart or upgrade.
+//
+// The slot is claimed on the attempt, not on success: a failing API must not be
+// retried on every poll, because the usage API answers repeated calls with 429.
+func (a *AnthropicAgent) beginSupplementalAPIPoll() bool {
+	interval := a.apiPollInterval()
+	if interval <= 0 {
+		return false
+	}
+	a.seedLastAPIPoll()
+	if !a.lastAPIPoll.IsZero() && time.Since(a.lastAPIPoll) < interval {
+		return false
+	}
+	a.noteAPIPoll()
+	return true
+}
+
+// seedLastAPIPoll reads the newest stored API snapshot once per process. A zero
+// lastAPIPoll afterwards means no API reading exists at all, which counts as
+// infinitely stale.
+func (a *AnthropicAgent) seedLastAPIPoll() {
+	if a.lastAPIPollRead {
+		return
+	}
+	a.lastAPIPollRead = true
+	if a.store == nil {
+		return
+	}
+	at, ok, err := a.store.LastAnthropicAPISnapshot()
+	if err != nil {
+		a.logger.Warn("Could not read last Anthropic API snapshot time", "error", err)
+		return
+	}
+	if ok {
+		a.lastAPIPoll = at
+	}
+}
+
+// noteAPIPoll records that the usage API has just been called.
+func (a *AnthropicAgent) noteAPIPoll() {
+	a.lastAPIPollRead = true
+	a.lastAPIPoll = time.Now().UTC()
 }
 
 // SetAPIPollingDisabled controls whether the agent may call the OAuth usage API.
@@ -563,10 +628,10 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 			}
 			// Hybrid: periodically do a full API poll for supplementary quotas
 			// (seven_day_sonnet, extra_usage, etc.) that statusline doesn't provide.
-			if a.apiPollCycleInterval > 0 && a.pollCycleCount%a.apiPollCycleInterval == 0 {
+			if a.beginSupplementalAPIPoll() {
 				a.logger.Info("Hybrid API poll triggered",
 					"cycle", a.pollCycleCount,
-					"interval", a.apiPollCycleInterval)
+					"interval", a.apiPollInterval())
 				// Fall through to the API polling path below
 			} else {
 				return // Statusline only - skip API polling this cycle
@@ -928,6 +993,11 @@ processResponse:
 			maxUtil = q.Utilization
 		}
 	}
+
+	// Any completed API poll resets the supplementary schedule, including one
+	// reached because the statusline was stale rather than because the hybrid
+	// slot came due.
+	a.noteAPIPoll()
 
 	a.logger.Info("Anthropic poll complete",
 		"source", "api",

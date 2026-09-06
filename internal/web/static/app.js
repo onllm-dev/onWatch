@@ -873,14 +873,33 @@ function isAnthropicScopedQuota(key) {
     key.length > ANTHROPIC_SCOPED_QUOTA_PREFIX.length;
 }
 
-function anthropicQuotaLabel(key) {
-  if (anthropicDisplayNames[key]) return anthropicDisplayNames[key];
-  if (!isAnthropicScopedQuota(key)) return key;
-  const model = key.slice(ANTHROPIC_SCOPED_QUOTA_PREFIX.length)
+// A weekly bucket scoped to one model, by either route: promoted from limits[]
+// (seven_day_scoped_*) or reported straight from the statusline under a name we
+// have no entry for (seven_day_*). Mirrors IsAnthropicPerModelWeekly in Go.
+function isAnthropicPerModelWeekly(key) {
+  if (isAnthropicScopedQuota(key)) return true;
+  if (typeof key !== 'string' || anthropicDisplayNames[key]) return false;
+  return key.startsWith('seven_day_') && key.length > 'seven_day_'.length;
+}
+
+function anthropicModelWords(slug) {
+  return slug
     .split('_')
     .filter(Boolean)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
+}
+
+function anthropicQuotaLabel(key) {
+  if (anthropicDisplayNames[key]) return anthropicDisplayNames[key];
+  let slug = null;
+  if (isAnthropicScopedQuota(key)) {
+    slug = key.slice(ANTHROPIC_SCOPED_QUOTA_PREFIX.length);
+  } else if (isAnthropicPerModelWeekly(key)) {
+    slug = key.slice('seven_day_'.length);
+  }
+  if (slug === null) return key;
+  const model = anthropicModelWords(slug);
   return model ? `Weekly ${model}` : key;
 }
 
@@ -1256,7 +1275,7 @@ function getQuotaDisplayName(quotaKey, provider) {
     const override = providerQuotaDisplayOverrides[provider][quotaKey];
     if (override) return override;
   }
-  if (isAnthropicScopedQuota(quotaKey)) return anthropicQuotaLabel(quotaKey);
+  if (isAnthropicPerModelWeekly(quotaKey)) return anthropicQuotaLabel(quotaKey);
   // Fall back to generic display name
   return overviewQuotaDisplayNames[quotaKey] || quotaKey;
 };

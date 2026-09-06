@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -569,6 +570,37 @@ func (s *Store) QueryAnthropicLatestPerQuota() ([]AnthropicLatestQuota, error) {
 		results = append(results, q)
 	}
 	return results, rows.Err()
+}
+
+// LastAnthropicAPISnapshot returns when the most recent snapshot sourced from
+// the OAuth usage API was captured, and whether one exists at all.
+//
+// The statusline bridge cannot report per-model weekly buckets, so the agent
+// still needs periodic API polls to pick them up. Basing that schedule on the
+// age of the stored reading rather than on an in-memory cycle counter means a
+// restart neither delays the next poll by a full interval nor triggers a burst
+// of them, which matters given how aggressively the usage API rate limits.
+//
+// The scan walks back from the newest row until it finds a non-statusline one,
+// so callers should cache the result rather than asking on every poll.
+func (s *Store) LastAnthropicAPISnapshot() (time.Time, bool, error) {
+	var capturedAt string
+	err := s.db.QueryRow(
+		`SELECT captured_at FROM anthropic_snapshots
+		 WHERE raw_json NOT LIKE '%"_source":"statusline"%'
+		 ORDER BY id DESC LIMIT 1`,
+	).Scan(&capturedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("failed to query last anthropic api snapshot: %w", err)
+	}
+	t, err := time.Parse(time.RFC3339Nano, capturedAt)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("failed to parse anthropic snapshot time %q: %w", capturedAt, err)
+	}
+	return t, true, nil
 }
 
 // QueryAllAnthropicQuotaNames returns all distinct quota names from Anthropic reset cycles.

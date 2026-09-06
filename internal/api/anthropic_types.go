@@ -183,7 +183,18 @@ func anthropicModelSlug(displayName string) string {
 // seven_day_scoped_claude_fable -> "Claude Fable".
 func anthropicScopedModelLabel(key string) (string, bool) {
 	slug, ok := strings.CutPrefix(key, anthropicScopedQuotaPrefix)
-	if !ok || slug == "" {
+	if !ok {
+		return "", false
+	}
+	return anthropicSlugLabel(slug)
+}
+
+// anthropicSlugLabel title-cases an underscore-separated slug: fable -> "Fable",
+// oauth_apps -> "Oauth Apps". Reports false for an empty slug or one with an
+// empty segment, so a malformed key falls back to being shown verbatim rather
+// than as a label with a hole in it.
+func anthropicSlugLabel(slug string) (string, bool) {
+	if slug == "" {
 		return "", false
 	}
 	words := strings.Split(slug, "_")
@@ -194,6 +205,26 @@ func anthropicScopedModelLabel(key string) (string, bool) {
 		words[i] = strings.ToUpper(w[:1]) + w[1:]
 	}
 	return strings.Join(words, " "), true
+}
+
+// IsAnthropicPerModelWeekly reports whether a quota key is a weekly bucket
+// scoped to a single model, by either route: synthesised from limits[] on the
+// API path, or reported straight from the statusline under a name we have no
+// curated entry for. Curated keys such as seven_day_sonnet are excluded - they
+// have their own label and sort position already.
+func IsAnthropicPerModelWeekly(key string) bool {
+	if IsAnthropicScopedQuota(key) {
+		return true
+	}
+	if _, ok := anthropicDisplayNames[key]; ok {
+		return false
+	}
+	slug, ok := strings.CutPrefix(key, "seven_day_")
+	if !ok {
+		return false
+	}
+	_, ok = anthropicSlugLabel(slug)
+	return ok
 }
 
 // IsAnthropicScopedQuota reports whether a quota key was synthesised from a
@@ -257,6 +288,14 @@ func AnthropicDisplayName(key string) string {
 	// key instead of being listed above.
 	if model, ok := anthropicScopedModelLabel(key); ok {
 		return "Weekly " + model
+	}
+	// The same treatment for a seven_day_* bucket reported under a name we have
+	// no entry for - the statusline can surface one at any time, and a card
+	// titled "seven_day_fable" reads like a defect.
+	if slug, ok := strings.CutPrefix(key, "seven_day_"); ok {
+		if model, ok := anthropicSlugLabel(slug); ok {
+			return "Weekly " + model
+		}
 	}
 	return key
 }
