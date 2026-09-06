@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+*.vsix
+*.tsbuildinfo
+coverage/
+
+# Re-include files the repo root .gitignore excludes globally
+!package.json
+!package-lock.json
+!media/icon.png
