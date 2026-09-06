@@ -234,7 +234,7 @@ describe("formatting", () => {
     expect(lines[3]).toBe(
       "Updated 12s ago (daemon data 3m ago) - [Open dashboard](command:onwatch.openDashboard) - [Quick view](command:onwatch.openQuickView) - [Refresh](command:onwatch.refresh)",
     );
-    expect(md).not.toContain("—");
+    expect(md).not.toContain("\u2014");
   });
 
   it("builds a tooltip when there are no providers", () => {
@@ -341,7 +341,7 @@ describe("buildStatusBarItems", () => {
     for (const s of states) {
       for (const mode of ["combined", "perProvider"] as const) {
         for (const item of buildStatusBarItems(s, { ...base, mode })) {
-          expect(item.text + item.tooltip).not.toMatch(/—/);
+          expect(item.text + item.tooltip).not.toMatch(/\u2014/);
         }
       }
     }
