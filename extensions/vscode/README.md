@@ -6,9 +6,9 @@ The extension is a thin client. It polls the onWatch daemon running on your mach
 
 ## What you get
 
-- Status bar item with the highest-used quota across your providers, for example `82%`. At critical it adds the time to reset: `82% · 2h14m`.
+- Status bar item showing the provider mark, the limit and the highest-used quota across your providers, for example `<Anthropic mark> 5h 85%`. At critical it adds the time to reset: `5h 92% · 2h 27m`.
 - Warning and critical colors that follow your VS Code theme.
-- Hover tooltip with one line per provider: status icon, name, percent, quota name and time to reset.
+- Hover tooltip with one section per provider: its mark and name, then a table of every limit with status icon, percent used (and used/limit when known) and time to reset.
 - Click to open the compact quick view (the same panel the macOS menubar uses) inside VS Code, or open the full dashboard.
 - Optional per-provider items instead of one combined item.
 - Optional one-time notification when a quota crosses into warning or critical.
@@ -57,8 +57,8 @@ See [docs/VSCODE_EXTENSION.md](https://github.com/onllm-dev/onWatch/blob/main/do
 
 | Label | Meaning |
 |---|---|
-| `82%` | Tightest quota across visible providers. Colored at warning and critical. |
-| `82% · 2h14m` | Critical, with time until that quota resets. |
+| `<mark> 5h 85%` | Provider mark, compact limit name and percent of the tightest quota across visible providers. Colored at warning and critical. |
+| `<mark> 5h 92% · 2h 27m` | Critical, with time until that quota resets. |
 | `onWatch: no daemon` | The daemon could not be reached at the discovered URL. Start it with `onwatch`. |
 | `onWatch: sign in` | The daemon requires authentication. Click to enter credentials. |
 | `onWatch: remote unsupported` | The daemon at a non-local URL does not expose the compact quota API (it only serves it to localhost in this version). |

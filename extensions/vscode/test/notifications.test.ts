@@ -31,7 +31,7 @@ describe("NotificationTracker", () => {
     const fired = t.evaluate([claude(95, "critical")], "critical");
     expect(fired).toHaveLength(1);
     expect(fired[0]).toMatchObject({ providerId: "anthropic", quotaKey: "five_hour", tier: "critical", percent: 95, resetAt: RESET_A });
-    expect(fired[0].message).toBe("onWatch: Claude 5h window is at 95% (critical) - resets in 59m");
+    expect(fired[0].message).toBe("onWatch: Anthropic 5-Hour Limit is at 95% (critical) - resets in 59m");
     expect(fired[0].message).not.toMatch(/\u2014/);
     // stays critical: silent
     expect(t.evaluate([claude(97, "critical")], "critical")).toEqual([]);
@@ -68,7 +68,7 @@ describe("NotificationTracker", () => {
     const w = t.evaluate([claude(75, "warning")], "warningAndCritical");
     expect(w).toHaveLength(1);
     expect(w[0].tier).toBe("warning");
-    expect(w[0].message).toBe("onWatch: Claude 5h window is at 75% (warning) - resets in 59m");
+    expect(w[0].message).toBe("onWatch: Anthropic 5-Hour Limit is at 75% (warning) - resets in 59m");
     // danger is still the warning tier: silent
     expect(t.evaluate([claude(85, "danger")], "warningAndCritical")).toEqual([]);
     const c = t.evaluate([claude(95, "critical")], "warningAndCritical");
@@ -109,7 +109,7 @@ describe("NotificationTracker", () => {
     const fired = t.evaluate([p(95, "critical")], "critical");
     expect(fired).toHaveLength(1);
     expect(fired[0].resetAt).toBeUndefined();
-    expect(fired[0].message).toBe("onWatch: Claude 5h window is at 95% (critical)");
+    expect(fired[0].message).toBe("onWatch: Anthropic 5-Hour Limit is at 95% (critical)");
     t.evaluate([p(10, "healthy")], "critical");
     expect(t.evaluate([p(95, "critical")], "critical")).toEqual([]);
   });

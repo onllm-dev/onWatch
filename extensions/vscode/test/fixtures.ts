@@ -2,15 +2,16 @@ import type { Preferences, ProviderCard, QuotaMeter, Snapshot } from "../src/mod
 
 export const NOW = Date.parse("2026-09-06T10:00:00Z");
 
+/** Default quota mirrors the daemon's Anthropic 5-hour window at 85% (warning). */
 export function quota(overrides: Partial<QuotaMeter> = {}): QuotaMeter {
   return {
     key: "five_hour",
-    label: "5h window",
-    display_value: "62%",
-    percent: 62,
-    status: "healthy",
-    reset_at: new Date(NOW + (2 * 60 + 14) * 60_000).toISOString(),
-    time_until_reset: "2h 14m",
+    label: "5-Hour Limit",
+    display_value: "85%",
+    percent: 85,
+    status: "warning",
+    reset_at: new Date(NOW + (2 * 60 + 27) * 60_000).toISOString(),
+    time_until_reset: "2h 27m",
     ...overrides,
   };
 }
@@ -19,9 +20,9 @@ export function provider(overrides: Partial<ProviderCard> = {}): ProviderCard {
   return {
     id: "anthropic",
     base_provider: "anthropic",
-    label: "Claude",
-    status: "healthy",
-    highest_percent: 62,
+    label: "Anthropic",
+    status: "warning",
+    highest_percent: 85,
     quotas: [quota()],
     ...overrides,
   };
@@ -58,28 +59,54 @@ export function preferences(overrides: Partial<Preferences> = {}): Preferences {
   };
 }
 
-/** Three providers: Claude 62% healthy, Codex 82% warning, Copilot 95% critical. */
+/** Anthropic (5h 85% warning, two weekly quotas). */
+export function anthropic(): ProviderCard {
+  return provider({
+    quotas: [
+      quota(),
+      quota({ key: "weekly_all", label: "Weekly All-Model", display_value: "20%", percent: 20, status: "healthy", time_until_reset: "5d 3h" }),
+      quota({ key: "weekly_fable", label: "Weekly Fable", display_value: "13%", percent: 13, status: "healthy", time_until_reset: "5d 3h" }),
+    ],
+  });
+}
+
+/** Codex profile with a subtitle, everything healthy. */
+export function codex(): ProviderCard {
+  return provider({
+    id: "codex:prakersh7",
+    base_provider: "codex",
+    label: "Codex - prakersh7",
+    subtitle: "ChatGPT account",
+    status: "healthy",
+    highest_percent: 0,
+    quotas: [quota({ key: "weekly", label: "Weekly All-Model", display_value: "0%", percent: 0, status: "healthy", time_until_reset: "13d 11h" })],
+  });
+}
+
+/** Copilot premium requests at 95% critical with used/limit numbers. */
+export function copilot(): ProviderCard {
+  return provider({
+    id: "copilot",
+    base_provider: "copilot",
+    label: "GitHub Copilot",
+    status: "critical",
+    highest_percent: 95,
+    quotas: [
+      quota({
+        key: "premium",
+        label: "Premium Requests",
+        display_value: "95%",
+        percent: 95,
+        status: "critical",
+        used: 285,
+        limit: 300,
+        time_until_reset: "2h 14m",
+      }),
+    ],
+  });
+}
+
+/** Anthropic 85% warning, Codex 0% healthy, Copilot 95% critical. */
 export function threeProviders(): ProviderCard[] {
-  return [
-    provider(),
-    provider({
-      id: "codex",
-      base_provider: "codex",
-      label: "Codex",
-      status: "warning",
-      highest_percent: 82,
-      quotas: [
-        quota({ key: "weekly", label: "Weekly", display_value: "82%", percent: 82, status: "warning", time_until_reset: "3d 4h" }),
-        quota({ key: "five_hour", label: "5h", display_value: "20%", percent: 20, status: "healthy", time_until_reset: "1h 2m" }),
-      ],
-    }),
-    provider({
-      id: "copilot",
-      base_provider: "copilot",
-      label: "GitHub Copilot",
-      status: "critical",
-      highest_percent: 95,
-      quotas: [quota({ key: "premium", label: "Premium requests", display_value: "95%", percent: 95, status: "critical", time_until_reset: "2h 14m" })],
-    }),
-  ];
+  return [anthropic(), codex(), copilot()];
 }
