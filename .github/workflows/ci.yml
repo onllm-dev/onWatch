@@ -53,8 +53,8 @@ jobs:
           go-version-file: go.mod
 
       - name: Test tagged tray packages
-        env:
-          CGO_ENABLED: "0"
+        # -race needs cgo for the test binary; the tray itself stays pure Go,
+        # which the CGO_ENABLED=0 cross-compile step below proves.
         run: |
           go vet -tags menubar ./...
           go test -race -tags menubar -count=1 ./internal/menubar ./internal/web .
