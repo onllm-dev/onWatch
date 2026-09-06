@@ -2,7 +2,7 @@
 
 **Free, open-source AI API quota monitoring for developers.**
 
-Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), [Gemini CLI](docs/GEMINI_SETUP.md), [Cursor](docs/CURSOR_SETUP.md), [Grok](docs/GROK_SETUP.md), [Kimi Code](docs/KIMI_SETUP.md), and Antigravity in one place.
+Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), [Gemini CLI](docs/GEMINI_SETUP.md) (legacy), [Cursor](docs/CURSOR_SETUP.md), [Grok](docs/GROK_SETUP.md), [Kimi Code](docs/KIMI_SETUP.md), and Antigravity in one place.
 See history, get alerts, and open a local web dashboard before you hit throttling or run over budget. Additionally, you can ingest local telemetry from your own API-driven workflows with API Integrations, keeping track of token use and spending across multiple providers.
 
 **Links:** [Website](https://onwatch.onllm.dev) | [Buy Me a Coffee](https://buymeacoffee.com/prakersh)
@@ -165,7 +165,7 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **Codex** -- Dynamic quota cards (LLMs, Review Requests) with OAuth auth-state refresh, historical cycle analytics, **multi-account support (Beta)** for tracking multiple ChatGPT accounts, and an **auto quota-starter (Beta, off by default)** that can start an unstarted 5h/weekly window for you (see FAQ)
 - **GitHub Copilot (Beta)** -- Premium Interactions, Chat, and Completions quota cards with monthly reset tracking
 - **MiniMax Coding Plan** -- Shared quota pool tracking for M2, M2.1, and M2.5 models with 5-hour rolling window reset cycles and **multi-account support** for tracking multiple MiniMax subscriptions via the dashboard UI
-- **Gemini CLI (Beta)** -- Per-model quota tracking for Gemini 2.5/3.x Pro, Flash, and Flash Lite models with 24-hour reset cycles
+- **Gemini CLI (Legacy)** -- Per-model quota tracking for Gemini 2.5/3.x Pro, Flash, and Flash Lite models with 24-hour reset cycles. Kept working for existing setups, but no longer the recommended path: Google's Gemini CLI has been superseded by Antigravity. New installs should use the `agy` source on the **Antigravity** provider instead
 - **Antigravity** -- Multi-model quota cards (Claude, Gemini, GPT) with grouped quota pools, logging history, and cycle overview. Selectable data **source** -- the desktop **IDE** probe or the **`agy` CLI** (richer weekly + 5-hour buckets), or **both** (default) -- switchable in the dashboard settings; all variants share one Google-account quota
 - **Cursor** -- Individual, Team, and Enterprise account tracking with auto-detected credentials from Cursor Desktop SQLite or macOS Keychain/Linux keyring, OAuth token auto-refresh, burn rate forecasts, and on-demand spend tracking
 - **Kimi Code** -- Moonshot Kimi Code CLI OAuth quotas via `GET /coding/v1/usages` (auto-detect `~/.kimi-code/credentials`). Weekly + window limits with reset countdown. See [Kimi Setup](docs/KIMI_SETUP.md).
@@ -328,7 +328,7 @@ Additional environment variables:
 | `COPILOT_TOKEN`          | GitHub Copilot PAT with `copilot` scope (Beta)         |
 | `MINIMAX_API_KEY`        | MiniMax Coding Plan API key                            |
 | `MINIMAX_REGION`         | MiniMax region: `global` (default) or `cn`              |
-| `GEMINI_ENABLED`         | Enable Gemini CLI quota tracking (Beta, auto-detected)   |
+| `GEMINI_ENABLED`         | Enable Gemini CLI quota tracking (Legacy, auto-detected) |
 | `GEMINI_REFRESH_TOKEN`   | Gemini OAuth refresh token (for Docker/headless)         |
 | `GEMINI_ACCESS_TOKEN`    | Gemini OAuth access token (for Docker/headless)          |
 | `GEMINI_CLIENT_ID`       | Custom OAuth client ID (optional, has defaults)          |

@@ -1,5 +1,10 @@
 # Gemini CLI Quota Tracking
 
+> **Legacy provider.** Google's Gemini CLI has been superseded by Antigravity, so this
+> provider is kept working for existing setups rather than actively developed. New installs
+> should track Antigravity instead - see [ANTIGRAVITY_SETUP.md](ANTIGRAVITY_SETUP.md) and
+> select the `agy` CLI source, which reports richer weekly and 5-hour buckets.
+
 onWatch can track your Google Gemini CLI quota usage, showing per-model remaining quota, reset times, and usage trends.
 
 ## Prerequisites
