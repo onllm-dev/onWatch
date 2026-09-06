@@ -2,6 +2,9 @@
 .vscode-test/**
 src/**
 test/**
+scripts/**
+media/icons/**
+media/codepoints.json
 node_modules/**
 out/**
 coverage/**

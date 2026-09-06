@@ -58,14 +58,16 @@ and always uses `http://127.0.0.1:<port>`. To point it elsewhere, set `onwatch.d
 
 | Label | Meaning |
 |---|---|
-| `82%` | The tightest (highest percent used) quota across visible providers. Background turns to the theme's warning color at warning and error color at critical. |
-| `82% · 2h14m` | Critical, plus time until that quota resets. |
-| `Claude 62%` | Per-provider mode: one item per visible provider. |
+| `<mark> 5h 85%` | Provider mark, compact limit name and percent of the tightest (highest percent used) quota across visible providers. Background turns to the theme's warning color at warning and error color at critical. |
+| `<mark> 5h 92% · 2h 27m` | Critical, plus time until that quota resets. |
+| `<mark> Weekly 0%` | Per-provider mode: one item per visible provider, each showing its own tightest limit. |
 | `onWatch: no daemon` | Nothing answered at the daemon URL. |
 | `onWatch: sign in` | The daemon returned 401 or 403. Click to enter credentials. |
 | `onWatch: remote unsupported` | A daemon at a non-localhost URL returned 404 for the compact API. |
 
-Hover for a tooltip with one line per provider (`$(pass)` healthy, `$(warning)` warning, `$(error)` critical), the quota name, time to reset, when the data was last fetched, and links to open the dashboard, open the quick view, or refresh.
+The mark is the same monochrome provider logo the dashboard uses. The extension ships them as an icon font (`media/onwatch-icons.woff`, built from `media/icons/*.svg` with `npm run icons`) and contributes them as theme icons named `onwatch-<provider>`. Limit names are shortened for the status bar: `5-Hour Limit` becomes `5h`, `Weekly All-Model` becomes `Weekly`, `Premium Requests` becomes `Premium`.
+
+Hover for a tooltip with one section per provider, in the daemon's order. Each section has the provider mark and name, an italic account subtitle when there is one, and a table with one row per limit: status icon (`$(pass)` healthy, `$(warning)` warning, `$(error)` critical), limit name, percent used with used/limit when the daemon knows both, and time to reset. Missing values are left out rather than shown as placeholders. The footer shows when the data was last fetched and links to open the quick view, the dashboard, or refresh.
 
 Click opens the quick view (`<daemonUrl>/menubar`), the same panel the macOS menubar shows. By default it opens inside VS Code with Simple Browser and falls back to your system browser when Simple Browser is not available.
 
