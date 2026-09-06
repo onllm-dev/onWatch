@@ -462,6 +462,10 @@ once.
 For unattended installs, set `ONWATCH_AUTOSTART=yes` (or `no`) before running
 `install.sh`.
 
+If the GitHub CLI is installed and logged in, the installer and `onwatch setup`
+ask once whether to star the repository (Enter accepts). Set `ONWATCH_STAR=no`
+to skip the question.
+
 On Linux, this role is played by the systemd unit that `install.sh` creates.
 
 ---
