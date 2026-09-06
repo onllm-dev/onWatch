@@ -36,17 +36,17 @@ func (h *Handler) Capabilities(w http.ResponseWriter, r *http.Request) {
 		"platform":          runtime.GOOS,
 		"menubar_supported": menubar.IsSupported(),
 		"menubar_running":   menubar.IsRunning(),
+		"menubar_session":   menubar.SessionAvailable(),
 	})
 }
 
 // MenubarSummary returns the normalized data contract used by the menubar UI.
-// Served to any local consumer (macOS companion, GNOME extension, browser).
+// Served to any consumer (native companions, GNOME extension, VS Code
+// extension, browser). Loopback callers skip authentication in the middleware;
+// remote callers go through the regular dashboard auth, so the handler itself
+// no longer gates on the remote address.
 // Does not require a native companion build (menubar.IsSupported).
 func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
-		http.NotFound(w, r)
-		return
-	}
 	snapshot, err := h.BuildMenubarSnapshot()
 	if err != nil {
 		h.logger.Error("failed to build menubar snapshot", "error", err)
@@ -60,10 +60,6 @@ func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
 // same rules as the macOS menubar companion, so GNOME can stay in sync without
 // reimplementing formatting.
 func (h *Handler) MenubarTrayTitle(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
-		http.NotFound(w, r)
-		return
-	}
 	snapshot, err := h.BuildMenubarSnapshot()
 	if err != nil {
 		h.logger.Error("failed to build menubar snapshot for tray title", "error", err)
@@ -105,12 +101,9 @@ func (h *Handler) MenubarTrayTitle(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// MenubarPage renders the localhost-only browser UI used by the tray companion.
+// MenubarPage renders the compact browser UI used by the tray companions and
+// the VS Code quick view. Public on loopback, behind dashboard auth elsewhere.
 func (h *Handler) MenubarPage(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
-		http.NotFound(w, r)
-		return
-	}
 
 	settings, _ := h.menubarSettings()
 	view := normalizeMenubarView(r.URL.Query().Get("view"), settings.DefaultView)
@@ -209,10 +202,6 @@ func (h *Handler) MenubarPreferences(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) MenubarRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if !isLoopbackRequest(r) {
-		http.NotFound(w, r)
 		return
 	}
 	if _, err := h.BuildMenubarSnapshot(); err != nil {

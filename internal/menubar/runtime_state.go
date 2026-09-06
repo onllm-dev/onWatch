@@ -1,4 +1,4 @@
-//go:build menubar && darwin
+//go:build menubar && (darwin || linux || windows)
 
 package menubar
 
@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 func companionProcessRunning() bool {
@@ -18,8 +17,7 @@ func companionProcessRunning() bool {
 		if pid <= 0 {
 			continue
 		}
-		proc, err := os.FindProcess(pid)
-		if err == nil && proc.Signal(syscall.Signal(0)) == nil {
+		if processAlive(pid) {
 			return true
 		}
 		_ = os.Remove(path)
@@ -31,6 +29,14 @@ func companionPIDPath(testMode bool) string {
 	name := "onwatch-menubar.pid"
 	if testMode {
 		name = "onwatch-menubar-test.pid"
+	}
+	return filepath.Join(defaultCompanionPIDDir(), name)
+}
+
+func companionRefreshPath(testMode bool) string {
+	name := "onwatch-menubar.refresh"
+	if testMode {
+		name = "onwatch-menubar-test.refresh"
 	}
 	return filepath.Join(defaultCompanionPIDDir(), name)
 }
@@ -58,18 +64,17 @@ func companionPIDEnvValue(testMode bool) string {
 	return fmt.Sprintf("%t:%s", testMode, companionPIDPath(testMode))
 }
 
-const refreshCompanionSignal = syscall.SIGUSR1
-
+// TriggerRefresh asks a running companion to re-fetch its snapshot right
+// away, e.g. after the user changes tray preferences in the popover.
 func TriggerRefresh(testMode bool) error {
 	pidPath := companionPIDPath(testMode)
 	pid := readPID(pidPath)
 	if pid <= 0 {
 		return nil
 	}
-	proc, err := os.FindProcess(pid)
-	if err != nil || proc.Signal(refreshCompanionSignal) != nil {
+	if !processAlive(pid) {
 		_ = os.Remove(pidPath)
 		return nil
 	}
-	return nil
+	return requestCompanionRefresh(pid, testMode)
 }

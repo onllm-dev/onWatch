@@ -40,6 +40,52 @@ jobs:
       - name: Build
         run: go build -o onwatch .
 
+  tray-linux:
+    runs-on: ubuntu-latest
+    name: Tray Linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test tagged tray packages
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go vet -tags menubar ./...
+          go test -race -tags menubar -count=1 ./internal/menubar ./internal/web .
+
+      - name: Cross-compile tray binaries
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          GOOS=linux GOARCH=amd64 go build -tags menubar -o /tmp/onwatch-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -tags menubar -o /tmp/onwatch-linux-arm64 .
+          GOOS=windows GOARCH=amd64 go build -tags menubar -o /tmp/onwatch-windows-amd64.exe .
+
+  tray-windows:
+    runs-on: windows-latest
+    name: Tray Windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test tagged tray packages
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go test -tags menubar -count=1 ./internal/menubar
+          go build -tags menubar -o onwatch-tray.exe .
+
   menubar-macos:
     runs-on: macos-15
     name: Menubar macOS

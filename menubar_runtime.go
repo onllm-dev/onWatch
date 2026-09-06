@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -49,28 +48,7 @@ func writeRuntimePID(path string) error {
 }
 
 func processRunning(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	if processZombie(pid) {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return proc.Signal(syscall.Signal(0)) == nil
-}
-
-func processZombie(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	out, err := exec.Command("ps", "-p", fmt.Sprintf("%d", pid), "-o", "stat=").Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(strings.TrimSpace(string(out)), "Z")
+	return processAlive(pid)
 }
 
 func menubarLogNames(testMode bool) []string {
@@ -98,7 +76,7 @@ func stopMenubarProcess(testMode bool) error {
 	}
 	proc, err := os.FindProcess(pid)
 	if err == nil {
-		_ = proc.Signal(syscall.SIGTERM)
+		_ = terminateProcess(proc)
 	}
 	_ = os.Remove(path)
 	return nil
@@ -118,7 +96,7 @@ func waitForServerReady(port int, timeout time.Duration) bool {
 }
 
 func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
-	if cfg == nil || cfg.TestMode || !menubar.IsSupported() || runtime.GOOS != "darwin" {
+	if cfg == nil || cfg.TestMode || !menubar.IsSupported() || !menubar.SessionAvailable() {
 		return nil
 	}
 	logger.Info("Starting menubar companion process")
@@ -152,6 +130,7 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 	}
 	cmd := exec.Command(exe, args...)
 	cmd.Env = os.Environ()
+	cmd.SysProcAttr = companionSysProcAttr()
 
 	logFile, err := config.OpenRotatingLogFile(menubarLogPath(cfg))
 	if err != nil {
@@ -293,4 +272,24 @@ func httpSnapshotProvider(port int) menubar.SnapshotProvider {
 		}
 		return &snapshot, nil
 	}
+}
+
+// portFilePath is the discovery file thin clients (GNOME extension, VS Code
+// extension, tray companion) read to find the dashboard port.
+func portFilePath() string {
+	return filepath.Join(pidDir, "port")
+}
+
+func writePortFile(port int) error {
+	return writePortFileTo(portFilePath(), port)
+}
+
+func writePortFileTo(path string, port int) error {
+	if port <= 0 || port > 65535 {
+		return fmt.Errorf("invalid port %d", port)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(fmt.Sprintf("%d\n", port)), 0o644)
 }

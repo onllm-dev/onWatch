@@ -1,4 +1,4 @@
-//go:build menubar && darwin
+//go:build menubar && (darwin || linux || windows)
 
 package menubar
 
@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
 	"sync"
 	"time"
 
@@ -21,9 +19,17 @@ var (
 	quitFn   func()
 )
 
+// providerMenuPoolSize bounds the per-provider rows in the tray menu. Rows
+// are created up front (systray appends new items at the bottom) and shown
+// or hidden as the snapshot changes.
+const providerMenuPoolSize = 24
+
 type trayController struct {
 	cfg     *Config
 	popover menubarPopover
+
+	menuMu        sync.Mutex
+	providerItems []*systray.MenuItem
 }
 
 func runCompanion(cfg *Config) error {
@@ -34,14 +40,9 @@ func runCompanion(cfg *Config) error {
 	quitFn = nil
 
 	controller := &trayController{cfg: cfg}
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, refreshCompanionSignal)
-	defer signal.Stop(signalChan)
-	go func() {
-		for range signalChan {
-			controller.refreshStatus()
-		}
-	}()
+	stop := make(chan struct{})
+	defer close(stop)
+	go watchRefreshRequests(stop, cfg.TestMode, controller.refreshStatus)
 
 	slog.Default().Debug("Initializing systray")
 	systray.Run(controller.onReady, controller.onExit)
@@ -63,19 +64,14 @@ func (c *trayController) onReady() {
 	logger := slog.Default()
 	logger.Info("Systray initialized, setting icon")
 
-	templateIcon, regularIcon := trayIcons()
-	if len(templateIcon) > 0 && len(regularIcon) > 0 {
-		systray.SetTemplateIcon(templateIcon, regularIcon)
-		logger.Debug("Tray icon set from PNG")
-	}
-
-	systray.SetTooltip("onWatch menubar companion")
+	setupTrayIcon()
+	systray.SetTooltip("onWatch")
 	systray.SetOnTapped(func() {
 		c.toggleMenubar()
 	})
 
 	if popover, err := newMenubarPopover(menubarPopoverWidth, menubarPopoverHeight); err != nil {
-		logger.Warn("native macOS menubar host unavailable, using browser fallback", "error", err)
+		logger.Warn("native menubar host unavailable, using browser fallback", "error", err)
 	} else {
 		c.popover = popover
 		// Warm the WebView so the first tray click does not flash a blank page
@@ -85,7 +81,17 @@ func (c *trayController) onReady() {
 		}
 	}
 
+	// Provider rows first so they stay above the actions.
+	c.providerItems = make([]*systray.MenuItem, 0, providerMenuPoolSize)
+	for i := 0; i < providerMenuPoolSize; i++ {
+		item := systray.AddMenuItem("", "Open the quick view")
+		item.Hide()
+		c.providerItems = append(c.providerItems, item)
+	}
+	systray.AddSeparator()
+	quickViewItem := systray.AddMenuItem("Open Quick View", "Show the onWatch quick view")
 	dashboardItem := systray.AddMenuItem("Open Dashboard", "Open the local onWatch dashboard")
+	refreshItem := systray.AddMenuItem("Refresh Now", "Fetch the latest quota data")
 	systray.AddSeparator()
 	quitItem := systray.AddMenuItem("Quit Menubar", "Quit the menubar companion")
 
@@ -96,7 +102,8 @@ func (c *trayController) onReady() {
 	c.refreshStatus()
 	logger.Info("Menubar ready and visible")
 
-	go c.watchMenu(dashboardItem, quitItem)
+	go c.watchMenu(quickViewItem, dashboardItem, refreshItem, quitItem)
+	go c.watchProviderItems()
 	go c.refreshLoop()
 }
 
@@ -109,15 +116,42 @@ func (c *trayController) onExit() {
 	slog.Default().Info("Menubar shutting down")
 }
 
-func (c *trayController) watchMenu(dashboardItem, quitItem *systray.MenuItem) {
+func (c *trayController) watchMenu(quickViewItem, dashboardItem, refreshItem, quitItem *systray.MenuItem) {
 	for {
 		select {
+		case <-quickViewItem.ClickedCh:
+			c.showMenubar()
 		case <-dashboardItem.ClickedCh:
 			_ = browser.OpenURL(c.dashboardURL())
+		case <-refreshItem.ClickedCh:
+			c.refreshStatus()
 		case <-quitItem.ClickedCh:
 			_ = stopCompanion()
 			return
 		}
+	}
+}
+
+func (c *trayController) watchProviderItems() {
+	for _, item := range c.providerItems {
+		go func(item *systray.MenuItem) {
+			for range item.ClickedCh {
+				c.showMenubar()
+			}
+		}(item)
+	}
+}
+
+func (c *trayController) updateMenu(lines []MenuLine) {
+	c.menuMu.Lock()
+	defer c.menuMu.Unlock()
+	for i, item := range c.providerItems {
+		if i < len(lines) {
+			item.SetTitle(lines[i].Text)
+			item.Show()
+			continue
+		}
+		item.Hide()
 	}
 }
 
@@ -158,7 +192,7 @@ func (c *trayController) refreshLoop() {
 func (c *trayController) refreshStatus() {
 	logger := slog.Default()
 	if c == nil || c.cfg == nil || c.cfg.SnapshotProvider == nil {
-		systray.SetTitle("onWatch")
+		updateTrayVisual(trayVisual{Title: "onWatch", Text: "-", Status: trayStatusOffline})
 		systray.SetTooltip("onWatch menubar companion")
 		return
 	}
@@ -166,25 +200,32 @@ func (c *trayController) refreshStatus() {
 	snapshot, err := c.cfg.SnapshotProvider()
 	if err != nil {
 		logger.Error("failed to refresh menubar snapshot", "error", err)
-		systray.SetTitle("--")
-		systray.SetTooltip("onWatch menubar companion unavailable")
-		return
+		snapshot = nil
 	}
 	if snapshot == nil {
-		systray.SetTitle("--")
-		systray.SetTooltip("onWatch menubar companion unavailable")
+		updateTrayVisual(trayVisual{Title: "--", Text: "-", Status: trayStatusOffline})
+		systray.SetTooltip(TrayTooltipText(nil, trayTooltipLimit))
+		c.updateMenu(nil)
 		return
 	}
 
 	settings, err := c.fetchPreferences()
 	if err != nil {
 		logger.Debug("failed to refresh menubar preferences, using defaults", "error", err)
+		settings = DefaultSettings()
 	}
-	title := TrayTitle(snapshot, settings)
-	tooltip := trayTooltip(snapshot)
-	systray.SetTitle(title)
-	systray.SetTooltip(tooltip)
-	logger.Debug("Tray icon set successfully", "title", title)
+	segments := TraySegments(snapshot, settings)
+	visual := trayVisual{
+		Title:    TrayTitle(snapshot, settings),
+		Text:     TrayIconText(segments, true),
+		Status:   TrayBadgeStatus(snapshot, segments),
+		Online:   true,
+		IconOnly: settings.StatusDisplay.Mode == StatusDisplayIconOnly,
+	}
+	updateTrayVisual(visual)
+	systray.SetTooltip(TrayTooltipText(snapshot, trayTooltipLimit))
+	c.updateMenu(BuildMenuLines(snapshot))
+	logger.Debug("Tray icon set successfully", "title", visual.Title, "badge", visual.Text, "status", visual.Status)
 }
 
 func (c *trayController) menubarURL() string {
@@ -231,22 +272,6 @@ func (c *trayController) fetchPreferences() (*Settings, error) {
 		return nil, err
 	}
 	return settings.Normalize(), nil
-}
-
-func trayTooltip(snapshot *Snapshot) string {
-	if snapshot == nil {
-		return "onWatch menubar companion"
-	}
-	aggregate := snapshot.Aggregate
-	if aggregate.ProviderCount == 0 {
-		return "onWatch menubar companion: no provider data available"
-	}
-	return fmt.Sprintf(
-		"onWatch menubar companion: %s across %d providers, updated %s",
-		aggregate.Label,
-		aggregate.ProviderCount,
-		snapshot.UpdatedAgo,
-	)
 }
 
 func normalizeRefreshSeconds(value int) int {

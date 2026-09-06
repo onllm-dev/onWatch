@@ -297,6 +297,28 @@ nssm remove onwatch confirm
 
 ---
 
+## System Tray
+
+The Windows binary includes the onWatch tray companion. When you start
+`onwatch.exe` from your own session (the installer does this), a small icon
+appears in the notification area:
+
+- The icon shows the selected quota percentage on a colored disc: slate when
+  healthy, amber at the warning threshold, red at critical, gray with a dash
+  when the daemon is unreachable.
+- Hover for a per-provider summary.
+- Left-click opens the quick view in a frameless Microsoft Edge window
+  anchored above the taskbar. Click again to close it.
+- Right-click for the menu: one row per provider, Open Quick View, Open
+  Dashboard, Refresh Now, Quit.
+
+Choose which quota the icon shows under **Settings > Menubar** in the
+dashboard. Set `ONWATCH_DISABLE_TRAY=1` in `.env` to run without the icon.
+The tray does not appear when onWatch runs as a Windows service, because
+services have no desktop session; start `onwatch.exe menubar` at logon
+instead (a shortcut in `shell:startup` works). Details in
+[TRAY_LINUX_WINDOWS.md](TRAY_LINUX_WINDOWS.md).
+
 ## Troubleshooting
 
 ### Windows Defender False Positive

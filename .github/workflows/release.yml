@@ -72,7 +72,9 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
+          # -tags menubar compiles the pure-Go tray companion (D-Bus on Linux,
+          # Win32 on Windows); no cgo needed, binaries stay static.
+          go build -tags menubar -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
             -o ${{ matrix.binary }} .
 
       - name: Upload artifact
