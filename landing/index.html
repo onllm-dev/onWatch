@@ -570,10 +570,12 @@ html[data-theme="dark"] .pcard li{background:var(--ink-800)}
   font-size:2.1rem;line-height:1;letter-spacing:-.03em}
 .tstat span{display:block;margin-top:.45rem;font-family:var(--font-mono);font-size:.63rem;
   letter-spacing:.13em;text-transform:uppercase;color:var(--fg-mute)}
-.tstat .live{display:none;align-items:center;gap:.32rem;margin-top:.5rem;color:var(--signal)}
-.tstat .live[data-on="1"]{display:inline-flex}
-.tstat .live i{width:5px;height:5px;border-radius:50%;background:var(--signal);
+.tstat .live,.stat .live{display:none;align-items:center;gap:.32rem;margin-top:.5rem;
+  color:var(--signal)}
+.tstat .live[data-on="1"],.stat .live[data-on="1"]{display:inline-flex}
+.tstat .live i,.stat .live i{width:5px;height:5px;border-radius:50%;background:var(--signal);
   box-shadow:0 0 0 0 var(--signal-glow);animation:pulse 2.4s infinite}
+.stat .live{font-size:.6rem;margin-top:.4rem}
 .trust-panels{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;align-items:start}
 @media(max-width:900px){.trust-panels{grid-template-columns:1fr}}
 .tpanel{border:1px solid var(--rule-strong);padding:1.2rem}
@@ -820,10 +822,12 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
 
     <!-- Stat rail -->
     <div class="stats rv" style="animation-delay:.5s">
+      <div class="stat"><b id="hero-stars">728</b><span>GitHub stars</span>
+        <span class="live" data-live><i></i>live</span></div>
+      <div class="stat"><b id="hero-downloads">49.3k</b><span>Downloads</span>
+        <span class="live" data-live><i></i>live</span></div>
       <div class="stat"><b>15</b><span>Providers tracked</span></div>
-      <div class="stat"><b>&lt;50<sup>MB</sup></b><span>Resident memory</span></div>
       <div class="stat"><b>0</b><span>Bytes of telemetry</span></div>
-      <div class="stat"><b>1</b><span>Static binary</span></div>
     </div>
 
     <div class="scale-rule" style="margin-top:2px">
@@ -1749,9 +1753,23 @@ var STATS_ENDPOINT = 'https://onllm.dev/api/github-stats.php';
 var STATS_REPO = 'onllm-dev/onWatch';
 var liveApplied = false;
 
+/* The hero rail and the trust grid quote the same two counters, so both are
+   written through here. The hero tiles ship with the snapshot figures baked
+   into the markup: they are above the fold, so a dash while a fetch resolves
+   would be worse than a number that is a few days low. Both counters only
+   ever climb, so the baked value understates rather than overstates, and the
+   pulsing "live" badge appears only once the endpoint has actually answered. */
+function renderStars(n){
+  setText('trust-stars', fmtNum(n));
+  setText('hero-stars', fmtNum(n));
+  var hdr = document.getElementById('hero-star-count');
+  if (hdr) hdr.textContent = fmtCompact(n);
+}
+
 function renderDownloads(containers, binaries){
   var total = containers + binaries;
   setText('trust-downloads', fmtCompact(total));
+  setText('hero-downloads', fmtCompact(total));
   setText('trust-downloads-split',
     fmtNum(containers) + ' container pulls plus ' + fmtNum(binaries) +
     ' release binaries, ' + fmtNum(total) + ' combined.');
@@ -1761,10 +1779,8 @@ function applyLiveStats(st){
   if (!st || !isInt(st.stars) || !isInt(st.release_downloads) || !isInt(st.ghcr_downloads)) {
     return false;
   }
-  setText('trust-stars', fmtNum(st.stars));
+  renderStars(st.stars);
   renderDownloads(st.ghcr_downloads, st.release_downloads);
-  var hdr = document.getElementById('hero-star-count');
-  if (hdr) hdr.textContent = fmtCompact(st.stars);
   document.querySelectorAll('[data-live]').forEach(function(el){
     el.setAttribute('data-on', '1');
   });
@@ -1870,7 +1886,7 @@ function render(d){
   setText('trust-countries', fmtNum(d.countriesCount));
   setText('trust-orgs', fmtNum(d.orgTotal));
   if (!liveApplied){
-    setText('trust-stars', fmtNum(d.stars));
+    renderStars(d.stars);
     renderDownloads(d.containers, d.binaries);
   }
 
