@@ -47,6 +47,10 @@ type Config struct {
 	// OpenCode Go provider configuration
 	OpenCodeGoWorkspaceID string // OPENCODE_GO_WORKSPACE_ID
 	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE
+	// Ollama Cloud provider configuration
+	OllamaAPIKey       string  // OLLAMA_API_KEY from ollama.com/settings/keys
+	OllamaMonthlyLimit float64 // OLLAMA_MONTHLY_LIMIT: included usage cap in USD (overrides the plan default; 0 = derive from plan)
+	OllamaResetDay     int     // OLLAMA_RESET_DAY: day of month the included usage resets (1-31; 0 = account anniversary)
 	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
 	CodexAutoStart5h   bool   // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
 	CodexAutoStart7d   bool   // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
@@ -228,6 +232,9 @@ var onwatchEnvKeys = []string{
 	"OPENCODE_GO_WORKSPACE_ID",
 	"OPENCODE_GO_AUTH_COOKIE",
 	"OPENCODE_HOME",
+	"OLLAMA_API_KEY",
+	"OLLAMA_MONTHLY_LIMIT",
+	"OLLAMA_RESET_DAY",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
@@ -340,6 +347,17 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	cfg.OpenCodeEnabled = os.Getenv("OPENCODE_ENABLED") == "true"
 	cfg.OpenCodeGoWorkspaceID = strings.TrimSpace(os.Getenv("OPENCODE_GO_WORKSPACE_ID"))
 	cfg.OpenCodeGoAuthCookie = strings.TrimSpace(os.Getenv("OPENCODE_GO_AUTH_COOKIE"))
+	cfg.OllamaAPIKey = strings.TrimSpace(os.Getenv("OLLAMA_API_KEY"))
+	if v := strings.TrimSpace(os.Getenv("OLLAMA_MONTHLY_LIMIT")); v != "" {
+		if f, err := strconv.ParseFloat(strings.TrimPrefix(v, "$"), 64); err == nil && f > 0 {
+			cfg.OllamaMonthlyLimit = f
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("OLLAMA_RESET_DAY")); v != "" {
+		if d, err := strconv.Atoi(v); err == nil && d >= 1 && d <= 31 {
+			cfg.OllamaResetDay = d
+		}
+	}
 	// Codex auto quota-starter (Beta): default off; the dashboard toggle in
 	// provider_settings overrides these env-provided defaults at runtime.
 	cfg.CodexAutoStart5h = os.Getenv("CODEX_AUTO_START_5H") == "true"
@@ -725,6 +743,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "" {
 		providers = append(providers, "opencode")
 	}
+	if c.OllamaAPIKey != "" {
+		providers = append(providers, "ollama")
+	}
 	return providers
 }
 
@@ -761,6 +782,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.KimiToken != "" || c.KimiEnabled
 	case "opencode":
 		return c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != ""
+	case "ollama":
+		return c.OllamaAPIKey != ""
 	}
 	return false
 }
@@ -811,6 +834,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "" {
+		count++
+	}
+	if c.OllamaAPIKey != "" {
 		count++
 	}
 	return count > 1
@@ -888,6 +914,13 @@ func (c *Config) String() string {
 	opencodeDisplay := redactAPIKey(c.OpenCodeGoAuthCookie, "")
 	fmt.Fprintf(&sb, "  OpenCodeGoWorkspaceID: %s,\n", c.OpenCodeGoWorkspaceID)
 	fmt.Fprintf(&sb, "  OpenCodeGoAuthCookie: %s,\n", opencodeDisplay)
+	fmt.Fprintf(&sb, "  OllamaAPIKey: %s,\n", redactAPIKey(c.OllamaAPIKey, ""))
+	if c.OllamaMonthlyLimit > 0 {
+		fmt.Fprintf(&sb, "  OllamaMonthlyLimit: %.2f,\n", c.OllamaMonthlyLimit)
+	}
+	if c.OllamaResetDay > 0 {
+		fmt.Fprintf(&sb, "  OllamaResetDay: %d,\n", c.OllamaResetDay)
+	}
 	if c.KimiAutoToken {
 		fmt.Fprintf(&sb, "  KimiAutoToken: true,\n")
 	}

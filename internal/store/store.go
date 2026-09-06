@@ -818,6 +818,57 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_opencode_cycles_name_start ON opencode_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_opencode_cycles_name_active ON opencode_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
 
+		-- Ollama Cloud tables
+		CREATE TABLE IF NOT EXISTS ollama_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			raw_json TEXT NOT NULL DEFAULT '',
+			plan TEXT NOT NULL DEFAULT '',
+			account_name TEXT NOT NULL DEFAULT '',
+			account_email TEXT NOT NULL DEFAULT '',
+			monthly_used REAL NOT NULL DEFAULT 0,
+			monthly_limit REAL NOT NULL DEFAULT 0,
+			extra_cost REAL NOT NULL DEFAULT 0,
+			quota_count INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS ollama_quota_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			quota_name TEXT NOT NULL,
+			used REAL NOT NULL DEFAULT 0,
+			limit_value REAL NOT NULL DEFAULT 0,
+			utilization REAL NOT NULL DEFAULT 0,
+			format TEXT NOT NULL DEFAULT 'currency',
+			resets_at TEXT,
+			FOREIGN KEY (snapshot_id) REFERENCES ollama_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS ollama_model_usage (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			model TEXT NOT NULL,
+			request_count INTEGER NOT NULL DEFAULT 0,
+			cost REAL NOT NULL DEFAULT 0,
+			FOREIGN KEY (snapshot_id) REFERENCES ollama_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS ollama_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			resets_at TEXT,
+			peak_utilization REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_ollama_snapshots_captured ON ollama_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_ollama_quota_values_snapshot ON ollama_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_ollama_model_usage_snapshot ON ollama_model_usage(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_ollama_cycles_name_start ON ollama_reset_cycles(quota_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_ollama_cycles_name_active ON ollama_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
+
 		-- API integrations telemetry ingestion tables
 		CREATE TABLE IF NOT EXISTS api_integration_usage_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
