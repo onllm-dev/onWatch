@@ -99,14 +99,14 @@ type Aggregate struct {
 
 // ProviderCard is the top-level card rendered for each provider.
 type ProviderCard struct {
-	ID             string        `json:"id"`
-	BaseProvider   string        `json:"base_provider"`
-	Label          string        `json:"label"`
-	Subtitle       string        `json:"subtitle,omitempty"`
-	Status         string        `json:"status"`
-	HighestPercent float64       `json:"highest_percent"`
-	UpdatedAt      string        `json:"updated_at,omitempty"`
-	Quotas         []QuotaMeter  `json:"quotas"`
+	ID             string         `json:"id"`
+	BaseProvider   string         `json:"base_provider"`
+	Label          string         `json:"label"`
+	Subtitle       string         `json:"subtitle,omitempty"`
+	Status         string         `json:"status"`
+	HighestPercent float64        `json:"highest_percent"`
+	UpdatedAt      string         `json:"updated_at,omitempty"`
+	Quotas         []QuotaMeter   `json:"quotas"`
 	Trends         []TrendSeries  `json:"trends,omitempty"`
 	Promo          *ProviderPromo `json:"promo,omitempty"`
 }
@@ -131,12 +131,13 @@ type QuotaMeter struct {
 	Status          string    `json:"status"`
 	Used            float64   `json:"used,omitempty"`
 	Limit           float64   `json:"limit,omitempty"`
+	Format          string    `json:"format,omitempty"` // "currency" when Used/Limit are USD
 	ResetAt         string    `json:"reset_at,omitempty"`
 	TimeUntilReset  string    `json:"time_until_reset,omitempty"`
 	ProjectedValue  float64   `json:"projected_value,omitempty"`
 	CurrentRate     float64   `json:"current_rate,omitempty"`
 	SparklinePoints []float64 `json:"sparkline_points,omitempty"`
-	Source          string    `json:"source,omitempty"`     // "statusline" or "api"
+	Source          string    `json:"source,omitempty"` // "statusline" or "api"
 	AgeSeconds      int64     `json:"age_seconds,omitempty"`
 	IsStale         bool      `json:"is_stale,omitempty"`
 }

@@ -15,6 +15,8 @@ export interface QuotaMeter {
   status: Severity;
   used?: number;
   limit?: number;
+  /** "currency" when used/limit are US dollars. */
+  format?: string;
   reset_at?: string;
   time_until_reset?: string;
   source?: string;
@@ -340,14 +342,30 @@ function formatCount(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+function formatUsd(value: number): string {
+  return `$${value > 0 && value < 0.01 ? value.toFixed(3) : value.toFixed(2)}`;
+}
+
 function usedCell(quota: QuotaMeter): string {
   if (typeof quota.percent !== "number" || !Number.isFinite(quota.percent)) {
     return "-";
   }
-  let cell = formatPercent(quota.percent);
   const { used, limit } = quota;
-  if (typeof used === "number" && typeof limit === "number" && Number.isFinite(used) && Number.isFinite(limit) && limit > 0) {
-    cell += ` (${formatCount(used)}/${formatCount(limit)})`;
+  const hasLimit = typeof used === "number" && typeof limit === "number" && Number.isFinite(used) && Number.isFinite(limit) && limit > 0;
+  const displayValue = (quota.display_value ?? "").trim();
+  let cell: string;
+  if (!hasLimit && displayValue !== "" && !displayValue.endsWith("%")) {
+    // The daemon already chose a non-percent reading (for example "$0.001 used"
+    // when a currency quota has no known cap); a bare 0% would mislead.
+    cell = escapeMarkdown(displayValue);
+  } else {
+    cell = formatPercent(quota.percent);
+    if (hasLimit) {
+      cell +=
+        quota.format === "currency"
+          ? ` (${formatUsd(used)}/${formatUsd(limit)})`
+          : ` (${formatCount(used)}/${formatCount(limit)})`;
+    }
   }
   return colorTier(quota.status) !== "none" ? `**${cell}**` : cell;
 }

@@ -723,6 +723,7 @@ func normalizeQuotas(payload map[string]interface{}, warningPercent, criticalPer
 			Status:         quotaStatus(item, percent, warningPercent, criticalPercent),
 			Used:           firstFloat(item, "usage", "used", "currentUsage", "currentUsed"),
 			Limit:          firstFloat(item, "limit", "total", "currentLimit", "entitlement"),
+			Format:         stringValue(item, "format"),
 			ResetAt:        firstString(item, "renewsAt", "resetsAt", "resetDate", "resetTime", "resetAt"),
 			TimeUntilReset: stringValue(item, "timeUntilReset"),
 			ProjectedValue: firstFloat(item, "projectedUsage", "projectedUtil", "projectedValue"),

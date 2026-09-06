@@ -93,3 +93,24 @@ func TestBuildOllamaSnapshot_FreePlanUnknownLimit(t *testing.T) {
 		t.Errorf("models should be nil when absent, got %v", snap.Models)
 	}
 }
+
+func TestOllamaSnapshot_ApplyResetAnchor(t *testing.T) {
+	captured := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	created := time.Date(2026, 1, 6, 8, 0, 0, 0, time.UTC)
+	snap := BuildOllamaSnapshot(&OllamaUsageResponse{}, &OllamaMeResponse{Plan: "pro", CreatedAt: &created}, "", 0, 0, captured)
+	if got := snap.Quotas[0].ResetsAt; got == nil || got.Day() != 6 {
+		t.Fatalf("pre-anchor reset = %v", got)
+	}
+	anchor := time.Date(2026, 9, 20, 3, 4, 5, 0, time.UTC) // observed reset on the 20th
+	snap.ApplyResetAnchor(anchor)
+	want := time.Date(2026, 10, 20, 3, 4, 5, 0, time.UTC)
+	if got := snap.Quotas[0].ResetsAt; got == nil || !got.Equal(want) {
+		t.Fatalf("post-anchor reset = %v, want %v", got, want)
+	}
+	var nilSnap *OllamaSnapshot
+	nilSnap.ApplyResetAnchor(anchor) // must not panic
+	snap.ApplyResetAnchor(time.Time{})
+	if got := snap.Quotas[0].ResetsAt; got == nil || !got.Equal(want) {
+		t.Fatalf("zero anchor should be ignored, got %v", got)
+	}
+}

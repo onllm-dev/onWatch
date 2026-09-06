@@ -93,6 +93,8 @@ func (a *OllamaAgent) poll(ctx context.Context) {
 		return
 	}
 
+	a.applyLearnedReset(snapshot)
+
 	if _, err := a.store.InsertOllamaSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert Ollama snapshot", "error", err)
 		return
@@ -128,4 +130,50 @@ func (a *OllamaAgent) poll(ctx context.Context) {
 		"monthly_used_usd", snapshot.MonthlyUsedUSD,
 		"quota_count", len(snapshot.Quotas),
 	)
+}
+
+const (
+	// ollamaResetAnchorSetting persists the moment a real monthly reset was
+	// observed so the reset day survives restarts.
+	ollamaResetAnchorSetting = "ollama_reset_anchor"
+	// ollamaResetDropUSD is the drop in included usage that counts as a reset
+	// (usage only ever grows within a cycle; half a cent absorbs rounding).
+	ollamaResetDropUSD = 0.005
+)
+
+// applyLearnedReset detects a real monthly reset (included usage fell since
+// the previous snapshot), records that moment, and re-anchors the quota's
+// ResetsAt to it. The account-anniversary guess is right for Free accounts
+// but paid plans reset on the subscription start day, which the API does
+// not expose. An explicit OLLAMA_RESET_DAY always wins.
+func (a *OllamaAgent) applyLearnedReset(snapshot *api.OllamaSnapshot) {
+	if a.store == nil || snapshot == nil || a.cfg.OllamaResetDay > 0 {
+		return
+	}
+	prev, err := a.store.QueryLatestOllama()
+	if err != nil {
+		a.logger.Warn("Ollama: could not load previous snapshot for reset detection", "error", err)
+	} else if prev != nil && prev.MonthlyUsedUSD-snapshot.MonthlyUsedUSD > ollamaResetDropUSD {
+		anchor := snapshot.CapturedAt.UTC().Format(time.RFC3339)
+		if err := a.store.SetSetting(ollamaResetAnchorSetting, anchor); err != nil {
+			a.logger.Warn("Ollama: failed to persist learned reset anchor", "error", err)
+		} else {
+			a.logger.Info("Ollama included usage dropped - learned monthly reset day",
+				"previous_usd", prev.MonthlyUsedUSD,
+				"current_usd", snapshot.MonthlyUsedUSD,
+				"reset_day", snapshot.CapturedAt.UTC().Day(),
+			)
+		}
+	}
+
+	stored, err := a.store.GetSetting(ollamaResetAnchorSetting)
+	if err != nil || stored == "" {
+		return
+	}
+	anchor, err := time.Parse(time.RFC3339, stored)
+	if err != nil {
+		a.logger.Warn("Ollama: ignoring malformed learned reset anchor", "value", stored)
+		return
+	}
+	snapshot.ApplyResetAnchor(anchor)
 }

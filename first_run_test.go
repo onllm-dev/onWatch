@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"os/exec"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
 func TestResolveAdminPassHash(t *testing.T) {
@@ -118,4 +122,39 @@ func TestStopProcessAndProcessAlive(t *testing.T) {
 	if processAlive(pid) {
 		t.Fatalf("processAlive(%d) = true after the child exited", pid)
 	}
+}
+
+func TestCollectOllamaKey_Verification(t *testing.T) {
+	orig := verifyOllamaKey
+	defer func() { verifyOllamaKey = orig }()
+
+	t.Run("rejected key is re-prompted", func(t *testing.T) {
+		calls := 0
+		verifyOllamaKey = func(key string) (string, error) {
+			calls++
+			if key == "bad" {
+				return "", api.ErrOllamaUnauthorized
+			}
+			return "pro", nil
+		}
+		got := collectOllamaKey(bufio.NewReader(strings.NewReader("bad\ngood\n")))
+		if got != "good" || calls != 2 {
+			t.Fatalf("got %q after %d calls", got, calls)
+		}
+	})
+
+	t.Run("network failure keeps the key", func(t *testing.T) {
+		verifyOllamaKey = func(string) (string, error) { return "", api.ErrOllamaNetworkError }
+		if got := collectOllamaKey(bufio.NewReader(strings.NewReader("offline-key\n"))); got != "offline-key" {
+			t.Fatalf("got %q", got)
+		}
+	})
+
+	t.Run("empty input is rejected before verification", func(t *testing.T) {
+		calls := 0
+		verifyOllamaKey = func(string) (string, error) { calls++; return "free", nil }
+		if got := collectOllamaKey(bufio.NewReader(strings.NewReader("\nk1\n"))); got != "k1" || calls != 1 {
+			t.Fatalf("got %q, calls %d", got, calls)
+		}
+	})
 }

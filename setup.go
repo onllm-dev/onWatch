@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -327,17 +329,44 @@ func collectSyntheticKey(reader *bufio.Reader) string {
 // collectOllamaKey prompts for an Ollama Cloud API key. The key comes from
 // ollama.com/settings/keys and is stored as OLLAMA_API_KEY in .env. onWatch uses
 // it to read included monthly usage and plan details from the ollama.com API.
+// verifyOllamaKey checks a key against ollama.com and returns the plan tier.
+// A package variable so tests can stub it and never touch the network.
+var verifyOllamaKey = func(key string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	snap, err := api.NewOllamaClient(key, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithOllamaTimeout(10*time.Second)).FetchSnapshot(ctx)
+	if err != nil {
+		return "", err
+	}
+	return snap.Plan, nil
+}
+
 func collectOllamaKey(reader *bufio.Reader) string {
 	fmt.Printf("\n  %sOllama Cloud Setup%s\n", colorBold, colorReset)
 	fmt.Printf("  %sCreate an API key at https://ollama.com/settings/keys%s\n", colorDim, colorReset)
 	for {
 		fmt.Print("  Ollama Cloud API key: ")
 		key := readLine(reader)
-		if key != "" {
+		if key == "" {
+			fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
+			continue
+		}
+		plan, err := verifyOllamaKey(key)
+		switch {
+		case err == nil:
+			if plan == "" {
+				plan = "unknown"
+			}
+			fmt.Printf("  %s ok %s  Key verified with ollama.com (plan: %s)  %s%s%s\n", colorGreen, colorReset, plan, colorDim, maskValue(key), colorReset)
+			return key
+		case api.IsOllamaAuthError(err):
+			fmt.Printf("  %sollama.com rejected this key (401). Check it at https://ollama.com/settings/keys and try again.%s\n", colorRed, colorReset)
+			continue
+		default:
+			fmt.Printf("  %s!%s Could not reach ollama.com to verify the key (%v) - saving it anyway\n", colorYellow, colorReset, err)
 			fmt.Printf("  %s ok %s  %s%s%s\n", colorGreen, colorReset, colorDim, maskValue(key), colorReset)
 			return key
 		}
-		fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
 	}
 }
 

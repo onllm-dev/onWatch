@@ -81,6 +81,7 @@ function normalizeQuota(raw: unknown): QuotaMeter | undefined {
     status: asSeverity(q.status),
     used: typeof q.used === "number" ? q.used : undefined,
     limit: typeof q.limit === "number" ? q.limit : undefined,
+    format: asOptString(q.format),
     reset_at: asOptString(q.reset_at),
     time_until_reset: asOptString(q.time_until_reset),
     source: asOptString(q.source),

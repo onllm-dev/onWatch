@@ -179,3 +179,94 @@ func TestOllamaAgent_Poll_FetchErrorTyped(t *testing.T) {
 
 	ag.poll(context.Background())
 }
+
+func ollamaSnapAt(captured time.Time, used float64, resetsAt time.Time) *api.OllamaSnapshot {
+	r := resetsAt
+	return &api.OllamaSnapshot{
+		CapturedAt:     captured,
+		Plan:           "pro",
+		MonthlyUsedUSD: used,
+		Quotas: []api.OllamaQuota{{
+			Name: "monthly", Used: used, Limit: 60, Utilization: used / 60 * 100,
+			Format: api.OllamaQuotaFormatCurrency, ResetsAt: &r,
+		}},
+	}
+}
+
+func TestOllamaAgent_LearnsResetDayFromUsageDrop(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer st.Close()
+
+	guess := time.Date(2026, 10, 6, 20, 0, 0, 0, time.UTC) // account-anniversary guess
+	stub := &stubOllamaClient{}
+	cfg := &config.Config{OllamaAPIKey: "k"}
+	ag := NewOllamaAgent(stub, st, tracker.NewOllamaTracker(st, nil), cfg, time.Second, slog.Default(), nil)
+
+	// Poll 1: usage growing, no anchor learned, guess kept.
+	stub.snapshot = ollamaSnapAt(time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC), 5.0, guess)
+	ag.poll(context.Background())
+	latest, _ := st.QueryLatestOllama()
+	if latest == nil || !latest.Quotas[0].ResetsAt.Equal(guess) {
+		t.Fatalf("poll 1 resetsAt = %v, want guess %v", latest.Quotas[0].ResetsAt, guess)
+	}
+	if v, _ := st.GetSetting("ollama_reset_anchor"); v != "" {
+		t.Fatalf("anchor should not be learned yet, got %q", v)
+	}
+
+	// Poll 2: usage fell from 5.00 to 0.20 on the 20th -> real reset observed.
+	observed := time.Date(2026, 9, 20, 0, 4, 0, 0, time.UTC)
+	stub.snapshot = ollamaSnapAt(observed, 0.2, guess)
+	ag.poll(context.Background())
+	latest, _ = st.QueryLatestOllama()
+	want := time.Date(2026, 10, 20, 0, 4, 0, 0, time.UTC)
+	if latest == nil || !latest.Quotas[0].ResetsAt.Equal(want) {
+		t.Fatalf("poll 2 resetsAt = %v, want learned %v", latest.Quotas[0].ResetsAt, want)
+	}
+	if v, _ := st.GetSetting("ollama_reset_anchor"); v != observed.Format(time.RFC3339) {
+		t.Fatalf("anchor = %q, want %q", v, observed.Format(time.RFC3339))
+	}
+
+	// Poll 3: growing again, still anchored on the learned day.
+	stub.snapshot = ollamaSnapAt(time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC), 0.9, guess)
+	ag.poll(context.Background())
+	latest, _ = st.QueryLatestOllama()
+	if !latest.Quotas[0].ResetsAt.Equal(want) {
+		t.Fatalf("poll 3 resetsAt = %v, want %v", latest.Quotas[0].ResetsAt, want)
+	}
+
+	// Tiny rounding dip (below half a cent) must not count as a reset.
+	stub.snapshot = ollamaSnapAt(time.Date(2026, 9, 22, 9, 0, 0, 0, time.UTC), 0.897, guess)
+	ag.poll(context.Background())
+	if v, _ := st.GetSetting("ollama_reset_anchor"); v != observed.Format(time.RFC3339) {
+		t.Fatalf("rounding dip changed anchor to %q", v)
+	}
+}
+
+func TestOllamaAgent_ExplicitResetDayDisablesLearning(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer st.Close()
+
+	guess := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	stub := &stubOllamaClient{}
+	cfg := &config.Config{OllamaAPIKey: "k", OllamaResetDay: 1}
+	ag := NewOllamaAgent(stub, st, nil, cfg, time.Second, slog.Default(), nil)
+
+	stub.snapshot = ollamaSnapAt(time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC), 5.0, guess)
+	ag.poll(context.Background())
+	stub.snapshot = ollamaSnapAt(time.Date(2026, 9, 20, 0, 4, 0, 0, time.UTC), 0.2, guess)
+	ag.poll(context.Background())
+
+	if v, _ := st.GetSetting("ollama_reset_anchor"); v != "" {
+		t.Fatalf("explicit reset day should disable learning, got anchor %q", v)
+	}
+	latest, _ := st.QueryLatestOllama()
+	if !latest.Quotas[0].ResetsAt.Equal(guess) {
+		t.Fatalf("resetsAt = %v, want untouched %v", latest.Quotas[0].ResetsAt, guess)
+	}
+}

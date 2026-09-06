@@ -294,6 +294,28 @@ describe("tooltip sections", () => {
     expect(formatProviderSection(fractional, NOW)).toContain("| 23% (2.3/10) |");
   });
 
+  it("shows dollars for currency quotas and the daemon's reading when the cap is unknown", () => {
+    const paid = provider({
+      id: "ollama",
+      base_provider: "ollama",
+      label: "Ollama",
+      status: "healthy",
+      highest_percent: 13,
+      quotas: [quota({ key: "monthly_included_usage", label: "Monthly Included Usage", display_value: "13%", percent: 12.5, status: "healthy", used: 7.5, limit: 60, format: "currency", time_until_reset: "12d 3h" })],
+    });
+    expect(formatProviderSection(paid, NOW)).toContain("| $(pass) Monthly Included Usage | 13% ($7.50/$60.00) | 12d 3h |");
+
+    const free = provider({
+      id: "ollama",
+      base_provider: "ollama",
+      label: "Ollama",
+      status: "healthy",
+      highest_percent: 0,
+      quotas: [quota({ key: "monthly_included_usage", label: "Monthly Included Usage", display_value: "$0.001 used", percent: 0, status: "healthy", used: 0.001, limit: 0, format: "currency", time_until_reset: "29d 22h" })],
+    });
+    expect(formatProviderSection(free, NOW)).toContain("| $(pass) Monthly Included Usage | $0.001 used | 29d 22h |");
+  });
+
   it("marks stale quotas and uses a hyphen for a missing countdown", () => {
     const p = provider({ quotas: [quota({ is_stale: true, time_until_reset: "", reset_at: undefined })] });
     expect(formatProviderSection(p, NOW)).toContain("| $(warning) 5-Hour Limit $(history) | **85%** | - |");

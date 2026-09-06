@@ -40,6 +40,8 @@ func TestMain(m *testing.M) {
 	stdinIsTerminal = func() bool { return false }
 	systemctlRestart = func() error { return nil }
 	inContainer = func() bool { return false }
+	// Setup wizard key verification must never hit ollama.com from tests.
+	verifyOllamaKey = func(string) (string, error) { return "free", nil }
 
 	os.Exit(m.Run())
 }

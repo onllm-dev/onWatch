@@ -2774,10 +2774,17 @@
                 return meta;
             }
 
+            function formatUsd(value) {
+                return value > 0 && value < 0.01 ? value.toFixed(3) : value.toFixed(2);
+            }
+
             function usageSummary(quota) {
                 const limit = Number(quota.limit);
                 const used = Number(quota.used);
                 if (Number.isFinite(limit) && limit > 0 && Number.isFinite(used) && used >= 0) {
+                    if (quota.format === "currency") {
+                        return `$${formatUsd(used)}/$${formatUsd(limit)}`;
+                    }
                     return `${Math.round(used)}/${Math.round(limit)}`;
                 }
                 return "";

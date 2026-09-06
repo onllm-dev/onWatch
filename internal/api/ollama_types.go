@@ -274,3 +274,20 @@ func BuildOllamaSnapshot(usage *OllamaUsageResponse, me *OllamaMeResponse, rawJS
 	}}
 	return snap
 }
+
+// ApplyResetAnchor recomputes the monthly quota's ResetsAt from a learned
+// anchor (the moment a real reset was observed), overriding the
+// account-anniversary guess. Explicit OLLAMA_RESET_DAY handling is the
+// caller's responsibility.
+func (s *OllamaSnapshot) ApplyResetAnchor(anchor time.Time) {
+	if s == nil || anchor.IsZero() {
+		return
+	}
+	next := OllamaNextReset(anchor, s.CapturedAt)
+	for i := range s.Quotas {
+		if s.Quotas[i].Name == OllamaQuotaMonthly {
+			t := next
+			s.Quotas[i].ResetsAt = &t
+		}
+	}
+}
