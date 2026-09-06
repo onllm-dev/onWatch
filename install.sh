@@ -142,6 +142,15 @@ validate_synthetic_key() {
     return 1
 }
 
+validate_ollama_key() {
+    local val="$1"
+    if [[ -n "$val" && "$val" != *[[:space:]]* ]]; then
+        return 0
+    fi
+    printf "  ${RED}Key cannot be empty or contain whitespace${NC}\n" >&2
+    return 1
+}
+
 validate_nonempty() {
     local val="$1"
     if [[ -n "$val" ]]; then
@@ -432,10 +441,21 @@ has_zai_key() {
     [[ -n "$val" && "$val" != "your_zai_api_key_here" ]]
 }
 
+has_ollama_key() {
+    local val
+    val="$(env_get OLLAMA_API_KEY)"
+    [[ -n "$val" && "$val" != "your_ollama_api_key_here" ]]
+}
+
 # Append a provider section to the existing .env
 append_synthetic_to_env() {
     local key="$1" env_file="${INSTALL_DIR}/.env"
     printf '\n# Synthetic API key (https://synthetic.new/settings/api)\nSYNTHETIC_API_KEY=%s\n' "$key" >> "$env_file"
+}
+
+append_ollama_to_env() {
+    local key="$1" env_file="${INSTALL_DIR}/.env"
+    printf '\n# Ollama Cloud API key (https://ollama.com/settings/keys)\nOLLAMA_API_KEY=%s\n' "$key" >> "$env_file"
 }
 
 append_zai_to_env() {
@@ -765,7 +785,7 @@ interactive_setup() {
         SETUP_USERNAME="${SETUP_USERNAME:-admin}"
         SETUP_PASSWORD=""  # Don't show existing password
 
-        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false has_grok=false
+        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false has_grok=false has_ollama=false
         has_synthetic_key && has_syn=true
         has_zai_key && has_zai=true
         has_anthropic_key && has_anth=true
@@ -774,14 +794,15 @@ interactive_setup() {
         has_antigravity_enabled && has_anti=true
         has_gemini_enabled && has_gemini=true
         has_grok_enabled && has_grok=true
+        has_ollama_key && has_ollama=true
 
-        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini && $has_grok; then
+        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini && $has_grok && $has_ollama; then
             # All providers configured — nothing to do
             info "Existing .env found — all providers configured"
             return
         fi
 
-        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini && ! $has_grok; then
+        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini && ! $has_grok && ! $has_ollama; then
             # .env exists but no keys at all — run full setup
             warn "Existing .env found but no API keys configured"
             info "Running interactive setup..."
@@ -804,6 +825,7 @@ interactive_setup() {
             $has_anti && configured="${configured}Antigravity "
             $has_gemini && configured="${configured}Gemini "
             $has_grok && configured="${configured}Grok "
+            $has_ollama && configured="${configured}Ollama "
             info "Existing .env found — configured: ${configured}"
             printf "\n"
 
@@ -962,6 +984,18 @@ interactive_setup() {
                 fi
             fi
 
+            if ! $has_ollama; then
+                local add_ollama
+                add_ollama=$(prompt_with_default "Add Ollama Cloud provider? (y/N)" "N")
+                if [[ "$add_ollama" =~ ^[Yy] ]]; then
+                    printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
+                    local ollama_key
+                    ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
+                    append_ollama_to_env "$ollama_key"
+                    ok "Added Ollama Cloud provider to .env"
+                fi
+            fi
+
             $_opened_fd3 && exec 3<&- || true
             return
         fi
@@ -990,12 +1024,13 @@ interactive_setup() {
         "Antigravity (Windsurf) only" \
         "Gemini CLI only" \
         "Grok (xAI) only" \
+        "Ollama Cloud only" \
         "Multiple (choose one at a time)" \
         "All available")
 
-    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled=""
+    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled="" ollama_key=""
 
-    if [[ "$provider_choice" == "9" ]]; then
+    if [[ "$provider_choice" == "10" ]]; then
         # ── Multiple: ask for each provider individually ──
         local add_it
         add_it=$(prompt_with_default "Add Synthetic provider? (y/N)" "N")
@@ -1046,8 +1081,14 @@ interactive_setup() {
             printf "  ${DIM}Grok auto-detects from ~/.grok/auth.json (or \$GROK_HOME)${NC}\n"
         fi
 
+        add_it=$(prompt_with_default "Add Ollama Cloud provider? (y/N)" "N")
+        if [[ "$add_it" =~ ^[Yy] ]]; then
+            printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
+            ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
+        fi
+
         # Validate at least one provider selected
-        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" ]]; then
+        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" && -z "$ollama_key" ]]; then
             printf "  ${RED}No providers selected. Please select at least one.${NC}\n"
             # Re-run provider selection by recursion-safe retry
             printf "\n"
@@ -1096,6 +1137,13 @@ interactive_setup() {
                 fi
             fi
             if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" ]]; then
+                add_it=$(prompt_with_default "Add Ollama Cloud provider? (y/N)" "N")
+                if [[ "$add_it" =~ ^[Yy] ]]; then
+                    printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
+                    ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
+                fi
+            fi
+            if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" && -z "$ollama_key" ]]; then
                 fail "At least one provider is required"
             fi
         fi
@@ -1103,13 +1151,13 @@ interactive_setup() {
         # ── Single provider or All ──
 
         # ── Synthetic API Key ──
-        if [[ "$provider_choice" == "1" || "$provider_choice" == "10" ]]; then
+        if [[ "$provider_choice" == "1" || "$provider_choice" == "11" ]]; then
             printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
             synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
         fi
 
         # ── Z.ai API Key ──
-        if [[ "$provider_choice" == "2" || "$provider_choice" == "10" ]]; then
+        if [[ "$provider_choice" == "2" || "$provider_choice" == "11" ]]; then
             local zai_result
             zai_result=$(collect_zai_config)
             zai_key=$(echo "$zai_result" | head -1)
@@ -1117,17 +1165,17 @@ interactive_setup() {
         fi
 
         # ── Anthropic Token ──
-        if [[ "$provider_choice" == "3" || "$provider_choice" == "10" ]]; then
+        if [[ "$provider_choice" == "3" || "$provider_choice" == "11" ]]; then
             anthropic_token=$(collect_anthropic_config)
         fi
 
         # ── Codex Token ──
-        if [[ "$provider_choice" == "4" || "$provider_choice" == "10" ]]; then
+        if [[ "$provider_choice" == "4" || "$provider_choice" == "11" ]]; then
             codex_token=$(collect_codex_config)
         fi
 
         # ── OpenCode (opencode-codex) ──
-        if [[ "$provider_choice" == "5" || "$provider_choice" == "10" ]]; then
+        if [[ "$provider_choice" == "5" || "$provider_choice" == "11" ]]; then
             opencode_enabled="true"
             if detect_opencode_auth; then
                 printf "\n  ${GREEN}✓${NC} OpenCode (opencode-codex) credentials detected (feeds Codex)\n"
@@ -1137,25 +1185,31 @@ interactive_setup() {
         fi
 
         # ── Antigravity (Windsurf) ──
-        if [[ "$provider_choice" == "6" || "$provider_choice" == "10" ]]; then
+        if [[ "$provider_choice" == "6" || "$provider_choice" == "11" ]]; then
             antigravity_enabled="true"
             printf "\n  ${GREEN}✓${NC} Antigravity enabled (auto-detects running Windsurf process)\n"
         fi
 
         # ── Gemini CLI ──
-        if [[ "$provider_choice" == "7" || "$provider_choice" == "10" ]]; then
+        if [[ "$provider_choice" == "7" || "$provider_choice" == "11" ]]; then
             gemini_enabled="true"
             printf "\n  ${GREEN}✓${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n"
         fi
 
         # ── Grok (xAI) ──
-        if [[ "$provider_choice" == "8" || "$provider_choice" == "10" ]]; then
+        if [[ "$provider_choice" == "8" || "$provider_choice" == "11" ]]; then
             grok_enabled="true"
             if [[ -f "$(grok_auth_path)" ]]; then
                 printf "\n  ${GREEN}✓${NC} Grok enabled (credentials detected at $(grok_auth_path))\n"
             else
                 printf "\n  ${GREEN}✓${NC} Grok enabled (run 'grok login' or set GROK_TOKEN to authenticate)\n"
             fi
+        fi
+
+        # ── Ollama Cloud ──
+        if [[ "$provider_choice" == "9" || "$provider_choice" == "11" ]]; then
+            printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
+            ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
         fi
     fi
 
@@ -1262,6 +1316,12 @@ interactive_setup() {
             echo ""
         fi
 
+        if [[ -n "$ollama_key" ]]; then
+            echo "# Ollama Cloud API key (https://ollama.com/settings/keys)"
+            echo "OLLAMA_API_KEY=${ollama_key}"
+            echo ""
+        fi
+
         echo "# Dashboard credentials"
         echo "ONWATCH_ADMIN_USER=${SETUP_USERNAME}"
         echo "ONWATCH_ADMIN_PASS=${SETUP_PASSWORD}"
@@ -1286,7 +1346,8 @@ interactive_setup() {
         6) provider_label="Antigravity" ;;
         7) provider_label="Gemini" ;;
         8) provider_label="Grok" ;;
-        9)
+        9) provider_label="Ollama Cloud" ;;
+        10)
             # Multiple — build label from selected providers
             local parts=()
             [[ -n "$synthetic_key" ]] && parts+=("Synthetic")
@@ -1297,9 +1358,10 @@ interactive_setup() {
             [[ -n "$antigravity_enabled" ]] && parts+=("Antigravity")
             [[ -n "$gemini_enabled" ]] && parts+=("Gemini")
             [[ -n "$grok_enabled" ]] && parts+=("Grok")
+            [[ -n "$ollama_key" ]] && parts+=("Ollama Cloud")
             provider_label=$(IFS=", "; echo "${parts[*]}")
             ;;
-        10) provider_label="All providers" ;;
+        11) provider_label="All providers" ;;
     esac
 
     local masked_pass

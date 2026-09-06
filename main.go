@@ -1308,6 +1308,10 @@ func run() error {
 	if cfg.HasProvider("opencode") {
 		opencodeTr = tracker.NewOpenCodeTracker(db, logger)
 	}
+	var ollamaTr *tracker.OllamaTracker
+	if cfg.HasProvider("ollama") {
+		ollamaTr = tracker.NewOllamaTracker(db, logger)
+	}
 
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
@@ -1396,6 +1400,13 @@ func run() error {
 		opencodeSm := agent.NewSessionManager(db, "opencode", idleTimeout, logger)
 		opencodeAg = agent.NewOpenCodeAgent(opencodeClient, db, opencodeTr, cfg, cfg.PollInterval, logger, opencodeSm)
 	}
+	var ollamaAg *agent.OllamaAgent
+	if cfg.HasProvider("ollama") {
+		ollamaClient := api.NewOllamaClient(cfg.OllamaAPIKey, logger, api.WithOllamaMonthlyLimit(cfg.OllamaMonthlyLimit), api.WithOllamaResetDay(cfg.OllamaResetDay))
+		ollamaSm := agent.NewSessionManager(db, "ollama", idleTimeout, logger)
+		ollamaAg = agent.NewOllamaAgent(ollamaClient, db, ollamaTr, cfg, cfg.PollInterval, logger, ollamaSm)
+		logger.Info("Ollama API client configured")
+	}
 
 	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
 	if cfg.APIIntegrationsEnabled {
@@ -1455,6 +1466,9 @@ func run() error {
 	}
 	if opencodeAg != nil {
 		opencodeAg.SetNotifier(notifier)
+	}
+	if ollamaAg != nil {
+		ollamaAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -1619,6 +1633,9 @@ func run() error {
 	if opencodeAg != nil {
 		opencodeAg.SetPollingCheck(func() bool { return isPollingEnabled("opencode") })
 	}
+	if ollamaAg != nil {
+		ollamaAg.SetPollingCheck(func() bool { return isPollingEnabled("ollama") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -1694,6 +1711,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "opencode", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	if ollamaTr != nil {
+		ollamaTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "ollama", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -1736,6 +1758,9 @@ func run() error {
 	}
 	if opencodeTr != nil {
 		handler.SetOpenCodeTracker(opencodeTr)
+	}
+	if ollamaTr != nil {
+		handler.SetOllamaTracker(ollamaTr)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -1783,6 +1808,9 @@ func run() error {
 	if opencodeAg != nil {
 		agentMgr.RegisterFactory("opencode", func() (agent.AgentRunner, error) { return opencodeAg, nil })
 	}
+	if ollamaAg != nil {
+		agentMgr.RegisterFactory("ollama", func() (agent.AgentRunner, error) { return ollamaAg, nil })
+	}
 
 	if apiIntegrationsAg != nil {
 		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
@@ -1828,7 +1856,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode", "ollama"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
@@ -2372,6 +2400,9 @@ func printBanner(cfg *config.Config, version string) {
 	if cfg.HasProvider("openrouter") {
 		fmt.Printf("OpenRouter Key:    %s\n", redactAPIKey(cfg.OpenRouterAPIKey))
 	}
+	if cfg.HasProvider("ollama") {
+		fmt.Printf("Ollama API Key:    %s\n", redactAPIKey(cfg.OllamaAPIKey))
+	}
 	if cfg.HasProvider("gemini") {
 		source := "auto-detect"
 		if cfg.GeminiRefreshToken != "" || cfg.GeminiAccessToken != "" {
@@ -2423,6 +2454,9 @@ func printHelp() {
 	fmt.Println("  MINIMAX_API_KEY         MiniMax API key")
 	fmt.Println("  MINIMAX_REGION          MiniMax region: global or cn (default: global)")
 	fmt.Println("  OPENROUTER_API_KEY      OpenRouter API key")
+	fmt.Println("  OLLAMA_API_KEY          Ollama Cloud API key (ollama.com/settings/keys)")
+	fmt.Println("  OLLAMA_MONTHLY_LIMIT    Ollama included usage cap in USD (0 = derive from plan)")
+	fmt.Println("  OLLAMA_RESET_DAY        Ollama reset day of month (1-31; 0 = account anniversary)")
 	fmt.Println("  CODEX_HOME              Optional Codex auth directory (uses CODEX_HOME/auth.json)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
 	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")

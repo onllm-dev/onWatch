@@ -182,12 +182,12 @@ test_anthropic_auto_rejected_manual() {
     assert_eq "ANTHROPIC_TOKEN" "manual-token"
 }
 
-# Multiple = choice 9. Provider prompt order:
-# synthetic, zai, anthropic, codex, opencode, antigravity, gemini, grok.
+# Multiple = choice 10. Provider prompt order:
+# synthetic, zai, anthropic, codex, opencode, antigravity, gemini, grok, ollama.
 test_multiple_syn_and_anth() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "9\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "10\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_multi_123" && \
     assert_unset "ZAI_API_KEY" && \
     assert_eq "ANTHROPIC_TOKEN" "anth-multi" && \
@@ -196,7 +196,7 @@ test_multiple_syn_and_anth() {
 
 test_multiple_zai_only() {
     setup && source_functions
-    run_setup "9\nN\ny\nzai_multi_456\nY\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "10\nN\ny\nzai_multi_456\nY\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_unset "SYNTHETIC_API_KEY" && \
     assert_eq "ZAI_API_KEY" "zai_multi_456" && \
     assert_unset "ANTHROPIC_TOKEN"
@@ -205,7 +205,7 @@ test_multiple_zai_only() {
 test_multiple_all_three() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "9\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "10\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_789" && \
     assert_eq "ZAI_API_KEY" "zai_all_789" && \
     assert_eq "ANTHROPIC_TOKEN" "anth_all_789" && \
@@ -221,18 +221,29 @@ test_grok_only() {
     assert_unset "SYNTHETIC_API_KEY"
 }
 
-# All available = choice 10. OpenCode/Antigravity/Gemini/Grok auto-enable and
-# consume no input.
-test_all_available_choice10() {
+# Ollama Cloud = choice 9; API-key provider (single value from
+# https://ollama.com/settings/keys).
+test_ollama_only() {
+    setup && source_functions
+    run_setup "9\nollama_test_key_123\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "OLLAMA_API_KEY" "ollama_test_key_123" && \
+    assert_unset "SYNTHETIC_API_KEY" && \
+    assert_unset "ZAI_API_KEY"
+}
+
+# All available = choice 11. OpenCode/Antigravity/Gemini/Grok auto-enable and
+# consume no input; Synthetic/Z.ai/Anthropic/Codex/Ollama prompt for keys.
+test_all_available_choice11() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
     detect_codex_token() { return 1; }
-    run_setup "10\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\n1\ncodex_all_avail\nadmin\ntestpass\n9211\n60\n"
+    run_setup "11\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\n1\ncodex_all_avail\nollama_all_avail\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_avail" && \
     assert_eq "ZAI_API_KEY" "zai_all_avail" && \
     assert_eq "ANTHROPIC_TOKEN" "anth_all_avail" && \
     assert_eq "CODEX_TOKEN" "codex_all_avail" && \
-    assert_eq "GROK_ENABLED" "true"
+    assert_eq "GROK_ENABLED" "true" && \
+    assert_eq "OLLAMA_API_KEY" "ollama_all_avail"
 }
 
 test_custom_port_and_interval() {
@@ -334,9 +345,30 @@ EOF
 
 test_multiple_none_triggers_retry() {
     setup && source_functions
-    # choice=9 (Multiple), all 8 providers N (triggers retry), then add Synthetic
-    run_setup "9\nN\nN\nN\nN\nN\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
+    # choice=10 (Multiple), all 9 providers N (triggers retry), then add Synthetic
+    run_setup "10\nN\nN\nN\nN\nN\nN\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_retry_123"
+}
+
+test_upgrade_add_ollama() {
+    setup && source_functions
+    detect_anthropic_token() { return 1; }
+    detect_codex_token() { return 1; }
+    # Keep the missing-provider order deterministic regardless of host state
+    # (e.g. a real ~/.gemini/oauth_creds.json would otherwise drop Gemini).
+    has_gemini_enabled() { return 1; }
+    cat > "${TEST_DIR}/.env" <<EOF
+SYNTHETIC_API_KEY=syn_existing_key
+ONWATCH_ADMIN_USER=admin
+ONWATCH_ADMIN_PASS=existingpass
+ONWATCH_PORT=9211
+EOF
+    # Missing-provider order: zai, anthropic, codex, opencode, antigravity,
+    # gemini, grok, ollama. Answer N to all except Ollama.
+    run_setup "N\nN\nN\nN\nN\nN\nN\ny\nollama_upgrade_key\n"
+    assert_eq "SYNTHETIC_API_KEY" "syn_existing_key" && \
+    assert_eq "OLLAMA_API_KEY" "ollama_upgrade_key" && \
+    assert_unset "ZAI_API_KEY"
 }
 
 test_detect_anthropic_file_fallback() {
@@ -383,10 +415,12 @@ run_test test_multiple_syn_and_anth
 run_test test_multiple_zai_only
 run_test test_multiple_all_three
 run_test test_grok_only
-run_test test_all_available_choice10
+run_test test_ollama_only
+run_test test_all_available_choice11
 run_test test_custom_port_and_interval
 run_test test_upgrade_add_zai
 run_test test_upgrade_add_codex
+run_test test_upgrade_add_ollama
 run_test test_upgrade_all_configured_skips
 run_test test_upgrade_auto_detect_anthropic
 run_test test_has_anthropic_key_rejects_placeholder

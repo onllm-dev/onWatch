@@ -276,6 +276,7 @@ func TestLoadExistingEnvAndProviderChecks(t *testing.T) {
 			"ANTIGRAVITY_ENABLED=true",
 			"GEMINI_ENABLED=true",
 			"GROK_ENABLED=true",
+			"OLLAMA_API_KEY=ollama_key",
 			"MALFORMED_LINE",
 		}, "\n")
 		if err := os.WriteFile(envPath, []byte(content), 0o600); err != nil {

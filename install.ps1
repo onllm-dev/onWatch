@@ -143,6 +143,13 @@ function Test-SyntheticKey {
     return $false
 }
 
+function Test-OllamaKey {
+    param([string]$val)
+    if ($val -and $val -notmatch '\s') { return $true }
+    Write-Host "  ${RED}Key cannot be empty or contain whitespace${NC}"
+    return $false
+}
+
 function Test-HttpsUrl {
     param([string]$val)
     if ($val.StartsWith("https://")) { return $true }
@@ -426,8 +433,9 @@ function Start-InteractiveSetup {
         $hasAnti = $envContent -match "ANTIGRAVITY_ENABLED=true"
         $hasGemini = ($envContent -match "GEMINI_ENABLED=true") -or (Test-GeminiCredentials)
         $hasGrok = ($envContent -match "GROK_ENABLED=true") -or ($envContent -match "GROK_TOKEN=\S+") -or (Test-GrokCredentials)
+        $hasOllama = $envContent -match "OLLAMA_API_KEY=\S+"
 
-        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok) {
+        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok -or $hasOllama) {
             $configured = @()
             if ($hasSyn) { $configured += "Synthetic" }
             if ($hasZai) { $configured += "Z.ai" }
@@ -436,6 +444,7 @@ function Start-InteractiveSetup {
             if ($hasAnti) { $configured += "Antigravity" }
             if ($hasGemini) { $configured += "Gemini" }
             if ($hasGrok) { $configured += "Grok" }
+            if ($hasOllama) { $configured += "Ollama" }
 
             Write-Info "Existing .env found - configured: $($configured -join ', ')"
 
@@ -469,6 +478,7 @@ function Start-InteractiveSetup {
         "Antigravity (Windsurf) only",
         "Gemini CLI only",
         "Grok (xAI) only",
+        "Ollama Cloud only",
         "Multiple (choose one at a time)",
         "All available"
     )
@@ -481,8 +491,9 @@ function Start-InteractiveSetup {
     $antigravityEnabled = ""
     $geminiEnabled = ""
     $grokEnabled = ""
+    $ollamaKey = ""
 
-    if ($providerChoice -eq 8) {
+    if ($providerChoice -eq 9) {
         # Multiple - ask for each provider individually
         $addIt = Read-PromptWithDefault -Prompt "Add Synthetic provider? (y/N)" -Default "N"
         if ($addIt -match "^[Yy]") {
@@ -526,45 +537,52 @@ function Start-InteractiveSetup {
             Write-Host "  ${DIM}Grok auto-detects from ~/.grok/auth.json (or `$env:GROK_HOME)${NC}"
         }
 
+        $addIt = Read-PromptWithDefault -Prompt "Add Ollama Cloud provider? (y/N)" -Default "N"
+        if ($addIt -match "^[Yy]") {
+            Write-Host ""
+            Write-Host "  ${DIM}Get your key: https://ollama.com/settings/keys${NC}"
+            $ollamaKey = Read-SecretPrompt -Prompt "Ollama Cloud API key" -Validation { param($val) Test-OllamaKey $val }
+        }
+
         # Validate at least one provider selected
-        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled) {
+        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled -and -not $ollamaKey) {
             Write-Fail "At least one provider is required"
         }
     } else {
         # Single provider or All
-        if ($providerChoice -eq 1 -or $providerChoice -eq 9) {
+        if ($providerChoice -eq 1 -or $providerChoice -eq 10) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://synthetic.new/settings/api${NC}"
             $syntheticKey = Read-SecretPrompt -Prompt "Synthetic API key (syn_...)" -Validation { param($val) Test-SyntheticKey $val }
         }
 
-        if ($providerChoice -eq 2 -or $providerChoice -eq 9) {
+        if ($providerChoice -eq 2 -or $providerChoice -eq 10) {
             $zaiConfig = Get-ZaiConfig
             $zaiKey = $zaiConfig.Key
             $zaiBaseUrl = $zaiConfig.BaseUrl
         }
 
-        if ($providerChoice -eq 3 -or $providerChoice -eq 9) {
+        if ($providerChoice -eq 3 -or $providerChoice -eq 10) {
             $anthropicToken = Get-AnthropicConfig
         }
 
-        if ($providerChoice -eq 4 -or $providerChoice -eq 9) {
+        if ($providerChoice -eq 4 -or $providerChoice -eq 10) {
             $codexToken = Get-CodexConfig
         }
 
-        if ($providerChoice -eq 5 -or $providerChoice -eq 9) {
+        if ($providerChoice -eq 5 -or $providerChoice -eq 10) {
             $antigravityEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Antigravity enabled (auto-detects running Windsurf process)"
         }
 
-        if ($providerChoice -eq 6 -or $providerChoice -eq 9) {
+        if ($providerChoice -eq 6 -or $providerChoice -eq 10) {
             $geminiEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)"
         }
 
-        if ($providerChoice -eq 7 -or $providerChoice -eq 9) {
+        if ($providerChoice -eq 7 -or $providerChoice -eq 10) {
             $grokEnabled = "true"
             Write-Host ""
             if (Test-GrokCredentials) {
@@ -572,6 +590,12 @@ function Start-InteractiveSetup {
             } else {
                 Write-Host "  ${GREEN}OK${NC} Grok enabled (run 'grok login' or set GROK_TOKEN to authenticate)"
             }
+        }
+
+        if ($providerChoice -eq 8 -or $providerChoice -eq 10) {
+            Write-Host ""
+            Write-Host "  ${DIM}Get your key: https://ollama.com/settings/keys${NC}"
+            $ollamaKey = Read-SecretPrompt -Prompt "Ollama Cloud API key" -Validation { param($val) Test-OllamaKey $val }
         }
     }
 
@@ -683,6 +707,14 @@ GROK_ENABLED=true
 "@
     }
 
+    if ($ollamaKey) {
+        $envContent += @"
+# Ollama Cloud API key (https://ollama.com/settings/keys)
+OLLAMA_API_KEY=$ollamaKey
+
+"@
+    }
+
     $envContent += @"
 # Dashboard credentials
 ONWATCH_ADMIN_USER=$($script:SetupUsername)
@@ -709,7 +741,8 @@ ONWATCH_PORT=$($script:SetupPort)
         5 { "Antigravity" }
         6 { "Gemini" }
         7 { "Grok" }
-        8 {
+        8 { "Ollama Cloud" }
+        9 {
             $parts = @()
             if ($syntheticKey) { $parts += "Synthetic" }
             if ($zaiKey) { $parts += "Z.ai" }
@@ -718,9 +751,10 @@ ONWATCH_PORT=$($script:SetupPort)
             if ($antigravityEnabled) { $parts += "Antigravity" }
             if ($geminiEnabled) { $parts += "Gemini" }
             if ($grokEnabled) { $parts += "Grok" }
+            if ($ollamaKey) { $parts += "Ollama Cloud" }
             $parts -join ", "
         }
-        9 { "All providers" }
+        10 { "All providers" }
     }
 
     $maskedPass = "*" * $script:SetupPassword.Length
