@@ -219,6 +219,9 @@ jobs:
       - name: List binaries
         run: ls -lh dist/
 
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS
+
       - name: Copy additional release files
         run: |
           cp install.bat dist/
