@@ -15,7 +15,7 @@ export default tseslint.config(
   },
   {
     // Pure modules must stay free of the vscode API so they run under vitest.
-    files: ["src/model.ts", "src/discovery.ts", "src/settings.ts", "src/notifications.ts", "src/client.ts", "src/icons.ts"],
+    files: ["src/model.ts", "src/discovery.ts", "src/settings.ts", "src/notifications.ts", "src/client.ts", "src/icons.ts", "src/quickViewHtml.ts"],
     rules: {
       "no-restricted-imports": ["error", { paths: ["vscode"] }],
     },

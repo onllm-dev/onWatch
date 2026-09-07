@@ -52,7 +52,8 @@
       {
         "command": "onwatch.openDashboard",
         "title": "Open Dashboard",
-        "category": "onWatch"
+        "category": "onWatch",
+        "icon": "$(link-external)"
       },
       {
         "command": "onwatch.openQuickView",
@@ -67,7 +68,8 @@
       {
         "command": "onwatch.refresh",
         "title": "Refresh",
-        "category": "onWatch"
+        "category": "onWatch",
+        "icon": "$(refresh)"
       },
       {
         "command": "onwatch.setCredentials",
@@ -85,6 +87,40 @@
         "category": "onWatch"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "onwatch",
+          "title": "onWatch",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "onwatch": [
+        {
+          "id": "onwatch.quickView",
+          "name": "Quick View",
+          "type": "webview",
+          "icon": "media/activity.svg",
+          "contextualTitle": "onWatch"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "onwatch.refresh",
+          "when": "view == onwatch.quickView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "onwatch.openDashboard",
+          "when": "view == onwatch.quickView",
+          "group": "navigation@2"
+        }
+      ]
+    },
     "configuration": {
       "title": "onWatch",
       "properties": {
@@ -127,16 +163,18 @@
         "onwatch.openIn": {
           "type": "string",
           "enum": [
+            "sidebar",
             "simpleBrowser",
             "externalBrowser"
           ],
           "enumDescriptions": [
+            "Show the quick view in the onWatch sidebar view (activity bar). The dashboard opens in Simple Browser.",
             "Open the dashboard and quick view inside VS Code with Simple Browser (falls back to the external browser if unavailable).",
             "Always open in the system browser."
           ],
-          "default": "simpleBrowser",
+          "default": "sidebar",
           "order": 4,
-          "markdownDescription": "Where clicking the status bar item, or running `onWatch: Open Dashboard`, opens pages."
+          "markdownDescription": "Where a status bar click, `onWatch: Open Quick View` and `onWatch: Open Dashboard` open. The quick view lives in the onWatch sidebar view by default; the full dashboard never fits a sidebar, so with `sidebar` it uses Simple Browser."
         },
         "onwatch.followDaemonSettings": {
           "type": "boolean",

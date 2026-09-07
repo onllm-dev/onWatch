@@ -1,6 +1,6 @@
 # VS Code Extension
 
-The onWatch VS Code extension puts your AI quotas in the status bar. It is a thin client for the onWatch daemon: the daemon keeps polling providers and storing history, and the extension reads the same compact menubar API that the macOS menubar and the GNOME extension use.
+The onWatch VS Code extension puts your AI quotas in the status bar and the compact quick view in the sidebar. It is a thin client for the onWatch daemon: the daemon keeps polling providers and storing history, and the extension reads the same compact menubar API that the macOS menubar and the GNOME extension use.
 
 Source lives in [`extensions/vscode`](../extensions/vscode). Tracking issue: [#117](https://github.com/onllm-dev/onWatch/issues/117).
 
@@ -48,7 +48,7 @@ npm run package     # writes onwatch-<version>.vsix
 
 When `onwatch.daemonUrl` is empty (the default) the extension tries, in order:
 
-1. `~/.onwatch/port` - a file containing a single port number (1-65535)
+1. the port file the daemon writes on every start, containing a single port number (1-65535): `~/.onwatch/port` on macOS and Linux, `%LOCALAPPDATA%\onwatch\port` on Windows (with `~/.onwatch/port` as a second try)
 2. the `ONWATCH_PORT` environment variable
 3. port `9211`
 
@@ -69,14 +69,22 @@ The mark is the same monochrome provider logo the dashboard uses. The extension 
 
 Hover for a tooltip with one section per provider, in the daemon's order. Each section has the provider mark and name, an italic account subtitle when there is one, and a table with one row per limit: status icon (`$(pass)` healthy, `$(warning)` warning, `$(error)` critical), limit name, percent used with used/limit when the daemon knows both, and time to reset. Missing values are left out rather than shown as placeholders. The footer shows when the data was last fetched and links to open the quick view, the dashboard, or refresh.
 
-Click opens the quick view (`<daemonUrl>/menubar`), the same panel the macOS menubar shows. By default it opens inside VS Code with Simple Browser and falls back to your system browser when Simple Browser is not available.
+Click reveals the quick view, the same panel the macOS menubar shows.
+
+## Sidebar quick view
+
+The extension contributes an onWatch icon to the activity bar. Its view frames the daemon's quick view page (`<daemonUrl>/menubar`) so the panel sits next to the file explorer and stays visible while you work; the page keeps refreshing on its own. The view's title bar has Refresh and Open Dashboard buttons. When the daemon is unreachable, needs a sign in, or is remote, the view shows a short notice with the matching actions (retry, set credentials, open dashboard, show logs) instead of an empty frame.
+
+The daemon allows this page, and only this page, to be framed by VS Code (it sends a `frame-ancestors` policy for the VS Code webview origins and skips `X-Frame-Options` there). Daemons older than 2.14.0 still send `X-Frame-Options: DENY` for every page, so the sidebar and Simple Browser show a blank frame with them; upgrade the daemon or set `onwatch.openIn` to `externalBrowser`.
+
+Prefer a window? Set `onwatch.openIn` to `simpleBrowser` or `externalBrowser`; the sidebar view stays available but clicks open the quick view there instead.
 
 ## Commands
 
 | Command | Description |
 |---|---|
 | `onWatch: Open Dashboard` | Open `<daemonUrl>/` per `onwatch.openIn`. |
-| `onWatch: Open Quick View` | Open `<daemonUrl>/menubar` per `onwatch.openIn`. |
+| `onWatch: Open Quick View` | Reveal the sidebar quick view, or open `<daemonUrl>/menubar` per `onwatch.openIn`. |
 | `onWatch: Open Dashboard in External Browser` | Always use the system browser. |
 | `onWatch: Refresh` | Poll the daemon now. |
 | `onWatch: Set Daemon Credentials` | Prompt for username, then password. Password goes to VS Code secret storage, username to `onwatch.auth.username`. |
@@ -92,7 +100,7 @@ All settings are under `onwatch.*`.
 | `daemonUrl` | string | `""` | Full base URL of the daemon. Empty means auto-discover (see above). |
 | `statusBar.mode` | `combined` / `perProvider` | `combined` | One item with the tightest quota, or one item per provider. |
 | `statusBar.visibility` | `always` / `whenAnyProviderNearLimit` / `never` | `always` | `whenAnyProviderNearLimit` shows the item only when a provider is at warning or worse, or when the daemon is unreachable. |
-| `openIn` | `simpleBrowser` / `externalBrowser` | `simpleBrowser` | Where dashboard and quick view open. |
+| `openIn` | `sidebar` / `simpleBrowser` / `externalBrowser` | `sidebar` | Where the quick view and dashboard open. `sidebar` reveals the onWatch sidebar view for the quick view and uses Simple Browser for the dashboard. |
 | `followDaemonSettings` | boolean | `true` | Take provider visibility, provider order, warning and critical thresholds, and refresh cadence from the daemon's menubar preferences (`Settings > Menubar` in the dashboard). Each of the four settings below overrides its daemon value only when you set it explicitly. When off, only the extension settings are used. |
 | `providers` | string[] | `[]` | Provider IDs to show, in order (for example `["anthropic", "codex", "copilot"]`). Profile-scoped IDs such as `codex:work` work too, and a bare `codex` matches all Codex profiles. Empty means all providers the daemon marks visible. |
 | `pollIntervalSeconds` | number | `60` | Poll interval, minimum 10. Fallback only: when following daemon settings, the daemon's `refresh_seconds` wins unless this is set explicitly. |
@@ -114,7 +122,7 @@ The extension has zero telemetry. It only ever talks to the daemon URL it discov
 The extension could not connect. Hover to see the URL it tried, then:
 
 1. Start the daemon: run `onwatch` in a terminal (or `onwatch service start` if you installed it as a service).
-2. Check the port. If the daemon logs `Starting web server port=9300`, either write `9300` to `~/.onwatch/port`, export `ONWATCH_PORT=9300`, or set `onwatch.daemonUrl` to `http://127.0.0.1:9300`.
+2. Check the port. If the daemon logs `Starting web server port=9300`, either write `9300` to the port file (`~/.onwatch/port`, or `%LOCALAPPDATA%\onwatch\port` on Windows), export `ONWATCH_PORT=9300`, or set `onwatch.daemonUrl` to `http://127.0.0.1:9300`.
 3. Run `onWatch: Show Logs` to see the resolved URL and the exact error.
 
 ### `onWatch: remote unsupported`
@@ -123,7 +131,7 @@ You pointed `onwatch.daemonUrl` at a daemon on another machine and it returned 4
 
 - Run VS Code (or the VS Code server, for Remote SSH) on the same machine as the daemon so the request comes from `127.0.0.1`.
 - Forward the daemon port over SSH (`ssh -L 9211:127.0.0.1:9211 host`) and leave `onwatch.daemonUrl` empty or set to `http://127.0.0.1:9211`.
-- The full dashboard still opens from the status bar item and the `onWatch: Open Dashboard` command.
+- The full dashboard still opens from the `onWatch: Open Dashboard` command and the sidebar view's title bar.
 
 ### `onWatch: sign in`
 

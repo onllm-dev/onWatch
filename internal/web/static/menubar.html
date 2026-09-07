@@ -240,6 +240,12 @@
             transition: background-color 180ms ease, border-color 180ms ease;
         }
 
+        /* Hosted inside an editor webview (VS Code sidebar, Simple Browser): the
+           host owns the surface, so the popover close button has no job. */
+        body.embedded #close-button {
+            display: none;
+        }
+
         .icon-button:hover {
             background: var(--bg-hover);
             border-color: var(--border);
@@ -1511,6 +1517,16 @@
 
             document.getElementById("brand-mark").innerHTML = icons.star;
             document.getElementById("settings-toggle").innerHTML = icons.settings;
+            const embedded = (() => {
+                try {
+                    return window.self !== window.top;
+                } catch (_e) {
+                    return true;
+                }
+            })();
+            if (embedded) {
+                document.body.classList.add("embedded");
+            }
             document.getElementById("close-button").innerHTML = icons.close;
             document.getElementById("settings-back").innerHTML = icons.back;
             document.getElementById("settings-close").innerHTML = icons.close;
@@ -1650,6 +1666,17 @@
 
             function openDashboard() {
                 if (sendNativeAction("open_dashboard")) {
+                    return;
+                }
+                if (embedded) {
+                    // An editor webview routes window.open to the system browser. Never
+                    // navigate this frame: the dashboard refuses to be framed and the
+                    // sidebar would go blank.
+                    try {
+                        window.open("/", "_blank", "noopener,noreferrer");
+                    } catch (_e) {
+                        // ignore
+                    }
                     return;
                 }
                 // Prefer a new tab/window so a tray WebView is not replaced by the full dashboard.
