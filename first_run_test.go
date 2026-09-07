@@ -89,6 +89,29 @@ func TestNetworkHint(t *testing.T) {
 	}
 }
 
+func TestStartupNotices_NetworkWarningIgnoresPasswordState(t *testing.T) {
+	network := "reachable from your network"
+	// Custom password, existing database, exposed bind: no login hint, but the
+	// exposure warning must still be there (beta.3 dropped it here).
+	got := startupNotices(false, true, "admin", "0.0.0.0")
+	if len(got) != 1 || !contains(got[0], network) {
+		t.Fatalf("custom password + exposed bind should print only the network warning, got %q", got)
+	}
+	// Default password on a first start, exposed bind: both lines.
+	got = startupNotices(true, false, "admin", "")
+	if len(got) != 2 || !contains(got[0], "Login:") || !contains(got[1], network) {
+		t.Fatalf("first start on 0.0.0.0 should print login hint then network warning, got %q", got)
+	}
+	// Loopback bind: never a network line.
+	for _, tc := range []struct{ def, db bool }{{true, false}, {false, true}, {false, false}} {
+		for _, line := range startupNotices(tc.def, tc.db, "admin", "127.0.0.1") {
+			if contains(line, network) {
+				t.Fatalf("loopback bind must not warn, got %q", line)
+			}
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
 }

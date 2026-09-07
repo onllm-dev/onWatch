@@ -338,6 +338,22 @@ func loginHint(defaultPass, dbExists bool, user string) string {
 	return fmt.Sprintf("Login: %s / %s (default - change it in Settings > Security or set ONWATCH_ADMIN_PASS in .env)", user, defaultAdminPass)
 }
 
+// startupNotices are the console lines the foreground parent prints after a
+// successful start. The login hint is first-start only; the network exposure
+// warning does not depend on the password or on an existing database, since
+// neither makes an all-interfaces bind any less exposed. The daemon child
+// logs the same exposure warning.
+func startupNotices(defaultPass, dbExists bool, user, host string) []string {
+	var lines []string
+	if hint := loginHint(defaultPass, dbExists, user); hint != "" {
+		lines = append(lines, hint)
+	}
+	if warn := networkHint(host); warn != "" {
+		lines = append(lines, warn)
+	}
+	return lines
+}
+
 // networkHint warns that the dashboard accepts connections from other
 // machines. Empty when the bind address is loopback.
 func networkHint(host string) string {
@@ -636,13 +652,8 @@ func daemonize(cfg *config.Config) error {
 	fmt.Printf("Daemon started (PID %d), logs: %s\n", childPID, logPath)
 	fmt.Printf("Dashboard: http://localhost:%d\n", cfg.Port)
 	_, dbErr := os.Stat(cfg.DBPath)
-	if hint := loginHint(cfg.IsDefaultPassword(), dbErr == nil, cfg.AdminUser); hint != "" {
-		fmt.Println(hint)
-		// The daemon child logs the same warning, but the console is what
-		// someone starting the bare binary actually reads.
-		if warn := networkHint(cfg.Host); warn != "" {
-			fmt.Println(warn)
-		}
+	for _, line := range startupNotices(cfg.IsDefaultPassword(), dbErr == nil, cfg.AdminUser, cfg.Host) {
+		fmt.Println(line)
 	}
 	return nil
 }
@@ -952,9 +963,11 @@ func run() error {
 	if cfg.AdminPassHash == sha256hex(defaultAdminPass) {
 		logger.Warn("USING DEFAULT PASSWORD - dashboard login is " + cfg.AdminUser + " / " + defaultAdminPass +
 			" - set ONWATCH_ADMIN_PASS in .env or change it in Settings > Security")
-		if hint := networkHint(cfg.Host); hint != "" {
-			logger.Warn(hint)
-		}
+	}
+	// Independent of the password: a real password does not make an
+	// all-interfaces bind any less exposed.
+	if hint := networkHint(cfg.Host); hint != "" {
+		logger.Warn(hint)
 	}
 
 	// Close any orphaned sessions from previous runs (e.g., process was killed)
