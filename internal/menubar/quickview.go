@@ -110,25 +110,34 @@ func appModeArgs(url, profileDir string, width, height int, pos *windowPosition)
 	return args
 }
 
-// quickViewPosition places the window horizontally centered on the cursor
-// (clamped to the work area) and anchored against whichever screen edge
-// hosts the taskbar, so it opens next to the tray like the macOS popover.
+// quickViewPosition anchors the window against whichever edge of the work
+// area hosts the taskbar (the cursor sits outside the work area on that side)
+// and centres it on the cursor along that edge, clamped so it stays on the
+// display. All coordinates are in the virtual screen, so a display left of
+// the primary one simply has negative X values.
 func quickViewPosition(cursor cursorPoint, work screenRect, width, height int) windowPosition {
-	x := cursor.X - width/2
-	minX := work.Left + quickViewMargin
-	maxX := work.Right - width - quickViewMargin
-	if x > maxX {
-		x = maxX
+	minX, maxX := work.Left+quickViewMargin, work.Right-width-quickViewMargin
+	minY, maxY := work.Top+quickViewMargin, work.Bottom-height-quickViewMargin
+	centredX := clampInt(cursor.X-width/2, minX, maxX)
+	centredY := clampInt(cursor.Y-height/2, minY, maxY)
+	switch {
+	case cursor.X < work.Left: // taskbar docked left
+		return windowPosition{X: minX, Y: centredY}
+	case cursor.X >= work.Right: // taskbar docked right
+		return windowPosition{X: maxX, Y: centredY}
+	case cursor.Y < work.Top: // taskbar docked top
+		return windowPosition{X: centredX, Y: minY}
+	default: // taskbar at the bottom, or cursor inside the work area
+		return windowPosition{X: centredX, Y: maxY}
 	}
-	if x < minX {
-		x = minX
+}
+
+func clampInt(v, lo, hi int) int {
+	if v > hi {
+		v = hi
 	}
-	y := work.Bottom - height - quickViewMargin
-	if cursor.Y < work.Top {
-		y = work.Top + quickViewMargin
+	if v < lo {
+		v = lo
 	}
-	if y < work.Top+quickViewMargin {
-		y = work.Top + quickViewMargin
-	}
-	return windowPosition{X: x, Y: y}
+	return v
 }
