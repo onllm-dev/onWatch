@@ -64,20 +64,20 @@
   "description": "Open-source quota monitoring for AI coding tools. Tracks usage across 16 providers with historical trends, reset-cycle detection, burn-rate projections and live countdowns. Runs as a local background agent with zero telemetry.",
   "url": "https://onwatch.onllm.dev",
   "downloadUrl": "https://github.com/onllm-dev/onwatch/releases",
-  "softwareVersion": "2.13.7",
+  "softwareVersion": "2.14.1",
   "license": "https://www.gnu.org/licenses/gpl-3.0.html",
   "isAccessibleForFree": true,
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "author": { "@type": "Organization", "name": "onllm.dev", "url": "https://onllm.dev" },
   "featureList": [
-    "Tracks 15 AI coding quota providers in one dashboard",
+    "Tracks 16 AI coding quota providers in one dashboard",
     "Historical usage trends stored locally in SQLite",
     "Reset cycle detection and per-cycle consumption stats",
     "Burn-rate projections and live countdown timers",
     "Per-session usage tracking",
     "Email and browser push notifications on threshold crossings",
     "Prometheus metrics endpoint for Grafana and Alertmanager",
-    "macOS menubar companion and GNOME Shell extension",
+    "macOS menubar, Linux and Windows tray, GNOME Shell extension and a VS Code extension",
     "Single static binary, under 50 MB resident memory",
     "Zero telemetry - all data stays on the machine"
   ]
@@ -313,6 +313,8 @@ header{
 .brand{display:flex;align-items:center;gap:.6rem;font-family:var(--font-display);
   font-variation-settings:'wdth' 108,'wght' 800;font-size:1.1rem;letter-spacing:-.02em}
 .brand .mark{width:22px;height:22px;flex:none}
+/* One flex item, or the .brand gap splits the wordmark into "on Watch". */
+.brand .wordmark{white-space:nowrap}
 .brand em{font-style:normal;color:var(--signal)}
 .nav-links{display:flex;gap:1.6rem;margin-left:auto}
 .nav-links a{font-size:.83rem;color:var(--fg-dim);transition:color .2s;position:relative}
@@ -333,7 +335,28 @@ header{
 }
 .ghbtn:hover{border-color:var(--signal);color:var(--fg)}
 .ghbtn b{color:var(--fg);font-weight:500}
-@media(max-width:880px){.nav-links{display:none}}
+.nav-toggle{display:none}
+.nav-toggle .ic-x{display:none}
+.nav-toggle[aria-expanded="true"] .ic-bars{display:none}
+.nav-toggle[aria-expanded="true"] .ic-x{display:block}
+@media(max-width:880px){
+  /* The links become a sheet under the header instead of vanishing, and
+     nav-act takes over the auto margin so the controls stay right-aligned. */
+  .nav-links{
+    display:none; position:absolute; left:0; right:0; top:100%;
+    flex-direction:column; gap:0; margin:0;
+    padding:.2rem var(--gut) 1rem;
+    background:var(--page); border-bottom:1px solid var(--rule);
+    box-shadow:0 22px 40px -30px rgba(0,0,0,.5);
+  }
+  .nav-links.open{display:flex}
+  .nav-links a{padding:.9rem 0;font-size:.95rem;color:var(--fg);border-top:1px solid var(--rule)}
+  .nav-links a::after{display:none}
+  .nav-toggle{display:grid}
+  .nav-act{margin-left:auto}
+}
+/* Sticky header must not swallow the heading of whatever you jumped to. */
+section[id]{scroll-margin-top:72px}
 
 /* ── Hero ──────────────────────────────────────────────────────── */
 .hero{position:relative;padding-block:clamp(2.6rem,5.4vw,4.6rem) 0;overflow:hidden}
@@ -353,8 +376,22 @@ header{
   .cmd{padding:.7rem .75rem;font-size:.72rem;gap:.55rem}
   .cmd .cp{padding:.24rem .4rem;font-size:.58rem}
   .stat{padding:1.15rem .9rem}
-  .nav{gap:.75rem}
+  .nav{gap:.6rem;height:56px}
   .gauge-name{font-size:.62rem}
+  .gauge-pct{font-size:1.3rem}
+  .panel-body{padding:.85rem .8rem 1rem}
+  .alt-installs{gap:.75rem}
+  .btn-row .btn{flex:1 1 100%;justify-content:center}
+  .lb{padding:3.4rem .6rem 3.4rem}
+  .lb-nav{width:32px;height:52px}
+  .foot{gap:1.2rem}
+  section[id]{scroll-margin-top:64px}
+}
+@media(max-width:400px){
+  /* One thumbnail per row below this: two-up stops being legible. */
+  .shots{grid-template-columns:1fr}
+  .brand{font-size:1rem}
+  .ghbtn{padding:0 .6rem}
 }
 
 .eyebrow{display:flex;align-items:center;gap:.7rem;margin-bottom:1.5rem}
@@ -562,6 +599,26 @@ html[data-theme="dark"] .pcard li{background:var(--ink-800)}
 .after-install{margin-top:1.1rem;font-size:.85rem;color:var(--fg-mute)}
 .after-install code{font-family:var(--font-mono);font-size:.8rem;color:var(--signal)}
 
+/* ── Editor (VS Code extension) ────────────────────────────────── */
+.editor{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,.65fr);
+  gap:clamp(1.4rem,3.5vw,2.6rem);margin-top:clamp(2.4rem,5vw,3.6rem);
+  border:1px solid var(--rule-strong);padding:clamp(1.3rem,3vw,2.2rem)}
+.editor-title{font-size:1.25rem;margin-bottom:.6rem}
+.editor p{font-size:.9rem;color:var(--fg-mute);line-height:1.65;max-width:60ch}
+.editor p code{font-family:var(--font-mono);font-size:.85em;color:var(--signal)}
+.editor-side{border-left:1px solid var(--rule);padding-left:clamp(1.2rem,2.5vw,1.8rem)}
+.editor-url{display:block;font-family:var(--font-mono);font-size:.72rem;line-height:1.7;
+  color:var(--signal);word-break:break-word;border-bottom:1px dotted var(--signal-glow)}
+.editor-url:hover{border-bottom-style:solid}
+.editor-list{list-style:none;margin-top:1.3rem;display:flex;flex-wrap:wrap;gap:.35rem}
+.editor-list li{font-family:var(--font-mono);font-size:.635rem;color:var(--fg-dim);
+  padding:.18rem .45rem;background:var(--ink-750);border:1px solid var(--rule)}
+html[data-theme="dark"] .editor-list li{background:var(--ink-800)}
+@media(max-width:860px){
+  .editor{grid-template-columns:1fr;gap:1.6rem}
+  .editor-side{border-left:none;border-top:1px solid var(--rule);padding-left:0;padding-top:1.4rem}
+}
+
 /* ── Trust ─────────────────────────────────────────────────────── */
 .trust-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
   border-top:1px solid var(--rule);border-left:1px solid var(--rule);margin-bottom:2rem}
@@ -650,11 +707,35 @@ html[data-theme="dark"] .chip{background:var(--ink-800)}
 .btn.primary:hover{background:transparent;color:var(--signal)}
 
 footer{border-top:1px solid var(--rule);padding-block:2.6rem 3rem;margin-top:clamp(3rem,7vw,6rem)}
-.foot{display:flex;flex-wrap:wrap;gap:1.6rem;justify-content:space-between;align-items:flex-start}
-.foot-links{display:flex;flex-wrap:wrap;gap:1.4rem;font-size:.83rem;color:var(--fg-mute)}
-.foot-links a:hover{color:var(--signal)}
-.foot-meta{font-family:var(--font-mono);font-size:.66rem;color:var(--fg-faint);line-height:1.9;text-align:right}
-@media(max-width:640px){.foot-meta{text-align:left}}
+/* Four columns rather than a brand on the left and meta stranded on the
+   right with a dead middle. */
+.foot{display:grid;
+  grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr);
+  gap:clamp(1.6rem,3vw,2.8rem);align-items:start}
+.foot-brand p{margin-top:.85rem;font-size:.85rem;color:var(--fg-mute);line-height:1.65;max-width:38ch}
+.foot-brand .brand{margin-bottom:0}
+.foot-col{display:flex;flex-direction:column;align-items:flex-start}
+.foot-col .label{margin-bottom:.7rem}
+.foot-col a{font-size:.86rem;color:var(--fg-mute);padding-block:.28rem;transition:color .2s}
+.foot-col a:hover{color:var(--signal)}
+.foot-meta{font-family:var(--font-mono);font-size:.66rem;color:var(--fg-faint);line-height:1.95}
+.foot-meta .fm{display:block}
+@media(max-width:640px){
+  footer{margin-top:1.6rem;padding-block:1.6rem 1.8rem}
+  /* Brand and build span the row; the two link columns sit side by side. */
+  .foot{grid-template-columns:1fr 1fr;gap:1.3rem 1.2rem}
+  .foot-brand{grid-column:1/-1}
+  .foot-brand .brand{font-size:1rem}
+  .foot-brand p{margin-top:.6rem;max-width:none}
+  .foot-col .label{margin-bottom:.45rem}
+  .foot-col a{font-size:.85rem;padding-block:.34rem}
+  /* Four fixed rows of mono wasted half the footer - let them flow instead. */
+  .foot-meta{grid-column:1/-1;border-top:1px solid var(--rule);padding-top:.9rem;
+    flex-direction:row;flex-wrap:wrap;column-gap:1.15rem;line-height:1.75}
+  .foot-meta .label{width:100%;margin-bottom:.35rem}
+  .foot-meta .fm{white-space:nowrap}
+}
+}
 
 /* ── Reveal animation ──────────────────────────────────────────── */
 /* ── Reveal control for long grids on small screens ──────────── */
@@ -667,7 +748,45 @@ footer{border-top:1px solid var(--rule);padding-block:2.6rem 3rem;margin-top:cla
 .reveal-btn:hover{border-color:var(--signal);color:var(--signal)}
 
 @media(max-width:760px){
-  .sec{padding-block:clamp(2.6rem,7vw,3.4rem)}
+  /* Density pass: the desktop rhythm leaves a phone scrolling through air. */
+  .sec{padding-block:2.1rem}
+  .sec-hd{margin-bottom:1.4rem}
+  .hero{padding-block:1.5rem 0}
+  .hero-grid{gap:1.6rem}
+  .eyebrow{margin-bottom:.9rem}
+  .hero h1{margin-bottom:.95rem}
+  .hero .lede{font-size:.97rem;line-height:1.55;margin-bottom:1.25rem}
+  .alt-installs{margin-top:.8rem}
+  .panel-hd,.panel-ft{padding:.5rem .8rem}
+  .panel-body{padding:.7rem .8rem .85rem}
+  .gauge{padding-block:.62rem}
+  .gauge-top{margin-bottom:.38rem}
+  .gauge-meta{margin-top:.34rem}
+  .spark{height:38px}
+  .stats{margin-top:1.2rem}
+  .stat{padding:1rem .85rem}
+  .trust-grid{margin-bottom:1.2rem}
+  .diff-list li{padding:.5rem 0}
+  .diff-list{margin-top:1rem}
+  .tabs{margin-bottom:1.1rem}
+  .gal-filters{margin-bottom:1rem}
+  .faq summary{padding-block:.95rem}
+  .faq .ans{padding-bottom:1.05rem}
+  .editor{margin-top:1.8rem;padding:1.1rem}
+  .editor p{font-size:.87rem}
+  /* Tabs scroll as one strip - wrapping them left a ragged second row. */
+  .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex:none;padding:.6rem .85rem;font-size:.68rem}
+  /* The COPY button floats over the first line once the block gets narrow. */
+  .code-block pre{padding:2.7rem 1rem 1rem;font-size:.74rem;line-height:1.65}
+  .faq summary{font-size:.95rem;padding-right:2rem}
+  .faq .ans{font-size:.88rem;padding-right:0}
+  .cta{padding:1.9rem 1.15rem}
+  .diff-col{padding:1.3rem 1.1rem}
+  .step{padding:1.3rem 1.1rem 1.4rem}
+  .tstat{padding:1.1rem 1rem}
+  .tstat b{font-size:1.8rem}
   /* Thumbnails open in a lightbox anyway, so two-up reads fine and halves
      the tallest section on the page. */
   .shots{grid-template-columns:1fr 1fr}
@@ -675,6 +794,7 @@ footer{border-top:1px solid var(--rule);padding-block:2.6rem 3rem;margin-top:cla
   .spec{padding:1.15rem 1rem}
   .pcard{padding:1.05rem 1rem 0}
   .stats{margin-top:1.6rem}
+  #get{padding-bottom:2rem}
   #star-history-chart{max-height:250px;object-fit:contain}
   .tpanel{padding:1rem}
 }
@@ -698,9 +818,9 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
           <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
         </g>
       </svg>
-      on<em>Watch</em>
+      <span class="wordmark">on<em>Watch</em></span>
     </a>
-    <nav class="nav-links">
+    <nav class="nav-links" id="nav-links">
       <a href="#providers">Providers</a>
       <a href="#why">Why</a>
       <a href="#features">Features</a>
@@ -722,6 +842,14 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
         <b id="hero-star-count">star</b>
       </a>
+      <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="Menu"
+              aria-expanded="false" aria-controls="nav-links">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <g class="ic-bars"><path d="M3 6h18M3 12h18M3 18h18"/></g>
+          <g class="ic-x"><path d="M5 5l14 14M19 5L5 19"/></g>
+        </svg>
+      </button>
     </div>
   </div>
 </header>
@@ -736,7 +864,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
       <div>
         <div class="eyebrow rv" style="animation-delay:.05s">
           <span class="pulse" aria-hidden="true"></span>
-          <span class="label">Open source <span class="dot">/</span> GPL-3.0 <span class="dot">/</span> v<span id="hero-version">2.13.7</span></span>
+          <span class="label">Open source <span class="dot">/</span> GPL-3.0 <span class="dot">/</span> v<span id="hero-version">2.14.1</span></span>
         </div>
 
         <h1 class="display rv" style="animation-delay:.12s">
@@ -826,7 +954,7 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
         <span class="live" data-live><i></i>live</span></div>
       <div class="stat"><b id="hero-downloads">49.3k</b><span>Downloads</span>
         <span class="live" data-live><i></i>live</span></div>
-      <div class="stat"><b>15</b><span>Providers tracked</span></div>
+      <div class="stat"><b>16</b><span>Providers tracked</span></div>
       <div class="stat"><b>0</b><span>Bytes of telemetry</span></div>
     </div>
 
@@ -1145,24 +1273,32 @@ html.js .rv.in{animation:fadeUp .72s var(--ease) forwards}
       </div>
       <div class="spec">
         <span class="n">3.09</span>
-        <h3>macOS menubar <span class="badge">Beta</span></h3>
-        <p>A companion menubar app with standard and detailed presets - circular quota meters,
-           sparkline trends, and provider ordering you control.</p>
+        <h3>Menubar and tray</h3>
+        <p>A companion in the macOS menubar and in the Linux and Windows tray - quota meters,
+           sparkline trends, provider ordering you control, and a quick view a click away.</p>
       </div>
       <div class="spec">
         <span class="n">3.10</span>
+        <h3>VS Code extension</h3>
+        <p>The tightest quota in your status bar, a hover breakdown per provider and the quick
+           view in an onWatch sidebar. On the
+           <a href="https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch"
+              target="_blank" rel="noopener" style="color:var(--signal)">Marketplace</a>.</p>
+      </div>
+      <div class="spec">
+        <span class="n">3.11</span>
         <h3>GNOME extension</h3>
         <p>A GNOME Shell extension surfaces the same tray panel on Linux, sharing the dashboard's
            menubar view rather than reimplementing it.</p>
       </div>
       <div class="spec">
-        <span class="n">3.11</span>
+        <span class="n">3.12</span>
         <h3>Reverse-proxy auth</h3>
         <p>Run behind Authelia, Authentik or any SSO that sets a trusted user header, scoped to
            CIDR ranges you nominate. Or keep the built-in login.</p>
       </div>
       <div class="spec">
-        <span class="n">3.12</span>
+        <span class="n">3.13</span>
         <h3>Runs as a service</h3>
         <p>launchd on macOS, systemd on Linux, Docker and Kubernetes with an Alpine variant.
            Self-update built in, and it starts at login if you want it to.</p>
@@ -1291,6 +1427,43 @@ onwatch setup      <span class="c"># add provider keys (most auto-detect existin
 onwatch start      <span class="c"># background agent + dashboard on :9191</span></pre>
       </div>
     </div>
+
+    <!-- VS Code extension -->
+    <div class="editor rv" id="vscode">
+      <div>
+        <span class="label" style="display:block;margin-bottom:.7rem">
+          Also <span class="dot">/</span> in your editor</span>
+        <h3 class="editor-title">VS Code extension</h3>
+        <p>Your tightest quota in the status bar - <code>82%</code>, with the time to reset once it
+           turns critical - a hover table with every provider, and the quick view in its own
+           onWatch sidebar. It is a thin client: the daemon does the polling, the extension finds
+           it on its own and follows the same provider order, visibility and thresholds you set in
+           the dashboard. Zero telemetry, same as the rest.</p>
+        <div class="code-block" style="margin-top:1.2rem">
+          <button class="cp" data-copy="#cb-code">COPY</button>
+          <pre id="cb-code">code --install-extension onllm-dev.onwatch</pre>
+        </div>
+        <p class="after-install">Every release also ships it as
+           <code>onwatch-vscode-&lt;version&gt;.vsix</code> for editors without Marketplace access.</p>
+      </div>
+      <aside class="editor-side">
+        <span class="label" style="display:block;margin-bottom:.6rem">Marketplace</span>
+        <a class="editor-url" href="https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch"
+           target="_blank" rel="noopener">marketplace.visualstudio.com<wbr>/items?itemName=onllm-dev.onwatch</a>
+        <div class="btn-row" style="justify-content:flex-start;margin-top:1.2rem">
+          <a class="btn primary" href="https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch"
+             target="_blank" rel="noopener">Install</a>
+          <a class="btn" href="https://github.com/onllm-dev/onwatch/blob/main/docs/VSCODE_EXTENSION.md"
+             target="_blank" rel="noopener">Docs</a>
+        </div>
+        <ul class="editor-list">
+          <li>Status bar percent</li>
+          <li>Hover breakdown</li>
+          <li>Sidebar quick view</li>
+          <li>Dashboard in a tab</li>
+        </ul>
+      </aside>
+    </div>
   </div>
 </section>
 
@@ -1408,30 +1581,42 @@ onwatch start      <span class="c"># background agent + dashboard on :9191</span
 
 <footer>
   <div class="wrap foot">
-    <div>
-      <a href="#" class="brand" style="margin-bottom:.9rem">
+    <div class="foot-brand">
+      <a href="#" class="brand">
         <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
           <circle cx="16" cy="16" r="15" fill="var(--signal)"/>
           <g transform="translate(4 4)" fill="none" stroke="var(--on-signal)" stroke-width="2" stroke-linecap="round">
             <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
           </g>
         </svg>
-        on<em>Watch</em>
+        <span class="wordmark">on<em>Watch</em></span>
       </a>
-      <div class="foot-links">
-        <a href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/onllm-dev/onwatch/releases" target="_blank" rel="noopener">Releases</a>
-        <a href="https://github.com/onllm-dev/onwatch/tree/main/docs" target="_blank" rel="noopener">Docs</a>
-        <a href="https://pkg.go.dev/github.com/onllm-dev/onwatch/v2" target="_blank" rel="noopener">pkg.go.dev</a>
-        <a href="https://onllm.dev" target="_blank" rel="noopener">onllm.dev</a>
-        <a href="https://buymeacoffee.com/prakersh" target="_blank" rel="noopener">Buy me a coffee</a>
-      </div>
+      <p>Quota history for 16 AI coding providers, kept on your own
+         machine. One binary, zero telemetry.</p>
     </div>
-    <div class="foot-meta">
-      GPL-3.0 &middot; GO 1.25+<br>
-      MACOS &middot; LINUX &middot; WINDOWS<br>
-      ZERO TELEMETRY &middot; LOCAL SQLITE<br>
-      <span style="color:var(--fg-mute)">v<span class="fv">2.13.7</span></span>
+
+    <nav class="foot-col" aria-label="Project links">
+      <span class="label">Project</span>
+      <a href="https://github.com/onllm-dev/onwatch" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/onllm-dev/onwatch/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/onllm-dev/onwatch/tree/main/docs" target="_blank" rel="noopener">Docs</a>
+      <a href="https://github.com/onllm-dev/onwatch/issues" target="_blank" rel="noopener">Issues</a>
+    </nav>
+
+    <nav class="foot-col" aria-label="Elsewhere">
+      <span class="label">Elsewhere</span>
+      <a href="https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch" target="_blank" rel="noopener">VS Code extension</a>
+      <a href="https://pkg.go.dev/github.com/onllm-dev/onwatch/v2" target="_blank" rel="noopener">pkg.go.dev</a>
+      <a href="https://onllm.dev" target="_blank" rel="noopener">onllm.dev</a>
+      <a href="https://buymeacoffee.com/prakersh" target="_blank" rel="noopener">Buy me a coffee</a>
+    </nav>
+
+    <div class="foot-col foot-meta">
+      <span class="label">Build</span>
+      <span class="fm">GPL-3.0 &middot; GO 1.25+</span>
+      <span class="fm">MACOS &middot; LINUX &middot; WINDOWS</span>
+      <span class="fm">ZERO TELEMETRY &middot; LOCAL SQLITE</span>
+      <span class="fm" style="color:var(--fg-mute)">v<span class="fv">2.14.1</span></span>
     </div>
   </div>
 </footer>
@@ -1470,6 +1655,38 @@ if (tt) tt.addEventListener('click', function(){
   applyTheme(next);
   try { localStorage.setItem('onwatch-theme', next); } catch(e){}
 });
+
+/* ── Mobile navigation ─────────────────────────────────────────── */
+var navToggle = document.getElementById('nav-toggle');
+var navLinks  = document.getElementById('nav-links');
+function setNav(open){
+  if (!navToggle || !navLinks) return;
+  navLinks.classList.toggle('open', open);
+  navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  navToggle.setAttribute('aria-label', open ? 'Close menu' : 'Menu');
+}
+if (navToggle && navLinks){
+  navToggle.addEventListener('click', function(){
+    setNav(navLinks.classList.contains('open') === false);
+  });
+  // Anchor links jump within the page, so the sheet has to close itself.
+  navLinks.addEventListener('click', function(e){
+    if (e.target.closest('a')) setNav(false);
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') setNav(false);
+  });
+  document.addEventListener('click', function(e){
+    if (!navLinks.classList.contains('open')) return;
+    if (e.target.closest('header')) return;
+    setNav(false);
+  });
+  // Leaving the narrow layout must not strand it in the open state.
+  var wide = window.matchMedia('(min-width: 881px)');
+  var onWide = function(ev){ if (ev.matches) setNav(false); };
+  if (wide.addEventListener) wide.addEventListener('change', onWide);
+  else if (wide.addListener) wide.addListener(onWide);
+}
 
 /* ── Reveal on scroll ──────────────────────────────────────────── */
 var rvs = document.querySelectorAll('.rv');
