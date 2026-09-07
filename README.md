@@ -142,6 +142,18 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 
 ---
 
+### VS Code Extension
+
+Put the same quotas in your editor. The extension is published on the VS Code Marketplace:
+
+**https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch**
+
+```bash
+code --install-extension onllm-dev.onwatch
+```
+
+It is a thin client: it needs the onWatch daemon running (steps above) and finds it automatically. Status bar item, hover tables and an onWatch sidebar with the quick view. Every GitHub release also ships the extension as `onwatch-vscode-<version>.vsix` for editors without Marketplace access. See [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md).
+
 ## What onWatch Tracks (That Your Provider Doesn't)
 
 ```
