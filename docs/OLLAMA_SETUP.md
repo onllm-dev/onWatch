@@ -2,6 +2,8 @@
 
 Track your **Ollama Cloud** included monthly usage in onWatch.
 
+> **Beta provider.** The ollama.com usage API is undocumented, and two details are still being confirmed with users on [issue #86](https://github.com/onllm-dev/onWatch/issues/86): the Free plan's included allowance (the page shows only a percent) and the dollar unit on paid plans. If your card shows "$X used" without a cap, set `OLLAMA_MONTHLY_LIMIT`. Reports of what your ollama.com settings page shows next to onWatch's value are very welcome there.
+
 Ollama Cloud bills against an included monthly usage allowance measured in US dollars. onWatch reads that usage from the authenticated ollama.com API with an API key you create at https://ollama.com/settings/keys.
 
 ---
