@@ -815,36 +815,107 @@ func (u *Updater) binaryDownloadURL(version string) string {
 
 // compareVersions compares two semver strings.
 // Returns: 1 if a > b, -1 if a < b, 0 if equal.
-// Handles pre-release suffixes like "2.2.5-test" by extracting numeric parts.
+// A pre-release sorts below the release it leads to ("2.14.0-beta.3" is older
+// than "2.14.0"), so an update is offered to anyone running a beta build.
 func compareVersions(a, b string) int {
-	a = strings.TrimPrefix(a, "v")
-	b = strings.TrimPrefix(b, "v")
-
-	partsA := strings.Split(a, ".")
-	partsB := strings.Split(b, ".")
-
-	// Pad shorter version with zeros
-	for len(partsA) < 3 {
-		partsA = append(partsA, "0")
-	}
-	for len(partsB) < 3 {
-		partsB = append(partsB, "0")
-	}
-
-	for i := 0; i < 3; i++ {
-		numA := extractLeadingInt(partsA[i])
-		numB := extractLeadingInt(partsB[i])
-		if numA > numB {
+	coreA, preA := splitVersion(a)
+	coreB, preB := splitVersion(b)
+	for i := 0; i < len(coreA); i++ {
+		if coreA[i] > coreB[i] {
 			return 1
 		}
-		if numA < numB {
+		if coreA[i] < coreB[i] {
 			return -1
 		}
+	}
+	return comparePreRelease(preA, preB)
+}
+
+// splitVersion parses "v2.14.0-beta.3+build" into its numeric parts and its
+// pre-release suffix. Build metadata carries no ordering and is dropped.
+func splitVersion(v string) ([3]int, string) {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if idx := strings.IndexByte(v, '+'); idx >= 0 {
+		v = v[:idx]
+	}
+	pre := ""
+	if idx := strings.IndexByte(v, '-'); idx >= 0 {
+		pre = v[idx+1:]
+		v = v[:idx]
+	}
+	var core [3]int
+	for i, part := range strings.Split(v, ".") {
+		if i >= len(core) {
+			break
+		}
+		core[i] = extractLeadingInt(part)
+	}
+	return core, pre
+}
+
+// comparePreRelease orders pre-release suffixes the way semver does: an empty
+// suffix (the real release) wins, dot-separated identifiers compare one by
+// one, numeric ones numerically and below alphanumeric ones, and a shorter
+// suffix loses to a longer one that shares its prefix.
+func comparePreRelease(a, b string) int {
+	if a == b {
+		return 0
+	}
+	if a == "" {
+		return 1
+	}
+	if b == "" {
+		return -1
+	}
+	partsA := strings.Split(a, ".")
+	partsB := strings.Split(b, ".")
+	for i := 0; i < len(partsA) && i < len(partsB); i++ {
+		if c := comparePreReleaseIdent(partsA[i], partsB[i]); c != 0 {
+			return c
+		}
+	}
+	switch {
+	case len(partsA) > len(partsB):
+		return 1
+	case len(partsA) < len(partsB):
+		return -1
 	}
 	return 0
 }
 
-// extractLeadingInt parses the leading integer from a string like "5-test" → 5.
+func comparePreReleaseIdent(a, b string) int {
+	numA, okA := numericIdent(a)
+	numB, okB := numericIdent(b)
+	switch {
+	case okA && okB:
+		switch {
+		case numA > numB:
+			return 1
+		case numA < numB:
+			return -1
+		}
+		return 0
+	case okA:
+		return -1
+	case okB:
+		return 1
+	}
+	return strings.Compare(a, b)
+}
+
+// numericIdent reports whether an identifier is all digits, and its value.
+func numericIdent(s string) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// extractLeadingInt parses the leading integer from a string like "5-test" -> 5.
 func extractLeadingInt(s string) int {
 	// Split on hyphen first (pre-release suffix)
 	if idx := strings.IndexByte(s, '-'); idx >= 0 {

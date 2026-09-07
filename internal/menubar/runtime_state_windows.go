@@ -4,19 +4,35 @@ package menubar
 
 import (
 	"os"
+	"syscall"
 	"time"
 )
 
 // Windows has no SIGUSR1, so the daemon touches a marker file next to the
 // PID file and the companion watches its modification time.
 
+// waitTimeout is WAIT_TIMEOUT: the process object is not signalled, so the
+// process is still running.
+const waitTimeout = uint32(0x00000102)
+
+// processAlive reports whether pid names a running process. A handle to an
+// exited process stays openable while anything holds one, so check whether the
+// process object has been signalled instead of trusting the open alone.
 func processAlive(pid int) bool {
-	proc, err := os.FindProcess(pid)
+	if pid <= 0 {
+		return false
+	}
+	handle, err := syscall.OpenProcess(syscall.SYNCHRONIZE, false, uint32(pid))
+	if err != nil {
+		// A process we may not synchronize on still exists.
+		return err == syscall.ERROR_ACCESS_DENIED
+	}
+	defer syscall.CloseHandle(handle)
+	state, err := syscall.WaitForSingleObject(handle, 0)
 	if err != nil {
 		return false
 	}
-	_ = proc.Release()
-	return true
+	return state == waitTimeout
 }
 
 func requestCompanionRefresh(_ int, testMode bool) error {

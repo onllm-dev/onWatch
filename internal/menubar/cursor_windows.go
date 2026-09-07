@@ -3,6 +3,8 @@
 package menubar
 
 import (
+	"fmt"
+	"log/slog"
 	"syscall"
 	"unsafe"
 )
@@ -46,28 +48,39 @@ func quickViewAnchor(width, height int) *windowPosition {
 	if r, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt))); r == 0 {
 		return nil
 	}
-	rect := workAreaAt(pt)
+	rect, source := workAreaAt(pt)
 	pos := quickViewPosition(
 		cursorPoint{X: int(pt.X), Y: int(pt.Y)},
 		screenRect{Left: int(rect.Left), Top: int(rect.Top), Right: int(rect.Right), Bottom: int(rect.Bottom)},
 		width, height,
 	)
+	// Placement across side-docked taskbars, secondary displays and mixed DPI
+	// can only be confirmed on real hardware, so every open records what it
+	// saw and what it decided - that is the report issue #125 asks for.
+	slog.Default().Info("quick view anchor",
+		"cursor", fmt.Sprintf("%d,%d", pt.X, pt.Y),
+		"work_area", fmt.Sprintf("%d,%d,%d,%d", rect.Left, rect.Top, rect.Right, rect.Bottom),
+		"work_area_source", source,
+		"window", fmt.Sprintf("%d,%d", pos.X, pos.Y),
+		"size", fmt.Sprintf("%dx%d", width, height),
+	)
 	return &pos
 }
 
-// workAreaAt returns the work area of the monitor under pt. SPI_GETWORKAREA
-// only describes the primary display, so it is the fallback, not the answer.
-func workAreaAt(pt winPoint) winRect {
+// workAreaAt returns the work area of the monitor under pt, and which API
+// answered. SPI_GETWORKAREA only describes the primary display, so it is the
+// fallback, not the answer.
+func workAreaAt(pt winPoint) (winRect, string) {
 	if rect, ok := monitorWorkArea(pt); ok {
-		return rect
+		return rect, "monitor"
 	}
 	var rect winRect
 	if r, _, _ := procSystemParameters.Call(spiGetWorkArea, 0, uintptr(unsafe.Pointer(&rect)), 0); r == 0 {
 		cx, _, _ := procGetSystemMetrics.Call(smCXScreen)
 		cy, _, _ := procGetSystemMetrics.Call(smCYScreen)
-		rect = winRect{Right: int32(cx), Bottom: int32(cy)}
+		return winRect{Right: int32(cx), Bottom: int32(cy)}, "screen-metrics"
 	}
-	return rect
+	return rect, "primary-work-area"
 }
 
 func monitorWorkArea(pt winPoint) (winRect, bool) {

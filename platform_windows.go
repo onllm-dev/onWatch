@@ -10,6 +10,10 @@ import (
 
 const createNoWindow = 0x08000000
 
+// waitTimeout is WAIT_TIMEOUT: the process object is not signalled, so the
+// process is still running.
+const waitTimeout = uint32(0x00000102)
+
 func daemonSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
 		HideWindow:    true,
@@ -40,16 +44,23 @@ func terminateProcess(proc *os.Process) error {
 	return proc.Kill()
 }
 
-// processAlive reports whether pid names a running process. os.FindProcess
-// opens a handle on Windows and fails when the process does not exist.
+// processAlive reports whether pid names a running process. Opening a handle
+// is not enough on Windows: a process that has exited still has an openable
+// handle while anything holds one, so ask whether the process object has been
+// signalled (which happens exactly when the process ends).
 func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	proc, err := os.FindProcess(pid)
+	handle, err := syscall.OpenProcess(syscall.SYNCHRONIZE, false, uint32(pid))
+	if err != nil {
+		// A process we may not synchronize on still exists.
+		return err == syscall.ERROR_ACCESS_DENIED
+	}
+	defer syscall.CloseHandle(handle)
+	state, err := syscall.WaitForSingleObject(handle, 0)
 	if err != nil {
 		return false
 	}
-	_ = proc.Release()
-	return true
+	return state == waitTimeout
 }

@@ -45,6 +45,15 @@ up, when all of these hold:
 
 Set `ONWATCH_DISABLE_TRAY=1` to keep the daemon headless on a desktop.
 
+### How it stops
+
+`onwatch stop` ends the companion along with the daemon. The companion also
+watches the daemon that spawned it and quits on its own about 30 seconds after
+that daemon disappears, so a crash, a `kill`, or a stop that ran with a
+different `HOME` or `LOCALAPPDATA` cannot leave a dead icon behind. A restart
+inside that window is adopted, including one under a new PID, so the icon does
+not flicker while the daemon comes back.
+
 ### Running the tray by hand
 
 When the daemon runs elsewhere (system service, another machine over an SSH
@@ -99,6 +108,18 @@ Set `ONWATCH_QUICKVIEW_BROWSER=/path/to/browser` to force one. When no
 Chromium-family browser exists, the companion opens the quick view in your
 default browser instead.
 
+On Windows the window is anchored to the display under the cursor and pressed
+against whichever edge holds the taskbar. Every open logs what it saw and where
+it put the window:
+
+```
+level=INFO msg="quick view anchor" cursor=1830,1417 work_area=0,0,2560,1400 work_area_source=monitor window=1552,712 size=360x680
+```
+
+If the window lands on the wrong display or edge, paste that line into
+[issue #125](https://github.com/onllm-dev/onWatch/issues/125); it carries the
+work area and the placement decision, which is all the geometry needed.
+
 ## Port discovery
 
 The daemon writes its dashboard port to `~/.onwatch/port` (Linux, macOS) or
@@ -125,7 +146,8 @@ have a tray.
   then confirm a StatusNotifier host exists (`busctl --user list | grep
   StatusNotifierWatcher`). On GNOME, enable an AppIndicator extension.
 - **Icon shows a gray dash**: the companion cannot reach the daemon. Check
-  `onwatch status` and the port in `~/.onwatch/port`.
+  `onwatch status` and the port in `~/.onwatch/port`. If the daemon is really
+  gone, the icon disappears on its own within about 30 seconds.
 - **Quick view opens in a full browser**: no Chromium-family browser was
   found. Install one or set `ONWATCH_QUICKVIEW_BROWSER`.
 - **Logs**: `~/.onwatch/data/menubar.log` (Linux, macOS) or

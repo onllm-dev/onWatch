@@ -35,6 +35,18 @@ func TestCompareVersions(t *testing.T) {
 		{"single digit", "3", "2.9.9", 1},
 		{"pre-release suffix", "2.2.6-test", "2.2.5-test", 1},
 		{"pre-release vs release", "2.2.6-beta", "2.2.5", 1},
+		{"beta below its release", "2.14.0-beta.3", "2.14.0", -1},
+		{"release above its beta", "2.14.0", "2.14.0-beta.3", 1},
+		{"patch above the beta of the release before it", "2.14.1", "2.14.0-beta.3", 1},
+		{"beta ordering", "2.14.0-beta.1", "2.14.0-beta.2", -1},
+		{"beta ordering is numeric, not lexical", "2.14.0-beta.10", "2.14.0-beta.9", 1},
+		{"alpha below beta", "2.14.0-alpha.1", "2.14.0-beta.1", -1},
+		{"rc above beta", "2.14.0-rc.1", "2.14.0-beta.9", 1},
+		{"shorter suffix below its longer prefix", "2.14.0-beta", "2.14.0-beta.1", -1},
+		{"numeric identifier below alphanumeric", "2.14.0-1", "2.14.0-beta", -1},
+		{"identical pre-releases", "2.14.0-beta.3", "v2.14.0-beta.3", 0},
+		{"build metadata is ignored", "2.14.0+abc", "2.14.0", 0},
+		{"build metadata on a pre-release", "2.14.0-beta.3+abc", "2.14.0-beta.3", 0},
 	}
 
 	for _, tt := range tests {

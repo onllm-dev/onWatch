@@ -129,7 +129,9 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 		args = append(args, "--test")
 	}
 	cmd := exec.Command(exe, args...)
-	cmd.Env = os.Environ()
+	// Hand over our PID so the companion can quit on its own once this daemon
+	// is gone instead of leaving a dead tray icon behind.
+	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%d", daemonPIDEnv, os.Getpid()))
 	cmd.SysProcAttr = companionSysProcAttr()
 
 	logFile, err := config.OpenRotatingLogFile(menubarLogPath(cfg))
@@ -244,6 +246,13 @@ func runMenubarCommand() error {
 		<-sigCh
 		_ = menubar.Stop()
 	}()
+
+	watchStop := make(chan struct{})
+	defer close(watchStop)
+	go watchDaemon(newDaemonWatcher(cfg, daemonPIDFromEnv()), daemonWatchInterval, watchStop, func() {
+		logger.Info("Daemon is gone, stopping menubar companion")
+		_ = menubar.Stop()
+	})
 
 	err = menubar.Init(mbCfg)
 	if err != nil {
