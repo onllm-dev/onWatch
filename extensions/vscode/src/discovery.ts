@@ -82,19 +82,45 @@ export function isLoopbackUrl(url: string): boolean {
   return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
 }
 
+/**
+ * Where the daemon writes its port file. It sits next to the daemon's PID file:
+ * `%LOCALAPPDATA%\\onwatch\\port` on Windows, `~/.onwatch/port` elsewhere. The
+ * home-directory path is still tried on Windows for daemons started with an
+ * empty LOCALAPPDATA.
+ */
+export function portFileCandidates(platform: string = process.platform, env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string[] {
+  const paths: string[] = [];
+  if (platform === "win32") {
+    const local = (env.LOCALAPPDATA ?? "").trim();
+    if (local !== "") {
+      paths.push(join(local, "onwatch", "port"));
+    }
+  }
+  paths.push(join(home, ".onwatch", "port"));
+  return paths;
+}
+
 export function portFilePath(home: string = homedir()): string {
   return join(home, ".onwatch", "port");
 }
 
-/** Contents of ~/.onwatch/port, or undefined when the file does not exist or cannot be read. */
-export function readPortFile(home: string = homedir()): string | undefined {
-  try {
-    return readFileSync(portFilePath(home), "utf8");
-  } catch {
-    return undefined;
+/** Contents of the first readable port file, or undefined when none exists. */
+export function readPortFile(home: string = homedir(), env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): string | undefined {
+  for (const path of portFileCandidates(platform, env, home)) {
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      // try the next location
+    }
   }
+  return undefined;
 }
 
-export function discoverBaseUrl(daemonUrl: string, env: NodeJS.ProcessEnv = process.env, home: string = homedir()): ResolvedUrl {
-  return resolveBaseUrl({ daemonUrl, portFileContents: readPortFile(home), envPort: env.ONWATCH_PORT });
+export function discoverBaseUrl(
+  daemonUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+  platform: string = process.platform,
+): ResolvedUrl {
+  return resolveBaseUrl({ daemonUrl, portFileContents: readPortFile(home, env, platform), envPort: env.ONWATCH_PORT });
 }

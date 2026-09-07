@@ -8,6 +8,7 @@ import {
   isLoopbackUrl,
   normalizeDaemonUrl,
   parsePort,
+  portFileCandidates,
   readPortFile,
   resolveBaseUrl,
 } from "../src/discovery";
@@ -119,6 +120,30 @@ describe("readPortFile / discoverBaseUrl", () => {
     writeFileSync(join(home, ".onwatch", "port"), "4321\n");
     expect(readPortFile(home)).toBe("4321\n");
     expect(discoverBaseUrl("", {}, home)).toEqual({ url: "http://127.0.0.1:4321", source: "portFile" });
+  });
+
+  it("prefers %LOCALAPPDATA%\\onwatch\\port on Windows, where the daemon writes it", () => {
+    home = mkdtempSync(join(tmpdir(), "onwatch-vscode-"));
+    const local = join(home, "AppData", "Local");
+    mkdirSync(join(local, "onwatch"), { recursive: true });
+    writeFileSync(join(local, "onwatch", "port"), "9300\n");
+    mkdirSync(join(home, ".onwatch"));
+    writeFileSync(join(home, ".onwatch", "port"), "1111\n");
+    const env = { LOCALAPPDATA: local };
+    expect(portFileCandidates("win32", env, home)).toEqual([join(local, "onwatch", "port"), join(home, ".onwatch", "port")]);
+    expect(readPortFile(home, env, "win32")).toBe("9300\n");
+    expect(discoverBaseUrl("", env, home, "win32")).toEqual({ url: "http://127.0.0.1:9300", source: "portFile" });
+    // Other platforms never look at LOCALAPPDATA.
+    expect(portFileCandidates("darwin", env, home)).toEqual([join(home, ".onwatch", "port")]);
+    expect(readPortFile(home, env, "linux")).toBe("1111\n");
+  });
+
+  it("falls back to the home directory on Windows when LOCALAPPDATA is unset or has no file", () => {
+    home = mkdtempSync(join(tmpdir(), "onwatch-vscode-"));
+    mkdirSync(join(home, ".onwatch"));
+    writeFileSync(join(home, ".onwatch", "port"), "2222\n");
+    expect(readPortFile(home, {}, "win32")).toBe("2222\n");
+    expect(readPortFile(home, { LOCALAPPDATA: join(home, "nowhere") }, "win32")).toBe("2222\n");
   });
 
   it("returns undefined when the file is missing", () => {
