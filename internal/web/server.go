@@ -160,7 +160,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 		finalHandler = sessionAuthMiddlewareWithTrustedProxy(sessions, bp, trustedProxy, logger)(mux)
 	}
 	// Apply security headers and gzip compression (outermost)
-	finalHandler = securityHeadersMiddleware(gzipHandler(finalHandler))
+	finalHandler = securityHeadersMiddleware(gzipHandler(finalHandler), bp)
 	finalHandler = csrfMiddleware(finalHandler, bp)
 
 	return &Server{
@@ -265,13 +265,23 @@ func csrfMiddleware(next http.Handler, basePath string) http.Handler {
 	})
 }
 
+// frameablePaths lists the pages that may be embedded in an iframe: the quick
+// view is hosted inside VS Code's sidebar webview and Simple Browser. It sets
+// its own frame-ancestors policy (see MenubarPage); everything else stays
+// unframeable.
+func isFrameablePath(path, bp string) bool {
+	return path == bp+"/menubar"
+}
+
 // securityHeadersMiddleware adds security headers to all responses
-func securityHeadersMiddleware(next http.Handler) http.Handler {
+func securityHeadersMiddleware(next http.Handler, bp string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Prevent MIME type sniffing
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		// Prevent clickjacking
-		w.Header().Set("X-Frame-Options", "DENY")
+		if !isFrameablePath(r.URL.Path, bp) {
+			w.Header().Set("X-Frame-Options", "DENY")
+		}
 		// Enable XSS filter (legacy browsers)
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		// Control referrer information
