@@ -6,7 +6,9 @@ Source lives in [`extensions/vscode`](../extensions/vscode). Tracking issue: [#1
 
 ## Install
 
-### From the Marketplace or Open VSX
+### From the Marketplace
+
+Listing: https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch
 
 Search for "onWatch" (publisher `onllm-dev`) in the Extensions view, or run:
 
@@ -14,18 +16,12 @@ Search for "onWatch" (publisher `onllm-dev`) in the Extensions view, or run:
 code --install-extension onllm-dev.onwatch
 ```
 
-Open VSX (VSCodium, Gitpod, code-server):
-
-```bash
-codium --install-extension onllm-dev.onwatch
-```
-
 ### From a .vsix
 
-Download `onwatch-<version>.vsix` from the GitHub release tagged `vscode-v<version>`, then:
+Every daemon release on GitHub ships `onwatch-vscode-<version>.vsix` next to the binaries (VSCodium and other forks without Marketplace access can use this). Download it, then:
 
 ```bash
-code --install-extension onwatch-<version>.vsix
+code --install-extension onwatch-vscode-<version>.vsix
 ```
 
 Or in VS Code: Extensions view > `...` menu > **Install from VSIX...**.

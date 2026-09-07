@@ -19,6 +19,7 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 **Compatibility & Docs**
 
 [![Version](https://img.shields.io/badge/Version-v2.14.0-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.14.0)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/onllm-dev.onwatch?style=for-the-badge&logo=visualstudiocode&logoColor=white&label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
@@ -204,7 +205,7 @@ Configure it in **Settings > Menubar**. You can enable or disable the companion,
 
 The tray is currently in beta. Feedback is highly appreciated at [github.com/onllm-dev/onwatch/issues](https://github.com/onllm-dev/onwatch/issues).
 
-**VS Code extension** -- Shows your tightest quota in the VS Code status bar (`82%`, with time to reset at critical), colored by your theme at warning and critical. Hover for a per-provider breakdown; click to open the quick view or the full dashboard inside VS Code. The extension is a thin client for the daemon and follows the same menubar preferences (provider order, visibility, thresholds), so it stays in sync with the dashboard. Zero telemetry. Install `onllm-dev.onwatch` from the Marketplace or Open VSX, or build it from [extensions/vscode](extensions/vscode). Full setup, settings and troubleshooting live in [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md).
+**VS Code extension** -- Shows your tightest quota in the VS Code status bar (`82%`, with time to reset at critical), colored by your theme at warning and critical. Hover for a per-provider breakdown; click to open the quick view or the full dashboard inside VS Code. The extension is a thin client for the daemon and follows the same menubar preferences (provider order, visibility, thresholds), so it stays in sync with the dashboard. Zero telemetry. Install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch) (`code --install-extension onllm-dev.onwatch`), grab the `.vsix` from any release, or build it from [extensions/vscode](extensions/vscode). Full setup, settings and troubleshooting live in [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md).
 
 **Email notifications (Beta)** -- Configure SMTP to receive alerts when quotas cross warning or critical thresholds, or when quotas reset. Per-quota threshold overrides for fine-grained control. SMTP passwords are encrypted at rest with AES-GCM.
 

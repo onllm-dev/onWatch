@@ -14,6 +14,16 @@ The extension is a thin client. It polls the onWatch daemon running on your mach
 - Optional one-time notification when a quota crosses into warning or critical.
 - Follows the daemon's own menubar preferences (provider order, visibility, thresholds, refresh cadence) so everything stays in sync with the dashboard.
 
+## Install
+
+From the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch), or:
+
+```bash
+code --install-extension onllm-dev.onwatch
+```
+
+Every [onWatch release](https://github.com/onllm-dev/onWatch/releases) also ships the extension as `onwatch-vscode-<version>.vsix` for editors without Marketplace access.
+
 ## Requirements
 
 - The onWatch daemon, running locally. Install it from the [onWatch repository](https://github.com/onllm-dev/onWatch) and start it with `onwatch`.
