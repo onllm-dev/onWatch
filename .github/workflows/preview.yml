@@ -151,6 +151,7 @@ jobs:
           - Native system tray for Linux (StatusNotifierItem) and Windows, pure Go, no extra packages. See docs/TRAY_LINUX_WINDOWS.md.
           - macOS menubar with the same shared controller (provider rows, Open Quick View, Refresh Now).
           - VS Code extension (\`${VSIX}\`): provider mark, limit and percent in the status bar, per-provider tables on hover, and the quick view in an onWatch sidebar view (click the status bar item or the activity bar icon).
+          - Ollama Cloud provider: set \`OLLAMA_API_KEY\` (ollama.com/settings/keys) and optionally \`OLLAMA_MONTHLY_LIMIT\` for a plan whose cap is not published. See docs/OLLAMA_SETUP.md and issue #86.
           - Daemon writes its port for client discovery to \`~/.onwatch/port\` (macOS, Linux) or \`%LOCALAPPDATA%\\onwatch\\port\` (Windows); menubar API served to authenticated remote callers.
 
           ## Install
@@ -170,6 +171,7 @@ jobs:
           - Linux: does the icon appear on your desktop (KDE, GNOME with AppIndicator, XFCE, Cinnamon)? Does the number and color match the dashboard? Does clicking open the quick view window?
           - Windows: icon in the notification area, quick view opening next to the taskbar in Edge (on the display that owns the taskbar), menu items working.
           - VS Code: label, hover tables, notifications on threshold crossings, the sidebar quick view (needs this preview's daemon: older daemons refuse to be framed).
+          - Ollama Cloud: does the included usage match ollama.com/settings? Free plan users: please share the page percent alongside the daemon's dollar value so the Free cap can be derived.
 
           Report at https://github.com/onllm-dev/onWatch/issues/117 (VS Code) or https://github.com/onllm-dev/onWatch/issues/98 (Linux tray). Checksums in \`SHA256SUMS\`.
           NOTES
