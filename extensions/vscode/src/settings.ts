@@ -1,7 +1,8 @@
 // Settings model and daemon-preference merge logic. No "vscode" import.
 import type { Preferences, StatusBarMode, Visibility } from "./model";
 
-export type OpenIn = "simpleBrowser" | "externalBrowser";
+/** Where pages open: the quick view in the onWatch sidebar view, or any page in Simple Browser or the system browser. */
+export type OpenIn = "sidebar" | "simpleBrowser" | "externalBrowser";
 export type NotifyMode = "off" | "critical" | "warningAndCritical";
 
 export interface ExtensionSettings {
@@ -25,7 +26,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   daemonUrl: "",
   statusBarMode: "combined",
   visibility: "always",
-  openIn: "simpleBrowser",
+  openIn: "sidebar",
   followDaemonSettings: true,
   providers: [],
   pollIntervalSeconds: 60,

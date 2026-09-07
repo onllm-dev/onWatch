@@ -9,7 +9,7 @@ The extension is a thin client. It polls the onWatch daemon running on your mach
 - Status bar item showing the provider mark, the limit and the highest-used quota across your providers, for example `<Anthropic mark> 5h 85%`. At critical it adds the time to reset: `5h 92% · 2h 27m`.
 - Warning and critical colors that follow your VS Code theme.
 - Hover tooltip with one section per provider: its mark and name, then a table of every limit with status icon, percent used (and used/limit when known) and time to reset.
-- Click to open the compact quick view (the same panel the macOS menubar uses) inside VS Code, or open the full dashboard.
+- A quick view in the sidebar: an onWatch activity bar icon opens the same compact panel the macOS menubar shows, next to the file explorer, so it stays visible while you work. A status bar click reveals it. Simple Browser and the system browser remain options.
 - Optional per-provider items instead of one combined item.
 - Optional one-time notification when a quota crosses into warning or critical.
 - Follows the daemon's own menubar preferences (provider order, visibility, thresholds, refresh cadence) so everything stays in sync with the dashboard.
@@ -19,7 +19,7 @@ The extension is a thin client. It polls the onWatch daemon running on your mach
 - The onWatch daemon, running locally. Install it from the [onWatch repository](https://github.com/onllm-dev/onWatch) and start it with `onwatch`.
 - VS Code 1.90 or newer.
 
-The extension auto-discovers the daemon: it reads `~/.onwatch/port`, then the `ONWATCH_PORT` environment variable, then falls back to `http://127.0.0.1:9211`. Set `onwatch.daemonUrl` if your daemon listens somewhere else.
+The extension auto-discovers the daemon: it reads the port file the daemon writes (`~/.onwatch/port` on macOS and Linux, `%LOCALAPPDATA%\onwatch\port` on Windows), then the `ONWATCH_PORT` environment variable, then falls back to `http://127.0.0.1:9211`. Set `onwatch.daemonUrl` if your daemon listens somewhere else.
 
 ## Commands
 
@@ -28,7 +28,7 @@ All commands live under the `onWatch` category in the Command Palette.
 | Command | What it does |
 |---|---|
 | `onWatch: Open Dashboard` | Opens the full dashboard (Simple Browser or external, see `onwatch.openIn`). |
-| `onWatch: Open Quick View` | Opens the compact quota panel. This is also the status bar click action. |
+| `onWatch: Open Quick View` | Reveals the quick view in the onWatch sidebar (or opens it per `onwatch.openIn`). This is also the status bar click action. |
 | `onWatch: Open Dashboard in External Browser` | Always opens the dashboard in your system browser. |
 | `onWatch: Refresh` | Polls the daemon now. |
 | `onWatch: Set Daemon Credentials` | Prompts for username and password for a daemon with authentication enabled. The password is stored in VS Code secret storage. |
@@ -42,7 +42,7 @@ All commands live under the `onWatch` category in the Command Palette.
 | `onwatch.daemonUrl` | `""` | Full base URL of the daemon. Empty means auto-discover. A base path such as `http://host:9211/onwatch` is honoured. |
 | `onwatch.statusBar.mode` | `combined` | `combined` (one item, tightest quota) or `perProvider` (one item per provider). |
 | `onwatch.statusBar.visibility` | `always` | `always`, `whenAnyProviderNearLimit`, or `never`. |
-| `onwatch.openIn` | `simpleBrowser` | `simpleBrowser` (falls back to external) or `externalBrowser`. |
+| `onwatch.openIn` | `sidebar` | `sidebar` (quick view in the onWatch sidebar view, dashboard in Simple Browser), `simpleBrowser` (falls back to external) or `externalBrowser`. |
 | `onwatch.followDaemonSettings` | `true` | Use the daemon's menubar preferences for provider visibility, order, thresholds and refresh cadence. Explicitly set extension settings override individual values. |
 | `onwatch.providers` | `[]` | Provider IDs to show, in order. Empty means all visible providers. |
 | `onwatch.pollIntervalSeconds` | `60` | Poll interval in seconds (minimum 10). Fallback when not following daemon settings. |

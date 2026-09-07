@@ -3,7 +3,8 @@ import { DaemonClient, DaemonError, type Credentials } from "./client";
 import { discoverBaseUrl } from "./discovery";
 import { applyThresholds, buildStatusBarItems, selectProviders, type DaemonState, type Preferences, type ProviderCard } from "./model";
 import { NotificationTracker } from "./notifications";
-import { openExternal, openUrl } from "./open";
+import { openExternal, openQuickView, openUrl } from "./open";
+import { QUICK_VIEW_ID, QuickViewProvider } from "./quickView";
 import { DEFAULT_SETTINGS, resolveEffectiveConfig, type ExtensionSettings, type OverridableKey } from "./settings";
 import { StatusBarController } from "./statusBar";
 
@@ -58,6 +59,7 @@ function loadSettings(): LoadedSettings {
 
 class OnWatchController implements vscode.Disposable {
   private readonly statusBar = new StatusBarController();
+  readonly quickView = new QuickViewProvider((m) => this.log(m));
   private readonly tracker = new NotificationTracker();
   private loaded: LoadedSettings = loadSettings();
   private baseUrl = "";
@@ -239,6 +241,7 @@ class OnWatchController implements vscode.Disposable {
       url: this.baseUrl,
     });
     this.statusBar.render(items);
+    this.quickView.update(this.state, this.quickViewUrl);
   }
 
   async setCredentials(): Promise<void> {
@@ -281,6 +284,7 @@ class OnWatchController implements vscode.Disposable {
     this.disposed = true;
     this.clearTimer();
     this.statusBar.dispose();
+    this.quickView.dispose();
   }
 }
 
@@ -298,7 +302,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.commands.registerCommand("onwatch.openDashboard", () => openUrl(controller.dashboardUrl, controller.openIn, log)),
-    vscode.commands.registerCommand("onwatch.openQuickView", () => openUrl(controller.quickViewUrl, controller.openIn, log)),
+    vscode.window.registerWebviewViewProvider(QUICK_VIEW_ID, controller.quickView),
+    vscode.commands.registerCommand("onwatch.openQuickView", () => openQuickView(controller.quickViewUrl, controller.openIn, log)),
     vscode.commands.registerCommand("onwatch.openDashboardExternal", () => openExternal(controller.dashboardUrl)),
     vscode.commands.registerCommand("onwatch.refresh", () => controller.pollNow()),
     vscode.commands.registerCommand("onwatch.setCredentials", () => controller.setCredentials()),

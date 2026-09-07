@@ -113,15 +113,23 @@ func (h *Handler) MenubarPage(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to render menubar page")
 		return
 	}
-	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; "+
-			"script-src 'self' 'unsafe-inline'; "+
-			"style-src 'self' 'unsafe-inline'; "+
-			"img-src 'self' data:; "+
-			"connect-src 'self'")
+	w.Header().Set("Content-Security-Policy", menubarPageCSP)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
 }
+
+// menubarPageCSP lets the quick view be framed by the onWatch VS Code
+// extension (sidebar webview and Simple Browser run inside vscode-webview://
+// on desktop, vscode-cdn.net in the browser-based editors, under a
+// vscode-file:// workbench) and by the dashboard origin itself, and by nobody
+// else. The middleware skips X-Frame-Options for this page so this list is
+// the whole policy.
+const menubarPageCSP = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"frame-ancestors 'self' vscode-webview: vscode-file: https://*.vscode-cdn.net"
 
 // MenubarTest renders the same menubar UI in a browser page for automated testing.
 func (h *Handler) MenubarTest(w http.ResponseWriter, r *http.Request) {

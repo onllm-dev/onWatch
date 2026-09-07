@@ -928,3 +928,50 @@ func TestBuildMenubarSnapshotKimiResetFields(t *testing.T) {
 		}
 	}
 }
+
+func TestMenubarPageAllowsEditorFrames(t *testing.T) {
+	h, s := newMenubarTestHandler(t)
+	defer s.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/menubar", nil)
+	rr := httptest.NewRecorder()
+	h.MenubarPage(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	csp := rr.Header().Get("Content-Security-Policy")
+	for _, want := range []string{"frame-ancestors 'self'", "vscode-webview:", "vscode-file:", "https://*.vscode-cdn.net"} {
+		if !strings.Contains(csp, want) {
+			t.Fatalf("quick view CSP should contain %q, got %q", want, csp)
+		}
+	}
+}
+
+func TestSecurityHeadersFrameDenyExemptsQuickViewOnly(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	cases := []struct {
+		path, bp string
+		deny     bool
+	}{
+		{"/", "", true},
+		{"/api/menubar/summary", "", true},
+		{"/menubar", "", false},
+		{"/onwatch/menubar", "/onwatch", false},
+		{"/menubar", "/onwatch", true},
+	}
+	for _, tc := range cases {
+		rr := httptest.NewRecorder()
+		securityHeadersMiddleware(next, tc.bp).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		got := rr.Header().Get("X-Frame-Options")
+		if tc.deny && got != "DENY" {
+			t.Errorf("%s (bp %q): expected X-Frame-Options DENY, got %q", tc.path, tc.bp, got)
+		}
+		if !tc.deny && got != "" {
+			t.Errorf("%s (bp %q): quick view must not send X-Frame-Options, got %q", tc.path, tc.bp, got)
+		}
+		if rr.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s: other security headers must stay", tc.path)
+		}
+	}
+}
