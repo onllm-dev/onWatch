@@ -2,6 +2,12 @@
 
 All notable changes to the onWatch VS Code extension are documented here.
 
+## 2.14.1
+
+Version bump only: the extension tracks the daemon's version and nothing in the
+extension changed. The 2.14.1 daemon fixes the updater for pre-release builds
+and retires tray icons whose daemon is gone.
+
 ## 2.14.0
 
 Initial release. The extension shares the onWatch daemon's version number from here on.

@@ -2,7 +2,7 @@
   "name": "onwatch",
   "displayName": "onWatch",
   "description": "AI quota tracking in your status bar - Anthropic, Codex, Copilot, Gemini and more, powered by the onWatch daemon",
-  "version": "2.14.0",
+  "version": "2.14.1",
   "publisher": "onllm-dev",
   "license": "GPL-3.0-only",
   "icon": "media/icon.png",
