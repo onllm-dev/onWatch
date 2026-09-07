@@ -71,6 +71,20 @@ func TestLoginHint(t *testing.T) {
 	}
 }
 
+func TestNetworkHint(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "localhost", "::1", "[::1]"} {
+		if got := networkHint(host); got != "" {
+			t.Errorf("networkHint(%q) = %q, want empty for a loopback bind", host, got)
+		}
+	}
+	if got := networkHint(""); !contains(got, "0.0.0.0") || !contains(got, "ONWATCH_HOST=127.0.0.1") {
+		t.Fatalf("empty host should name 0.0.0.0 and the fix, got %q", got)
+	}
+	if got := networkHint("10.0.0.5"); !contains(got, "10.0.0.5") {
+		t.Fatalf("explicit host should be echoed, got %q", got)
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
 }

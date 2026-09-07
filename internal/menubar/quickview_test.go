@@ -118,3 +118,34 @@ func TestQuickViewPositionAnchorsAboveTaskbar(t *testing.T) {
 		t.Fatalf("expected top-anchored y below a top taskbar, got %d", top.Y)
 	}
 }
+
+func TestQuickViewPositionSideTaskbars(t *testing.T) {
+	t.Parallel()
+	// Taskbar docked left: work area starts at x=60, cursor is in the bar.
+	work := screenRect{Left: 60, Top: 0, Right: 1920, Bottom: 1080}
+	left := quickViewPosition(cursorPoint{X: 30, Y: 500}, work, 360, 680)
+	if left.X != 68 || left.Y != 500-340 {
+		t.Fatalf("left taskbar: got %+v, want x=68 y=160", left)
+	}
+	// Taskbar docked right, cursor near the bottom: y clamps onto the display.
+	work = screenRect{Left: 0, Top: 0, Right: 1860, Bottom: 1080}
+	right := quickViewPosition(cursorPoint{X: 1890, Y: 1000}, work, 360, 680)
+	if right.X != 1860-360-8 || right.Y != 1080-680-8 {
+		t.Fatalf("right taskbar: got %+v", right)
+	}
+}
+
+func TestQuickViewPositionSecondaryDisplay(t *testing.T) {
+	t.Parallel()
+	// A 1440x2560-ish portrait display left of the primary one: negative X,
+	// taskbar at its bottom. The window must land on that display, not at the
+	// primary display's bottom-left corner.
+	work := screenRect{Left: -1440, Top: -300, Right: 0, Bottom: 2112}
+	pos := quickViewPosition(cursorPoint{X: -589, Y: 2115}, work, 360, 680)
+	if pos.X != -589-180 {
+		t.Fatalf("expected x centred on the cursor, got %d", pos.X)
+	}
+	if pos.Y != 2112-680-8 {
+		t.Fatalf("expected y above the secondary taskbar, got %d", pos.Y)
+	}
+}

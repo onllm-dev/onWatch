@@ -338,6 +338,19 @@ func loginHint(defaultPass, dbExists bool, user string) string {
 	return fmt.Sprintf("Login: %s / %s (default - change it in Settings > Security or set ONWATCH_ADMIN_PASS in .env)", user, defaultAdminPass)
 }
 
+// networkHint warns that the dashboard accepts connections from other
+// machines. Empty when the bind address is loopback.
+func networkHint(host string) string {
+	if !dashboardExposedToNetwork(host) {
+		return ""
+	}
+	bind := host
+	if bind == "" {
+		bind = "0.0.0.0"
+	}
+	return "Dashboard is reachable from your network (bind address " + bind + ") - set ONWATCH_HOST=127.0.0.1 to keep it local"
+}
+
 // sha256hex returns the SHA-256 hex hash of a string.
 func sha256hex(s string) string {
 	h := sha256.Sum256([]byte(s))
@@ -625,6 +638,11 @@ func daemonize(cfg *config.Config) error {
 	_, dbErr := os.Stat(cfg.DBPath)
 	if hint := loginHint(cfg.IsDefaultPassword(), dbErr == nil, cfg.AdminUser); hint != "" {
 		fmt.Println(hint)
+		// The daemon child logs the same warning, but the console is what
+		// someone starting the bare binary actually reads.
+		if warn := networkHint(cfg.Host); warn != "" {
+			fmt.Println(warn)
+		}
 	}
 	return nil
 }
@@ -934,12 +952,8 @@ func run() error {
 	if cfg.AdminPassHash == sha256hex(defaultAdminPass) {
 		logger.Warn("USING DEFAULT PASSWORD - dashboard login is " + cfg.AdminUser + " / " + defaultAdminPass +
 			" - set ONWATCH_ADMIN_PASS in .env or change it in Settings > Security")
-		if dashboardExposedToNetwork(cfg.Host) {
-			bind := cfg.Host
-			if bind == "" {
-				bind = "0.0.0.0"
-			}
-			logger.Warn("Dashboard is reachable from your network (bind address " + bind + ") - set ONWATCH_HOST=127.0.0.1 to keep it local")
+		if hint := networkHint(cfg.Host); hint != "" {
+			logger.Warn(hint)
 		}
 	}
 
