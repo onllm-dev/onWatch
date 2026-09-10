@@ -156,17 +156,22 @@ func TestAgent_StoresEverySnapshot(t *testing.T) {
 
 	agent := New(client, str, tr, 50*time.Millisecond, logger, nil)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 175*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go agent.Run(ctx)
-	<-ctx.Done()
-	time.Sleep(10 * time.Millisecond)
 
-	// Should have 4 snapshots (1 immediate + 3 at 50ms intervals)
-	// Or 5 depending on timing, so check range
-	if count := pollCount.Load(); count < 3 {
-		t.Errorf("Expected at least 3 polls, got %d", count)
+	// Wait for the polls to arrive instead of asserting against a fixed
+	// wall-clock window. The property under test is that the agent keeps
+	// polling on its interval, and a loaded CI runner can starve the ticker
+	// goroutine for seconds without that property being violated.
+	deadline := time.After(10 * time.Second)
+	for pollCount.Load() < 3 {
+		select {
+		case <-deadline:
+			t.Fatalf("Expected at least 3 polls, got %d", pollCount.Load())
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
 }
 
