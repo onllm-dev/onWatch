@@ -27,6 +27,19 @@ const (
 	codexStarterRateWindow = 4 * time.Hour
 )
 
+// codexAuthPausedRetryInterval is the first delay before a paused agent
+// re-attempts a poll with its stored credentials, and
+// codexAuthPausedRetryMaxInterval caps the escalating schedule.
+//
+// Without bounded self-recovery the only exit from the paused state is a
+// credential change on disk, which leaves polling dead indefinitely when the
+// cause was server-side rather than a bad token (issue #127; the Anthropic
+// equivalent is issue #111).
+const (
+	codexAuthPausedRetryInterval    = 15 * time.Minute
+	codexAuthPausedRetryMaxInterval = 6 * time.Hour
+)
+
 // codexTokenRefreshThreshold is how soon before expiry we proactively refresh the token.
 // Codex tokens expire weekly, so refreshing 6 hours early provides a comfortable buffer.
 const codexTokenRefreshThreshold = 6 * time.Hour
@@ -71,6 +84,16 @@ type CodexAgent struct {
 	authPaused               bool
 	lastFailedToken          string
 	proactiveRefreshFailures int // consecutive proactive refresh failures (non-reused-token)
+
+	// Bounded self-recovery while authPaused: authRetryAt is when the next
+	// recovery poll is allowed and authRetryCount drives the escalating backoff.
+	authRetryAt    time.Time
+	authRetryCount int
+
+	// now overrides the clock used by the auth-pause schedule. Tests only;
+	// nil means time.Now. Snapshot and quota-window timestamps deliberately
+	// keep using the real clock.
+	now func() time.Time
 
 	// Auto quota-starter (Beta).
 	// codexAccountID is the Codex account_id (string) used for the
@@ -186,6 +209,74 @@ func (a *CodexAgent) allowStarterPing(quotaName string) bool {
 	next = append(next, fires[1:]...)
 	next = append(next, now)
 	a.starterFires[quotaName] = next
+	return true
+}
+
+// currentTime returns the clock used by the auth-pause schedule.
+func (a *CodexAgent) currentTime() time.Time {
+	if a.now != nil {
+		return a.now()
+	}
+	return time.Now()
+}
+
+// pauseAuth stops polling after repeated auth failures and schedules the first
+// bounded self-recovery attempt. An already scheduled retry is preserved so a
+// failed recovery keeps escalating instead of restarting at the base interval.
+func (a *CodexAgent) pauseAuth(failedToken string) {
+	a.authPaused = true
+	a.lastFailedToken = failedToken
+	if a.authRetryAt.IsZero() {
+		a.authRetryAt = a.currentTime().Add(codexAuthPausedRetryInterval)
+	}
+}
+
+// resumeAuth clears all auth pause state after credentials are known good.
+func (a *CodexAgent) resumeAuth() {
+	a.authPaused = false
+	a.authFailCount = 0
+	a.lastFailedToken = ""
+	a.authRetryAt = time.Time{}
+	a.authRetryCount = 0
+}
+
+// codexAuthRetryBackoff returns the delay before the nth paused-state recovery
+// attempt, doubling from codexAuthPausedRetryInterval up to the max.
+func codexAuthRetryBackoff(attempt int) time.Duration {
+	if attempt <= 1 {
+		return codexAuthPausedRetryInterval
+	}
+	shift := attempt - 1
+	if shift > 10 {
+		shift = 10 // prevent overflow
+	}
+	backoff := codexAuthPausedRetryInterval * (1 << shift)
+	if backoff > codexAuthPausedRetryMaxInterval {
+		return codexAuthPausedRetryMaxInterval
+	}
+	return backoff
+}
+
+// tryPausedAuthRecovery reports whether a paused agent may attempt one poll
+// this cycle, rescheduling the next attempt on an escalating backoff.
+//
+// Unlike the Anthropic equivalent this never triggers an OAuth refresh: Codex
+// refresh tokens are one-time use, so a timer-driven refresh would burn
+// credentials the Codex CLI still needs. Re-attempting the poll with the stored
+// token recovers from server-side failures on its own, and the proactive
+// refresh in poll() still handles genuine expiry.
+func (a *CodexAgent) tryPausedAuthRecovery() bool {
+	now := a.currentTime()
+	if a.authRetryAt.IsZero() || now.Before(a.authRetryAt) {
+		return false
+	}
+
+	a.authRetryCount++
+	a.authRetryAt = now.Add(codexAuthRetryBackoff(a.authRetryCount))
+	a.logger.Info("Attempting recovery from paused Codex polling",
+		"attempt", a.authRetryCount,
+		"next_retry_at", a.authRetryAt,
+		"account_id", a.accountID)
 	return true
 }
 
@@ -336,8 +427,7 @@ func (a *CodexAgent) poll(ctx context.Context) {
 							// Unrecoverable - token is dead, user must re-authenticate
 							a.logger.Error("Codex refresh token already used - re-authenticate via 'codex auth'",
 								"error", err)
-							a.authPaused = true
-							a.lastFailedToken = creds.AccessToken
+							a.pauseAuth(creds.AccessToken)
 							// Send auth error notification
 							a.sendAuthErrorNotification(
 								"Token Refresh Failed",
@@ -350,8 +440,7 @@ func (a *CodexAgent) poll(ctx context.Context) {
 								"error", err,
 								"consecutive_failures", a.proactiveRefreshFailures)
 							if a.proactiveRefreshFailures >= maxCodexAuthFailures {
-								a.authPaused = true
-								a.lastFailedToken = creds.AccessToken
+								a.pauseAuth(creds.AccessToken)
 								a.logger.Error("Codex proactive refresh PAUSED - too many consecutive failures",
 									"failure_count", a.proactiveRefreshFailures,
 									"action", "Re-authenticate via 'codex auth' to resume polling")
@@ -381,9 +470,7 @@ func (a *CodexAgent) poll(ctx context.Context) {
 
 							// Reset auth failures since we have fresh credentials
 							if a.authPaused {
-								a.authPaused = false
-								a.authFailCount = 0
-								a.lastFailedToken = ""
+								a.resumeAuth()
 								a.logger.Info("Codex auth failure pause lifted - token refreshed via OAuth")
 							}
 						}
@@ -403,16 +490,15 @@ func (a *CodexAgent) poll(ctx context.Context) {
 
 			// If we were paused due to auth failures and credentials changed, resume.
 			if a.authPaused && newToken != a.lastFailedToken {
-				a.authPaused = false
-				a.authFailCount = 0
-				a.lastFailedToken = ""
+				a.resumeAuth()
 				a.logger.Info("Codex auth failure pause lifted - new credentials detected")
 			}
 		}
 	}
 
-	// If auth is paused, skip polling until credentials change.
-	if a.authPaused {
+	// If auth is paused, skip polling until credentials change or a bounded
+	// recovery attempt comes due.
+	if a.authPaused && !a.tryPausedAuthRecovery() {
 		return
 	}
 
@@ -443,16 +529,15 @@ func (a *CodexAgent) poll(ctx context.Context) {
 							"max_failures", maxCodexAuthFailures)
 
 						if a.authFailCount >= maxCodexAuthFailures {
-							a.authPaused = true
-							a.lastFailedToken = retryToken
+							a.pauseAuth(retryToken)
 							a.logger.Error("Codex polling PAUSED due to repeated auth failures",
 								"failure_count", a.authFailCount,
 								"action", "Re-authenticate Codex to resume polling")
 							// Send auth error notification
 							a.sendAuthErrorNotification(
 								"Authentication Failed",
-								"Codex polling has been paused due to repeated authentication failures. Please re-authenticate via 'codex auth' to resume.",
-								false, // not recoverable without re-auth
+								"Codex polling has been paused due to repeated authentication failures. Please re-authenticate via 'codex auth' to resume. onWatch also retries on its own, starting 15 minutes from now, in case the failure was server-side.",
+								false, // re-auth is the expected fix; the bounded retry is only a safety net
 							)
 						}
 					} else {
@@ -462,10 +547,20 @@ func (a *CodexAgent) poll(ctx context.Context) {
 				}
 				// Retry succeeded, reset auth failure count.
 				a.authFailCount = 0
+				if a.authPaused {
+					a.resumeAuth()
+					a.logger.Info("Codex auth failure pause lifted - poll succeeded", "account_id", a.accountID)
+				}
 			} else {
 				a.logger.Error("No Codex token available after re-read")
 				return
 			}
+		} else if errors.Is(err, api.ErrCodexAccessBlocked) {
+			// A challenge response is an edge block, not a credential problem:
+			// log it and leave the auth failure budget untouched.
+			a.logger.Warn("Codex usage request blocked by a challenge response",
+				"error", err, "account_id", a.accountID)
+			return
 		} else {
 			a.logger.Error("Failed to fetch Codex usage", "error", err)
 			return
@@ -473,6 +568,10 @@ func (a *CodexAgent) poll(ctx context.Context) {
 	} else {
 		// Success, reset auth failure count.
 		a.authFailCount = 0
+		if a.authPaused {
+			a.resumeAuth()
+			a.logger.Info("Codex auth failure pause lifted - poll succeeded", "account_id", a.accountID)
+		}
 	}
 
 	now := time.Now().UTC()

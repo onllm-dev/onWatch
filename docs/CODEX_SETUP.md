@@ -256,7 +256,31 @@ To enable Codex tracking:
 
 ### "Codex polling paused due to repeated auth failures"
 
-Refresh your Codex login so `auth.json` has a new access token, then restart onWatch.
+Polling pauses after three consecutive authentication failures so a dead token
+does not hammer the API. It resumes on its own in one of two ways:
+
+- **New credentials.** Refresh your Codex login so `auth.json` holds a new
+  access token; the next poll picks it up and lifts the pause. No restart needed.
+- **Bounded retry.** If the failures were server-side rather than a bad token,
+  onWatch retries the poll on its own - first after 15 minutes, then doubling up
+  to a 6 hour ceiling. A successful poll lifts the pause. The retry reuses the
+  stored token and never triggers an OAuth refresh, so it cannot consume the
+  one-time refresh token the Codex CLI needs.
+
+### "Codex usage request blocked by a challenge response"
+
+The usage endpoint answered with a bot challenge (an HTML or Cloudflare page)
+instead of a JSON error. This is an edge block, not a credential problem, so it
+does not count toward the auth failure budget and never pauses polling.
+It normally clears by itself on a later poll.
+
+### Endpoint selection
+
+Codex serves usage from one of two paths and the working one varies per account,
+so a 404 makes onWatch probe the other path. The alternate path is remembered
+only after it actually returns usage, and is dropped again as soon as it stops
+working or the token changes - so a temporary failure can never pin polling to a
+dead endpoint.
 
 ### Token security
 
