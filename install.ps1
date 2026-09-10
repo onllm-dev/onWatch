@@ -434,8 +434,9 @@ function Start-InteractiveSetup {
         $hasGemini = ($envContent -match "GEMINI_ENABLED=true") -or (Test-GeminiCredentials)
         $hasGrok = ($envContent -match "GROK_ENABLED=true") -or ($envContent -match "GROK_TOKEN=\S+") -or (Test-GrokCredentials)
         $hasOllama = $envContent -match "OLLAMA_API_KEY=\S+"
+        $hasMuse = ($envContent -match "MUSE_ENABLED=true") -or ($envContent -match "META_API_KEY=\S+")
 
-        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok -or $hasOllama) {
+        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok -or $hasOllama -or $hasMuse) {
             $configured = @()
             if ($hasSyn) { $configured += "Synthetic" }
             if ($hasZai) { $configured += "Z.ai" }
@@ -445,6 +446,7 @@ function Start-InteractiveSetup {
             if ($hasGemini) { $configured += "Gemini" }
             if ($hasGrok) { $configured += "Grok" }
             if ($hasOllama) { $configured += "Ollama" }
+            if ($hasMuse) { $configured += "Muse" }
 
             Write-Info "Existing .env found - configured: $($configured -join ', ')"
 
@@ -479,6 +481,7 @@ function Start-InteractiveSetup {
         "Gemini CLI only",
         "Grok (xAI) only",
         "Ollama Cloud only",
+        "Muse (Meta) only",
         "Multiple (choose one at a time)",
         "All available"
     )
@@ -492,8 +495,10 @@ function Start-InteractiveSetup {
     $geminiEnabled = ""
     $grokEnabled = ""
     $ollamaKey = ""
+    $museEnabled = ""
+    $museKey = ""
 
-    if ($providerChoice -eq 9) {
+    if ($providerChoice -eq 10) {
         # Multiple - ask for each provider individually
         $addIt = Read-PromptWithDefault -Prompt "Add Synthetic provider? (y/N)" -Default "N"
         if ($addIt -match "^[Yy]") {
@@ -544,45 +549,55 @@ function Start-InteractiveSetup {
             $ollamaKey = Read-SecretPrompt -Prompt "Ollama Cloud API key" -Validation { param($val) Test-OllamaKey $val }
         }
 
+        $addIt = Read-PromptWithDefault -Prompt "Add Muse (Meta) provider? (y/N)" -Default "N"
+        if ($addIt -match "^[Yy]") {
+            Write-Host "  ${DIM}Leave empty to auto-detect from 'muse login'${NC}"
+            $museKey = Read-PromptWithDefault -Prompt "Meta API key [Enter = auto-detect]" -Default ""
+            if ([string]::IsNullOrWhiteSpace($museKey)) {
+                $museKey = ""
+                $museEnabled = "true"
+            }
+        }
+
         # Validate at least one provider selected
-        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled -and -not $ollamaKey) {
+        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled -and -not $ollamaKey -and -not $museEnabled -and -not $museKey) {
             Write-Fail "At least one provider is required"
         }
     } else {
         # Single provider or All
-        if ($providerChoice -eq 1 -or $providerChoice -eq 10) {
+        if ($providerChoice -eq 1 -or $providerChoice -eq 11) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://synthetic.new/settings/api${NC}"
             $syntheticKey = Read-SecretPrompt -Prompt "Synthetic API key (syn_...)" -Validation { param($val) Test-SyntheticKey $val }
         }
 
-        if ($providerChoice -eq 2 -or $providerChoice -eq 10) {
+        if ($providerChoice -eq 2 -or $providerChoice -eq 11) {
             $zaiConfig = Get-ZaiConfig
             $zaiKey = $zaiConfig.Key
             $zaiBaseUrl = $zaiConfig.BaseUrl
         }
 
-        if ($providerChoice -eq 3 -or $providerChoice -eq 10) {
+        if ($providerChoice -eq 3 -or $providerChoice -eq 11) {
             $anthropicToken = Get-AnthropicConfig
         }
 
-        if ($providerChoice -eq 4 -or $providerChoice -eq 10) {
+        if ($providerChoice -eq 4 -or $providerChoice -eq 11) {
             $codexToken = Get-CodexConfig
         }
 
-        if ($providerChoice -eq 5 -or $providerChoice -eq 10) {
+        if ($providerChoice -eq 5 -or $providerChoice -eq 11) {
             $antigravityEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Antigravity enabled (auto-detects running Windsurf process)"
         }
 
-        if ($providerChoice -eq 6 -or $providerChoice -eq 10) {
+        if ($providerChoice -eq 6 -or $providerChoice -eq 11) {
             $geminiEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)"
         }
 
-        if ($providerChoice -eq 7 -or $providerChoice -eq 10) {
+        if ($providerChoice -eq 7 -or $providerChoice -eq 11) {
             $grokEnabled = "true"
             Write-Host ""
             if (Test-GrokCredentials) {
@@ -592,10 +607,21 @@ function Start-InteractiveSetup {
             }
         }
 
-        if ($providerChoice -eq 8 -or $providerChoice -eq 10) {
+        if ($providerChoice -eq 8 -or $providerChoice -eq 11) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://ollama.com/settings/keys${NC}"
             $ollamaKey = Read-SecretPrompt -Prompt "Ollama Cloud API key" -Validation { param($val) Test-OllamaKey $val }
+        }
+
+        if ($providerChoice -eq 9 -or $providerChoice -eq 11) {
+            Write-Host ""
+            Write-Host "  ${DIM}Leave empty to auto-detect from 'muse login'${NC}"
+            $museKey = Read-PromptWithDefault -Prompt "Meta API key [Enter = auto-detect]" -Default ""
+            if ([string]::IsNullOrWhiteSpace($museKey)) {
+                $museKey = ""
+                $museEnabled = "true"
+                Write-Host "  ${GREEN}OK${NC} Muse enabled (auto-detects 'muse login' credentials)"
+            }
         }
     }
 
@@ -715,6 +741,20 @@ OLLAMA_API_KEY=$ollamaKey
 "@
     }
 
+    if ($museKey) {
+        $envContent += @"
+# Muse (Meta) API key (or leave unset to auto-detect 'muse login')
+META_API_KEY=$museKey
+
+"@
+    } elseif ($museEnabled) {
+        $envContent += @"
+# Muse (Meta) - auto-detected from 'muse login'
+MUSE_ENABLED=true
+
+"@
+    }
+
     $envContent += @"
 # Dashboard credentials
 ONWATCH_ADMIN_USER=$($script:SetupUsername)
@@ -742,7 +782,8 @@ ONWATCH_PORT=$($script:SetupPort)
         6 { "Gemini" }
         7 { "Grok" }
         8 { "Ollama Cloud" }
-        9 {
+        9 { "Muse" }
+        10 {
             $parts = @()
             if ($syntheticKey) { $parts += "Synthetic" }
             if ($zaiKey) { $parts += "Z.ai" }
@@ -752,9 +793,10 @@ ONWATCH_PORT=$($script:SetupPort)
             if ($geminiEnabled) { $parts += "Gemini" }
             if ($grokEnabled) { $parts += "Grok" }
             if ($ollamaKey) { $parts += "Ollama Cloud" }
+            if ($museEnabled -or $museKey) { $parts += "Muse" }
             $parts -join ", "
         }
-        10 { "All providers" }
+        11 { "All providers" }
     }
 
     $maskedPass = "*" * $script:SetupPassword.Length

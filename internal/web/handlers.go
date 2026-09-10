@@ -111,6 +111,7 @@ type Handler struct {
 	kimiTracker         *tracker.KimiTracker
 	opencodeTracker     *tracker.OpenCodeTracker
 	ollamaTracker       *tracker.OllamaTracker
+	museTracker         *tracker.MuseTracker
 	updater             *update.Updater
 	notifier            Notifier
 	agentManager        ProviderAgentController
@@ -1140,6 +1141,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "kimi", Name: "Kimi Code", Description: "Kimi Code CLI OAuth quota tracking", AutoDetectable: true},
 		{Key: "opencode", Name: "OpenCode Go", Description: "OpenCode Go quota tracking", AutoDetectable: false},
 		{Key: "ollama", Name: "Ollama Cloud", Description: "Ollama Cloud included usage tracking", AutoDetectable: false},
+		{Key: "muse", Name: "Muse", Description: "Meta Muse coding-plan quota tracking", AutoDetectable: true},
 	}
 }
 
@@ -1220,6 +1222,11 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return h.config != nil && strings.TrimSpace(h.config.OpenCodeGoWorkspaceID) != "" && strings.TrimSpace(h.config.OpenCodeGoAuthCookie) != ""
 	case "ollama":
 		return h.config != nil && strings.TrimSpace(h.config.OllamaAPIKey) != ""
+	case "muse":
+		if h.config != nil && (h.config.MuseEnabled || strings.TrimSpace(h.config.MuseAPIKey) != "") {
+			return true
+		}
+		return api.DetectMuseCredentials(h.logger) != nil
 	default:
 		return false
 	}
@@ -1373,6 +1380,10 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.OllamaAPIKey = src.OllamaAPIKey
 	dst.OllamaMonthlyLimit = src.OllamaMonthlyLimit
 	dst.OllamaResetDay = src.OllamaResetDay
+	dst.MuseAPIKey = src.MuseAPIKey
+	dst.MuseAutoToken = src.MuseAutoToken
+	dst.MuseModel = src.MuseModel
+	dst.MuseEnabled = src.MuseEnabled
 	dst.AntigravityBaseURL = src.AntigravityBaseURL
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
@@ -1467,6 +1478,9 @@ var providerEnumFields = map[string]map[string][]string{
 		"display_mode": {"usage", "available"},
 	},
 	"ollama": {
+		"display_mode": {"usage", "available"},
+	},
+	"muse": {
 		"display_mode": {"usage", "available"},
 	},
 }
@@ -1593,6 +1607,15 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 		}
 		if day := parseSettingInt(s["reset_day"]); day >= 1 && day <= 31 {
 			cfg.OllamaResetDay = day
+		}
+	}
+	// Muse coding plan: API key plus optional probe model override.
+	if s := provSettings["muse"]; s != nil {
+		if key, _ := s["api_key"].(string); key != "" {
+			cfg.MuseAPIKey = key
+		}
+		if model, _ := s["model"].(string); strings.TrimSpace(model) != "" {
+			cfg.MuseModel = strings.TrimSpace(model)
 		}
 	}
 
@@ -1944,6 +1967,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentOpenCode(w, r)
 	case "ollama":
 		h.currentOllama(w, r)
+	case "muse":
+		h.currentMuse(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2403,6 +2428,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("ollama") && providerTelemetryEnabled(visibility, "ollama") {
 		response["ollama"] = h.buildOllamaCurrent()
 	}
+	if h.config.HasProvider("muse") && providerTelemetryEnabled(visibility, "muse") {
+		response["muse"] = h.buildMuseCurrent()
+	}
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -2779,6 +2807,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyOpenCode(w, r)
 	case "ollama":
 		h.historyOllama(w, r)
+	case "muse":
+		h.historyMuse(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3235,6 +3265,28 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				ollamaData = append(ollamaData, entry)
 			}
 			response["ollama"] = ollamaData
+		}
+	}
+
+	if h.config.HasProvider("muse") && providerTelemetryEnabled(visibility, "muse") && h.store != nil {
+		snapshots, err := h.store.QueryMuseRange(start, now, 200)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			museData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+				}
+				for _, q := range snap.Quotas {
+					entry[q.Name] = q.Utilization
+				}
+				museData = append(museData, entry)
+			}
+			response["muse"] = museData
 		}
 	}
 
@@ -3848,6 +3900,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesOpenCode(w, r)
 	case "ollama":
 		h.cyclesOllama(w, r)
+	case "muse":
+		h.cyclesMuse(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4223,6 +4277,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryOpenCode(w, r)
 	case "ollama":
 		h.summaryOllama(w, r)
+	case "muse":
+		h.summaryMuse(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -5044,6 +5100,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsOpenCode(w, r, rangeDur)
 	case "ollama":
 		h.insightsOllama(w, r, rangeDur)
+	case "muse":
+		h.insightsMuse(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -5143,6 +5201,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("ollama") && providerTelemetryEnabled(visibility, "ollama") {
 		response["ollama"] = h.buildOllamaInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("muse") && providerTelemetryEnabled(visibility, "muse") {
+		response["muse"] = h.buildMuseInsights(hidden, rangeDur)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -7771,6 +7832,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewOpenCode(w, r)
 	case "ollama":
 		h.cycleOverviewOllama(w, r)
+	case "muse":
+		h.cycleOverviewMuse(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -11417,6 +11480,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryOpenCode(w, r)
 	case "ollama":
 		h.loggingHistoryOllama(w, r)
+	case "muse":
+		h.loggingHistoryMuse(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}

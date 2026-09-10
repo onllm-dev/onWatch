@@ -42,6 +42,8 @@ type setupConfig struct {
 	geminiEnabled      bool
 	grokEnabled        bool
 	ollamaKey          string
+	museEnabled        bool
+	museKey            string
 	adminUser          string
 	adminPass          string
 	port               int
@@ -122,6 +124,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		"Gemini CLI only",
 		"Grok (xAI) only",
 		"Ollama Cloud only",
+		"Muse (Meta) only",
 		"Multiple (choose one at a time)",
 		"All available",
 	}
@@ -152,9 +155,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		cfg.grokEnabled = collectGrok(reader, logger)
 	case 9: // Ollama Cloud only
 		cfg.ollamaKey = collectOllamaKey(reader)
-	case 10: // Multiple
-		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled, cfg.ollamaKey = collectMultipleProviders(reader, logger)
-	case 11: // All
+	case 10: // Muse (Meta) only
+		cfg.museEnabled, cfg.museKey = collectMuse(reader, logger)
+	case 11: // Multiple
+		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled, cfg.ollamaKey, cfg.museEnabled, cfg.museKey = collectMultipleProviders(reader, logger)
+	case 12: // All
 		cfg.syntheticKey = collectSyntheticKey(reader)
 		cfg.zaiKey, cfg.zaiBaseURL = collectZaiConfig(reader)
 		cfg.anthropicToken = collectAnthropicToken(reader, logger)
@@ -166,10 +171,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		fmt.Printf("  %s ok %s  Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n", colorGreen, colorReset)
 		cfg.grokEnabled = collectGrok(reader, logger)
 		cfg.ollamaKey = collectOllamaKey(reader)
+		cfg.museEnabled, cfg.museKey = collectMuse(reader, logger)
 	}
 
 	// Validate at least one provider
-	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled && cfg.ollamaKey == "" {
+	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled && cfg.ollamaKey == "" && !cfg.museEnabled && cfg.museKey == "" {
 		return nil, fmt.Errorf("at least one provider is required")
 	}
 
@@ -220,7 +226,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	return cfg, nil
 }
 
-func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled, grokEnabled bool, ollamaKey string) {
+func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled, grokEnabled bool, ollamaKey string, museEnabled bool, museKey string) {
 	if promptYesNo(reader, "Add Synthetic provider?", false) {
 		synKey = collectSyntheticKey(reader)
 	}
@@ -249,6 +255,9 @@ func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey
 	}
 	if promptYesNo(reader, "Add Ollama Cloud provider?", false) {
 		ollamaKey = collectOllamaKey(reader)
+	}
+	if promptYesNo(reader, "Add Muse (Meta) provider?", false) {
+		museEnabled, museKey = collectMuse(reader, logger)
 	}
 	return
 }
@@ -366,6 +375,65 @@ func collectOllamaKey(reader *bufio.Reader) string {
 			fmt.Printf("  %s!%s Could not reach ollama.com to verify the key (%v) - saving it anyway\n", colorYellow, colorReset, err)
 			fmt.Printf("  %s ok %s  %s%s%s\n", colorGreen, colorReset, colorDim, maskValue(key), colorReset)
 			return key
+		}
+	}
+}
+
+// detectMuseCredentialsFunc resolves local Muse credentials for the setup
+// wizard. A package variable so tests can stub it and never touch the
+// developer's keychain.
+var detectMuseCredentialsFunc = api.DetectMuseCredentials
+
+// verifyMuseKey checks a key against the Meta Model API with one minimal
+// usage probe and returns a "5h x% / weekly y%" summary.
+// A package variable so tests can stub it and never touch the network.
+var verifyMuseKey = func(key, model string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	snap, err := api.NewMuseClient(key, model, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithMuseTimeout(30*time.Second)).FetchSnapshot(ctx)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("5h %.1f%% used / weekly %.1f%% used", snap.WindowUsedPct, snap.WeeklyUsedPct), nil
+}
+
+// collectMuse enables Meta Muse coding-plan tracking. onWatch prefers the
+// existing `muse login` session (keychain / login file) and only stores an
+// explicit META_API_KEY in .env when the user provides one. Returns the
+// enabled flag and the explicit key ("" when auto-detect is used).
+func collectMuse(reader *bufio.Reader, logger *slog.Logger) (bool, string) {
+	fmt.Printf("\n  %sMuse (Meta) Setup%s\n", colorBold, colorReset)
+	fmt.Printf("  %sonWatch reads your Muse coding-plan quota from the Meta Model API.%s\n", colorDim, colorReset)
+
+	if creds := detectMuseCredentialsFunc(logger); creds != nil && creds.APIKey != "" {
+		fmt.Printf("  %s ok %s  Detected Muse credentials (%s)\n", colorGreen, colorReset, creds.Source)
+		if promptYesNo(reader, "Enable Muse tracking?", true) {
+			return true, ""
+		}
+		return false, ""
+	}
+
+	fmt.Printf("  %s!%s No Muse login found (run 'muse login' first, or paste a key)%s\n", colorYellow, colorReset, colorReset)
+	fmt.Printf("  %sLeave empty to enable with auto-detect later.%s\n", colorDim, colorReset)
+	for {
+		fmt.Print("  Meta API key [Enter = auto-detect]: ")
+		key := readLine(reader)
+		if key == "" {
+			return promptYesNo(reader, "Enable Muse tracking anyway?", false), ""
+		}
+		// One tiny probe verifies the key; the same probe powers `muse /usage`.
+		summary, err := verifyMuseKey(key, api.ResolveMuseModel())
+		switch {
+		case err == nil:
+			fmt.Printf("  %s ok %s  Key verified (%s)  %s%s%s\n", colorGreen, colorReset, summary, colorDim, maskValue(key), colorReset)
+			return true, key
+		case api.IsMuseAuthError(err):
+			fmt.Printf("  %sMeta rejected this key (401). Run 'muse login' and try again.%s\n", colorRed, colorReset)
+			continue
+		default:
+			fmt.Printf("  %s!%s Could not reach api.meta.ai to verify the key (%v) - saving it anyway\n", colorYellow, colorReset, err)
+			fmt.Printf("  %s ok %s  %s%s%s\n", colorGreen, colorReset, colorDim, maskValue(key), colorReset)
+			return true, key
 		}
 	}
 }
@@ -503,6 +571,17 @@ func writeEnvFile(path string, cfg *setupConfig) error {
 		b.WriteString("# OLLAMA_RESET_DAY=\n\n")
 	}
 
+	if cfg.museEnabled || cfg.museKey != "" {
+		b.WriteString("# Muse (Meta) coding plan - auto-detected from `muse login` when no key is set\n")
+		if cfg.museKey != "" {
+			b.WriteString(fmt.Sprintf("META_API_KEY=%s\n", cfg.museKey))
+		} else {
+			b.WriteString("MUSE_ENABLED=true\n")
+		}
+		b.WriteString("# Optional: usage-probe model (default: your Muse settings model, else muse-spark-1.3)\n")
+		b.WriteString("# META_MUSE_MODEL=\n\n")
+	}
+
 	b.WriteString("# Dashboard credentials\n")
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_USER=%s\n", cfg.adminUser))
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_PASS=%s\n\n", cfg.adminPass))
@@ -549,6 +628,9 @@ func printSummary(cfg *setupConfig) {
 	}
 	if cfg.ollamaKey != "" {
 		providers = append(providers, "Ollama Cloud")
+	}
+	if cfg.museEnabled || cfg.museKey != "" {
+		providers = append(providers, "Muse")
 	}
 	providerLabel := strings.Join(providers, ", ")
 

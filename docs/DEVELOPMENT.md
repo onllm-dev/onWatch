@@ -146,6 +146,7 @@ ANTHROPIC_TOKEN=your_anthropic_token      # Auto-detected from Claude Code if no
 CODEX_TOKEN=your_codex_token              # Recommended for Codex-only setups
 COPILOT_TOKEN=ghp_your_github_token       # GitHub PAT with 'copilot' scope (Beta)
 OLLAMA_API_KEY=your_ollama_cloud_key      # Ollama Cloud usage from ollama.com/settings/keys
+# META_API_KEY or MUSE_ENABLED=true       # Muse coding plan (auto-detected from `muse login`)
 ```
 
 All configured providers run simultaneously. Configure any combination.

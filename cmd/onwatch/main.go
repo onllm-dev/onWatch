@@ -817,6 +817,20 @@ func run() error {
 		}
 	}
 
+	// Muse coding-plan auto-detect from `muse login` credentials. Explicit META_API_KEY wins.
+	if os.Getenv("MUSE_ENABLED") != "false" {
+		if creds := api.DetectMuseCredentials(preflightLogger); creds != nil && creds.APIKey != "" {
+			if cfg.MuseAPIKey == "" {
+				cfg.MuseAPIKey = creds.APIKey
+				cfg.MuseAutoToken = true
+			}
+			if cfg.MuseModel == "" {
+				cfg.MuseModel = creds.Model
+			}
+			cfg.MuseEnabled = true
+		}
+	}
+
 	// Daemonize: if not in debug mode, not already the daemon child, not
 	// supervised by launchd, and NOT in Docker, fork.
 	// Docker containers should always run in foreground mode (logs to stdout)
@@ -1119,6 +1133,16 @@ func run() error {
 		logger.Info("Grok API client configured")
 	}
 
+	var museClient *api.MuseClient
+	if cfg.HasProvider("muse") {
+		museModel := cfg.MuseModel
+		if museModel == "" {
+			museModel = api.ResolveMuseModel()
+		}
+		museClient = api.NewMuseClient(cfg.MuseAPIKey, museModel, logger)
+		logger.Info("Muse API client configured", "auto_token", cfg.MuseAutoToken, "model", museModel)
+	}
+
 	var kimiClient *api.KimiClient
 	if cfg.HasProvider("kimi") {
 		// Auto-detected OAuth access tokens expire quickly (~15m). Never freeze
@@ -1333,6 +1357,10 @@ func run() error {
 	if cfg.HasProvider("ollama") {
 		ollamaTr = tracker.NewOllamaTracker(db, logger)
 	}
+	var museTr *tracker.MuseTracker
+	if cfg.HasProvider("muse") {
+		museTr = tracker.NewMuseTracker(db, logger)
+	}
 
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
@@ -1428,6 +1456,11 @@ func run() error {
 		ollamaAg = agent.NewOllamaAgent(ollamaClient, db, ollamaTr, cfg, cfg.PollInterval, logger, ollamaSm)
 		logger.Info("Ollama API client configured")
 	}
+	var museAg *agent.MuseAgent
+	if museClient != nil {
+		museSm := agent.NewSessionManager(db, "muse", idleTimeout, logger)
+		museAg = agent.NewMuseAgent(museClient, db, museTr, cfg.PollInterval, logger, museSm)
+	}
 
 	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
 	if cfg.APIIntegrationsEnabled {
@@ -1491,6 +1524,9 @@ func run() error {
 	}
 	if ollamaAg != nil {
 		ollamaAg.SetNotifier(notifier)
+	}
+	if museAg != nil {
+		museAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -1658,6 +1694,9 @@ func run() error {
 	if ollamaAg != nil {
 		ollamaAg.SetPollingCheck(func() bool { return isPollingEnabled("ollama") })
 	}
+	if museAg != nil {
+		museAg.SetPollingCheck(func() bool { return isPollingEnabled("muse") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -1738,6 +1777,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "ollama", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	if museTr != nil {
+		museTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "muse", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -1783,6 +1827,9 @@ func run() error {
 	}
 	if ollamaTr != nil {
 		handler.SetOllamaTracker(ollamaTr)
+	}
+	if museTr != nil {
+		handler.SetMuseTracker(museTr)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -1833,6 +1880,9 @@ func run() error {
 	if ollamaAg != nil {
 		agentMgr.RegisterFactory("ollama", func() (agent.AgentRunner, error) { return ollamaAg, nil })
 	}
+	if museAg != nil {
+		agentMgr.RegisterFactory("muse", func() (agent.AgentRunner, error) { return museAg, nil })
+	}
 
 	if apiIntegrationsAg != nil {
 		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
@@ -1878,7 +1928,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode", "ollama"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode", "ollama", "muse"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
@@ -2425,6 +2475,13 @@ func printBanner(cfg *config.Config, version string) {
 	if cfg.HasProvider("ollama") {
 		fmt.Printf("Ollama API Key:    %s\n", redactAPIKey(cfg.OllamaAPIKey))
 	}
+	if cfg.HasProvider("muse") {
+		source := "auto-detect"
+		if !cfg.MuseAutoToken {
+			source = "env var"
+		}
+		fmt.Printf("Muse:              %s\n", source)
+	}
 	if cfg.HasProvider("gemini") {
 		source := "auto-detect"
 		if cfg.GeminiRefreshToken != "" || cfg.GeminiAccessToken != "" {
@@ -2479,6 +2536,9 @@ func printHelp() {
 	fmt.Println("  OLLAMA_API_KEY          Ollama Cloud API key (ollama.com/settings/keys)")
 	fmt.Println("  OLLAMA_MONTHLY_LIMIT    Ollama included usage cap in USD (0 = derive from plan)")
 	fmt.Println("  OLLAMA_RESET_DAY        Ollama reset day of month (1-31; 0 = account anniversary)")
+	fmt.Println("  META_API_KEY            Meta Muse API key (auto-detected from `muse login` if unset)")
+	fmt.Println("  META_MUSE_MODEL         Muse usage-probe model (default: muse-spark-1.3)")
+	fmt.Println("  MUSE_ENABLED            Set false to disable the Muse provider")
 	fmt.Println("  CODEX_HOME              Optional Codex auth directory (uses CODEX_HOME/auth.json)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
 	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")
