@@ -187,6 +187,7 @@ It is a thin client: it needs the onWatch daemon running (steps above) and finds
 - **DeepSeek** -- Balance-based tracking for the DeepSeek platform API. Total, Granted, and Topped-Up balance cards with drop-rate trends. Set `DEEPSEEK_API_KEY`. See [DeepSeek Setup](docs/DEEPSEEK_SETUP.md).
 - **OpenCode Go** -- Subscription quota cards (5-Hour, Weekly, and Monthly when present) scraped from the authenticated OpenCode Go dashboard, with cycle history and deep insights. Set `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`. Separate from `OPENCODE_ENABLED`, which only feeds ChatGPT credentials into the Codex provider. See [OpenCode Setup](docs/OPENCODE_SETUP.md).
 - **Ollama Cloud** (beta) -- Included monthly usage in USD from the ollama.com API with plan-derived caps, per-model request counts, extra-usage spend, cycle history and insights. Set `OLLAMA_API_KEY`. See [Ollama Setup](docs/OLLAMA_SETUP.md).
+- **Muse** -- Meta Muse coding-plan quota tracking (5-hour prompts + weekly usage) from the same subscription snapshot `muse /usage` shows, via one minimal probe per poll. Auto-detected from `muse login` (macOS Keychain / login file) or set `META_API_KEY`. See [Muse Setup](docs/MUSE_SETUP.md).
 - **API Integrations** -- Local JSONL ingestion for custom API-driven workflows and automations. Track per-integration token volume, request counts, recent activity, costs, trends, and accumulated usage across separate API keys and providers.
 - **All** -- Side-by-side view of all configured providers
 - **Prometheus metrics endpoint (Beta)** -- Exposes `/metrics` for Prometheus/Grafana/Alertmanager integrations, with optional bearer token protection via `ONWATCH_METRICS_TOKEN`
@@ -363,6 +364,9 @@ Additional environment variables:
 | `OLLAMA_API_KEY`         | Ollama Cloud API key from ollama.com/settings/keys (enables usage tracking)|
 | `OLLAMA_MONTHLY_LIMIT`   | Ollama included usage cap in USD (0 = derive from plan)|
 | `OLLAMA_RESET_DAY`       | Ollama reset day of month, 1-31 (0 = learn from the first observed reset, starting from the account anniversary)|
+| `META_API_KEY`           | Meta Muse API key (default: auto-detected from `muse login`)|
+| `META_MUSE_MODEL`        | Muse usage-probe model (default: Muse settings model, else `muse-spark-1.3`)|
+| `MUSE_ENABLED`           | Enable/disable Muse tracking (`false` disables even with credentials)|
 | `ANTIGRAVITY_ENABLED`    | Enable Antigravity provider (auto-detects local server)|
 | `ANTIGRAVITY_SOURCE`     | Data source: `both` (default), `cli` (agy), or `ide`   |
 | `ANTIGRAVITY_CLI_PATH`   | Override path to the `agy` binary (else PATH/well-known)|

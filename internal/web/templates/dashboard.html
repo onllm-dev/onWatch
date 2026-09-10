@@ -144,6 +144,9 @@
         <!-- Ollama Cloud quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-ollama" data-provider="ollama"></div>
         <div class="ollama-model-breakdown" id="ollama-model-breakdown"></div>
+        {{else if eq .CurrentProvider "muse"}}
+        <!-- Muse quota cards (dynamically populated by JS) -->
+        <div class="quota-grid" id="quota-grid-muse" data-provider="muse"></div>
         {{else if eq .CurrentProvider "api-integrations"}}
         <div class="api-integrations-dashboard" id="api-integrations-dashboard" data-provider="api-integrations">
             <div class="quota-grid" id="api-integrations-grid"></div>
@@ -498,7 +501,7 @@
         </section>
         {{end}}
 
-        {{if and (ne .CurrentProvider "both") (ne .CurrentProvider "api-integrations") (ne .CurrentProvider "cursor") (ne .CurrentProvider "opencode") (ne .CurrentProvider "ollama")}}
+        {{if and (ne .CurrentProvider "both") (ne .CurrentProvider "api-integrations") (ne .CurrentProvider "cursor") (ne .CurrentProvider "opencode") (ne .CurrentProvider "ollama") (ne .CurrentProvider "muse")}}
         <section class="sessions-section" id="sessions-section">
             <header class="section-header">
                 <h3 class="section-title">
@@ -613,7 +616,7 @@
                         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
                         <path d="M3 3v5h5"/>
                     </svg>
-                    {{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama")}}Usage Samples{{else}}Logging History{{end}}
+                    {{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama") (eq .CurrentProvider "muse")}}Usage Samples{{else}}Logging History{{end}}
                 </h3>
                 <div class="cycles-filters-inline">
                     <div class="filter-group">
@@ -627,7 +630,7 @@
                         </div>
                     </div>
                     <div class="filter-group">
-                        <span class="filter-label">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama")}}Bucket{{else}}Group{{end}}</span>
+                        <span class="filter-label">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama") (eq .CurrentProvider "muse")}}Bucket{{else}}Group{{end}}</span>
                         <div class="filter-pills" id="cycles-bucket-pills" role="group" aria-label="Polling grouping window">
                             <!-- Populated dynamically from poll interval -->
                         </div>
@@ -653,14 +656,14 @@
                     </thead>
                     <tbody id="cycles-tbody">
                         <tr>
-                            <td colspan="5" class="empty-state">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama")}}No usage samples yet. Tracking begins after the first successful sync.{{else}}No polling data yet. Tracking begins on first poll.{{end}}</td>
+                            <td colspan="5" class="empty-state">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama") (eq .CurrentProvider "muse")}}No usage samples yet. Tracking begins after the first successful sync.{{else}}No polling data yet. Tracking begins on first poll.{{end}}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
             <div class="table-footer">
                 <span class="table-info" id="cycles-info">Showing 0-0 of 0</span>
-                <span class="table-legend">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama")}}Δ = change since previous sample{{else}}⚡ = consumption rate per hour{{end}}</span>
+                <span class="table-legend">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama") (eq .CurrentProvider "muse")}}Δ = change since previous sample{{else}}⚡ = consumption rate per hour{{end}}</span>
                 <div class="table-pagination" id="cycles-pagination"></div>
             </div>
         </section>
@@ -671,11 +674,11 @@
                     <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 20V10M18 20V4M6 20v-4"/>
                     </svg>
-                    {{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama")}}Billing Cycle Overview{{else}}Cycle Overview{{end}}
+                    {{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama") (eq .CurrentProvider "muse")}}Billing Cycle Overview{{else}}Cycle Overview{{end}}
                 </h3>
                 <div class="cycles-filters-inline">
                     <div class="filter-group">
-                        <span class="filter-label">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama")}}Quota{{else}}Period{{end}}</span>
+                        <span class="filter-label">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama") (eq .CurrentProvider "muse")}}Quota{{else}}Period{{end}}</span>
                         <div class="filter-pills" id="overview-period-pills" role="group" aria-label="Renewal period"></div>
                     </div>
                     <select class="page-size-select" id="overview-page-size" aria-label="Rows per page">
@@ -690,13 +693,13 @@
                 <table class="data-table" id="overview-table">
                     <thead id="overview-thead"><tr><th>Loading...</th></tr></thead>
                     <tbody id="overview-tbody">
-                        <tr><td class="empty-state">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama")}}Select a quota to compare monthly billing cycles.{{else}}Select a renewal period to view cross-quota data.{{end}}</td></tr>
+                        <tr><td class="empty-state">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama") (eq .CurrentProvider "muse")}}Select a quota to compare monthly billing cycles.{{else}}Select a renewal period to view cross-quota data.{{end}}</td></tr>
                     </tbody>
                 </table>
             </div>
             <div class="table-footer">
                 <span class="table-info" id="overview-info">Showing 0-0 of 0</span>
-                <span class="table-legend">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama")}}Monthly cycle comparison by quota{{else}}⚡ = consumption rate per hour{{end}}</span>
+                <span class="table-legend">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode") (eq .CurrentProvider "ollama") (eq .CurrentProvider "muse")}}Monthly cycle comparison by quota{{else}}⚡ = consumption rate per hour{{end}}</span>
                 <div class="table-pagination" id="overview-pagination"></div>
             </div>
         </section>

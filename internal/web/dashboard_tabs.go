@@ -44,6 +44,8 @@ func defaultProviderTabLabel(key string) string {
 		return "OpenCode"
 	case "ollama":
 		return "Ollama"
+	case "muse":
+		return "Muse"
 	case "moonshot":
 		return "Moonshot"
 	case "deepseek":

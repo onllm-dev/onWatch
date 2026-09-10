@@ -42,6 +42,8 @@ func TestMain(m *testing.M) {
 	inContainer = func() bool { return false }
 	// Setup wizard key verification must never hit ollama.com from tests.
 	verifyOllamaKey = func(string) (string, error) { return "free", nil }
+	// Muse key verification must never hit api.meta.ai from tests.
+	verifyMuseKey = func(string, string) (string, error) { return "5h 1.0% used / weekly 2.0% used", nil }
 
 	os.Exit(m.Run())
 }
