@@ -112,7 +112,8 @@ function Invoke-StarOffer {
     $thrown = $null
     $output = ""
     try {
-        $output = (Offer-GitHubStar 2>&1 | Out-String)
+        # *>&1, not 2>&1: Write-Host lands on the information stream.
+        $output = (Offer-GitHubStar *>&1 | Out-String)
     } catch {
         $thrown = $_
     } finally {
