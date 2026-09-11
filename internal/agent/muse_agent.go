@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"log/slog"
+	"os/exec"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
@@ -10,6 +11,23 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
+
+// museCLIBusy reports whether a live `muse` CLI process is running. The usage
+// probe shares the Meta /v1/responses quota with that session; probing while
+// it is active 429s the TUI. A variable so tests can stub it.
+var museCLIBusy = museProcessNamed
+
+func museProcessNamed(name string) bool {
+	if name == "" {
+		return false
+	}
+	if _, err := exec.LookPath("pgrep"); err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "pgrep", "-x", name).Run() == nil
+}
 
 // museFetcher is the usage-probe surface the Muse agent needs.
 type museFetcher interface {
@@ -88,10 +106,18 @@ func (a *MuseAgent) poll(ctx context.Context) {
 	if a.pollingCheck != nil && !a.pollingCheck() {
 		return // polling disabled for this provider
 	}
+	if museCLIBusy != nil && museCLIBusy("muse") {
+		a.logger.Info("Muse poll skipped: live muse CLI would race the usage probe")
+		return
+	}
 
 	snapshot, err := a.client.FetchSnapshot(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
+			return
+		}
+		if api.IsMuseRateLimited(err) {
+			a.logger.Warn("Muse usage probe rate-limited; skipping this cycle")
 			return
 		}
 		a.logger.Error("Failed to fetch Muse quotas", "error", err)

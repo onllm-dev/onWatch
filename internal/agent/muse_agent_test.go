@@ -12,6 +12,13 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
+func withIdleMuseCLI(t *testing.T) {
+	t.Helper()
+	prev := museCLIBusy
+	museCLIBusy = func(string) bool { return false }
+	t.Cleanup(func() { museCLIBusy = prev })
+}
+
 type stubMuseClient struct {
 	snapshot *api.MuseSnapshot
 	err      error
@@ -43,6 +50,7 @@ func TestMuseAgent_Poll_NoClientSafe(t *testing.T) {
 }
 
 func TestMuseAgent_Poll_FetchErrorNoInsert(t *testing.T) {
+	withIdleMuseCLI(t)
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -65,6 +73,7 @@ func TestMuseAgent_Poll_FetchErrorNoInsert(t *testing.T) {
 }
 
 func TestMuseAgent_Poll_SuccessInsertsAndTracks(t *testing.T) {
+	withIdleMuseCLI(t)
 	st, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -104,6 +113,67 @@ func TestMuseAgent_Poll_SuccessInsertsAndTracks(t *testing.T) {
 	if cycle == nil {
 		t.Fatal("expected active cycle")
 	}
+}
+
+func TestMuseAgent_Poll_SkipsWhenCLIBusy(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer st.Close()
+
+	prev := museCLIBusy
+	museCLIBusy = func(string) bool { return true }
+	defer func() { museCLIBusy = prev }()
+
+	called := false
+	client := &stubMuseClient{snapshot: &api.MuseSnapshot{CapturedAt: time.Now().UTC()}}
+	tr := tracker.NewMuseTracker(st, nil)
+	ag := NewMuseAgent(&countingMuseClient{inner: client, called: &called}, st, tr, time.Second, slog.Default(), nil)
+	ag.poll(context.Background())
+	if called {
+		t.Fatal("usage probe must not run while the muse CLI is active")
+	}
+	latest, err := st.QueryLatestMuse()
+	if err != nil {
+		t.Fatalf("QueryLatestMuse: %v", err)
+	}
+	if latest != nil {
+		t.Fatal("expected no snapshot when muse CLI is busy")
+	}
+}
+
+func TestMuseAgent_Poll_RateLimitedNoInsert(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer st.Close()
+
+	prev := museCLIBusy
+	museCLIBusy = func(string) bool { return false }
+	defer func() { museCLIBusy = prev }()
+
+	client := &stubMuseClient{err: api.ErrMuseRateLimited}
+	ag := NewMuseAgent(client, st, tracker.NewMuseTracker(st, nil), time.Second, slog.Default(), nil)
+	ag.poll(context.Background())
+	latest, err := st.QueryLatestMuse()
+	if err != nil {
+		t.Fatalf("QueryLatestMuse: %v", err)
+	}
+	if latest != nil {
+		t.Fatal("expected no snapshot after 429")
+	}
+}
+
+type countingMuseClient struct {
+	inner  *stubMuseClient
+	called *bool
+}
+
+func (c *countingMuseClient) FetchSnapshot(ctx context.Context) (*api.MuseSnapshot, error) {
+	*c.called = true
+	return c.inner.FetchSnapshot(ctx)
 }
 
 func TestMuseAgent_Poll_DisabledByCheck(t *testing.T) {

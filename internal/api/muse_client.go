@@ -153,31 +153,57 @@ func (c *MuseClient) FetchSnapshot(ctx context.Context) (*MuseSnapshot, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, museMaxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("%w: read body: %v", ErrMuseNetworkError, err)
-	}
-
 	switch {
 	case resp.StatusCode == http.StatusOK:
-		// continue below
+		// continue below — stream-parse so we can drop the connection as
+		// soon as the subscription snapshot arrives. Holding the generation
+		// open races the live Muse CLI on the same API key (HTTP 429).
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, museMaxBodyBytes))
 		return nil, fmt.Errorf("%w: %s", ErrMuseUnauthorized, museErrorDetail(body))
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return nil, ErrMuseRateLimited
 	case resp.StatusCode >= 500:
 		return nil, fmt.Errorf("%w: http %d", ErrMuseServerError, resp.StatusCode)
 	default:
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, museMaxBodyBytes))
 		return nil, fmt.Errorf("%w: http %d: %s", ErrMuseInvalidResponse, resp.StatusCode, museErrorDetail(body))
 	}
 
-	lines := museSSEDataLines(body)
-	sub, err := ParseMuseSubscriptionEvents(lines)
+	sub, raw, err := readMuseSubscriptionStream(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrMuseInvalidResponse, err)
 	}
 
-	return BuildMuseSnapshot(sub, c.model, string(body), c.now()), nil
+	return BuildMuseSnapshot(sub, c.model, raw, c.now()), nil
+}
+
+// readMuseSubscriptionStream scans an SSE body and returns at the first
+// event that carries a usable subscription snapshot, so the HTTP stream can
+// be closed instead of waiting for the model to finish the dummy probe.
+func readMuseSubscriptionStream(r io.Reader) (*MuseSubscription, string, error) {
+	sc := bufio.NewScanner(io.LimitReader(r, museMaxBodyBytes))
+	sc.Buffer(make([]byte, 0, 4096), museMaxBodyBytes)
+	var raw strings.Builder
+	var snapshot *MuseSubscription
+	for sc.Scan() {
+		line := sc.Text()
+		raw.WriteString(line)
+		raw.WriteByte('\n')
+		text := strings.TrimSpace(line)
+		if !strings.HasPrefix(text, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(text, "data:"))
+		if candidate := parseMuseSubscriptionData(payload); candidate != nil {
+			snapshot = candidate
+			break
+		}
+	}
+	if snapshot == nil {
+		return nil, raw.String(), fmt.Errorf("muse: stream carried no subscription usage")
+	}
+	return snapshot, raw.String(), nil
 }
 
 // museSSEDataLines returns the payloads of SSE "data:" lines.

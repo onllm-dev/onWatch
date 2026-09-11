@@ -65,6 +65,17 @@ func TestMuseStore_InsertAndQueryLatest(t *testing.T) {
 	}
 }
 
+func TestMuseStore_InsertNilSnapshot(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	defer s.Close()
+	if _, err := s.InsertMuseSnapshot(nil); err == nil {
+		t.Fatal("expected error for nil snapshot")
+	}
+}
+
 func TestMuseStore_QueryLatestEmpty(t *testing.T) {
 	s, err := New(":memory:")
 	if err != nil {
