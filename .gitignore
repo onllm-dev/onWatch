@@ -92,3 +92,6 @@ onwatch-test
 /result
 /result-*
 .direnv/
+
+# Agent worktrees, local scratch state
+.claude/worktrees/
