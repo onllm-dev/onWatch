@@ -160,30 +160,40 @@ func museHasQuota(sub *MuseSubscription) bool {
 	return sub.Window != nil || sub.Weekly != nil
 }
 
+// parseMuseSubscriptionData extracts a usage snapshot from one SSE data
+// payload (without the "data:" prefix). Empty / "[DONE]" / non-JSON lines
+// yield nil.
+func parseMuseSubscriptionData(data string) *MuseSubscription {
+	data = strings.TrimSpace(data)
+	if data == "" || data == "[DONE]" {
+		return nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(data), &obj); err != nil {
+		return nil
+	}
+	raw, ok := obj["subscription"]
+	if !ok {
+		return nil
+	}
+	var wire museSubscriptionWire
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return nil
+	}
+	candidate := wire.subscription()
+	if !museHasQuota(candidate) {
+		return nil
+	}
+	return candidate
+}
+
 // ParseMuseSubscriptionEvents returns the last subscription snapshot seen in
 // SSE data lines (payloads without the "data:" prefix). Lines that are empty,
 // "[DONE]", or not JSON objects are skipped.
 func ParseMuseSubscriptionEvents(dataLines []string) (*MuseSubscription, error) {
 	var snapshot *MuseSubscription
 	for _, data := range dataLines {
-		data = strings.TrimSpace(data)
-		if data == "" || data == "[DONE]" {
-			continue
-		}
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(data), &obj); err != nil {
-			continue
-		}
-		raw, ok := obj["subscription"]
-		if !ok {
-			continue
-		}
-		var wire museSubscriptionWire
-		if err := json.Unmarshal(raw, &wire); err != nil {
-			continue
-		}
-		candidate := wire.subscription()
-		if museHasQuota(candidate) {
+		if candidate := parseMuseSubscriptionData(data); candidate != nil {
 			snapshot = candidate
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func museTestServer(t *testing.T, body string, status int) *httptest.Server {
@@ -106,6 +107,48 @@ func TestMuseClientNoSubscription(t *testing.T) {
 	_, err := c.FetchSnapshot(context.Background())
 	if err == nil {
 		t.Fatal("expected error when stream has no subscription")
+	}
+}
+
+func TestMuseClientStopsAfterSubscription(t *testing.T) {
+	// The live Meta stream keeps generating after the subscription event.
+	// The client must return as soon as it has usage, not wait for [DONE],
+	// otherwise it holds a competing /v1/responses call against the Muse CLI.
+	released := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("ResponseWriter is not a Flusher")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: "+museTestSSESubscription+"\n\n")
+		flusher.Flush()
+		select {
+		case <-r.Context().Done():
+			close(released)
+		case <-time.After(3 * time.Second):
+			t.Error("client kept the probe stream open after the subscription event")
+			close(released)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewMuseClient("k", "muse-spark-1.3", nil, WithMuseBaseURL(srv.URL), WithMuseTimeout(4*time.Second))
+	start := time.Now()
+	snap, err := c.FetchSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("FetchSnapshot: %v", err)
+	}
+	if snap == nil || snap.WindowUsedPct != 34 {
+		t.Fatalf("snapshot = %+v", snap)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("FetchSnapshot took %s; expected to return at the subscription event", elapsed)
+	}
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not observe client disconnect")
 	}
 }
 

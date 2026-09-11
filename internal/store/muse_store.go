@@ -34,6 +34,9 @@ type MuseLatestQuota struct {
 
 // InsertMuseSnapshot stores a snapshot and its per-quota values atomically.
 func (s *Store) InsertMuseSnapshot(snapshot *api.MuseSnapshot) (int64, error) {
+	if snapshot == nil {
+		return 0, fmt.Errorf("nil muse snapshot")
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)

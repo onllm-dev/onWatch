@@ -2,7 +2,13 @@
 
 Track your **Meta Muse coding-plan** quota (5-hour prompts + weekly usage) in onWatch.
 
-Meta publishes no aggregate usage or billing endpoint for the coding plan, so onWatch reads the same subscription snapshot the `muse` CLI `/usage` command shows: each poll sends one minimal streamed probe (`POST https://api.meta.ai/v1/responses` with `stream: true`, input `"ping"`, `max_output_tokens: 16`) and extracts the inline `subscription` object. The probe is a few tokens and never touches your files.
+Meta publishes no aggregate usage or billing endpoint for the coding plan, so onWatch reads the same subscription snapshot the `muse` CLI `/usage` command shows: each poll sends one minimal streamed probe (`POST https://api.meta.ai/v1/responses` with `stream: true`, input `"ping"`, `max_output_tokens: 16`) and extracts the inline `subscription` object.
+
+The probe shares the Meta API key (and rate limit) with a live Muse TUI session. onWatch therefore:
+
+- Stops reading the SSE stream as soon as the `subscription` event arrives, instead of holding the dummy generation open
+- Skips the probe entirely while a `muse` CLI process is running
+- Backs off a cycle on HTTP 429 rather than retrying into the TUI's quota window
 
 ---
 
