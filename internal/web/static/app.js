@@ -76,6 +76,8 @@ function getCurrentProvider() {
   if (opencodeGrid) return 'opencode';
   const ollamaGrid = document.getElementById('quota-grid-ollama');
   if (ollamaGrid) return 'ollama';
+  const museGrid = document.getElementById('quota-grid-muse');
+  if (museGrid) return 'muse';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -997,6 +999,7 @@ function quotaOrderForProvider(provider) {
   if (provider === 'cursor') return cursorQuotaOrder;
   if (provider === 'opencode') return opencodeQuotaOrder;
   if (provider === 'ollama') return ollamaQuotaOrder;
+  if (provider === 'muse') return museQuotaOrder;
   return [];
 }
 
@@ -1230,6 +1233,10 @@ const renewalCategories = {
   ],
   ollama: [
     { label: 'Monthly', groupBy: 'monthly' }
+  ],
+  muse: [
+    { label: '5h Prompts', groupBy: 'window_5h' },
+    { label: 'Weekly', groupBy: 'weekly' }
   ]
 };
 
@@ -1275,6 +1282,10 @@ const providerQuotaDisplayOverrides = {
   },
   ollama: {
     monthly: 'Monthly Included Usage'
+  },
+  muse: {
+    window_5h: '5h Prompts',
+    weekly: 'Weekly'
   }
 };
 
@@ -4206,6 +4217,125 @@ function renderOllamaModelBreakdown(models, containerId) {
   container.innerHTML = `<h3 class="ollama-model-title">Model Usage This Month</h3><ul class="ollama-model-list">${rows}</ul>`;
 }
 
+// ── Muse Coding-Plan Card Rendering ──
+const museQuotaOrder = ['window_5h', 'weekly'];
+const museDisplayNames = {
+  window_5h: '5h Prompts',
+  weekly: 'Weekly'
+};
+const museChartColorMap = {
+  window_5h: { border: '#0064e0', bg: 'rgba(0, 100, 224, 0.08)' },
+  weekly: { border: '#7c3aed', bg: 'rgba(124, 58, 237, 0.08)' }
+};
+const museChartColorFallback = [
+  { border: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.08)' },
+  { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.08)' }
+];
+
+// museCardLabel formats the fraction line as percent used.
+function museCardLabel(quota) {
+  const used = quota.used != null ? quota.used : (quota.utilization || 0);
+  return used.toFixed(1) + '% used';
+}
+
+function renderMuseQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  const list = (quotas && quotas.length) ? quotas : [{ name: 'window_5h', utilization: 0, status: 'healthy' }];
+  list.forEach((q, idx) => {
+    const pct = (q.utilization || 0);
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(pct);
+    const name = (q.name || 'window_5h');
+    const label = q.displayName || museDisplayNames[name] || name;
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const cdSecs = resetsAt ? Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)) : 0;
+    const cdText = cdSecs > 0 ? formatDuration(cdSecs) : '--:--';
+    if (resetsAt) State.currentQuotas['muse-' + name] = { timeUntilResetSeconds: cdSecs };
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const card = document.createElement('article');
+    card.className = 'quota-card muse-card';
+    card.dataset.quota = name;
+    card.dataset.provider = 'muse';
+    card.style.animationDelay = (idx * 60) + 'ms';
+    card.innerHTML = `
+      <header class="card-header">
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.6 6.6c-2 0-3.6 1-4.9 2.6L12 11.4l-1.7-2.2C9 7.6 7.4 6.6 5.4 6.6c-2.5 0-4.4 2-4.4 4.7 0 2.9 2.1 5.1 4.7 5.1 2 0 3.6-1 4.9-2.6l1.4-1.8 1.4 1.8c1.3 1.6 2.9 2.6 4.9 2.6 2.6 0 4.7-2.2 4.7-5.1 0-2.7-1.9-4.7-4.4-4.7z"/></svg>
+            ${label}
+          </h2>
+        </div>
+        <span class="countdown" id="countdown-muse-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ' style="display:none"'}>${cdText}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="percent-muse-${name}">${pctStr}%</span>
+        <span class="usage-fraction" id="fraction-muse-${name}">${museCardLabel(q)}</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="progress-muse-${name}" style="width:${pctStr}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="status-muse-${name}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="reset-muse-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ''}>${resetsAt ? formatResetTime(resetsAt) : ''}</span>
+      </footer>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function museQuotaSetsMatch(container, quotas) {
+  if (!container) return false;
+  const renderedCards = Array.from(container.querySelectorAll('.muse-card[data-quota]'));
+  if (renderedCards.length !== (quotas || []).length) return false;
+  const rendered = new Set(renderedCards.map(c => c.dataset.quota));
+  return (quotas || []).every(q => rendered.has(q.name));
+}
+
+function updateMuseCard(quota) {
+  const name = quota.name || 'window_5h';
+  const pct = quota.utilization || 0;
+  const pctStr = pct.toFixed(1);
+  const status = quota.status || getQuotaStatus(pct);
+  const progressEl = document.getElementById(`progress-muse-${name}`);
+  const percentEl = document.getElementById(`percent-muse-${name}`);
+  const fractionEl = document.getElementById(`fraction-muse-${name}`);
+  const statusEl = document.getElementById(`status-muse-${name}`);
+  const resetEl = document.getElementById(`reset-muse-${name}`);
+  const countdownEl = document.getElementById(`countdown-muse-${name}`);
+  if (percentEl) percentEl.textContent = pctStr + '%';
+  if (fractionEl) fractionEl.textContent = museCardLabel(quota);
+  if (progressEl) {
+    progressEl.style.width = pctStr + '%';
+    progressEl.dataset.status = status;
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(pct));
+  }
+  const resetsAt = quota.resets_at || quota.resetsAt || '';
+  if (resetEl) {
+    resetEl.textContent = resetsAt ? formatResetTime(resetsAt) : '';
+    if (resetsAt) resetEl.dataset.resetAt = resetsAt;
+  }
+  if (statusEl) {
+    const cfg = statusConfig[status] || statusConfig.healthy;
+    statusEl.dataset.status = status;
+    statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${cfg.icon}"/></svg> ${cfg.label}`;
+  }
+  if (countdownEl && resetsAt) {
+    const secs = Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000));
+    State.currentQuotas['muse-' + name] = { timeUntilResetSeconds: secs };
+    countdownEl.dataset.resetAt = resetsAt;
+    countdownEl.style.display = '';
+    countdownEl.textContent = secs > 0 ? formatDuration(secs) : '--:--';
+  }
+}
+
 async function fetchCurrent() {
   const requestProvider = getCurrentProvider();
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
@@ -4390,6 +4520,17 @@ async function fetchCurrent() {
           }
         }
         renderOllamaModelBreakdown(data.models || [], 'ollama-model-breakdown');
+
+      } else if (provider === 'muse') {
+        if (data.quotas) {
+          const container = document.getElementById('quota-grid-muse');
+          if (container && !museQuotaSetsMatch(container, data.quotas)) {
+            renderMuseQuotaCards(data.quotas, 'quota-grid-muse');
+          }
+          if (Array.isArray(data.quotas) && data.quotas.length > 0) {
+            data.quotas.forEach(q => updateMuseCard(q));
+          }
+        }
 
       } else if (provider === 'zai') {
         updateCard('tokensLimit', data.tokensLimit);
@@ -6100,6 +6241,7 @@ const bothProviderNames = {
   kimi: 'Kimi Code',
   opencode: 'OpenCode',
   ollama: 'Ollama',
+  muse: 'Muse',
   'api-integrations': 'API Integrations',
 };
 
@@ -6974,7 +7116,7 @@ function buildProviderCardDatasets(provider, rows, range) {
   if (provider === 'gemini') {
     return buildDynamicDatasetsForRows(rows, range, geminiDisplayNames, geminiChartColorMap, geminiChartColorFallback, 'gemini');
   }
-  if (provider === 'cursor' || provider === 'opencode' || provider === 'ollama') {
+  if (provider === 'cursor' || provider === 'opencode' || provider === 'ollama' || provider === 'muse') {
     const normalizedRows = rows.map((row) => {
       if (!Array.isArray(row.quotas)) return row;
       const entry = { capturedAt: row.capturedAt };
@@ -6988,6 +7130,9 @@ function buildProviderCardDatasets(provider, rows, range) {
     }
     if (provider === 'ollama') {
       return buildDynamicDatasetsForRows(normalizedRows, range, ollamaDisplayNames, ollamaChartColorMap, ollamaChartColorFallback, 'ollama');
+    }
+    if (provider === 'muse') {
+      return buildDynamicDatasetsForRows(normalizedRows, range, museDisplayNames, museChartColorMap, museChartColorFallback, 'muse');
     }
     return buildDynamicDatasetsForRows(normalizedRows, range, opencodeDisplayNames, opencodeChartColorMap, opencodeChartColorFallback, 'opencode');
   }
@@ -7507,7 +7652,7 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi', 'opencode', 'ollama']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi', 'opencode', 'ollama', 'muse']);
 
   // All-accounts overview: fetch each account's logging history and merge,
   // tagging every row with its account name for the combined table.
@@ -9064,7 +9209,7 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok' || overviewProv === 'kimi' || overviewProv === 'opencode' || overviewProv === 'ollama';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok' || overviewProv === 'kimi' || overviewProv === 'opencode' || overviewProv === 'ollama' || overviewProv === 'muse';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
   // MiniMax reports a percentage-based quota; the Duration and Total Delta
   // columns add no signal there, so omit them for this provider.
@@ -10173,6 +10318,7 @@ const DEFAULT_PROVIDER_TAB_LABELS = {
   kimi: 'Kimi',
   opencode: 'OpenCode',
   ollama: 'Ollama',
+  muse: 'Muse',
   'api-integrations': 'API Integrations',
   both: 'All',
 };
@@ -10899,6 +11045,14 @@ const providerSettingsConfig = {
       { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Not configured', hint: 'Ollama API key from https://ollama.com/settings/keys. Overrides OLLAMA_API_KEY from .env.', sensitive: true },
       { id: 'monthly_limit', label: 'Monthly Limit', type: 'text', placeholder: 'Derived from plan', hint: 'Included monthly usage cap in USD. Leave empty to derive from your plan (Pro $60, Max $300, Team $1,000). Overrides OLLAMA_MONTHLY_LIMIT.' },
       { id: 'reset_day', label: 'Reset Day', type: 'text', placeholder: 'Account anniversary', hint: 'Day of month your included usage resets (1-31). Leave empty to use your account anniversary. Overrides OLLAMA_RESET_DAY.' },
+    ],
+  },
+  muse: {
+    title: 'Muse',
+    desc: 'Configure Meta Muse coding-plan quota tracking. Auto-detected from `muse login` when no key is set. Changes take effect after daemon restart.',
+    fields: [
+      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Auto-detected', hint: 'Meta API key. Leave empty to use your `muse login` session. Overrides META_API_KEY from .env.', sensitive: true },
+      { id: 'model', label: 'Probe Model', type: 'text', placeholder: 'muse-spark-1.3', hint: 'Model used for the usage probe (for example muse-spark-1.3-contributor). Leave empty to use your Muse settings model. Overrides META_MUSE_MODEL.' },
     ],
   },
 };
@@ -11917,6 +12071,10 @@ const _overrideQuotasByProvider = {
   ],
   ollama: [
     { key: 'monthly', label: 'Monthly Included Usage' },
+  ],
+  muse: [
+    { key: 'window_5h', label: '5h Prompts' },
+    { key: 'weekly', label: 'Weekly' },
   ],
 };
 

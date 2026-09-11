@@ -458,6 +458,23 @@ append_ollama_to_env() {
     printf '\n# Ollama Cloud API key (https://ollama.com/settings/keys)\nOLLAMA_API_KEY=%s\n' "$key" >> "$env_file"
 }
 
+has_muse_configured() {
+    local key muse_on
+    key="$(env_get META_API_KEY)"
+    [[ -n "$key" && "$key" != "your_meta_api_key_here" ]] && return 0
+    muse_on="$(env_get MUSE_ENABLED)"
+    [[ "$muse_on" == "true" ]]
+}
+
+append_muse_to_env() {
+    local key="$1" env_file="${INSTALL_DIR}/.env"
+    if [[ -n "$key" ]]; then
+        printf '\n# Muse (Meta) API key (or leave unset to auto-detect muse login)\nMETA_API_KEY=%s\n' "$key" >> "$env_file"
+    else
+        printf '\n# Muse (Meta) - auto-detected from muse login\nMUSE_ENABLED=true\n' >> "$env_file"
+    fi
+}
+
 append_zai_to_env() {
     local key="$1" base_url="$2" env_file="${INSTALL_DIR}/.env"
     printf '\n# Z.ai API key (https://www.z.ai/api-keys)\nZAI_API_KEY=%s\n\n# Z.ai base URL\nZAI_BASE_URL=%s\n' "$key" "$base_url" >> "$env_file"
@@ -785,7 +802,7 @@ interactive_setup() {
         SETUP_USERNAME="${SETUP_USERNAME:-admin}"
         SETUP_PASSWORD=""  # Don't show existing password
 
-        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false has_grok=false has_ollama=false
+        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false has_grok=false has_ollama=false has_muse=false
         has_synthetic_key && has_syn=true
         has_zai_key && has_zai=true
         has_anthropic_key && has_anth=true
@@ -795,14 +812,15 @@ interactive_setup() {
         has_gemini_enabled && has_gemini=true
         has_grok_enabled && has_grok=true
         has_ollama_key && has_ollama=true
+        has_muse_configured && has_muse=true
 
-        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini && $has_grok && $has_ollama; then
+        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini && $has_grok && $has_ollama && $has_muse; then
             # All providers configured — nothing to do
             info "Existing .env found — all providers configured"
             return
         fi
 
-        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini && ! $has_grok && ! $has_ollama; then
+        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini && ! $has_grok && ! $has_ollama && ! $has_muse; then
             # .env exists but no keys at all — run full setup
             warn "Existing .env found but no API keys configured"
             info "Running interactive setup..."
@@ -826,6 +844,7 @@ interactive_setup() {
             $has_gemini && configured="${configured}Gemini "
             $has_grok && configured="${configured}Grok "
             $has_ollama && configured="${configured}Ollama "
+            $has_muse && configured="${configured}Muse "
             info "Existing .env found — configured: ${configured}"
             printf "\n"
 
@@ -996,6 +1015,18 @@ interactive_setup() {
                 fi
             fi
 
+            if ! $has_muse; then
+                local add_muse
+                add_muse=$(prompt_with_default "Add Muse (Meta) provider? (y/N)" "N")
+                if [[ "$add_muse" =~ ^[Yy] ]]; then
+                    printf "  ${DIM}Leave empty to auto-detect from 'muse login'${NC}\n"
+                    local muse_key
+                    muse_key=$(prompt_with_default "Meta API key [Enter = auto-detect]" "")
+                    append_muse_to_env "$muse_key"
+                    ok "Added Muse provider to .env"
+                fi
+            fi
+
             $_opened_fd3 && exec 3<&- || true
             return
         fi
@@ -1025,12 +1056,13 @@ interactive_setup() {
         "Gemini CLI only" \
         "Grok (xAI) only" \
         "Ollama Cloud only" \
+        "Muse (Meta) only" \
         "Multiple (choose one at a time)" \
         "All available")
 
-    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled="" ollama_key=""
+    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled="" ollama_key="" muse_enabled="" muse_key=""
 
-    if [[ "$provider_choice" == "10" ]]; then
+    if [[ "$provider_choice" == "11" ]]; then
         # ── Multiple: ask for each provider individually ──
         local add_it
         add_it=$(prompt_with_default "Add Synthetic provider? (y/N)" "N")
@@ -1087,8 +1119,17 @@ interactive_setup() {
             ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
         fi
 
+        add_it=$(prompt_with_default "Add Muse (Meta) provider? (y/N)" "N")
+        if [[ "$add_it" =~ ^[Yy] ]]; then
+            printf "  ${DIM}Leave empty to auto-detect from 'muse login'${NC}\n"
+            muse_key=$(prompt_with_default "Meta API key [Enter = auto-detect]" "")
+            if [[ -z "$muse_key" ]]; then
+                muse_enabled="true"
+            fi
+        fi
+
         # Validate at least one provider selected
-        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" && -z "$ollama_key" ]]; then
+        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" && -z "$ollama_key" && -z "$muse_enabled" && -z "$muse_key" ]]; then
             printf "  ${RED}No providers selected. Please select at least one.${NC}\n"
             # Re-run provider selection by recursion-safe retry
             printf "\n"
@@ -1151,13 +1192,13 @@ interactive_setup() {
         # ── Single provider or All ──
 
         # ── Synthetic API Key ──
-        if [[ "$provider_choice" == "1" || "$provider_choice" == "11" ]]; then
+        if [[ "$provider_choice" == "1" || "$provider_choice" == "12" ]]; then
             printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
             synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
         fi
 
         # ── Z.ai API Key ──
-        if [[ "$provider_choice" == "2" || "$provider_choice" == "11" ]]; then
+        if [[ "$provider_choice" == "2" || "$provider_choice" == "12" ]]; then
             local zai_result
             zai_result=$(collect_zai_config)
             zai_key=$(echo "$zai_result" | head -1)
@@ -1165,17 +1206,17 @@ interactive_setup() {
         fi
 
         # ── Anthropic Token ──
-        if [[ "$provider_choice" == "3" || "$provider_choice" == "11" ]]; then
+        if [[ "$provider_choice" == "3" || "$provider_choice" == "12" ]]; then
             anthropic_token=$(collect_anthropic_config)
         fi
 
         # ── Codex Token ──
-        if [[ "$provider_choice" == "4" || "$provider_choice" == "11" ]]; then
+        if [[ "$provider_choice" == "4" || "$provider_choice" == "12" ]]; then
             codex_token=$(collect_codex_config)
         fi
 
         # ── OpenCode (opencode-codex) ──
-        if [[ "$provider_choice" == "5" || "$provider_choice" == "11" ]]; then
+        if [[ "$provider_choice" == "5" || "$provider_choice" == "12" ]]; then
             opencode_enabled="true"
             if detect_opencode_auth; then
                 printf "\n  ${GREEN}✓${NC} OpenCode (opencode-codex) credentials detected (feeds Codex)\n"
@@ -1185,19 +1226,19 @@ interactive_setup() {
         fi
 
         # ── Antigravity (Windsurf) ──
-        if [[ "$provider_choice" == "6" || "$provider_choice" == "11" ]]; then
+        if [[ "$provider_choice" == "6" || "$provider_choice" == "12" ]]; then
             antigravity_enabled="true"
             printf "\n  ${GREEN}✓${NC} Antigravity enabled (auto-detects running Windsurf process)\n"
         fi
 
         # ── Gemini CLI ──
-        if [[ "$provider_choice" == "7" || "$provider_choice" == "11" ]]; then
+        if [[ "$provider_choice" == "7" || "$provider_choice" == "12" ]]; then
             gemini_enabled="true"
             printf "\n  ${GREEN}✓${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n"
         fi
 
         # ── Grok (xAI) ──
-        if [[ "$provider_choice" == "8" || "$provider_choice" == "11" ]]; then
+        if [[ "$provider_choice" == "8" || "$provider_choice" == "12" ]]; then
             grok_enabled="true"
             if [[ -f "$(grok_auth_path)" ]]; then
                 printf "\n  ${GREEN}✓${NC} Grok enabled (credentials detected at $(grok_auth_path))\n"
@@ -1207,9 +1248,19 @@ interactive_setup() {
         fi
 
         # ── Ollama Cloud ──
-        if [[ "$provider_choice" == "9" || "$provider_choice" == "11" ]]; then
+        if [[ "$provider_choice" == "9" || "$provider_choice" == "12" ]]; then
             printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
             ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
+        fi
+
+        # ── Muse (Meta): optional key, auto-detects `muse login` when empty ──
+        if [[ "$provider_choice" == "10" || "$provider_choice" == "12" ]]; then
+            printf "\n  ${DIM}Leave empty to auto-detect from 'muse login'${NC}\n"
+            muse_key=$(prompt_with_default "Meta API key [Enter = auto-detect]" "")
+            if [[ -z "$muse_key" ]]; then
+                muse_enabled="true"
+                printf "  ${GREEN}✓${NC} Muse enabled (auto-detects 'muse login' credentials)\n"
+            fi
         fi
     fi
 
@@ -1322,6 +1373,16 @@ interactive_setup() {
             echo ""
         fi
 
+        if [[ -n "$muse_key" ]]; then
+            echo "# Muse (Meta) API key (or leave unset to auto-detect 'muse login')"
+            echo "META_API_KEY=${muse_key}"
+            echo ""
+        elif [[ -n "$muse_enabled" ]]; then
+            echo "# Muse (Meta) - auto-detected from 'muse login'"
+            echo "MUSE_ENABLED=true"
+            echo ""
+        fi
+
         echo "# Dashboard credentials"
         echo "ONWATCH_ADMIN_USER=${SETUP_USERNAME}"
         echo "ONWATCH_ADMIN_PASS=${SETUP_PASSWORD}"
@@ -1347,7 +1408,8 @@ interactive_setup() {
         7) provider_label="Gemini" ;;
         8) provider_label="Grok" ;;
         9) provider_label="Ollama Cloud" ;;
-        10)
+        10) provider_label="Muse" ;;
+        11)
             # Multiple — build label from selected providers
             local parts=()
             [[ -n "$synthetic_key" ]] && parts+=("Synthetic")
@@ -1359,9 +1421,10 @@ interactive_setup() {
             [[ -n "$gemini_enabled" ]] && parts+=("Gemini")
             [[ -n "$grok_enabled" ]] && parts+=("Grok")
             [[ -n "$ollama_key" ]] && parts+=("Ollama Cloud")
+            [[ -n "$muse_enabled" || -n "$muse_key" ]] && parts+=("Muse")
             provider_label=$(IFS=", "; echo "${parts[*]}")
             ;;
-        11) provider_label="All providers" ;;
+        12) provider_label="All providers" ;;
     esac
 
     local masked_pass

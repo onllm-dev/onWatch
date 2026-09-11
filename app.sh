@@ -193,6 +193,11 @@ build_native_binary() {
             -tags "$DARWIN_FULL_TAGS" \
             -ldflags="-s -w -X main.version=$VERSION" \
             -o "$output" .
+        # macOS taskgated kills unsigned pages (SIGKILL Code Signature Invalid).
+        # Re-apply an ad-hoc signature after the Go linker strip.
+        if command -v codesign >/dev/null 2>&1; then
+            codesign --force --sign - --identifier com.onllm.onwatch "$output" >/dev/null 2>&1 || true
+        fi
         return
     fi
 
