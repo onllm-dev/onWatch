@@ -42,7 +42,7 @@ $NC = "$ESC[0m"
 # Check if terminal supports ANSI (Windows 10 1511+ and PowerShell 5.1+)
 $SupportsAnsi = $true
 try {
-    $host.UI.SupportsVirtualTerminal
+    $null = $host.UI.SupportsVirtualTerminal
 } catch {
     $SupportsAnsi = $false
 }
@@ -886,6 +886,27 @@ function Start-OnWatch {
 
 # ─── Main ──────────────────────────────────────────────────────────────
 
+# Runs gh with every stream discarded and returns its exit code, or 1 when gh
+# cannot run at all. gh writes to stderr on every call, logged in or not, and
+# Windows PowerShell 5.1 turns redirected native stderr into a terminating
+# NativeCommandError while $ErrorActionPreference is "Stop" - which used to
+# abort the installer over an optional courtesy.
+function Invoke-GhQuiet {
+    param([Parameter(Mandatory = $true)][string[]]$GhArgs)
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try {
+        $global:LASTEXITCODE = 1
+        & gh @GhArgs 2>&1 | Out-Null
+        return $LASTEXITCODE
+    } catch {
+        return 1
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 # Offered once (remembered in .star-prompted, shared with `onwatch setup`)
 # when the gh CLI is logged in and the repo is not starred yet. Yes is the
 # default, also when there is no interactive console. ONWATCH_STAR=no is the
@@ -895,10 +916,8 @@ function Offer-GitHubStar {
     $marker = Join-Path $INSTALL_DIR ".star-prompted"
     if (Test-Path $marker) { return }
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return }
-    & gh auth status *> $null
-    if ($LASTEXITCODE -ne 0) { return }
-    & gh api "user/starred/$REPO" *> $null
-    if ($LASTEXITCODE -eq 0) { return }   # already starred
+    if ((Invoke-GhQuiet "auth", "status") -ne 0) { return }
+    if ((Invoke-GhQuiet "api", "user/starred/$REPO") -eq 0) { return }   # already starred
 
     $answer = "Y"
     if ([Environment]::UserInteractive) {
@@ -913,8 +932,7 @@ function Offer-GitHubStar {
     }
     Set-Content -Path $marker -Value "asked" -ErrorAction SilentlyContinue
     if ($answer -match '^[Yy]') {
-        & gh repo star $REPO *> $null
-        if ($LASTEXITCODE -eq 0) {
+        if ((Invoke-GhQuiet "repo", "star", $REPO) -eq 0) {
             Write-Ok "Thanks for the star!"
         } else {
             Write-Warn "Could not star the repo - try: gh repo star $REPO"
@@ -963,7 +981,7 @@ function Main {
     Write-Host ""
     Start-OnWatch
 
-    Offer-GitHubStar
+    try { Offer-GitHubStar } catch { }
 
     Write-Host ""
     Write-Host "  ${GREEN}${BOLD}Installation complete${NC}"
