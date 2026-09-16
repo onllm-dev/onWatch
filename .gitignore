@@ -49,7 +49,10 @@ test-screenshots/
 test-evidence/
 
 # Go
-vendor/
+# Anchored to the module root: `go mod vendor` only ever writes /vendor, and an
+# unanchored rule also swallowed internal/web/static/vendor, which holds the
+# dashboard's bundled Chart.js and webfonts and must be tracked.
+/vendor/
 *.test
 coverage.out
 coverage.html

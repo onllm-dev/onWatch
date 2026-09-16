@@ -77,8 +77,12 @@
   --radius-full: 9999px;
 
   /* Typography */
-  --font-primary: 'Ubuntu', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  /* Ubuntu and JetBrains Mono ship in the binary (static/vendor/fonts.css) as
+     latin and latin-ext subsets only, so the system stacks below carry any
+     glyph outside those ranges - an account name in Cyrillic or Devanagari,
+     for example - instead of leaving a tofu box. */
+  --font-primary: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, Menlo, Consolas, monospace;
 
   /* Transitions */
   --transition-fast: 150ms ease;

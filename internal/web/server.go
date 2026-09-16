@@ -286,12 +286,16 @@ func securityHeadersMiddleware(next http.Handler, bp string) http.Handler {
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		// Control referrer information
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		// Content Security Policy
+		// Content Security Policy. Every asset is vendored into the binary and
+		// served from this origin, so no third-party host is whitelisted: a
+		// dashboard page load must never disclose the viewer's IP address to a
+		// CDN or font host. This is also the enforcement backstop if a template
+		// ever regresses to an external reference.
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' cdn.jsdelivr.net; "+
-				"style-src 'self' 'unsafe-inline' fonts.googleapis.com; "+
-				"font-src 'self' fonts.gstatic.com; "+
+				"script-src 'self'; "+
+				"style-src 'self' 'unsafe-inline'; "+
+				"font-src 'self'; "+
 				"img-src 'self' data:; "+
 				"connect-src 'self'; "+
 				"worker-src 'self'")
