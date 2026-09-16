@@ -1001,10 +1001,17 @@ func OpenRotatingLogFile(path string) (*os.File, error) {
 		return nil, fmt.Errorf("failed to stat log file %s: %w", path, err)
 	}
 
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// 0600: the log records provider account names and other identifiers, so it
+	// must not be readable by other local accounts. Chmod covers logs created
+	// as 0644 by an earlier version, since O_CREATE leaves an existing file's
+	// mode alone.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, err
 	}
+	// Windows and some network filesystems do not support chmod; having the log
+	// at all beats refusing to start over its mode.
+	_ = file.Chmod(0600)
 	return file, nil
 }
 
