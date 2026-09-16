@@ -325,6 +325,24 @@
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
+                <h3 class="settings-section-title">Privacy &amp; Outbound Connections</h3>
+                <p class="settings-section-desc">Every other connection onWatch makes is to a provider API you configured. Nothing is sent to the onWatch project, and the dashboard loads no third-party fonts, scripts or analytics. See the <a href="{{.BasePath}}/privacy">privacy notice</a> for the full itemised list of what is stored and where.</p>
+                <div class="settings-fields">
+                    <div class="settings-toggle-row">
+                        <div class="settings-toggle-info">
+                            <div class="settings-toggle-label">Update check</div>
+                            <div class="settings-toggle-sublabel">When enabled, onWatch asks api.github.com hourly whether a newer release exists, which discloses this machine's IP address and browser User-Agent to GitHub. Turn it off and onWatch makes no version request at all - you can still update by re-running the installer.</div>
+                            <div class="settings-field-hint" id="settings-update-check-lock-hint" hidden>Pinned off for this deployment by ONWATCH_UPDATE_CHECK.</div>
+                        </div>
+                        <label class="settings-toggle">
+                            <input type="checkbox" id="settings-update-check" checked>
+                            <span class="settings-toggle-track"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
                 <h3 class="settings-section-title">Timezone</h3>
                 <div class="settings-fields">
                     <div class="settings-field">
@@ -386,6 +404,48 @@
                 </div>
                 <button class="settings-save-btn settings-save-btn-secondary" id="password-save-btn" type="button">Update Password</button>
                 <div id="settings-password-feedback" class="settings-feedback" hidden></div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Data Retention</h3>
+                <p class="settings-section-desc">How long onWatch keeps what it has collected. Both are <strong>0 by default, which keeps everything forever</strong> - onWatch will not start deleting your history because you upgraded. Choosing a period is how you satisfy storage limitation (GDPR Art. 5(1)(e)); only you can decide what it should be.</p>
+                <div class="settings-fields">
+                    <div class="settings-field settings-field-half">
+                        <label for="settings-retention-scrub-days">Scrub identifiers after (days)</label>
+                        <input type="number" id="settings-retention-scrub-days" class="settings-input" min="0" max="36500" value="0">
+                        <span class="settings-field-hint">Clears account emails, account names and the verbatim provider API responses from older records, while keeping the numbers behind your charts. 0 = never.</span>
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="settings-retention-delete-days">Delete records after (days)</label>
+                        <input type="number" id="settings-retention-delete-days" class="settings-input" min="0" max="36500" value="0">
+                        <span class="settings-field-hint">Removes the records outright, oldest first. Must be greater than or equal to the scrub period. An in-progress reset cycle is never deleted. 0 = never.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Your Data</h3>
+                <p class="settings-section-desc">Take a copy of everything onWatch stores, or delete it. These are the mechanisms behind the access, portability and erasure rights in the GDPR (Art. 15, 20 and 17) and India's DPDP Act (s.11 and s.12). The <a href="{{.BasePath}}/privacy">privacy notice</a> itemises what is held and where it goes.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="settings-export-data">Export</label>
+                        <button class="settings-save-btn settings-save-btn-secondary" id="settings-export-data" type="button">Download all my data (JSON)</button>
+                        <span class="settings-field-hint">Every table, machine-readable. Passwords, API keys and OAuth tokens are redacted - the file is a record of your data, not a copy of your credentials.</span>
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="settings-erase-provider">Delete one provider</label>
+                        <select id="settings-erase-provider" class="settings-input">
+                            <option value="">Select a provider...</option>
+                        </select>
+                        <span class="settings-field-hint">Removes that provider's snapshots, cycles, accounts and alerts. The others are untouched.</span>
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="settings-erase-data">Delete everything</label>
+                        <button class="settings-save-btn settings-save-btn-secondary" id="settings-erase-data" type="button">Erase stored data...</button>
+                        <span class="settings-field-hint">Clears all usage history, provider accounts and push subscriptions, and drops stored provider credentials. Your login and display preferences stay so the dashboard keeps working. This cannot be undone.</span>
+                    </div>
+                </div>
+                <div id="settings-privacy-feedback" class="settings-feedback" hidden></div>
             </div>
         </div>
 

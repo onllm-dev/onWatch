@@ -254,6 +254,14 @@ func sessionAuthMiddlewareWithTrustedProxy(sessions *SessionStore, basePath stri
 				return
 			}
 
+			// The privacy notice is public: it carries no personal data, and a
+			// notice that can only be read after logging in does not meet the
+			// "easily accessible" bar in GDPR Art. 12.
+			if isPublicNoticePath(path, basePath) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Local tray surface is intentionally public for localhost requests.
 			if isLocalMenubarPublicPath(path) && isLoopbackRequest(r) {
 				next.ServeHTTP(w, r)

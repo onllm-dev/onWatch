@@ -1901,6 +1901,20 @@ func run() error {
 		logger.Info("No agents configured")
 	}
 
+	// Retention runs regardless of which providers are configured: it is a
+	// data-protection obligation, not a provider feature, so it is deliberately
+	// not registered with the provider agent manager where a toggle could
+	// switch it off by accident. It is inert until a period is chosen.
+	retentionAg := agent.NewRetentionAgent(db, store.RetentionPolicy{
+		ScrubAfter:  time.Duration(cfg.RetentionScrubDays) * 24 * time.Hour,
+		DeleteAfter: time.Duration(cfg.RetentionDeleteDays) * 24 * time.Hour,
+	}, logger)
+	go func() {
+		if err := retentionAg.Run(ctx); err != nil {
+			logger.Error("retention agent stopped with an error", "error", err)
+		}
+	}()
+
 	// Start web server in goroutine
 	serverErr := make(chan error, 1)
 	go func() {

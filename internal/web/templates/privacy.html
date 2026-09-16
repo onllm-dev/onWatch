@@ -1,0 +1,478 @@
+{{define "content"}}
+<div class="settings-page privacy-page" data-page="privacy">
+    <header class="settings-header">
+        <div class="settings-header-left">
+            <a href="{{.BasePath}}/" class="settings-back" aria-label="Back to dashboard" title="Back to dashboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <div>
+                <h1 class="settings-title">Privacy Notice</h1>
+                <p class="settings-subtitle">What onWatch stores on this machine, and everywhere it sends data</p>
+            </div>
+        </div>
+        <div class="settings-header-right">
+            <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+                <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="settings-main" id="main-content">
+
+        <!-- Summary -->
+        <div class="settings-section">
+            <h3 class="settings-section-title">In short</h3>
+            <p class="settings-section-desc">onWatch runs on this machine. It polls AI provider quota APIs with your own credentials, writes usage history to a SQLite file on this machine, and serves this dashboard from this machine. <strong>The onWatch project receives nothing.</strong> There is no analytics, no telemetry, no crash reporting and no onWatch-operated backend of any kind.</p>
+            <p class="settings-section-desc">That does not make this page unnecessary. onWatch handles account email addresses, OAuth refresh tokens, per-request usage logs and other tools' credential files, and it contacts up to twenty-five third-party endpoints. Everything below is itemised so you can check it against the source.</p>
+            <p class="settings-section-desc">This page is the same notice that ships as <code>docs/PRIVACY.md</code> in the repository, compiled into the binary you are running. Related controls live in <a href="{{.BasePath}}/settings">Settings</a>, under General.</p>
+            <span class="settings-field-hint">Last reviewed 2026-09-16. Describes onWatch v{{.Version}}.</span>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <!-- Who is who -->
+        <div class="settings-section">
+            <h3 class="settings-section-title">Who is responsible</h3>
+            <p class="settings-section-desc">The onWatch project is <strong>not</strong> a controller, processor or Data Fiduciary for anything you do with onWatch, for a verifiable reason: no data ever reaches the project. <strong>Whoever runs this binary is the Data Controller under the GDPR and the Data Fiduciary under India's DPDP Act 2023.</strong></p>
+            <p class="settings-section-desc">If you run onWatch on your own machine, for your own accounts, and nobody else can reach this dashboard, you are within the personal and household exemption - GDPR Art. 2(2)(c) and DPDP Act s.3(c)(ii). Data protection law then does not regulate you for it, and this page is documentation rather than an obligation. That exemption stops in three cases:</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Situation</th><th>Why the exemption stops</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>The dashboard is reachable by other people - bound to 0.0.0.0, behind a reverse proxy, on a shared LAN, or behind SSO</td><td>You are making personal data available to others. The processing is no longer purely personal.</td></tr>
+                        <tr><td>A company, team or client deploys it</td><td>The purpose is organisational, not domestic. Full controller and Data Fiduciary duties apply.</td></tr>
+                        <tr><td>It watches an account belonging to someone other than you - an employee's, a contractor's</td><td>You are processing another identifiable person's data, including their AI usage over time. Nothing in onWatch tells that person they are being watched. You have to tell them.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-section-desc">onWatch performs no automated decision-making and no profiling in the sense of GDPR Art. 22. Alerts are fixed numeric-threshold comparisons. There is no advertising, no ad tech, no behavioural tracking, no third-party cookies, and one first-party session cookie only.</p>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <!-- Auto-enabled providers -->
+        <div class="settings-section">
+            <h3 class="settings-section-title">Seven providers start polling without being configured <span class="beta-tag">Important</span></h3>
+            <p class="settings-section-desc"><strong>Seven providers begin contacting their vendors' APIs with no configuration from you at all, purely because another tool's credential file is present on this disk.</strong> You install onWatch to watch one provider; if Claude Code, the Codex CLI, OpenCode, the Gemini CLI, Cursor, the Grok CLI or Kimi Code is installed on the same machine, onWatch finds those credentials and starts polling those vendors on its normal timer. Nobody consented, because nobody was asked.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Provider</th><th>Starts because onWatch found</th><th>Then polls</th><th>Stoppable before the first poll?</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Anthropic</td><td>~/.claude/.credentials.json, the macOS Keychain item, or the GNOME keyring</td><td>api.anthropic.com</td><td><strong>No.</strong> No env switch exists. Dashboard polling toggle only, after the fact, or remove the credentials.</td></tr>
+                        <tr><td>Codex</td><td>~/.codex/auth.json, the OpenCode auth.json, or a saved Codex profile</td><td>chatgpt.com</td><td><strong>No.</strong> No CODEX_ENABLED switch exists.</td></tr>
+                        <tr><td>OpenCode</td><td>Codex credentials sourced from OpenCode, which override the env default</td><td>opencode.ai</td><td>Partly. Set OPENCODE_ENABLED to something other than true <em>and</em> remove those credentials.</td></tr>
+                        <tr><td>Cursor</td><td>The session token inside Cursor's state.vscdb</td><td>api2.cursor.sh, cursor.com</td><td><strong>No.</strong> No CURSOR_ENABLED switch exists.</td></tr>
+                        <tr><td>Gemini</td><td>~/.gemini/oauth_creds.json</td><td>cloudcode-pa.googleapis.com</td><td>Yes - GEMINI_ENABLED=false</td></tr>
+                        <tr><td>Grok</td><td>~/.grok/auth.json</td><td>grok.com</td><td>Yes - GROK_ENABLED=false</td></tr>
+                        <tr><td>Kimi</td><td>kimi-code.json in your credentials directory</td><td>api.kimi.com</td><td>Yes - KIMI_ENABLED=false or KIMI_CODE_ENABLED=false</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-section-desc">For Anthropic, Codex, Cursor and OpenCode there is no pre-start switch, so the first poll happens before you can object. After that, each provider's polling toggle in <a href="{{.BasePath}}/settings">Settings</a> is honoured on the next cycle. If you are deploying this for an organisation, check the machine for credential files before starting the daemon, and disclose this in your own notice.</p>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <!-- What is stored -->
+        <div class="settings-section">
+            <h3 class="settings-section-title">What is stored: identity and credentials in the database</h3>
+            <p class="settings-section-desc">The database is <code>~/.onwatch/data/onwatch.db</code> (<code>/data/onwatch.db</code> in Docker). It has 56 tables. <strong>17 hold personal data; 39 hold only numeric quota telemetry.</strong> The file as a whole is not encrypted - see the encryption table further down. Every identity column below is re-written on <em>every poll</em>, which on the default 120-second interval means roughly 720 new rows carrying the same email per day.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Table and column</th><th>What it is</th><th>Source</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>users.username, users.password_hash</td><td>The dashboard login. bcrypt hash (legacy installs: 64-hex SHA-256).</td><td>You, at setup</td></tr>
+                        <tr><td>auth_tokens.token</td><td>Dashboard session bearer token, 32 random bytes hex</td><td>Generated on login</td></tr>
+                        <tr><td>push_subscriptions.endpoint, .p256dh, .auth</td><td>A Web Push subscription. The endpoint is a URL at the browser vendor's push service and is a stable identifier for that browser install; p256dh and auth are that browser's encryption keys.</td><td>The browser</td></tr>
+                        <tr><td>provider_accounts.name</td><td>Free-text account label. For Codex it is the profile name you typed - people routinely use an email address or a person's name.</td><td>You</td></tr>
+                        <tr><td>provider_accounts.external_id</td><td>Hard third-party identity. For Codex, chatgpt_account_id:chatgpt_user_id, decoded from the id_token JWT. Links this install to a named OpenAI account.</td><td>Provider credential</td></tr>
+                        <tr><td>provider_accounts.metadata</td><td>Free-form JSON per account. For MiniMax it holds the API key.</td><td>Setup / provider</td></tr>
+                        <tr><td>antigravity_snapshots.email</td><td>Google / Antigravity account email</td><td>Provider response</td></tr>
+                        <tr><td>grok_snapshots.email, .team_id, .login_method</td><td>xAI account email, team or org id, login method</td><td>~/.grok/auth.json</td></tr>
+                        <tr><td>ollama_snapshots.account_email, .account_name</td><td>Ollama Cloud account email and real name</td><td>ollama.com/api/me</td></tr>
+                        <tr><td>kimi_snapshots.user_id, .region, .membership</td><td>Kimi / Moonshot account user id, region, membership level</td><td>Provider response</td></tr>
+                        <tr><td>gemini_snapshots.project_id</td><td>The Google Cloud / Code Assist project id tied to this install</td><td>Provider response</td></tr>
+                        <tr><td>codex_snapshots.account_id, and account_id on codex_reset_cycles, minimax_snapshots, minimax_reset_cycles, grok_snapshots, grok_reset_cycles, kimi_snapshots, kimi_reset_cycles</td><td>Internal integer key to provider_accounts.id. Not an identifier alone, but it is the join that attaches every quota row to an identity row.</td><td>Internal</td></tr>
+                        <tr><td>openrouter_snapshots.label</td><td>The OpenRouter API key's own label, returned by the vendor. User-chosen free text - commonly a person's name, an email or a machine name.</td><td>Provider response</td></tr>
+                        <tr><td>system_alerts.title, .message, .metadata</td><td>Local alert records. The telemetry-ingest error path writes the source file's absolute path (normally containing the OS username) and the first 180 bytes of the offending line, verbatim, into metadata.</td><td>Internal</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">What is stored: settings keys</h3>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Key</th><th>Contents</th><th>Encrypted?</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>smtp</td><td>host, port, protocol, username, password, from_address, from_name, to. The "to" list is your alert recipients.</td><td>Password only. Username, from address and recipients are plaintext.</td></tr>
+                        <tr><td>gemini_tokens</td><td>Google OAuth access_token, refresh_token, expires_at</td><td>Yes, AES-256-GCM</td></tr>
+                        <tr><td>provider_settings</td><td>Provider secrets set through the dashboard: api_key for Synthetic, Z.ai, MiniMax, OpenRouter, Moonshot, DeepSeek and Ollama; token for Copilot; csrf_token for Antigravity; auth_cookie and workspace_id for OpenCode. Redacted from API responses, which protects the display, not the file.</td><td>No - plaintext at rest</td></tr>
+                        <tr><td>vapid_keys</td><td>The Web Push VAPID keypair, including the private key</td><td>No - plaintext at rest</td></tr>
+                        <tr><td>encryption_salt</td><td>16-byte salt used to derive the at-rest key. Not personal data, but it is key material: reset it alone and the encrypted values become undecryptable.</td><td>n/a</td></tr>
+                        <tr><td>dashboard_provider_labels</td><td>Free-text provider tab labels you chose. Unvalidated - in practice people put emails, personal names or machine names here.</td><td>No</td></tr>
+                        <tr><td>timezone, notifications, provider_visibility, api_integrations_visibility, hidden_insights, menubar, auto_refresh_tokens, update_check, dashboard_providers_order, migration flags</td><td>Display and behaviour preferences. No identifiers. Timezone is a weak location signal.</td><td>No</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">What is stored: the raw_json columns</h3>
+            <p class="settings-section-desc">Every provider snapshot table keeps the vendor's response verbatim in a <code>raw_json</code> column. The typed columns beside it are only a subset. <strong>Three of these columns hold identifiers that exist nowhere else in the database</strong>, so an export or erasure that walks only the typed columns will miss them.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Column</th><th>What is inside</th><th>Identifier only found here</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>copilot_snapshots.raw_json</td><td>The whole Copilot user response: login, access_type_sku, quota_reset_date, the quota map</td><td><strong>login - your GitHub username.</strong> The typed columns keep only plan and reset date.</td></tr>
+                        <tr><td>antigravity_snapshots.raw_json</td><td>IDE path: the whole user-status response, plan info and every model config. CLI path: quota buckets only, no identifiers.</td><td><strong>userStatus.name - your real display name.</strong></td></tr>
+                        <tr><td>kimi_snapshots.raw_json</td><td>The whole usages response: user id, region, businessId, membership level, authentication method and scope, usage and limits</td><td><strong>user.businessId and the authentication block.</strong></td></tr>
+                        <tr><td>grok_snapshots.raw_json</td><td>Billing cycle start and end, monthly limit, on-demand cap, usage in cents</td><td>None, but it is the account's financial spend history</td></tr>
+                        <tr><td>cursor_snapshots.raw_json</td><td>Billing cycle, plan usage, total, included and bonus spend, spend limits. The OAuth tokens and Stripe structs are deliberately not persisted.</td><td>None; financial spend history</td></tr>
+                        <tr><td>ollama_snapshots.raw_json</td><td>The usage body only: cost, period, per-model name, request count and cost. The account email and name go to typed columns instead.</td><td>None; per-model activity</td></tr>
+                        <tr><td>anthropic_snapshots.raw_json</td><td>A quota map of utilization, resets_at, is_enabled, monthly_limit, used_credits. Keys can be model-scoped, e.g. seven_day_opus.</td><td>None</td></tr>
+                        <tr><td>codex_snapshots.raw_json</td><td>plan_type, primary and secondary rate-limit windows, code-review rate limit, credit balance</td><td>None</td></tr>
+                        <tr><td>gemini_snapshots.raw_json</td><td>Quota buckets only: remainingFraction, resetTime, modelId</td><td>None</td></tr>
+                        <tr><td>minimax_snapshots.raw_json</td><td>base_resp plus per-model interval and weekly counts</td><td>None</td></tr>
+                        <tr><td>opencode_snapshots.raw_json</td><td><strong>Always empty.</strong> The OpenCode client never populates it.</td><td>None</td></tr>
+                        <tr><td>zai_snapshots.time_usage_details</td><td>Per-model usage array, e.g. modelCode and usage count</td><td>None; per-model activity breakdown</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">What is stored: the optional telemetry ingest</h3>
+            <p class="settings-section-desc">Off unless you create <code>~/.onwatch/api-integrations/</code> and put JSONL files in it. This is the only part of onWatch that ingests data you supply rather than data a vendor returns, and the only part whose contents onWatch cannot enumerate.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Table and column</th><th>What it is</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>api_integration_usage_events.account_name</td><td>Free-text account label taken verbatim from each line. In practice integrations put an account email or user id here.</td></tr>
+                        <tr><td>api_integration_usage_events.request_id</td><td>The upstream provider's request id, verbatim - a correlation handle into that provider's own logs for that call.</td></tr>
+                        <tr><td>api_integration_usage_events.metadata_json</td><td><strong>Free-form JSON that you control, with no schema, no key allowlist and no redaction</strong> - only compacted and capped at 4096 bytes. It can contain end-user ids, session ids, prompt or document excerpts, IP addresses or email addresses. This notice cannot tell you what is in it; if you enable this feature you are responsible for knowing what your integrations emit.</td></tr>
+                        <tr><td>api_integration_usage_events.source_path, .fingerprint</td><td>The source file's absolute path (normally containing the OS username), and a SHA-256 over the event fields used for deduplication. The fingerprint is a stable pseudonymous hash - pseudonymised data, not anonymous.</td></tr>
+                        <tr><td>api_integration_usage_events.integration_name, .model, token counts, .cost_usd, .latency_ms, .captured_at</td><td>Per-call telemetry: which model, when, how many prompt and completion tokens, what it cost, how long it took. Every field is numeric, and at per-request granularity this is the most revealing material in the database.</td></tr>
+                        <tr><td>api_integration_ingest_state.source_path</td><td>One row per tailed file, keyed on the absolute path. Persists after the file itself is gone.</td></tr>
+                        <tr><td>api_integration_ingest_state.partial_line</td><td>A verbatim trailing fragment of a telemetry file, <strong>up to 512 KB</strong>, kept so tailing resumes across restarts. It contains raw event text, including whatever was in metadata.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-section-desc">Two boundaries worth knowing. Databases created by the original api-integrations build stored the entire verbatim JSONL line in a <code>raw_line</code> column; a migration drops the column, but SQLite does not reclaim the page content, so a pre-upgrade database file or a backup of one still contains whole raw events until it is vacuumed. And the source <code>.jsonl</code> files are never deleted or truncated by onWatch - it only tails them, so deleting database rows leaves the original events intact on disk.</p>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">The 39 tables with no personal data</h3>
+            <p class="settings-section-desc">Numeric quota telemetry only: schema_version, quota_snapshots, reset_cycles, sessions, zai_snapshots, zai_hourly_usage, zai_reset_cycles, anthropic_snapshots, anthropic_quota_values, anthropic_reset_cycles, notification_log, copilot_quota_values, copilot_reset_cycles, codex_quota_values, codex_reset_cycles, antigravity_model_values, antigravity_reset_cycles, moonshot_snapshots, moonshot_reset_cycles, deepseek_snapshots, deepseek_reset_cycles, minimax_model_values, minimax_reset_cycles, gemini_quota_values, gemini_reset_cycles, openrouter_reset_cycles, cursor_snapshots, cursor_quota_values, cursor_reset_cycles, grok_quota_values, grok_reset_cycles, kimi_quota_values, kimi_reset_cycles, opencode_snapshots, opencode_quota_values, opencode_reset_cycles, ollama_quota_values, ollama_model_usage, ollama_reset_cycles.</p>
+            <p class="settings-section-desc"><strong>Caveat, and it matters.</strong> "No personal data" here means no email, name, account identifier, endpoint, credential or IP address. It does not mean anonymous. A typical install watches one person's accounts, so every utilisation figure, reset cycle and per-model request count in these 39 tables is behavioural data about one identifiable person, and is personal data under the GDPR. Export and erasure should cover all 56 tables and cascade on account_id and snapshot ids, not just delete the identity rows.</p>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">What is stored: files on disk, and what is only in memory</h3>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Path</th><th>Contents</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>~/.onwatch/data/onwatch.db (-wal, -shm)</td><td>Everything in the tables above. Mode 0600 in a 0700 directory. Not encrypted as a file.</td></tr>
+                        <tr><td>~/.onwatch/.env</td><td>Every provider secret in cleartext plus the dashboard login: SYNTHETIC_API_KEY, ZAI_API_KEY, ANTHROPIC_TOKEN, CODEX_TOKEN, OPENCODE_GO_AUTH_COOKIE, OPENCODE_GO_WORKSPACE_ID, COPILOT_TOKEN, MINIMAX_API_KEY, OPENROUTER_API_KEY, OLLAMA_API_KEY, ONWATCH_ADMIN_USER, ONWATCH_ADMIN_PASS. Mode 0600.</td></tr>
+                        <tr><td>~/.onwatch/data/.onwatch.log (and .1, .2, .3)</td><td>The debug log, mode 0600. Records <strong>client IP addresses</strong>, proxy-asserted SSO usernames in trusted_proxy mode, and provider account names. Size-capped at 4 x 50 MB with no time limit. Under Docker this content goes to stdout instead, i.e. into your container log.</td></tr>
+                        <tr><td>~/.onwatch/data/codex-profiles/&lt;profile&gt;.json</td><td>Written by onWatch: per Codex profile, the name, account_id, ChatGPT user id, access, refresh and id tokens, and api_key. Mode 0600.</td></tr>
+                        <tr><td>~/.onwatch/api-integrations/*.jsonl</td><td>Your telemetry input files. Read only, never deleted or truncated by onWatch.</td></tr>
+                        <tr><td>~/.onwatch/quickview-profile/</td><td>A full browser profile created by the tray quick-view: the onwatch_session cookie, local storage and the dashboard cache. <strong>Deleting the database does not clear this</strong>, and onWatch never cleans it up.</td></tr>
+                        <tr><td>~/.onwatch/onwatch.pid, port, onwatch-menubar.pid, onwatch-menubar.refresh, menubar.log, .autostart-declined</td><td>Process ids, the listening port, a refresh timestamp, a marker file. No personal data in the contents, though the path contains the OS username and menubar.log can carry the same request-level detail as the main log.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-section-desc">Held in memory only, gone when the daemon stops: live session tokens plus the admin username and password hash; login rate-limiter entries keyed by client IP address (minutes only, capped at 1000 entries, never written to the database - and taken from X-Forwarded-For before RemoteAddr, so behind a proxy this is whatever the proxy asserts); every provider API key, token, auth cookie and CSRF token; the Grok account holder's <strong>first and last name</strong>, read from ~/.grok/auth.json and never persisted; and the proxy-asserted SSO username, which does reach the debug log.</p>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <!-- Where it goes -->
+        <div class="settings-section">
+            <h3 class="settings-section-title">Where it goes: provider polls</h3>
+            <p class="settings-section-desc">Nothing here goes to the onWatch project. Each provider polls on the agent timer, by default every 120 seconds, and each can be turned off with its polling toggle in <a href="{{.BasePath}}/settings">Settings</a>. Every request additionally discloses this machine's <strong>egress IP address</strong> and TLS fingerprint.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Destination</th><th>For</th><th>What leaves this machine</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>api.synthetic.new</td><td>Synthetic quota</td><td>Bearer SYNTHETIC_API_KEY, User-Agent onwatch/1.0</td></tr>
+                        <tr><td>api.z.ai / open.bigmodel.cn</td><td>Z.ai quota; the second only when the China region is selected</td><td>ZAI_API_KEY (raw, no Bearer prefix), User-Agent onwatch/1.0</td></tr>
+                        <tr><td>api.anthropic.com</td><td>Claude Code quota</td><td>The Claude Code OAuth access token, and <strong>User-Agent claude-code/2.1.69 - onWatch identifies itself to Anthropic as the Claude Code client, not as onWatch</strong></td></tr>
+                        <tr><td>console.anthropic.com</td><td>OAuth refresh, used deliberately as a rate-limit bypass: on HTTP 429 a new access token is minted for a fresh window</td><td>The refresh token and client id. The response then <strong>rewrites your on-disk Claude Code credentials, the macOS Keychain item and the GNOME keyring.</strong></td></tr>
+                        <tr><td>chatgpt.com</td><td>Codex usage</td><td>The Codex access token, plus the ChatGPT account id in request headers</td></tr>
+                        <tr><td>chatgpt.com (auto quota-starter, Beta, default off)</td><td>Deliberately spends a little of your ChatGPT quota to start a fresh limit window after a reset</td><td><strong>The only call in onWatch that submits generative content and bills your account.</strong> A full model request with an instructions string and a fixed one-line prompt, sent with originator codex_cli_rs. Opt in only via CODEX_AUTO_START_5H / CODEX_AUTO_START_7D.</td></tr>
+                        <tr><td>auth.openai.com</td><td>Codex OAuth refresh</td><td>Refresh token and client id. The response rewrites your Codex auth.json.</td></tr>
+                        <tr><td>api.github.com</td><td>GitHub Copilot quota</td><td>Bearer COPILOT_TOKEN. Requires an explicit token - no auto-detection.</td></tr>
+                        <tr><td>api.minimax.io / www.minimaxi.com</td><td>MiniMax coding-plan quota; the second only for the China region</td><td>Bearer MINIMAX_API_KEY</td></tr>
+                        <tr><td>cloudcode-pa.googleapis.com</td><td>Gemini Code Assist quota and tier</td><td>Google OAuth access token, project and tier identifiers in the body</td></tr>
+                        <tr><td>oauth2.googleapis.com</td><td>Gemini OAuth refresh</td><td>Google refresh token, OAuth client id and client secret</td></tr>
+                        <tr><td>api2.cursor.sh</td><td>Cursor usage, and OAuth refresh</td><td>Cursor access token, then the refresh token on expiry</td></tr>
+                        <tr><td>cursor.com</td><td>Cursor plan info and per-user usage</td><td><strong>A full web session cookie, not a scoped API key</strong>, plus your Cursor user id in the query string</td></tr>
+                        <tr><td>api.kimi.com / auth.kimi.com</td><td>Kimi Code usage, and OAuth refresh</td><td>Kimi access token, then the refresh token</td></tr>
+                        <tr><td>grok.com</td><td>Grok credits and quota</td><td>Grok access token, plus <strong>forged Origin and Referer headers so the request looks like the Grok web app</strong></td></tr>
+                        <tr><td>api.moonshot.ai</td><td>Moonshot balance</td><td>Bearer MOONSHOT_API_KEY</td></tr>
+                        <tr><td>api.deepseek.com</td><td>DeepSeek balance</td><td>Bearer DEEPSEEK_API_KEY</td></tr>
+                        <tr><td>openrouter.ai</td><td>OpenRouter key limits and usage</td><td>Bearer OPENROUTER_API_KEY</td></tr>
+                        <tr><td>ollama.com</td><td>Ollama Cloud usage and account identity</td><td>Bearer OLLAMA_API_KEY. The identity response is where account_email and account_name come from.</td></tr>
+                        <tr><td>127.0.0.1:42100 (Antigravity)</td><td>Antigravity quota from the locally running IDE</td><td><strong>Nothing leaves the machine.</strong> Caveat: ANTIGRAVITY_BASE_URL is unvalidated and the CSRF token is sent to whatever host it names. Do not point it off-box.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-section-desc">Three of those change what a vendor sees, so they are worth restating plainly: onWatch <strong>impersonates the Claude Code client</strong> to Anthropic, <strong>forges the Grok web app's Origin and Referer</strong> to xAI, and sends <strong>full web session cookies</strong> rather than scoped API keys to Cursor and OpenCode. If your organisation has rules about how its accounts may be accessed, check them against these facts.</p>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Where it goes: notifications, the version check, and clicks</h3>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Destination</th><th>When</th><th>What it learns</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Your SMTP relay</td><td>Only if you configure email alerts</td><td>The SMTP username and password, the From and To addresses, and an alert body naming the provider, quota and utilisation percentage - so the relay learns your recipients and your quota posture. <strong>With protocol set to "none", the mail server credentials are transmitted in plaintext.</strong> Choose "none" only on a network and server you trust completely.</td></tr>
+                        <tr><td>The browser's push service (Google FCM, Mozilla, Apple or Microsoft, chosen by the viewer's browser, not by onWatch)</td><td>Only if you enable push</td><td>The alert payload is AES-128-GCM encrypted, <strong>so the push service cannot read your alerts.</strong> It does still learn the daemon's egress IP address, the timing and frequency of every alert, the subscription endpoint identifying that browser install, and onWatch's VAPID public key.</td></tr>
+                        <tr><td>api.github.com</td><td>Version check, on dashboard load and hourly, <strong>only while it is enabled</strong></td><td>This machine's egress IP address and User-Agent onwatch/{{.Version}}, which discloses the exact installed version. <strong>Turn it off in <a href="{{.BasePath}}/settings">Settings</a> under General, "Privacy &amp; Outbound Connections", or set ONWATCH_UPDATE_CHECK=false to pin it off for the deployment. When it is off, onWatch makes no version request at all.</strong> Downloading a new binary happens only when you click Update.</td></tr>
+                        <tr><td>onwatch.onllm.dev, onllm.dev, github.com, buymeacoffee.com, www.reddit.com</td><td>Only when a person clicks a footer link or the one contextual badge</td><td>Nothing until clicked - these are inert links, not fetched resources. On click, that destination sees the clicker's IP address, User-Agent and an origin-only Referer.</td></tr>
+                        <tr><td>Docker Hub, the Alpine CDN, the Go module proxy and checksum services, and Google's container registry</td><td>Build time only, if you build the container image yourself</td><td>The builder's IP address and the images and module versions requested - which discloses the full dependency graph. All four are mirrorable, or use the Nix build. The shipped container and the release binary make none of these calls at runtime.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-section-desc"><strong>The dashboard serves every asset from inside the binary.</strong> Chart.js and the webfonts are vendored, the Content-Security-Policy is 'self' only, and a test fails the build if any template or static file references a third-party origin. No viewer's IP address reaches Google or any CDN, on any page, including the unauthenticated login page. The dashboard loads no third-party fonts, no third-party scripts and no analytics or tag managers of any kind. The tray companion is fully local, over 127.0.0.1.</p>
+            <p class="settings-section-desc">There is no single offline switch. To run fully air-gapped: turn the version check off, turn off or do not configure every provider, and leave notifications unconfigured. At that point onWatch makes no outbound request at all.</p>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <!-- Credentials -->
+        <div class="settings-section">
+            <h3 class="settings-section-title">Credentials: what onWatch reads, and what it rewrites</h3>
+            <p class="settings-section-desc">onWatch has no provider credentials of its own. It uses yours, and for OAuth providers it keeps them alive by refreshing them - which means writing to files it does not own. This is controllable: <a href="{{.BasePath}}/settings">Settings</a> under General, Credentials, <strong>"Auto refresh tokens"</strong>. Turn it off and onWatch stops writing refreshed tokens back into harness credential files.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Path</th><th>Access</th><th>What is involved</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>~/.gemini/oauth_creds.json</td><td>Read only</td><td>access_token, refresh_token, id_token, scope, expiry. The refreshed copy is persisted <em>into the database</em> under gemini_tokens, so erasing the database does not touch this file and deleting this file does not erase the database copy.</td></tr>
+                        <tr><td>~/.grok/auth.json</td><td>Read only</td><td>The richest identity file onWatch touches: key, refresh_token, auth_mode, email, team_id, user_id, <strong>first_name, last_name</strong>, expires_at. The email, team id and login method end up in grok_snapshots; the names stay in memory.</td></tr>
+                        <tr><td>Cursor's state.vscdb</td><td>Read only</td><td>onWatch opens Cursor's own SQLite state database and reads the session token out of it, so a live Cursor session credential passes through onWatch's memory. The path is logged on failure.</td></tr>
+                        <tr><td>The running Antigravity IDE's process command line</td><td>Read only</td><td>There is no credential file for Antigravity - onWatch enumerates local processes and lifts the CSRF token off the command line.</td></tr>
+                        <tr><td>~/.claude/.credentials.json</td><td><strong>Read and rewritten</strong></td><td>The refreshed Claude Code OAuth block: accessToken, refreshToken, expiresAt, scopes, subscriptionType, rateLimitTier. Leaves a <strong>.credentials.json.bak</strong> copy.</td></tr>
+                        <tr><td>macOS Keychain item "Claude Code-credentials", and the GNOME keyring via secret-tool</td><td><strong>Written</strong></td><td>The same refreshed tokens, into the stores Claude Code actually reads, keyed by your OS username.</td></tr>
+                        <tr><td>~/.codex/auth.json</td><td><strong>Read and rewritten</strong></td><td>OPENAI_API_KEY and the access, refresh and id tokens plus account_id. Leaves a <strong>.bak</strong> copy.</td></tr>
+                        <tr><td>OpenCode auth.json</td><td><strong>Read and rewritten</strong></td><td>The openai block: type, refresh, access, expires, accountId. Leaves a <strong>.bak</strong> copy.</td></tr>
+                        <tr><td>kimi-code.json</td><td><strong>Read and rewritten</strong></td><td>access_token, refresh_token, token_type, scope, expiry. Mode 0600.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-section-desc"><strong>The .bak files are never cleaned up.</strong> Each one is a second, unmanaged copy of a live OAuth refresh token sitting next to the original. If you are hardening a deployment, or decommissioning a machine, find and remove them. Anthropic refresh tokens are one-time-use with rotation, so a stale .bak may hold a token that is already spent - or one that still works.</p>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">What is encrypted at rest, and what is not</h3>
+            <p class="settings-section-desc">The database file as a whole is <strong>not</strong> encrypted. Individual values are, as listed. The key is derived with HKDF from the dashboard password hash plus the encryption_salt setting, and the data is re-encrypted when the dashboard password changes - so a weak dashboard password weakens the encrypted values too, and losing the salt makes them undecryptable. Full-disk encryption remains the right control for everything else.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Value</th><th>State</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>settings.smtp password</td><td><strong>Encrypted</strong>, AES-256-GCM</td></tr>
+                        <tr><td>settings.gemini_tokens (Google access and refresh token)</td><td><strong>Encrypted</strong>, AES-256-GCM</td></tr>
+                        <tr><td>provider_accounts.metadata (includes the MiniMax API key)</td><td><strong>Encrypted</strong>, AES-256-GCM</td></tr>
+                        <tr><td>settings.provider_settings (every provider API key, the Copilot token, the Antigravity CSRF token, the OpenCode auth cookie)</td><td><strong>Not encrypted.</strong> Plaintext at rest. Redacted from API responses, which protects the display, not the file.</td></tr>
+                        <tr><td>settings.vapid_keys, including the Web Push private key</td><td><strong>Not encrypted.</strong> Plaintext at rest.</td></tr>
+                        <tr><td>settings.smtp username, from_address, to</td><td><strong>Not encrypted.</strong> Plaintext email addresses at rest.</td></tr>
+                        <tr><td>users.password_hash</td><td>bcrypt hash (legacy installs: 64-hex SHA-256). A hash, not encryption.</td></tr>
+                        <tr><td>auth_tokens.token</td><td>Plaintext, but expires at 7 days and all tokens are deleted on password change.</td></tr>
+                        <tr><td>~/.onwatch/.env</td><td><strong>Not encrypted.</strong> Every provider secret and the dashboard login in cleartext, mode 0600.</td></tr>
+                        <tr><td>Other tools' credential files</td><td>Whatever protection that tool applies. onWatch writes mode 0600 where it writes at all.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <!-- Retention -->
+        <div class="settings-section">
+            <h3 class="settings-section-title">How long it is kept</h3>
+            <p class="settings-section-desc">Retention is a policy <strong>you set</strong>. There are two settings, both a whole number of days, both in <a href="{{.BasePath}}/settings">Settings</a> under General, and both also settable per deployment with the environment variables ONWATCH_RETENTION_SCRUB_DAYS and ONWATCH_RETENTION_DELETE_DAYS. <strong>Both default to zero, which means keep everything forever</strong> - that is the default for every install, new and existing. An unset, empty or unparseable value is also read as "keep everything" rather than guessed at, because a retention pass is destructive and an unreadable setting must never be taken as permission to delete. If you need storage limitation, which GDPR Art. 5(1)(e) is not optional about for an organisational deployment, <strong>you have to set these yourself.</strong></p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Setting</th><th>Effect once a row is older than it</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>retention_scrub_days</td><td><strong>Scrub:</strong> the identifier and verbatim-payload columns are cleared in place - emails, account names, labels, external_id, project_id, user_id, raw_json, and the telemetry account_name, request_id, metadata_json and source_path. The numeric quota columns beside them are deliberately left alone, so long-term charts survive scrubbing.</td></tr>
+                        <tr><td>retention_delete_days</td><td><strong>Delete:</strong> the row is removed, with its child rows deleted first so no orphan is left behind. Must be at least retention_scrub_days, or rows would be deleted before they were ever scrubbed. Maximum 36500 days.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-section-desc">The policy is enforced by an hourly pass that re-reads the settings each time, so a change made in the dashboard takes effect within the hour without a restart, and an environment value is the default for whichever of the two periods you have not set in the dashboard. Scrubbing runs before deletion, so a row due for both ends up deleted rather than scrubbed twice. The tables the policy covers come from one declarative registry, and a test fails the build if a table in the schema is left unclassified - that is what stops a newly added provider from quietly creating a table that escapes retention, export and erasure.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Data</th><th>Retention</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Provider snapshot history, quota values, model values and reset cycles</td><td>Per the policy above. <strong>Default: kept indefinitely.</strong></td></tr>
+                        <tr><td>system_alerts</td><td>Per the policy above, by created_at. Dismissing an alert only marks it dismissed; retention or erasure is what removes it.</td></tr>
+                        <tr><td>api_integration_usage_events</td><td>60 days by default, from ONWATCH_API_INTEGRATIONS_RETENTION (for example 720h; 0 disables pruning). This is the one automatic prune that predates the retention policy.</td></tr>
+                        <tr><td>api_integration_ingest_state</td><td>Per the policy above, by updated_at. The 60-day event prune does not touch this table, so without a retention policy the 512 KB partial_line fragments persist.</td></tr>
+                        <tr><td>auth_tokens and in-memory sessions</td><td>7 days maximum, evicted on a ticker, and all tokens deleted when the dashboard password changes</td></tr>
+                        <tr><td>Login rate-limiter entries (IP addresses)</td><td>Minutes, in memory only, capped at 1000 entries</td></tr>
+                        <tr><td>users, provider_accounts, push_subscriptions, settings</td><td>Until you delete them. These are configuration, not history.</td></tr>
+                        <tr><td>~/.onwatch/data/.onwatch.log</td><td>Size-capped at 4 x 50 MB. <strong>No time limit.</strong> Under Docker it goes to your container log instead, with whatever retention your log stack applies.</td></tr>
+                        <tr><td>~/.onwatch/api-integrations/*.jsonl, ~/.onwatch/quickview-profile/, and the credential .bak files</td><td><strong>Never touched by onWatch.</strong> Your files, your retention.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Export and erasure</h3>
+            <p class="settings-section-desc"><strong>Export.</strong> From <a href="{{.BasePath}}/settings">Settings</a>, or <code>GET /api/privacy/export</code>. Returns one JSON file, <code>onwatch-export-&lt;timestamp&gt;.json</code>, walking every table in the registry rather than only the 17 with obvious identifiers. It is streamed straight out of SQLite so a long history does not blow the 40 MB memory ceiling, and it is capped at 20000 rows per table with any truncation recorded in the output rather than silently dropped. <strong>Credential values are replaced with a redaction marker; personal data is not redacted</strong> - the point of the file is to show what is held. Treat the download as sensitive: it is a complete copy of the account's usage history.</p>
+            <p class="settings-section-desc"><strong>Erasure.</strong> From <a href="{{.BasePath}}/settings">Settings</a>, or <code>POST /api/privacy/erase</code>, in two scopes: <em>all</em> clears every provider's history plus the device and account records, and <em>provider</em> clears one named provider, which is the proportionate answer when only one account is in question. It requires a typed confirmation, because it cannot be undone.</p>
+            <p class="settings-section-desc">Two limits to be precise about. <strong>Erasure does not shrink the database file</strong> - SQLite leaves the freed pages in place, so run VACUUM after a large erasure. That matters most for a database ever written by the original api-integrations build, which holds whole raw telemetry lines in the dropped raw_line column until it is vacuumed. And erasure removes rows, not files.</p>
+            <p class="settings-section-desc"><strong>What erasure cannot reach.</strong> A database-side erasure does not remove: the original ~/.onwatch/api-integrations/*.jsonl telemetry events; the debug log and its rotations, with their IP addresses, proxy-asserted usernames and account names (or your container log under Docker); ~/.onwatch/.env; other tools' credential files and the .bak copies onWatch left beside them; ~/.onwatch/quickview-profile/; <strong>your backups</strong>, which still contain everything you erased from the live database; and the provider's own records - onWatch reads a vendor's API and cannot delete anything on the vendor's side, so an erasure request covering the underlying AI usage has to go to that vendor directly.</p>
+            <p class="settings-section-desc">Decisions that are the deployer's, not onWatch's: the two retention windows, which default to keeping everything; who can reach this dashboard; whether to enable the telemetry ingest and what your integrations may put in metadata; your backup retention; your container log retention; disk encryption; when to run VACUUM; and whether you tell the people whose accounts you are watching.</p>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <!-- Rights -->
+        <div class="settings-section">
+            <h3 class="settings-section-title">Your rights, and the actual mechanism for each</h3>
+            <p class="settings-section-desc">This applies where the GDPR or the DPDP Act applies - in practice to organisational deployments and shared dashboards, not to an individual watching their own accounts at home. onWatch is software, not a service: it provides the mechanism, and the deployer has to receive the request, verify who is asking, act within the statutory deadline and reply.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Right</th><th>Mechanism in onWatch</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Access (GDPR Art. 15), portability (Art. 20), information about processing (DPDP s.11)</td><td><strong>The export</strong> - GET /api/privacy/export, from Settings. Machine-readable JSON, every table in the registry. Add the disclosures on this page, which give the purposes, recipients and retention an Art. 15 response also has to state.</td></tr>
+                        <tr><td>Erasure (GDPR Art. 17), DPDP s.12(3), and erasure on consent withdrawal (DPDP s.8(7))</td><td><strong>The erasure</strong> - POST /api/privacy/erase, from Settings, scoped to one provider or to everything, then VACUUM. Read "What erasure cannot reach" above before certifying that erasure is complete - several categories sit outside the database.</td></tr>
+                        <tr><td>Rectification (GDPR Art. 16), correction and completion (DPDP s.12(1))</td><td>Honestly, it depends on the field. Provider data - emails, account names, plan, project id, usage figures - is fetched <strong>read-only</strong> from the vendor. onWatch cannot correct it, and if it did the next poll would overwrite the correction. <strong>The correction has to be made at the provider, and it then flows in on the next poll</strong>, within about two minutes on the default interval. Data you entered locally is directly editable in the dashboard: provider account names, provider tab labels, notification settings, recipients, timezone. If a correction cannot wait for the next poll, delete the affected rows.</td></tr>
+                        <tr><td>Restriction (GDPR Art. 18) and objection (Art. 21)</td><td>Turn that provider's polling off, which stops new rows immediately, and erase or scrub the existing rows. There is no flag that marks data as restricted while keeping it visible.</td></tr>
+                        <tr><td>Withdrawal of consent (GDPR Art. 7(3), DPDP s.6(4)-(6))</td><td>Turn the provider off, <strong>remove its credentials so auto-enablement does not restart it</strong>, then erase.</td></tr>
+                        <tr><td>Grievance redressal (DPDP s.13)</td><td>The contact below. <strong>The deployer must fill it in.</strong></td></tr>
+                        <tr><td>Nomination (DPDP s.14)</td><td>onWatch has no nomination feature. See below.</td></tr>
+                        <tr><td>Complaint to a supervisory authority (GDPR Art. 77) or the Data Protection Board of India (DPDP s.13(3))</td><td>Always available. Under DPDP s.13(3) a data principal must ordinarily use the Data Fiduciary's own grievance mechanism first, which is why the section below has to be real.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Grievance contact</h3>
+            <p class="settings-section-desc"><strong>DEPLOYER: REPLACE THIS BLOCK BEFORE SHOWING THIS PAGE TO ANYONE.</strong></p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Field</th><th>Value</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Data Controller / Data Fiduciary</td><td>[legal entity name, registered address]</td></tr>
+                        <tr><td>Grievance Officer, or contact for data protection queries</td><td>[name or role]</td></tr>
+                        <tr><td>Email (must be monitored)</td><td>[email address]</td></tr>
+                        <tr><td>Postal address</td><td>[address]</td></tr>
+                        <tr><td>Response time committed to</td><td>[for example, within 30 days]</td></tr>
+                        <tr><td>Data Protection Officer, if appointed (GDPR Art. 37)</td><td>[name and contact]</td></tr>
+                        <tr><td>EU or UK representative, if required (GDPR Art. 27)</td><td>[name and contact]</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-section-desc"><strong>A Data Fiduciary must publish this.</strong> DPDP Act s.8(9) requires publishing the business contact information of a Data Protection Officer or of a person able to answer a data principal's questions, and s.8(10) requires a grievance redressal mechanism; s.13 gives the data principal the right to use it and requires a response within the prescribed period. The GDPR separately requires controller identity and contact details in any Art. 13 or 14 notice. <strong>If you are an individual running onWatch for yourself, this section does not apply to you</strong> - there is nobody to appoint and nobody to publish to.</p>
+            <p class="settings-section-desc">The onWatch project is not the contact for any of this. It holds none of your data and cannot act on a request about it. Bugs and security issues in the software are a separate matter and do go to the project, through the repository's SECURITY.md process.</p>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Nomination (DPDP Act s.14)</h3>
+            <p class="settings-section-desc">Section 14 lets a data principal nominate someone to exercise their rights on their behalf in the event of death or incapacity. <strong>onWatch has no nomination feature</strong> - no field for a nominee, no way to verify one, no way to hand a nominee an account. If the DPDP Act applies to your deployment, offering nomination is your duty as Data Fiduciary and has to be handled outside onWatch: accept the nomination through your grievance channel, record it with your other data protection records, verify the nominee when they come forward, and then use export and erasure to give effect to what they ask for.</p>
+            <p class="settings-section-desc">If you deploy onWatch for a team, decide now, in writing, what happens to a member's usage history when they leave, die or become incapacitated. That is a retention and erasure decision you already have to make.</p>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Children's data (DPDP Act s.9)</h3>
+            <p class="settings-section-desc">onWatch is a developer tool for tracking paid AI provider quotas. It is not directed at children, has no consumer sign-up, no public instance, and no way for anyone to create an account - the deployer sets a single dashboard password. It processes no data it knows or has reason to believe belongs to a child: the only people whose data it holds are the holders of the provider accounts being watched, and those are paid AI accounts held by the deployer.</p>
+            <p class="settings-section-desc">onWatch <strong>cannot</strong> verify age and does not try. There is no age gate and no field anywhere that records an age. If a deployer configures onWatch to watch a child's account, onWatch will have no idea, and the s.9(1) verifiable parental consent obligation falls entirely on that deployer.</p>
+            <p class="settings-section-desc"><strong>DPDP s.9(3) is not engaged.</strong> That subsection prohibits tracking, behavioural monitoring and targeted advertising directed at children. onWatch does none of those things for anyone of any age: no advertising, no ad tech, no third-party trackers, no cross-site identifiers, no profiling, no automated decision-making, and - since every dashboard asset is served from the binary under a 'self'-only policy - no third-party request on page load at all. There is nothing here to exempt, because there is nothing here to prohibit. The same reasoning applies to persons with disabilities who have a lawful guardian under s.9(2).</p>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Cross-border transfers</h3>
+            <p class="settings-section-desc">Relevant under GDPR Art. 44-49 and DPDP Act s.16. onWatch itself transfers nothing anywhere - it has no infrastructure. Every transfer below follows from a destination <strong>you</strong> chose, under that vendor's own terms, and onWatch has no visibility into it. An EU or UK controller needs a transfer mechanism for each one actually used.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Transfer</th><th>Where it goes, and what to check</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Provider API polls</td><td>Wherever that vendor processes; most are US companies. <strong>Two cases are region-selectable by you</strong>, so the jurisdiction is your choice to make and document: Z.ai via api.z.ai versus open.bigmodel.cn (China), and MiniMax via api.minimax.io versus www.minimaxi.com (China). Note also that Moonshot, Kimi and Z.ai are Chinese-headquartered vendors whichever endpoint you use.</td></tr>
+                        <tr><td>OAuth token refresh endpoints</td><td>console.anthropic.com, auth.openai.com, oauth2.googleapis.com, api2.cursor.sh, auth.kimi.com - the same jurisdictions as the vendors.</td></tr>
+                        <tr><td>Your SMTP relay</td><td>Wherever you pointed it. A hosted mail provider may be in another country and may retain message content and metadata under its own policy. Your choice, your transfer, your assessment.</td></tr>
+                        <tr><td>The browser's push service</td><td>Google, Mozilla, Apple or Microsoft, <strong>chosen by the viewer's browser</strong>, not by you and not by onWatch. Payloads are encrypted end to end, but the daemon's IP address and the timing of every alert are disclosed. This is genuinely awkward to assess because the destination changes with the browser a viewer happens to use. If that is unacceptable for your deployment, do not enable push - use email.</td></tr>
+                        <tr><td>api.github.com version check</td><td>GitHub, a US company. <strong>Switch it off and this transfer does not happen</strong> - Settings, General, "Privacy &amp; Outbound Connections", or ONWATCH_UPDATE_CHECK=false.</td></tr>
+                        <tr><td>Build-time fetches</td><td>Docker Hub, Alpine's CDN, Google-operated Go module and checksum services, and Google's container registry. Builder infrastructure only, and all four are mirrorable.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Security safeguards</h3>
+            <p class="settings-section-desc">Not duplicated here, because it would go stale. See <code>SECURITY.md</code> in the repository for the security model, hardening guidance, supported versions and how to report a vulnerability. Three facts from this page most affect your posture, so you do not have to cross-reference for them: the database is <strong>not encrypted as a file</strong>, and provider_settings, vapid_keys and the SMTP addresses are plaintext inside it, so use full-disk encryption; onWatch <strong>writes to other tools' credential files</strong> and leaves uncleaned .bak copies of live refresh tokens beside them, which "Auto refresh tokens" turns off; and the dashboard has <strong>one shared password</strong>, no per-user accounts and no audit trail of who looked at what - if more than one person can reach it, that is the control you are missing, and the debug log's IP addresses are not a substitute.</p>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">Changes to this notice</h3>
+            <p class="settings-section-desc">This notice is versioned with the source. Any change to what onWatch stores, where it sends it, or how long it keeps it is reflected here in the same release that makes the change, and the commit history of <code>docs/PRIVACY.md</code> is the authoritative changelog for it. There is no remote copy that can be changed underneath you: the page you are reading is compiled into the binary you are running. onWatch cannot notify anyone of a change, because it has no way to contact anyone - if you are a deployer, re-read this on upgrade and update your own notice if anything moved.</p>
+            <p class="settings-section-desc"><strong>Last reviewed: 2026-09-16.</strong> Describes onWatch v{{.Version}}. <a href="{{.BasePath}}/">Back to dashboard</a> or go to <a href="{{.BasePath}}/settings">Settings</a>.</p>
+        </div>
+
+    </main>
+
+    <footer class="app-footer">
+        <div class="footer-content">
+            <span class="footer-brand"><a href="https://onwatch.onllm.dev" class="footer-link" target="_blank" rel="noopener">onWatch v{{.Version}}</a></span>
+            <span class="footer-heart">Built with &#10084;&#65039; by <a href="https://onllm.dev" class="footer-link" target="_blank" rel="noopener">onllm.dev</a></span>
+            <div class="footer-links">
+                <a href="{{.BasePath}}/" class="footer-link">Dashboard</a>
+                <span class="footer-sep">&#183;</span>
+                <a href="{{.BasePath}}/settings" class="footer-link">Settings</a>
+                <span class="footer-sep">&#183;</span>
+                <a href="https://github.com/onllm-dev/onwatch" class="footer-link" target="_blank" rel="noopener">GitHub</a>
+            </div>
+        </div>
+    </footer>
+</div>
+{{end}}

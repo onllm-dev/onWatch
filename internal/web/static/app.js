@@ -9453,7 +9453,52 @@ function renderPagination(table, page, totalPages) {
 
 // ── Self-Update ──
 
+// Mirrors the update_check setting. The server refuses the call when the
+// setting is off, but the request itself is the thing being avoided: an
+// hourly poll from an open dashboard tab is what made this an undisclosed
+// outbound connection in the first place. Assumed on until /api/settings says
+// otherwise, then corrected by refreshUpdateCheckSetting() before the first
+// scheduled call.
+let updateCheckEnabled = true;
+
+// refreshUpdateCheckSetting reads the current toggle state. The dashboard page
+// does not otherwise load settings, so without this a dashboard-only session
+// would keep polling after the operator turned the check off in Settings.
+async function refreshUpdateCheckSetting() {
+  try {
+    const res = await authFetch('/api/settings');
+    if (!res.ok) return;
+    const data = await res.json();
+    updateCheckEnabled = data.update_check !== false;
+
+    // Retention. 0 means keep everything, which is the default.
+    const scrubDays = document.getElementById('settings-retention-scrub-days');
+    if (scrubDays) scrubDays.value = Number(data.retention_scrub_days) || 0;
+    const deleteDays = document.getElementById('settings-retention-delete-days');
+    if (deleteDays) deleteDays.value = Number(data.retention_delete_days) || 0;
+
+    // Provider list for the targeted erasure control. Built from the server's
+    // registry so it cannot drift from what the API will actually accept.
+    const erasePicker = document.getElementById('settings-erase-provider');
+    if (erasePicker && Array.isArray(data.erase_providers)) {
+      const current = erasePicker.value;
+      erasePicker.innerHTML = '<option value="">Select a provider...</option>';
+      data.erase_providers.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        erasePicker.appendChild(opt);
+      });
+      erasePicker.value = current;
+    }
+  } catch (e) {
+    // Leave the previous value in place; a failed settings read must not
+    // silently re-enable an outbound call the operator turned off.
+  }
+}
+
 async function checkForUpdate() {
+  if (!updateCheckEnabled) return;
   try {
     const res = await authFetch('/api/update/check');
     const data = await res.json();
@@ -9542,6 +9587,7 @@ async function initSettingsPage() {
   setupSMTPTest();
   setupPushNotifications();
   setupSettingsPassword();
+  setupPrivacyControls();
   setupThresholdSliders();
   setupOverrides();
 }
@@ -9642,6 +9688,18 @@ async function loadSettings() {
     if (autoRefresh) {
       autoRefresh.checked = data.auto_refresh_tokens !== false;
     }
+
+    // Update check (default on). A deployment can pin it off with
+    // ONWATCH_UPDATE_CHECK, in which case the toggle is shown disabled with a
+    // hint rather than letting the operator flip a switch that does nothing.
+    const updateCheck = document.getElementById('settings-update-check');
+    if (updateCheck) {
+      updateCheck.checked = data.update_check !== false;
+      updateCheck.disabled = data.update_check_locked === true;
+      const lockHint = document.getElementById('settings-update-check-lock-hint');
+      if (lockHint) lockHint.hidden = data.update_check_locked !== true;
+    }
+    updateCheckEnabled = data.update_check !== false;
 
     // SMTP
     if (data.smtp) {
@@ -11449,6 +11507,25 @@ function gatherSettings() {
     settings.auto_refresh_tokens = !!autoRefresh.checked;
   }
 
+  // Update check. A disabled control means the deployment pinned the value, so
+  // do not send it back and overwrite the stored setting.
+  const updateCheck = document.getElementById('settings-update-check');
+  if (updateCheck && !updateCheck.disabled) {
+    settings.update_check = !!updateCheck.checked;
+    updateCheckEnabled = !!updateCheck.checked;
+  }
+
+  // Retention periods, in whole days. The server rejects a delete period
+  // shorter than the scrub period, so the error surfaces in the save feedback.
+  const scrubDaysInput = document.getElementById('settings-retention-scrub-days');
+  if (scrubDaysInput) {
+    settings.retention_scrub_days = Math.max(0, parseInt(scrubDaysInput.value, 10) || 0);
+  }
+  const deleteDaysInput = document.getElementById('settings-retention-delete-days');
+  if (deleteDaysInput) {
+    settings.retention_delete_days = Math.max(0, parseInt(deleteDaysInput.value, 10) || 0);
+  }
+
   // Global display mode goes under provider_settings.global. Other provider
   // settings (API keys, tokens, etc.) are still saved via the per-provider
   // modal because the server strips sensitive keys from the GET response;
@@ -11810,6 +11887,75 @@ function urlBase64ToUint8Array(base64String) {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
+}
+
+// ── Data rights: export and erasure ──
+
+// setupPrivacyControls wires the export download and the two erasure paths.
+// Erasure is irreversible, so both paths require the operator to type the
+// confirmation word the API also insists on - a single click is not enough.
+function setupPrivacyControls() {
+  const feedback = document.getElementById('settings-privacy-feedback');
+
+  const exportBtn = document.getElementById('settings-export-data');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      // A plain navigation, so the browser handles the download and the
+      // Content-Disposition filename rather than buffering it in memory.
+      window.location.href = `${API_BASE}/api/privacy/export`;
+      if (feedback) showSettingsFeedback(feedback, 'Export started - check your downloads.', 'success');
+    });
+  }
+
+  async function erase(payload, describe) {
+    if (feedback) feedback.hidden = true;
+    const typed = window.prompt(
+      `${describe}\n\nThis cannot be undone. Type ERASE to confirm:`);
+    if (typed === null) return;
+    if (typed !== 'ERASE') {
+      if (feedback) showSettingsFeedback(feedback, 'Erasure cancelled - confirmation did not match.', 'error');
+      return;
+    }
+
+    try {
+      const res = await authFetch(`${API_BASE}/api/privacy/erase`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ confirm: 'ERASE' }, payload)),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (feedback) showSettingsFeedback(feedback, data.error || 'Erasure failed.', 'error');
+        return;
+      }
+      const rows = Object.values(data.removed || {}).reduce((a, b) => a + b, 0);
+      if (feedback) {
+        showSettingsFeedback(feedback, `Erased ${rows} record${rows === 1 ? '' : 's'}. Reloading...`, 'success');
+      }
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (e) {
+      if (feedback) showSettingsFeedback(feedback, 'Erasure failed - see the daemon log.', 'error');
+    }
+  }
+
+  const eraseAllBtn = document.getElementById('settings-erase-data');
+  if (eraseAllBtn) {
+    eraseAllBtn.addEventListener('click', () => {
+      erase({ scope: 'all' },
+        'Delete ALL stored usage history, provider accounts and push subscriptions, and drop stored provider credentials.');
+    });
+  }
+
+  const erasePicker = document.getElementById('settings-erase-provider');
+  if (erasePicker) {
+    erasePicker.addEventListener('change', () => {
+      const provider = erasePicker.value;
+      if (!provider) return;
+      erase({ scope: 'provider', provider },
+        `Delete everything stored for ${provider}.`)
+        .finally(() => { erasePicker.value = ''; });
+    });
+  }
 }
 
 function setupSettingsPassword() {
@@ -12328,9 +12474,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     startCountdowns();
     startAutoRefresh();
 
-    // Check for updates on load and every 60 minutes
-    checkForUpdate();
-    setInterval(checkForUpdate, 3600000);
+    // Check for updates on load and every 60 minutes, but read the setting
+    // first so a dashboard opened with checks turned off makes no request at
+    // all. Re-read it on each tick as well, so a change made in another tab or
+    // by another operator takes effect without a reload.
+    refreshUpdateCheckSetting().then(() => {
+      checkForUpdate();
+      setInterval(() => {
+        refreshUpdateCheckSetting().then(checkForUpdate);
+      }, 3600000);
+    });
 
     // Update button click handler
     const updateBtn = document.getElementById('update-btn');

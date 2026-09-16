@@ -84,6 +84,11 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/cycle-overview"), handler.CycleOverview)
 	mux.HandleFunc(p("/api/logging-history"), handler.LoggingHistory)
 	mux.HandleFunc(p("/api/update/check"), handler.CheckUpdate)
+	// Data-protection surfaces: the notice is public (GDPR Art. 12 asks for it
+	// to be easily accessible), the export and erasure are not.
+	mux.HandleFunc(p("/privacy"), handler.PrivacyPage)
+	mux.HandleFunc(p("/api/privacy/export"), handler.ExportData)
+	mux.HandleFunc(p("/api/privacy/erase"), handler.EraseData)
 	mux.HandleFunc(p("/api/update/apply"), handler.ApplyUpdate)
 	mux.HandleFunc(p("/api/push/vapid"), handler.PushVAPIDKey)
 	mux.HandleFunc(p("/api/push/subscribe"), handler.PushSubscribe)

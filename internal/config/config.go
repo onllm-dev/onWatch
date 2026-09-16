@@ -121,6 +121,21 @@ type Config struct {
 	DebugMode          bool          // --debug flag (foreground mode)
 	DebugStdout        bool          // --debugstdout flag (foreground + all logs to stdout)
 	TestMode           bool          // --test flag (test mode isolation)
+
+	// UpdateCheckForcedOff is set by ONWATCH_UPDATE_CHECK=false and pins the
+	// automatic version check off for the whole deployment, overriding the
+	// dashboard toggle. The env var can only restrict, never force back on: a
+	// true value merely restates the default, because a privacy control the
+	// operator cannot switch off from the dashboard would not be a withdrawal
+	// as easy as giving consent (DPDP s.6(4)).
+	UpdateCheckForcedOff bool // ONWATCH_UPDATE_CHECK
+
+	// RetentionScrubDays and RetentionDeleteDays seed the data retention
+	// policy in whole days, 0 meaning keep everything. They exist so a
+	// container deployment can start with a policy already in force; the
+	// dashboard setting takes precedence once the operator chooses one.
+	RetentionScrubDays  int // ONWATCH_RETENTION_SCRUB_DAYS
+	RetentionDeleteDays int // ONWATCH_RETENTION_DELETE_DAYS
 }
 
 // envWithFallback reads the primary env var, falling back to the legacy name.
@@ -130,6 +145,21 @@ func envWithFallback(primary, fallback string) string {
 		return v
 	}
 	return os.Getenv(fallback)
+}
+
+// envDays reads a whole number of days from an environment variable. An
+// unset, empty, negative or unparseable value yields 0, which every retention
+// path reads as "keep everything".
+func envDays(name string) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return 0
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil || days < 0 {
+		return 0
+	}
+	return days
 }
 
 // expandTilde replaces a leading ~ with the user's home directory.
@@ -498,6 +528,18 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// Metrics token for Prometheus endpoint
 	cfg.MetricsToken = os.Getenv("ONWATCH_METRICS_TOKEN")
+
+	// Automatic version check. Only a false value carries meaning; see the
+	// UpdateCheckForcedOff field comment.
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ONWATCH_UPDATE_CHECK"))) {
+	case "0", "false", "no", "off":
+		cfg.UpdateCheckForcedOff = true
+	}
+
+	// Retention defaults, in days. An unparseable value is ignored rather than
+	// guessed at: retention deletes data, so a typo must not become a policy.
+	cfg.RetentionScrubDays = envDays("ONWATCH_RETENTION_SCRUB_DAYS")
+	cfg.RetentionDeleteDays = envDays("ONWATCH_RETENTION_DELETE_DAYS")
 
 	// Host (bind address)
 	cfg.Host = envWithFallback("ONWATCH_HOST", "SYNTRACK_HOST")

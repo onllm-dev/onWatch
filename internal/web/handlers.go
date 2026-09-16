@@ -106,6 +106,7 @@ type Handler struct {
 	dashboardTmpl      *template.Template
 	loginTmpl          *template.Template
 	settingsTmpl       *template.Template
+	privacyTmpl        *template.Template
 	sessions           *SessionStore
 	config             *config.Config
 	metrics            *metrics.Metrics
@@ -702,6 +703,13 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 		settingsTmpl = template.New("empty")
 	}
 
+	// Parse privacy notice template (layout + privacy)
+	privacyTmpl, err := template.New("").ParseFS(templatesFS, "templates/layout.html", "templates/privacy.html")
+	if err != nil {
+		logger.Error("failed to parse privacy template", "error", err)
+		privacyTmpl = template.New("empty")
+	}
+
 	h := &Handler{
 		store:         store,
 		tracker:       tracker,
@@ -709,6 +717,7 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 		dashboardTmpl: dashboardTmpl,
 		loginTmpl:     loginTmpl,
 		settingsTmpl:  settingsTmpl,
+		privacyTmpl:   privacyTmpl,
 		sessions:      sessions,
 		config:        cfg,
 		metrics:       metrics.New(),
@@ -6641,11 +6650,26 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		autoRefreshTokens = h.store.AutoRefreshTokensEnabled()
 	}
 
+	// Version check: off wins. A deployment that pins it off with
+	// ONWATCH_UPDATE_CHECK=false reports locked so the dashboard can disable
+	// the toggle and say why, rather than offering a switch that does nothing.
+	updateCheckLocked := h.config != nil && h.config.UpdateCheckForcedOff
+	updateCheck := !updateCheckLocked && h.store.UpdateCheckEnabled()
+
+	// Retention, reported in whole days. Zero means keep everything, which is
+	// what every install gets until the operator chooses a period.
+	retention := h.store.RetentionPolicyFromSettings()
+
 	result := map[string]interface{}{
-		"timezone":            tz,
-		"hidden_insights":     hiddenInsights,
-		"menubar":             menubarSettings,
-		"auto_refresh_tokens": autoRefreshTokens,
+		"timezone":              tz,
+		"hidden_insights":       hiddenInsights,
+		"menubar":               menubarSettings,
+		"auto_refresh_tokens":   autoRefreshTokens,
+		"update_check":          updateCheck,
+		"update_check_locked":   updateCheckLocked,
+		"retention_scrub_days":  int(retention.ScrubAfter.Hours() / 24),
+		"retention_delete_days": int(retention.DeleteAfter.Hours() / 24),
+		"erase_providers":       store.KnownEraseProviders(),
 	}
 
 	// SMTP settings (never return the actual password)
@@ -6782,6 +6806,34 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result["auto_refresh_tokens"] = enabled
+	}
+
+	// Handle update_check (version comparison against api.github.com)
+	if raw, ok := body["update_check"]; ok {
+		var enabled bool
+		if err := json.Unmarshal(raw, &enabled); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid update_check value")
+			return
+		}
+		val := "true"
+		if !enabled {
+			val = "false"
+		}
+		if err := h.store.SetSetting(store.SettingUpdateCheck, val); err != nil {
+			h.logger.Error("failed to save update_check setting", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save setting")
+			return
+		}
+		result["update_check"] = enabled
+	}
+
+	// Handle the retention policy. Both values are in whole days, 0 meaning
+	// keep everything. They are validated together: a delete period shorter
+	// than the scrub period would mean rows are removed before they are ever
+	// scrubbed, which makes the scrub setting a lie rather than a policy.
+	if err := h.applyRetentionSettings(body, result); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	// Handle hidden_insights
@@ -7463,10 +7515,30 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "password updated successfully"})
 }
 
+// updateCheckAllowed reports whether a version check may contact GitHub.
+// ONWATCH_UPDATE_CHECK=false pins it off for the deployment; otherwise the
+// dashboard toggle decides.
+func (h *Handler) updateCheckAllowed() bool {
+	if h.config != nil && h.config.UpdateCheckForcedOff {
+		return false
+	}
+	return h.store.UpdateCheckEnabled()
+}
+
 // CheckUpdate checks for available updates (GET /api/update/check).
 func (h *Handler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	// No outbound request when the operator turned version checks off. This
+	// answers 200 rather than an error because the dashboard also uses this
+	// endpoint as a liveness probe while waiting for a restart.
+	if !h.updateCheckAllowed() {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"available": false,
+			"disabled":  true,
+		})
 		return
 	}
 	if h.updater == nil {
@@ -7486,6 +7558,13 @@ func (h *Handler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ApplyUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	// Applying an update downloads a release binary from GitHub, so it obeys
+	// the same switch as the version check: an air-gapped or policy-pinned
+	// deployment must not reach out here either.
+	if !h.updateCheckAllowed() {
+		respondError(w, http.StatusForbidden, "update check is disabled - enable it in Settings to download updates")
 		return
 	}
 	if h.updater == nil {

@@ -1818,6 +1818,10 @@ func (s *Store) QuerySyntheticCycleOverview(groupBy string, limit int) ([]CycleO
 // Setting key for OAuth auto-refresh of coding-harness credentials.
 const SettingAutoRefreshTokens = "auto_refresh_tokens"
 
+// SettingUpdateCheck gates the version check against api.github.com.
+// See UpdateCheckEnabled.
+const SettingUpdateCheck = "update_check"
+
 // GetSetting returns the value for a setting key. Returns "" if not found.
 func (s *Store) GetSetting(key string) (string, error) {
 	var value string
@@ -1849,6 +1853,31 @@ func (s *Store) AutoRefreshTokensEnabled() bool {
 	}
 	val, err := s.GetSetting(SettingAutoRefreshTokens)
 	if err != nil || val == "" {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(val)) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}
+
+// UpdateCheckEnabled reports whether onWatch may contact api.github.com to
+// compare the running version against the latest release.
+//
+// That call discloses the machine's IP address and User-Agent to GitHub, so it
+// is switchable off from Settings and can be pinned off for a whole deployment
+// with ONWATCH_UPDATE_CHECK=false. Off means no version-check request at all,
+// automatic or manual, so that "off" needs no footnote. It defaults to true
+// when unset: missing a security release is its own harm, and the call is
+// itemised in the privacy notice the dashboard serves.
+func (s *Store) UpdateCheckEnabled() bool {
+	if s == nil {
+		return true
+	}
+	val, err := s.GetSetting(SettingUpdateCheck)
+	if err != nil || strings.TrimSpace(val) == "" {
 		return true
 	}
 	switch strings.ToLower(strings.TrimSpace(val)) {
