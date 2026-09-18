@@ -39,11 +39,11 @@ type Config struct {
 	CopilotToken string // COPILOT_TOKEN (GitHub PAT with copilot scope)
 
 	// Codex provider configuration
-	CodexToken         string // CODEX_TOKEN or auto-detected
-	CodexAutoToken     bool   // true if token was auto-detected
-	CodexAutoSource    string // "codex" | "opencode" when auto-detected (display/logging)
-	CodexHasProfiles   bool   // true if saved profiles exist (enables bootstrap without token)
-	OpenCodeEnabled    bool   // OPENCODE_ENABLED=true: track ChatGPT via OpenCode auth.json (feeds Codex)
+	CodexToken       string // CODEX_TOKEN or auto-detected
+	CodexAutoToken   bool   // true if token was auto-detected
+	CodexAutoSource  string // "codex" | "opencode" when auto-detected (display/logging)
+	CodexHasProfiles bool   // true if saved profiles exist (enables bootstrap without token)
+	OpenCodeEnabled  bool   // OPENCODE_ENABLED=true: track ChatGPT via OpenCode auth.json (feeds Codex)
 	// OpenCode Go provider configuration
 	OpenCodeGoWorkspaceID string // OPENCODE_GO_WORKSPACE_ID
 	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE
@@ -51,10 +51,10 @@ type Config struct {
 	OllamaAPIKey       string  // OLLAMA_API_KEY from ollama.com/settings/keys
 	OllamaMonthlyLimit float64 // OLLAMA_MONTHLY_LIMIT: included usage cap in USD (overrides the plan default; 0 = derive from plan)
 	OllamaResetDay     int     // OLLAMA_RESET_DAY: day of month the included usage resets (1-31; 0 = account anniversary)
-	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
-	CodexAutoStart5h   bool   // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
-	CodexAutoStart7d   bool   // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
-	DisplayMode        string // ONWATCH_DISPLAY_MODE: "usage" | "available", default "usage" (global, applies to all providers)
+	CodexShowAvailable string  // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
+	CodexAutoStart5h   bool    // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
+	CodexAutoStart7d   bool    // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
+	DisplayMode        string  // ONWATCH_DISPLAY_MODE: "usage" | "available", default "usage" (global, applies to all providers)
 
 	// Antigravity provider configuration (auto-detected from local process)
 	AntigravityBaseURL   string // ANTIGRAVITY_BASE_URL (for Docker)
@@ -71,7 +71,7 @@ type Config struct {
 
 	// Moonshot provider configuration
 	MoonshotAPIKey string // MOONSHOT_API_KEY
-	
+
 	// DeepSeek provider configuration
 	DeepSeekAPIKey string // DEEPSEEK_API_KEY
 
@@ -103,7 +103,7 @@ type Config struct {
 	// Shared configuration
 	PollInterval       time.Duration // ONWATCH_POLL_INTERVAL (seconds → Duration)
 	Port               int           // ONWATCH_PORT
-	Host               string        // ONWATCH_HOST (bind address, default: 0.0.0.0)
+	Host               string        // ONWATCH_HOST (bind address; default 127.0.0.1, or 0.0.0.0 in a container - see EffectiveHost)
 	SecureCookies      bool          // ONWATCH_SECURE_COOKIES (set Secure flag on cookies)
 	AdminUser          string        // ONWATCH_ADMIN_USER
 	AdminPass          string        // ONWATCH_ADMIN_PASS
@@ -136,6 +136,15 @@ type Config struct {
 	// dashboard setting takes precedence once the operator chooses one.
 	RetentionScrubDays  int // ONWATCH_RETENTION_SCRUB_DAYS
 	RetentionDeleteDays int // ONWATCH_RETENTION_DELETE_DAYS
+
+	// AllowDefaultPassword lets the dashboard bind a non-loopback address while
+	// the password is still the documented default. See ValidateNetworkExposure.
+	AllowDefaultPassword bool // ONWATCH_ALLOW_DEFAULT_PASSWORD
+
+	// MetricsPublic serves /metrics without a bearer token. Without it, and
+	// without ONWATCH_METRICS_TOKEN, the endpoint is not registered at all -
+	// it exposes per-account quota data and used to be open by default.
+	MetricsPublic bool // ONWATCH_METRICS_PUBLIC
 }
 
 // envWithFallback reads the primary env var, falling back to the legacy name.
@@ -145,6 +154,16 @@ func envWithFallback(primary, fallback string) string {
 		return v
 	}
 	return os.Getenv(fallback)
+}
+
+// envBool reads an opt-in flag. Only an affirmative value enables it, so a
+// typo leaves the safer behaviour in place.
+func envBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // envDays reads a whole number of days from an environment variable. An
@@ -425,10 +444,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// OpenRouter provider
 	cfg.OpenRouterAPIKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
-	
+
 	// Moonshot provider
 	cfg.MoonshotAPIKey = strings.TrimSpace(os.Getenv("MOONSHOT_API_KEY"))
-	
+
 	// DeepSeek provider
 	cfg.DeepSeekAPIKey = strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
 
@@ -540,6 +559,9 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// guessed at: retention deletes data, so a typo must not become a policy.
 	cfg.RetentionScrubDays = envDays("ONWATCH_RETENTION_SCRUB_DAYS")
 	cfg.RetentionDeleteDays = envDays("ONWATCH_RETENTION_DELETE_DAYS")
+
+	cfg.AllowDefaultPassword = envBool("ONWATCH_ALLOW_DEFAULT_PASSWORD")
+	cfg.MetricsPublic = envBool("ONWATCH_METRICS_PUBLIC")
 
 	// Host (bind address)
 	cfg.Host = envWithFallback("ONWATCH_HOST", "SYNTRACK_HOST")
@@ -920,7 +942,7 @@ func (c *Config) String() string {
 	// Redact MiniMax token
 	minimaxDisplay := redactAPIKey(c.MiniMaxAPIKey, "")
 	fmt.Fprintf(&sb, "  MiniMaxAPIKey: %s,\n", minimaxDisplay)
-	
+
 	// Redact Moonshot token
 	moonshotDisplay := redactAPIKey(c.MoonshotAPIKey, "")
 	fmt.Fprintf(&sb, "  MoonshotAPIKey: %s,\n", moonshotDisplay)
@@ -928,7 +950,7 @@ func (c *Config) String() string {
 	// Redact DeepSeek token
 	deepseekDisplay := redactAPIKey(c.DeepSeekAPIKey, "")
 	fmt.Fprintf(&sb, "  DeepSeekAPIKey: %s,\n", deepseekDisplay)
-	
+
 	fmt.Fprintf(&sb, "  APIIntegrationsEnabled: %v,\n", c.APIIntegrationsEnabled)
 	fmt.Fprintf(&sb, "  APIIntegrationsDir: %s,\n", c.APIIntegrationsDir)
 	fmt.Fprintf(&sb, "  APIIntegrationsRetention: %v,\n", c.APIIntegrationsRetention)

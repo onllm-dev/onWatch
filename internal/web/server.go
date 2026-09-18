@@ -114,15 +114,26 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/alerts/dismiss-all"), handler.DismissAllAlerts)
 	mux.HandleFunc(p("/api/alerts/simulate"), handler.SimulateAlert)
 
-	// Prometheus metrics endpoint (public, with bearer token auth)
+	// Prometheus metrics endpoint. It reports per-account quota usage, so it is
+	// not registered at all unless the operator has either set a bearer token or
+	// explicitly opted into serving it open. It used to be served unauthenticated
+	// whenever no token was set, which on the old 0.0.0.0 default meant the whole
+	// network could read it.
 	if handler.metrics != nil {
-		var metricsHandler http.Handler = http.HandlerFunc(handler.Metrics)
-		if metricsToken != "" {
-			metricsHandler = metricsAuthMiddleware(metricsToken, metricsHandler)
-		} else if logger != nil {
-			logger.Warn("metrics endpoint is unauthenticated; set ONWATCH_METRICS_TOKEN to restrict /metrics access")
+		metricsPublic := handler.config != nil && handler.config.MetricsPublic
+		switch {
+		case metricsToken != "":
+			mux.Handle(p("/metrics"), metricsAuthMiddleware(metricsToken, http.HandlerFunc(handler.Metrics)))
+		case metricsPublic:
+			if logger != nil {
+				logger.Warn("serving /metrics without authentication because ONWATCH_METRICS_PUBLIC is set; it exposes per-account quota usage")
+			}
+			mux.Handle(p("/metrics"), http.HandlerFunc(handler.Metrics))
+		default:
+			if logger != nil {
+				logger.Info("/metrics is disabled; set ONWATCH_METRICS_TOKEN to enable it, or ONWATCH_METRICS_PUBLIC=true to serve it without a token")
+			}
 		}
-		mux.Handle(p("/metrics"), metricsHandler)
 	}
 
 	// Service worker (served with base path scope)

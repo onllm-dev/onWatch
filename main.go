@@ -652,7 +652,15 @@ func daemonize(cfg *config.Config) error {
 	fmt.Printf("Daemon started (PID %d), logs: %s\n", childPID, logPath)
 	fmt.Printf("Dashboard: http://localhost:%d\n", cfg.Port)
 	_, dbErr := os.Stat(cfg.DBPath)
-	for _, line := range startupNotices(cfg.IsDefaultPassword(), dbErr == nil, cfg.AdminUser, cfg.Host) {
+	// A network-reachable dashboard with the documented default password is
+	// effectively unauthenticated, so this refuses to start rather than warning
+	// about it. The error names both remedies and the override.
+	if err := cfg.ValidateNetworkExposure(cfg.IsDockerEnvironment()); err != nil {
+		fmt.Fprintf(os.Stderr, "\n  %serror%s  %v\n\n", colorRed, colorReset, err)
+		os.Exit(1)
+	}
+
+	for _, line := range startupNotices(cfg.IsDefaultPassword(), dbErr == nil, cfg.AdminUser, cfg.EffectiveHost(cfg.IsDockerEnvironment())) {
 		fmt.Println(line)
 	}
 	return nil
@@ -1878,7 +1886,10 @@ func run() error {
 			"user_header", cfg.TrustedUserHeader)
 	}
 
-	server := web.NewServer(cfg.Port, handler, logger, cfg.AdminUser, cfg.AdminPassHash, cfg.Host, cfg.BasePath, cfg.MetricsToken, trustedProxy)
+	// Loopback unless the operator asked for more, or this is a container where
+	// the network namespace is the boundary. See config.EffectiveHost.
+	bindHost := cfg.EffectiveHost(cfg.IsDockerEnvironment())
+	server := web.NewServer(cfg.Port, handler, logger, cfg.AdminUser, cfg.AdminPassHash, bindHost, cfg.BasePath, cfg.MetricsToken, trustedProxy)
 
 	// Setup signal handling
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2512,6 +2523,20 @@ func printHelp() {
 	fmt.Println("  ONWATCH_DB_PATH         SQLite database file path")
 	fmt.Println("  ONWATCH_LOG_LEVEL       Log level: debug, info, warn, error")
 	fmt.Println("  ONWATCH_LOG_FORMAT      Log output format: text, txt, fmt, or json (default: text)")
+	fmt.Println()
+	fmt.Println("Privacy and security:")
+	fmt.Println("  ONWATCH_HOST            Bind address (default: 127.0.0.1, or 0.0.0.0 in a container)")
+	fmt.Println("  ONWATCH_UPDATE_CHECK    false pins the version check off (no calls to api.github.com)")
+	fmt.Println("  ONWATCH_RETENTION_SCRUB_DAYS   Clear identifiers from records older than N days (0 = never)")
+	fmt.Println("  ONWATCH_RETENTION_DELETE_DAYS  Delete records older than N days (0 = never)")
+	fmt.Println("  ONWATCH_METRICS_TOKEN   Bearer token for /metrics (without it, /metrics is not served)")
+	fmt.Println("  ONWATCH_METRICS_PUBLIC  true serves /metrics with no token (exposes per-account usage)")
+	fmt.Println("  ONWATCH_ALLOW_DEFAULT_PASSWORD  true permits a network bind with the default password")
+	fmt.Println()
+	fmt.Println("  The update check and both retention periods also have controls in Settings, which")
+	fmt.Println("  take precedence once you use them. The rest are boot-time settings: changing the")
+	fmt.Println("  bind address or metrics auth from the dashboard would let a session widen its own")
+	fmt.Println("  access. What onWatch stores and where it goes is itemised at /privacy.")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  onwatch setup                     # Interactive setup wizard")
