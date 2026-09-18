@@ -128,7 +128,7 @@ rather than copying 52 rows into it.
 | **Categories of personal data** | Account identifiers (provider account names, external IDs, project IDs, GitHub login, Codex account ID, Kimi user ID); email addresses (Antigravity, Grok, Ollama account email, SMTP from/to); authentication credentials (provider OAuth access and refresh tokens, API keys, session cookies, the dashboard password hash); usage and behavioural history (per-provider quota snapshots, reset cycles, per-model request counts, per-request usage events); technical data (dashboard client IP addresses, User-Agent, push subscription endpoints which are stable device identifiers); verbatim vendor API responses (`raw_json`). **No special-category data.** Full field-level inventory: `docs/PRIVACY.md` |
 | **Recipients** | The 16 AI provider APIs (each an independent controller, contacted on every poll using the account holder's own credential); `api.github.com` for the version check **if enabled** - off-switchable in Settings -> General -> "Privacy & Outbound Connections" or pinned off with `ONWATCH_UPDATE_CHECK=false`; your SMTP relay **if configured**; the viewer's browser push service **if push alerts are enabled**. **No data of any kind goes to the onWatch project.** No analytics, no CDN, no font host - all dashboard assets are served from the binary |
 | **Third-country transfers** | onWatch itself transfers nothing to the project. Provider polling reaches vendor endpoints that are predominantly US-hosted, using a credential the account holder already has with that vendor. `[IDENTIFY THE VENDORS YOU POLL, THEIR HOSTING LOCATION, AND THE TRANSFER MECHANISM IN YOUR CONTRACT WITH EACH - SCCs, adequacy, or the vendor's DPA]`. The version check reaches GitHub (US) when enabled. DPDP s.16 restricts transfer only to countries the Central Government notifies; check the current notified list |
-| **Retention** | `[YOUR CONFIGURED PERIOD]`. **Read section 7 before filling this in** - the default for most tables has historically been "forever", and you must set a period and be able to show it is enforced. Configure it in Settings -> Data & Retention; `api_integration_usage_events` additionally honours `ONWATCH_API_INTEGRATIONS_RETENTION` (default 60 days) |
+| **Retention** | `[YOUR CONFIGURED PERIOD]`. **Read section 7 before filling this in** - the default for most tables has historically been "forever", and you must set a period and be able to show it is enforced. Configure it in Settings -> General -> Data Retention; `api_integration_usage_events` additionally honours `ONWATCH_API_INTEGRATIONS_RETENTION` (default 60 days) |
 | **Security measures** | Self-hosted, single-tenant, no third-party access. bcrypt dashboard password; `subtle.ConstantTimeCompare` for credential comparison; per-IP login rate limiting; AES-256-GCM with an HKDF-SHA256 key derived from the dashboard password for the stored SMTP password (and, once the in-progress encryption work lands, for `gemini_tokens` and `provider_accounts.metadata` - **verify against your build before you write this down**); parameterised SQL only; data directory `0700`, `.env` and debug log `0600`; security headers and a `'self'`-only CSP with zero third-party subresources; optional TLS termination, secure cookies and trusted-proxy SSO. **Read `SECURITY.md` in full** - the known hardening gaps (default `0.0.0.0` bind, default password `changeme`, unauthenticated `/metrics`, unencrypted database) are part of your honest answer here, together with the mitigations you applied. `[LIST YOUR APPLIED MITIGATIONS: bind address, TLS, disk encryption, firewall, metrics token]` |
 
 ### Art. 35 - do you need a DPIA?
@@ -253,13 +253,14 @@ Concrete operator steps. Adapt the wording to your own intake process; the
 onWatch actions are the part that matters here.
 
 > **Implementation status:** the retention, export and erasure controls
-> referenced below and in section 3 live in the dashboard's settings, under
-> "Data & Retention" or "General" depending on how the control shipped. **Open
-> your own build and confirm they are there before you promise a requester a
-> one-month turnaround.** If they are absent, the build predates that work: fall
-> back to scoped SQL against `onwatch.db` with the daemon stopped, followed by
-> `VACUUM`, and note that a hand-written `DELETE` must cascade on `account_id`
-> and `snapshot_id` across every provider table or it will leave orphaned
+> referenced below and in section 3 are in the dashboard under **Settings ->
+> General**, in the "Data Retention" and "Your Data" sections. **Open your own
+> build and confirm they are there before you promise a requester a one-month
+> turnaround** - a build that predates this work will not have them. If they
+> are absent, fall back to scoped SQL against `onwatch.db` with the daemon
+> stopped, followed by `VACUUM`, and note that a hand-written `DELETE` must
+> cascade on `account_id` and `snapshot_id` across every provider table or it
+> will leave orphaned
 > quota, reset-cycle and model-value rows behind.
 
 ### 5.1 Access (GDPR Art. 15) and portability (Art. 20) / DPDP s.11
@@ -267,7 +268,7 @@ onWatch actions are the part that matters here.
 | Step | Action |
 |---|---|
 | 1 | Verify the requester's identity against the account they are asking about. Do not disclose one person's quota history to another |
-| 2 | Settings -> Data & Retention -> **Export**. Scope the export to the provider account(s) belonging to the requester |
+| 2 | Settings -> General -> **Your Data** -> Download all my data. Scope the export to the provider account(s) belonging to the requester |
 | 3 | The export covers the database. It does **not** cover: `~/.onwatch/data/.onwatch.log` and its rotations (which hold dashboard client IP addresses, proxy-asserted usernames and provider account names), `~/.onwatch/api-integrations/*.jsonl` input files, `~/.onwatch/data/codex-profiles/*.json`, or your backups. If the request is broad, retrieve those manually |
 | 4 | **Redact credentials before you hand anything over.** An export scoped to a person can include that person's provider OAuth tokens and API keys. Those are their data, but emailing them is creating a new breach. Deliver credentials through a secure channel or omit them with an explanation |
 | 5 | Add what only you can supply: your identity as controller, the purposes, the lawful basis, recipients, retention, and their rights. `docs/PRIVACY.md` gives you the field-level descriptions to attach |
@@ -284,7 +285,7 @@ ground is rarely worth the argument.
 |---|---|
 | 1 | Establish whether an exception applies (GDPR Art. 17(3) - legal obligation, legal claims; DPDP s.12(3) - retention required by law). Financial records you must keep for tax are a real limit; the quota history behind them usually is not |
 | 2 | **Stop the collection first.** Turn off polling for that provider account in the dashboard, or erasure will simply re-populate on the next poll cycle |
-| 3 | Settings -> Data & Retention -> **Erase**, scoped to the account. This must cascade on `account_id` and `snapshot_id` across all provider tables - deleting the identity row alone leaves the linked quota, reset-cycle and model-value rows behind |
+| 3 | Settings -> General -> **Your Data** -> Erase, scoped to the account. This must cascade on `account_id` and `snapshot_id` across all provider tables - deleting the identity row alone leaves the linked quota, reset-cycle and model-value rows behind |
 | 4 | **`VACUUM` afterwards.** SQLite leaves deleted rows in freed pages. `sqlite3 ~/.onwatch/data/onwatch.db "VACUUM;"` with the daemon stopped. Note also that `api_integration_usage_events.raw_line` was dropped by a schema migration and `DROP COLUMN` reclaims nothing - a pre-upgrade database still contains whole raw event lines until vacuumed |
 | 5 | **Handle the JSONL input files.** `~/.onwatch/api-integrations/*.jsonl` are only *tailed* by onWatch - it never deletes or truncates them. The full original events survive any database-side erasure. You must delete or rotate them yourself, and remember the `api_integration_ingest_state` row keeps `source_path` and up to 512 KB of `partial_line` telemetry |
 | 6 | **Handle the log.** `~/.onwatch/data/.onwatch.log` plus `.1`/`.2`/`.3` hold IP addresses and account names. Size-capped at 4 x 50 MB with no time limit, so they do not age out on a schedule. Delete or truncate them as part of a full erasure |

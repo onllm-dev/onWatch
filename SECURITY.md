@@ -159,43 +159,48 @@ check rather than take it on faith.
 These are real and unpatched as of this writing. They are listed here rather
 than left for you to find. Each row has the mitigation to apply today.
 
-### 1. The default bind address is all interfaces
+### 1. The default bind address is all interfaces - FIXED
 
-`ONWATCH_HOST` defaults to `0.0.0.0` (`internal/config/config.go:106`), so a
-fresh install is reachable from every machine that can route to the host. onWatch
-prints a warning at startup ("Dashboard is reachable from your network ... set
-`ONWATCH_HOST=127.0.0.1` to keep it local", `main.go:358-368`) but does not
-change the default.
+`ONWATCH_HOST` now defaults to `127.0.0.1`, so a fresh install is reachable
+only from the machine it runs on (`internal/config/secure_defaults.go`,
+`EffectiveHost`). A container still defaults to `0.0.0.0`, because there the
+network namespace is the boundary and a published port does not work
+otherwise. An explicit `ONWATCH_HOST` always wins.
 
-**Mitigation:** set `ONWATCH_HOST=127.0.0.1` unless you specifically need
-network access, and firewall the port either way.
+**If you are on an older version:** set `ONWATCH_HOST=127.0.0.1` unless you
+specifically need network access, and firewall the port either way.
 
-### 2. The default dashboard password is `changeme`
+### 2. The default dashboard password is `changeme` - MITIGATED
 
-`DefaultAdminPass` is the literal string `changeme`
-(`internal/config/config.go:1096`). Combined with gap 1, an unconfigured install
-on a shared network is open to anyone who finds the port. The only guard is a
-log warning at `main.go:963-965` and a first-start console hint at
-`main.go:338`. Nothing forces a change, and the dashboard will serve on the
-default password indefinitely.
+`DefaultAdminPass` is still the literal string `changeme`
+(`internal/config/config.go`), but onWatch now **refuses to start** when that
+password would be served on a non-loopback address
+(`ValidateNetworkExposure`). The error names both remedies. Set
+`ONWATCH_ALLOW_DEFAULT_PASSWORD=true` to override on a trusted private network.
 
-**Mitigation:** set `ONWATCH_ADMIN_PASS` in `.env` before first start, or change
-it immediately in the dashboard under Settings -> General -> Password (the
-startup hint calls this "Settings > Security"). Changing it also rotates the SMTP
-encryption key and invalidates every existing session token.
+A loopback-only install still runs on the default password, so it remains
+worth changing: anyone with an account on that machine can reach it.
 
-### 3. `/metrics` is unauthenticated unless you set a token
+**Mitigation:** set `ONWATCH_ADMIN_PASS` in `.env` before first start, or
+change it immediately in the dashboard under Settings -> General -> Password.
+Changing it also rotates the SMTP encryption key, re-keys the stored provider
+credentials, and invalidates every existing session token.
 
-If `ONWATCH_METRICS_TOKEN` is unset, `/metrics` is served with no
-authentication at all (`internal/web/server.go:114-121`). It logs a warning and
-carries on. The endpoint is not harmless: it exposes per-account quota data,
-utilisation and reset timings, and the `accountInfo` join metric maps
-`account_id` to the human-readable `account_name`
-(`internal/metrics/metrics.go:51-53`). On a `0.0.0.0` bind this is an
-unauthenticated read of who uses which provider and how much.
+### 3. `/metrics` is unauthenticated unless you set a token - FIXED
 
-**Mitigation:** set `ONWATCH_METRICS_TOKEN` to a long random value, or block
-`/metrics` at the reverse proxy if your scraper cannot send a bearer token.
+`/metrics` is no longer registered at all unless `ONWATCH_METRICS_TOKEN` is
+set, or `ONWATCH_METRICS_PUBLIC=true` is passed to serve it open deliberately
+(`internal/web/server.go`). It previously served with no authentication
+whenever no token was set, which on the old `0.0.0.0` default was an
+unauthenticated read of who uses which provider and how much: the endpoint
+exposes per-account quota data, utilisation and reset timings, and the
+`accountInfo` join metric maps `account_id` to a human-readable
+`account_name` (`internal/metrics/metrics.go:51-53`).
+
+**If you scrape it:** set `ONWATCH_METRICS_TOKEN` to a long random value and
+send it as a bearer token. `ONWATCH_METRICS_PUBLIC=true` restores the old
+behaviour if your scraper cannot send one, but then block `/metrics` at the
+reverse proxy.
 
 ### 4. `ANTIGRAVITY_BASE_URL` is an unvalidated destination for a bearer token
 
@@ -276,15 +281,21 @@ so it would inherit gap 8.
 
 ### 10. Secrets stored unencrypted in the database
 
-The SQLite database is not encrypted. Today several secrets sit in it in
-cleartext: the `gemini_tokens` setting (OAuth access **and** refresh token,
-`internal/store/gemini_store.go:538`), `provider_accounts.metadata` (which holds
-the MiniMax API key, `main.go:1360`), the `provider_settings` setting (provider
-API keys, the Copilot token, the Antigravity CSRF token, the OpenCode auth
-cookie) and `vapid_keys`. Only the SMTP password is encrypted. Work to encrypt
-`gemini_tokens` and `provider_accounts.metadata` with AES-256-GCM under a key
-derived from the dashboard password is in progress; until it lands, treat
-`onwatch.db` as a file full of live provider credentials.
+The SQLite database file itself is not encrypted, so what protects it is the
+`0700` data directory and whatever the filesystem gives you.
+
+Encrypted at rest, with AES-256-GCM under a key derived from the dashboard
+password: the SMTP password, the `gemini_tokens` setting (OAuth access **and**
+refresh token) and `provider_accounts.metadata` (the provider API key). All
+three are re-keyed when the dashboard password changes. Values written by an
+earlier version are read as cleartext and encrypted the next time they are
+written.
+
+Still cleartext: the `provider_settings` setting (provider API keys, the
+Copilot token, the Antigravity CSRF token, the OpenCode auth cookie) and
+`vapid_keys`. Encrypting those means changing every field-level read site and
+has not been done. Until it is, treat `onwatch.db` as a file that still
+contains live provider credentials.
 
 **Mitigation:** keep the data directory on an encrypted volume (see the
 checklist), keep it `0700`, and never copy the database anywhere you would not
@@ -293,59 +304,17 @@ accounts.
 
 ### 11. `system_alerts` grows forever
 
-`ClearOldSystemAlerts` exists (`internal/store/store.go:2511`) but **has no
-callers**, so the table is never pruned. Dismissing an alert only sets
-`dismissed_at`. Alert `metadata` can contain telemetry fragments and filesystem
-paths. This is a slow disk-growth and data-minimisation problem rather than an
-exploit.
+`ClearOldSystemAlerts` had no callers, so `system_alerts` grew forever. It is
+now driven by the retention agent (`internal/agent/retention_agent.go`), along
+with `api_integration_ingest_state`, which was never pruned at all.
 
-**Mitigation:** none available in-product today beyond the retention work in
-progress. Watch the size of `onwatch.db`.
+Retention is still **off by default** - both periods are 0, meaning keep
+everything, so that an upgrade never deletes an existing install's history.
+Choosing a period is the operator's decision.
 
-## Hardening checklist
-
-Work through this before you leave an install running.
-
-- [ ] **Set a real password.** `ONWATCH_ADMIN_PASS` in `.env` before first
-      start, or Settings -> General -> Password immediately after. Confirm the
-      startup log no longer contains `USING DEFAULT PASSWORD`.
-- [ ] **Bind to loopback.** `ONWATCH_HOST=127.0.0.1`. If you need remote access,
-      leave the bind on loopback and put a reverse proxy with TLS in front, or
-      reach it over a VPN or an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 host`).
-- [ ] **Terminate TLS at the proxy** and set `ONWATCH_SECURE_COOKIES=true`. Do
-      not serve the dashboard over plain HTTP across a network - the session
-      cookie and the login POST are both in the clear.
-- [ ] **Strip forwarding headers at the proxy.** Have the proxy overwrite, not
-      append, `X-Forwarded-For` and `X-Real-Ip` (gap 8).
-- [ ] **Set a metrics token** (`ONWATCH_METRICS_TOKEN`) or block `/metrics` at
-      the proxy (gap 3).
-- [ ] **Restrict by source IP in the firewall or the proxy**, not in onWatch
-      (gap 9).
-- [ ] **Keep the data directory on an encrypted volume.** LUKS on Linux,
-      FileVault on macOS, BitLocker on Windows. The database holds live provider
-      credentials in cleartext (gap 10). Verify `~/.onwatch/data` is `0700` and
-      `~/.onwatch/data/.onwatch.log` is `0600`.
-- [ ] **Run as an unprivileged user** dedicated to onWatch. It needs no root.
-      Under systemd, add `NoNewPrivileges=true`, `PrivateTmp=true`,
-      `ProtectSystem=strict` and a `ReadWritePaths=` limited to the data
-      directory.
-- [ ] **Decide about the version check.** Leave it on to learn about security
-      releases, or set `ONWATCH_UPDATE_CHECK=false` if `api.github.com` must not
-      see this host - and then subscribe to the repository's releases so you
-      still hear about fixes.
-- [ ] **Audit `ANTIGRAVITY_BASE_URL`** - unset it unless you need it (gap 4).
-- [ ] **Use TLS for SMTP** (gap 5).
-- [ ] **Never commit** `.env`, `*.db` or binaries. The repository `.gitignore`
-      covers them; check before you push a fork.
-- [ ] **Review the auto-enabled providers.** Anthropic, Codex, OpenCode, Gemini,
-      Cursor, Grok and Kimi start polling with no configuration at all, purely
-      because another CLI's credential file exists on disk
-      (`main.go:733-824`). Only Gemini, Grok and Kimi have a pre-start kill
-      switch (`GEMINI_ENABLED=false`, `GROK_ENABLED=false`,
-      `KIMI_ENABLED=false`); for the other four the first poll happens before
-      you can object, and you turn them off with the per-provider polling toggle
-      in the dashboard afterwards. See `docs/PRIVACY.md`.
-
+**Mitigation:** set a retention period in Settings -> General -> Data
+Retention, or with `ONWATCH_RETENTION_SCRUB_DAYS` /
+`ONWATCH_RETENTION_DELETE_DAYS`.
 ### Backups
 
 - Back up `~/.onwatch/data/onwatch.db` with `sqlite3 onwatch.db ".backup out.db"`

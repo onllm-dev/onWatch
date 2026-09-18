@@ -28,7 +28,7 @@ onWatch fills the gap between "current usage snapshot" and the historical, per-c
 
 It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, Grok, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Grok CLI**, **Antigravity**, and others.
 
-**Zero telemetry. Single binary. All data stays on your machine.**
+**No telemetry. Single binary. All data stays on your machine.**
 
 **Beta:** onWatch is currently in active development. Features and APIs may change as we refine the product.
 
@@ -238,7 +238,7 @@ The tray is currently in beta. Feedback is highly appreciated at [github.com/onl
 | **Solo developers & freelancers** using Claude Code, Cline, Roo Code, or Kilo Code with Anthropic/Synthetic/Z.ai/Codex/Copilot/MiniMax/Gemini CLI/Antigravity | Budget anxiety -- no visibility into quota burn rate, surprise throttling mid-task  | Real-time rate projections, historical trends, live countdowns so you never get throttled unexpectedly  |
 | **Small dev teams (3-20 people)** sharing API keys                                                                       | No shared visibility into who's consuming what, impossible to budget next month     | Shared dashboard with session tracking, cycle history for budget planning                               |
 | **DevOps & platform engineers**                                                                                          | Shadow AI usage with no FinOps for coding API subscriptions                         | Lightweight sidecar (<50 MB), SQLite data source for Grafana, REST API for monitoring stack integration |
-| **Privacy-conscious developers** in regulated industries                                                                 | Can't use SaaS analytics that phone home; need local, auditable monitoring          | Single binary, local SQLite, zero telemetry, GPL-3.0 source code, works air-gapped                      |
+| **Privacy-conscious developers** in regulated industries                                                                 | Can't use SaaS analytics that phone home; need local, auditable monitoring          | Single binary, local SQLite, no telemetry, GPL-3.0 source code, runs air-gapped with the update check off                      |
 | **Researchers & educators** on grants                                                                                    | Need per-session API cost attribution for grant reports and paper methodology       | Per-session usage tracking, historical export via SQLite                                                |
 | **Budget-conscious API users** paying $3-$60/month                                                                       | Every request matters; no way to know if plan is underutilized or budget is at risk | Usage insights, plan capacity analysis, upgrade/downgrade recommendations via data                      |
 
@@ -287,7 +287,16 @@ Yes. onWatch monitors the API provider (Synthetic, Z.ai, Anthropic, Codex, GitHu
 
 ### Does onWatch send any data to external servers?
 
-No. Zero telemetry. All data stays in a local SQLite file. The only outbound calls are to the Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Gemini CLI, Cursor, Grok, and Antigravity quota APIs you configure (Antigravity connects to localhost only). Fully auditable on [GitHub](https://github.com/onllm-dev/onwatch) (GPL-3.0).
+No analytics, no usage reporting, and nothing is ever sent to the onWatch project. All data stays in a local SQLite file.
+
+onWatch makes two kinds of outbound call, both listed in full in the [privacy notice](docs/PRIVACY.md), which the dashboard also serves at `/privacy`:
+
+1. **Provider quota APIs**, to read your usage. Note that seven providers - Anthropic, Codex, OpenCode, Gemini, Cursor, Grok and Kimi - start polling automatically when their CLI's credential file is already on disk, without you configuring anything. Turn off any you do not want under Settings -> Providers. Antigravity connects to localhost only.
+2. **api.github.com**, hourly while a dashboard tab is open, to compare your version against the latest release. This discloses your IP address and the version you are running. Turn it off under Settings -> General -> Privacy & Outbound Connections, or pin it off for a deployment with `ONWATCH_UPDATE_CHECK=false`; onWatch then makes no version request at all.
+
+The dashboard itself loads nothing from the internet: Chart.js and the webfonts are compiled into the binary, so opening it discloses nothing to Google or any CDN. With the update check off and provider polling stopped, onWatch runs fully air-gapped.
+
+Fully auditable on [GitHub](https://github.com/onllm-dev/onwatch) (GPL-3.0).
 
 ### How much memory does onWatch use?
 
@@ -629,13 +638,18 @@ The `docker-compose.yml` includes memory limits (64M limit, 32M reservation), lo
 
 ## Security
 
-- API keys loaded from `.env`, never committed, redacted in all log output
+- API keys loaded from `.env` (written `0600`), never committed, redacted in all log output
 - Session-based auth with cookie + Basic Auth fallback
-- Passwords stored as SHA-256 hashes with constant-time comparison
-- SMTP passwords encrypted at rest with AES-256-GCM (key derived from admin password)
-- VAPID keys auto-generated (ECDSA P-256) and stored in database
+- Dashboard password stored as a bcrypt hash, compared in constant time (SHA-256 hashes from older installs are still accepted)
+- SMTP password, Gemini OAuth tokens and provider API keys encrypted at rest with AES-256-GCM (key derived from the dashboard password, re-keyed when it changes)
+- VAPID keys auto-generated (ECDSA P-256) and stored in the database
 - Web Push payloads encrypted per RFC 8291 (ECDH + HKDF + AES-128-GCM)
 - Parameterized SQL queries throughout
+- Binds `127.0.0.1` by default, and refuses to serve the dashboard on a network address while the password is still `changeme`
+
+Full security model, the known hardening gaps and how to report a vulnerability: [SECURITY.md](SECURITY.md).
+What is stored and where it goes: [docs/PRIVACY.md](docs/PRIVACY.md).
+GDPR and DPDP Act guidance for organisations: [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
 
 ---
 
