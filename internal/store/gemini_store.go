@@ -538,7 +538,9 @@ func (s *Store) QueryGeminiCycleOverview(modelID string, limit int) ([]CycleOver
 func (s *Store) SaveGeminiTokens(accessToken, refreshToken string, expiresAt int64) error {
 	data := fmt.Sprintf(`{"access_token":%q,"refresh_token":%q,"expires_at":%d}`,
 		accessToken, refreshToken, expiresAt)
-	return s.SetSetting("gemini_tokens", data)
+	// A Google refresh token is a long-lived credential for the user's
+	// account, so the blob is encrypted at rest when a cipher is configured.
+	return s.SetSetting("gemini_tokens", s.protectSecret(data))
 }
 
 // LoadGeminiTokens retrieves persisted Gemini OAuth tokens from the settings table.
@@ -547,6 +549,11 @@ func (s *Store) LoadGeminiTokens() (accessToken, refreshToken string, expiresAt 
 	data, err := s.GetSetting("gemini_tokens")
 	if err != nil || data == "" {
 		return "", "", 0, err
+	}
+	// Reads a value written by an earlier version unchanged; see revealSecret.
+	data = s.revealSecret(data)
+	if data == "" {
+		return "", "", 0, nil
 	}
 	var tokens struct {
 		AccessToken  string `json:"access_token"`

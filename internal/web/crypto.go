@@ -102,7 +102,44 @@ func ReEncryptAllData(store interface {
 		errors["smtp"] = err.Error()
 	}
 
+	// Re-encrypt the Gemini OAuth pair. Without this the tokens become
+	// unreadable after a password change and Gemini polling silently stops.
+	if err := reEncryptSetting(store, "gemini_tokens", oldKey, newKey); err != nil {
+		errors["gemini_tokens"] = err.Error()
+	}
+
 	return errors
+}
+
+// reEncryptSetting re-keys a settings value that is stored as ciphertext.
+// A plaintext value (written before encryption existed) is encrypted with the
+// new key, and a value already under the new key is left alone.
+func reEncryptSetting(store interface {
+	GetSetting(key string) (string, error)
+	SetSetting(key, value string) error
+}, key, oldKey, newKey string) error {
+	stored, err := store.GetSetting(key)
+	if err != nil || stored == "" {
+		return nil
+	}
+
+	plaintext := stored
+	if IsEncryptedValue(stored) {
+		decrypted, err := notify.Decrypt(stored, oldKey)
+		if err != nil {
+			if _, newErr := notify.Decrypt(stored, newKey); newErr == nil {
+				return nil // already re-keyed
+			}
+			return fmt.Errorf("failed to decrypt %s with the old key: %w", key, err)
+		}
+		plaintext = decrypted
+	}
+
+	reEncrypted, err := notify.Encrypt(plaintext, newKey)
+	if err != nil {
+		return fmt.Errorf("failed to re-encrypt %s: %w", key, err)
+	}
+	return store.SetSetting(key, reEncrypted)
 }
 
 // reEncryptSMTPPassword re-encrypts the SMTP password when admin password changes.
@@ -171,4 +208,30 @@ func reEncryptSMTPPassword(store interface {
 	}
 
 	return nil
+}
+
+// storeSecretCipher adapts the AES-256-GCM helpers to the store's SecretCipher
+// interface, so internal/store can encrypt credentials at rest without
+// depending on this package or on internal/notify.
+type storeSecretCipher struct {
+	key string
+}
+
+// NewStoreSecretCipher returns a cipher for the store, keyed by a value from
+// DeriveEncryptionKey. A password change produces a different key, which is
+// why the store's metadata is re-keyed at the same time.
+func NewStoreSecretCipher(key string) *storeSecretCipher {
+	return &storeSecretCipher{key: key}
+}
+
+func (c *storeSecretCipher) Encrypt(plaintext string) (string, error) {
+	return notify.Encrypt(plaintext, c.key)
+}
+
+func (c *storeSecretCipher) Decrypt(ciphertext string) (string, error) {
+	return notify.Decrypt(ciphertext, c.key)
+}
+
+func (c *storeSecretCipher) IsEncrypted(value string) bool {
+	return notify.IsEncryptedValue(value)
 }

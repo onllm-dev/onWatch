@@ -1440,6 +1440,12 @@ func run() error {
 		apiIntegrationsAg = agent.NewAPIIntegrationsIngestAgent(db, cfg.APIIntegrationsDir, cfg.APIIntegrationsRetention, logger)
 	}
 
+	// Credentials at rest. The store holds the Gemini OAuth pair and the
+	// provider API keys in provider_accounts.metadata; both go through the
+	// same AES-256-GCM path as the SMTP password, keyed off the dashboard
+	// password hash, so a password change re-keys all of them together.
+	db.SetSecretCipher(web.NewStoreSecretCipher(deriveEncryptionKey(cfg.AdminPassHash)))
+
 	// Create notification engine
 	notifier := notify.New(db, logger)
 	notifier.SetEncryptionKey(deriveEncryptionKey(cfg.AdminPassHash))

@@ -367,6 +367,46 @@ func TestSettingsHTML_HasPrivacyControls(t *testing.T) {
 	}
 }
 
+// TestAppJS_PrivacyPageDoesNotRequireAuth asserts the browser does not bounce a
+// logged-out visitor off the notice.
+//
+// Serving /privacy without auth server-side is not enough: app.js runs on every
+// page, and its bootstrap calls authFetch("/api/settings"), which redirects to
+// /login on a 401. Without an early branch the public notice is public in name
+// only - the reader lands on a login form.
+func TestAppJS_PrivacyPageDoesNotRequireAuth(t *testing.T) {
+	t.Parallel()
+
+	appJS := readStaticAppJS(t)
+
+	idx := strings.Index(appJS, "document.addEventListener('DOMContentLoaded'")
+	if idx < 0 {
+		t.Fatal("DOMContentLoaded handler not found")
+	}
+	bootstrap := appJS[idx:]
+
+	privacyIdx := strings.Index(bootstrap, `data-page="privacy"`)
+	if privacyIdx < 0 {
+		t.Fatal(`bootstrap must branch on the privacy page ([data-page="privacy"]) before fetching anything`)
+	}
+
+	// The branch has to come before the first authenticated call, or the
+	// redirect happens anyway.
+	authIdx := strings.Index(bootstrap, "authFetch(")
+	if authIdx >= 0 && privacyIdx > authIdx {
+		t.Error("the privacy-page branch must come before the first authFetch in the bootstrap")
+	}
+
+	// The template carries the hook the branch relies on.
+	data, err := templatesFS.ReadFile("templates/privacy.html")
+	if err != nil {
+		t.Fatalf("read privacy.html: %v", err)
+	}
+	if !strings.Contains(string(data), `data-page="privacy"`) {
+		t.Error(`privacy.html must carry the data-page="privacy" hook app.js branches on`)
+	}
+}
+
 // TestAppJS_WiresPrivacyControls asserts the controls are actually connected.
 func TestAppJS_WiresPrivacyControls(t *testing.T) {
 	t.Parallel()

@@ -20,6 +20,8 @@ import (
 // Store provides SQLite storage for onWatch
 type Store struct {
 	db *sql.DB
+	// secrets holds the cipher for credentials at rest. See secret_cipher.go.
+	secrets secretCipherHolder
 }
 
 // Session represents an agent session

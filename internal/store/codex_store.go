@@ -754,6 +754,7 @@ func (s *Store) QueryProviderAccounts(provider string) ([]ProviderAccount, error
 			return nil, fmt.Errorf("failed to scan provider account: %w", err)
 		}
 		acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		acc.Metadata = s.revealSecret(acc.Metadata)
 		if deletedAt.Valid && deletedAt.String != "" {
 			t, _ := time.Parse(time.RFC3339Nano, deletedAt.String)
 			acc.DeletedAt = &t
@@ -783,6 +784,7 @@ func (s *Store) QueryActiveProviderAccounts(provider string) ([]ProviderAccount,
 			return nil, fmt.Errorf("failed to scan provider account: %w", err)
 		}
 		acc.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		acc.Metadata = s.revealSecret(acc.Metadata)
 		accounts = append(accounts, acc)
 	}
 
@@ -1150,7 +1152,9 @@ func (s *Store) queryProviderAccountsByExternalID(provider, externalID string) (
 
 // UpdateProviderAccountMetadata updates the metadata JSON for a provider account.
 func (s *Store) UpdateProviderAccountMetadata(id int64, metadata string) error {
-	_, err := s.db.Exec(`UPDATE provider_accounts SET metadata = ? WHERE id = ?`, metadata, id)
+	// The metadata blob carries a provider API key, so it is encrypted at rest
+	// when a cipher is configured.
+	_, err := s.db.Exec(`UPDATE provider_accounts SET metadata = ? WHERE id = ?`, s.protectSecret(metadata), id)
 	if err != nil {
 		return fmt.Errorf("failed to update provider account metadata: %w", err)
 	}

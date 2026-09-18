@@ -12357,6 +12357,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     navigator.serviceWorker.register(BASE_PATH + '/sw.js').catch(function() {});
   }
 
+  // The privacy notice is served without authentication, so it must not make
+  // an authenticated call. Everything below this point eventually calls
+  // authFetch, which redirects to /login on a 401 - that would bounce a
+  // logged-out reader straight off the notice and undo the whole point of
+  // serving it publicly. Theme and layout only.
+  if (document.querySelector('[data-page="privacy"]')) {
+    initTheme();
+    initLayoutToggle();
+    return;
+  }
+
   // Settings page has its own initialization
   if (isSettingsPage()) {
     initTheme();
