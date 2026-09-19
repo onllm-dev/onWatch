@@ -45,7 +45,7 @@ func TestSendNotification_EmailSent(t *testing.T) {
 		Utilization: 85.0,
 		Limit:       1000,
 	}
-	engine.sendNotification(mailer, nil, NotificationChannels{Email: true, Push: false}, status, "warning")
+	engine.sendNotification(channelSet{mailer: mailer, push: nil, enabled: NotificationChannels{Email: true, Push: false}}, status, "warning", 0)
 
 	if mailCount.Load() != 1 {
 		t.Errorf("Expected 1 email, got %d", mailCount.Load())
@@ -75,7 +75,7 @@ func TestSendNotification_AlreadySent(t *testing.T) {
 	engine.mu.RUnlock()
 
 	status := QuotaStatus{Provider: "anthropic", QuotaKey: "daily", Utilization: 85.0}
-	engine.sendNotification(mailer, nil, NotificationChannels{Email: true, Push: false}, status, "warning")
+	engine.sendNotification(channelSet{mailer: mailer, push: nil, enabled: NotificationChannels{Email: true, Push: false}}, status, "warning", 0)
 
 	if mailCount.Load() != 0 {
 		t.Errorf("Expected 0 emails (already sent), got %d", mailCount.Load())
@@ -103,7 +103,7 @@ func TestSendNotification_EmailFailure(t *testing.T) {
 	badMailer := NewSMTPMailer(badCfg, slog.Default())
 
 	status := QuotaStatus{Provider: "anthropic", QuotaKey: "daily", Utilization: 85.0}
-	engine.sendNotification(badMailer, nil, NotificationChannels{Email: true, Push: false}, status, "warning")
+	engine.sendNotification(channelSet{mailer: badMailer, push: nil, enabled: NotificationChannels{Email: true, Push: false}}, status, "warning", 0)
 
 	// Nothing should have been logged since send failed.
 	sentAt, _, err := s.GetLastNotification("anthropic", "daily", "warning")
@@ -176,7 +176,7 @@ func TestSendNotification_PushSent(t *testing.T) {
 	engine := newTestEngine(t, s)
 
 	status := QuotaStatus{Provider: "anthropic", QuotaKey: "daily", Utilization: 85.0}
-	engine.sendNotification(nil, pushSender, NotificationChannels{Email: false, Push: true}, status, "warning")
+	engine.sendNotification(channelSet{mailer: nil, push: pushSender, enabled: NotificationChannels{Email: false, Push: true}}, status, "warning", 0)
 
 	if received.Load() != 1 {
 		t.Errorf("Expected 1 push request, got %d", received.Load())
@@ -209,7 +209,7 @@ func TestSendNotification_Push410DeletesSubscription(t *testing.T) {
 	engine := newTestEngine(t, s)
 
 	status := QuotaStatus{Provider: "anthropic", QuotaKey: "daily", Utilization: 85.0}
-	engine.sendNotification(nil, pushSender, NotificationChannels{Email: false, Push: true}, status, "warning")
+	engine.sendNotification(channelSet{mailer: nil, push: pushSender, enabled: NotificationChannels{Email: false, Push: true}}, status, "warning", 0)
 
 	// After 410, subscription should be removed.
 	subs, err := s.GetPushSubscriptions()
@@ -601,7 +601,7 @@ func TestSendNotification_StoreError(t *testing.T) {
 
 	status := QuotaStatus{Provider: "anthropic", QuotaKey: "daily", Utilization: 85.0}
 	// Should return early without sending.
-	engine.sendNotification(mailer, nil, NotificationChannels{Email: true, Push: false}, status, "warning")
+	engine.sendNotification(channelSet{mailer: mailer, push: nil, enabled: NotificationChannels{Email: true, Push: false}}, status, "warning", 0)
 
 	if mailCount.Load() != 0 {
 		t.Errorf("Expected 0 emails when store is closed, got %d", mailCount.Load())
@@ -627,7 +627,7 @@ func TestSendNotification_PushGetSubscriptionsError(t *testing.T) {
 
 	status := QuotaStatus{Provider: "anthropic", QuotaKey: "daily", Utilization: 85.0}
 	// Should not panic. Push error is logged, notification not sent.
-	engine.sendNotification(nil, pushSender, NotificationChannels{Email: false, Push: true}, status, "warning")
+	engine.sendNotification(channelSet{mailer: nil, push: pushSender, enabled: NotificationChannels{Email: false, Push: true}}, status, "warning", 0)
 }
 
 // ---------------------------------------------------------------------------

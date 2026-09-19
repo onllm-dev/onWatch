@@ -364,3 +364,69 @@ func TestReEncryptSMTPPassword_Branches(t *testing.T) {
 		})
 	}
 }
+
+// The webhook bearer token is encrypted with the admin-password-derived key,
+// so a password change must re-encrypt it alongside the SMTP password or the
+// token becomes unreadable at the next startup.
+func TestReEncryptAllData_ReEncryptsWebhookToken(t *testing.T) {
+	setTestEncryptionSalt(t, []byte("abcdefghijklmnop"))
+	store := newMemorySettingStore()
+
+	oldKey := DeriveEncryptionKey("old-hash", nil)
+	newKey := DeriveEncryptionKey("new-hash", nil)
+
+	encrypted, err := notify.EncryptForStorage("tk_secret", oldKey)
+	if err != nil {
+		t.Fatalf("EncryptForStorage() error = %v", err)
+	}
+	store.settings["webhook"] = `{"url":"https://ntfy.sh/topic","bearer_token":"` + encrypted + `","events":{"warning":true}}`
+
+	errs := ReEncryptAllData(store, "old-hash", "new-hash")
+	if len(errs) != 0 {
+		t.Fatalf("ReEncryptAllData() errors = %v, want none", errs)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(store.settings["webhook"]), &got); err != nil {
+		t.Fatalf("failed to parse updated webhook setting: %v", err)
+	}
+	ciphertext, _ := got["bearer_token"].(string)
+	if !IsEncryptedValue(ciphertext) {
+		t.Fatalf("bearer_token = %q, want it to keep the encrypted prefix", ciphertext)
+	}
+	plaintext, err := notify.DecryptFromStorage(ciphertext, newKey)
+	if err != nil {
+		t.Fatalf("DecryptFromStorage() with new key error = %v", err)
+	}
+	if plaintext != "tk_secret" {
+		t.Fatalf("re-encrypted token = %q, want tk_secret", plaintext)
+	}
+	// Other fields survive the rewrite.
+	if got["url"] != "https://ntfy.sh/topic" {
+		t.Errorf("url = %v, want preserved", got["url"])
+	}
+}
+
+func TestReEncryptAllData_WebhookWithoutTokenIsUntouched(t *testing.T) {
+	setTestEncryptionSalt(t, []byte("abcdefghijklmnop"))
+	store := newMemorySettingStore()
+	store.settings["webhook"] = `{"url":"https://ntfy.sh/topic"}`
+
+	if errs := ReEncryptAllData(store, "old-hash", "new-hash"); len(errs) != 0 {
+		t.Fatalf("ReEncryptAllData() errors = %v, want none", errs)
+	}
+	if store.setCalls != 0 {
+		t.Fatalf("SetSetting calls = %d, want 0 when there is no token", store.setCalls)
+	}
+}
+
+func TestReEncryptAllData_CollectsWebhookError(t *testing.T) {
+	setTestEncryptionSalt(t, []byte("abcdefghijklmnop"))
+	store := newMemorySettingStore()
+	store.settings["webhook"] = "not-json"
+
+	errs := ReEncryptAllData(store, "old-hash", "new-hash")
+	if _, ok := errs["webhook"]; !ok {
+		t.Fatalf("ReEncryptAllData() should include a webhook error, got %v", errs)
+	}
+}

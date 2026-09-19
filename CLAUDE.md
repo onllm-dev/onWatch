@@ -74,7 +74,7 @@ On `go.sum` changes, update `vendorHash` in `flake.nix` (run `nix build .#onwatc
 5. Add to `internal/web/handlers.go` endpoints
 6. Update dashboard JS in `internal/web/static/app.js`
 
-**API Docs:** See `docs/` for provider-specific setup (COPILOT_SETUP.md, CODEX_SETUP.md, ANTIGRAVITY_SETUP.md, GEMINI_SETUP.md, CURSOR_SETUP.md, KIMI_SETUP.md, GROK_SETUP.md, MOONSHOT_SETUP.md, DEEPSEEK_SETUP.md, OPENCODE_SETUP.md, OLLAMA_SETUP.md)
+**API Docs:** See `docs/` for provider-specific setup (COPILOT_SETUP.md, CODEX_SETUP.md, ANTIGRAVITY_SETUP.md, GEMINI_SETUP.md, CURSOR_SETUP.md, KIMI_SETUP.md, GROK_SETUP.md, MOONSHOT_SETUP.md, DEEPSEEK_SETUP.md, OPENCODE_SETUP.md, OLLAMA_SETUP.md) and WEBHOOK_SETUP.md for outbound HTTP notifications
 
 **Containers:** `IsDockerEnvironment()` in `config.go` detects Docker/K8s. Containers run foreground only.
 

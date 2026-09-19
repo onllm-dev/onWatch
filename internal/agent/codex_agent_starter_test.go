@@ -2,17 +2,20 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
@@ -210,5 +213,119 @@ func TestCodexAgent_MaybeAutoStart(t *testing.T) {
 	time.Sleep(250 * time.Millisecond)
 	if got := atomic.LoadInt32(&count); got != 1 {
 		t.Errorf("enabled auto-start fired %d times, want 1 (only unstarted five_hour)", got)
+	}
+}
+
+// starterWebhookEngine wires a notification engine whose webhook channel points
+// at a capture server, so starter events can be observed end to end.
+func starterWebhookEngine(t *testing.T) (*notify.NotificationEngine, func() []string) {
+	t.Helper()
+
+	var mu sync.Mutex
+	var events []string
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var p notify.WebhookPayload
+		json.NewDecoder(r.Body).Decode(&p)
+		mu.Lock()
+		events = append(events, p.Event)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(hook.Close)
+
+	db, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	webhookJSON, _ := json.Marshal(map[string]interface{}{
+		"url":             hook.URL,
+		"timeout_seconds": 2,
+		"events":          map[string]bool{"starter_success": true, "starter_failure": true},
+	})
+	db.SetSetting("webhook", string(webhookJSON))
+	notifJSON, _ := json.Marshal(map[string]interface{}{
+		"warning_threshold":  80,
+		"critical_threshold": 95,
+		"channels":           map[string]bool{"webhook": true},
+	})
+	db.SetSetting("notifications", string(notifJSON))
+
+	engine := notify.New(db, slog.Default())
+	if err := engine.Reload(); err != nil {
+		t.Fatalf("Reload() error = %v", err)
+	}
+	if err := engine.ConfigureWebhook(); err != nil {
+		t.Fatalf("ConfigureWebhook() error = %v", err)
+	}
+
+	return engine, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), events...)
+	}
+}
+
+// A successful starter ping notifies the webhook channel.
+func TestCodexAgent_SendStarterPing_NotifiesOnSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("event: response.created\n\n"))
+	}))
+	defer srv.Close()
+
+	engine, delivered := starterWebhookEngine(t)
+	client := api.NewCodexClient("tok_abc", slog.Default(), api.WithCodexStarterURL(srv.URL))
+	ag := NewCodexAgent(client, nil, nil, time.Hour, slog.Default(), nil)
+	ag.SetNotifier(engine)
+
+	ag.SendStarterPing(context.Background(), "acct_123", "five_hour")
+
+	events := delivered()
+	if len(events) != 1 || events[0] != notify.EventStarterSuccess {
+		t.Errorf("delivered events = %v, want [%s]", events, notify.EventStarterSuccess)
+	}
+}
+
+// A failed starter ping notifies the webhook channel with the failure event.
+func TestCodexAgent_SendStarterPing_NotifiesOnFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	engine, delivered := starterWebhookEngine(t)
+	client := api.NewCodexClient("tok_abc", slog.Default(), api.WithCodexStarterURL(srv.URL))
+	ag := NewCodexAgent(client, nil, nil, time.Hour, slog.Default(), nil)
+	ag.SetNotifier(engine)
+
+	ag.SendStarterPing(context.Background(), "acct_123", "five_hour")
+
+	events := delivered()
+	if len(events) != 1 || events[0] != notify.EventStarterFailure {
+		t.Errorf("delivered events = %v, want [%s]", events, notify.EventStarterFailure)
+	}
+}
+
+// A ping skipped by the rate cap is not a delivery outcome and must stay silent.
+func TestCodexAgent_SendStarterPing_RateCappedSendsNoEvent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("event: response.created\n\n"))
+	}))
+	defer srv.Close()
+
+	engine, delivered := starterWebhookEngine(t)
+	client := api.NewCodexClient("tok_abc", slog.Default(), api.WithCodexStarterURL(srv.URL))
+	ag := NewCodexAgent(client, nil, nil, time.Hour, slog.Default(), nil)
+	ag.SetNotifier(engine)
+
+	for i := 0; i < codexStarterMaxFires+2; i++ {
+		ag.SendStarterPing(context.Background(), "acct", "five_hour")
+	}
+
+	if got := len(delivered()); got != codexStarterMaxFires {
+		t.Errorf("delivered %d events, want %d (rate-capped pings send nothing)", got, codexStarterMaxFires)
 	}
 }

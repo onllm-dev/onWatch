@@ -191,6 +191,7 @@ func (a *AntigravityAgent) poll(ctx context.Context) {
 				QuotaKey:    g.GroupKey,
 				Utilization: utilization,
 				Limit:       100, // Percentage-based
+				ResetAt:     derefTime(g.ResetTime),
 			})
 		}
 	}

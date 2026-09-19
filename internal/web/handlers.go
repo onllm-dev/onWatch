@@ -42,6 +42,17 @@ var loginErrors = map[string]string{
 	LoginErrorRateLimit: "Too many login attempts. Please try again later.",
 }
 
+// Webhook limits enforced when settings are saved. The timeout and retry caps
+// mirror the sender's own clamps in internal/notify so the UI reports a clear
+// validation error instead of silently accepting a value that gets reduced.
+const (
+	maxWebhookHeaders        = 10
+	maxWebhookHeaderNameLen  = 64
+	maxWebhookHeaderValueLen = 512
+	maxWebhookTimeoutSeconds = 15
+	maxWebhookRetries        = 5
+)
+
 // Notifier defines the interface for the notification engine.
 // The concrete implementation lives in internal/notify.
 type Notifier interface {
@@ -53,6 +64,8 @@ type Notifier interface {
 	TestSMTPDiag() (string, error)
 	SetEncryptionKey(key string)
 	GetVAPIDPublicKey() string
+	ConfigureWebhook() error
+	SendTestWebhook() error
 }
 
 // ProviderAgentController controls provider agent runtime lifecycle.
@@ -81,40 +94,42 @@ type MiniMaxAccountReloader interface {
 
 // Handler handles HTTP requests for the web dashboard
 type Handler struct {
-	store              *store.Store
-	tracker            *tracker.Tracker
-	zaiTracker         *tracker.ZaiTracker
-	anthropicTracker   *tracker.AnthropicTracker
-	copilotTracker     *tracker.CopilotTracker
-	codexTracker       *tracker.CodexTracker
-	antigravityTracker *tracker.AntigravityTracker
-	minimaxTracker     *tracker.MiniMaxTracker
-	geminiTracker      *tracker.GeminiTracker
-	openrouterTracker  *tracker.OpenRouterTracker
-	moonshotTracker    *tracker.MoonshotTracker
-	deepseekTracker    *tracker.DeepSeekTracker
-	cursorTracker      *tracker.CursorTracker
-	grokTracker        *tracker.GrokTracker
-	kimiTracker        *tracker.KimiTracker
-	opencodeTracker    *tracker.OpenCodeTracker
-	ollamaTracker      *tracker.OllamaTracker
-	updater            *update.Updater
-	notifier           Notifier
-	agentManager       ProviderAgentController
-	minimaxAgentMgr    MiniMaxAccountReloader
-	logger             *slog.Logger
-	dashboardTmpl      *template.Template
-	loginTmpl          *template.Template
-	settingsTmpl       *template.Template
-	sessions           *SessionStore
-	config             *config.Config
-	metrics            *metrics.Metrics
-	version            string
-	smtpTestMu         sync.Mutex
-	smtpTestLastSent   time.Time
-	pushTestMu         sync.Mutex
-	pushTestLastSent   time.Time
-	rateLimiter        *LoginRateLimiter // Per-IP rate limiting for login attempts
+	store               *store.Store
+	tracker             *tracker.Tracker
+	zaiTracker          *tracker.ZaiTracker
+	anthropicTracker    *tracker.AnthropicTracker
+	copilotTracker      *tracker.CopilotTracker
+	codexTracker        *tracker.CodexTracker
+	antigravityTracker  *tracker.AntigravityTracker
+	minimaxTracker      *tracker.MiniMaxTracker
+	geminiTracker       *tracker.GeminiTracker
+	openrouterTracker   *tracker.OpenRouterTracker
+	moonshotTracker     *tracker.MoonshotTracker
+	deepseekTracker     *tracker.DeepSeekTracker
+	cursorTracker       *tracker.CursorTracker
+	grokTracker         *tracker.GrokTracker
+	kimiTracker         *tracker.KimiTracker
+	opencodeTracker     *tracker.OpenCodeTracker
+	ollamaTracker       *tracker.OllamaTracker
+	updater             *update.Updater
+	notifier            Notifier
+	agentManager        ProviderAgentController
+	minimaxAgentMgr     MiniMaxAccountReloader
+	logger              *slog.Logger
+	dashboardTmpl       *template.Template
+	loginTmpl           *template.Template
+	settingsTmpl        *template.Template
+	sessions            *SessionStore
+	config              *config.Config
+	metrics             *metrics.Metrics
+	version             string
+	smtpTestMu          sync.Mutex
+	smtpTestLastSent    time.Time
+	webhookTestMu       sync.Mutex
+	webhookTestLastSent time.Time
+	pushTestMu          sync.Mutex
+	pushTestLastSent    time.Time
+	rateLimiter         *LoginRateLimiter // Per-IP rate limiting for login attempts
 }
 
 // DefaultCodexAccountID is the default account ID for single-account setups.
@@ -6673,6 +6688,18 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Webhook settings (never return the actual bearer token)
+		webhookJSON, _ := h.store.GetSetting("webhook")
+		if webhookJSON != "" {
+			var wh map[string]interface{}
+			if json.Unmarshal([]byte(webhookJSON), &wh) == nil {
+				token, _ := wh["bearer_token"].(string)
+				wh["bearer_token"] = ""
+				wh["bearer_token_set"] = token != ""
+				result["webhook"] = wh
+			}
+		}
+
 		// Provider visibility settings
 		visJSON, _ := h.store.GetSetting("provider_visibility")
 		if visJSON != "" {
@@ -6894,7 +6921,10 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			NotifyReset       bool    `json:"notify_reset"`
 			NotifyAuthError   bool    `json:"notify_auth_error"`
 			CooldownMinutes   int     `json:"cooldown_minutes"`
-			Overrides         []struct {
+			// Channels is a pointer so an omitted value keeps the stored
+			// selection instead of silently resetting every channel to off.
+			Channels  *notify.NotificationChannels `json:"channels,omitempty"`
+			Overrides []struct {
 				QuotaKey       string  `json:"quota_key"`
 				Provider       string  `json:"provider"`
 				Warning        float64 `json:"warning"`
@@ -6940,6 +6970,18 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Preserve the stored channel selection when the client omits it.
+		if notif.Channels == nil {
+			if existingJSON, _ := h.store.GetSetting("notifications"); existingJSON != "" {
+				var existing struct {
+					Channels *notify.NotificationChannels `json:"channels"`
+				}
+				if json.Unmarshal([]byte(existingJSON), &existing) == nil {
+					notif.Channels = existing.Channels
+				}
+			}
+		}
+
 		notifJSON, _ := json.Marshal(notif)
 		if err := h.store.SetSetting("notifications", string(notifJSON)); err != nil {
 			h.logger.Error("failed to save notification settings", "error", err)
@@ -6952,6 +6994,82 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if h.notifier != nil {
 			if err := h.notifier.Reload(); err != nil {
 				h.logger.Error("failed to reload notifier after notification update", "error", err)
+			}
+		}
+	}
+
+	// Handle webhook settings. The stored blob is notify.WebhookConfig, the same
+	// shape the engine reloads, so there is a single definition to keep in sync.
+	if raw, ok := body["webhook"]; ok {
+		var wh notify.WebhookConfig
+		if err := json.Unmarshal(raw, &wh); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid webhook value")
+			return
+		}
+
+		// An empty URL disables the channel; anything else must be a usable endpoint.
+		wh.URL = strings.TrimSpace(wh.URL)
+		if wh.URL != "" {
+			if err := notify.ValidateWebhookURL(wh.URL); err != nil {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
+		if err := validateWebhookHeaders(wh.Headers); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if wh.TimeoutSeconds < 0 || wh.TimeoutSeconds > maxWebhookTimeoutSeconds {
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("webhook timeout must be between 0 and %d seconds (0 uses the default)", maxWebhookTimeoutSeconds))
+			return
+		}
+		if wh.Retries < 0 || wh.Retries > maxWebhookRetries {
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("webhook retries must be between 0 and %d", maxWebhookRetries))
+			return
+		}
+
+		// A blank token keeps the stored one: the UI never echoes it back.
+		if wh.BearerToken == "" {
+			if existingJSON, _ := h.store.GetSetting("webhook"); existingJSON != "" {
+				var existing map[string]interface{}
+				if json.Unmarshal([]byte(existingJSON), &existing) == nil {
+					if token, ok := existing["bearer_token"].(string); ok {
+						wh.BearerToken = token
+					}
+				}
+			}
+		}
+
+		// Encrypt the token at rest, keyed off the admin password hash.
+		if wh.BearerToken != "" && !notify.IsEncryptedValue(wh.BearerToken) {
+			if h.sessions == nil {
+				respondError(w, http.StatusServiceUnavailable, "cannot encrypt webhook token before authentication is configured")
+				return
+			}
+			encryptionKey := DeriveEncryptionKey(h.sessions.passwordHash, nil)
+			encrypted, err := notify.EncryptForStorage(wh.BearerToken, encryptionKey)
+			if err != nil {
+				h.logger.Error("failed to encrypt webhook bearer token", "error", err)
+				respondError(w, http.StatusInternalServerError, "failed to encrypt webhook token")
+				return
+			}
+			wh.BearerToken = encrypted
+		}
+
+		webhookJSON, _ := json.Marshal(wh)
+		if err := h.store.SetSetting("webhook", string(webhookJSON)); err != nil {
+			h.logger.Error("failed to save webhook settings", "error", err)
+			respondError(w, http.StatusInternalServerError, "failed to save webhook settings")
+			return
+		}
+		result["webhook"] = "saved"
+
+		// Reconfigure the live sender with the new settings
+		if h.notifier != nil {
+			if err := h.notifier.ConfigureWebhook(); err != nil {
+				h.logger.Error("failed to reconfigure webhook after settings update", "error", err)
 			}
 		}
 	}
@@ -7144,6 +7262,100 @@ func (h *Handler) SMTPTest(w http.ResponseWriter, r *http.Request) {
 		"message":     "Test email sent successfully",
 		"diagnostics": diag,
 	})
+}
+
+// WebhookTest posts a test payload to the configured webhook endpoint.
+func (h *Handler) WebhookTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Rate limit: 10 second cooldown
+	h.webhookTestMu.Lock()
+	elapsed := time.Since(h.webhookTestLastSent)
+	if elapsed < 10*time.Second {
+		h.webhookTestMu.Unlock()
+		remaining := int((10*time.Second - elapsed).Seconds())
+		respondError(w, http.StatusTooManyRequests, fmt.Sprintf("please wait %d seconds before sending another test", remaining))
+		return
+	}
+	h.webhookTestLastSent = time.Now()
+	h.webhookTestMu.Unlock()
+
+	if h.notifier == nil {
+		respondError(w, http.StatusServiceUnavailable, "notification engine not configured")
+		return
+	}
+
+	if err := h.notifier.SendTestWebhook(); err != nil {
+		h.logger.Error("webhook test failed", "error", err)
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Test webhook delivered successfully",
+	})
+}
+
+// validateWebhookHeaders rejects malformed or oversized custom header sets at
+// save time. net/http refuses non-token header names and control characters in
+// values when the request is built, so anything accepted here that it would
+// reject later would fail every delivery instead of failing the save.
+func validateWebhookHeaders(headers map[string]string) error {
+	if len(headers) > maxWebhookHeaders {
+		return fmt.Errorf("at most %d custom headers are supported", maxWebhookHeaders)
+	}
+	for name, value := range headers {
+		if name == "" {
+			return fmt.Errorf("custom header names cannot be empty")
+		}
+		if len(name) > maxWebhookHeaderNameLen || len(value) > maxWebhookHeaderValueLen {
+			return fmt.Errorf("custom header %q is too long", name)
+		}
+		if !isHeaderToken(name) {
+			return fmt.Errorf("custom header name %q may only contain letters, digits, and !#$%%&'*+-.^_`|~", name)
+		}
+		if !isHeaderValue(value) {
+			return fmt.Errorf("custom header %q contains invalid characters", name)
+		}
+	}
+	return nil
+}
+
+// isHeaderToken reports whether s is an RFC 7230 token (a valid header name).
+func isHeaderToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		case strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// isHeaderValue reports whether s contains only characters net/http accepts in
+// a header value: printable ASCII, horizontal tab, and bytes above 0x7F.
+func isHeaderValue(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\t' || (c >= 0x20 && c != 0x7f) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // PushVAPIDKey returns the VAPID public key for push subscription.
@@ -7455,6 +7667,12 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if len(reEncryptErrors) > 0 {
 		h.logger.Warn("some data could not be re-encrypted during password change", "errors", reEncryptErrors)
 		// Continue anyway - data might need manual re-entry or was already encrypted with new key
+	}
+
+	// Keep the running notifier on the new key so secrets saved before the next
+	// restart (which are encrypted with the new hash) can still be read back.
+	if h.notifier != nil {
+		h.notifier.SetEncryptionKey(DeriveEncryptionKey(newHash, nil))
 	}
 
 	// Invalidate all sessions (force re-login)

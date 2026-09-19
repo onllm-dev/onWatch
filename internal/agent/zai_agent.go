@@ -120,6 +120,7 @@ func (a *ZaiAgent) poll(ctx context.Context) {
 				QuotaKey:    "tokens",
 				Utilization: float64(snapshot.TokensPercentage),
 				Limit:       snapshot.TokensUsage,
+				ResetAt:     derefTime(snapshot.TokensNextResetTime),
 			})
 		}
 		if snapshot.TimeUsage > 0 {
@@ -129,6 +130,7 @@ func (a *ZaiAgent) poll(ctx context.Context) {
 				QuotaKey:    "time",
 				Utilization: pct,
 				Limit:       snapshot.TimeUsage,
+				ResetAt:     derefTime(snapshot.TimeNextResetTime),
 			})
 		}
 	}

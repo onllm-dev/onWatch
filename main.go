@@ -1447,6 +1447,7 @@ func run() error {
 	notifier.Reload()
 	notifier.ConfigureSMTP()
 	notifier.ConfigurePush()
+	notifier.ConfigureWebhook()
 
 	// Wire notifier to agents
 	if ag != nil {

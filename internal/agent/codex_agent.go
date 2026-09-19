@@ -359,10 +359,27 @@ func (a *CodexAgent) SendStarterPing(ctx context.Context, codexAccountID, quotaN
 	if err := a.client.SendStarterPing(pingCtx, codexAccountID); err != nil {
 		a.logger.Warn("Codex auto quota-starter ping failed",
 			"quota", quotaName, "account_id", a.accountID, "model", api.CodexStarterModel(), "error", err)
+		a.sendStarterEvent(quotaName, false, err.Error())
 		return
 	}
 	a.logger.Info("Codex auto quota-starter ping sent",
 		"quota", quotaName, "account_id", a.accountID, "model", api.CodexStarterModel())
+	a.sendStarterEvent(quotaName, true, "")
+}
+
+// sendStarterEvent reports an auto quota-starter outcome to the notifier.
+// The detail is the transport error text, which never contains credentials.
+func (a *CodexAgent) sendStarterEvent(quotaName string, success bool, detail string) {
+	if a.notifier == nil {
+		return
+	}
+	a.notifier.SendStarterEvent(notify.StarterEvent{
+		Provider:  "codex",
+		QuotaKey:  quotaName,
+		AccountID: fmt.Sprintf("%d", a.accountID),
+		Success:   success,
+		Detail:    detail,
+	})
 }
 
 // sendAuthErrorNotification sends an auth error notification via the notifier.
@@ -601,6 +618,7 @@ func (a *CodexAgent) poll(ctx context.Context) {
 				AccountID:   fmt.Sprintf("%d", a.accountID),
 				Utilization: q.Utilization,
 				Limit:       100,
+				ResetAt:     derefTime(q.ResetsAt),
 			})
 		}
 	}

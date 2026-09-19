@@ -2716,6 +2716,21 @@ button, input, select { font-family: inherit; }
   border-color: var(--accent-teal);
   box-shadow: 0 0 0 3px var(--accent-teal-muted);
 }
+textarea.settings-input {
+  resize: vertical;
+  min-height: 76px;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.settings-subsection-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 24px 0 12px;
+}
 
 .settings-input-sm {
   width: 72px;

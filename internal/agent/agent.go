@@ -168,3 +168,13 @@ func (a *Agent) poll(ctx context.Context) {
 		"sub_renews_at", resp.Subscription.RenewsAt,
 	)
 }
+
+// derefTime returns the pointed-to time, or the zero time when the pointer is
+// nil. Providers report a quota reset as an optional timestamp; notifications
+// omit reset_at entirely when it is unknown.
+func derefTime(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
+}

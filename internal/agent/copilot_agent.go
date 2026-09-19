@@ -119,6 +119,7 @@ func (a *CopilotAgent) poll(ctx context.Context) {
 				QuotaKey:    q.Name,
 				Utilization: utilization,
 				Limit:       float64(q.Entitlement),
+				ResetAt:     derefTime(snapshot.ResetDate),
 			})
 		}
 	}

@@ -111,6 +111,7 @@ func (a *GrokAgent) poll(ctx context.Context) {
 			Provider:    "grok",
 			QuotaKey:    q.Name,
 			Utilization: q.Utilization,
+			ResetAt:     derefTime(q.ResetsAt),
 		})
 	}
 

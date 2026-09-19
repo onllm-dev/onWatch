@@ -9540,6 +9540,7 @@ async function initSettingsPage() {
   setupProviderReload();
   setupProviderSettingsModal();
   setupSMTPTest();
+  setupWebhookTest();
   setupPushNotifications();
   setupSettingsPassword();
   setupThresholdSliders();
@@ -9681,14 +9682,20 @@ async function loadSettings() {
       if (n.channels) {
         const emailToggle = document.getElementById('channel-email');
         const pushToggle = document.getElementById('channel-push');
+        const webhookToggle = document.getElementById('channel-webhook');
         if (emailToggle) emailToggle.checked = n.channels.email !== false;
         if (pushToggle) pushToggle.checked = n.channels.push !== false;
+        // Webhook defaults off: it only works once an endpoint is configured.
+        if (webhookToggle) webhookToggle.checked = n.channels.webhook === true;
       }
       // Load overrides
       if (n.overrides && n.overrides.length > 0) {
         n.overrides.forEach(o => addOverrideRow(o.quota_key, o.provider, o.warning, o.critical, o.is_absolute, o.disable_reset, o.disable_warning, o.disable_critical));
       }
     }
+
+    // Webhook settings
+    loadWebhookSettings(data.webhook);
 
     // Provider settings - store in State for modal use
     State.providerSettings = data.provider_settings || {};
@@ -11405,10 +11412,14 @@ function gatherSettings() {
       channels: {
         email: document.getElementById('channel-email')?.checked ?? true,
         push: document.getElementById('channel-push')?.checked ?? true,
+        webhook: document.getElementById('channel-webhook')?.checked ?? false,
       },
       overrides: overrides,
     };
   }
+
+  const webhook = collectWebhookSettings();
+  if (webhook) settings.webhook = webhook;
 
   // Provider visibility
   const toggles = document.querySelectorAll('#provider-toggles input[type="checkbox"]');
@@ -11492,7 +11503,15 @@ function setupSettingsSave() {
     saveBtn.textContent = 'Saving...';
     if (feedback) { feedback.hidden = true; }
 
-    const settings = gatherSettings();
+    let settings;
+    try {
+      settings = gatherSettings();
+    } catch (e) {
+      showSettingsFeedback(feedback, e.message || 'Invalid settings.', 'error');
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
+      return;
+    }
 
     // Client-side validation
     if (settings.notifications) {
@@ -11590,6 +11609,130 @@ function setupSMTPTest() {
     } finally {
       testBtn.disabled = false;
       testBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Send Test Email';
+    }
+  });
+}
+
+// Parses the "Name: value" per line textarea into a headers object.
+// Returns null when a line is malformed so the caller can surface an error.
+function parseWebhookHeaders(text) {
+  const headers = {};
+  const lines = (text || '').split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const idx = trimmed.indexOf(':');
+    if (idx <= 0) return null;
+    const name = trimmed.slice(0, idx).trim();
+    const value = trimmed.slice(idx + 1).trim();
+    if (!name) return null;
+    headers[name] = value;
+  }
+  return headers;
+}
+
+function formatWebhookHeaders(headers) {
+  if (!headers) return '';
+  return Object.keys(headers).map(name => name + ': ' + headers[name]).join('\n');
+}
+
+function loadWebhookSettings(webhook) {
+  const urlInput = document.getElementById('webhook-url');
+  if (!urlInput) return;
+
+  const w = webhook || {};
+  urlInput.value = w.url || '';
+  setVal('webhook-timeout', w.timeout_seconds || 5);
+  setVal('webhook-retries', typeof w.retries === 'number' ? w.retries : 2);
+
+  const headersInput = document.getElementById('webhook-headers');
+  if (headersInput) headersInput.value = formatWebhookHeaders(w.headers);
+
+  // The token is never echoed back; only whether one is stored.
+  const tokenInput = document.getElementById('webhook-token');
+  const tokenHint = document.getElementById('webhook-token-hint');
+  if (tokenInput) tokenInput.value = '';
+  if (tokenHint) {
+    tokenHint.textContent = w.bearer_token_set
+      ? 'A token is saved. Leave blank to keep it.'
+      : 'Stored encrypted. Leave blank to keep the saved token.';
+  }
+
+  const events = w.events || {};
+  const eventFields = {
+    'webhook-event-warning': 'warning',
+    'webhook-event-critical': 'critical',
+    'webhook-event-reset': 'reset',
+    'webhook-event-auth-error': 'auth_error',
+    'webhook-event-starter-success': 'starter_success',
+    'webhook-event-starter-failure': 'starter_failure',
+  };
+  // Warning and critical default on for a fresh config; the rest default off.
+  const defaults = { warning: true, critical: true };
+  const isNew = !webhook;
+  Object.keys(eventFields).forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const key = eventFields[id];
+    el.checked = isNew ? !!defaults[key] : events[key] === true;
+  });
+}
+
+function collectWebhookSettings() {
+  const urlInput = document.getElementById('webhook-url');
+  if (!urlInput) return null;
+
+  const headersInput = document.getElementById('webhook-headers');
+  const headers = parseWebhookHeaders(headersInput ? headersInput.value : '');
+  if (headers === null) {
+    throw new Error('Custom headers must use "Name: value" on each line.');
+  }
+
+  return {
+    url: urlInput.value.trim(),
+    bearer_token: document.getElementById('webhook-token')?.value || '',
+    headers: headers,
+    timeout_seconds: parseInt(document.getElementById('webhook-timeout')?.value) || 5,
+    retries: parseInt(document.getElementById('webhook-retries')?.value ?? '2') || 0,
+    events: {
+      warning: document.getElementById('webhook-event-warning')?.checked ?? false,
+      critical: document.getElementById('webhook-event-critical')?.checked ?? false,
+      reset: document.getElementById('webhook-event-reset')?.checked ?? false,
+      auth_error: document.getElementById('webhook-event-auth-error')?.checked ?? false,
+      starter_success: document.getElementById('webhook-event-starter-success')?.checked ?? false,
+      starter_failure: document.getElementById('webhook-event-starter-failure')?.checked ?? false,
+    },
+  };
+}
+
+function setupWebhookTest() {
+  const testBtn = document.getElementById('webhook-test-btn');
+  const result = document.getElementById('webhook-test-result');
+  if (!testBtn) return;
+
+  const label = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Send Test Webhook';
+
+  testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true;
+    testBtn.textContent = 'Sending...';
+    if (result) { result.textContent = ''; result.className = 'settings-test-result'; }
+
+    try {
+      const resp = await authFetch('/api/settings/webhook/test', { method: 'POST' });
+      const data = await resp.json();
+      if (result) {
+        const ok = data.success === true;
+        result.textContent = data.message || data.error || (ok ? 'Test webhook delivered.' : 'Test failed.');
+        result.className = 'settings-test-result ' + (ok ? 'success' : 'error');
+      }
+    } catch (e) {
+      if (result) {
+        result.textContent = 'Network error.';
+        result.className = 'settings-test-result error';
+      }
+    } finally {
+      testBtn.disabled = false;
+      testBtn.innerHTML = label;
     }
   });
 }

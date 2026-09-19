@@ -114,6 +114,7 @@ func (a *MiniMaxAgent) poll(ctx context.Context) {
 					QuotaKey:    "coding_plan",
 					Utilization: merged.UsedPercent,
 					Limit:       float64(merged.Total),
+					ResetAt:     derefTime(merged.ResetAt),
 				})
 			}
 		} else {
@@ -126,6 +127,7 @@ func (a *MiniMaxAgent) poll(ctx context.Context) {
 					QuotaKey:    m.ModelName,
 					Utilization: m.UsedPercent,
 					Limit:       float64(m.Total),
+					ResetAt:     derefTime(m.ResetAt),
 				})
 			}
 		}

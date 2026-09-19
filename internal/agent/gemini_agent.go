@@ -312,6 +312,7 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 				QuotaKey:    q.ModelID,
 				Utilization: q.UsagePercent,
 				Limit:       100,
+				ResetAt:     derefTime(q.ResetTime),
 			})
 		}
 	}

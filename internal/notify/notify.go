@@ -17,6 +17,7 @@ type NotificationEngine struct {
 	logger              *slog.Logger
 	mailer              *SMTPMailer
 	pushSender          *PushSender
+	webhookSender       *WebhookSender
 	vapidPublicKey      string
 	mu                  sync.RWMutex
 	cfg                 NotificationConfig
@@ -36,8 +37,9 @@ type NotificationConfig struct {
 
 // NotificationChannels controls which delivery channels are active.
 type NotificationChannels struct {
-	Email bool `json:"email"`
-	Push  bool `json:"push"`
+	Email   bool `json:"email"`
+	Push    bool `json:"push"`
+	Webhook bool `json:"webhook"`
 }
 
 // ThresholdOverride allows per-quota threshold customization.
@@ -66,6 +68,7 @@ type QuotaStatus struct {
 	Utilization   float64
 	Limit         float64
 	ResetOccurred bool
+	ResetAt       time.Time // when the quota window next resets (zero if unknown)
 }
 
 // New creates a new NotificationEngine with default configuration.
@@ -409,12 +412,16 @@ func (e *NotificationEngine) SendTestPush() error {
 func (e *NotificationEngine) Check(status QuotaStatus) {
 	e.mu.RLock()
 	cfg := e.cfg
-	mailer := e.mailer
-	pushSender := e.pushSender
+	channels := channelSet{
+		mailer:  e.mailer,
+		push:    e.pushSender,
+		webhook: e.webhookSender,
+		enabled: e.cfg.Channels,
+	}
 	e.mu.RUnlock()
 
 	// Need at least one channel configured
-	if mailer == nil && pushSender == nil {
+	if !channels.any() {
 		return
 	}
 
@@ -432,7 +439,7 @@ func (e *NotificationEngine) Check(status QuotaStatus) {
 			e.logger.Error("failed to clear notification log on reset", "error", err)
 		}
 		if cfg.Types.Reset && !(hasOverride && override.DisableReset) {
-			e.sendNotification(mailer, pushSender, cfg.Channels, status, "reset")
+			e.sendNotification(channels, status, EventReset, 0)
 		}
 		return
 	}
@@ -460,13 +467,13 @@ func (e *NotificationEngine) Check(status QuotaStatus) {
 
 	// Check critical first (higher priority)
 	if status.Utilization >= criticalThreshold && cfg.Types.Critical && !(hasOverride && override.DisableCrit) {
-		e.sendNotification(mailer, pushSender, cfg.Channels, status, "critical")
+		e.sendNotification(channels, status, EventCritical, criticalThreshold)
 		return
 	}
 
 	// Check warning
 	if status.Utilization >= warningThreshold && cfg.Types.Warning && !(hasOverride && override.DisableWarning) {
-		e.sendNotification(mailer, pushSender, cfg.Channels, status, "warning")
+		e.sendNotification(channels, status, EventWarning, warningThreshold)
 		return
 	}
 }
@@ -506,7 +513,7 @@ func (e *NotificationEngine) TestSMTPDiag() (string, error) {
 // sendNotification sends notifications via enabled channels.
 // Each provider+quota+type combination fires at most once per cycle.
 // The notification_log entry is cleared on quota reset (see Check/resetOccurred).
-func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *PushSender, channels NotificationChannels, status QuotaStatus, notifType string) {
+func (e *NotificationEngine) sendNotification(channels channelSet, status QuotaStatus, notifType string, threshold float64) {
 	provider := normalizeNotificationProvider(status.Provider)
 	quotaKey := notificationQuotaKey(status)
 	sentAt, _, err := e.store.GetLastNotification(provider, quotaKey, notifType)
@@ -527,8 +534,8 @@ func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *Pu
 	sent := false
 
 	// Send via email if enabled and configured
-	if channels.Email && mailer != nil {
-		if err := mailer.Send(subject, body); err != nil {
+	if channels.enabled.Email && channels.mailer != nil {
+		if err := channels.mailer.Send(subject, body); err != nil {
 			e.logger.Error("failed to send email notification", "error", err,
 				"quota", quotaKey, "type", notifType)
 		} else {
@@ -537,7 +544,7 @@ func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *Pu
 	}
 
 	// Send via push if enabled and configured
-	if channels.Push && pushSender != nil {
+	if channels.enabled.Push && channels.push != nil {
 		subs, err := e.store.GetPushSubscriptions()
 		if err != nil {
 			e.logger.Error("failed to get push subscriptions", "error", err)
@@ -546,7 +553,7 @@ func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *Pu
 				ps := PushSubscription{Endpoint: sub.Endpoint}
 				ps.Keys.P256dh = sub.P256dh
 				ps.Keys.Auth = sub.Auth
-				if err := pushSender.Send(ps, subject, body); err != nil {
+				if err := channels.push.Send(ps, subject, body); err != nil {
 					e.logger.Error("failed to send push notification", "error", err,
 						"endpoint", sub.Endpoint)
 					// If subscription is gone (410), remove it
@@ -558,6 +565,11 @@ func (e *NotificationEngine) sendNotification(mailer *SMTPMailer, pushSender *Pu
 				}
 			}
 		}
+	}
+
+	// Send via webhook if enabled and configured
+	if channels.deliverWebhook(e.logger, webhookPayloadForQuota(status, notifType, subject, body, threshold)) {
+		sent = true
 	}
 
 	// Log the notification only if at least one channel succeeded
@@ -647,8 +659,7 @@ type AuthErrorAlert struct {
 func (e *NotificationEngine) SendAuthErrorNotification(alert AuthErrorAlert) bool {
 	e.mu.RLock()
 	cfg := e.cfg
-	mailer := e.mailer
-	pushSender := e.pushSender
+	channels := channelSet{mailer: e.mailer, push: e.pushSender, webhook: e.webhookSender, enabled: e.cfg.Channels}
 	e.mu.RUnlock()
 
 	// Check if auth error notifications are enabled
@@ -663,8 +674,8 @@ func (e *NotificationEngine) SendAuthErrorNotification(alert AuthErrorAlert) boo
 	sent := false
 
 	// Send via email if enabled and configured
-	if cfg.Channels.Email && mailer != nil {
-		if err := mailer.Send(subject, body); err != nil {
+	if channels.enabled.Email && channels.mailer != nil {
+		if err := channels.mailer.Send(subject, body); err != nil {
 			e.logger.Error("failed to send auth error email", "error", err, "provider", alert.Provider)
 		} else {
 			sent = true
@@ -673,7 +684,7 @@ func (e *NotificationEngine) SendAuthErrorNotification(alert AuthErrorAlert) boo
 	}
 
 	// Send via push if enabled and configured
-	if cfg.Channels.Push && pushSender != nil {
+	if channels.enabled.Push && channels.push != nil {
 		subs, err := e.store.GetPushSubscriptions()
 		if err != nil {
 			e.logger.Error("failed to get push subscriptions", "error", err)
@@ -682,7 +693,7 @@ func (e *NotificationEngine) SendAuthErrorNotification(alert AuthErrorAlert) boo
 				ps := PushSubscription{Endpoint: sub.Endpoint}
 				ps.Keys.P256dh = sub.P256dh
 				ps.Keys.Auth = sub.Auth
-				if err := pushSender.Send(ps, subject, alert.Message); err != nil {
+				if err := channels.push.Send(ps, subject, alert.Message); err != nil {
 					e.logger.Error("failed to send auth error push", "error", err, "endpoint", sub.Endpoint)
 					if strings.Contains(err.Error(), "410") {
 						e.store.DeletePushSubscription(sub.Endpoint)
@@ -694,7 +705,19 @@ func (e *NotificationEngine) SendAuthErrorNotification(alert AuthErrorAlert) boo
 		}
 	}
 
-	// Create in-dashboard system alert (always, regardless of email/push success)
+	// Send via webhook if enabled and configured
+	if channels.deliverWebhook(e.logger, WebhookPayload{
+		Event:     EventAuthError,
+		Provider:  normalizeNotificationProvider(alert.Provider),
+		AccountID: alert.AccountID,
+		Title:     subject,
+		Message:   alert.Message,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}) {
+		sent = true
+	}
+
+	// Create in-dashboard system alert (always, regardless of delivery success)
 	severity := "warning"
 	if !alert.IsRecovable {
 		severity = "error"
@@ -742,4 +765,191 @@ func (e *NotificationEngine) buildAuthErrorBody(alert AuthErrorAlert) string {
 	}
 	sb.WriteString("\n-- Sent by onWatch")
 	return sb.String()
+}
+
+// channelSet bundles the delivery channels resolved for a single notification,
+// so a send does not have to re-acquire the engine lock per channel.
+type channelSet struct {
+	mailer  *SMTPMailer
+	push    *PushSender
+	webhook *WebhookSender
+	enabled NotificationChannels
+}
+
+// any reports whether at least one channel is both configured and enabled, so
+// Check can skip per-quota log reads and message formatting when nothing could
+// deliver anyway.
+func (c channelSet) any() bool {
+	return (c.enabled.Email && c.mailer != nil) ||
+		(c.enabled.Push && c.push != nil) ||
+		(c.enabled.Webhook && c.webhook != nil)
+}
+
+// webhookEnabled reports whether the webhook channel should deliver this event.
+func (c channelSet) webhookEnabled(event string) bool {
+	return c.enabled.Webhook && c.webhook != nil && c.webhook.Enabled(event)
+}
+
+// deliverWebhook sends payload if the webhook channel is enabled for its event.
+// Returns true only when a delivery succeeded, so callers can treat it like the
+// other channels when deciding whether to log the notification as sent.
+func (c channelSet) deliverWebhook(logger *slog.Logger, payload WebhookPayload) bool {
+	if !c.webhookEnabled(payload.Event) {
+		return false
+	}
+	if err := c.webhook.Send(payload); err != nil {
+		logger.Error("failed to send webhook notification", "error", err,
+			"event", payload.Event, "provider", payload.Provider, "quota", payload.QuotaKey)
+		return false
+	}
+	return true
+}
+
+// webhookPayloadForQuota builds the JSON payload for a quota threshold or reset event.
+func webhookPayloadForQuota(status QuotaStatus, event, title, message string, threshold float64) WebhookPayload {
+	payload := WebhookPayload{
+		Event:     event,
+		Provider:  normalizeNotificationProvider(status.Provider),
+		QuotaKey:  status.QuotaKey,
+		AccountID: status.AccountID,
+		Title:     title,
+		Message:   message,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	utilization := status.Utilization
+	payload.Utilization = &utilization
+	if status.Limit > 0 {
+		limit := status.Limit
+		payload.Limit = &limit
+	}
+	if threshold > 0 {
+		t := threshold
+		payload.Threshold = &t
+	}
+	if !status.ResetAt.IsZero() {
+		payload.ResetAt = status.ResetAt.UTC().Format(time.RFC3339)
+	}
+	return payload
+}
+
+// ConfigureWebhook initializes or updates the webhook sender from DB settings.
+// The handler stores webhook config as a single JSON blob under key "webhook",
+// in the WebhookConfig shape.
+func (e *NotificationEngine) ConfigureWebhook() error {
+	raw, err := e.store.GetSetting("webhook")
+	if err != nil {
+		return fmt.Errorf("notify.ConfigureWebhook: %w", err)
+	}
+
+	var cfg WebhookConfig
+	if raw != "" {
+		if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+			return fmt.Errorf("notify.ConfigureWebhook: invalid webhook JSON: %w", err)
+		}
+	}
+	cfg.URL = strings.TrimSpace(cfg.URL)
+
+	var sender *WebhookSender
+	if cfg.URL != "" {
+		// Decrypt the bearer token. Tokens are stored with the "enc:" prefix, so
+		// an unprefixed value is plaintext (a pre-encryption config) and passes
+		// through unchanged. A token that cannot be decrypted is dropped rather
+		// than sent as ciphertext: the endpoint's 401 is then visible in the
+		// logs and the test button, instead of tripping the breaker in silence.
+		e.mu.RLock()
+		key := e.encryptionKey
+		e.mu.RUnlock()
+		if IsEncryptedValue(cfg.BearerToken) {
+			decrypted, err := DecryptFromStorage(cfg.BearerToken, key)
+			if err != nil {
+				e.logger.Warn("webhook bearer token could not be decrypted; delivering without it - re-enter the token in settings", "error", err)
+				cfg.BearerToken = ""
+			} else {
+				cfg.BearerToken = decrypted
+			}
+		}
+		sender = NewWebhookSender(cfg, e.logger)
+	}
+
+	e.mu.Lock()
+	previous := e.webhookSender
+	e.webhookSender = sender
+	e.mu.Unlock()
+
+	if previous != nil {
+		previous.Close()
+	}
+	return nil
+}
+
+// StarterEvent describes a Codex auto quota-starter outcome.
+type StarterEvent struct {
+	Provider  string
+	QuotaKey  string
+	AccountID string
+	Success   bool
+	Detail    string // failure reason, or extra context on success
+}
+
+// SendStarterEvent delivers an auto quota-starter outcome to the webhook channel.
+//
+// Starter pings are operational events rather than quota-cycle alerts, so they
+// are not written to the notification log and are not deduplicated per cycle.
+// The starter's own rate cap bounds how often this can fire.
+func (e *NotificationEngine) SendStarterEvent(ev StarterEvent) {
+	e.mu.RLock()
+	channels := channelSet{webhook: e.webhookSender, enabled: e.cfg.Channels}
+	e.mu.RUnlock()
+
+	event := EventStarterFailure
+	if ev.Success {
+		event = EventStarterSuccess
+	}
+	if !channels.webhookEnabled(event) {
+		return
+	}
+
+	provider := normalizeNotificationProvider(ev.Provider)
+	title := fmt.Sprintf("[QUOTA STARTER] %s %s ping failed", titleCase(provider), ev.QuotaKey)
+	message := "The auto quota-starter ping did not complete."
+	if ev.Success {
+		title = fmt.Sprintf("[QUOTA STARTER] %s %s window started", titleCase(provider), ev.QuotaKey)
+		message = "The auto quota-starter ping started a new limit window."
+	}
+	if ev.Detail != "" {
+		message = message + " " + ev.Detail
+	}
+
+	payload := WebhookPayload{
+		Event:     event,
+		Provider:  provider,
+		QuotaKey:  ev.QuotaKey,
+		AccountID: ev.AccountID,
+		Title:     title,
+		Message:   message,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	channels.deliverWebhook(e.logger, payload)
+}
+
+// SendTestWebhook posts a test payload to verify the webhook configuration.
+// It ignores the per-event toggles so the endpoint can be verified during setup.
+func (e *NotificationEngine) SendTestWebhook() error {
+	e.mu.RLock()
+	sender := e.webhookSender
+	e.mu.RUnlock()
+
+	if sender == nil {
+		return fmt.Errorf("webhook not configured")
+	}
+
+	return sender.SendTest(WebhookPayload{
+		Event:     EventTest,
+		Provider:  "onwatch",
+		Title:     "[onWatch] Test Webhook",
+		Message:   "This is a test notification from onWatch. Your webhook endpoint is reachable.",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	})
 }

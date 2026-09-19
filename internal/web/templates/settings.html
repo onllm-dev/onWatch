@@ -126,6 +126,16 @@
                             </button>
                         </div>
                     </div>
+                    <div class="settings-toggle-row">
+                        <div class="settings-toggle-info">
+                            <div class="settings-toggle-label">Webhook (HTTP)</div>
+                            <div class="settings-toggle-sublabel">POST alerts to any HTTP endpoint - ntfy, Gotify, or your own service</div>
+                        </div>
+                        <label class="settings-toggle">
+                            <input type="checkbox" id="channel-webhook">
+                            <span class="settings-toggle-track"></span>
+                        </label>
+                    </div>
                 </div>
                 <div class="settings-actions" id="push-test-actions" hidden>
                     <button class="settings-test-btn" id="push-test-btn" type="button">
@@ -138,6 +148,73 @@
                     <summary>Push Diagnostics</summary>
                     <pre class="push-diagnostics-output" id="push-diagnostics">Collecting...</pre>
                 </details>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-section">
+                <h3 class="settings-section-title">Webhook Configuration</h3>
+                <p class="settings-section-desc">onWatch POSTs a JSON payload to this URL. Credentials are never included in the payload.</p>
+                <div class="settings-fields">
+                    <div class="settings-field">
+                        <label for="webhook-url">Endpoint URL</label>
+                        <input type="url" id="webhook-url" class="settings-input" placeholder="http://localhost:8080/onwatch" autocomplete="off">
+                        <span class="settings-field-hint">http or https. Local and private addresses are allowed for self-hosted services.</span>
+                    </div>
+                    <div class="settings-field">
+                        <label for="webhook-token">Bearer Token (optional)</label>
+                        <input type="password" id="webhook-token" class="settings-input" placeholder="Sent as Authorization: Bearer ..." autocomplete="new-password">
+                        <span class="settings-field-hint" id="webhook-token-hint">Stored encrypted. Leave blank to keep the saved token.</span>
+                    </div>
+                    <div class="settings-field">
+                        <label for="webhook-headers">Custom Headers (optional)</label>
+                        <textarea id="webhook-headers" class="settings-input" rows="3" placeholder="X-Title: onWatch alert&#10;X-Priority: high" autocomplete="off"></textarea>
+                        <span class="settings-field-hint">One <code>Name: value</code> pair per line. ntfy reads Title, Priority, and Tags from headers. Headers are stored unencrypted - keep credentials in the Bearer Token field.</span>
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="webhook-timeout">Timeout (seconds)</label>
+                        <input type="number" id="webhook-timeout" class="settings-input" min="1" max="15" value="5" placeholder="5">
+                        <span class="settings-field-hint">Total budget across all retries.</span>
+                    </div>
+                    <div class="settings-field settings-field-half">
+                        <label for="webhook-retries">Retries</label>
+                        <input type="number" id="webhook-retries" class="settings-input" min="0" max="5" value="2" placeholder="2">
+                        <span class="settings-field-hint">Applied to timeouts, 429, and 5xx only.</span>
+                    </div>
+                </div>
+                <h4 class="settings-subsection-title">Webhook Events</h4>
+                <div class="settings-fields">
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="webhook-event-warning" checked>
+                        <span>Warning alerts</span>
+                    </label>
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="webhook-event-critical" checked>
+                        <span>Critical alerts</span>
+                    </label>
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="webhook-event-reset">
+                        <span>Reset notifications</span>
+                    </label>
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="webhook-event-auth-error">
+                        <span>Auth error alerts</span>
+                    </label>
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="webhook-event-starter-success">
+                        <span>Quota-starter success (Codex auto quota-starter)</span>
+                    </label>
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="webhook-event-starter-failure">
+                        <span>Quota-starter failure</span>
+                    </label>
+                </div>
+                <div class="settings-actions">
+                    <button class="settings-test-btn" id="webhook-test-btn" type="button">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                        Send Test Webhook
+                    </button>
+                    <span class="settings-test-result" id="webhook-test-result"></span>
+                </div>
+                <p class="settings-section-desc">Save your settings before testing - the test uses the saved configuration.</p>
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">

@@ -3899,8 +3899,10 @@ func TestHandler_UpdateSettings_MethodNotAllowed(t *testing.T) {
 
 // mockNotifier implements the Notifier interface for testing.
 type mockNotifier struct {
-	sendTestErr  error
-	reloadCalled bool
+	sendTestErr            error
+	reloadCalled           bool
+	webhookTestErr         error
+	configureWebhookCalled bool
 }
 
 func (m *mockNotifier) Reload() error                 { m.reloadCalled = true; return nil }
@@ -3911,6 +3913,12 @@ func (m *mockNotifier) SendTestPush() error           { return nil }
 func (m *mockNotifier) TestSMTPDiag() (string, error) { return "", m.sendTestErr }
 func (m *mockNotifier) SetEncryptionKey(_ string)     {}
 func (m *mockNotifier) GetVAPIDPublicKey() string     { return "" }
+func (m *mockNotifier) SendTestWebhook() error        { return m.webhookTestErr }
+
+func (m *mockNotifier) ConfigureWebhook() error {
+	m.configureWebhookCalled = true
+	return nil
+}
 
 func TestHandler_SMTPTest_Success(t *testing.T) {
 	t.Parallel()
@@ -6285,6 +6293,8 @@ func (m *mockNotifierWithVAPID) SendTestPush() error           { return m.sendPu
 func (m *mockNotifierWithVAPID) TestSMTPDiag() (string, error) { return "", m.sendTestErr }
 func (m *mockNotifierWithVAPID) SetEncryptionKey(_ string)     {}
 func (m *mockNotifierWithVAPID) GetVAPIDPublicKey() string     { return m.vapidKey }
+func (m *mockNotifierWithVAPID) ConfigureWebhook() error       { return nil }
+func (m *mockNotifierWithVAPID) SendTestWebhook() error        { return nil }
 
 func TestHandler_PushVAPIDKey_Success(t *testing.T) {
 	t.Parallel()
@@ -8101,7 +8111,9 @@ func TestHandler_UpdateSettings_Notifications_PushChannel(t *testing.T) {
 	h := NewHandler(s, nil, nil, nil, cfg)
 	h.SetNotifier(&mockNotifier{})
 
-	body := `{"notifications":{"enabled":true,"warning_threshold":70,"critical_threshold":90,"channels":["email","push"]}}`
+	// channels is an object keyed by channel name - the array form was never
+	// readable by the notification engine, which expects the same object shape.
+	body := `{"notifications":{"enabled":true,"warning_threshold":70,"critical_threshold":90,"channels":{"email":true,"push":true}}}`
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	h.UpdateSettings(rr, req)

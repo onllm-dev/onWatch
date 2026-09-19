@@ -102,7 +102,62 @@ func ReEncryptAllData(store interface {
 		errors["smtp"] = err.Error()
 	}
 
+	// Re-encrypt webhook bearer token
+	if err := reEncryptWebhookToken(store, oldKey, newKey); err != nil {
+		errors["webhook"] = err.Error()
+	}
+
 	return errors
+}
+
+// reEncryptWebhookToken re-keys the webhook bearer token when the admin
+// password changes. The token is stored with the "enc:" prefix, so an
+// unprefixed value is plaintext and is simply encrypted with the new key.
+func reEncryptWebhookToken(store interface {
+	GetSetting(key string) (string, error)
+	SetSetting(key, value string) error
+}, oldKey, newKey string) error {
+	raw, err := store.GetSetting("webhook")
+	if err != nil || raw == "" {
+		return nil // No webhook settings to re-encrypt
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		return fmt.Errorf("failed to parse webhook settings: %w", err)
+	}
+
+	token, _ := settings["bearer_token"].(string)
+	if token == "" {
+		return nil // No token to re-encrypt
+	}
+
+	plaintext := token
+	if IsEncryptedValue(token) {
+		plaintext, err = notify.DecryptFromStorage(token, oldKey)
+		if err != nil {
+			// Already re-keyed (e.g. a retried password change) - leave it alone.
+			if _, tryNewErr := notify.DecryptFromStorage(token, newKey); tryNewErr == nil {
+				return nil
+			}
+			return fmt.Errorf("failed to decrypt webhook token with old key: %w", err)
+		}
+	}
+
+	reEncrypted, err := notify.EncryptForStorage(plaintext, newKey)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt webhook token: %w", err)
+	}
+	settings["bearer_token"] = reEncrypted
+
+	updated, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("failed to encode webhook settings: %w", err)
+	}
+	if err := store.SetSetting("webhook", string(updated)); err != nil {
+		return fmt.Errorf("failed to save re-encrypted webhook token: %w", err)
+	}
+	return nil
 }
 
 // reEncryptSMTPPassword re-encrypts the SMTP password when admin password changes.

@@ -113,6 +113,7 @@ func (a *OllamaAgent) poll(ctx context.Context) {
 				QuotaKey:    q.Name,
 				Utilization: q.Utilization,
 				Limit:       q.Limit,
+				ResetAt:     derefTime(q.ResetsAt),
 			})
 		}
 	}

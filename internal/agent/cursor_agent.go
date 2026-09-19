@@ -204,6 +204,7 @@ processSnapshot:
 				QuotaKey:    q.Name,
 				Utilization: q.Utilization,
 				Limit:       q.Limit,
+				ResetAt:     derefTime(q.ResetsAt),
 			})
 		}
 	}

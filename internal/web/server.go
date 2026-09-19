@@ -80,6 +80,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 		}
 	})
 	mux.HandleFunc(p("/api/settings/smtp/test"), handler.SMTPTest)
+	mux.HandleFunc(p("/api/settings/webhook/test"), handler.WebhookTest)
 	mux.HandleFunc(p("/api/password"), handler.ChangePassword)
 	mux.HandleFunc(p("/api/cycle-overview"), handler.CycleOverview)
 	mux.HandleFunc(p("/api/logging-history"), handler.LoggingHistory)
