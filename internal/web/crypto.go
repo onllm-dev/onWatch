@@ -160,6 +160,16 @@ func reEncryptWebhookToken(store interface {
 	return nil
 }
 
+// decryptStoredSecret decrypts a stored secret with key, accepting both storage
+// shapes in use: values written with the "enc:" prefix (webhook bearer tokens)
+// and bare ciphertext written by notify.Encrypt (SMTP passwords).
+func decryptStoredSecret(value, key string) (string, error) {
+	if IsEncryptedValue(value) {
+		return notify.DecryptFromStorage(value, key)
+	}
+	return notify.Decrypt(value, key)
+}
+
 // reEncryptSMTPPassword re-encrypts the SMTP password when admin password changes.
 func reEncryptSMTPPassword(store interface {
 	GetSetting(key string) (string, error)
@@ -186,34 +196,33 @@ func reEncryptSMTPPassword(store interface {
 		return nil // No password to re-encrypt
 	}
 
-	// Check if the password is already encrypted
-	if !IsEncryptedValue(encryptedPass) {
-		// It's plaintext, encrypt it with the new key
-		newEncrypted, err := notify.Encrypt(encryptedPass, newKey)
-		if err != nil {
-			return fmt.Errorf("failed to encrypt SMTP password: %w", err)
+	// Detect encryption by attempting decryption, not by inspecting the value.
+	// UpdateSettings stores the password as bare notify.Encrypt output with no
+	// "enc:" prefix, and ConfigureSMTP reads it back the same way, so the
+	// prefix check used here previously reported stored ciphertext as plaintext
+	// and encrypted it a second time - after which ConfigureSMTP decrypted only
+	// the outer layer and handed the inner ciphertext to the mail server.
+	plaintext, err := decryptStoredSecret(encryptedPass, oldKey)
+	if err != nil {
+		// Unreadable with the old key: either already re-keyed by a previous
+		// (perhaps retried) password change, or never encrypted at all.
+		if _, newErr := decryptStoredSecret(encryptedPass, newKey); newErr == nil {
+			return nil // Already encrypted with the new key, nothing to do
 		}
-		smtpSettings["password"] = newEncrypted
-	} else {
-		// It's encrypted, decrypt with old key and re-encrypt with new key
-		plaintext, err := notify.Decrypt(encryptedPass, oldKey)
-		if err != nil {
-			// If decryption fails with old key, try with new key (might already be re-encrypted)
-			_, tryNewErr := notify.Decrypt(encryptedPass, newKey)
-			if tryNewErr == nil {
-				// Already encrypted with new key, nothing to do
-				return nil
-			}
+		if IsEncryptedValue(encryptedPass) {
+			// Marked as ciphertext but readable with neither key - do not
+			// silently encrypt a corrupt value and bury the original.
 			return fmt.Errorf("failed to decrypt SMTP password with old key: %w", err)
 		}
-
-		// Re-encrypt with new key
-		newEncrypted, err := notify.Encrypt(plaintext, newKey)
-		if err != nil {
-			return fmt.Errorf("failed to re-encrypt SMTP password: %w", err)
-		}
-		smtpSettings["password"] = newEncrypted
+		plaintext = encryptedPass // Legacy plaintext password
 	}
+
+	// Always write back in the bare form ConfigureSMTP expects.
+	newEncrypted, err := notify.Encrypt(plaintext, newKey)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt SMTP password: %w", err)
+	}
+	smtpSettings["password"] = newEncrypted
 
 	// Save updated settings
 	newJSON, err := json.Marshal(smtpSettings)
