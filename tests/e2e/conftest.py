@@ -120,7 +120,7 @@ def onwatch_server(mock_server: subprocess.Popen) -> Generator[subprocess.Popen,
     build_tags = os.environ.get("ONWATCH_E2E_GO_BUILD_TAGS", "").strip()
     if build_tags:
         build_cmd.extend(["-tags", build_tags])
-    build_cmd.extend(["-o", ONWATCH_BINARY, "."])
+    build_cmd.extend(["-o", ONWATCH_BINARY, "./cmd/onwatch"])
 
     result = subprocess.run(
         build_cmd,

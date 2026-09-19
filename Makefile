@@ -16,7 +16,7 @@ integration:
 	go test -v -tags=integration ./...
 
 dev:
-	go run . --debug --interval 10
+	go run ./cmd/onwatch --debug --interval 10
 
 lint:
 	go fmt ./...

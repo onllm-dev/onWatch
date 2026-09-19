@@ -38,7 +38,7 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Build
-        run: go build -o onwatch .
+        run: go build -o onwatch ./cmd/onwatch
 
   tray-linux:
     runs-on: ubuntu-latest
@@ -57,15 +57,15 @@ jobs:
         # which the CGO_ENABLED=0 cross-compile step below proves.
         run: |
           go vet -tags menubar ./...
-          go test -race -tags menubar -count=1 ./internal/menubar ./internal/web .
+          go test -race -tags menubar -count=1 ./internal/menubar ./internal/web ./cmd/onwatch
 
       - name: Cross-compile tray binaries
         env:
           CGO_ENABLED: "0"
         run: |
-          GOOS=linux GOARCH=amd64 go build -tags menubar -o /tmp/onwatch-linux-amd64 .
-          GOOS=linux GOARCH=arm64 go build -tags menubar -o /tmp/onwatch-linux-arm64 .
-          GOOS=windows GOARCH=amd64 go build -tags menubar -o /tmp/onwatch-windows-amd64.exe .
+          GOOS=linux GOARCH=amd64 go build -tags menubar -o /tmp/onwatch-linux-amd64 ./cmd/onwatch
+          GOOS=linux GOARCH=arm64 go build -tags menubar -o /tmp/onwatch-linux-arm64 ./cmd/onwatch
+          GOOS=windows GOARCH=amd64 go build -tags menubar -o /tmp/onwatch-windows-amd64.exe ./cmd/onwatch
 
   tray-windows:
     runs-on: windows-latest
@@ -84,7 +84,7 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           go test -tags menubar -count=1 ./internal/menubar
-          go build -tags menubar -o onwatch-tray.exe .
+          go build -tags menubar -o onwatch-tray.exe ./cmd/onwatch
 
   installer-windows:
     runs-on: windows-latest
@@ -120,7 +120,7 @@ jobs:
       - name: Compile tagged menubar packages
         run: |
           go test -tags menubar ./internal/menubar ./internal/web
-          CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags menubar,desktop,production -o /tmp/onwatch-menubar .
+          CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags menubar,desktop,production -o /tmp/onwatch-menubar ./cmd/onwatch
 
       - name: Setup Python
         uses: actions/setup-python@v5

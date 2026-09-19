@@ -63,7 +63,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          go build -tags menubar -ldflags="-s -w -X main.version=${VERSION}" -o ${{ matrix.binary }} .
+          go build -tags menubar -ldflags="-s -w -X main.version=${VERSION}" -o ${{ matrix.binary }} ./cmd/onwatch
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.binary }}
@@ -88,7 +88,7 @@ jobs:
             CGO_LDFLAGS="-framework UniformTypeIdentifiers -Wl,-no_warn_duplicate_libraries" \
             go build -tags menubar,desktop,production \
             -ldflags="-s -w -X main.version=${VERSION}" \
-            -o onwatch-darwin-${{ matrix.goarch }} .
+            -o onwatch-darwin-${{ matrix.goarch }} ./cmd/onwatch
       - uses: actions/upload-artifact@v4
         with:
           name: onwatch-darwin-${{ matrix.goarch }}

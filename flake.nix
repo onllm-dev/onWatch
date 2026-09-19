@@ -18,7 +18,7 @@
           pname = "onwatch";
           inherit version;
           src = ./.;
-          subPackages = [ "." ];
+          subPackages = [ "cmd/onwatch" ];
           vendorHash = "sha256-zagPclPZItTTUaMh+8Ph7k5ESqc3vETPNkhMQ493MoY=";
           ldflags = [
             "-s"

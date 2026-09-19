@@ -27,13 +27,20 @@ ARG TARGETARCH
 # -ldflags="-s -w" strips debug info for smaller binary
 # CGO_ENABLED=0 ensures static binary (required for distroless)
 # TARGETOS and TARGETARCH are set by Docker buildx for multi-arch builds
+# main.version is stamped purely via ldflags, so fall back to the root VERSION
+# file when no build arg is supplied (e.g. a plain `docker compose up --build`).
+# Leaving it as "dev" would silently disable update checks.
 RUN \
   TARGETOS=${TARGETOS:-linux} \
   TARGETARCH=${TARGETARCH:-amd64} \
+  BUILD_VERSION="${VERSION}" && \
+  if [ -z "$BUILD_VERSION" ] || [ "$BUILD_VERSION" = "dev" ]; then \
+    BUILD_VERSION="$(cat VERSION)"; \
+  fi && \
   CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
-    -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" \
+    -ldflags="-s -w -X main.version=${BUILD_VERSION} -X main.buildTime=${BUILD_TIME}" \
     -trimpath \
-    -o onwatch .
+    -o onwatch ./cmd/onwatch
 
 # Verify the binary works (only if native build)
 RUN ./onwatch --version || echo "Cross-compiled binary, skipping version check"

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -34,16 +33,11 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/web"
 )
 
-//go:embed VERSION
-var embeddedVersion string
-
+// version is stamped at build time via -ldflags "-X main.version=...".
+// The root VERSION file remains the single source of truth: app.sh, flake.nix,
+// the Dockerfile and the release workflows all read it and pass it through.
+// A bare `go build ./cmd/onwatch` with no ldflags reports "dev".
 var version = "dev"
-
-func init() {
-	if version == "dev" {
-		version = strings.TrimSpace(embeddedVersion)
-	}
-}
 
 // dualHandler fans out log records to two slog handlers:
 // a file handler (full verbosity) and a stdout handler (warn/error only).

@@ -9,7 +9,7 @@ Background daemon (<50MB RAM) tracking: Anthropic, Synthetic, Z.ai, Copilot, Cod
 ## Code Map
 
 ```
-main.go                     # CLI entry, daemon lifecycle
+cmd/onwatch/                # CLI entry, daemon lifecycle (main.go, setup.go, service_cmd.go, menubar_*.go)
 internal/
 ├── api/                    # HTTP clients + types per provider
 │   └── {provider}_client.go, {provider}_types.go

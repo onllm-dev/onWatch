@@ -33,7 +33,7 @@ This implementation adds AES-256-GCM encryption for SMTP passwords stored in the
 - `ReEncryptAllData(store, oldKey, newKey)` - re-encrypts all data with new key
 - `reEncryptSMTPPassword()` - handles SMTP password re-encryption specifically
 
-#### 4. `main.go`
+#### 4. `cmd/onwatch/main.go`
 - Added `deriveEncryptionKey()` function
 - Sets encryption key on notifier during startup: `notifier.SetEncryptionKey(deriveEncryptionKey(cfg.AdminPassHash))`
 

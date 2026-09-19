@@ -131,8 +131,8 @@ falling back to `ONWATCH_PORT` and then 9211.
 
 ```bash
 ./app.sh --build                                  # host binary, tray included on every OS
-CGO_ENABLED=0 GOOS=linux   go build -tags menubar .
-CGO_ENABLED=0 GOOS=windows go build -tags menubar .
+CGO_ENABLED=0 GOOS=linux   go build -tags menubar ./cmd/onwatch
+CGO_ENABLED=0 GOOS=windows go build -tags menubar ./cmd/onwatch
 ```
 
 CI runs the tagged tests on Ubuntu and Windows (`tray-linux`, `tray-windows`

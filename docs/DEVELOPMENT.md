@@ -62,7 +62,7 @@ winget install GoLang.Go
 Build:
 
 ```powershell
-go build -ldflags="-s -w" -o onwatch.exe .
+go build -ldflags="-s -w" -o onwatch.exe ./cmd/onwatch
 ```
 
 ---
@@ -79,7 +79,7 @@ go build -ldflags="-s -w" -o onwatch.exe .
 ./app.sh --smoke          # Quick validation: vet + build + short tests
 ./app.sh --release        # Cross-compile all 5 platforms (or: make release-local)
 ./app.sh --deps           # Install Go + git for your platform
-make dev                  # go run . --debug --interval 10
+make dev                  # go run ./cmd/onwatch --debug --interval 10
 make lint                 # go fmt + go vet
 make coverage             # HTML coverage report
 ```
@@ -120,7 +120,7 @@ This produces binaries in `dist/`:
 Manual cross-compilation:
 
 ```bash
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(cat VERSION)" -o onwatch-linux-amd64 .
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(cat VERSION)" -o onwatch-linux-amd64 ./cmd/onwatch
 ```
 
 ---
@@ -159,7 +159,7 @@ make dev    # Runs with --debug --interval 10
 Or manually:
 
 ```bash
-go run . --debug --interval 10
+go run ./cmd/onwatch --debug --interval 10
 ```
 
 ---
@@ -218,7 +218,7 @@ Key source files:
 Strip debug symbols for a smaller binary:
 
 ```bash
-make build    # Equivalent to: go build -ldflags="-s -w -X main.version=$(VERSION)" -o onwatch .
+make build    # Equivalent to: go build -ldflags="-s -w -X main.version=$(VERSION)" -o onwatch ./cmd/onwatch
 ```
 
 Binary sizes: ~15 MB per platform.
@@ -489,8 +489,8 @@ The GitHub star prompt follows the same pattern: `install.sh`, `install.ps1` and
 | `internal/update/update.go` | Version check, download, binary replacement, systemd migration |
 | `internal/service/launchd.go` | macOS LaunchAgent plist rendering, install/uninstall/kickstart |
 | `internal/web/handlers.go` | `/api/update/check` and `/api/update/apply` endpoints |
-| `main.go` | `MigrateSystemdUnit()` call on startup, `runUpdate()` CLI handler |
-| `service_cmd.go` | `onwatch service` subcommand, auto-start offer, post-update restart |
+| `cmd/onwatch/main.go` | `MigrateSystemdUnit()` call on startup, `runUpdate()` CLI handler |
+| `cmd/onwatch/service_cmd.go` | `onwatch service` subcommand, auto-start offer, post-update restart |
 
 ---
 
