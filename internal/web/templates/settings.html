@@ -58,19 +58,19 @@
                         </select>
                         <span class="settings-field-hint">Auto prefers STARTTLS when available and falls back to implicit TLS when the server expects encryption from the start. Use None only for plaintext SMTP.</span>
                     </div>
-                    <div class="settings-field">
+                    <div class="settings-field settings-field-half">
                         <label for="smtp-username">Username</label>
                         <input type="text" id="smtp-username" class="settings-input" placeholder="user@example.com" autocomplete="off">
                     </div>
-                    <div class="settings-field">
+                    <div class="settings-field settings-field-half">
                         <label for="smtp-password">Password</label>
                         <input type="password" id="smtp-password" class="settings-input" placeholder="App password or SMTP password" autocomplete="new-password">
                     </div>
-                    <div class="settings-field">
+                    <div class="settings-field settings-field-half">
                         <label for="smtp-from-address">From Address</label>
                         <input type="email" id="smtp-from-address" class="settings-input" placeholder="alerts@example.com">
                     </div>
-                    <div class="settings-field">
+                    <div class="settings-field settings-field-half">
                         <label for="smtp-from-name">From Name</label>
                         <input type="text" id="smtp-from-name" class="settings-input" placeholder="onWatch Alerts">
                     </div>
@@ -150,7 +150,7 @@
                 </details>
             </div>
             <div class="settings-divider"></div>
-            <div class="settings-section">
+            <div class="settings-section" id="webhook-config-section" hidden>
                 <h3 class="settings-section-title">Webhook Configuration</h3>
                 <p class="settings-section-desc">onWatch POSTs a JSON payload to this URL. Credentials are never included in the payload.</p>
                 <div class="settings-fields">
@@ -169,12 +169,12 @@
                         <textarea id="webhook-headers" class="settings-input" rows="3" placeholder="X-Title: onWatch alert&#10;X-Priority: high" autocomplete="off"></textarea>
                         <span class="settings-field-hint">One <code>Name: value</code> pair per line. ntfy reads Title, Priority, and Tags from headers. Headers are stored unencrypted - keep credentials in the Bearer Token field.</span>
                     </div>
-                    <div class="settings-field settings-field-half">
+                    <div class="settings-field settings-field-half settings-field-narrow">
                         <label for="webhook-timeout">Timeout (seconds)</label>
                         <input type="number" id="webhook-timeout" class="settings-input" min="1" max="15" value="5" placeholder="5">
                         <span class="settings-field-hint">Total budget across all retries.</span>
                     </div>
-                    <div class="settings-field settings-field-half">
+                    <div class="settings-field settings-field-half settings-field-narrow">
                         <label for="webhook-retries">Retries</label>
                         <input type="number" id="webhook-retries" class="settings-input" min="0" max="5" value="2" placeholder="2">
                         <span class="settings-field-hint">Applied to timeouts, 429, and 5xx only.</span>
@@ -182,27 +182,27 @@
                 </div>
                 <h4 class="settings-subsection-title">Webhook Events</h4>
                 <div class="settings-fields">
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="webhook-event-warning" checked>
                         <span>Warning alerts</span>
                     </label>
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="webhook-event-critical" checked>
                         <span>Critical alerts</span>
                     </label>
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="webhook-event-reset">
                         <span>Reset notifications</span>
                     </label>
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="webhook-event-auth-error">
                         <span>Auth error alerts</span>
                     </label>
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="webhook-event-starter-success">
                         <span>Quota-starter success (Codex auto quota-starter)</span>
                     </label>
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="webhook-event-starter-failure">
                         <span>Quota-starter failure</span>
                     </label>
@@ -241,19 +241,19 @@
             <div class="settings-section">
                 <h3 class="settings-section-title">Notification Types</h3>
                 <div class="settings-fields">
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="notify-warning" checked>
                         <span>Warning alerts (quota crosses warning threshold)</span>
                     </label>
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="notify-critical" checked>
                         <span>Critical alerts (quota crosses critical threshold)</span>
                     </label>
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="notify-reset" checked>
                         <span>Reset notifications (quota cycle resets)</span>
                     </label>
-                    <label class="settings-checkbox-row">
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="notify-auth-error">
                         <span>Auth error alerts (token refresh failures)</span>
                     </label>
@@ -268,7 +268,7 @@
                         <input type="checkbox" id="notify-repeat">
                         <span>Repeat alerts while a quota stays over its threshold</span>
                     </label>
-                    <div class="settings-field settings-field-half">
+                    <div class="settings-field settings-field-half settings-field-narrow">
                         <label for="notify-cooldown">Cooldown (minutes)</label>
                         <input type="number" id="notify-cooldown" class="settings-input" min="1" value="30" placeholder="30">
                         <span class="settings-field-hint">Minimum gap between repeats for the same quota and level.</span>
@@ -291,7 +291,7 @@
         <div class="settings-panel" id="panel-providers" role="tabpanel" hidden>
             <div class="settings-section">
                 <h3 class="settings-section-title">Dashboard Tabs</h3>
-                <p class="settings-section-desc">Only providers with <strong>Dashboard</strong> enabled appear here. Drag the handle (or use ↑/↓) to reorder tabs. Use the <strong>Tab name</strong> field to rename (emoji allowed); leave blank for the default name (e.g. Z.ai → GLM).</p>
+                <p class="settings-section-desc">Only providers with <strong>Dashboard</strong> enabled appear here. Drag the handle (or use ↑/↓) to reorder. Type in the name field to rename a tab (emoji allowed); leave it blank to keep the default.</p>
                 <ul class="dashboard-tab-order-list" id="dashboard-tab-order" aria-label="Dashboard provider tab order and names"></ul>
             </div>
             <div class="settings-divider"></div>
@@ -366,11 +366,11 @@
                             <option value="300">5 minutes</option>
                         </select>
                     </div>
-                    <div class="settings-field settings-field-half">
+                    <div class="settings-field settings-field-half settings-field-narrow">
                         <label for="menubar-warning">Warning Threshold (%)</label>
                         <input type="number" id="menubar-warning" class="settings-input" min="0" max="100" value="70">
                     </div>
-                    <div class="settings-field settings-field-half">
+                    <div class="settings-field settings-field-half settings-field-narrow">
                         <label for="menubar-critical">Critical Threshold (%)</label>
                         <input type="number" id="menubar-critical" class="settings-input" min="0" max="100" value="90">
                     </div>
@@ -409,7 +409,7 @@
             <div class="settings-section">
                 <h3 class="settings-section-title">Timezone</h3>
                 <div class="settings-fields">
-                    <div class="settings-field">
+                    <div class="settings-field settings-field-half">
                         <label for="settings-timezone">Display Timezone</label>
                         <select id="settings-timezone" class="settings-input">
                             <option value="">Browser Default</option>
@@ -423,7 +423,7 @@
                 <h3 class="settings-section-title">Quota Display</h3>
                 <p class="settings-section-desc">Choose whether quota cards show how much you've used or how much is left. Per-provider settings (e.g. Codex) override this global default.</p>
                 <div class="settings-fields">
-                    <div class="settings-field">
+                    <div class="settings-field settings-field-half">
                         <label for="settings-display-mode">Display Mode</label>
                         <select id="settings-display-mode" class="settings-input">
                             <option value="usage">Usage (% used)</option>
@@ -438,7 +438,7 @@
                 <h3 class="settings-section-title">Layout Density</h3>
                 <p class="settings-section-desc">Choose how compact the dashboard cards appear.</p>
                 <div class="settings-fields">
-                    <div class="settings-field">
+                    <div class="settings-field settings-field-half">
                         <label for="settings-layout-density">Density</label>
                         <select id="settings-layout-density" class="settings-input">
                             <option value="compact">Compact</option>
@@ -453,7 +453,7 @@
                 <h3 class="settings-section-title">Password</h3>
                 <p class="settings-section-desc">Change the dashboard login password.</p>
                 <div class="settings-fields">
-                    <div class="settings-field">
+                    <div class="settings-field settings-field-half">
                         <label for="settings-current-password">Current Password</label>
                         <input type="password" id="settings-current-password" class="settings-input" autocomplete="current-password">
                     </div>

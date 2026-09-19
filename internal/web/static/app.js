@@ -9690,6 +9690,7 @@ async function loadSettings() {
         // Webhook defaults off: it only works once an endpoint is configured.
         if (webhookToggle) webhookToggle.checked = n.channels.webhook === true;
       }
+      syncWebhookConfigVisibility();
       // Load overrides
       if (n.overrides && n.overrides.length > 0) {
         n.overrides.forEach(o => addOverrideRow(o.quota_key, o.provider, o.warning, o.critical, o.is_absolute, o.disable_reset, o.disable_warning, o.disable_critical));
@@ -9994,6 +9995,13 @@ async function populateProviderToggles(visibility) {
   const codexStatus = providerByKey.get('codex') || null;
   const minimaxStatus = providerByKey.get('minimax') || null;
 
+  // Providers that are not set up yet are not actionable here, and there are
+  // usually more of them than configured ones, so they collapse into a
+  // disclosure at the end of the list rather than burying the live providers.
+  const unconfiguredGroup = document.createElement('details');
+  unconfiguredGroup.className = 'provider-unconfigured';
+  let unconfiguredCount = 0;
+
   providers
     .filter(p => p.key !== 'codex' && p.key !== 'minimax')
     .forEach((p) => {
@@ -10001,15 +10009,24 @@ async function populateProviderToggles(visibility) {
         polling: p.pollingEnabled !== false,
         dashboard: p.dashboardVisible !== false
       };
-      container.appendChild(createProviderToggleRow({
+      const configured = p.configured !== false;
+      const row = createProviderToggleRow({
         key: p.key,
         name: p.name,
         desc: p.description,
         vis,
-        configured: p.configured !== false,
+        configured,
         autoDetectable: !!p.autoDetectable,
         isPolling: !!p.isPolling
-      }));
+      });
+      // Auto-detectable providers can start reporting without being configured,
+      // so treat anything currently polling as live.
+      if (configured || p.isPolling) {
+        container.appendChild(row);
+      } else {
+        unconfiguredGroup.appendChild(row);
+        unconfiguredCount += 1;
+      }
     });
 
   // Codex: always ONE card with sub-profiles listed inside
@@ -10096,6 +10113,13 @@ async function populateProviderToggles(visibility) {
   }
 
   container.appendChild(createAPIIntegrationsToggleRow(State.apiIntegrationsVisibility || { dashboard: true }, apiIntegrationsHealth));
+
+  if (unconfiguredCount > 0) {
+    const summary = document.createElement('summary');
+    summary.textContent = `Not configured (${unconfiguredCount})`;
+    unconfiguredGroup.prepend(summary);
+    container.appendChild(unconfiguredGroup);
+  }
 }
 
 async function fetchMenubarProviders() {
@@ -10288,7 +10312,7 @@ async function populateDashboardTabOrder() {
 
   const providers = await fetchDashboardTabOrderProviders();
   if (providers.length === 0) {
-    list.innerHTML = '<li class="dashboard-tab-order-item"><div class="dashboard-tab-order-fields"><span class="dashboard-tab-order-key">No providers available</span></div></li>';
+    list.innerHTML = '<li class="dashboard-tab-order-item dashboard-tab-order-empty"><span class="dashboard-tab-order-key">No providers available</span></li>';
     State.dashboardProvidersOrder = [];
     return;
   }
@@ -10323,10 +10347,11 @@ async function populateDashboardTabOrder() {
           <code class="dashboard-tab-order-id">${escapeHTML(provider.key)}</code>
         </span>
         <label class="dashboard-tab-rename">
-          <span class="dashboard-tab-rename-label">${pencilIcon} Tab name</span>
+          ${pencilIcon}
           <input type="text" class="dashboard-tab-order-label" data-provider="${provider.key}"
             maxlength="48" value="${escapeHTML(custom)}"
             placeholder="${escapeHTML(placeholder)}"
+            title="Rename the ${escapeHTML(placeholder)} tab (leave blank for the default name)"
             aria-label="Rename tab for ${escapeHTML(placeholder)} (leave blank for default)">
         </label>
       </div>
@@ -10648,7 +10673,7 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
-      </button>` : '';
+      </button>` : '<div class="settings-toggle-gear-slot" aria-hidden="true"></div>';
   row.innerHTML = `
     <div class="settings-toggle-info">
       <div class="settings-toggle-label">${name} ${badge}</div>
@@ -10657,16 +10682,14 @@ function createProviderToggleRow({ key, name, desc, vis, configured, autoDetecta
     <div class="settings-toggle-group">
       <div class="settings-toggle-item">
         <div class="settings-toggle-item-label">Telemetry</div>
-        <div class="settings-toggle-item-hint">${isDeleted ? 'Unavailable - profile deleted' : 'Track usage data in background'}</div>
-        <label class="settings-toggle" title="${isDeleted ? 'Telemetry unavailable - profile deleted' : 'Telemetry'}">
+        <label class="settings-toggle" title="${isDeleted ? 'Telemetry unavailable - profile deleted' : 'Track usage data in background'}">
           <input type="checkbox" data-provider="${key}" data-role="polling" ${vis.polling !== false && !isDeleted ? 'checked' : ''} ${telemetryDisabled}>
           <span class="settings-toggle-track"></span>
         </label>
       </div>
       <div class="settings-toggle-item">
         <div class="settings-toggle-item-label">Dashboard</div>
-        <div class="settings-toggle-item-hint">${isDeleted ? 'Show historical data' : 'Show as individual tab'}</div>
-        <label class="settings-toggle" title="Dashboard">
+        <label class="settings-toggle" title="${isDeleted ? 'Show historical data' : 'Show as individual tab'}">
           <input type="checkbox" data-provider="${key}" data-role="dashboard" ${vis.dashboard !== false ? 'checked' : ''}>
           <span class="settings-toggle-track"></span>
         </label>
@@ -10747,14 +10770,15 @@ function createAPIIntegrationsToggleRow(visibility, health) {
       <div class="settings-toggle-sublabel">Local JSONL API telemetry tracking for your own automated integrations.</div>
     </div>
     <div class="settings-toggle-group">
+      <div class="settings-toggle-item" aria-hidden="true"></div>
       <div class="settings-toggle-item">
         <div class="settings-toggle-item-label">Dashboard</div>
-        <div class="settings-toggle-item-hint">Show as a dedicated dashboard tab</div>
-        <label class="settings-toggle" title="Dashboard">
+        <label class="settings-toggle" title="Show as a dedicated dashboard tab">
           <input type="checkbox" data-provider="api-integrations" data-role="api-integrations-dashboard" ${(visibility?.dashboard ?? true) ? 'checked' : ''}>
           <span class="settings-toggle-track"></span>
         </label>
       </div>
+      <div class="settings-toggle-gear-slot" aria-hidden="true"></div>
     </div>
   `;
 
@@ -11708,7 +11732,25 @@ function collectWebhookSettings() {
   };
 }
 
+// The webhook block is the tallest section on the Notifications tab, so it only
+// unfolds once the channel is switched on. The fields keep their values while
+// hidden, so toggling the channel back on restores whatever was typed.
+function syncWebhookConfigVisibility() {
+  const section = document.getElementById('webhook-config-section');
+  const toggle = document.getElementById('channel-webhook');
+  if (!section || !toggle) return;
+  section.hidden = !toggle.checked;
+}
+
+function setupWebhookConfigDisclosure() {
+  const toggle = document.getElementById('channel-webhook');
+  if (!toggle) return;
+  toggle.addEventListener('change', syncWebhookConfigVisibility);
+  syncWebhookConfigVisibility();
+}
+
 function setupWebhookTest() {
+  setupWebhookConfigDisclosure();
   const testBtn = document.getElementById('webhook-test-btn');
   const result = document.getElementById('webhook-test-result');
   if (!testBtn) return;
