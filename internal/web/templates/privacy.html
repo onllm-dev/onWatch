@@ -306,8 +306,8 @@
                         <tr><td>settings.smtp password</td><td><strong>Encrypted</strong>, AES-256-GCM</td></tr>
                         <tr><td>settings.gemini_tokens (Google access and refresh token)</td><td><strong>Encrypted</strong>, AES-256-GCM</td></tr>
                         <tr><td>provider_accounts.metadata (includes the MiniMax API key)</td><td><strong>Encrypted</strong>, AES-256-GCM</td></tr>
-                        <tr><td>settings.provider_settings (every provider API key, the Copilot token, the Antigravity CSRF token, the OpenCode auth cookie)</td><td><strong>Not encrypted.</strong> Plaintext at rest. Redacted from API responses, which protects the display, not the file.</td></tr>
-                        <tr><td>settings.vapid_keys, including the Web Push private key</td><td><strong>Not encrypted.</strong> Plaintext at rest.</td></tr>
+                        <tr><td>settings.provider_settings (every provider API key, the Copilot token, the Antigravity CSRF token, the OpenCode auth cookie)</td><td><strong>Encrypted</strong>, AES-256-GCM. Also redacted from API responses.</td></tr>
+                        <tr><td>settings.vapid_keys, including the Web Push private key</td><td><strong>Encrypted</strong>, AES-256-GCM.</td></tr>
                         <tr><td>settings.smtp username, from_address, to</td><td><strong>Not encrypted.</strong> Plaintext email addresses at rest.</td></tr>
                         <tr><td>users.password_hash</td><td>bcrypt hash (legacy installs: 64-hex SHA-256). A hash, not encryption.</td></tr>
                         <tr><td>auth_tokens.token</td><td>Plaintext, but expires at 7 days and all tokens are deleted on password change.</td></tr>

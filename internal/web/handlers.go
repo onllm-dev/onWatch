@@ -7509,13 +7509,14 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		// Continue anyway - data might need manual re-entry or was already encrypted with new key
 	}
 
-	// Re-key the provider API keys in provider_accounts.metadata and install
-	// the new cipher on the store. This has to happen here, after the settings
-	// re-encryption above: the store decrypts on read, so the rows must be read
-	// while the old cipher is still installed. Skipping it would leave the
-	// provider keys unreadable and stop polling without an obvious cause.
-	if err := h.store.ReKeyProviderAccountMetadata(NewStoreSecretCipher(DeriveEncryptionKey(newHash, nil))); err != nil {
-		h.logger.Warn("provider account credentials could not be re-encrypted during password change", "error", err)
+	// Re-key every credential the store holds - provider_settings, the Gemini
+	// OAuth pair, vapid_keys and provider_accounts.metadata - and install the
+	// new cipher. This has to happen after the settings re-encryption above:
+	// the store decrypts on read, so the values must be read out while the old
+	// cipher is still installed. Skipping it would leave every provider
+	// credential unreadable and stop polling without an obvious cause.
+	if err := h.store.ReKeySecrets(NewStoreSecretCipher(DeriveEncryptionKey(newHash, nil))); err != nil {
+		h.logger.Warn("stored credentials could not be re-encrypted during password change", "error", err)
 	}
 
 	// Invalidate all sessions (force re-login)

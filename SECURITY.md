@@ -285,17 +285,18 @@ The SQLite database file itself is not encrypted, so what protects it is the
 `0700` data directory and whatever the filesystem gives you.
 
 Encrypted at rest, with AES-256-GCM under a key derived from the dashboard
-password: the SMTP password, the `gemini_tokens` setting (OAuth access **and**
-refresh token) and `provider_accounts.metadata` (the provider API key). All
-three are re-keyed when the dashboard password changes. Values written by an
-earlier version are read as cleartext and encrypted the next time they are
-written.
+password: the SMTP password, `settings.provider_settings` (every provider API
+key set from the dashboard, the Copilot token, the Antigravity CSRF token, the
+OpenCode auth cookie), `settings.gemini_tokens` (OAuth access **and** refresh
+token), `settings.vapid_keys` (including the Web Push private key) and
+`provider_accounts.metadata`. All are re-keyed when the dashboard password
+changes. Values written by an earlier version are read as cleartext and
+encrypted the next time they are written.
 
-Still cleartext: the `provider_settings` setting (provider API keys, the
-Copilot token, the Antigravity CSRF token, the OpenCode auth cookie) and
-`vapid_keys`. Encrypting those means changing every field-level read site and
-has not been done. Until it is, treat `onwatch.db` as a file that still
-contains live provider credentials.
+Still cleartext: the SMTP `username`, `from_address` and `to` fields, and
+`~/.onwatch/.env`, which holds whatever provider secrets you put there (mode
+0600). A secret supplied through `.env` rather than the dashboard stays in
+`.env` in the clear.
 
 **Mitigation:** keep the data directory on an encrypted volume (see the
 checklist), keep it `0700`, and never copy the database anywhere you would not

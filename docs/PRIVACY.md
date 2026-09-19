@@ -494,8 +494,8 @@ dashboard password changes.
 | `settings.smtp` -> `password` | **Encrypted**, AES-256-GCM |
 | `settings.gemini_tokens` (Google access and refresh token) | **Encrypted**, AES-256-GCM |
 | `provider_accounts.metadata` (includes the MiniMax API key) | **Encrypted**, AES-256-GCM |
-| `settings.provider_settings` (every provider API key, the Copilot token, the Antigravity CSRF token, the OpenCode auth cookie) | **Not encrypted.** Plaintext at rest. Redacted from dashboard API responses, which protects the display, not the file. |
-| `settings.vapid_keys`, including the Web Push **private key** | **Not encrypted.** Plaintext at rest. |
+| `settings.provider_settings` (every provider API key, the Copilot token, the Antigravity CSRF token, the OpenCode auth cookie) | **Encrypted**, AES-256-GCM. Also redacted from dashboard API responses. |
+| `settings.vapid_keys`, including the Web Push **private key** | **Encrypted**, AES-256-GCM. |
 | `settings.smtp` -> `username`, `from_address`, `to` | **Not encrypted.** Plaintext email addresses at rest. |
 | `users.password_hash` | bcrypt hash (legacy installs: 64-hex SHA-256). A hash, not encryption. |
 | `auth_tokens.token` | Plaintext, but expires at 7 days and is wiped on password change |

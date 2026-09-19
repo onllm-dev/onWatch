@@ -954,6 +954,13 @@ func run() error {
 	}
 	hash, src := resolveAdminPassHash(dbHash, cfg.AdminPass)
 	cfg.AdminPassHash = hash
+
+	// Credentials at rest, installed here rather than later because the store
+	// decrypts on read: provider_settings is read further down while wiring up
+	// the providers, and a cipher installed after that point would hand those
+	// reads ciphertext. The salt is already loaded above, and the password hash
+	// is the key, so this is the earliest correct moment.
+	db.SetSecretCipher(web.NewStoreSecretCipher(deriveEncryptionKey(cfg.AdminPassHash)))
 	switch src {
 	case passFromDB:
 		logger.Info("Using database-stored password for auth")
@@ -1447,12 +1454,6 @@ func run() error {
 	if cfg.APIIntegrationsEnabled {
 		apiIntegrationsAg = agent.NewAPIIntegrationsIngestAgent(db, cfg.APIIntegrationsDir, cfg.APIIntegrationsRetention, logger)
 	}
-
-	// Credentials at rest. The store holds the Gemini OAuth pair and the
-	// provider API keys in provider_accounts.metadata; both go through the
-	// same AES-256-GCM path as the SMTP password, keyed off the dashboard
-	// password hash, so a password change re-keys all of them together.
-	db.SetSecretCipher(web.NewStoreSecretCipher(deriveEncryptionKey(cfg.AdminPassHash)))
 
 	// Create notification engine
 	notifier := notify.New(db, logger)

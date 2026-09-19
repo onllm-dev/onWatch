@@ -28,6 +28,25 @@ type SecretCipher interface {
 	IsEncrypted(value string) bool
 }
 
+// secretSettingKeys are the settings whose whole value is a credential, and so
+// is encrypted transparently by GetSetting and SetSetting.
+//
+// "smtp" is deliberately absent: the web layer already encrypts just its
+// password field, and encrypting the whole blob would hide the JSON from
+// ConfigureSMTP and break mail delivery.
+var secretSettingKeys = map[string]bool{
+	// Every provider API key set from the dashboard, plus the Copilot token,
+	// the Antigravity CSRF token and the OpenCode auth cookie.
+	"provider_settings": true,
+	// Google OAuth access and refresh token.
+	"gemini_tokens": true,
+	// Web Push keypair, including the private key.
+	"vapid_keys": true,
+}
+
+// IsSecretSettingKey reports whether a settings key holds a credential.
+func IsSecretSettingKey(key string) bool { return secretSettingKeys[key] }
+
 // secretCipherHolder guards the cipher, which is set during start-up and read
 // from provider agent goroutines.
 type secretCipherHolder struct {
@@ -105,6 +124,44 @@ func (s *Store) revealSecret(stored string) string {
 		return ""
 	}
 	return plaintext
+}
+
+// ReKeySecrets re-encrypts every stored credential under a new cipher and
+// installs it. Call this when the dashboard password changes.
+//
+// The read-then-swap-then-write order is load-bearing: reads decrypt with the
+// cipher currently installed, so the values have to be read out before the new
+// one goes in. Doing it the other way round leaves every provider credential
+// unreadable and stops polling with no obvious cause.
+func (s *Store) ReKeySecrets(newCipher SecretCipher) error {
+	if s == nil {
+		return nil
+	}
+
+	// Read every secret settings value with the old cipher still installed.
+	pending := make(map[string]string, len(secretSettingKeys))
+	for key := range secretSettingKeys {
+		value, err := s.GetSetting(key)
+		if err != nil {
+			return fmt.Errorf("store.ReKeySecrets: read %s: %w", key, err)
+		}
+		if value != "" {
+			pending[key] = value
+		}
+	}
+
+	// ReKeyProviderAccountMetadata installs the new cipher as part of its own
+	// read-swap-write, so the settings are written afterwards under it.
+	if err := s.ReKeyProviderAccountMetadata(newCipher); err != nil {
+		return err
+	}
+
+	for key, value := range pending {
+		if err := s.SetSetting(key, value); err != nil {
+			return fmt.Errorf("store.ReKeySecrets: write %s: %w", key, err)
+		}
+	}
+	return nil
 }
 
 // ReKeyProviderAccountMetadata re-encrypts every provider account's metadata

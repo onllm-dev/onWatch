@@ -1825,6 +1825,10 @@ const SettingAutoRefreshTokens = "auto_refresh_tokens"
 const SettingUpdateCheck = "update_check"
 
 // GetSetting returns the value for a setting key. Returns "" if not found.
+//
+// Settings that hold a credential (see secretSettingKeys) are decrypted here,
+// so callers never deal with ciphertext. A value written before encryption
+// existed is returned unchanged.
 func (s *Store) GetSetting(key string) (string, error) {
 	var value string
 	err := s.db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
@@ -1834,11 +1838,18 @@ func (s *Store) GetSetting(key string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("store.GetSetting: %w", err)
 	}
+	if secretSettingKeys[key] {
+		return s.revealSecret(value), nil
+	}
 	return value, nil
 }
 
-// SetSetting inserts or replaces a setting value.
+// SetSetting inserts or replaces a setting value. Credential settings are
+// encrypted at rest; see GetSetting.
 func (s *Store) SetSetting(key, value string) error {
+	if secretSettingKeys[key] {
+		value = s.protectSecret(value)
+	}
 	_, err := s.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, value)
 	if err != nil {
 		return fmt.Errorf("store.SetSetting: %w", err)

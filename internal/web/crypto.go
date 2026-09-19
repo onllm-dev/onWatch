@@ -102,44 +102,13 @@ func ReEncryptAllData(store interface {
 		errors["smtp"] = err.Error()
 	}
 
-	// Re-encrypt the Gemini OAuth pair. Without this the tokens become
-	// unreadable after a password change and Gemini polling silently stops.
-	if err := reEncryptSetting(store, "gemini_tokens", oldKey, newKey); err != nil {
-		errors["gemini_tokens"] = err.Error()
-	}
+	// The credential settings (provider_settings, gemini_tokens, vapid_keys)
+	// and provider_accounts.metadata are re-keyed by Store.ReKeySecrets, which
+	// the password-change handler calls next. Doing it here as well would
+	// double-encrypt them, because the store now encrypts those keys inside
+	// SetSetting.
 
 	return errors
-}
-
-// reEncryptSetting re-keys a settings value that is stored as ciphertext.
-// A plaintext value (written before encryption existed) is encrypted with the
-// new key, and a value already under the new key is left alone.
-func reEncryptSetting(store interface {
-	GetSetting(key string) (string, error)
-	SetSetting(key, value string) error
-}, key, oldKey, newKey string) error {
-	stored, err := store.GetSetting(key)
-	if err != nil || stored == "" {
-		return nil
-	}
-
-	plaintext := stored
-	if IsEncryptedValue(stored) {
-		decrypted, err := notify.Decrypt(stored, oldKey)
-		if err != nil {
-			if _, newErr := notify.Decrypt(stored, newKey); newErr == nil {
-				return nil // already re-keyed
-			}
-			return fmt.Errorf("failed to decrypt %s with the old key: %w", key, err)
-		}
-		plaintext = decrypted
-	}
-
-	reEncrypted, err := notify.Encrypt(plaintext, newKey)
-	if err != nil {
-		return fmt.Errorf("failed to re-encrypt %s: %w", key, err)
-	}
-	return store.SetSetting(key, reEncrypted)
 }
 
 // reEncryptSMTPPassword re-encrypts the SMTP password when admin password changes.
@@ -224,12 +193,17 @@ func NewStoreSecretCipher(key string) *storeSecretCipher {
 	return &storeSecretCipher{key: key}
 }
 
+// Encrypt uses the prefixed storage form ("enc:" + base64). The prefix is what
+// IsEncrypted recognises, so all three methods have to agree on it: a cipher
+// whose Encrypt omitted the prefix would produce values its own IsEncrypted
+// reports as plaintext, which double-encrypts on every write and hands raw
+// ciphertext back to callers on every read.
 func (c *storeSecretCipher) Encrypt(plaintext string) (string, error) {
-	return notify.Encrypt(plaintext, c.key)
+	return notify.EncryptForStorage(plaintext, c.key)
 }
 
 func (c *storeSecretCipher) Decrypt(ciphertext string) (string, error) {
-	return notify.Decrypt(ciphertext, c.key)
+	return notify.DecryptFromStorage(ciphertext, c.key)
 }
 
 func (c *storeSecretCipher) IsEncrypted(value string) bool {

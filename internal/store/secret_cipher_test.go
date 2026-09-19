@@ -61,10 +61,12 @@ func TestGeminiTokens_EncryptedAtRest(t *testing.T) {
 		t.Fatalf("SaveGeminiTokens: %v", err)
 	}
 
-	// What landed in the settings table must not contain the tokens.
-	raw, err := s.GetSetting("gemini_tokens")
-	if err != nil {
-		t.Fatalf("GetSetting: %v", err)
+	// What landed in the settings table must not contain the tokens. This reads
+	// the column directly: GetSetting decrypts this key transparently, so going
+	// through it would test nothing.
+	var raw string
+	if err := s.db.QueryRow(`SELECT value FROM settings WHERE key = 'gemini_tokens'`).Scan(&raw); err != nil {
+		t.Fatalf("read gemini_tokens column: %v", err)
 	}
 	for _, secret := range []string{"ya29.ACCESS", "1//REFRESH"} {
 		if strings.Contains(raw, secret) {
