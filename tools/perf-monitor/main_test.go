@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -372,6 +373,9 @@ func TestStopOnWatch_RemovesInvalidPIDFileSafely(t *testing.T) {
 
 func TestStartOnWatch_BinaryMissingReturnsZero(t *testing.T) {
 	tempDir := t.TempDir()
+	// An empty PATH keeps the fallback lookup from finding an installed onwatch
+	// and starting a real daemon instead of reporting the missing binary.
+	t.Setenv("PATH", tempDir)
 	oldWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("get wd: %v", err)
@@ -538,6 +542,33 @@ func TestStopOnWatch_ValidPIDFileSignalsProcess(t *testing.T) {
 	}
 }
 
+// runMainHelper re-executes this test binary as a child running main().
+//
+// The child is deliberately isolated: it runs in an empty directory with an
+// empty PATH, so startonWatch's binary search (./onwatch, ../onwatch,
+// ../../onwatch, then PATH) genuinely finds nothing. Without that isolation the
+// child locates the repo-root binary built by `app.sh --build` (or an installed
+// onwatch on PATH), starts a real daemon instead of failing, and then the
+// daemon inherits the child's stdout so CombinedOutput never reaches EOF - the
+// test hangs until the panic timeout and leaks the daemon. The context bounds
+// the wait so a regression fails fast instead of stalling the whole suite.
+func runMainHelper(t *testing.T, envVar string) ([]byte, error) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run="+t.Name())
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(os.Environ(), envVar+"=1", "PATH="+t.TempDir())
+
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("helper did not exit within 30s (it likely started a real daemon); output=%s", string(output))
+	}
+	return output, err
+}
+
 func TestMain_NoProcessFoundExitsWithHelp(t *testing.T) {
 	if os.Getenv("PERF_MONITOR_MAIN_HELPER") == "1" {
 		os.Args = []string{"perf-monitor", "65522", "0s"}
@@ -545,9 +576,7 @@ func TestMain_NoProcessFoundExitsWithHelp(t *testing.T) {
 		return
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestMain_NoProcessFoundExitsWithHelp")
-	cmd.Env = append(os.Environ(), "PERF_MONITOR_MAIN_HELPER=1")
-	output, err := cmd.CombinedOutput()
+	output, err := runMainHelper(t, "PERF_MONITOR_MAIN_HELPER")
 	if err == nil {
 		t.Fatalf("expected helper to exit non-zero, output=%s", string(output))
 	}
@@ -571,9 +600,7 @@ func TestMain_RestartFailureExitsWithError(t *testing.T) {
 		return
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestMain_RestartFailureExitsWithError")
-	cmd.Env = append(os.Environ(), "PERF_MONITOR_MAIN_RESTART_HELPER=1")
-	output, err := cmd.CombinedOutput()
+	output, err := runMainHelper(t, "PERF_MONITOR_MAIN_RESTART_HELPER")
 	if err == nil {
 		t.Fatalf("expected helper to exit non-zero, output=%s", string(output))
 	}
