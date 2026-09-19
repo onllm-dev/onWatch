@@ -14,7 +14,8 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 [![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)  
 [![Coverage](https://img.shields.io/codecov/c/github/onllm-dev/onwatch?style=for-the-badge&logo=codecov&logoColor=white&label=Coverage)](https://codecov.io/gh/onllm-dev/onwatch)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-brightgreen?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/onllm-dev/onwatch/v2?style=for-the-badge)](https://goreportcard.com/report/github.com/onllm-dev/onwatch/v2)
+
+<a href="https://trendshift.io/repositories/22078?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-22078" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/22078/daily?language=Go" alt="onllm-dev%2FonWatch | Trendshift" width="250" height="55"/></a>
 
 **Compatibility & Docs**
 
