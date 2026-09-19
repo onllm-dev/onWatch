@@ -426,3 +426,54 @@ func TestUpdateSettingsWebhookTimeoutBoundsMessage(t *testing.T) {
 		t.Errorf("message = %s, want it to state the real 0-15 range", rr.Body.String())
 	}
 }
+
+// The repeat flag is what makes the cooldown setting meaningful, so it must
+// survive a save like the other notification toggles.
+func TestUpdateSettingsPersistsNotifyRepeat(t *testing.T) {
+	s, _ := store.New(":memory:")
+	defer s.Close()
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithSynthetic())
+
+	rr := putSettings(t, h, `{"notifications":{
+		"warning_threshold":80,
+		"critical_threshold":95,
+		"notify_critical":true,
+		"notify_repeat":true,
+		"cooldown_minutes":45
+	}}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rr.Code, rr.Body.String())
+	}
+
+	raw, _ := s.GetSetting("notifications")
+	var saved struct {
+		NotifyRepeat    bool `json:"notify_repeat"`
+		CooldownMinutes int  `json:"cooldown_minutes"`
+	}
+	if err := json.Unmarshal([]byte(raw), &saved); err != nil {
+		t.Fatalf("stored notifications is not valid JSON: %v", err)
+	}
+	if !saved.NotifyRepeat {
+		t.Error("notify_repeat = false, want the submitted true to persist")
+	}
+	if saved.CooldownMinutes != 45 {
+		t.Errorf("cooldown_minutes = %d, want 45", saved.CooldownMinutes)
+	}
+}
+
+func TestSettingsTemplateHasRepeatToggle(t *testing.T) {
+	html := readSettingsTemplate(t)
+	if !strings.Contains(html, `id="notify-repeat"`) {
+		t.Error("settings page is missing the repeat-alerts toggle")
+	}
+}
+
+func TestAppJSRoundTripsNotifyRepeat(t *testing.T) {
+	appJS := readStaticAppJS(t)
+	if !strings.Contains(appJS, "notify_repeat: document.getElementById('notify-repeat')?.checked ?? false") {
+		t.Error("app.js does not send notify_repeat when saving")
+	}
+	if !strings.Contains(appJS, "repeatCheck.checked = !!n.notify_repeat") {
+		t.Error("app.js does not load notify_repeat back into the form")
+	}
+}

@@ -23,6 +23,9 @@ type NotificationEngine struct {
 	cfg                 NotificationConfig
 	encryptionKey       string // current hex-encoded key for decrypting SMTP passwords
 	legacyEncryptionKey string // fallback hex-encoded key for legacy SMTP password migration
+
+	// now is overridable in tests so cooldown behaviour is deterministic.
+	now func() time.Time
 }
 
 // NotificationConfig holds threshold and delivery settings.
@@ -30,7 +33,8 @@ type NotificationConfig struct {
 	Warning   float64                      // global warning threshold (default 80)
 	Critical  float64                      // global critical threshold (default 95)
 	Overrides map[string]ThresholdOverride // per provider+quota overrides (legacy key: quota only)
-	Cooldown  time.Duration                // minimum time between notifications
+	Repeat    bool                         // re-alert while a quota stays over threshold
+	Cooldown  time.Duration                // minimum time between repeated notifications
 	Types     NotificationTypes            // which notification types are enabled
 	Channels  NotificationChannels         // which delivery channels are enabled
 }
@@ -76,11 +80,12 @@ func New(s *store.Store, logger *slog.Logger) *NotificationEngine {
 	return &NotificationEngine{
 		store:  s,
 		logger: logger,
+		now:    time.Now,
 		cfg: NotificationConfig{
 			Warning:   80,
 			Critical:  95,
 			Overrides: make(map[string]ThresholdOverride),
-			Cooldown:  30 * time.Minute,
+			Cooldown:  defaultNotificationCooldown,
 			Types:     NotificationTypes{Warning: true, Critical: true, Reset: false},
 			Channels:  NotificationChannels{Email: true, Push: true},
 		},
@@ -125,6 +130,7 @@ type notificationSettingsJSON struct {
 	NotifyCritical    bool                  `json:"notify_critical"`
 	NotifyReset       bool                  `json:"notify_reset"`
 	NotifyAuthError   bool                  `json:"notify_auth_error"`
+	NotifyRepeat      bool                  `json:"notify_repeat"`
 	CooldownMinutes   int                   `json:"cooldown_minutes"`
 	Channels          *NotificationChannels `json:"channels,omitempty"`
 	Overrides         []struct {
@@ -161,9 +167,12 @@ func (e *NotificationEngine) Reload() error {
 	if notif.CriticalThreshold > 0 {
 		e.cfg.Critical = notif.CriticalThreshold
 	}
+	// A zero or missing cooldown keeps the default rather than becoming "no
+	// cooldown", so enabling repeat can never alert on every poll.
 	if notif.CooldownMinutes > 0 {
 		e.cfg.Cooldown = time.Duration(notif.CooldownMinutes) * time.Minute
 	}
+	e.cfg.Repeat = notif.NotifyRepeat
 	e.cfg.Types = NotificationTypes{
 		Warning:   notif.NotifyWarning,
 		Critical:  notif.NotifyCritical,
@@ -425,6 +434,8 @@ func (e *NotificationEngine) Check(status QuotaStatus) {
 		return
 	}
 
+	policy := newRepeatPolicy(cfg)
+
 	// Handle reset: clear notification log so alerts can fire again in the new cycle
 	provider := normalizeNotificationProvider(status.Provider)
 	quotaKey := notificationQuotaKey(status)
@@ -439,7 +450,7 @@ func (e *NotificationEngine) Check(status QuotaStatus) {
 			e.logger.Error("failed to clear notification log on reset", "error", err)
 		}
 		if cfg.Types.Reset && !(hasOverride && override.DisableReset) {
-			e.sendNotification(channels, status, EventReset, 0)
+			e.sendNotification(channels, policy, status, EventReset, 0)
 		}
 		return
 	}
@@ -467,13 +478,13 @@ func (e *NotificationEngine) Check(status QuotaStatus) {
 
 	// Check critical first (higher priority)
 	if status.Utilization >= criticalThreshold && cfg.Types.Critical && !(hasOverride && override.DisableCrit) {
-		e.sendNotification(channels, status, EventCritical, criticalThreshold)
+		e.sendNotification(channels, policy, status, EventCritical, criticalThreshold)
 		return
 	}
 
 	// Check warning
 	if status.Utilization >= warningThreshold && cfg.Types.Warning && !(hasOverride && override.DisableWarning) {
-		e.sendNotification(channels, status, EventWarning, warningThreshold)
+		e.sendNotification(channels, policy, status, EventWarning, warningThreshold)
 		return
 	}
 }
@@ -510,10 +521,35 @@ func (e *NotificationEngine) TestSMTPDiag() (string, error) {
 	return res.Diagnostics, res.Error
 }
 
+// defaultNotificationCooldown is the gap between repeated alerts when no
+// cooldown is configured. Repeats must never fall back to "no cooldown", which
+// would alert on every poll.
+const defaultNotificationCooldown = 30 * time.Minute
+
+// repeatPolicy controls whether an alert that already fired for the current
+// quota cycle may fire again, and how long the gap must be.
+type repeatPolicy struct {
+	enabled  bool
+	cooldown time.Duration
+}
+
+// newRepeatPolicy builds the policy for a send, guaranteeing a positive
+// cooldown whenever repeats are on.
+func newRepeatPolicy(cfg NotificationConfig) repeatPolicy {
+	cooldown := cfg.Cooldown
+	if cooldown <= 0 {
+		cooldown = defaultNotificationCooldown
+	}
+	return repeatPolicy{enabled: cfg.Repeat, cooldown: cooldown}
+}
+
 // sendNotification sends notifications via enabled channels.
-// Each provider+quota+type combination fires at most once per cycle.
-// The notification_log entry is cleared on quota reset (see Check/resetOccurred).
-func (e *NotificationEngine) sendNotification(channels channelSet, status QuotaStatus, notifType string, threshold float64) {
+//
+// By default each provider+quota+type combination fires at most once per cycle;
+// the notification_log entry is cleared on quota reset (see Check/ResetOccurred).
+// When repeat is enabled the alert fires again once the cooldown has elapsed,
+// which is what makes the configured cooldown meaningful.
+func (e *NotificationEngine) sendNotification(channels channelSet, policy repeatPolicy, status QuotaStatus, notifType string, threshold float64) {
 	provider := normalizeNotificationProvider(status.Provider)
 	quotaKey := notificationQuotaKey(status)
 	sentAt, _, err := e.store.GetLastNotification(provider, quotaKey, notifType)
@@ -521,12 +557,21 @@ func (e *NotificationEngine) sendNotification(channels channelSet, status QuotaS
 		e.logger.Error("failed to check notification log", "error", err)
 		return
 	}
-	// Already sent for this cycle - skip (log is cleared on reset)
 	if !sentAt.IsZero() {
-		e.logger.Debug("notification already sent for this cycle",
-			"quota", quotaKey, "type", notifType,
-			"sent_at", sentAt)
-		return
+		// Already sent for this cycle - skip (log is cleared on reset)
+		if !policy.enabled {
+			e.logger.Debug("notification already sent for this cycle",
+				"quota", quotaKey, "type", notifType,
+				"sent_at", sentAt)
+			return
+		}
+		// Repeating, but not before the cooldown has elapsed.
+		if elapsed := e.clock().Sub(sentAt); elapsed < policy.cooldown {
+			e.logger.Debug("notification within cooldown",
+				"quota", quotaKey, "type", notifType,
+				"sent_at", sentAt, "elapsed", elapsed, "cooldown", policy.cooldown)
+			return
+		}
 	}
 
 	subject := e.buildSubject(status, notifType)
@@ -574,10 +619,19 @@ func (e *NotificationEngine) sendNotification(channels channelSet, status QuotaS
 
 	// Log the notification only if at least one channel succeeded
 	if sent {
-		if err := e.store.UpsertNotificationLog(provider, quotaKey, notifType, status.Utilization); err != nil {
+		if err := e.store.UpsertNotificationLogAt(provider, quotaKey, notifType, status.Utilization, e.clock()); err != nil {
 			e.logger.Error("failed to log notification", "error", err)
 		}
 	}
+}
+
+// clock returns the engine's time source, defaulting to time.Now for engines
+// built before the field existed (e.g. zero-value structs in tests).
+func (e *NotificationEngine) clock() time.Time {
+	if e.now != nil {
+		return e.now()
+	}
+	return time.Now()
 }
 
 func normalizeNotificationProvider(provider string) string {

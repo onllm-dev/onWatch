@@ -261,12 +261,17 @@
             </div>
             <div class="settings-divider"></div>
             <div class="settings-section">
-                <h3 class="settings-section-title">Cooldown</h3>
-                <p class="settings-section-desc">Minimum time between repeated notifications for the same quota and level.</p>
+                <h3 class="settings-section-title">Repeat &amp; Cooldown</h3>
+                <p class="settings-section-desc">By default each quota alerts once per cycle. Enable repeats to keep being alerted while a quota stays over its threshold.</p>
                 <div class="settings-fields">
+                    <label class="settings-checkbox-row">
+                        <input type="checkbox" id="notify-repeat">
+                        <span>Repeat alerts while a quota stays over its threshold</span>
+                    </label>
                     <div class="settings-field settings-field-half">
                         <label for="notify-cooldown">Cooldown (minutes)</label>
                         <input type="number" id="notify-cooldown" class="settings-input" min="1" value="30" placeholder="30">
+                        <span class="settings-field-hint">Minimum gap between repeats for the same quota and level.</span>
                     </div>
                 </div>
             </div>

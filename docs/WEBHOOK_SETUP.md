@@ -131,6 +131,10 @@ steady state and at most one per newly crossed threshold.
   the target is user-supplied and a redirect could send the payload elsewhere.
 - **Failed deliveries are retried on the next poll.** A notification is only
   marked as sent for the cycle once at least one channel succeeds.
+- **Each alert fires once per quota cycle** by default. Enable **Repeat alerts**
+  under Settings -> Notifications to keep being alerted while a quota stays over
+  its threshold; the **Cooldown** setting is then the minimum gap between those
+  repeats. Repeats apply to every channel, not just webhooks.
 
 ## Security notes
 

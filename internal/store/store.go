@@ -2285,13 +2285,20 @@ func (s *Store) DeleteAllAuthTokens() error {
 // The UNIQUE(provider, quota_key, notification_type) constraint ensures only the
 // most recent notification per provider+quota+type pair is kept.
 func (s *Store) UpsertNotificationLog(provider, quotaKey, notifType string, util float64) error {
+	return s.UpsertNotificationLogAt(provider, quotaKey, notifType, util, time.Now())
+}
+
+// UpsertNotificationLogAt records a notification with an explicit send time, so
+// the caller comparing against sent_at (the notification cooldown) and the
+// caller writing it use the same clock.
+func (s *Store) UpsertNotificationLogAt(provider, quotaKey, notifType string, util float64, at time.Time) error {
 	if provider == "" {
 		provider = "legacy"
 	}
 	_, err := s.db.Exec(
 		`INSERT OR REPLACE INTO notification_log (provider, quota_key, notification_type, sent_at, utilization)
 		 VALUES (?, ?, ?, ?, ?)`,
-		provider, quotaKey, notifType, time.Now().UTC().Format(time.RFC3339Nano), util,
+		provider, quotaKey, notifType, at.UTC().Format(time.RFC3339Nano), util,
 	)
 	if err != nil {
 		return fmt.Errorf("store.UpsertNotificationLog: %w", err)

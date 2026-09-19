@@ -6920,6 +6920,7 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			NotifyCritical    bool    `json:"notify_critical"`
 			NotifyReset       bool    `json:"notify_reset"`
 			NotifyAuthError   bool    `json:"notify_auth_error"`
+			NotifyRepeat      bool    `json:"notify_repeat"`
 			CooldownMinutes   int     `json:"cooldown_minutes"`
 			// Channels is a pointer so an omitted value keeps the stored
 			// selection instead of silently resetting every channel to off.
