@@ -1,6 +1,9 @@
+//go:build !windows
+
 package api
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 )
@@ -13,6 +16,13 @@ func isolateMuseCredentials(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("META_API_KEY", "")
 	t.Setenv("MUSE_AUTH_PATH", filepath.Join(home, "missing-auth.json"))
+	// Never let a miss fall through to the developer's real Keychain or
+	// secret-service keyring: it would prompt, stall, or find a live key.
+	origLookup := museKeychainLookup
+	museKeychainLookup = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, context.Canceled
+	}
+	t.Cleanup(func() { museKeychainLookup = origLookup })
 	InvalidateMuseCredentialsCache()
 	t.Cleanup(InvalidateMuseCredentialsCache)
 }
