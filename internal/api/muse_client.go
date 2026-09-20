@@ -160,8 +160,12 @@ func (c *MuseClient) FetchSnapshot(ctx context.Context) (*MuseSnapshot, error) {
 		// soon as the subscription snapshot arrives. Holding the generation
 		// open races the live Muse CLI on the same API key (HTTP 429).
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, museMaxBodyBytes))
-		return nil, fmt.Errorf("%w: %s", ErrMuseUnauthorized, museErrorDetail(body))
+		// The body is deliberately dropped: vendors commonly echo the rejected
+		// credential back in auth failures, and the agent logs this error
+		// verbatim. "Never log API keys" (CLAUDE.md). The status is already
+		// self-describing.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, museMaxBodyBytes))
+		return nil, fmt.Errorf("%w: http %d (credential rejected)", ErrMuseUnauthorized, resp.StatusCode)
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return nil, ErrMuseRateLimited
 	case resp.StatusCode >= 500:

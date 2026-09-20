@@ -72,3 +72,29 @@ func TestValidWindowsImage(t *testing.T) {
 		}
 	}
 }
+
+// Agent contexts are cancel-only with no deadline. The scan must still be
+// bounded, or a wedged `ps` holds the poll goroutine until daemon shutdown.
+func TestRunningContextBoundsAnUnboundedCallerContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if _, ok := ctx.Deadline(); ok {
+		t.Fatal("test precondition: caller context must have no deadline")
+	}
+
+	var seen context.Context
+	restore := execCommandContext
+	execCommandContext = func(c context.Context, name string, args ...string) ([]byte, error) {
+		seen = c
+		return nil, context.Canceled
+	}
+	t.Cleanup(func() { execCommandContext = restore })
+
+	RunningContext(ctx, "x.exe", func(string) bool { return false })
+	if seen == nil {
+		t.Fatal("scan never ran")
+	}
+	if _, ok := seen.Deadline(); !ok {
+		t.Fatal("scan context has no deadline: ScanTimeout is not being applied")
+	}
+}

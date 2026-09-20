@@ -30,13 +30,16 @@ const ScanTimeout = 5 * time.Second
 // An unusable process listing reports false: callers fall back to the behaviour
 // they had before the guard existed, which their own backoff still bounds.
 func Running(windowsImage string, match func(cmdline string) bool) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), ScanTimeout)
-	defer cancel()
-	return RunningContext(ctx, windowsImage, match)
+	return RunningContext(context.Background(), windowsImage, match)
 }
 
-// RunningContext is Running with a caller-supplied context.
+// RunningContext is Running with a caller-supplied context. The scan is always
+// bounded by ScanTimeout on top of whatever the caller supplies: agent contexts
+// are cancel-only with no deadline, so passing one straight to exec would let a
+// wedged `ps` hold a poll goroutine until daemon shutdown.
 func RunningContext(ctx context.Context, windowsImage string, match func(cmdline string) bool) bool {
+	ctx, cancel := context.WithTimeout(ctx, ScanTimeout)
+	defer cancel()
 	if runtime.GOOS == "windows" {
 		// windowsImage is interpolated into a cmd /C string, so anything that
 		// could break out of the quoted argument is refused outright rather
@@ -53,7 +56,7 @@ func RunningContext(ctx context.Context, windowsImage string, match func(cmdline
 	}
 	// `ps -Ao args=` is POSIX and prints the full command line of every process
 	// on both macOS and Linux.
-	out, err := exec.CommandContext(ctx, "ps", "-Ao", "args=").Output()
+	out, err := execCommandContext(ctx, "ps", "-Ao", "args=")
 	if err != nil {
 		return false
 	}
@@ -76,6 +79,12 @@ func validWindowsImage(name string) bool {
 		}
 	}
 	return true
+}
+
+// execCommandContext runs the process listing. A variable so tests can assert
+// the deadline the scan actually receives.
+var execCommandContext = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).Output()
 }
 
 // Scan reports whether any line of a process listing satisfies match.

@@ -198,9 +198,9 @@ func parseMuseSubscriptionData(data string) *MuseSubscription {
 	return candidate
 }
 
-// ParseMuseSubscriptionEvents returns the last subscription snapshot seen in
-// SSE data lines (payloads without the "data:" prefix). Lines that are empty,
-// "[DONE]", or not JSON objects are skipped.
+// ParseMuseSubscriptionEvents returns the first usable subscription snapshot
+// in a list of SSE data lines, matching readMuseSubscriptionStream. Frames
+// without a reading (placeholders such as `"window":{}`) are skipped.
 func ParseMuseSubscriptionEvents(dataLines []string) (*MuseSubscription, error) {
 	var snapshot *MuseSubscription
 	for _, data := range dataLines {

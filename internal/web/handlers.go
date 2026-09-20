@@ -1396,6 +1396,7 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.MuseModel = src.MuseModel
 	dst.MuseEnabled = src.MuseEnabled
 	dst.MuseBaseURL = src.MuseBaseURL
+	dst.MuseDisabled = src.MuseDisabled
 	dst.AntigravityBaseURL = src.AntigravityBaseURL
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
