@@ -58,8 +58,6 @@ func ollamaQuotaOrder(name string) int {
 	return 99
 }
 
-// ollamaTitleCase upper-cases the first rune of each space-separated word.
-
 type ollamaQuotaRate struct {
 	Rate          float64
 	HasRate       bool

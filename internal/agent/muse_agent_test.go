@@ -15,7 +15,7 @@ import (
 func withIdleMuseCLI(t *testing.T) {
 	t.Helper()
 	prev := museCLIBusy
-	museCLIBusy = func(string) bool { return false }
+	museCLIBusy = func(context.Context, string) bool { return false }
 	t.Cleanup(func() { museCLIBusy = prev })
 }
 
@@ -123,7 +123,7 @@ func TestMuseAgent_Poll_SkipsWhenCLIBusy(t *testing.T) {
 	defer st.Close()
 
 	prev := museCLIBusy
-	museCLIBusy = func(string) bool { return true }
+	museCLIBusy = func(context.Context, string) bool { return true }
 	defer func() { museCLIBusy = prev }()
 
 	called := false
@@ -151,7 +151,7 @@ func TestMuseAgent_Poll_RateLimitedNoInsert(t *testing.T) {
 	defer st.Close()
 
 	prev := museCLIBusy
-	museCLIBusy = func(string) bool { return false }
+	museCLIBusy = func(context.Context, string) bool { return false }
 	defer func() { museCLIBusy = prev }()
 
 	client := &stubMuseClient{err: api.ErrMuseRateLimited}
@@ -215,6 +215,12 @@ func TestIsMuseCommandLine(t *testing.T) {
 		{"desktop bundle", "/Applications/Muse.app/Contents/MacOS/muse", false},
 		{"electron helper", "muse --type=renderer", false},
 		{"different binary", "/usr/local/bin/museum", false},
+		// npm/bun installs: ps reports the interpreter plus the shebang path.
+		{"node launcher", "node /usr/local/bin/muse", true},
+		{"bun launcher", "bun /home/dev/.bun/bin/muse chat", true},
+		{"node with flags", "node --enable-source-maps /usr/local/bin/muse", true},
+		{"node running something else", "node /usr/local/bin/other-cli", false},
+		{"deno subcommand then cli", "deno run /usr/local/bin/muse", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -226,7 +232,7 @@ func TestIsMuseCommandLine(t *testing.T) {
 }
 
 func TestMuseProcessNamedEmptyName(t *testing.T) {
-	if museProcessNamed("") {
+	if museProcessNamed(context.Background(), "") {
 		t.Fatal("an empty process name must never report a running CLI")
 	}
 }

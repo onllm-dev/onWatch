@@ -4232,8 +4232,15 @@ const museChartColorFallback = [
   { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.08)' }
 ];
 
-// museCardLabel formats the fraction line as percent used.
+// musePercent resolves the figure the card shows, honouring the Remaining
+// display mode that buildMuseCurrent already emits via applyDisplayModeToResponse.
+function musePercent(quota) {
+  return quota.cardPercent != null ? quota.cardPercent : (quota.utilization || 0);
+}
+
+// museCardLabel formats the fraction line for the active display mode.
 function museCardLabel(quota) {
+  if (quota.cardLabel) return quota.cardLabel;
   const used = quota.used != null ? quota.used : (quota.utilization || 0);
   return used.toFixed(1) + '% used';
 }
@@ -4252,9 +4259,9 @@ function renderMuseQuotaCards(quotas, containerId) {
   container.innerHTML = '';
   const list = museEffectiveQuotas(quotas);
   list.forEach((q, idx) => {
-    const pct = (q.utilization || 0);
+    const pct = musePercent(q);
     const pctStr = pct.toFixed(1);
-    const status = q.status || getQuotaStatus(pct);
+    const status = q.status || getQuotaStatus(q.utilization || 0);
     const name = (q.name || 'window_5h');
     const label = q.displayName || museDisplayNames[name] || name;
     const resetsAt = q.resets_at || q.resetsAt || '';
@@ -4309,9 +4316,9 @@ function museQuotaSetsMatch(container, quotas) {
 
 function updateMuseCard(quota) {
   const name = quota.name || 'window_5h';
-  const pct = quota.utilization || 0;
+  const pct = musePercent(quota);
   const pctStr = pct.toFixed(1);
-  const status = quota.status || getQuotaStatus(pct);
+  const status = quota.status || getQuotaStatus(quota.utilization || 0);
   const progressEl = document.getElementById(`progress-muse-${name}`);
   const percentEl = document.getElementById(`percent-muse-${name}`);
   const fractionEl = document.getElementById(`fraction-muse-${name}`);

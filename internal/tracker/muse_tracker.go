@@ -19,7 +19,6 @@ type MuseTracker struct {
 	store      *store.Store
 	logger     *slog.Logger
 	lastValues map[string]float64
-	lastResets map[string]string
 	hasLast    bool
 	onReset    func(quotaName string)
 }
@@ -53,7 +52,6 @@ func NewMuseTracker(store *store.Store, logger *slog.Logger) *MuseTracker {
 		store:      store,
 		logger:     logger,
 		lastValues: make(map[string]float64),
-		lastResets: make(map[string]string),
 	}
 }
 
@@ -87,9 +85,6 @@ func (t *MuseTracker) processQuota(quota api.MuseQuota, capturedAt time.Time) er
 			return fmt.Errorf("failed to set initial peak: %w", err)
 		}
 		t.lastValues[quotaName] = currentUtil
-		if quota.ResetsAt != nil {
-			t.lastResets[quotaName] = quota.ResetsAt.Format(time.RFC3339Nano)
-		}
 		t.logger.Info("Created new Muse cycle",
 			"quota", quotaName,
 			"resetsAt", quota.ResetsAt,
@@ -153,9 +148,6 @@ func (t *MuseTracker) processQuota(quota api.MuseQuota, capturedAt time.Time) er
 		}
 
 		t.lastValues[quotaName] = currentUtil
-		if quota.ResetsAt != nil {
-			t.lastResets[quotaName] = quota.ResetsAt.Format(time.RFC3339Nano)
-		}
 		t.logger.Info("Detected Muse quota reset",
 			"quota", quotaName,
 			"reason", resetReason,
@@ -200,9 +192,6 @@ func (t *MuseTracker) processQuota(quota api.MuseQuota, capturedAt time.Time) er
 	}
 
 	t.lastValues[quotaName] = currentUtil
-	if quota.ResetsAt != nil {
-		t.lastResets[quotaName] = quota.ResetsAt.Format(time.RFC3339Nano)
-	}
 	return nil
 }
 

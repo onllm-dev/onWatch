@@ -49,3 +49,31 @@ func TestQueryMuseCycleOverviewRespectsLimitOfOne(t *testing.T) {
 		t.Fatalf("rows = %d, want 3", len(rows))
 	}
 }
+
+// The history query filters on cycle_end IS NOT NULL, but an empty string is
+// not NULL: such a row must not yield a nil CycleEnd that handlers dereference.
+func TestScanMuseCycleEmptyTimestamps(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	defer s.Close()
+
+	if _, err := s.db.Exec(
+		`INSERT INTO muse_reset_cycles (quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta)
+		 VALUES (?, ?, '', '', 0, 0)`,
+		"window_5h", time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	history, err := s.QueryMuseCycleHistory("window_5h")
+	if err != nil {
+		t.Fatalf("QueryMuseCycleHistory: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("history = %d rows, want 1 (empty string passes IS NOT NULL)", len(history))
+	}
+	if history[0].ResetsAt != nil {
+		t.Errorf("ResetsAt = %v, want nil: an empty timestamp must not become a zero time", history[0].ResetsAt)
+	}
+}

@@ -19,6 +19,7 @@ const (
 	museUserAgent      = "onwatch/1.0"
 	museTimeout        = 60 * time.Second
 	museMaxBodyBytes   = 64 * 1024 // 64 KiB: one probe response is a few KB
+	museDetailMaxRunes = 120       // cap for error details echoed into logs
 	museProbeInput     = "ping"
 	museProbeMaxTokens = 16
 )
@@ -155,7 +156,7 @@ func (c *MuseClient) FetchSnapshot(ctx context.Context) (*MuseSnapshot, error) {
 
 	switch {
 	case resp.StatusCode == http.StatusOK:
-		// continue below — stream-parse so we can drop the connection as
+		// continue below - stream-parse so we can drop the connection as
 		// soon as the subscription snapshot arrives. Holding the generation
 		// open races the live Muse CLI on the same API key (HTTP 429).
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
@@ -182,7 +183,12 @@ func (c *MuseClient) FetchSnapshot(ctx context.Context) (*MuseSnapshot, error) {
 // event that carries a usable subscription snapshot, so the HTTP stream can
 // be closed instead of waiting for the model to finish the dummy probe.
 func readMuseSubscriptionStream(r io.Reader) (*MuseSubscription, string, error) {
-	sc := bufio.NewScanner(io.LimitReader(r, museMaxBodyBytes))
+	// One byte over the cap: if the limiter is fully drained the body was at
+	// least museMaxBodyBytes+1, which is the only reliable truncation signal.
+	// raw.Len() cannot be used - ScanLines strips CR, so a CRLF stream rebuilds
+	// shorter than it arrived.
+	limited := &io.LimitedReader{R: r, N: museMaxBodyBytes + 1}
+	sc := bufio.NewScanner(limited)
 	sc.Buffer(make([]byte, 0, 4096), museMaxBodyBytes)
 	var raw strings.Builder
 	var snapshot *MuseSubscription
@@ -209,7 +215,7 @@ func readMuseSubscriptionStream(r io.Reader) (*MuseSubscription, string, error) 
 	if err := sc.Err(); err != nil {
 		return nil, raw.String(), fmt.Errorf("muse: reading usage stream: %w", err)
 	}
-	if int64(raw.Len()) >= museMaxBodyBytes {
+	if limited.N <= 0 {
 		return nil, raw.String(), fmt.Errorf("muse: usage stream exceeded %d bytes before a subscription frame arrived", museMaxBodyBytes)
 	}
 	return nil, raw.String(), fmt.Errorf("muse: stream carried no subscription usage")
@@ -223,20 +229,24 @@ func museErrorDetail(body []byte) string {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(body, &envelope); err == nil && strings.TrimSpace(envelope.Error.Message) != "" {
-		s := strings.Join(strings.Fields(envelope.Error.Message), " ")
-		if len(s) > 120 {
-			s = s[:120]
-		}
-		return s
+		return truncateMuseDetail(strings.Join(strings.Fields(envelope.Error.Message), " "))
 	}
 	s := strings.Join(strings.Fields(string(body)), " ")
 	if s == "" {
 		return "unknown"
 	}
-	if len(s) > 120 {
-		s = s[:120]
+	return truncateMuseDetail(s)
+}
+
+// truncateMuseDetail caps an error detail at museDetailMaxRunes. Slicing bytes
+// would split a multi-byte rune in a localised message and leave an invalid
+// UTF-8 fragment in the log line and the dashboard error body.
+func truncateMuseDetail(s string) string {
+	runes := []rune(s)
+	if len(runes) <= museDetailMaxRunes {
+		return s
 	}
-	return s
+	return string(runes[:museDetailMaxRunes])
 }
 
 // IsMuseAuthError reports whether err means the credential was rejected.

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -54,7 +55,9 @@ func isKimiCodeCommandLine(cmdline string) bool {
 // session, the same failure mode that made onWatch skip refresh while Claude
 // Code is running.
 //
-// Exported as a package-level variable so tests can override it.
-var IsKimiCodeRunning = func() bool {
-	return procscan.Running("kimi-code.exe", isKimiCodeCommandLine)
+// Exported as a package-level variable so tests can override it. The context
+// bounds the scan: a poll that is cancelled must not leave a wedged `ps`
+// holding its goroutine open.
+var IsKimiCodeRunning = func(ctx context.Context) bool {
+	return procscan.RunningContext(ctx, "kimi-code.exe", isKimiCodeCommandLine)
 }

@@ -16,6 +16,10 @@ func isolateMuseCredentials(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("META_API_KEY", "")
 	t.Setenv("MUSE_AUTH_PATH", filepath.Join(home, "missing-auth.json"))
+	// MuseSettingsPath checks XDG_CONFIG_HOME before HOME, so without this
+	// ResolveMuseModel reads the developer's real ~/.config/muse/settings.json
+	// and the resolved model becomes environment-dependent.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	// Never let a miss fall through to the developer's real Keychain or
 	// secret-service keyring: it would prompt, stall, or find a live key.
 	origLookup := museKeychainLookup

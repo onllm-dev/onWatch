@@ -254,7 +254,11 @@ func BuildMuseSnapshot(sub *MuseSubscription, model, rawJSON string, capturedAt 
 		return snap
 	}
 	snap.Tier = sub.Tier
-	if sub.Window != nil {
+	// museWindowHasReading, not a nil check: a placeholder `"window":{}` frame
+	// decodes to a non-nil window and would be recorded as a real 0% reading,
+	// wiping the cycle's true value and booking the next reading as one large
+	// delta.
+	if museWindowHasReading(sub.Window) {
 		used := clampMusePercent(sub.Window.UsedPercent)
 		resetsAt := sub.Window.ResetsAt
 		snap.WindowUsedPct = used
@@ -269,7 +273,7 @@ func BuildMuseSnapshot(sub *MuseSubscription, model, rawJSON string, capturedAt 
 			ResetsAt:    resetsAt,
 		})
 	}
-	if sub.Weekly != nil {
+	if museWindowHasReading(sub.Weekly) {
 		used := clampMusePercent(sub.Weekly.UsedPercent)
 		resetsAt := sub.Weekly.ResetsAt
 		snap.WeeklyUsedPct = used

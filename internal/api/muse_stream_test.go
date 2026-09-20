@@ -3,6 +3,8 @@ package api
 import (
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 )
 
 func TestReadMuseSubscriptionStreamStopsAtFirstUsableFrame(t *testing.T) {
@@ -56,5 +58,60 @@ func TestMuseHasQuotaRejectsEmptyWindows(t *testing.T) {
 	}
 	if museHasQuota(nil) {
 		t.Error("nil subscription is not a reading")
+	}
+}
+
+// A frame with a real weekly reading but a placeholder window must not record
+// the window at 0%: that wipes the cycle's true value and books the next real
+// reading as one large delta.
+func TestBuildMuseSnapshotSkipsPlaceholderWindow(t *testing.T) {
+	sub, err := ParseMuseSubscriptionEvents([]string{
+		`{"subscription":{"tier":"pro","weekly":{"resets_at":"1789344000","used_percent":"41"},"window":{}}}`,
+	})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	snap := BuildMuseSnapshot(sub, "m", "{}", time.Unix(1789000000, 0).UTC())
+	for _, q := range snap.Quotas {
+		if q.Name == MuseQuotaWindow5H {
+			t.Fatalf("placeholder window recorded as a quota: %+v", q)
+		}
+	}
+	if snap.WindowUsedPct != 0 || snap.WindowResetsAt != nil {
+		t.Fatalf("placeholder window leaked into the snapshot: used=%v resetsAt=%v",
+			snap.WindowUsedPct, snap.WindowResetsAt)
+	}
+	if len(snap.Quotas) != 1 || snap.Quotas[0].Name != MuseQuotaWeekly {
+		t.Fatalf("quotas = %+v, want the weekly reading alone", snap.Quotas)
+	}
+}
+
+func TestTruncateMuseDetailIsRuneSafe(t *testing.T) {
+	long := strings.Repeat("é", museDetailMaxRunes+20)
+	got := truncateMuseDetail(long)
+	if !utf8.ValidString(got) {
+		t.Fatal("truncation split a multi-byte rune")
+	}
+	if n := utf8.RuneCountInString(got); n != museDetailMaxRunes {
+		t.Fatalf("rune count = %d, want %d", n, museDetailMaxRunes)
+	}
+	if short := truncateMuseDetail("ok"); short != "ok" {
+		t.Fatalf("short string altered: %q", short)
+	}
+}
+
+// ScanLines strips CR, so a CRLF stream rebuilds shorter than it arrived and
+// truncation cannot be inferred from the rebuilt buffer.
+func TestReadMuseSubscriptionStreamReportsCRLFTruncation(t *testing.T) {
+	var b strings.Builder
+	for b.Len() <= museMaxBodyBytes {
+		b.WriteString("data: {\"delta\":\"" + strings.Repeat("x", 200) + "\"}\r\n")
+	}
+	_, _, err := readMuseSubscriptionStream(strings.NewReader(b.String()))
+	if err == nil {
+		t.Fatal("expected an error for a truncated CRLF stream")
+	}
+	if strings.Contains(err.Error(), "carried no subscription usage") {
+		t.Fatalf("truncation misreported as missing usage: %v", err)
 	}
 }

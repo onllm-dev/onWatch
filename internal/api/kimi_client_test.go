@@ -132,7 +132,7 @@ func TestKimiClientFetchSnapshot_ForceRefreshOn401UnexpiredAccess(t *testing.T) 
 	c := NewKimiClient("", nil,
 		WithKimiBaseURL(srv.URL),
 		WithKimiOAuthHost(srv.URL),
-		WithKimiCLIRunning(func() bool { return false }),
+		WithKimiCLIRunning(func(context.Context) bool { return false }),
 	)
 	snap, err := c.FetchSnapshot(context.Background())
 	if err != nil {
@@ -195,7 +195,7 @@ func TestKimiClientFetchSnapshot_LiveCLIAdoptsDiskSkipsOAuth(t *testing.T) {
 	c := NewKimiClient("", nil,
 		WithKimiBaseURL(srv.URL),
 		WithKimiOAuthHost(srv.URL),
-		WithKimiCLIRunning(func() bool { return true }),
+		WithKimiCLIRunning(func(context.Context) bool { return true }),
 	)
 	snap, err := c.FetchSnapshot(context.Background())
 	if err != nil {
@@ -245,7 +245,7 @@ func TestKimiClientFetchSnapshot_LiveCLI401AdoptsUpdatedDiskNotOAuth(t *testing.
 	c := NewKimiClient("", nil,
 		WithKimiBaseURL(srv.URL),
 		WithKimiOAuthHost(srv.URL),
-		WithKimiCLIRunning(func() bool { return true }),
+		WithKimiCLIRunning(func(context.Context) bool { return true }),
 	)
 	snap, err := c.FetchSnapshot(context.Background())
 	if err != nil {
@@ -276,7 +276,7 @@ func TestKimiClientFetchSnapshot_LiveCLI401DoesNotOAuth(t *testing.T) {
 	c := NewKimiClient("", nil,
 		WithKimiBaseURL(srv.URL),
 		WithKimiOAuthHost(srv.URL),
-		WithKimiCLIRunning(func() bool { return true }),
+		WithKimiCLIRunning(func(context.Context) bool { return true }),
 	)
 	_, err := c.FetchSnapshot(context.Background())
 	if err != ErrKimiUnauthorized {

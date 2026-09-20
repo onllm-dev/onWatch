@@ -281,7 +281,7 @@ func scanMuseCycle(rows *sql.Rows) (*MuseResetCycle, error) {
 		t, _ := time.Parse(time.RFC3339Nano, cycleEnd.String)
 		cycle.CycleEnd = &t
 	}
-	if resetsAt.Valid {
+	if resetsAt.Valid && resetsAt.String != "" {
 		rt, _ := time.Parse(time.RFC3339Nano, resetsAt.String)
 		cycle.ResetsAt = &rt
 	}
@@ -337,33 +337,6 @@ func (s *Store) QueryMuseCycleHistory(quotaName string, limit ...int) ([]*MuseRe
 
 	return cycles, rows.Err()
 }
-
-// QueryMuseCyclesSince returns closed cycles started at or after since.
-func (s *Store) QueryMuseCyclesSince(quotaName string, since time.Time) ([]*MuseResetCycle, error) {
-	rows, err := s.db.Query(
-		`SELECT id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
-		FROM muse_reset_cycles WHERE quota_name = ? AND cycle_end IS NOT NULL AND cycle_start >= ?
-		ORDER BY cycle_start DESC`,
-		quotaName, since.UTC().Format(time.RFC3339Nano),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query muse cycles since: %w", err)
-	}
-	defer rows.Close()
-
-	var cycles []*MuseResetCycle
-	for rows.Next() {
-		cycle, err := scanMuseCycle(rows)
-		if err != nil {
-			return nil, err
-		}
-		cycles = append(cycles, cycle)
-	}
-
-	return cycles, rows.Err()
-}
-
-// QueryMuseUtilizationSeries returns per-quota utilization points since a time.
 func (s *Store) QueryMuseUtilizationSeries(quotaName string, since time.Time) ([]UtilizationPoint, error) {
 	rows, err := s.db.Query(
 		`SELECT s.captured_at, qv.utilization
@@ -469,16 +442,15 @@ func (s *Store) QueryMuseCycleOverview(groupBy string, limit int) ([]CycleOvervi
 	if err != nil {
 		return nil, fmt.Errorf("store.QueryMuseCycleOverview: active: %w", err)
 	}
-	bounded := limit > 0
 	if activeCycle != nil {
 		cycles = append(cycles, activeCycle)
 		limit--
 	}
 
-	// A caller-supplied limit fully consumed by the active cycle means no
-	// history at all. Passing 0 through would drop the LIMIT clause and return
-	// every cycle ever recorded, which is the opposite of the cap requested.
-	if !bounded || limit > 0 {
+	// A limit fully consumed by the active cycle means no history at all.
+	// Passing 0 through would drop the LIMIT clause and return every cycle ever
+	// recorded, which is the opposite of the cap requested.
+	if limit > 0 {
 		completedCycles, err := s.QueryMuseCycleHistory(groupBy, limit)
 		if err != nil {
 			return nil, fmt.Errorf("store.QueryMuseCycleOverview: %w", err)

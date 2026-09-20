@@ -17,13 +17,19 @@ import (
 
 // museCLIBusy reports whether a live `muse` CLI process is running. The usage
 // probe shares the Meta /v1/responses quota with that session; probing while
-// it is active 429s the TUI. A variable so tests can stub it.
+// it is active 429s the TUI. A variable so tests can stub it. The context
+// bounds the scan so a cancelled poll does not wait out a wedged `ps`.
 var museCLIBusy = museProcessNamed
 
 // isMuseCommandLine reports whether a full process command line belongs to the
-// Muse CLI. A false positive only skips a poll cycle, so the match errs narrow:
-// the executable basename must be the CLI itself, not a process that merely
-// names it.
+// Muse CLI.
+//
+// A false negative is the costly direction here: missing a live CLI lets the
+// probe run against the same API key and 429 the user's session, which is the
+// whole reason the guard exists. npm/bun global installs put a shebang
+// launcher on PATH, and the kernel hands the interpreter the unresolved path,
+// so ps reports `node /usr/local/bin/muse` rather than `muse` - the same case
+// isClaudeCodeCommandLine handles.
 func isMuseCommandLine(name string) func(string) bool {
 	return func(cmdline string) bool {
 		line := strings.TrimSpace(cmdline)
@@ -42,17 +48,38 @@ func isMuseCommandLine(name string) func(string) bool {
 		if runtime.GOOS == "windows" {
 			base = strings.TrimSuffix(base, ".exe")
 		}
-		return base == name
+		if base == name {
+			return true
+		}
+		// A JS runtime hosting the CLI through its bin entry.
+		if !isJSRuntime(base) {
+			return false
+		}
+		for _, arg := range fields[1:] {
+			if strings.HasPrefix(arg, "-") {
+				continue // interpreter flag
+			}
+			if !strings.ContainsAny(arg, "/.") {
+				continue // subcommand such as `deno run`
+			}
+			// First script-like argument decides.
+			argBase := filepath.Base(arg)
+			if runtime.GOOS == "windows" {
+				argBase = strings.TrimSuffix(argBase, ".exe")
+			}
+			return argBase == name
+		}
+		return false
 	}
 }
 
 // museProcessNamed uses the shared process scan so the guard also works on
 // Windows, where pgrep does not exist and the probe would otherwise never skip.
-func museProcessNamed(name string) bool {
+func museProcessNamed(ctx context.Context, name string) bool {
 	if name == "" {
 		return false
 	}
-	return procscan.Running(name+".exe", isMuseCommandLine(name))
+	return procscan.RunningContext(ctx, name+".exe", isMuseCommandLine(name))
 }
 
 // museFetcher is the usage-probe surface the Muse agent needs.
@@ -132,7 +159,7 @@ func (a *MuseAgent) poll(ctx context.Context) {
 	if a.pollingCheck != nil && !a.pollingCheck() {
 		return // polling disabled for this provider
 	}
-	if museCLIBusy != nil && museCLIBusy("muse") {
+	if museCLIBusy != nil && museCLIBusy(ctx, "muse") {
 		a.logger.Info("Muse poll skipped: live muse CLI would race the usage probe")
 		return
 	}

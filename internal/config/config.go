@@ -57,6 +57,7 @@ type Config struct {
 	MuseModel          string // META_MUSE_MODEL or Muse settings model (default muse-spark-1.3)
 	MuseEnabled        bool   // true if MUSE_ENABLED=true or key present (unless explicitly false)
 	MuseBaseURL        string // MUSE_BASE_URL override for proxy setups (default https://api.meta.ai)
+	MuseDisabled       bool   // true if MUSE_ENABLED=false explicitly opted out
 	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
 	CodexAutoStart5h   bool   // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
 	CodexAutoStart7d   bool   // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
@@ -244,6 +245,7 @@ var onwatchEnvKeys = []string{
 	"META_API_KEY",
 	"META_MUSE_MODEL",
 	"MUSE_ENABLED",
+	"MUSE_BASE_URL",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
@@ -455,6 +457,7 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	cfg.MuseBaseURL = strings.TrimSpace(os.Getenv("MUSE_BASE_URL"))
 	if os.Getenv("MUSE_ENABLED") == "false" {
 		cfg.MuseEnabled = false
+		cfg.MuseDisabled = true
 	} else if os.Getenv("MUSE_ENABLED") == "true" || cfg.MuseAPIKey != "" {
 		cfg.MuseEnabled = true
 	}

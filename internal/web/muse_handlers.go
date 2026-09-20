@@ -60,8 +60,6 @@ func museQuotaOrder(name string) int {
 	return 99
 }
 
-// museTitleCase upper-cases the first rune of each space-separated word.
-
 type museQuotaRate struct {
 	Rate          float64
 	HasRate       bool
@@ -207,6 +205,25 @@ func (h *Handler) buildMuseCurrent() map[string]interface{} {
 		response["windowLabel"] = api.MuseWindowLabel(latest.WindowDurationMins)
 	}
 
+	// One summary per quota per request: UsageSummary runs an active-cycle
+	// query plus a 200-row history scan plus a latest-snapshot join, and the
+	// closure below is called for every quota on every dashboard refresh.
+	summaries := map[string]*tracker.MuseSummary{}
+	summaryFor := func(name string) *tracker.MuseSummary {
+		if h.museTracker == nil {
+			return nil
+		}
+		if cached, ok := summaries[name]; ok {
+			return cached
+		}
+		summary, sErr := h.museTracker.UsageSummary(name)
+		if sErr != nil {
+			summary = nil
+		}
+		summaries[name] = summary
+		return summary
+	}
+
 	quotaFromLatest := func(q api.MuseQuota, capturedAt time.Time) map[string]interface{} {
 		age := now.Sub(capturedAt)
 		qMap := map[string]interface{}{
@@ -227,10 +244,11 @@ func (h *Handler) buildMuseCurrent() map[string]interface{} {
 			qMap["timeUntilReset"] = formatDuration(timeUntilReset)
 			qMap["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
-		if h.museTracker != nil {
-			if summary, sErr := h.museTracker.UsageSummary(q.Name); sErr == nil && summary != nil {
-				qMap["currentRate"] = summary.CurrentRate
-				qMap["projectedUtil"] = summary.ProjectedUtil
+		if summary := summaryFor(q.Name); summary != nil {
+			qMap["currentRate"] = summary.CurrentRate
+			qMap["projectedUtil"] = summary.ProjectedUtil
+			if !summary.TrackingSince.IsZero() {
+				qMap["trackingSince"] = summary.TrackingSince.Format(time.RFC3339)
 			}
 		}
 		return qMap
@@ -386,10 +404,12 @@ func (h *Handler) cyclesMuse(w http.ResponseWriter, r *http.Request) {
 			"id":              c.ID,
 			"quotaName":       c.QuotaName,
 			"cycleStart":      c.CycleStart.Format(time.RFC3339),
-			"cycleEnd":        c.CycleEnd.Format(time.RFC3339),
 			"peakUtilization": c.PeakUtilization,
 			"totalDelta":      c.TotalDelta,
 			"isActive":        false,
+		}
+		if c.CycleEnd != nil {
+			cycleMap["cycleEnd"] = c.CycleEnd.Format(time.RFC3339)
 		}
 		if c.ResetsAt != nil {
 			cycleMap["resetsAt"] = c.ResetsAt.Format(time.RFC3339)
@@ -431,18 +451,6 @@ func (h *Handler) insightsMuse(w http.ResponseWriter, _ *http.Request, rangeDur 
 	hidden := h.getHiddenInsightKeys()
 	respondJSON(w, http.StatusOK, h.buildMuseInsights(hidden, rangeDur))
 }
-
-func (h *Handler) museQuotaNames() []string {
-	if h.store == nil {
-		return nil
-	}
-	names, err := h.store.QueryAllMuseQuotaNames()
-	if err != nil {
-		return nil
-	}
-	return names
-}
-
 func (h *Handler) buildMuseSummaryMap() map[string]interface{} {
 	if h.store == nil || h.museTracker == nil {
 		return map[string]interface{}{}

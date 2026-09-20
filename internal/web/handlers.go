@@ -1223,8 +1223,17 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 	case "ollama":
 		return h.config != nil && strings.TrimSpace(h.config.OllamaAPIKey) != ""
 	case "muse":
-		if h.config != nil && (h.config.MuseEnabled || strings.TrimSpace(h.config.MuseAPIKey) != "") {
+		if h.config == nil {
+			return false
+		}
+		if h.config.MuseEnabled || strings.TrimSpace(h.config.MuseAPIKey) != "" {
 			return true
+		}
+		// MUSE_ENABLED=false is an explicit opt-out: main.go skips auto-detect
+		// and never builds an agent, so probing the credential store here would
+		// advertise a provider that can never poll.
+		if h.config.MuseDisabled {
+			return false
 		}
 		// Cached: detection can shell out to the keychain with a multi-second
 		// deadline, and this runs on every provider-list request.
@@ -1386,6 +1395,7 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.MuseAutoToken = src.MuseAutoToken
 	dst.MuseModel = src.MuseModel
 	dst.MuseEnabled = src.MuseEnabled
+	dst.MuseBaseURL = src.MuseBaseURL
 	dst.AntigravityBaseURL = src.AntigravityBaseURL
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled

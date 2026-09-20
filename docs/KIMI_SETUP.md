@@ -11,7 +11,7 @@ This is **not** the Moonshot Open Platform pay-as-you-go balance API (`api.moons
 
 ## Prerequisites
 
-1. Install and log in with **kimi-code** only: [docs](https://moonshotai.github.io/kimi-code/) — `kimi login`
+1. Install and log in with **kimi-code** only: [docs](https://moonshotai.github.io/kimi-code/) - `kimi login`
 2. Credentials file is searched **only** under the kimi-code store (in order):
    - `$KIMI_CODE_CREDENTIALS` or `$KIMI_CREDENTIALS` (explicit file; Docker/CI)
    - `$KIMI_CODE_HOME/credentials/kimi-code.json`
@@ -23,7 +23,7 @@ A single dashboard tab must not touch two OAuth token chains (refresh rotation w
 ### Token refresh policy
 
 - If a **kimi-code process is running**, onWatch **never** calls OAuth refresh. The live CLI owns the refresh-token chain; rotating it from onWatch would kick the session out. Instead onWatch re-reads `kimi-code.json` (including when the file mtime/size changes) and adopts the access token the CLI last wrote.
-- If the kimi-code **access token is still valid** (`expires_at` with a 60s skew) and no live CLI needs to be deferred to, onWatch **never** refreshes — it reuses the token already on disk.
+- If the kimi-code **access token is still valid** (`expires_at` with a 60s skew) and no live CLI needs to be deferred to, onWatch **never** refreshes - it reuses the token already on disk.
 - Refresh runs only when access is **expired**, **no kimi-code process is running**, and Settings → Auto refresh tokens is on. Then onWatch may call:
 
 ```http

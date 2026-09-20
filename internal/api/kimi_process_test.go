@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"testing"
 
 	"github.com/onllm-dev/onwatch/v2/internal/procscan"
@@ -49,5 +50,5 @@ func TestKimiCodeMatchesProcessListing(t *testing.T) {
 // IsKimiCodeRunning shells out to ps/tasklist; assert only that it is callable
 // and returns without panicking on the host running the suite.
 func TestIsKimiCodeRunningIsCallable(t *testing.T) {
-	_ = IsKimiCodeRunning()
+	_ = IsKimiCodeRunning(context.Background())
 }
