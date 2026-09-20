@@ -1,6 +1,6 @@
 # onWatch
 
-Go CLI for AI quota tracking. Polls 16 providers → SQLite → Material Design 3 dashboard.
+Go CLI for AI quota tracking. Polls 17 providers → SQLite → Material Design 3 dashboard.
 
 ## Task
 
