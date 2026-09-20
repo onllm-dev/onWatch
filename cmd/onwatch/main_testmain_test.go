@@ -1,7 +1,10 @@
 package main
 
 import (
+	"log/slog"
+
 	"fmt"
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"net"
 	"os"
 	"path/filepath"
@@ -44,6 +47,11 @@ func TestMain(m *testing.M) {
 	verifyOllamaKey = func(string) (string, error) { return "free", nil }
 	// Muse key verification must never hit api.meta.ai from tests.
 	verifyMuseKey = func(string, string) (string, error) { return "5h 1.0% used / weekly 2.0% used", nil }
+	// Muse credential detection must never read the developer's keychain or
+	// login file: on a machine with real credentials the setup wizard takes
+	// its auto-detected branch, asks one question instead of two, and the
+	// scripted prompt input in the wizard tests desyncs from there on.
+	detectMuseCredentialsFunc = func(*slog.Logger) *api.MuseCredentials { return nil }
 
 	os.Exit(m.Run())
 }

@@ -46,3 +46,29 @@ func TestRunningContextNilMatcher(t *testing.T) {
 func TestRunningIsCallable(t *testing.T) {
 	_ = Running("definitely-not-a-real-process.exe", func(string) bool { return false })
 }
+
+func TestValidWindowsImage(t *testing.T) {
+	valid := []string{"claude.exe", "kimi-code.exe", "muse.exe", "a_b-1.exe"}
+	for _, name := range valid {
+		if !validWindowsImage(name) {
+			t.Errorf("validWindowsImage(%q) = false, want true", name)
+		}
+	}
+	// Anything that could escape the quoted findstr argument must be refused.
+	invalid := []string{
+		"",
+		`" & calc & "`,
+		"claude.exe\" & del /q C:\\ & \"",
+		`c:\windows\system32\claude.exe`,
+		"claude exe",
+		"claude|findstr",
+		"claude&calc",
+		"claude%PATH%",
+		"cláude.exe",
+	}
+	for _, name := range invalid {
+		if validWindowsImage(name) {
+			t.Errorf("validWindowsImage(%q) = true, want false", name)
+		}
+	}
+}

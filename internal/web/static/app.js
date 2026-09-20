@@ -4238,11 +4238,19 @@ function museCardLabel(quota) {
   return used.toFixed(1) + '% used';
 }
 
+// museEffectiveQuotas resolves what actually gets rendered, including the
+// placeholder shown before the first successful poll. The match check below
+// must compare against this same list, or the placeholder counts as a
+// mismatch and the grid is torn down and rebuilt on every poll.
+function museEffectiveQuotas(quotas) {
+  return (quotas && quotas.length) ? quotas : [{ name: 'window_5h', utilization: 0, status: 'healthy' }];
+}
+
 function renderMuseQuotaCards(quotas, containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '';
-  const list = (quotas && quotas.length) ? quotas : [{ name: 'window_5h', utilization: 0, status: 'healthy' }];
+  const list = museEffectiveQuotas(quotas);
   list.forEach((q, idx) => {
     const pct = (q.utilization || 0);
     const pctStr = pct.toFixed(1);
@@ -4292,10 +4300,11 @@ function renderMuseQuotaCards(quotas, containerId) {
 
 function museQuotaSetsMatch(container, quotas) {
   if (!container) return false;
+  const expected = museEffectiveQuotas(quotas);
   const renderedCards = Array.from(container.querySelectorAll('.muse-card[data-quota]'));
-  if (renderedCards.length !== (quotas || []).length) return false;
+  if (renderedCards.length !== expected.length) return false;
   const rendered = new Set(renderedCards.map(c => c.dataset.quota));
-  return (quotas || []).every(q => rendered.has(q.name));
+  return expected.every(q => rendered.has(q.name));
 }
 
 function updateMuseCard(quota) {

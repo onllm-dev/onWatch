@@ -38,7 +38,10 @@ func Running(windowsImage string, match func(cmdline string) bool) bool {
 // RunningContext is Running with a caller-supplied context.
 func RunningContext(ctx context.Context, windowsImage string, match func(cmdline string) bool) bool {
 	if runtime.GOOS == "windows" {
-		if windowsImage == "" {
+		// windowsImage is interpolated into a cmd /C string, so anything that
+		// could break out of the quoted argument is refused outright rather
+		// than escaped. Callers pass a plain executable name.
+		if !validWindowsImage(windowsImage) {
 			return false
 		}
 		// tasklist always exits 0; findstr verifies a real match.
@@ -55,6 +58,24 @@ func RunningContext(ctx context.Context, windowsImage string, match func(cmdline
 		return false
 	}
 	return Scan(out, match)
+}
+
+// validWindowsImage reports whether an image name is safe to interpolate into
+// a cmd /C command string: a bare executable name, no path, quoting or shell
+// metacharacters.
+func validWindowsImage(name string) bool {
+	if name == "" || len(name) > 260 {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.' || r == '-' || r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Scan reports whether any line of a process listing satisfies match.

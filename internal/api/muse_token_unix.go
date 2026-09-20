@@ -52,9 +52,9 @@ func readMusePlatformKey(logger *slog.Logger) (string, string) {
 		if _, err := exec.LookPath("secret-tool"); err != nil {
 			return "", ""
 		}
-		out, err := exec.CommandContext(ctx, "secret-tool", "lookup",
+		out, err := museKeychainLookup(ctx, "secret-tool", "lookup",
 			"service", museKeychainService,
-			"account", museKeychainAccount).Output()
+			"account", museKeychainAccount)
 		if err != nil {
 			return "", ""
 		}
@@ -67,8 +67,10 @@ func readMusePlatformKey(logger *slog.Logger) (string, string) {
 	}
 }
 
-// museKeychainLookup runs the platform credential lookup. A variable so
-// tests can simulate a hanging Keychain approval dialog.
+// museKeychainLookup runs the platform credential lookup on every unix
+// platform. A variable so tests can simulate a hanging Keychain approval
+// dialog, and so they never reach the developer's real Keychain or
+// secret-service keyring - every lookup must go through here.
 var museKeychainLookup = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
 }

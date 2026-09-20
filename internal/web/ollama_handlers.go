@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
@@ -60,17 +59,6 @@ func ollamaQuotaOrder(name string) int {
 }
 
 // ollamaTitleCase upper-cases the first rune of each space-separated word.
-func ollamaTitleCase(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	words := strings.Fields(s)
-	for i, w := range words {
-		words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
-	}
-	return strings.Join(words, " ")
-}
 
 type ollamaQuotaRate struct {
 	Rate          float64
@@ -505,7 +493,7 @@ func (h *Handler) buildOllamaInsights(hidden map[string]bool, _ time.Duration) o
 		return resp
 	}
 
-	if planLabel := ollamaTitleCase(latest.Plan); planLabel != "" {
+	if planLabel := titleCaseWords(latest.Plan); planLabel != "" {
 		resp.Stats = append(resp.Stats, ollamaInsightStat{
 			Label: "Plan",
 			Value: planLabel,

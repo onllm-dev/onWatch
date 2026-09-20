@@ -1619,6 +1619,10 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 		if model, _ := s["model"].(string); strings.TrimSpace(model) != "" {
 			cfg.MuseModel = strings.TrimSpace(model)
 		}
+		// Detection is cached for 60s, misses included. Without this a key
+		// saved from Settings stays invisible to the provider list until the
+		// cached miss expires.
+		api.InvalidateMuseCredentialsCache()
 	}
 
 	if logger != nil {

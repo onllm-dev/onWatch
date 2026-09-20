@@ -8,11 +8,16 @@ import (
 
 const museTestSSESubscription = `{"subscription":{"tier":"pro","weekly":{"resets_at":"1789344000","used_percent":"12.5"},"window":{"resets_at":"1789078632","used_percent":"34","window_duration_mins":"300"}}}`
 
-func TestParseMuseSubscriptionEventsPicksLastSnapshot(t *testing.T) {
+// The probe closes the stream at the first usable subscription frame so it
+// never holds a generation open and rate-limits a live Muse CLI, so the parser
+// must agree: first usable frame wins, and leading non-usage frames are
+// skipped.
+func TestParseMuseSubscriptionEventsPicksFirstSnapshot(t *testing.T) {
 	lines := []string{
 		`{"type":"response.created"}`,
-		`{"subscription":{"tier":"pro","weekly":{"resets_at":"1789344000","used_percent":"10"},"window":{"resets_at":"1789078632","used_percent":"20","window_duration_mins":"300"}}}`,
+		`{"subscription":{"window":{}}}`,
 		museTestSSESubscription,
+		`{"subscription":{"tier":"pro","weekly":{"resets_at":"1789344000","used_percent":"10"},"window":{"resets_at":"1789078632","used_percent":"20","window_duration_mins":"300"}}}`,
 		"[DONE]",
 		"",
 	}
@@ -24,10 +29,10 @@ func TestParseMuseSubscriptionEventsPicksLastSnapshot(t *testing.T) {
 		t.Fatalf("tier = %q, want pro", sub.Tier)
 	}
 	if sub.Window.UsedPercent != 34 {
-		t.Fatalf("window used = %v, want 34", sub.Window.UsedPercent)
+		t.Fatalf("window used = %v, want 34 (first usable frame)", sub.Window.UsedPercent)
 	}
 	if sub.Weekly.UsedPercent != 12.5 {
-		t.Fatalf("weekly used = %v, want 12.5", sub.Weekly.UsedPercent)
+		t.Fatalf("weekly used = %v, want 12.5 (first usable frame)", sub.Weekly.UsedPercent)
 	}
 	if sub.Window.WindowDurationMins != 300 {
 		t.Fatalf("window mins = %v, want 300", sub.Window.WindowDurationMins)

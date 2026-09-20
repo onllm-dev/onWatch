@@ -340,7 +340,7 @@ func TestProviderCollectionHelpers(t *testing.T) {
 			"y",            // antigravity yes
 			"n",            // gemini no
 			"n",            // grok no
-		"n",            // muse no
+			"n",            // muse no
 		}, "\n") + "\n"
 		r := bufio.NewReader(strings.NewReader(input))
 		syn, zai, zaiURL, anth, codex, _, anti, _, _, _, _, _ := collectMultipleProviders(r, testLogger())

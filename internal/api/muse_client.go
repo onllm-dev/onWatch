@@ -200,24 +200,19 @@ func readMuseSubscriptionStream(r io.Reader) (*MuseSubscription, string, error) 
 			break
 		}
 	}
-	if snapshot == nil {
-		return nil, raw.String(), fmt.Errorf("muse: stream carried no subscription usage")
+	if snapshot != nil {
+		return snapshot, raw.String(), nil
 	}
-	return snapshot, raw.String(), nil
-}
-
-// museSSEDataLines returns the payloads of SSE "data:" lines.
-func museSSEDataLines(body []byte) []string {
-	var lines []string
-	sc := bufio.NewScanner(bytes.NewReader(body))
-	sc.Buffer(make([]byte, 0, 4096), museMaxBodyBytes)
-	for sc.Scan() {
-		text := strings.TrimSpace(sc.Text())
-		if strings.HasPrefix(text, "data:") {
-			lines = append(lines, strings.TrimSpace(strings.TrimPrefix(text, "data:")))
-		}
+	// A scanner failure (an SSE line over museMaxBodyBytes, or a dropped
+	// connection) must not be reported as "Meta sent no usage": that sends the
+	// operator looking at their plan instead of the transport.
+	if err := sc.Err(); err != nil {
+		return nil, raw.String(), fmt.Errorf("muse: reading usage stream: %w", err)
 	}
-	return lines
+	if int64(raw.Len()) >= museMaxBodyBytes {
+		return nil, raw.String(), fmt.Errorf("muse: usage stream exceeded %d bytes before a subscription frame arrived", museMaxBodyBytes)
+	}
+	return nil, raw.String(), fmt.Errorf("muse: stream carried no subscription usage")
 }
 
 // museErrorDetail extracts a short server message without echoing secrets.

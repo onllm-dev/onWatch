@@ -469,16 +469,22 @@ func (s *Store) QueryMuseCycleOverview(groupBy string, limit int) ([]CycleOvervi
 	if err != nil {
 		return nil, fmt.Errorf("store.QueryMuseCycleOverview: active: %w", err)
 	}
+	bounded := limit > 0
 	if activeCycle != nil {
 		cycles = append(cycles, activeCycle)
 		limit--
 	}
 
-	completedCycles, err := s.QueryMuseCycleHistory(groupBy, limit)
-	if err != nil {
-		return nil, fmt.Errorf("store.QueryMuseCycleOverview: %w", err)
+	// A caller-supplied limit fully consumed by the active cycle means no
+	// history at all. Passing 0 through would drop the LIMIT clause and return
+	// every cycle ever recorded, which is the opposite of the cap requested.
+	if !bounded || limit > 0 {
+		completedCycles, err := s.QueryMuseCycleHistory(groupBy, limit)
+		if err != nil {
+			return nil, fmt.Errorf("store.QueryMuseCycleOverview: %w", err)
+		}
+		cycles = append(cycles, completedCycles...)
 	}
-	cycles = append(cycles, completedCycles...)
 
 	var overviewRows []CycleOverviewRow
 	for _, c := range cycles {

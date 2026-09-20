@@ -21,7 +21,7 @@ The probe shares the Meta API key (and rate limit) with a live Muse TUI session.
 
 ## How It Works
 
-The probe response carries a Server-Sent Events stream. onWatch scans its `data:` lines and keeps the last event containing a `subscription` snapshot:
+The probe response carries a Server-Sent Events stream. onWatch scans its `data:` lines and stops at the first event carrying a usable `subscription` snapshot, then closes the connection. Holding the stream open would keep a generation running on your plan and rate-limit a live `muse` session. Placeholder frames such as `{"subscription":{"window":{}}}` are skipped:
 
 ```json
 {"subscription":{

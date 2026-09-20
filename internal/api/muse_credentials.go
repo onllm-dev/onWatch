@@ -101,7 +101,7 @@ func readMuseAuthFileKey() string {
 	if err != nil {
 		return ""
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	if !museAuthFilePermsOK(info.Mode().Perm()) {
 		return ""
 	}
 	data, err := os.ReadFile(path)

@@ -206,6 +206,9 @@ func (t *MuseTracker) processQuota(quota api.MuseQuota, capturedAt time.Time) er
 	return nil
 }
 
+// museSummaryCycleLimit caps the cycles read for a usage summary.
+const museSummaryCycleLimit = 200
+
 // UsageSummary computes statistics for a Muse quota window.
 func (t *MuseTracker) UsageSummary(quotaName string) (*MuseSummary, error) {
 	activeCycle, err := t.store.QueryActiveMuseCycle(quotaName)
@@ -213,7 +216,10 @@ func (t *MuseTracker) UsageSummary(quotaName string) (*MuseSummary, error) {
 		return nil, fmt.Errorf("failed to query active cycle: %w", err)
 	}
 
-	history, err := t.store.QueryMuseCycleHistory(quotaName)
+	// Bounded per CLAUDE.md (cycles <= 200): UsageSummary runs once per quota
+	// on every dashboard /api/current request, so an unbounded read would
+	// materialise every cycle ever recorded on the HTTP request path.
+	history, err := t.store.QueryMuseCycleHistory(quotaName, museSummaryCycleLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cycle history: %w", err)
 	}

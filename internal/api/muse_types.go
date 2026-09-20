@@ -153,11 +153,22 @@ func (w *museSubscriptionWire) subscription() *MuseSubscription {
 	return &MuseSubscription{Tier: tier, Window: w.Window, Weekly: w.Weekly}
 }
 
+// museWindowHasReading reports whether a window carries an actual measurement.
+// Meta sends placeholder objects (`"window":{}`) on some frames; those decode
+// to a non-nil window with a zero percentage and no reset, and accepting them
+// would record 0% and wipe the real reading for the cycle.
+func museWindowHasReading(w *museWindow) bool {
+	if w == nil {
+		return false
+	}
+	return w.UsedPercent != 0 || w.ResetsAt != nil || w.WindowDurationMins != 0
+}
+
 func museHasQuota(sub *MuseSubscription) bool {
 	if sub == nil {
 		return false
 	}
-	return sub.Window != nil || sub.Weekly != nil
+	return museWindowHasReading(sub.Window) || museWindowHasReading(sub.Weekly)
 }
 
 // parseMuseSubscriptionData extracts a usage snapshot from one SSE data
@@ -194,7 +205,11 @@ func ParseMuseSubscriptionEvents(dataLines []string) (*MuseSubscription, error) 
 	var snapshot *MuseSubscription
 	for _, data := range dataLines {
 		if candidate := parseMuseSubscriptionData(data); candidate != nil {
+			// First usable frame wins, matching readMuseSubscriptionStream:
+			// the probe closes the stream as soon as usage arrives so it does
+			// not hold a generation open and rate-limit a live Muse CLI.
 			snapshot = candidate
+			break
 		}
 	}
 	if snapshot == nil {

@@ -12,9 +12,9 @@ import (
 
 func createTestConfigWithMuse() *config.Config {
 	return &config.Config{
-		MuseAPIKey:  "[REDACTED]",
-		MuseModel:   "muse-spark-1.3",
-		MuseEnabled: true,
+		MuseAPIKey:   "[REDACTED]",
+		MuseModel:    "muse-spark-1.3",
+		MuseEnabled:  true,
 		PollInterval: 60 * time.Second,
 		Port:         9212,
 		AdminUser:    "admin",

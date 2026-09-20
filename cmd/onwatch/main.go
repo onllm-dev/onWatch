@@ -1134,7 +1134,14 @@ func run() error {
 	}
 
 	var museClient *api.MuseClient
-	if cfg.HasProvider("muse") {
+	if cfg.HasProvider("muse") && strings.TrimSpace(cfg.MuseAPIKey) == "" {
+		// MUSE_ENABLED alone is enough for HasProvider, and the setup wizard
+		// writes it whenever the user picks auto-detect. If preflight
+		// detection then found nothing (no keychain item, or the approval
+		// dialog timed out), polling with an empty key would log an error
+		// every interval forever and still show an empty tab.
+		logger.Warn("Muse enabled but no API key resolved; skipping Muse polling (run `muse login` or set META_API_KEY)")
+	} else if cfg.HasProvider("muse") {
 		museModel := cfg.MuseModel
 		if museModel == "" {
 			museModel = api.ResolveMuseModel()
