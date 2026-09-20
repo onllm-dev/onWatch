@@ -1226,14 +1226,13 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		if h.config == nil {
 			return false
 		}
-		if h.config.MuseEnabled || strings.TrimSpace(h.config.MuseAPIKey) != "" {
-			return true
-		}
-		// MUSE_ENABLED=false is an explicit opt-out: main.go skips auto-detect
-		// and never builds an agent, so probing the credential store here would
-		// advertise a provider that can never poll.
+		// MUSE_ENABLED=false is an explicit opt-out and wins over everything,
+		// including a key that is present in the environment.
 		if h.config.MuseDisabled {
 			return false
+		}
+		if h.config.MuseEnabled || strings.TrimSpace(h.config.MuseAPIKey) != "" {
+			return true
 		}
 		// Cached: detection can shell out to the keychain with a multi-second
 		// deadline, and this runs on every provider-list request.
@@ -1626,6 +1625,11 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 	if s := provSettings["muse"]; s != nil {
 		if key, _ := s["api_key"].(string); key != "" {
 			cfg.MuseAPIKey = key
+			// Saving a key through Settings is an explicit opt-in, so it grants
+			// the consent that auto-detection deliberately does not.
+			if !cfg.MuseDisabled {
+				cfg.MuseEnabled = true
+			}
 		}
 		if model, _ := s["model"].(string); strings.TrimSpace(model) != "" {
 			cfg.MuseModel = strings.TrimSpace(model)

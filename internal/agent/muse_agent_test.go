@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -235,4 +236,39 @@ func TestMuseProcessNamedEmptyName(t *testing.T) {
 	if museProcessNamed(context.Background(), "") {
 		t.Fatal("an empty process name must never report a running CLI")
 	}
+}
+
+// A live CLI pauses polling; the marker is what lets the dashboard say so
+// instead of letting the cards age into "stale" through a coding session.
+func TestMuseAgentRecordsAndClearsCLIPauseMarker(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer st.Close()
+
+	agent := &MuseAgent{store: st, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	agent.setCLIActive(true)
+	raw, err := st.GetSetting(store.SettingMuseCLIActiveAt)
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if raw == "" {
+		t.Fatal("expected a pause marker to be recorded")
+	}
+	if _, err := time.Parse(time.RFC3339, raw); err != nil {
+		t.Fatalf("marker %q is not RFC3339: %v", raw, err)
+	}
+
+	agent.setCLIActive(false)
+	if raw, err := st.GetSetting(store.SettingMuseCLIActiveAt); err != nil || raw != "" {
+		t.Fatalf("marker = %q (err %v), want cleared after a successful poll", raw, err)
+	}
+}
+
+// The marker is presentational, so a nil store must never panic a poll.
+func TestMuseAgentSetCLIActiveNilStore(t *testing.T) {
+	agent := &MuseAgent{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	agent.setCLIActive(true)
 }

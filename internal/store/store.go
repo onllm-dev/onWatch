@@ -1860,6 +1860,16 @@ func (s *Store) QuerySyntheticCycleOverview(groupBy string, limit int) ([]CycleO
 // Setting key for OAuth auto-refresh of coding-harness credentials.
 const SettingAutoRefreshTokens = "auto_refresh_tokens"
 
+// SettingMuseCLIActiveAt records when the Muse agent last skipped a poll
+// because a live `muse` CLI would have been rate-limited by the probe. The
+// dashboard reads it so a paused provider explains itself instead of silently
+// ageing into "stale".
+const SettingMuseCLIActiveAt = "muse_cli_active_at"
+
+// MuseCLIActiveWindow is how long a recorded skip keeps the provider in the
+// paused state. It must exceed a poll interval so a single skip does not flap.
+const MuseCLIActiveWindow = 5 * time.Minute
+
 // GetSetting returns the value for a setting key. Returns "" if not found.
 func (s *Store) GetSetting(key string) (string, error) {
 	var value string

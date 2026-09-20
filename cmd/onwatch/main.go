@@ -817,8 +817,12 @@ func run() error {
 		}
 	}
 
-	// Muse coding-plan auto-detect from `muse login` credentials. Explicit META_API_KEY wins.
-	if os.Getenv("MUSE_ENABLED") != "false" {
+	// Muse coding-plan credential resolution from `muse login`. Explicit
+	// META_API_KEY wins. Unlike every other auto-detected provider, a Muse poll
+	// is a real inference request against the user's own 5h prompt window, so
+	// finding credentials resolves the key for an opt-in but never enables
+	// tracking on its own.
+	if !cfg.MuseDisabled {
 		if creds := api.DetectMuseCredentials(preflightLogger); creds != nil && creds.APIKey != "" {
 			if cfg.MuseAPIKey == "" {
 				cfg.MuseAPIKey = creds.APIKey
@@ -827,7 +831,9 @@ func run() error {
 			if cfg.MuseModel == "" {
 				cfg.MuseModel = creds.Model
 			}
-			cfg.MuseEnabled = true
+			if !cfg.MuseEnabled {
+				preflightLogger.Info("Muse credentials detected but tracking is off - set MUSE_ENABLED=true to opt in (each poll spends one prompt from your 5h window)")
+			}
 		}
 	}
 

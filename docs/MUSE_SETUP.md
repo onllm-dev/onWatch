@@ -7,7 +7,7 @@ Meta publishes no aggregate usage or billing endpoint for the coding plan, so on
 The probe shares the Meta API key (and rate limit) with a live Muse TUI session. onWatch therefore:
 
 - Stops reading the SSE stream as soon as the `subscription` event arrives, instead of holding the dummy generation open
-- Skips the probe entirely while a `muse` CLI process is running
+- Skips the probe while a `muse` CLI process is running, so it cannot rate-limit your live session. The dashboard marks the Muse cards as paused for the duration (hover the grid for the reason) instead of ageing them into "stale", and resumes on the first poll after the CLI exits. No usage is recorded during that window
 - Backs off a cycle on HTTP 429 rather than retrying into the TUI's quota window
 
 ---
@@ -54,9 +54,19 @@ muse login
 
 Use any one of the following.
 
-### Option A - auto-detect (recommended)
+### Option A - opt in and let onWatch find the key (recommended)
 
-No configuration needed. On startup onWatch resolves the key in this order:
+Muse tracking is off until you turn it on. Unlike every other provider, a Muse
+poll is a real inference request that spends a prompt from your own 5h window,
+so onWatch never starts polling just because it found credentials on disk.
+
+Set this in `~/.onwatch/.env`:
+
+```bash
+MUSE_ENABLED=true
+```
+
+onWatch then resolves the key in this order:
 
 1. `META_API_KEY` from the environment / `.env`
 2. `providers.meta.api_key` in `~/.config/muse/auth.json` (must not be group/other-readable)
@@ -64,10 +74,14 @@ No configuration needed. On startup onWatch resolves the key in this order:
 
 The probe model resolves as `META_MUSE_MODEL`, then the `model` in `~/.config/muse/settings.json`, then `muse-spark-1.3`.
 
-To force-enable auto-detect (for example when the key only appears later), set in `~/.onwatch/.env`:
+Setting `META_API_KEY` explicitly, or enabling Muse in the dashboard settings,
+also counts as opting in; `MUSE_ENABLED=true` is only needed when you want
+onWatch to use the key `muse login` already stored.
+
+To turn tracking off again, set:
 
 ```bash
-MUSE_ENABLED=true
+MUSE_ENABLED=false
 ```
 
 ### Option B - `.env` with explicit key

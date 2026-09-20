@@ -151,6 +151,21 @@ func (a *MuseAgent) Run(ctx context.Context) error {
 	}
 }
 
+// setCLIActive records or clears the live-CLI pause marker. Failures are
+// logged and ignored: the marker is presentational and must never block a poll.
+func (a *MuseAgent) setCLIActive(active bool) {
+	if a.store == nil {
+		return
+	}
+	value := ""
+	if active {
+		value = time.Now().UTC().Format(time.RFC3339)
+	}
+	if err := a.store.SetSetting(store.SettingMuseCLIActiveAt, value); err != nil {
+		a.logger.Debug("muse: failed to record live-CLI pause marker", "error", err)
+	}
+}
+
 // poll performs a single Muse poll cycle.
 func (a *MuseAgent) poll(ctx context.Context) {
 	if a.client == nil {
@@ -161,8 +176,14 @@ func (a *MuseAgent) poll(ctx context.Context) {
 	}
 	if museCLIBusy != nil && museCLIBusy(ctx, "muse") {
 		a.logger.Info("Muse poll skipped: live muse CLI would race the usage probe")
+		// Record the skip so the dashboard can say the provider is paused
+		// rather than letting the cards age into "stale" through a long
+		// coding session, which is exactly when quota is being spent.
+		a.setCLIActive(true)
 		return
 	}
+
+	a.setCLIActive(false)
 
 	snapshot, err := a.client.FetchSnapshot(ctx)
 	if err != nil {

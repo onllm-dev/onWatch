@@ -811,7 +811,11 @@ func (c *Config) HasProvider(name string) bool {
 	case "ollama":
 		return c.OllamaAPIKey != ""
 	case "muse":
-		return c.MuseAPIKey != "" || c.MuseEnabled
+		// MuseEnabled is the only consent signal: it is set by an explicit
+		// META_API_KEY, MUSE_ENABLED=true, or the setup wizard. A key merely
+		// auto-detected from `muse login` must not start polling, because every
+		// Muse poll spends a prompt from the user's own 5h window.
+		return !c.MuseDisabled && c.MuseEnabled
 	}
 	return false
 }

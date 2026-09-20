@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
@@ -44,6 +46,23 @@ var museQuotaDisplayOrder = map[string]int{
 var museDisplayNames = map[string]string{
 	api.MuseQuotaWindow5H: "5h Prompts",
 	api.MuseQuotaWeekly:   "Weekly",
+}
+
+// museCLIPaused reports whether the agent recently skipped a poll because a
+// live `muse` CLI was running.
+func (h *Handler) museCLIPaused() bool {
+	if h.store == nil {
+		return false
+	}
+	raw, err := h.store.GetSetting(store.SettingMuseCLIActiveAt)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return false
+	}
+	at, err := time.Parse(time.RFC3339, strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	return time.Since(at) < store.MuseCLIActiveWindow
 }
 
 func museDisplayName(name string) string {
@@ -205,6 +224,14 @@ func (h *Handler) buildMuseCurrent() map[string]interface{} {
 		response["windowLabel"] = api.MuseWindowLabel(latest.WindowDurationMins)
 	}
 
+	// A live `muse` CLI pauses polling, so the cards must not drift into
+	// "stale" during a coding session: say why instead.
+	cliPaused := h.museCLIPaused()
+	if cliPaused {
+		response["cliActive"] = true
+		response["pausedReason"] = "A live muse CLI is running; the usage probe is paused so it does not rate-limit your session."
+	}
+
 	// One summary per quota per request: UsageSummary runs an active-cycle
 	// query plus a 200-row history scan plus a latest-snapshot join, and the
 	// closure below is called for every quota on every dashboard refresh.
@@ -236,7 +263,7 @@ func (h *Handler) buildMuseCurrent() map[string]interface{} {
 			"status":        utilStatus(q.Utilization),
 			"lastUpdatedAt": capturedAt.Format(time.RFC3339),
 			"ageSeconds":    int64(age.Seconds()),
-			"isStale":       age > 30*time.Minute,
+			"isStale":       !cliPaused && age > 30*time.Minute,
 		}
 		if q.ResetsAt != nil {
 			timeUntilReset := time.Until(*q.ResetsAt)

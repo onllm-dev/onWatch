@@ -4546,6 +4546,18 @@ async function fetchCurrent() {
           if (Array.isArray(data.quotas) && data.quotas.length > 0) {
             data.quotas.forEach(q => updateMuseCard(q));
           }
+          // Polling pauses while a muse CLI is live so the probe cannot
+          // rate-limit that session. Surface it as a hover tooltip and a
+          // styling hook rather than inline text.
+          if (container) {
+            if (data.cliActive) {
+              container.dataset.cliPaused = 'true';
+              container.title = data.pausedReason || 'Paused: a live muse CLI is running.';
+            } else {
+              delete container.dataset.cliPaused;
+              container.removeAttribute('title');
+            }
+          }
         }
 
       } else if (provider === 'zai') {
