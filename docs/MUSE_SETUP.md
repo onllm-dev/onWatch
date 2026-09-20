@@ -113,6 +113,7 @@ Then open the dashboard and select the **Muse** tab. You should see the 5h Promp
 | `META_MUSE_MODEL` | Probe model (default: your Muse settings model, else `muse-spark-1.3`). |
 | `MUSE_ENABLED` | Set `true` to enable auto-detect, `false` to disable Muse tracking entirely. |
 | `MUSE_AUTH_PATH` | Override the Muse login file path (default: `~/.config/muse/auth.json`). |
+| `MUSE_BASE_URL` | Override the Meta Model API base URL for proxy setups (default: `https://api.meta.ai`). |
 
 ---
 

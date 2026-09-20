@@ -1,6 +1,10 @@
 package api
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/onllm-dev/onwatch/v2/internal/procscan"
+)
 
 func TestIsKimiCodeCommandLine(t *testing.T) {
 	tests := []struct {
@@ -29,15 +33,15 @@ func TestIsKimiCodeCommandLine(t *testing.T) {
 	}
 }
 
-func TestScanForKimiCode(t *testing.T) {
+func TestKimiCodeMatchesProcessListing(t *testing.T) {
 	listing := []byte("/sbin/launchd\n/usr/local/bin/onwatch serve\n/Users/dev/.kimi-code/bin/kimi\n")
-	if !scanForKimiCode(listing) {
+	if !procscan.Scan(listing, isKimiCodeCommandLine) {
 		t.Fatal("expected the CLI to be found in the process listing")
 	}
-	if scanForKimiCode([]byte("/sbin/launchd\n/usr/local/bin/onwatch serve\n")) {
+	if procscan.Scan([]byte("/sbin/launchd\n/usr/local/bin/onwatch serve\n"), isKimiCodeCommandLine) {
 		t.Fatal("did not expect a match in a listing without the CLI")
 	}
-	if scanForKimiCode(nil) {
+	if procscan.Scan(nil, isKimiCodeCommandLine) {
 		t.Fatal("did not expect a match in an empty listing")
 	}
 }

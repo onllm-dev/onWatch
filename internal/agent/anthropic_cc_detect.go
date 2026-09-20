@@ -1,18 +1,12 @@
 package agent
 
 import (
-	"bytes"
-	"context"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
-)
 
-// claudeCodeScanTimeout bounds the process listing used by IsClaudeCodeRunning
-// so a wedged `ps` can never stall a poll cycle.
-const claudeCodeScanTimeout = 5 * time.Second
+	"github.com/onllm-dev/onwatch/v2/internal/procscan"
+)
 
 // isClaudeCodeCommandLine reports whether a full process command line belongs to
 // the Claude Code CLI.
@@ -88,17 +82,6 @@ func isJSRuntime(base string) bool {
 	return false
 }
 
-// scanForClaudeCode reports whether any line of a process listing is a Claude
-// Code CLI process.
-func scanForClaudeCode(psOutput []byte) bool {
-	for _, line := range bytes.Split(psOutput, []byte("\n")) {
-		if isClaudeCodeCommandLine(string(line)) {
-			return true
-		}
-	}
-	return false
-}
-
 // IsClaudeCodeRunning checks if the Claude Code CLI is currently executing.
 // When Claude Code is running, onWatch skips OAuth refresh to avoid competing
 // for the same refresh token - a refresh by onWatch invalidates Claude Code's
@@ -117,24 +100,7 @@ func scanForClaudeCode(psOutput []byte) bool {
 // still keep its hands off the refresh token. It does mean onWatch's own OAuth
 // recovery paths rarely run for such users.
 var IsClaudeCodeRunning = func() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), claudeCodeScanTimeout)
-	defer cancel()
-
-	if runtime.GOOS == "windows" {
-		// Windows tasklist cannot report command lines without a much heavier
-		// WMI/PowerShell query, so this stays a process-name match. It shares
-		// the name with the desktop app, which is a known limitation.
-		cmd := exec.CommandContext(ctx, "cmd", "/C", `tasklist /FI "IMAGENAME eq claude.exe" /NH 2>nul | findstr /I "claude.exe"`)
-		return cmd.Run() == nil
-	}
-
-	// `ps -Ao args=` is POSIX and prints the full command line of every process
-	// on both macOS and Linux.
-	out, err := exec.CommandContext(ctx, "ps", "-Ao", "args=").Output()
-	if err != nil {
-		// Treat an unusable process listing as "not running": the OAuth guards
-		// downstream (rate limit backoff, invalid_grant) still bound refreshes.
-		return false
-	}
-	return scanForClaudeCode(out)
+	// Windows tasklist shares the image name with the desktop app, which is a
+	// known limitation of the name-only match there.
+	return procscan.Running("claude.exe", isClaudeCodeCommandLine)
 }

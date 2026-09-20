@@ -1226,7 +1226,9 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		if h.config != nil && (h.config.MuseEnabled || strings.TrimSpace(h.config.MuseAPIKey) != "") {
 			return true
 		}
-		return api.DetectMuseCredentials(h.logger) != nil
+		// Cached: detection can shell out to the keychain with a multi-second
+		// deadline, and this runs on every provider-list request.
+		return api.DetectMuseCredentialsCached(h.logger) != nil
 	default:
 		return false
 	}

@@ -1,19 +1,12 @@
 package api
 
 import (
-	"bytes"
-	"context"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
-)
 
-// kimiCodeScanTimeout bounds the process listing used by IsKimiCodeRunning so a
-// wedged `ps` can never stall a poll cycle (same guard as the Claude Code scan
-// in internal/agent/anthropic_cc_detect.go).
-const kimiCodeScanTimeout = 5 * time.Second
+	"github.com/onllm-dev/onwatch/v2/internal/procscan"
+)
 
 // isKimiCodeCommandLine reports whether a full process command line belongs to
 // the Kimi Code CLI.
@@ -52,17 +45,6 @@ func isKimiCodeCommandLine(cmdline string) bool {
 	return base == "kimi-code"
 }
 
-// scanForKimiCode reports whether any line of a process listing is a Kimi Code
-// CLI process.
-func scanForKimiCode(psOutput []byte) bool {
-	for _, line := range bytes.Split(psOutput, []byte("\n")) {
-		if isKimiCodeCommandLine(string(line)) {
-			return true
-		}
-	}
-	return false
-}
-
 // IsKimiCodeRunning reports whether a Kimi Code CLI process is currently
 // executing.
 //
@@ -74,22 +56,5 @@ func scanForKimiCode(psOutput []byte) bool {
 //
 // Exported as a package-level variable so tests can override it.
 var IsKimiCodeRunning = func() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), kimiCodeScanTimeout)
-	defer cancel()
-
-	if runtime.GOOS == "windows" {
-		// tasklist always exits 0; findstr verifies a real match.
-		cmd := exec.CommandContext(ctx, "cmd", "/C", `tasklist /FI "IMAGENAME eq kimi-code.exe" /NH 2>nul | findstr /I "kimi-code.exe"`)
-		return cmd.Run() == nil
-	}
-
-	// `ps -Ao args=` is POSIX and prints the full command line of every process
-	// on both macOS and Linux.
-	out, err := exec.CommandContext(ctx, "ps", "-Ao", "args=").Output()
-	if err != nil {
-		// An unusable process listing means "not running": refreshing is the
-		// behaviour onWatch had before this guard existed.
-		return false
-	}
-	return scanForKimiCode(out)
+	return procscan.Running("kimi-code.exe", isKimiCodeCommandLine)
 }

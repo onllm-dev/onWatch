@@ -39,11 +39,11 @@ type Config struct {
 	CopilotToken string // COPILOT_TOKEN (GitHub PAT with copilot scope)
 
 	// Codex provider configuration
-	CodexToken         string // CODEX_TOKEN or auto-detected
-	CodexAutoToken     bool   // true if token was auto-detected
-	CodexAutoSource    string // "codex" | "opencode" when auto-detected (display/logging)
-	CodexHasProfiles   bool   // true if saved profiles exist (enables bootstrap without token)
-	OpenCodeEnabled    bool   // OPENCODE_ENABLED=true: track ChatGPT via OpenCode auth.json (feeds Codex)
+	CodexToken       string // CODEX_TOKEN or auto-detected
+	CodexAutoToken   bool   // true if token was auto-detected
+	CodexAutoSource  string // "codex" | "opencode" when auto-detected (display/logging)
+	CodexHasProfiles bool   // true if saved profiles exist (enables bootstrap without token)
+	OpenCodeEnabled  bool   // OPENCODE_ENABLED=true: track ChatGPT via OpenCode auth.json (feeds Codex)
 	// OpenCode Go provider configuration
 	OpenCodeGoWorkspaceID string // OPENCODE_GO_WORKSPACE_ID
 	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE
@@ -52,10 +52,11 @@ type Config struct {
 	OllamaMonthlyLimit float64 // OLLAMA_MONTHLY_LIMIT: included usage cap in USD (overrides the plan default; 0 = derive from plan)
 	OllamaResetDay     int     // OLLAMA_RESET_DAY: day of month the included usage resets (1-31; 0 = account anniversary)
 	// Muse coding-plan provider configuration (auto-detected from `muse login` or META_API_KEY)
-	MuseAPIKey    string // META_API_KEY or auto-detected Muse login key
-	MuseAutoToken bool   // true if key was auto-detected from local Muse credentials
-	MuseModel     string // META_MUSE_MODEL or Muse settings model (default muse-spark-1.3)
-	MuseEnabled   bool   // true if MUSE_ENABLED=true or key present (unless explicitly false)
+	MuseAPIKey         string // META_API_KEY or auto-detected Muse login key
+	MuseAutoToken      bool   // true if key was auto-detected from local Muse credentials
+	MuseModel          string // META_MUSE_MODEL or Muse settings model (default muse-spark-1.3)
+	MuseEnabled        bool   // true if MUSE_ENABLED=true or key present (unless explicitly false)
+	MuseBaseURL        string // MUSE_BASE_URL override for proxy setups (default https://api.meta.ai)
 	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
 	CodexAutoStart5h   bool   // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
 	CodexAutoStart7d   bool   // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
@@ -76,7 +77,7 @@ type Config struct {
 
 	// Moonshot provider configuration
 	MoonshotAPIKey string // MOONSHOT_API_KEY
-	
+
 	// DeepSeek provider configuration
 	DeepSeekAPIKey string // DEEPSEEK_API_KEY
 
@@ -403,10 +404,10 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// OpenRouter provider
 	cfg.OpenRouterAPIKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
-	
+
 	// Moonshot provider
 	cfg.MoonshotAPIKey = strings.TrimSpace(os.Getenv("MOONSHOT_API_KEY"))
-	
+
 	// DeepSeek provider
 	cfg.DeepSeekAPIKey = strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
 
@@ -451,6 +452,7 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// Muse coding-plan provider (primary via `muse login` credentials; explicit key for Docker)
 	cfg.MuseAPIKey = strings.TrimSpace(os.Getenv("META_API_KEY"))
 	cfg.MuseModel = strings.TrimSpace(os.Getenv("META_MUSE_MODEL"))
+	cfg.MuseBaseURL = strings.TrimSpace(os.Getenv("MUSE_BASE_URL"))
 	if os.Getenv("MUSE_ENABLED") == "false" {
 		cfg.MuseEnabled = false
 	} else if os.Getenv("MUSE_ENABLED") == "true" || cfg.MuseAPIKey != "" {
@@ -904,7 +906,7 @@ func (c *Config) String() string {
 	// Redact MiniMax token
 	minimaxDisplay := redactAPIKey(c.MiniMaxAPIKey, "")
 	fmt.Fprintf(&sb, "  MiniMaxAPIKey: %s,\n", minimaxDisplay)
-	
+
 	// Redact Moonshot token
 	moonshotDisplay := redactAPIKey(c.MoonshotAPIKey, "")
 	fmt.Fprintf(&sb, "  MoonshotAPIKey: %s,\n", moonshotDisplay)
@@ -912,7 +914,7 @@ func (c *Config) String() string {
 	// Redact DeepSeek token
 	deepseekDisplay := redactAPIKey(c.DeepSeekAPIKey, "")
 	fmt.Fprintf(&sb, "  DeepSeekAPIKey: %s,\n", deepseekDisplay)
-	
+
 	fmt.Fprintf(&sb, "  APIIntegrationsEnabled: %v,\n", c.APIIntegrationsEnabled)
 	fmt.Fprintf(&sb, "  APIIntegrationsDir: %s,\n", c.APIIntegrationsDir)
 	fmt.Fprintf(&sb, "  APIIntegrationsRetention: %v,\n", c.APIIntegrationsRetention)

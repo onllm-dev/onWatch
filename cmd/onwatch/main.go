@@ -1139,8 +1139,13 @@ func run() error {
 		if museModel == "" {
 			museModel = api.ResolveMuseModel()
 		}
-		museClient = api.NewMuseClient(cfg.MuseAPIKey, museModel, logger)
-		logger.Info("Muse API client configured", "auto_token", cfg.MuseAutoToken, "model", museModel)
+		museOpts := []api.MuseClientOption{}
+		if cfg.MuseBaseURL != "" {
+			museOpts = append(museOpts, api.WithMuseBaseURL(cfg.MuseBaseURL))
+		}
+		museClient = api.NewMuseClient(cfg.MuseAPIKey, museModel, logger, museOpts...)
+		logger.Info("Muse API client configured", "auto_token", cfg.MuseAutoToken, "model", museModel,
+			"base_url_override", cfg.MuseBaseURL != "")
 	}
 
 	var kimiClient *api.KimiClient
@@ -2538,6 +2543,7 @@ func printHelp() {
 	fmt.Println("  OLLAMA_RESET_DAY        Ollama reset day of month (1-31; 0 = account anniversary)")
 	fmt.Println("  META_API_KEY            Meta Muse API key (auto-detected from `muse login` if unset)")
 	fmt.Println("  META_MUSE_MODEL         Muse usage-probe model (default: muse-spark-1.3)")
+	fmt.Println("  MUSE_BASE_URL           Muse API base URL (default: https://api.meta.ai)")
 	fmt.Println("  MUSE_ENABLED            Set false to disable the Muse provider")
 	fmt.Println("  CODEX_HOME              Optional Codex auth directory (uses CODEX_HOME/auth.json)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 // MuseCredentials holds a resolved Muse coding-plan credential.
@@ -142,4 +144,50 @@ func musePlatformKey(payload string) string {
 		return key
 	}
 	return strings.TrimSpace(p.AccessToken)
+}
+
+// museCredTTL bounds how often the credential stores are probed. Detection can
+// shell out to the macOS Keychain or secret-tool, each with a multi-second
+// deadline, so request-path callers must never run it unthrottled.
+const museCredTTL = 60 * time.Second
+
+var (
+	museCredMu     sync.Mutex
+	museCredCache  *MuseCredentials
+	museCredAt     time.Time
+	museCredCached bool
+)
+
+// DetectMuseCredentialsCached is DetectMuseCredentials with a short TTL, for
+// callers on the request path such as the provider list. A negative result is
+// cached too: a miss is exactly the case that pays the full keychain deadline.
+func DetectMuseCredentialsCached(logger *slog.Logger) *MuseCredentials {
+	museCredMu.Lock()
+	defer museCredMu.Unlock()
+	if museCredCached && time.Since(museCredAt) < museCredTTL {
+		if museCredCache == nil {
+			return nil
+		}
+		cp := *museCredCache
+		return &cp
+	}
+	creds := DetectMuseCredentials(logger)
+	museCredCache = creds
+	museCredAt = time.Now()
+	museCredCached = true
+	if creds == nil {
+		return nil
+	}
+	cp := *creds
+	return &cp
+}
+
+// InvalidateMuseCredentialsCache clears the cached detection so the next call
+// re-probes, for use after Muse settings change.
+func InvalidateMuseCredentialsCache() {
+	museCredMu.Lock()
+	defer museCredMu.Unlock()
+	museCredCache = nil
+	museCredAt = time.Time{}
+	museCredCached = false
 }

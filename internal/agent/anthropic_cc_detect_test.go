@@ -1,6 +1,10 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/onllm-dev/onwatch/v2/internal/procscan"
+)
 
 // TestIsClaudeCodeCommandLine verifies that only real Claude Code CLI processes
 // are detected - not the Claude desktop app, MCP servers, plugin scripts or any
@@ -163,16 +167,16 @@ func TestScanForClaudeCode(t *testing.T) {
 		"/Applications/Claude.app/Contents/Frameworks/Claude Helper (Renderer).app/Contents/MacOS/Claude Helper (Renderer) --type=renderer\n" +
 		"node /Users/dev/.claude/plugins/cache/vendor/claude-mem/scripts/mcp-server.cjs\n"
 
-	if scanForClaudeCode([]byte(desktopOnly)) {
-		t.Error("scanForClaudeCode() = true for desktop-app-only listing, want false")
+	if procscan.Scan([]byte(desktopOnly), isClaudeCodeCommandLine) {
+		t.Error("procscan.Scan() = true for desktop-app-only listing, want false")
 	}
 
 	withCLI := desktopOnly + "/Users/dev/.local/bin/claude --resume\n"
-	if !scanForClaudeCode([]byte(withCLI)) {
-		t.Error("scanForClaudeCode() = false when the Claude Code CLI is present, want true")
+	if !procscan.Scan([]byte(withCLI), isClaudeCodeCommandLine) {
+		t.Error("procscan.Scan() = false when the Claude Code CLI is present, want true")
 	}
 
-	if scanForClaudeCode(nil) {
-		t.Error("scanForClaudeCode(nil) = true, want false")
+	if procscan.Scan(nil, isClaudeCodeCommandLine) {
+		t.Error("procscan.Scan(nil, isClaudeCodeCommandLine) = true, want false")
 	}
 }

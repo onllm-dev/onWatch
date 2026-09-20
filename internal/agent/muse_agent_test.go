@@ -199,3 +199,34 @@ func TestMuseAgent_Poll_DisabledByCheck(t *testing.T) {
 		t.Fatal("expected no poll when disabled")
 	}
 }
+
+func TestIsMuseCommandLine(t *testing.T) {
+	match := isMuseCommandLine("muse")
+	tests := []struct {
+		name    string
+		cmdline string
+		want    bool
+	}{
+		{"empty", "", false},
+		{"bare cli", "muse", true},
+		{"cli with path and args", "/opt/homebrew/bin/muse chat", true},
+		{"onwatch polling muse", "/usr/local/bin/onwatch --provider muse", false},
+		{"unrelated mention", "grep -r muse /etc", false},
+		{"desktop bundle", "/Applications/Muse.app/Contents/MacOS/muse", false},
+		{"electron helper", "muse --type=renderer", false},
+		{"different binary", "/usr/local/bin/museum", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := match(tt.cmdline); got != tt.want {
+				t.Fatalf("isMuseCommandLine(%q) = %v, want %v", tt.cmdline, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMuseProcessNamedEmptyName(t *testing.T) {
+	if museProcessNamed("") {
+		t.Fatal("an empty process name must never report a running CLI")
+	}
+}

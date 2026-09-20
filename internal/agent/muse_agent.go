@@ -3,11 +3,14 @@ package agent
 import (
 	"context"
 	"log/slog"
-	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/notify"
+	"github.com/onllm-dev/onwatch/v2/internal/procscan"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
@@ -17,16 +20,39 @@ import (
 // it is active 429s the TUI. A variable so tests can stub it.
 var museCLIBusy = museProcessNamed
 
+// isMuseCommandLine reports whether a full process command line belongs to the
+// Muse CLI. A false positive only skips a poll cycle, so the match errs narrow:
+// the executable basename must be the CLI itself, not a process that merely
+// names it.
+func isMuseCommandLine(name string) func(string) bool {
+	return func(cmdline string) bool {
+		line := strings.TrimSpace(cmdline)
+		if line == "" {
+			return false
+		}
+		// Desktop bundles and Electron helpers are never the CLI.
+		if strings.Contains(line, ".app/Contents/") || strings.Contains(line, "--type=") {
+			return false
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			return false
+		}
+		base := filepath.Base(fields[0])
+		if runtime.GOOS == "windows" {
+			base = strings.TrimSuffix(base, ".exe")
+		}
+		return base == name
+	}
+}
+
+// museProcessNamed uses the shared process scan so the guard also works on
+// Windows, where pgrep does not exist and the probe would otherwise never skip.
 func museProcessNamed(name string) bool {
 	if name == "" {
 		return false
 	}
-	if _, err := exec.LookPath("pgrep"); err != nil {
-		return false
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	return exec.CommandContext(ctx, "pgrep", "-x", name).Run() == nil
+	return procscan.Running(name+".exe", isMuseCommandLine(name))
 }
 
 // museFetcher is the usage-probe surface the Muse agent needs.
