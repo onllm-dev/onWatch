@@ -30,6 +30,7 @@ type Settings struct {
 	RefreshSeconds   int           `json:"refresh_seconds"`
 	ProvidersOrder   []string      `json:"providers_order"`
 	VisibleProviders []string      `json:"visible_providers"`
+	KnownProviders   []string      `json:"known_providers"`
 	WarningPercent   int           `json:"warning_percent"`
 	CriticalPercent  int           `json:"critical_percent"`
 	StatusDisplay    StatusDisplay `json:"status_display"`
@@ -219,6 +220,9 @@ func (s *Settings) Normalize() *Settings {
 		out.VisibleProviders = []string{}
 	}
 	out.VisibleProviders = normalizedStringList(out.VisibleProviders)
+	if out.KnownProviders != nil {
+		out.KnownProviders = normalizedStringList(out.KnownProviders)
+	}
 	out.StatusDisplay = out.StatusDisplay.normalize(defaults.StatusDisplay)
 	// Tray title metrics must follow the same left-to-right order as the
 	// menubar provider list. selected_quotas may be stored in click order;
