@@ -1604,15 +1604,8 @@
                         throw new Error(`preferences ${response.status}`);
                     }
                     const data = await response.json();
-                    const previousIDs = new Set(state.providerOptions.map((p) => p.id));
                     state.providerOptions = Array.isArray(data.providers) ? data.providers : [];
                     const preferences = normalizePreferences(data);
-                    if (previousIDs.size > 0 && preferences.visible_providers.length > 0) {
-                        const newProviders = state.providerOptions.filter((p) => !previousIDs.has(p.id));
-                        for (const provider of newProviders) {
-                            preferences.visible_providers.push(provider.id);
-                        }
-                    }
                     const localStatus = readStoredStatusDisplay();
                     const localOrder = readStoredProviderOrder();
                     if (localStatus) {
@@ -2351,7 +2344,7 @@
                     return ordered;
                 }
                 const allowed = new Set(visible);
-                return ordered.filter((provider) => allowed.has(provider.id));
+                return ordered.filter((provider) => allowed.has(provider.id) || allowed.has(provider.base_provider));
             }
 
             function orderedProviderOptions() {

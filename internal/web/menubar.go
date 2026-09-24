@@ -159,7 +159,7 @@ func (h *Handler) MenubarTest(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) MenubarPreferences(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		settings, err := h.menubarSettings()
+		settings, err := h.reconcileMenubarSettings()
 		if err != nil {
 			h.logger.Error("failed to load menubar preferences", "error", err)
 			respondError(w, http.StatusInternalServerError, "failed to load menubar preferences")
@@ -189,7 +189,7 @@ func (h *Handler) MenubarPreferences(w http.ResponseWriter, r *http.Request) {
 		}
 		normalized := settings.Normalize()
 		normalized.DefaultView = normalizeMenubarView(string(normalized.DefaultView), menubar.ViewStandard)
-		if err := h.store.SetMenubarSettings(normalized); err != nil {
+		if err := h.saveMenubarSettings(normalized); err != nil {
 			h.logger.Error("failed to save menubar preferences", "error", err)
 			respondError(w, http.StatusInternalServerError, "failed to save menubar preferences")
 			return
@@ -237,7 +237,7 @@ func isLocalMenubarPublicPath(path string) bool {
 
 // BuildMenubarSnapshot constructs the shared menubar UI contract.
 func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
-	settings, err := h.menubarSettings()
+	settings, err := h.reconcileMenubarSettings()
 	if err != nil {
 		return nil, err
 	}
@@ -458,69 +458,72 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	return providers, latest
 }
 
-// refreshMenubarVisibleProviders appends newly detected providers to the
-// persisted visible list. Once a user curates their own list, a brand-new
-// provider (e.g. Command Code) would otherwise stay invisible forever: it was
-// absent when the list was saved, so the legacy filter drops it on every
-// request and the menubar never catches up. Unknown IDs are left alone so an
-// explicit hide can never be undone by a provider that no longer exists.
-func refreshMenubarVisibleProviders(h *Handler, visible []string, providers []menubar.ProviderCard) []string {
-	if h == nil || h.store == nil || len(visible) == 0 {
-		return visible
+// updateMenubarProviderHistory changes one settings value so provider history
+// and automatic visibility are saved together. A nil history marks settings
+// written before provider discovery was tracked.
+func updateMenubarProviderHistory(settings *menubar.Settings, configured []string) bool {
+	changed := settings.KnownProviders == nil
+	if settings.KnownProviders == nil {
+		settings.KnownProviders = []string{}
+		for _, provider := range configured {
+			if provider != "commandcode" {
+				settings.KnownProviders = append(settings.KnownProviders, provider)
+			}
+		}
 	}
-	// A provider is "new" when neither its card ID nor its base key is covered
-	// by the saved list. Base-key matching keeps multi-account providers
-	// (codex:1, minimax:6) from re-appending on every request.
-	changed := false
-	merged := append([]string(nil), visible...)
-	for _, card := range providers {
-		if menubarSettingsKeyAllows(card.ID, merged) {
+	for _, provider := range configured {
+		if menubarSettingsKeyAllows(provider, settings.KnownProviders) {
 			continue
 		}
-		merged = append(merged, card.ID)
+		settings.KnownProviders = append(settings.KnownProviders, provider)
+		if len(settings.VisibleProviders) > 0 && !menubarSettingsKeyAllows(provider, settings.VisibleProviders) {
+			settings.VisibleProviders = append(settings.VisibleProviders, provider)
+		}
 		changed = true
 	}
-	if !changed {
-		return visible
-	}
-	// Re-read before writing so an unrelated concurrent save is not clobbered:
-	// re-apply the append onto the freshest list and persist that. A fresh
-	// store returns defaults with an empty list, which is indistinguishable
-	// from show-all - but the caller only reaches here with a non-empty list,
-	// so an empty fresh list means nobody has saved yet and the merged result
-	// is the correct first save.
-	settings, err := h.menubarSettings()
-	if err != nil || settings == nil {
-		return visible
-	}
-	fresh := append([]string(nil), settings.VisibleProviders...)
-	refreshed := append([]string(nil), fresh...)
-	for _, card := range providers {
-		if !menubarSettingsKeyAllows(card.ID, refreshed) {
-			refreshed = append(refreshed, card.ID)
-		}
-	}
-	if menubarVisibleListsEqual(refreshed, fresh) {
-		return fresh
-	}
-	settings.VisibleProviders = refreshed
-	if err := h.store.SetMenubarSettings(settings.Normalize()); err != nil {
-		h.logger.Error("failed to persist refreshed menubar visibility", "error", err)
-		return visible
-	}
-	return refreshed
+	return changed
 }
 
-func menubarVisibleListsEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
+func (h *Handler) configuredMenubarProviders() []string {
+	if h.config == nil {
+		return nil
 	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
+	configured := make([]string, 0, len(providerCatalog()))
+	for _, provider := range providerCatalog() {
+		if h.config.HasProvider(provider.Key) {
+			configured = append(configured, provider.Key)
 		}
 	}
-	return true
+	return configured
+}
+
+func (h *Handler) reconcileMenubarSettings() (*menubar.Settings, error) {
+	h.menubarSettingsMu.Lock()
+	defer h.menubarSettingsMu.Unlock()
+	settings, err := h.menubarSettings()
+	if err != nil || h.store == nil {
+		return settings, err
+	}
+	if updateMenubarProviderHistory(settings, h.configuredMenubarProviders()) {
+		if err := h.store.SetMenubarSettings(settings); err != nil {
+			return nil, err
+		}
+	}
+	return settings, nil
+}
+
+// saveMenubarSettings keeps discovery history when either settings API writes
+// a client supplied settings object. The submitted visibility is explicit.
+func (h *Handler) saveMenubarSettings(settings *menubar.Settings) error {
+	h.menubarSettingsMu.Lock()
+	defer h.menubarSettingsMu.Unlock()
+	current, err := h.menubarSettings()
+	if err != nil {
+		return err
+	}
+	updateMenubarProviderHistory(current, h.configuredMenubarProviders())
+	settings.KnownProviders = append([]string{}, current.KnownProviders...)
+	return h.store.SetMenubarSettings(settings)
 }
 
 // menubarAccountLabel builds multi-account menubar titles using the dashboard
@@ -574,7 +577,7 @@ func (h *Handler) renderMenubarHTML(view menubar.ViewType, settings *menubar.Set
 func (h *Handler) buildMenubarProviderOptions(settings *menubar.Settings) ([]menubarProviderOption, error) {
 	normalized := settings.Normalize()
 	providers, _ := h.buildMenubarProviders(normalized, true)
-	visibleKeys := refreshMenubarVisibleProviders(h, append([]string(nil), normalized.VisibleProviders...), providers)
+	visibleKeys := normalized.VisibleProviders
 	options := make([]menubarProviderOption, 0, len(providers))
 	for _, provider := range providers {
 		quotaOptions := make([]menubarQuotaOption, 0, len(provider.Quotas))

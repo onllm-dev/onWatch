@@ -125,6 +125,7 @@ type Handler struct {
 	config              *config.Config
 	metrics             *metrics.Metrics
 	version             string
+	menubarSettingsMu   sync.Mutex
 	smtpTestMu          sync.Mutex
 	smtpTestLastSent    time.Time
 	webhookTestMu       sync.Mutex
@@ -7321,7 +7322,7 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		normalized := settings.Normalize()
 		normalized.DefaultView = normalizeMenubarView(string(normalized.DefaultView), menubar.ViewStandard)
-		if err := h.store.SetMenubarSettings(normalized); err != nil {
+		if err := h.saveMenubarSettings(normalized); err != nil {
 			h.logger.Error("failed to save menubar settings", "error", err)
 			respondError(w, http.StatusInternalServerError, "failed to save menubar settings")
 			return
