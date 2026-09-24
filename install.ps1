@@ -435,8 +435,9 @@ function Start-InteractiveSetup {
         $hasGrok = ($envContent -match "GROK_ENABLED=true") -or ($envContent -match "GROK_TOKEN=\S+") -or (Test-GrokCredentials)
         $hasOllama = $envContent -match "OLLAMA_API_KEY=\S+"
         $hasMuse = ($envContent -match "MUSE_ENABLED=true") -or ($envContent -match "META_API_KEY=\S+")
+        $hasCommandCode = ($envContent -match "COMMANDCODE_ENABLED=true") -or ($envContent -match "COMMAND_CODE_API_KEY=\S+")
 
-        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok -or $hasOllama -or $hasMuse) {
+        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok -or $hasOllama -or $hasMuse -or $hasCommandCode) {
             $configured = @()
             if ($hasSyn) { $configured += "Synthetic" }
             if ($hasZai) { $configured += "Z.ai" }
@@ -447,6 +448,7 @@ function Start-InteractiveSetup {
             if ($hasGrok) { $configured += "Grok" }
             if ($hasOllama) { $configured += "Ollama" }
             if ($hasMuse) { $configured += "Muse" }
+            if ($hasCommandCode) { $configured += "Command Code" }
 
             Write-Info "Existing .env found - configured: $($configured -join ', ')"
 
@@ -482,6 +484,7 @@ function Start-InteractiveSetup {
         "Grok (xAI) only",
         "Ollama Cloud only",
         "Muse (Meta) only",
+        "Command Code only",
         "Multiple (choose one at a time)",
         "All available"
     )
@@ -497,8 +500,10 @@ function Start-InteractiveSetup {
     $ollamaKey = ""
     $museEnabled = ""
     $museKey = ""
+    $commandCodeEnabled = ""
+    $commandCodeKey = ""
 
-    if ($providerChoice -eq 10) {
+    if ($providerChoice -eq 11) {
         # Multiple - ask for each provider individually
         $addIt = Read-PromptWithDefault -Prompt "Add Synthetic provider? (y/N)" -Default "N"
         if ($addIt -match "^[Yy]") {
@@ -549,6 +554,16 @@ function Start-InteractiveSetup {
             $ollamaKey = Read-SecretPrompt -Prompt "Ollama Cloud API key" -Validation { param($val) Test-OllamaKey $val }
         }
 
+        $addIt = Read-PromptWithDefault -Prompt "Add Command Code provider? (y/N)" -Default "N"
+        if ($addIt -match "^[Yy]") {
+            Write-Host "  ${DIM}Leave empty to auto-detect from the 'cmd' CLI login${NC}"
+            $commandCodeKey = Read-PromptWithDefault -Prompt "Command Code API key [Enter = auto-detect]" -Default ""
+            if ([string]::IsNullOrWhiteSpace($commandCodeKey)) {
+                $commandCodeKey = ""
+                $commandCodeEnabled = "true"
+            }
+        }
+
         $addIt = Read-PromptWithDefault -Prompt "Add Muse (Meta) provider? (y/N)" -Default "N"
         if ($addIt -match "^[Yy]") {
             Write-Host "  ${DIM}Leave empty to auto-detect from 'muse login'${NC}"
@@ -560,44 +575,44 @@ function Start-InteractiveSetup {
         }
 
         # Validate at least one provider selected
-        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled -and -not $ollamaKey -and -not $museEnabled -and -not $museKey) {
+        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled -and -not $ollamaKey -and -not $museEnabled -and -not $museKey -and -not $commandCodeEnabled -and -not $commandCodeKey) {
             Write-Fail "At least one provider is required"
         }
     } else {
         # Single provider or All
-        if ($providerChoice -eq 1 -or $providerChoice -eq 11) {
+        if ($providerChoice -eq 1 -or $providerChoice -eq 12) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://synthetic.new/settings/api${NC}"
             $syntheticKey = Read-SecretPrompt -Prompt "Synthetic API key (syn_...)" -Validation { param($val) Test-SyntheticKey $val }
         }
 
-        if ($providerChoice -eq 2 -or $providerChoice -eq 11) {
+        if ($providerChoice -eq 2 -or $providerChoice -eq 12) {
             $zaiConfig = Get-ZaiConfig
             $zaiKey = $zaiConfig.Key
             $zaiBaseUrl = $zaiConfig.BaseUrl
         }
 
-        if ($providerChoice -eq 3 -or $providerChoice -eq 11) {
+        if ($providerChoice -eq 3 -or $providerChoice -eq 12) {
             $anthropicToken = Get-AnthropicConfig
         }
 
-        if ($providerChoice -eq 4 -or $providerChoice -eq 11) {
+        if ($providerChoice -eq 4 -or $providerChoice -eq 12) {
             $codexToken = Get-CodexConfig
         }
 
-        if ($providerChoice -eq 5 -or $providerChoice -eq 11) {
+        if ($providerChoice -eq 5 -or $providerChoice -eq 12) {
             $antigravityEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Antigravity enabled (auto-detects running Windsurf process)"
         }
 
-        if ($providerChoice -eq 6 -or $providerChoice -eq 11) {
+        if ($providerChoice -eq 6 -or $providerChoice -eq 12) {
             $geminiEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)"
         }
 
-        if ($providerChoice -eq 7 -or $providerChoice -eq 11) {
+        if ($providerChoice -eq 7 -or $providerChoice -eq 12) {
             $grokEnabled = "true"
             Write-Host ""
             if (Test-GrokCredentials) {
@@ -607,13 +622,13 @@ function Start-InteractiveSetup {
             }
         }
 
-        if ($providerChoice -eq 8 -or $providerChoice -eq 11) {
+        if ($providerChoice -eq 8 -or $providerChoice -eq 12) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://ollama.com/settings/keys${NC}"
             $ollamaKey = Read-SecretPrompt -Prompt "Ollama Cloud API key" -Validation { param($val) Test-OllamaKey $val }
         }
 
-        if ($providerChoice -eq 9 -or $providerChoice -eq 11) {
+        if ($providerChoice -eq 9 -or $providerChoice -eq 12) {
             Write-Host ""
             Write-Host "  ${DIM}Leave empty to auto-detect from 'muse login'${NC}"
             $museKey = Read-PromptWithDefault -Prompt "Meta API key [Enter = auto-detect]" -Default ""
@@ -621,6 +636,17 @@ function Start-InteractiveSetup {
                 $museKey = ""
                 $museEnabled = "true"
                 Write-Host "  ${GREEN}OK${NC} Muse enabled (auto-detects 'muse login' credentials)"
+            }
+        }
+
+        if ($providerChoice -eq 10 -or $providerChoice -eq 12) {
+            Write-Host ""
+            Write-Host "  ${DIM}Leave empty to auto-detect from the 'cmd' CLI login${NC}"
+            $commandCodeKey = Read-PromptWithDefault -Prompt "Command Code API key [Enter = auto-detect]" -Default ""
+            if ([string]::IsNullOrWhiteSpace($commandCodeKey)) {
+                $commandCodeKey = ""
+                $commandCodeEnabled = "true"
+                Write-Host "  ${GREEN}OK${NC} Command Code enabled (auto-detects 'cmd login' credentials)"
             }
         }
     }
@@ -755,6 +781,20 @@ MUSE_ENABLED=true
 "@
     }
 
+    if ($commandCodeKey) {
+        $envContent += @"
+# Command Code API key (or leave unset to auto-detect the 'cmd' CLI login)
+COMMAND_CODE_API_KEY=$commandCodeKey
+
+"@
+    } elseif ($commandCodeEnabled) {
+        $envContent += @"
+# Command Code - auto-detected from the 'cmd' CLI login
+COMMANDCODE_ENABLED=true
+
+"@
+    }
+
     $envContent += @"
 # Dashboard credentials
 ONWATCH_ADMIN_USER=$($script:SetupUsername)
@@ -783,7 +823,8 @@ ONWATCH_PORT=$($script:SetupPort)
         7 { "Grok" }
         8 { "Ollama Cloud" }
         9 { "Muse" }
-        10 {
+        10 { "Command Code" }
+        11 {
             $parts = @()
             if ($syntheticKey) { $parts += "Synthetic" }
             if ($zaiKey) { $parts += "Z.ai" }
@@ -794,9 +835,10 @@ ONWATCH_PORT=$($script:SetupPort)
             if ($grokEnabled) { $parts += "Grok" }
             if ($ollamaKey) { $parts += "Ollama Cloud" }
             if ($museEnabled -or $museKey) { $parts += "Muse" }
+            if ($commandCodeEnabled -or $commandCodeKey) { $parts += "Command Code" }
             $parts -join ", "
         }
-        11 { "All providers" }
+        12 { "All providers" }
     }
 
     $maskedPass = "*" * $script:SetupPassword.Length

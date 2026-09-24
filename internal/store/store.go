@@ -911,6 +911,56 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_muse_cycles_name_start ON muse_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_muse_cycles_name_active ON muse_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
 
+		-- Command Code tables
+		CREATE TABLE IF NOT EXISTS commandcode_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			raw_json TEXT NOT NULL DEFAULT '',
+			account_name TEXT NOT NULL DEFAULT '',
+			account_id TEXT NOT NULL DEFAULT '',
+			org_id TEXT NOT NULL DEFAULT '',
+			plan TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			monthly_credits REAL NOT NULL DEFAULT 0,
+			purchased_credits REAL NOT NULL DEFAULT 0,
+			free_credits REAL NOT NULL DEFAULT 0,
+			remaining_credits REAL NOT NULL DEFAULT 0,
+			period_start TEXT,
+			period_end TEXT,
+			period_cost REAL NOT NULL DEFAULT 0,
+			period_requests INTEGER NOT NULL DEFAULT 0,
+			period_tokens INTEGER NOT NULL DEFAULT 0,
+			quota_count INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS commandcode_quota_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			quota_name TEXT NOT NULL,
+			used REAL NOT NULL DEFAULT 0,
+			limit_value REAL NOT NULL DEFAULT 0,
+			utilization REAL NOT NULL DEFAULT 0,
+			format TEXT NOT NULL DEFAULT 'credits',
+			resets_at TEXT,
+			remaining REAL NOT NULL DEFAULT 0,
+			FOREIGN KEY (snapshot_id) REFERENCES commandcode_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS commandcode_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			resets_at TEXT,
+			peak_utilization REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_commandcode_snapshots_captured ON commandcode_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_commandcode_quota_values_snapshot ON commandcode_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_commandcode_cycles_name_start ON commandcode_reset_cycles(quota_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_commandcode_cycles_name_active ON commandcode_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
+
 		-- API integrations telemetry ingestion tables
 		CREATE TABLE IF NOT EXISTS api_integration_usage_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -432,6 +432,15 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 			}
 		}
 	}
+	if h.config != nil && h.config.HasProvider("commandcode") && h.providerDashboardVisible("commandcode", visibility) {
+		payload := h.buildCommandCodeCurrent()
+		if card := normalizeProviderCard("commandcode", resolveProviderTabLabel("commandcode", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			providers = append(providers, *card)
+			if captured := parseCapturedAt(payload); captured.After(latest) {
+				latest = captured
+			}
+		}
+	}
 	if h.config != nil && h.config.HasProvider("cursor") && h.providerDashboardVisible("cursor", visibility) {
 		payload := h.buildCursorCurrent()
 		if card := normalizeProviderCard("cursor", resolveProviderTabLabel("cursor", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
@@ -447,6 +456,71 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		providers = filterMenubarProviders(providers, normalized.VisibleProviders)
 	}
 	return providers, latest
+}
+
+// refreshMenubarVisibleProviders appends newly detected providers to the
+// persisted visible list. Once a user curates their own list, a brand-new
+// provider (e.g. Command Code) would otherwise stay invisible forever: it was
+// absent when the list was saved, so the legacy filter drops it on every
+// request and the menubar never catches up. Unknown IDs are left alone so an
+// explicit hide can never be undone by a provider that no longer exists.
+func refreshMenubarVisibleProviders(h *Handler, visible []string, providers []menubar.ProviderCard) []string {
+	if h == nil || h.store == nil || len(visible) == 0 {
+		return visible
+	}
+	// A provider is "new" when neither its card ID nor its base key is covered
+	// by the saved list. Base-key matching keeps multi-account providers
+	// (codex:1, minimax:6) from re-appending on every request.
+	changed := false
+	merged := append([]string(nil), visible...)
+	for _, card := range providers {
+		if menubarSettingsKeyAllows(card.ID, merged) {
+			continue
+		}
+		merged = append(merged, card.ID)
+		changed = true
+	}
+	if !changed {
+		return visible
+	}
+	// Re-read before writing so an unrelated concurrent save is not clobbered:
+	// re-apply the append onto the freshest list and persist that. A fresh
+	// store returns defaults with an empty list, which is indistinguishable
+	// from show-all - but the caller only reaches here with a non-empty list,
+	// so an empty fresh list means nobody has saved yet and the merged result
+	// is the correct first save.
+	settings, err := h.menubarSettings()
+	if err != nil || settings == nil {
+		return visible
+	}
+	fresh := append([]string(nil), settings.VisibleProviders...)
+	refreshed := append([]string(nil), fresh...)
+	for _, card := range providers {
+		if !menubarSettingsKeyAllows(card.ID, refreshed) {
+			refreshed = append(refreshed, card.ID)
+		}
+	}
+	if menubarVisibleListsEqual(refreshed, fresh) {
+		return fresh
+	}
+	settings.VisibleProviders = refreshed
+	if err := h.store.SetMenubarSettings(settings.Normalize()); err != nil {
+		h.logger.Error("failed to persist refreshed menubar visibility", "error", err)
+		return visible
+	}
+	return refreshed
+}
+
+func menubarVisibleListsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // menubarAccountLabel builds multi-account menubar titles using the dashboard
@@ -500,7 +574,7 @@ func (h *Handler) renderMenubarHTML(view menubar.ViewType, settings *menubar.Set
 func (h *Handler) buildMenubarProviderOptions(settings *menubar.Settings) ([]menubarProviderOption, error) {
 	normalized := settings.Normalize()
 	providers, _ := h.buildMenubarProviders(normalized, true)
-	visibleKeys := append([]string(nil), normalized.VisibleProviders...)
+	visibleKeys := refreshMenubarVisibleProviders(h, append([]string(nil), normalized.VisibleProviders...), providers)
 	options := make([]menubarProviderOption, 0, len(providers))
 	for _, provider := range providers {
 		quotaOptions := make([]menubarQuotaOption, 0, len(provider.Quotas))

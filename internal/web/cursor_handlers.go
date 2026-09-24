@@ -58,9 +58,11 @@ func cursorQuotaOrder(name string) int {
 }
 
 func utilStatus(util float64) string {
+	// Statuses must stay within the set the dashboard CSS, the dashboard JS
+	// statusConfig, and the menubar status ranker all understand: healthy,
+	// warning, danger, critical. An unknown string renders with no badge
+	// styling and never worsens a card or aggregate status.
 	switch {
-	case util >= 95:
-		return "exhausted"
 	case util >= 80:
 		return "critical"
 	case util >= 60:

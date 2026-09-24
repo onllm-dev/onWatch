@@ -42,7 +42,7 @@ func (h *Handler) buildDeepSeekCurrent() map[string]interface{} {
 			
 			status := "healthy"
 			if latest.TotalBalance == 0 {
-				status = "exhausted"
+				status = "critical"
 			}
 			
 			balance := map[string]interface{}{

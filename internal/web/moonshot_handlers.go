@@ -40,7 +40,7 @@ func (h *Handler) buildMoonshotCurrent() map[string]interface{} {
 			
 			status := "healthy"
 			if latest.AvailableBalance == 0 {
-				status = "exhausted"
+				status = "critical"
 			}
 			
 			balance := map[string]interface{}{

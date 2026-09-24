@@ -44,6 +44,8 @@ type setupConfig struct {
 	ollamaKey          string
 	museEnabled        bool
 	museKey            string
+	commandCodeEnabled bool
+	commandCodeKey     string
 	adminUser          string
 	adminPass          string
 	port               int
@@ -125,6 +127,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		"Grok (xAI) only",
 		"Ollama Cloud only",
 		"Muse (Meta) only",
+		"Command Code only",
 		"Multiple (choose one at a time)",
 		"All available",
 	}
@@ -157,9 +160,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		cfg.ollamaKey = collectOllamaKey(reader)
 	case 10: // Muse (Meta) only
 		cfg.museEnabled, cfg.museKey = collectMuse(reader, logger)
-	case 11: // Multiple
-		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled, cfg.ollamaKey, cfg.museEnabled, cfg.museKey = collectMultipleProviders(reader, logger)
-	case 12: // All
+	case 11: // Command Code only
+		cfg.commandCodeEnabled, cfg.commandCodeKey = collectCommandCode(reader, logger)
+	case 12: // Multiple
+		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled, cfg.ollamaKey, cfg.museEnabled, cfg.museKey, cfg.commandCodeEnabled, cfg.commandCodeKey = collectMultipleProviders(reader, logger)
+	case 13: // All
 		cfg.syntheticKey = collectSyntheticKey(reader)
 		cfg.zaiKey, cfg.zaiBaseURL = collectZaiConfig(reader)
 		cfg.anthropicToken = collectAnthropicToken(reader, logger)
@@ -172,10 +177,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		cfg.grokEnabled = collectGrok(reader, logger)
 		cfg.ollamaKey = collectOllamaKey(reader)
 		cfg.museEnabled, cfg.museKey = collectMuse(reader, logger)
+		cfg.commandCodeEnabled, cfg.commandCodeKey = collectCommandCode(reader, logger)
 	}
 
 	// Validate at least one provider
-	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled && cfg.ollamaKey == "" && !cfg.museEnabled && cfg.museKey == "" {
+	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled && cfg.ollamaKey == "" && !cfg.museEnabled && cfg.museKey == "" && !cfg.commandCodeEnabled && cfg.commandCodeKey == "" {
 		return nil, fmt.Errorf("at least one provider is required")
 	}
 
@@ -226,7 +232,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	return cfg, nil
 }
 
-func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled, grokEnabled bool, ollamaKey string, museEnabled bool, museKey string) {
+func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled, grokEnabled bool, ollamaKey string, museEnabled bool, museKey string, commandCodeEnabled bool, commandCodeKey string) {
 	if promptYesNo(reader, "Add Synthetic provider?", false) {
 		synKey = collectSyntheticKey(reader)
 	}
@@ -258,6 +264,9 @@ func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey
 	}
 	if promptYesNo(reader, "Add Muse (Meta) provider?", false) {
 		museEnabled, museKey = collectMuse(reader, logger)
+	}
+	if promptYesNo(reader, "Add Command Code provider?", false) {
+		commandCodeEnabled, commandCodeKey = collectCommandCode(reader, logger)
 	}
 	return
 }
@@ -438,6 +447,67 @@ func collectMuse(reader *bufio.Reader, logger *slog.Logger) (bool, string) {
 	}
 }
 
+// detectCommandCodeCredentialsFunc resolves local Command Code credentials for
+// the setup wizard. A package variable so tests can stub it and never read the
+// developer's real auth files.
+var detectCommandCodeCredentialsFunc = api.DetectCommandCodeCredentials
+
+// verifyCommandCodeKey checks a key against the Command Code API with one
+// read-only GET and returns a short credit summary.
+// A package variable so tests can stub it and never touch the network.
+var verifyCommandCodeKey = func(key, baseURL string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	opts := []api.CommandCodeClientOption{api.WithCommandCodeTimeout(20 * time.Second)}
+	if baseURL != "" {
+		opts = append(opts, api.WithCommandCodeBaseURL(baseURL))
+	}
+	snap, err := api.NewCommandCodeClient(key, slog.New(slog.NewTextHandler(io.Discard, nil)), opts...).FetchSnapshot(ctx)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("$%.2f credits remaining, %d requests this period", snap.RemainingCredits, snap.PeriodReqs), nil
+}
+
+// collectCommandCode enables Command Code credit tracking. onWatch prefers the
+// key saved by the `cmd` CLI - the Command Code binary, which most onWatch
+// users get here through - and only stores an explicit key in .env when the
+// user provides one. Every poll is a read-only GET, so unlike Muse there is no
+// per-poll cost to warn about. Returns the enabled flag and the explicit key
+// ("" when auto-detect is used).
+func collectCommandCode(reader *bufio.Reader, logger *slog.Logger) (bool, string) {
+	fmt.Printf("\n  %sCommand Code Setup%s\n", colorBold, colorReset)
+	fmt.Printf("  %sonWatch reads your Command Code credit balance and rate-limit windows from the Command Code API.%s\n", colorDim, colorReset)
+
+	if creds := detectCommandCodeCredentialsFunc(logger); creds != nil && creds.APIKey != "" {
+		fmt.Printf("  %s ok %s  Detected Command Code credentials (%s)\n", colorGreen, colorReset, creds.Source)
+		return promptYesNo(reader, "Enable Command Code tracking?", true), ""
+	}
+
+	fmt.Printf("  %s!%s No Command Code login found (log in with the 'cmd' CLI first, or paste a key)%s\n", colorYellow, colorReset, colorReset)
+	fmt.Printf("  %sLeave empty to enable with auto-detect later.%s\n", colorDim, colorReset)
+	for {
+		fmt.Print("  Command Code API key [Enter = auto-detect]: ")
+		key := readLine(reader)
+		if key == "" {
+			return promptYesNo(reader, "Enable Command Code tracking anyway?", false), ""
+		}
+		summary, err := verifyCommandCodeKey(key, "")
+		switch {
+		case err == nil:
+			fmt.Printf("  %s ok %s  Key verified (%s)  %s%s%s\n", colorGreen, colorReset, summary, colorDim, maskValue(key), colorReset)
+			return true, key
+		case api.IsCommandCodeAuthError(err):
+			fmt.Printf("  %sCommand Code rejected this key (401). Log in again with the 'cmd' CLI or paste a fresh key.%s\n", colorRed, colorReset)
+			continue
+		default:
+			fmt.Printf("  %s!%s Could not reach api.commandcode.ai to verify the key (%v) - saving it anyway\n", colorYellow, colorReset, err)
+			fmt.Printf("  %s ok %s  %s%s%s\n", colorGreen, colorReset, colorDim, maskValue(key), colorReset)
+			return true, key
+		}
+	}
+}
+
 func collectZaiConfig(reader *bufio.Reader) (string, string) {
 	fmt.Printf("\n  %sGet your key: https://www.z.ai/api-keys%s\n", colorDim, colorReset)
 
@@ -582,6 +652,17 @@ func writeEnvFile(path string, cfg *setupConfig) error {
 		b.WriteString("# META_MUSE_MODEL=\n\n")
 	}
 
+	if cfg.commandCodeEnabled || cfg.commandCodeKey != "" {
+		b.WriteString("# Command Code - auto-detected from the `cmd` CLI login when no key is set\n")
+		if cfg.commandCodeKey != "" {
+			b.WriteString(fmt.Sprintf("COMMAND_CODE_API_KEY=%s\n", cfg.commandCodeKey))
+		} else {
+			b.WriteString("COMMANDCODE_ENABLED=true\n")
+		}
+		b.WriteString("# Optional: override the API base URL (proxy or compatible endpoint)\n")
+		b.WriteString("# COMMANDCODE_BASE_URL=\n\n")
+	}
+
 	b.WriteString("# Dashboard credentials\n")
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_USER=%s\n", cfg.adminUser))
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_PASS=%s\n\n", cfg.adminPass))
@@ -631,6 +712,9 @@ func printSummary(cfg *setupConfig) {
 	}
 	if cfg.museEnabled || cfg.museKey != "" {
 		providers = append(providers, "Muse")
+	}
+	if cfg.commandCodeEnabled || cfg.commandCodeKey != "" {
+		providers = append(providers, "Command Code")
 	}
 	providerLabel := strings.Join(providers, ", ")
 

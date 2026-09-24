@@ -341,9 +341,10 @@ func TestProviderCollectionHelpers(t *testing.T) {
 			"n",            // gemini no
 			"n",            // grok no
 			"n",            // muse no
+			"n",            // commandcode no
 		}, "\n") + "\n"
 		r := bufio.NewReader(strings.NewReader(input))
-		syn, zai, zaiURL, anth, codex, _, anti, _, _, _, _, _ := collectMultipleProviders(r, testLogger())
+		syn, zai, zaiURL, anth, codex, _, anti, _, _, _, _, _, _, _ := collectMultipleProviders(r, testLogger())
 		if syn == "" || zai == "" || zaiURL == "" {
 			t.Fatalf("expected synthetic and zai collected, got syn=%q zai=%q zaiURL=%q", syn, zai, zaiURL)
 		}

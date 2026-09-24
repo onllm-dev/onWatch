@@ -837,6 +837,20 @@ func run() error {
 		}
 	}
 
+	// Command Code credentials from the Command Code CLI auth file or the pi /
+	// OMP agent stores. Explicit COMMAND_CODE_API_KEY wins. Every poll is a
+	// read-only billing GET that spends no credits, so a detected key enables
+	// tracking directly, matching Grok and Kimi.
+	if !cfg.CommandCodeDisabled {
+		if creds := api.DetectCommandCodeCredentials(preflightLogger); creds != nil && creds.APIKey != "" {
+			if cfg.CommandCodeAPIKey == "" {
+				cfg.CommandCodeAPIKey = creds.APIKey
+				cfg.CommandCodeAutoToken = true
+			}
+			cfg.CommandCodeEnabled = true
+		}
+	}
+
 	// Daemonize: if not in debug mode, not already the daemon child, not
 	// supervised by launchd, and NOT in Docker, fork.
 	// Docker containers should always run in foreground mode (logs to stdout)
@@ -1161,6 +1175,23 @@ func run() error {
 			"base_url_override", cfg.MuseBaseURL != "")
 	}
 
+	var commandCodeClient *api.CommandCodeClient
+	if cfg.HasProvider("commandcode") && strings.TrimSpace(cfg.CommandCodeAPIKey) == "" {
+		// COMMANDCODE_ENABLED=true alone is enough for HasProvider. Polling
+		// with an empty key would log a 401 every interval forever, so the
+		// client is skipped and the tab shows nothing until a key resolves.
+		logger.Warn("Command Code enabled but no API key resolved; skipping polling (set COMMAND_CODE_API_KEY or log in with the cmd CLI binary)")
+	} else if cfg.HasProvider("commandcode") {
+		commandCodeOpts := []api.CommandCodeClientOption{}
+		if cfg.CommandCodeBaseURL != "" {
+			commandCodeOpts = append(commandCodeOpts, api.WithCommandCodeBaseURL(cfg.CommandCodeBaseURL))
+		}
+		commandCodeClient = api.NewCommandCodeClient(cfg.CommandCodeAPIKey, logger, commandCodeOpts...)
+		logger.Info("Command Code API client configured",
+			"auto_token", cfg.CommandCodeAutoToken,
+			"base_url_override", cfg.CommandCodeBaseURL != "")
+	}
+
 	var kimiClient *api.KimiClient
 	if cfg.HasProvider("kimi") {
 		// Auto-detected OAuth access tokens expire quickly (~15m). Never freeze
@@ -1379,6 +1410,10 @@ func run() error {
 	if cfg.HasProvider("muse") {
 		museTr = tracker.NewMuseTracker(db, logger)
 	}
+	var commandCodeTr *tracker.CommandCodeTracker
+	if cfg.HasProvider("commandcode") {
+		commandCodeTr = tracker.NewCommandCodeTracker(db, logger)
+	}
 
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
@@ -1479,6 +1514,11 @@ func run() error {
 		museSm := agent.NewSessionManager(db, "muse", idleTimeout, logger)
 		museAg = agent.NewMuseAgent(museClient, db, museTr, cfg.PollInterval, logger, museSm)
 	}
+	var commandCodeAg *agent.CommandCodeAgent
+	if commandCodeClient != nil {
+		commandCodeSm := agent.NewSessionManager(db, "commandcode", idleTimeout, logger)
+		commandCodeAg = agent.NewCommandCodeAgent(commandCodeClient, db, commandCodeTr, cfg.PollInterval, logger, commandCodeSm)
+	}
 
 	var apiIntegrationsAg *agent.APIIntegrationsIngestAgent
 	if cfg.APIIntegrationsEnabled {
@@ -1545,6 +1585,9 @@ func run() error {
 	}
 	if museAg != nil {
 		museAg.SetNotifier(notifier)
+	}
+	if commandCodeAg != nil {
+		commandCodeAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -1715,6 +1758,9 @@ func run() error {
 	if museAg != nil {
 		museAg.SetPollingCheck(func() bool { return isPollingEnabled("muse") })
 	}
+	if commandCodeAg != nil {
+		commandCodeAg.SetPollingCheck(func() bool { return isPollingEnabled("commandcode") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -1800,6 +1846,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "muse", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	if commandCodeTr != nil {
+		commandCodeTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "commandcode", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -1848,6 +1899,9 @@ func run() error {
 	}
 	if museTr != nil {
 		handler.SetMuseTracker(museTr)
+	}
+	if commandCodeTr != nil {
+		handler.SetCommandCodeTracker(commandCodeTr)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -1901,6 +1955,9 @@ func run() error {
 	if museAg != nil {
 		agentMgr.RegisterFactory("muse", func() (agent.AgentRunner, error) { return museAg, nil })
 	}
+	if commandCodeAg != nil {
+		agentMgr.RegisterFactory("commandcode", func() (agent.AgentRunner, error) { return commandCodeAg, nil })
+	}
 
 	if apiIntegrationsAg != nil {
 		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
@@ -1946,7 +2003,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode", "ollama", "muse"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode", "ollama", "muse", "commandcode"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
@@ -2500,6 +2557,13 @@ func printBanner(cfg *config.Config, version string) {
 		}
 		fmt.Printf("Muse:              %s\n", source)
 	}
+	if cfg.HasProvider("commandcode") {
+		source := "auto-detect"
+		if !cfg.CommandCodeAutoToken {
+			source = "env var"
+		}
+		fmt.Printf("Command Code:      %s\n", source)
+	}
 	if cfg.HasProvider("gemini") {
 		source := "auto-detect"
 		if cfg.GeminiRefreshToken != "" || cfg.GeminiAccessToken != "" {
@@ -2558,6 +2622,10 @@ func printHelp() {
 	fmt.Println("  META_MUSE_MODEL         Muse usage-probe model (default: muse-spark-1.3)")
 	fmt.Println("  MUSE_BASE_URL           Muse API base URL (default: https://api.meta.ai)")
 	fmt.Println("  MUSE_ENABLED            Set false to disable the Muse provider")
+	fmt.Println("  COMMAND_CODE_API_KEY    Command Code API key (auto-detected from the cmd CLI login if unset)")
+	fmt.Println("  COMMANDCODE_ENABLED     Set false to disable the Command Code provider")
+	fmt.Println("  COMMANDCODE_BASE_URL    Command Code API base URL (default: https://api.commandcode.ai)")
+	fmt.Println("  COMMANDCODE_AUTH_PATH   Override the commandcode auth.json path")
 	fmt.Println("  CODEX_HOME              Optional Codex auth directory (uses CODEX_HOME/auth.json)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
 	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")

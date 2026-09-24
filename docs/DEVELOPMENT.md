@@ -147,6 +147,7 @@ CODEX_TOKEN=your_codex_token              # Recommended for Codex-only setups
 COPILOT_TOKEN=ghp_your_github_token       # GitHub PAT with 'copilot' scope (Beta)
 OLLAMA_API_KEY=your_ollama_cloud_key      # Ollama Cloud usage from ollama.com/settings/keys
 # META_API_KEY or MUSE_ENABLED=true       # Muse coding plan (auto-detected from `muse login`)
+COMMAND_CODE_API_KEY=user_your_key        # Command Code (auto-detected from the `cmd` CLI login)
 ```
 
 All configured providers run simultaneously. Configure any combination.

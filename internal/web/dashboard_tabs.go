@@ -46,6 +46,8 @@ func defaultProviderTabLabel(key string) string {
 		return "Ollama"
 	case "muse":
 		return "Muse"
+	case "commandcode":
+		return "Command Code"
 	case "moonshot":
 		return "Moonshot"
 	case "deepseek":

@@ -78,6 +78,8 @@ function getCurrentProvider() {
   if (ollamaGrid) return 'ollama';
   const museGrid = document.getElementById('quota-grid-muse');
   if (museGrid) return 'muse';
+  const commandCodeGrid = document.getElementById('quota-grid-commandcode');
+  if (commandCodeGrid) return 'commandcode';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -1000,6 +1002,7 @@ function quotaOrderForProvider(provider) {
   if (provider === 'opencode') return opencodeQuotaOrder;
   if (provider === 'ollama') return ollamaQuotaOrder;
   if (provider === 'muse') return museQuotaOrder;
+  if (provider === 'commandcode') return commandCodeQuotaOrder;
   return [];
 }
 
@@ -1237,6 +1240,11 @@ const renewalCategories = {
   muse: [
     { label: '5h Prompts', groupBy: 'window_5h' },
     { label: 'Weekly', groupBy: 'weekly' }
+  ],
+  commandcode: [
+    { label: '5-Hour', groupBy: 'five_hour' },
+    { label: 'Weekly', groupBy: 'weekly' },
+    { label: 'Monthly', groupBy: 'monthly' }
   ]
 };
 
@@ -1286,6 +1294,11 @@ const providerQuotaDisplayOverrides = {
   muse: {
     window_5h: '5h Prompts',
     weekly: 'Weekly'
+  },
+  commandcode: {
+    five_hour: '5-Hour Credits',
+    weekly: 'Weekly Credits',
+    monthly: 'Monthly Credits'
   }
 };
 
@@ -4352,6 +4365,163 @@ function updateMuseCard(quota) {
   }
 }
 
+// ── Command Code Card Rendering ──
+const commandCodeQuotaOrder = ['five_hour', 'weekly', 'monthly'];
+const commandCodeDisplayNames = {
+  five_hour: '5-Hour Credits',
+  weekly: 'Weekly Credits',
+  monthly: 'Monthly Credits'
+};
+const commandCodeChartColorMap = {
+  five_hour: { border: '#f97316', bg: 'rgba(249, 115, 22, 0.08)' },
+  weekly: { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)' },
+  monthly: { border: '#10b981', bg: 'rgba(16, 185, 129, 0.08)' }
+};
+const commandCodeChartColorFallback = [
+  { border: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.08)' },
+  { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.08)' }
+];
+
+// commandCodePercent resolves the figure the card shows, honouring the
+// Remaining display mode that buildCommandCodeCurrent emits.
+function commandCodePercent(quota) {
+  return quota.cardPercent != null ? quota.cardPercent : (quota.utilization || 0);
+}
+
+// commandCodeCardLabel formats the fraction line. The two rate-limit windows
+// are denominated in credits with two decimals (1.51 / 14.00), matching the
+// reference provider; the monthly card is a dollar balance.
+function commandCodeCardLabel(quota) {
+  if (quota.cardLabel) return quota.cardLabel;
+  const name = quota.name || 'monthly';
+  const used = quota.used || 0;
+  const limit = quota.limit || 0;
+  if (name === 'monthly') {
+    if (quota.limitUnknown || limit <= 0) {
+      return commandCodeUsd(quota.remaining != null ? quota.remaining : used) + ' remaining';
+    }
+    return commandCodeUsd(used) + ' / ' + commandCodeUsd(limit);
+  }
+  const credits = (v) => (Number(v) || 0).toFixed(2);
+  if (limit <= 0) {
+    return credits(used) + ' credits';
+  }
+  return credits(used) + ' / ' + credits(limit) + ' cr';
+}
+
+function commandCodeUsd(value) {
+  const v = Number(value) || 0;
+  if (v > 0 && v < 0.01) return '$' + v.toFixed(3);
+  return '$' + v.toFixed(2);
+}
+
+// commandCodeEffectiveQuotas resolves what gets rendered, including the
+// placeholder shown before the first successful poll. The match check below
+// must compare against this same list, or the placeholder counts as a mismatch
+// and the grid is torn down and rebuilt on every poll.
+function commandCodeEffectiveQuotas(quotas) {
+  return (quotas && quotas.length) ? quotas : [{ name: 'five_hour', utilization: 0, status: 'healthy' }];
+}
+
+function renderCommandCodeQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  const list = commandCodeEffectiveQuotas(quotas);
+  list.forEach((q, idx) => {
+    const pct = commandCodePercent(q);
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(q.utilization || 0);
+    const name = (q.name || 'five_hour');
+    const label = q.displayName || commandCodeDisplayNames[name] || name;
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const cdSecs = resetsAt ? Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)) : 0;
+    const cdText = cdSecs > 0 ? formatDuration(cdSecs) : '--:--';
+    if (resetsAt) State.currentQuotas['commandcode-' + name] = { timeUntilResetSeconds: cdSecs };
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const card = document.createElement('article');
+    card.className = 'quota-card commandcode-card';
+    card.dataset.quota = name;
+    card.dataset.provider = 'commandcode';
+    card.style.animationDelay = (idx * 60) + 'ms';
+    card.innerHTML = `
+      <header class="card-header">
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            ${label}
+          </h2>
+        </div>
+        <span class="countdown" id="countdown-commandcode-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ' style="display:none"'}>${cdText}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="percent-commandcode-${name}">${pctStr}%</span>
+        <span class="usage-fraction" id="fraction-commandcode-${name}">${commandCodeCardLabel(q)}</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="progress-commandcode-${name}" style="width:${pctStr}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="status-commandcode-${name}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="reset-commandcode-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ''}>${resetsAt ? formatResetTime(resetsAt) : ''}</span>
+      </footer>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function commandCodeQuotaSetsMatch(container, quotas) {
+  if (!container) return false;
+  const expected = commandCodeEffectiveQuotas(quotas);
+  const renderedCards = Array.from(container.querySelectorAll('.commandcode-card[data-quota]'));
+  if (renderedCards.length !== expected.length) return false;
+  const rendered = new Set(renderedCards.map(c => c.dataset.quota));
+  return expected.every(q => rendered.has(q.name));
+}
+
+function updateCommandCodeCard(quota) {
+  const name = quota.name || 'five_hour';
+  const pct = commandCodePercent(quota);
+  const pctStr = pct.toFixed(1);
+  const status = quota.status || getQuotaStatus(quota.utilization || 0);
+  const progressEl = document.getElementById(`progress-commandcode-${name}`);
+  const percentEl = document.getElementById(`percent-commandcode-${name}`);
+  const fractionEl = document.getElementById(`fraction-commandcode-${name}`);
+  const statusEl = document.getElementById(`status-commandcode-${name}`);
+  const resetEl = document.getElementById(`reset-commandcode-${name}`);
+  const countdownEl = document.getElementById(`countdown-commandcode-${name}`);
+  if (percentEl) percentEl.textContent = pctStr + '%';
+  if (fractionEl) fractionEl.textContent = commandCodeCardLabel(quota);
+  if (progressEl) {
+    progressEl.style.width = pctStr + '%';
+    progressEl.dataset.status = status;
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(pct));
+  }
+  const resetsAt = quota.resets_at || quota.resetsAt || '';
+  if (resetEl) {
+    resetEl.textContent = resetsAt ? formatResetTime(resetsAt) : '';
+    if (resetsAt) resetEl.dataset.resetAt = resetsAt;
+  }
+  if (statusEl) {
+    const cfg = statusConfig[status] || statusConfig.healthy;
+    statusEl.dataset.status = status;
+    statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${cfg.icon}"/></svg> ${cfg.label}`;
+  }
+  if (countdownEl && resetsAt) {
+    const secs = Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000));
+    State.currentQuotas['commandcode-' + name] = { timeUntilResetSeconds: secs };
+    countdownEl.dataset.resetAt = resetsAt;
+    countdownEl.style.display = '';
+    countdownEl.textContent = secs > 0 ? formatDuration(secs) : '--:--';
+  }
+}
+
 async function fetchCurrent() {
   const requestProvider = getCurrentProvider();
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
@@ -4557,6 +4727,17 @@ async function fetchCurrent() {
               delete container.dataset.cliPaused;
               container.removeAttribute('title');
             }
+          }
+        }
+
+      } else if (provider === 'commandcode') {
+        if (data.quotas) {
+          const container = document.getElementById('quota-grid-commandcode');
+          if (container && !commandCodeQuotaSetsMatch(container, data.quotas)) {
+            renderCommandCodeQuotaCards(data.quotas, 'quota-grid-commandcode');
+          }
+          if (Array.isArray(data.quotas) && data.quotas.length > 0) {
+            data.quotas.forEach(q => updateCommandCodeCard(q));
           }
         }
 
@@ -6270,6 +6451,7 @@ const bothProviderNames = {
   opencode: 'OpenCode',
   ollama: 'Ollama',
   muse: 'Muse',
+  commandcode: 'Command Code',
   'api-integrations': 'API Integrations',
 };
 
@@ -7144,7 +7326,7 @@ function buildProviderCardDatasets(provider, rows, range) {
   if (provider === 'gemini') {
     return buildDynamicDatasetsForRows(rows, range, geminiDisplayNames, geminiChartColorMap, geminiChartColorFallback, 'gemini');
   }
-  if (provider === 'cursor' || provider === 'opencode' || provider === 'ollama' || provider === 'muse') {
+  if (provider === 'cursor' || provider === 'opencode' || provider === 'ollama' || provider === 'muse' || provider === 'commandcode') {
     const normalizedRows = rows.map((row) => {
       if (!Array.isArray(row.quotas)) return row;
       const entry = { capturedAt: row.capturedAt };
@@ -7161,6 +7343,9 @@ function buildProviderCardDatasets(provider, rows, range) {
     }
     if (provider === 'muse') {
       return buildDynamicDatasetsForRows(normalizedRows, range, museDisplayNames, museChartColorMap, museChartColorFallback, 'muse');
+    }
+    if (provider === 'commandcode') {
+      return buildDynamicDatasetsForRows(normalizedRows, range, commandCodeDisplayNames, commandCodeChartColorMap, commandCodeChartColorFallback, 'commandcode');
     }
     return buildDynamicDatasetsForRows(normalizedRows, range, opencodeDisplayNames, opencodeChartColorMap, opencodeChartColorFallback, 'opencode');
   }
@@ -7680,7 +7865,7 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi', 'opencode', 'ollama', 'muse']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi', 'opencode', 'ollama', 'muse', 'commandcode']);
 
   // All-accounts overview: fetch each account's logging history and merge,
   // tagging every row with its account name for the combined table.
@@ -9237,7 +9422,7 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok' || overviewProv === 'kimi' || overviewProv === 'opencode' || overviewProv === 'ollama' || overviewProv === 'muse';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok' || overviewProv === 'kimi' || overviewProv === 'opencode' || overviewProv === 'ollama' || overviewProv === 'muse' || overviewProv === 'commandcode';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
   // MiniMax reports a percentage-based quota; the Duration and Total Delta
   // columns add no signal there, so omit them for this provider.
@@ -10380,6 +10565,7 @@ const DEFAULT_PROVIDER_TAB_LABELS = {
   opencode: 'OpenCode',
   ollama: 'Ollama',
   muse: 'Muse',
+  commandcode: 'Command Code',
   'api-integrations': 'API Integrations',
   both: 'All',
 };
@@ -11114,6 +11300,14 @@ const providerSettingsConfig = {
     fields: [
       { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Auto-detected', hint: 'Meta API key. Leave empty to use your `muse login` session. Overrides META_API_KEY from .env.', sensitive: true },
       { id: 'model', label: 'Probe Model', type: 'text', placeholder: 'muse-spark-1.3', hint: 'Model used for the usage probe (for example muse-spark-1.3-contributor). Leave empty to use your Muse settings model. Overrides META_MUSE_MODEL.' },
+    ],
+  },
+  commandcode: {
+    title: 'Command Code',
+    desc: 'Configure Command Code credit and rate-limit tracking. Auto-detected from the Command Code CLI login (or the pi / OMP auth store) when no key is set. Changes take effect after daemon restart.',
+    fields: [
+      { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Auto-detected', hint: 'Command Code API key (user_...). Leave empty to use the key saved by the cmd CLI. Overrides COMMAND_CODE_API_KEY from .env.', sensitive: true },
+      { id: 'base_url', label: 'Base URL', type: 'text', placeholder: 'https://api.commandcode.ai', hint: 'Override the API base URL for a proxy or a compatible endpoint. Leave empty for the default. Overrides COMMANDCODE_BASE_URL.' },
     ],
   },
 };

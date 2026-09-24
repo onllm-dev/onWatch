@@ -112,6 +112,7 @@ type Handler struct {
 	opencodeTracker     *tracker.OpenCodeTracker
 	ollamaTracker       *tracker.OllamaTracker
 	museTracker         *tracker.MuseTracker
+	commandCodeTracker  *tracker.CommandCodeTracker
 	updater             *update.Updater
 	notifier            Notifier
 	agentManager        ProviderAgentController
@@ -1142,6 +1143,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "opencode", Name: "OpenCode Go", Description: "OpenCode Go quota tracking", AutoDetectable: false},
 		{Key: "ollama", Name: "Ollama Cloud", Description: "Ollama Cloud included usage tracking", AutoDetectable: false},
 		{Key: "muse", Name: "Muse", Description: "Meta Muse coding-plan quota tracking", AutoDetectable: true},
+		{Key: "commandcode", Name: "Command Code", Description: "Command Code credit and rate-limit tracking", AutoDetectable: true},
 	}
 }
 
@@ -1237,6 +1239,20 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		// Cached: detection can shell out to the keychain with a multi-second
 		// deadline, and this runs on every provider-list request.
 		return api.DetectMuseCredentialsCached(h.logger) != nil
+	case "commandcode":
+		if h.config == nil {
+			return false
+		}
+		// COMMANDCODE_ENABLED=false is an explicit opt-out and wins over
+		// everything, including a key that is present in the environment.
+		if h.config.CommandCodeDisabled {
+			return false
+		}
+		if h.config.CommandCodeEnabled || strings.TrimSpace(h.config.CommandCodeAPIKey) != "" {
+			return true
+		}
+		// Reading a few small JSON files, so no cache is needed.
+		return api.DetectCommandCodeCredentials(h.logger) != nil
 	default:
 		return false
 	}
@@ -1396,6 +1412,11 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.MuseEnabled = src.MuseEnabled
 	dst.MuseBaseURL = src.MuseBaseURL
 	dst.MuseDisabled = src.MuseDisabled
+	dst.CommandCodeAPIKey = src.CommandCodeAPIKey
+	dst.CommandCodeAutoToken = src.CommandCodeAutoToken
+	dst.CommandCodeEnabled = src.CommandCodeEnabled
+	dst.CommandCodeDisabled = src.CommandCodeDisabled
+	dst.CommandCodeBaseURL = src.CommandCodeBaseURL
 	dst.AntigravityBaseURL = src.AntigravityBaseURL
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
@@ -1493,6 +1514,9 @@ var providerEnumFields = map[string]map[string][]string{
 		"display_mode": {"usage", "available"},
 	},
 	"muse": {
+		"display_mode": {"usage", "available"},
+	},
+	"commandcode": {
 		"display_mode": {"usage", "available"},
 	},
 }
@@ -1638,6 +1662,18 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 		// saved from Settings stays invisible to the provider list until the
 		// cached miss expires.
 		api.InvalidateMuseCredentialsCache()
+	}
+	// Command Code: API key plus optional base URL override.
+	if s := provSettings["commandcode"]; s != nil {
+		if key, _ := s["api_key"].(string); strings.TrimSpace(key) != "" {
+			cfg.CommandCodeAPIKey = strings.TrimSpace(key)
+			if !cfg.CommandCodeDisabled {
+				cfg.CommandCodeEnabled = true
+			}
+		}
+		if base, _ := s["base_url"].(string); strings.TrimSpace(base) != "" {
+			cfg.CommandCodeBaseURL = strings.TrimSpace(base)
+		}
 	}
 
 	if logger != nil {
@@ -1990,6 +2026,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentOllama(w, r)
 	case "muse":
 		h.currentMuse(w, r)
+	case "commandcode":
+		h.currentCommandCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2452,6 +2490,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("muse") && providerTelemetryEnabled(visibility, "muse") {
 		response["muse"] = h.buildMuseCurrent()
 	}
+	if h.config.HasProvider("commandcode") && providerTelemetryEnabled(visibility, "commandcode") {
+		response["commandcode"] = h.buildCommandCodeCurrent()
+	}
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -2830,6 +2871,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyOllama(w, r)
 	case "muse":
 		h.historyMuse(w, r)
+	case "commandcode":
+		h.historyCommandCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3308,6 +3351,28 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				museData = append(museData, entry)
 			}
 			response["muse"] = museData
+		}
+	}
+
+	if h.config.HasProvider("commandcode") && providerTelemetryEnabled(visibility, "commandcode") && h.store != nil {
+		snapshots, err := h.store.QueryCommandCodeRange(start, now, 200)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			ccData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+				}
+				for _, q := range snap.Quotas {
+					entry[q.Name] = q.Utilization
+				}
+				ccData = append(ccData, entry)
+			}
+			response["commandcode"] = ccData
 		}
 	}
 
@@ -3923,6 +3988,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesOllama(w, r)
 	case "muse":
 		h.cyclesMuse(w, r)
+	case "commandcode":
+		h.cyclesCommandCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4300,6 +4367,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryOllama(w, r)
 	case "muse":
 		h.summaryMuse(w, r)
+	case "commandcode":
+		h.summaryCommandCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -5123,6 +5192,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsOllama(w, r, rangeDur)
 	case "muse":
 		h.insightsMuse(w, r, rangeDur)
+	case "commandcode":
+		h.insightsCommandCode(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -5225,6 +5296,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("muse") && providerTelemetryEnabled(visibility, "muse") {
 		response["muse"] = h.buildMuseInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("commandcode") && providerTelemetryEnabled(visibility, "commandcode") {
+		response["commandcode"] = h.buildCommandCodeInsights(hidden, rangeDur)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -7855,6 +7929,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewOllama(w, r)
 	case "muse":
 		h.cycleOverviewMuse(w, r)
+	case "commandcode":
+		h.cycleOverviewCommandCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -11503,6 +11579,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryOllama(w, r)
 	case "muse":
 		h.loggingHistoryMuse(w, r)
+	case "commandcode":
+		h.loggingHistoryCommandCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}

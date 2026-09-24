@@ -975,3 +975,96 @@ func TestSecurityHeadersFrameDenyExemptsQuickViewOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestRefreshMenubarVisibleProvidersAppendsNewcomers(t *testing.T) {
+	t.Parallel()
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+	h := NewHandler(s, nil, nil, nil, &config.Config{})
+
+	cards := []menubar.ProviderCard{
+		{ID: "anthropic", Label: "Anthropic"},
+		{ID: "commandcode", Label: "Command Code"},
+	}
+	got := refreshMenubarVisibleProviders(h, []string{"anthropic"}, cards)
+	if len(got) != 2 || got[0] != "anthropic" || got[1] != "commandcode" {
+		t.Fatalf("visible = %v, want [anthropic commandcode]", got)
+	}
+
+	// Persisted: a second handler reading from the same store sees it.
+	settings, err := s.GetMenubarSettings()
+	if err != nil {
+		t.Fatalf("GetMenubarSettings: %v", err)
+	}
+	found := false
+	for _, key := range settings.Normalize().VisibleProviders {
+		if key == "commandcode" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("commandcode was not persisted to visible_providers")
+	}
+}
+
+func TestRefreshMenubarVisibleProvidersLeavesShowAllAlone(t *testing.T) {
+	t.Parallel()
+	h := &Handler{}
+	cards := []menubar.ProviderCard{{ID: "commandcode", Label: "Command Code"}}
+	if got := refreshMenubarVisibleProviders(h, nil, cards); len(got) != 0 {
+		t.Fatalf("show-all list must stay empty, got %v", got)
+	}
+	if got := refreshMenubarVisibleProviders(h, []string{}, cards); len(got) != 0 {
+		t.Fatalf("empty list must stay empty, got %v", got)
+	}
+}
+
+func TestRefreshMenubarVisibleProvidersNoOpWhenComplete(t *testing.T) {
+	t.Parallel()
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+	h := NewHandler(s, nil, nil, nil, &config.Config{})
+
+	cards := []menubar.ProviderCard{{ID: "commandcode", Label: "Command Code"}}
+	before, err := s.GetMenubarSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := refreshMenubarVisibleProviders(h, []string{"commandcode"}, cards)
+	if len(got) != 1 || got[0] != "commandcode" {
+		t.Fatalf("visible = %v", got)
+	}
+	after, err := s.GetMenubarSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No write happened: the stored blob is byte-identical.
+	beforeJSON, _ := json.Marshal(before.Normalize())
+	afterJSON, _ := json.Marshal(after.Normalize())
+	if string(beforeJSON) != string(afterJSON) {
+		t.Fatal("settings must not be rewritten when nothing is new")
+	}
+}
+
+func TestRefreshMenubarVisibleProvidersMatchesBaseKeys(t *testing.T) {
+	t.Parallel()
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+	h := NewHandler(s, nil, nil, nil, &config.Config{})
+
+	// A saved bare "codex" covers "codex:1", so no duplicate is appended.
+	cards := []menubar.ProviderCard{{ID: "codex:1", Label: "Codex - work"}}
+	got := refreshMenubarVisibleProviders(h, []string{"codex"}, cards)
+	if len(got) != 1 || got[0] != "codex" {
+		t.Fatalf("visible = %v, want the bare key left alone", got)
+	}
+}

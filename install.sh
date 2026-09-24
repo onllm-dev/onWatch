@@ -458,6 +458,25 @@ append_ollama_to_env() {
     printf '\n# Ollama Cloud API key (https://ollama.com/settings/keys)\nOLLAMA_API_KEY=%s\n' "$key" >> "$env_file"
 }
 
+has_commandcode_configured() {
+    local key cc_on
+    key="$(env_get COMMAND_CODE_API_KEY)"
+    [[ -n "$key" && "$key" != "your_commandcode_api_key_here" ]] && return 0
+    key="$(env_get COMMANDCODE_API_KEY)"
+    [[ -n "$key" ]] && return 0
+    cc_on="$(env_get COMMANDCODE_ENABLED)"
+    [[ "$cc_on" == "true" ]]
+}
+
+append_commandcode_to_env() {
+    local key="$1" env_file="${INSTALL_DIR}/.env"
+    if [[ -n "$key" ]]; then
+        printf '\n# Command Code API key (or leave unset to auto-detect the cmd CLI login)\nCOMMAND_CODE_API_KEY=%s\n' "$key" >> "$env_file"
+    else
+        printf '\n# Command Code - auto-detected from the cmd CLI login\nCOMMANDCODE_ENABLED=true\n' >> "$env_file"
+    fi
+}
+
 has_muse_configured() {
     local key muse_on
     key="$(env_get META_API_KEY)"
@@ -802,7 +821,7 @@ interactive_setup() {
         SETUP_USERNAME="${SETUP_USERNAME:-admin}"
         SETUP_PASSWORD=""  # Don't show existing password
 
-        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false has_grok=false has_ollama=false has_muse=false
+        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false has_grok=false has_ollama=false has_muse=false has_commandcode=false
         has_synthetic_key && has_syn=true
         has_zai_key && has_zai=true
         has_anthropic_key && has_anth=true
@@ -813,14 +832,15 @@ interactive_setup() {
         has_grok_enabled && has_grok=true
         has_ollama_key && has_ollama=true
         has_muse_configured && has_muse=true
+        has_commandcode_configured && has_commandcode=true
 
-        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini && $has_grok && $has_ollama && $has_muse; then
+        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini && $has_grok && $has_ollama && $has_muse && $has_commandcode; then
             # All providers configured — nothing to do
             info "Existing .env found — all providers configured"
             return
         fi
 
-        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini && ! $has_grok && ! $has_ollama && ! $has_muse; then
+        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini && ! $has_grok && ! $has_ollama && ! $has_muse && ! $has_commandcode; then
             # .env exists but no keys at all — run full setup
             warn "Existing .env found but no API keys configured"
             info "Running interactive setup..."
@@ -845,6 +865,7 @@ interactive_setup() {
             $has_grok && configured="${configured}Grok "
             $has_ollama && configured="${configured}Ollama "
             $has_muse && configured="${configured}Muse "
+            $has_commandcode && configured="${configured}Command Code "
             info "Existing .env found — configured: ${configured}"
             printf "\n"
 
@@ -1027,6 +1048,18 @@ interactive_setup() {
                 fi
             fi
 
+            if ! $has_commandcode; then
+                local add_commandcode
+                add_commandcode=$(prompt_with_default "Add Command Code provider? (y/N)" "N")
+                if [[ "$add_commandcode" =~ ^[Yy] ]]; then
+                    printf "  ${DIM}Leave empty to auto-detect from the 'cmd' CLI login${NC}\n"
+                    local commandcode_key
+                    commandcode_key=$(prompt_with_default "Command Code API key [Enter = auto-detect]" "")
+                    append_commandcode_to_env "$commandcode_key"
+                    ok "Added Command Code provider to .env"
+                fi
+            fi
+
             $_opened_fd3 && exec 3<&- || true
             return
         fi
@@ -1057,12 +1090,13 @@ interactive_setup() {
         "Grok (xAI) only" \
         "Ollama Cloud only" \
         "Muse (Meta) only" \
+        "Command Code only" \
         "Multiple (choose one at a time)" \
         "All available")
 
-    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled="" ollama_key="" muse_enabled="" muse_key=""
+    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled="" ollama_key="" muse_enabled="" muse_key="" commandcode_enabled="" commandcode_key=""
 
-    if [[ "$provider_choice" == "11" ]]; then
+    if [[ "$provider_choice" == "12" ]]; then
         # ── Multiple: ask for each provider individually ──
         local add_it
         add_it=$(prompt_with_default "Add Synthetic provider? (y/N)" "N")
@@ -1128,8 +1162,17 @@ interactive_setup() {
             fi
         fi
 
+        add_it=$(prompt_with_default "Add Command Code provider? (y/N)" "N")
+        if [[ "$add_it" =~ ^[Yy] ]]; then
+            printf "  ${DIM}Leave empty to auto-detect from the 'cmd' CLI login${NC}\n"
+            commandcode_key=$(prompt_with_default "Command Code API key [Enter = auto-detect]" "")
+            if [[ -z "$commandcode_key" ]]; then
+                commandcode_enabled="true"
+            fi
+        fi
+
         # Validate at least one provider selected
-        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" && -z "$ollama_key" && -z "$muse_enabled" && -z "$muse_key" ]]; then
+        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" && -z "$ollama_key" && -z "$muse_enabled" && -z "$muse_key" && -z "$commandcode_enabled" && -z "$commandcode_key" ]]; then
             printf "  ${RED}No providers selected. Please select at least one.${NC}\n"
             # Re-run provider selection by recursion-safe retry
             printf "\n"
@@ -1192,13 +1235,13 @@ interactive_setup() {
         # ── Single provider or All ──
 
         # ── Synthetic API Key ──
-        if [[ "$provider_choice" == "1" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "1" || "$provider_choice" == "13" ]]; then
             printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
             synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
         fi
 
         # ── Z.ai API Key ──
-        if [[ "$provider_choice" == "2" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "2" || "$provider_choice" == "13" ]]; then
             local zai_result
             zai_result=$(collect_zai_config)
             zai_key=$(echo "$zai_result" | head -1)
@@ -1206,17 +1249,17 @@ interactive_setup() {
         fi
 
         # ── Anthropic Token ──
-        if [[ "$provider_choice" == "3" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "3" || "$provider_choice" == "13" ]]; then
             anthropic_token=$(collect_anthropic_config)
         fi
 
         # ── Codex Token ──
-        if [[ "$provider_choice" == "4" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "4" || "$provider_choice" == "13" ]]; then
             codex_token=$(collect_codex_config)
         fi
 
         # ── OpenCode (opencode-codex) ──
-        if [[ "$provider_choice" == "5" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "5" || "$provider_choice" == "13" ]]; then
             opencode_enabled="true"
             if detect_opencode_auth; then
                 printf "\n  ${GREEN}✓${NC} OpenCode (opencode-codex) credentials detected (feeds Codex)\n"
@@ -1226,19 +1269,19 @@ interactive_setup() {
         fi
 
         # ── Antigravity (Windsurf) ──
-        if [[ "$provider_choice" == "6" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "6" || "$provider_choice" == "13" ]]; then
             antigravity_enabled="true"
             printf "\n  ${GREEN}✓${NC} Antigravity enabled (auto-detects running Windsurf process)\n"
         fi
 
         # ── Gemini CLI ──
-        if [[ "$provider_choice" == "7" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "7" || "$provider_choice" == "13" ]]; then
             gemini_enabled="true"
             printf "\n  ${GREEN}✓${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n"
         fi
 
         # ── Grok (xAI) ──
-        if [[ "$provider_choice" == "8" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "8" || "$provider_choice" == "13" ]]; then
             grok_enabled="true"
             if [[ -f "$(grok_auth_path)" ]]; then
                 printf "\n  ${GREEN}✓${NC} Grok enabled (credentials detected at $(grok_auth_path))\n"
@@ -1248,18 +1291,28 @@ interactive_setup() {
         fi
 
         # ── Ollama Cloud ──
-        if [[ "$provider_choice" == "9" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "9" || "$provider_choice" == "13" ]]; then
             printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
             ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
         fi
 
         # ── Muse (Meta): optional key, auto-detects `muse login` when empty ──
-        if [[ "$provider_choice" == "10" || "$provider_choice" == "12" ]]; then
+        if [[ "$provider_choice" == "10" || "$provider_choice" == "13" ]]; then
             printf "\n  ${DIM}Leave empty to auto-detect from 'muse login'${NC}\n"
             muse_key=$(prompt_with_default "Meta API key [Enter = auto-detect]" "")
             if [[ -z "$muse_key" ]]; then
                 muse_enabled="true"
                 printf "  ${GREEN}✓${NC} Muse enabled (auto-detects 'muse login' credentials)\n"
+            fi
+        fi
+
+        # ── Command Code: optional key, auto-detects the `cmd` CLI login ──
+        if [[ "$provider_choice" == "11" || "$provider_choice" == "13" ]]; then
+            printf "\n  ${DIM}Leave empty to auto-detect from the 'cmd' CLI login${NC}\n"
+            commandcode_key=$(prompt_with_default "Command Code API key [Enter = auto-detect]" "")
+            if [[ -z "$commandcode_key" ]]; then
+                commandcode_enabled="true"
+                printf "  ${GREEN}✓${NC} Command Code enabled (auto-detects 'cmd login' credentials)\n"
             fi
         fi
     fi
@@ -1383,6 +1436,16 @@ interactive_setup() {
             echo ""
         fi
 
+        if [[ -n "$commandcode_key" ]]; then
+            echo "# Command Code API key (or leave unset to auto-detect the 'cmd' CLI login)"
+            echo "COMMAND_CODE_API_KEY=${commandcode_key}"
+            echo ""
+        elif [[ -n "$commandcode_enabled" ]]; then
+            echo "# Command Code - auto-detected from the 'cmd' CLI login"
+            echo "COMMANDCODE_ENABLED=true"
+            echo ""
+        fi
+
         echo "# Dashboard credentials"
         echo "ONWATCH_ADMIN_USER=${SETUP_USERNAME}"
         echo "ONWATCH_ADMIN_PASS=${SETUP_PASSWORD}"
@@ -1409,7 +1472,8 @@ interactive_setup() {
         8) provider_label="Grok" ;;
         9) provider_label="Ollama Cloud" ;;
         10) provider_label="Muse" ;;
-        11)
+        11) provider_label="Command Code" ;;
+        12)
             # Multiple — build label from selected providers
             local parts=()
             [[ -n "$synthetic_key" ]] && parts+=("Synthetic")
@@ -1422,9 +1486,10 @@ interactive_setup() {
             [[ -n "$grok_enabled" ]] && parts+=("Grok")
             [[ -n "$ollama_key" ]] && parts+=("Ollama Cloud")
             [[ -n "$muse_enabled" || -n "$muse_key" ]] && parts+=("Muse")
+            [[ -n "$commandcode_enabled" || -n "$commandcode_key" ]] && parts+=("Command Code")
             provider_label=$(IFS=", "; echo "${parts[*]}")
             ;;
-        12) provider_label="All providers" ;;
+        13) provider_label="All providers" ;;
     esac
 
     local masked_pass

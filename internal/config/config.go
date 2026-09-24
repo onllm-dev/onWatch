@@ -102,6 +102,14 @@ type Config struct {
 	KimiAutoToken bool   // true if token was auto-detected from local kimi-code credentials
 	KimiEnabled   bool   // true if KIMI_ENABLED/KIMI_CODE_ENABLED=true or credentials present
 
+	// Command Code provider configuration (auto-detected from the Command Code
+	// CLI auth file, the pi / OMP agent stores, or COMMAND_CODE_API_KEY)
+	CommandCodeAPIKey    string // COMMAND_CODE_API_KEY / COMMANDCODE_API_KEY or auto-detected
+	CommandCodeAutoToken bool   // true if the key was auto-detected from a local auth file
+	CommandCodeEnabled   bool   // true if a key is present or COMMANDCODE_ENABLED=true
+	CommandCodeDisabled  bool   // true if COMMANDCODE_ENABLED=false explicitly opted out
+	CommandCodeBaseURL   string // COMMANDCODE_BASE_URL override for proxy setups
+
 	// Custom API Integrations telemetry ingestion
 	APIIntegrationsEnabled   bool          // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
 	APIIntegrationsDir       string        // ONWATCH_API_INTEGRATIONS_DIR (default: ~/.onwatch/api-integrations or /data/api-integrations)
@@ -246,6 +254,11 @@ var onwatchEnvKeys = []string{
 	"META_MUSE_MODEL",
 	"MUSE_ENABLED",
 	"MUSE_BASE_URL",
+	"COMMAND_CODE_API_KEY",
+	"COMMANDCODE_API_KEY",
+	"COMMANDCODE_ENABLED",
+	"COMMANDCODE_BASE_URL",
+	"COMMANDCODE_AUTH_PATH",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
@@ -462,6 +475,23 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 		cfg.MuseEnabled = true
 	}
 	// File-based auto-detection (DetectMuseCredentials) happens later in main.go preflight
+
+	// Command Code provider (auto-detected from the local CLI / pi / OMP auth
+	// stores). Polling reads billing endpoints only, so unlike Muse it costs
+	// nothing per poll and can follow the other auto-detected providers.
+	cfg.CommandCodeAPIKey = strings.TrimSpace(os.Getenv("COMMAND_CODE_API_KEY"))
+	if cfg.CommandCodeAPIKey == "" {
+		cfg.CommandCodeAPIKey = strings.TrimSpace(os.Getenv("COMMANDCODE_API_KEY"))
+	}
+	cfg.CommandCodeBaseURL = strings.TrimSpace(os.Getenv("COMMANDCODE_BASE_URL"))
+	if os.Getenv("COMMANDCODE_ENABLED") == "false" {
+		cfg.CommandCodeEnabled = false
+		cfg.CommandCodeDisabled = true
+	} else if os.Getenv("COMMANDCODE_ENABLED") == "true" || cfg.CommandCodeAPIKey != "" {
+		cfg.CommandCodeEnabled = true
+	}
+	// File-based auto-detection (DetectCommandCodeCredentials) happens later in
+	// main.go preflight.
 
 	// Custom API Integrations telemetry ingestion
 	cfg.APIIntegrationsDir = strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_DIR"))
@@ -772,6 +802,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.MuseAPIKey != "" || c.MuseEnabled {
 		providers = append(providers, "muse")
 	}
+	if c.CommandCodeAPIKey != "" || c.CommandCodeEnabled {
+		providers = append(providers, "commandcode")
+	}
 	return providers
 }
 
@@ -816,6 +849,10 @@ func (c *Config) HasProvider(name string) bool {
 		// auto-detected from `muse login` must not start polling, because every
 		// Muse poll spends a prompt from the user's own 5h window.
 		return !c.MuseDisabled && c.MuseEnabled
+	case "commandcode":
+		// Every Command Code poll is a read-only billing GET, so a detected key
+		// is enough; only an explicit opt-out disables it.
+		return !c.CommandCodeDisabled && (c.CommandCodeAPIKey != "" || c.CommandCodeEnabled)
 	}
 	return false
 }
@@ -872,6 +909,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.MuseAPIKey != "" || c.MuseEnabled {
+		count++
+	}
+	if c.CommandCodeAPIKey != "" || c.CommandCodeEnabled {
 		count++
 	}
 	return count > 1
@@ -965,6 +1005,13 @@ func (c *Config) String() string {
 	}
 	if c.MuseEnabled {
 		fmt.Fprintf(&sb, "  MuseEnabled: true,\n")
+	}
+	fmt.Fprintf(&sb, "  CommandCodeAPIKey: %s,\n", redactAPIKey(c.CommandCodeAPIKey, ""))
+	if c.CommandCodeAutoToken {
+		fmt.Fprintf(&sb, "  CommandCodeAutoToken: true,\n")
+	}
+	if c.CommandCodeEnabled {
+		fmt.Fprintf(&sb, "  CommandCodeEnabled: true,\n")
 	}
 	if c.KimiAutoToken {
 		fmt.Fprintf(&sb, "  KimiAutoToken: true,\n")

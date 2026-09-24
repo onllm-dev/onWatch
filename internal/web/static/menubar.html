@@ -402,6 +402,11 @@
             mask-image: url("/static/icons/muse.svg");
         }
 
+        .provider-icon-commandcode {
+            -webkit-mask-image: url("/static/icons/commandcode.svg");
+            mask-image: url("/static/icons/commandcode.svg");
+        }
+
         .provider-icon-moonshot {
             -webkit-mask-image: url("/static/icons/moonshot.svg");
             mask-image: url("/static/icons/moonshot.svg");
@@ -2770,6 +2775,8 @@
                     return "provider-icon-ollama";
                 case "muse":
                     return "provider-icon-muse";
+                case "commandcode":
+                    return "provider-icon-commandcode";
                 case "moonshot":
                     return "provider-icon-moonshot";
                 case "deepseek":
@@ -2819,9 +2826,20 @@
                     if (quota.format === "currency") {
                         return `$${formatUsd(used)}/$${formatUsd(limit)}`;
                     }
+                    if (quota.format === "credits") {
+                        return `${formatCredits(used)}/${formatCredits(limit)} cr`;
+                    }
                     return `${Math.round(used)}/${Math.round(limit)}`;
                 }
                 return "";
+            }
+
+            function formatCredits(value) {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric)) {
+                    return "0.00";
+                }
+                return numeric.toFixed(2);
             }
 
             function formatRate(value) {

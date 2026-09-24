@@ -19,7 +19,7 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 
 **Compatibility & Docs**
 
-[![Version](https://img.shields.io/badge/Version-v2.14.3-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.14.3)
+[![Version](https://img.shields.io/badge/Version-v2.14.4-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.14.4)
 [![VS Code Marketplace](https://vsmarketplacebadges.dev/version-short/onllm-dev.onwatch.svg?style=for-the-badge&label=VS%20Code&logo=visualstudiocode&logoColor=white&color=007ACC)](https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
@@ -189,6 +189,7 @@ It is a thin client: it needs the onWatch daemon running (steps above) and finds
 - **OpenCode Go** -- Subscription quota cards (5-Hour, Weekly, and Monthly when present) scraped from the authenticated OpenCode Go dashboard, with cycle history and deep insights. Set `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`. Separate from `OPENCODE_ENABLED`, which only feeds ChatGPT credentials into the Codex provider. See [OpenCode Setup](docs/OPENCODE_SETUP.md).
 - **Ollama Cloud** (beta) -- Included monthly usage in USD from the ollama.com API with plan-derived caps, per-model request counts, extra-usage spend, cycle history and insights. Set `OLLAMA_API_KEY`. See [Ollama Setup](docs/OLLAMA_SETUP.md).
 - **Muse** -- Meta Muse coding-plan quota tracking (5-hour prompts + weekly usage) from the same subscription snapshot `muse /usage` shows, via one minimal probe per poll. Opt-in: set `MUSE_ENABLED=true` and onWatch uses the key `muse login` stored (macOS Keychain / login file), or set `META_API_KEY` directly. Tracking stays off until you opt in, because each poll spends a prompt from your own 5h window. See [Muse Setup](docs/MUSE_SETUP.md).
+- **Command Code** -- Credit balance plus the 5-hour and weekly rate-limit windows from the Command Code API, with billing-period cost, request and token totals. Auto-detected from the `cmd` CLI login (or the pi / OMP auth store); set `COMMAND_CODE_API_KEY` for Docker and headless hosts. Polling reads billing endpoints only, so it spends no credits. See [Command Code Setup](docs/COMMANDCODE_SETUP.md).
 - **API Integrations** -- Local JSONL ingestion for custom API-driven workflows and automations. Track per-integration token volume, request counts, recent activity, costs, trends, and accumulated usage across separate API keys and providers.
 - **All** -- Side-by-side view of all configured providers
 - **Prometheus metrics endpoint (Beta)** -- Exposes `/metrics` for Prometheus/Grafana/Alertmanager integrations, with optional bearer token protection via `ONWATCH_METRICS_TOKEN`
@@ -370,6 +371,10 @@ Additional environment variables:
 | `META_API_KEY`           | Meta Muse API key. Setting it opts in to Muse tracking (otherwise the key from `muse login` is used once `MUSE_ENABLED=true`)|
 | `META_MUSE_MODEL`        | Muse usage-probe model (default: Muse settings model, else `muse-spark-1.3`)|
 | `MUSE_ENABLED`           | Opt in to Muse tracking (`true`), or disable it even with credentials present (`false`). Off by default: each poll spends a prompt from your 5h window|
+| `COMMAND_CODE_API_KEY`   | Command Code API key (`user_...`). Either this or a local `cmd login` credential is required to track the provider|
+| `COMMANDCODE_ENABLED`    | Disable Command Code tracking even with credentials present (`false`). Auto-detected by default from `~/.commandcode/auth.json` or the pi / OMP auth store|
+| `COMMANDCODE_BASE_URL`   | Override the Command Code API base URL (default `https://api.commandcode.ai`)|
+| `COMMANDCODE_AUTH_PATH`  | Override the Command Code auth-file path|
 | `ANTIGRAVITY_ENABLED`    | Enable Antigravity provider (auto-detects local server)|
 | `ANTIGRAVITY_SOURCE`     | Data source: `both` (default), `cli` (agy), or `ide`   |
 | `ANTIGRAVITY_CLI_PATH`   | Override path to the `agy` binary (else PATH/well-known)|
