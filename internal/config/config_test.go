@@ -1547,3 +1547,55 @@ func TestOpenRotatingLogFile_CreatesMissingParentDir(t *testing.T) {
 		t.Fatalf("log file not created: %v", err)
 	}
 }
+
+func TestConfig_MistralRetention_Default(t *testing.T) {
+	os.Clearenv()
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.MistralRetention != 90*24*time.Hour {
+		t.Errorf("MistralRetention = %v, want %v", cfg.MistralRetention, 90*24*time.Hour)
+	}
+}
+
+func TestConfig_MistralRetention_LoadsFromEnv(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("MISTRAL_RETENTION", "168h")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.MistralRetention != 168*time.Hour {
+		t.Errorf("MistralRetention = %v, want %v", cfg.MistralRetention, 168*time.Hour)
+	}
+}
+
+func TestConfig_MistralRetention_Disabled(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("MISTRAL_RETENTION", "0")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.MistralRetention != 0 {
+		t.Errorf("MistralRetention = %v, want 0", cfg.MistralRetention)
+	}
+}
+
+// A negative duration parses fine, so Validate has to reject it.
+func TestConfig_MistralRetention_RejectsNegative(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("MISTRAL_RETENTION", "-5h")
+	defer os.Clearenv()
+
+	if _, err := Load(); err == nil {
+		t.Fatal("negative MISTRAL_RETENTION was accepted")
+	}
+}

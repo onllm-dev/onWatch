@@ -316,53 +316,60 @@
           "fontCharacter": "\\E00B"
         }
       },
+      "onwatch-mistral": {
+        "description": "onWatch mistral mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00C"
+        }
+      },
       "onwatch-moonshot": {
         "description": "onWatch Moonshot mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E00C"
+          "fontCharacter": "\\E00D"
         }
       },
       "onwatch-ollama": {
         "description": "onWatch ollama mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E00D"
+          "fontCharacter": "\\E00E"
         }
       },
       "onwatch-openai": {
         "description": "onWatch OpenAI mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E00E"
+          "fontCharacter": "\\E00F"
         }
       },
       "onwatch-opencode": {
         "description": "onWatch OpenCode mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E00F"
+          "fontCharacter": "\\E010"
         }
       },
       "onwatch-openrouter": {
         "description": "onWatch OpenRouter mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E010"
+          "fontCharacter": "\\E011"
         }
       },
       "onwatch-synthetic": {
         "description": "onWatch Synthetic mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E011"
+          "fontCharacter": "\\E012"
         }
       },
       "onwatch-zai": {
         "description": "onWatch Z.ai mark",
         "default": {
           "fontPath": "./media/onwatch-icons.woff",
-          "fontCharacter": "\\E012"
+          "fontCharacter": "\\E013"
         }
       }
     }
