@@ -11279,10 +11279,11 @@ const providerSettingsConfig = {
   },
   opencode: {
     title: 'OpenCode Go',
-    desc: 'Configure OpenCode Go quota tracking. Changes take effect after daemon restart.',
+    desc: 'Configure OpenCode Go quota tracking. Recommended: a console service-account key, which reads your plan\'s own 5-hour, weekly and monthly meters. The workspace ID + auth cookie scrape is the legacy fallback. Changes take effect after daemon restart.',
     fields: [
-      { id: 'workspace_id', label: 'Workspace ID', type: 'text', placeholder: 'wrk_...', hint: 'Your OpenCode Go workspace ID. Overrides OPENCODE_GO_WORKSPACE_ID from .env.' },
-      { id: 'auth_cookie', label: 'Auth Cookie', type: 'password', placeholder: 'Not configured', hint: 'The auth cookie value required for scraping the dashboard. Overrides OPENCODE_GO_AUTH_COOKIE from .env.', sensitive: true },
+      { id: 'api_key', label: 'Usage API Key', type: 'password', placeholder: 'Not configured', hint: 'OpenCode console service-account key (oc_sk_...) of the account with the Go subscription. Reads the plan meters from the Go status API; preferred over the cookie. Overrides OPENCODE_GO_API_KEY from .env.', sensitive: true },
+      { id: 'workspace_id', label: 'Workspace ID (legacy)', type: 'text', placeholder: 'wrk_...', hint: 'Legacy scrape mode only: your OpenCode Go workspace ID. Overrides OPENCODE_GO_WORKSPACE_ID from .env.' },
+      { id: 'auth_cookie', label: 'Auth Cookie (legacy)', type: 'password', placeholder: 'Not configured', hint: 'Legacy scrape mode only: the auth cookie used to scrape the dashboard. Overrides OPENCODE_GO_AUTH_COOKIE from .env.', sensitive: true },
     ],
   },
   ollama: {
