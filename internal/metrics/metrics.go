@@ -2,6 +2,7 @@
 package metrics
 
 import (
+	"context"
 	"net/http"
 	"runtime"
 	"runtime/debug"
@@ -22,7 +23,9 @@ const defaultAccountID = "default"
 
 // Metrics holds all Prometheus metrics for onWatch.
 type Metrics struct {
-	reg *prometheus.Registry
+	reg            *prometheus.Registry
+	billingSpend   *prometheus.GaugeVec
+	billingUpdated *prometheus.GaugeVec
 
 	// scrapeMu serializes Scrape() so concurrent callers (HTTP handler, tests,
 	// signal handlers) cannot race the Reset()+repopulate sequence and observe
@@ -62,7 +65,9 @@ func New() *Metrics {
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	m := &Metrics{
-		reg: reg,
+		reg:            reg,
+		billingSpend:   prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "onwatch_billing_spend", Help: "Last reported pay-as-you-go charges in the billing currency."}, []string{"provider", "account_id", "currency"}),
+		billingUpdated: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "onwatch_billing_updated_timestamp_seconds", Help: "Timestamp of last successful billing result."}, []string{"provider", "account_id"}),
 		quotaUtilization: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "onwatch_quota_utilization_percent",
@@ -150,7 +155,7 @@ func New() *Metrics {
 	}
 
 	reg.MustRegister(
-		m.quotaUtilization,
+		m.billingSpend, m.billingUpdated, m.quotaUtilization,
 		m.quotaResetTimestamp,
 		m.creditsBalance,
 		m.agentHealthy,
@@ -239,6 +244,8 @@ func (m *Metrics) Scrape(s *store.Store, pollInterval time.Duration) {
 
 	staleThreshold := pollInterval * 2
 
+	m.billingSpend.Reset()
+	m.billingUpdated.Reset()
 	m.quotaUtilization.Reset()
 	m.quotaResetTimestamp.Reset()
 	m.creditsBalance.Reset()
@@ -248,6 +255,7 @@ func (m *Metrics) Scrape(s *store.Store, pollInterval time.Duration) {
 	m.apiIntegrationSpendUSD.Reset()
 	m.accountInfo.Reset()
 
+	m.scrapeMistral(s, staleThreshold)
 	m.scrapeAnthropic(s, staleThreshold)
 	m.scrapeCodex(s, staleThreshold)
 	m.scrapeCopilot(s, staleThreshold)
@@ -737,4 +745,36 @@ func (m *Metrics) recordLastCycleAge(provider, accountID string, capturedAt time
 	}
 
 	m.agentLastCycleAge.With(lbls).Set(ageSeconds)
+}
+
+func (m *Metrics) scrapeMistral(s *store.Store, staleThreshold time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	snap, err := s.LatestMistral(ctx)
+	if err != nil {
+		m.scrapeErrorsTotal.WithLabelValues("mistral", "query_failed").Inc()
+		return
+	}
+	if snap == nil {
+		return
+	}
+	oldest := snap.CapturedAt
+	for _, q := range snap.Quotas {
+		labels := prometheus.Labels{"provider": "mistral", "quota_type": q.Name, "account_id": snap.Identity}
+		m.quotaUtilization.With(labels).Set(q.Utilization)
+		if q.ResetsAt != nil {
+			m.quotaResetTimestamp.With(labels).Set(float64(q.ResetsAt.Unix()))
+		}
+		if q.CapturedAt.Before(oldest) {
+			oldest = q.CapturedAt
+		}
+	}
+	m.recordLastCycleAge("mistral", snap.Identity, oldest, staleThreshold)
+	if status, _ := s.GetSetting("mistral_status"); status == "reconnect" || status == "stale" {
+		m.agentHealthy.WithLabelValues("mistral", snap.Identity).Set(0)
+	}
+	if b := snap.Billing; b != nil && b.Amount != nil {
+		m.billingSpend.WithLabelValues("mistral", snap.Identity, b.Currency).Set(*b.Amount)
+		m.billingUpdated.WithLabelValues("mistral", snap.Identity).Set(float64(b.CapturedAt.Unix()))
+	}
 }

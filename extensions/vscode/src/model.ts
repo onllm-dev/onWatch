@@ -15,7 +15,8 @@ export interface QuotaMeter {
   status: Severity;
   used?: number;
   limit?: number;
-  /** "currency" when used/limit are US dollars. */
+  /** "currency" when used/limit are monetary values. */
+  currency?: string;
   format?: string;
   reset_at?: string;
   time_until_reset?: string;
@@ -342,7 +343,10 @@ function formatCount(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-function formatUsd(value: number): string {
+function formatUsd(value: number, currency?: string): string {
+  if (currency && currency !== "USD") {
+    try { return new Intl.NumberFormat(undefined, {style: "currency", currency}).format(value); } catch { return `${value.toFixed(2)} ${currency}`; }
+  }
   return `$${value > 0 && value < 0.01 ? value.toFixed(3) : value.toFixed(2)}`;
 }
 
@@ -363,7 +367,7 @@ function usedCell(quota: QuotaMeter): string {
     if (hasLimit) {
       cell +=
         quota.format === "currency"
-          ? ` (${formatUsd(used)}/${formatUsd(limit)})`
+          ? ` (${formatUsd(used, quota.currency)}/${formatUsd(limit, quota.currency)})`
           : ` (${formatCount(used)}/${formatCount(limit)})`;
     }
   }

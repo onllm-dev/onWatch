@@ -100,16 +100,17 @@ type Aggregate struct {
 
 // ProviderCard is the top-level card rendered for each provider.
 type ProviderCard struct {
-	ID             string         `json:"id"`
-	BaseProvider   string         `json:"base_provider"`
-	Label          string         `json:"label"`
-	Subtitle       string         `json:"subtitle,omitempty"`
-	Status         string         `json:"status"`
-	HighestPercent float64        `json:"highest_percent"`
-	UpdatedAt      string         `json:"updated_at,omitempty"`
-	Quotas         []QuotaMeter   `json:"quotas"`
-	Trends         []TrendSeries  `json:"trends,omitempty"`
-	Promo          *ProviderPromo `json:"promo,omitempty"`
+	ID               string         `json:"id"`
+	BaseProvider     string         `json:"base_provider"`
+	Label            string         `json:"label"`
+	Subtitle         string         `json:"subtitle,omitempty"`
+	ConnectionStatus string         `json:"connection_status,omitempty"`
+	Status           string         `json:"status"`
+	HighestPercent   float64        `json:"highest_percent"`
+	UpdatedAt        string         `json:"updated_at,omitempty"`
+	Quotas           []QuotaMeter   `json:"quotas"`
+	Trends           []TrendSeries  `json:"trends,omitempty"`
+	Promo            *ProviderPromo `json:"promo,omitempty"`
 }
 
 // ProviderPromo carries promo metadata for a provider card.
@@ -125,6 +126,7 @@ type ProviderPromo struct {
 
 // QuotaMeter represents one circular quota meter inside a provider card.
 type QuotaMeter struct {
+	Currency        string    `json:"currency,omitempty"`
 	Key             string    `json:"key"`
 	Label           string    `json:"label"`
 	DisplayValue    string    `json:"display_value"`
@@ -132,7 +134,7 @@ type QuotaMeter struct {
 	Status          string    `json:"status"`
 	Used            float64   `json:"used,omitempty"`
 	Limit           float64   `json:"limit,omitempty"`
-	Format          string    `json:"format,omitempty"` // "currency" when Used/Limit are USD
+	Format          string    `json:"format,omitempty"` // "currency" when Used/Limit are monetary values
 	ResetAt         string    `json:"reset_at,omitempty"`
 	TimeUntilReset  string    `json:"time_until_reset,omitempty"`
 	ProjectedValue  float64   `json:"projected_value,omitempty"`

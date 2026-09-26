@@ -294,6 +294,13 @@ describe("tooltip sections", () => {
     expect(formatProviderSection(fractional, NOW)).toContain("| 23% (2.3/10) |");
   });
 
+  it("preserves the currency reported by Mistral", () => {
+    const card = provider({id:"mistral",base_provider:"mistral",quotas:[quota({used:1.25,limit:12.75,format:"currency",currency:"EUR",status:"healthy"})]});
+    const text = formatProviderSection(card, NOW);
+    expect(text).toContain("€1.25");
+    expect(text).not.toContain("$1.25");
+  });
+
   it("shows dollars for currency quotas and the daemon's reading when the cap is unknown", () => {
     const paid = provider({
       id: "ollama",

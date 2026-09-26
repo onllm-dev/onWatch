@@ -154,13 +154,28 @@ func preflightDatabasePath(dbPath string) error {
 	return nil
 }
 
+// sqliteConnectionPragmas are the settings SQLite scopes to a single
+// connection, in the driver's _pragma DSN form. journal_mode is stored in the
+// database file itself, so it stays with the one-off pragmas in New.
+const sqliteConnectionPragmas = "_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-500)"
+
 // New creates a new Store with the given database path
 func New(dbPath string) (*Store, error) {
 	if err := preflightDatabasePath(dbPath); err != nil {
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// Per-connection pragmas travel in the DSN so the driver applies them to
+	// every connection the pool opens. Applied with db.Exec below they reached
+	// only one connection, leaving the pool's second one with foreign_keys off
+	// (ON DELETE CASCADE did nothing there), busy_timeout 0 (contended writes
+	// failed with SQLITE_BUSY at once) and SQLite's default 2MB page cache. A
+	// path that already carries a query string is left untouched.
+	dsn := dbPath
+	if !strings.Contains(dbPath, "?") {
+		dsn += "?" + sqliteConnectionPragmas
+	}
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -960,6 +975,58 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_commandcode_quota_values_snapshot ON commandcode_quota_values(snapshot_id);
 		CREATE INDEX IF NOT EXISTS idx_commandcode_cycles_name_start ON commandcode_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_commandcode_cycles_name_active ON commandcode_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
+
+		-- Mistral tables. Quota amounts are NULL when Mistral only reports a
+		-- percentage, so an unknown amount is never recorded as zero. Billing
+		-- rows exist only when pay-as-you-go spend is actually known.
+		CREATE TABLE IF NOT EXISTS mistral_snapshots (
+			id INTEGER PRIMARY KEY,
+			identity TEXT NOT NULL,
+			captured_at TEXT NOT NULL,
+			status TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_mistral_snapshots ON mistral_snapshots(identity, captured_at);
+
+		CREATE TABLE IF NOT EXISTS mistral_quota_values (
+			snapshot_id INTEGER NOT NULL,
+			quota_name TEXT NOT NULL,
+			used REAL,
+			limit_value REAL,
+			utilization REAL NOT NULL,
+			currency TEXT NOT NULL DEFAULT '',
+			resets_at TEXT,
+			PRIMARY KEY (snapshot_id, quota_name),
+			FOREIGN KEY (snapshot_id) REFERENCES mistral_snapshots(id) ON DELETE CASCADE
+		);
+		CREATE INDEX IF NOT EXISTS idx_mistral_quota_values_name ON mistral_quota_values(quota_name, snapshot_id);
+
+		CREATE TABLE IF NOT EXISTS mistral_billing (
+			snapshot_id INTEGER PRIMARY KEY,
+			amount REAL NOT NULL,
+			currency TEXT NOT NULL,
+			period_start TEXT NOT NULL,
+			period_end TEXT NOT NULL,
+			captured_at TEXT NOT NULL,
+			status TEXT NOT NULL,
+			FOREIGN KEY (snapshot_id) REFERENCES mistral_snapshots(id) ON DELETE CASCADE
+		);
+		CREATE INDEX IF NOT EXISTS idx_mistral_billing_period ON mistral_billing(period_start);
+
+		CREATE TABLE IF NOT EXISTS mistral_cycles (
+			id INTEGER PRIMARY KEY,
+			identity TEXT NOT NULL,
+			quota_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			resets_at TEXT,
+			peak REAL NOT NULL,
+			delta REAL NOT NULL,
+			last_used REAL NOT NULL,
+			last_limit REAL NOT NULL,
+			last_at TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_mistral_cycles ON mistral_cycles(identity, quota_name, cycle_start);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_mistral_active_cycle ON mistral_cycles(identity, quota_name) WHERE cycle_end IS NULL;
 
 		-- API integrations telemetry ingestion tables
 		CREATE TABLE IF NOT EXISTS api_integration_usage_events (
