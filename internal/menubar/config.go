@@ -86,6 +86,10 @@ type Snapshot struct {
 	UpdatedAgo  string         `json:"updated_ago"`
 	Aggregate   Aggregate      `json:"aggregate"`
 	Providers   []ProviderCard `json:"providers"`
+	// MistralEnabled reflects config, not poll state: a provider card only
+	// appears in Providers once it has quota data, which would hide anything
+	// gated on it until after the first successful poll.
+	MistralEnabled bool `json:"mistral_enabled"`
 }
 
 // Aggregate summarizes the overall health across all visible providers.

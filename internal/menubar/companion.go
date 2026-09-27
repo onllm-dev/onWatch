@@ -32,6 +32,21 @@ type trayController struct {
 
 	menuMu        sync.Mutex
 	providerItems []*systray.MenuItem
+
+	mistralMu      sync.RWMutex
+	mistralEnabled bool
+}
+
+func (c *trayController) setMistralEnabled(enabled bool) {
+	c.mistralMu.Lock()
+	c.mistralEnabled = enabled
+	c.mistralMu.Unlock()
+}
+
+func (c *trayController) isMistralEnabled() bool {
+	c.mistralMu.RLock()
+	defer c.mistralMu.RUnlock()
+	return c.mistralEnabled
 }
 
 func runCompanion(cfg *Config) error {
@@ -131,6 +146,10 @@ func (c *trayController) watchBrowserAccess(grantItem *systray.MenuItem) {
 	logger := slog.Default()
 	previous := "\x00"
 	refresh := func() string {
+		if !c.isMistralEnabled() {
+			grantItem.Hide()
+			return ""
+		}
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return ""
@@ -262,6 +281,7 @@ func (c *trayController) refreshStatus() {
 		c.updateMenu(nil)
 		return
 	}
+	c.setMistralEnabled(snapshot.MistralEnabled)
 
 	settings, err := c.fetchPreferences()
 	if err != nil {

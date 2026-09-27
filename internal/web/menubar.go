@@ -246,10 +246,11 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 	providers, latest := h.buildMenubarProviders(settings, false)
 	aggregate := buildAggregate(providers)
 	return &menubar.Snapshot{
-		GeneratedAt: time.Now().UTC(),
-		UpdatedAgo:  timeAgo(latest),
-		Aggregate:   aggregate,
-		Providers:   providers,
+		GeneratedAt:    time.Now().UTC(),
+		UpdatedAgo:     timeAgo(latest),
+		Aggregate:      aggregate,
+		Providers:      providers,
+		MistralEnabled: h.config != nil && h.config.HasProvider("mistral"),
 	}, nil
 }
 
