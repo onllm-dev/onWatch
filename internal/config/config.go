@@ -54,8 +54,8 @@ type Config struct {
 	OpenCodeEnabled  bool   // OPENCODE_ENABLED=true: track ChatGPT via OpenCode auth.json (feeds Codex)
 	// OpenCode Go provider configuration
 	OpenCodeGoWorkspaceID string // OPENCODE_GO_WORKSPACE_ID
-	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE
-	OpenCodeGoAPIKey      string // OPENCODE_GO_API_KEY: console service-account key (reads the plan's meters via go/status; preferred over the cookie scrape)
+	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE: __Host-console_session cookie value (or a full cookie header)
+	OpenCodeGoAPIKey      string // OPENCODE_GO_API_KEY: console service-account key (preferred over the session cookie)
 	// Ollama Cloud provider configuration
 	OllamaAPIKey       string  // OLLAMA_API_KEY from ollama.com/settings/keys
 	OllamaMonthlyLimit float64 // OLLAMA_MONTHLY_LIMIT: included usage cap in USD (overrides the plan default; 0 = derive from plan)
@@ -1210,7 +1210,7 @@ func (c *Config) IsDefaultPassword() bool {
 }
 
 // OpenCodeGoConfigured reports whether OpenCode Go tracking has credentials:
-// a usage-API key (preferred) or the legacy workspace ID + auth cookie pair.
+// a usage-API key (preferred) or the workspace ID + console session cookie pair.
 func (c *Config) OpenCodeGoConfigured() bool {
 	return c.OpenCodeGoAPIKey != "" || (c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "")
 }

@@ -11309,11 +11309,11 @@ const providerSettingsConfig = {
   },
   opencode: {
     title: 'OpenCode Go',
-    desc: 'Configure OpenCode Go quota tracking. Recommended: a console service-account key, which reads your plan\'s own 5-hour, weekly and monthly meters. The workspace ID + auth cookie scrape is the legacy fallback. Changes take effect after daemon restart.',
+    desc: 'Configure OpenCode Go quota tracking. onWatch reads your plan\'s 5-hour, weekly and monthly meters from the OpenCode console, using a service-account key or your browser session. Changes take effect after daemon restart.',
     fields: [
-      { id: 'api_key', label: 'Usage API Key', type: 'password', placeholder: 'Not configured', hint: 'OpenCode console service-account key (oc_sk_...) of the account with the Go subscription. Reads the plan meters from the Go status API; preferred over the cookie. Overrides OPENCODE_GO_API_KEY from .env.', sensitive: true },
-      { id: 'workspace_id', label: 'Workspace ID (legacy)', type: 'text', placeholder: 'wrk_...', hint: 'Legacy scrape mode only: your OpenCode Go workspace ID. Overrides OPENCODE_GO_WORKSPACE_ID from .env.' },
-      { id: 'auth_cookie', label: 'Auth Cookie (legacy)', type: 'password', placeholder: 'Not configured', hint: 'Legacy scrape mode only: the auth cookie used to scrape the dashboard. Overrides OPENCODE_GO_AUTH_COOKIE from .env.', sensitive: true },
+      { id: 'api_key', label: 'Usage API Key', type: 'password', placeholder: 'Not configured', hint: 'OpenCode console service-account key (oc_sk_...) of the account with the Go subscription. Used instead of the session cookie when set. Overrides OPENCODE_GO_API_KEY from .env.', sensitive: true },
+      { id: 'workspace_id', label: 'Workspace ID', type: 'text', placeholder: 'wrk_...', hint: 'Session mode: your OpenCode Go workspace ID (wrk_...). Overrides OPENCODE_GO_WORKSPACE_ID from .env.' },
+      { id: 'auth_cookie', label: 'Session Cookie', type: 'password', placeholder: 'Not configured', hint: 'Session mode: the __Host-console_session cookie value from opencode.ai (the old auth cookie no longer works). Overrides OPENCODE_GO_AUTH_COOKIE from .env.', sensitive: true },
     ],
   },
   ollama: {
