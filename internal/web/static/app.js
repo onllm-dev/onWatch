@@ -2570,8 +2570,10 @@ function formatBalanceAmount(value, currency) {
 function renderBalanceCards(provider, balance, containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
-  if (!balance) {
-    container.innerHTML = '<p class="empty-state">No balance data available</p>';
+  // Before the first poll the API returns a zero placeholder with no status;
+  // show that as "no data" rather than a healthy zero balance.
+  if (!balance || !balance.status) {
+    container.innerHTML = '<p class="empty-state">No balance data yet</p>';
     return;
   }
   State.balanceCurrency = balance.currency || '';

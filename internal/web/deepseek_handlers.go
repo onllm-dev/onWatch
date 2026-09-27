@@ -371,10 +371,16 @@ func (h *Handler) loggingHistoryDeepSeek(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Rows are labelled with one currency, so skip snapshots taken in another
+	// (an account that switched between CNY and USD).
+	currency := h.deepseekCurrency("")
 	capturedAt := make([]time.Time, 0, len(snapshots))
 	ids := make([]int64, 0, len(snapshots))
 	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
 	for _, snap := range snapshots {
+		if snap.Currency != "" && snap.Currency != currency {
+			continue
+		}
 		capturedAt = append(capturedAt, snap.CapturedAt)
 		ids = append(ids, snap.ID)
 		series = append(series, balanceCrossQuotas(quotaNames, snap.TotalBalance, snap.GrantedBalance, snap.ToppedUpBalance))
@@ -382,7 +388,7 @@ func (h *Handler) loggingHistoryDeepSeek(w http.ResponseWriter, r *http.Request)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"provider":   "deepseek",
-		"currency":   h.deepseekCurrency(""),
+		"currency":   currency,
 		"quotaNames": quotaNames,
 		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
 	})

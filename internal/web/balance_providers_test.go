@@ -175,3 +175,31 @@ func TestBalanceProvidersAreWiredIntoTheDashboard(t *testing.T) {
 		}
 	}
 }
+
+// Logging rows carry one currency label, so rows in another currency are
+// left out rather than shown with the wrong symbol.
+func TestDeepSeekLoggingHistorySkipsOtherCurrencies(t *testing.T) {
+	h, s := newBalanceTestHandler(t)
+	now := time.Now().UTC()
+	cny := &api.DeepSeekSnapshot{CapturedAt: now.Add(-2 * time.Hour), IsAvailable: true, Currency: "CNY", TotalBalance: 30}
+	if _, err := s.InsertDeepSeekSnapshot(cny); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	insertDeepSeekUSD(t, h, s, now.Add(-time.Hour), 4.02)
+
+	var resp struct {
+		Currency string        `json:"currency"`
+		Logs     []interface{} `json:"logs"`
+	}
+	getJSON(t, h, "/api/logging-history?provider=deepseek&range=1", &resp)
+	if resp.Currency != "USD" || len(resp.Logs) != 1 {
+		t.Fatalf("currency=%q logs=%d, want only the USD row", resp.Currency, len(resp.Logs))
+	}
+}
+
+func TestBalanceCardsTreatPlaceholderAsNoData(t *testing.T) {
+	js := readStaticFile(t, "static/app.js")
+	if !strings.Contains(js, "if (!balance || !balance.status) {") {
+		t.Fatal("renderBalanceCards must not render the pre-poll zero placeholder as a healthy balance")
+	}
+}
