@@ -1,5 +1,9 @@
 name: CI
 
+# Every job runs in parallel on its own runner, so wall time is the slowest
+# job, not the sum. "CI OK" at the bottom depends on all of them and is the
+# single check to require on main.
+
 on:
   push:
     branches: [main]
@@ -7,10 +11,16 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A new push to the same PR cancels the older, now-stale run.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
-    name: Test
+    name: Lint
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -20,15 +30,69 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Lint
+      - name: gofmt
         run: |
-          go fmt ./...
-          go vet ./...
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
 
-      - name: Test with coverage
-        run: go test -race -coverprofile=coverage.out -covermode=atomic -count=1 ./...
+      # Vet every shipped OS and build-tag combination from one runner, so a
+      # file that only compiles on one platform cannot slip through.
+      - name: go vet (all platforms)
+        run: |
+          for os in linux darwin windows; do
+            echo "== GOOS=$os"
+            GOOS=$os go vet ./...
+          done
+          GOOS=linux go vet -tags menubar ./...
+          GOOS=windows go vet -tags menubar ./...
+
+  test:
+    name: Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            race: "-race"
+            tags: menubar
+          - name: macOS
+            os: macos-15
+            race: "-race"
+            tags: menubar
+          # The race detector needs cgo, which the Windows runner lacks.
+          - name: Windows
+            os: windows-latest
+            race: ""
+            tags: menubar
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        shell: bash
+        run: go test ${{ matrix.race }} -timeout 15m -coverprofile=coverage.out -covermode=atomic -count=1 ./...
+
+      # The tray companion is compiled only with -tags menubar.
+      - name: Test tray packages
+        shell: bash
+        env:
+          CGO_LDFLAGS: ${{ runner.os == 'macOS' && '-framework UniformTypeIdentifiers' || '' }}
+        run: go test ${{ matrix.race }} -timeout 15m -tags ${{ matrix.tags }} -count=1 ./internal/menubar ./internal/web ./cmd/onwatch
 
       - name: Upload coverage to Codecov
+        if: runner.os == 'Linux'
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage.out
@@ -37,75 +101,71 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-      - name: Build
-        run: go build -o onwatch ./cmd/onwatch
-
-  tray-linux:
+  # Alpine is what the shell Docker image runs on: musl libc and busybox
+  # instead of glibc and coreutils.
+  test-alpine:
     runs-on: ubuntu-latest
-    name: Tray Linux
+    name: Test (Alpine)
+    timeout-minutes: 30
+    container: golang:1.25-alpine
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Test tagged tray packages
-        # -race needs cgo for the test binary; the tray itself stays pure Go,
-        # which the CGO_ENABLED=0 cross-compile step below proves.
-        run: |
-          go vet -tags menubar ./...
-          go test -race -tags menubar -count=1 ./internal/menubar ./internal/web ./cmd/onwatch
-
-      - name: Cross-compile tray binaries
-        env:
-          CGO_ENABLED: "0"
-        run: |
-          GOOS=linux GOARCH=amd64 go build -tags menubar -o /tmp/onwatch-linux-amd64 ./cmd/onwatch
-          GOOS=linux GOARCH=arm64 go build -tags menubar -o /tmp/onwatch-linux-arm64 ./cmd/onwatch
-          GOOS=windows GOARCH=amd64 go build -tags menubar -o /tmp/onwatch-windows-amd64.exe ./cmd/onwatch
-
-  tray-windows:
-    runs-on: windows-latest
-    name: Tray Windows
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Test tagged tray packages
-        env:
-          CGO_ENABLED: "0"
-        run: |
-          go test -tags menubar -count=1 ./internal/menubar
-          go build -tags menubar -o onwatch-tray.exe ./cmd/onwatch
-
-  windows:
-    runs-on: windows-latest
-    name: Windows
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      # The Linux job never compiles Windows-only files or excludes Unix-only
-      # tests, so build breaks like getCredentialsFilePath (#134) slip through.
-      - name: Vet
-        run: go vet ./...
-
-      # No -race: the race detector needs cgo, which the runner lacks.
       - name: Test
-        run: go test -count=1 ./...
+        run: go test -timeout 15m -count=1 ./...
+
+  # Build every release artifact exactly as release.yml does, so a PR cannot
+  # break the release pipeline.
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, goos: linux, goarch: amd64, cgo: "0", tags: menubar }
+          - { os: ubuntu-latest, goos: linux, goarch: arm64, cgo: "0", tags: menubar }
+          - { os: ubuntu-latest, goos: windows, goarch: amd64, cgo: "0", tags: menubar }
+          - { os: ubuntu-latest, goos: windows, goarch: arm64, cgo: "0", tags: menubar }
+          - { os: macos-15, goos: darwin, goarch: amd64, cgo: "1", tags: "menubar,desktop,production" }
+          - { os: macos-15, goos: darwin, goarch: arm64, cgo: "1", tags: "menubar,desktop,production" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -tags ${{ matrix.tags }} -ldflags="-s -w" -o onwatch-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/onwatch
+
+  e2e:
+    name: E2E (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-latest, tags: menubar }
+          - { name: macOS, os: macos-15, tags: "menubar,desktop,production" }
+          - { name: Windows, os: windows-latest, tags: menubar }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -116,73 +176,118 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r tests/e2e/requirements.txt
-          python -m playwright install chromium
+          python -m playwright install --with-deps chromium
 
-      - name: Run provider E2E tests
+      - name: Run E2E suite
+        shell: bash
+        env:
+          CGO_LDFLAGS: ${{ runner.os == 'macOS' && '-framework UniformTypeIdentifiers' || '' }}
+          ONWATCH_E2E_GO_BUILD_TAGS: ${{ matrix.tags }}
         run: |
           cd tests/e2e
-          pytest tests/test_provider_balances.py -v
+          pytest -v
 
       - name: Show onWatch logs
         if: failure()
-        shell: pwsh
+        shell: bash
         run: |
-          Get-ChildItem $env:TEMP -Filter 'onwatch-e2e-*.log' -ErrorAction SilentlyContinue | ForEach-Object {
-            "===== $($_.Name)"
-            Get-Content $_.FullName -Tail 150
-          }
+          python - <<'EOF'
+          import glob, os, tempfile
+          for path in sorted(glob.glob(os.path.join(tempfile.gettempdir(), "onwatch-e2e-*.log"))):
+              print(f"===== {path}")
+              with open(path, errors="replace") as f:
+                  print("".join(f.readlines()[-150:]))
+          EOF
 
-  installer-windows:
-    runs-on: windows-latest
-    name: Installer Windows
+  installer:
+    name: Installer (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-latest }
+          - { name: macOS, os: macos-15 }
+          - { name: Windows, os: windows-latest }
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Test install.sh
+        if: runner.os != 'Windows'
+        run: bash tests/test_install.sh
 
       # 5.1 is what ships with Windows and what `irm ... | iex` runs, and it is
       # the host where redirected native stderr under ErrorActionPreference=Stop
       # becomes a terminating NativeCommandError. 7 keeps the script honest for
       # anyone who upgraded.
       - name: Test install.ps1 under Windows PowerShell 5.1
+        if: runner.os == 'Windows'
         shell: powershell
         run: .\tests\test_install_ps1.ps1
 
       - name: Test install.ps1 under PowerShell 7
+        if: runner.os == 'Windows'
         shell: pwsh
         run: .\tests\test_install_ps1.ps1
 
-  menubar-macos:
-    runs-on: macos-15
-    name: Menubar macOS
+  docker:
+    runs-on: ubuntu-latest
+    name: Docker
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Compile tagged menubar packages
+      - name: Build images
         run: |
-          go test -tags menubar ./internal/menubar ./internal/web
-          CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags menubar,desktop,production -o /tmp/onwatch-menubar ./cmd/onwatch
+          docker build --target runtime-shell -t onwatch:ci-shell .
+          docker build --target runtime -t onwatch:ci .
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install E2E dependencies
+      # Start each image and wait for the dashboard. Z.ai points at a closed
+      # local port, so the container makes no outbound provider calls.
+      - name: Smoke test images
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r tests/e2e/requirements.txt
-          python -m playwright install chromium
+          for image in onwatch:ci-shell onwatch:ci; do
+            name=smoke-${image//[:.]/-}
+            docker run -d --name "$name" -p 19300:9211 \
+              -e ONWATCH_ADMIN_PASS=ci-smoke -e ZAI_API_KEY=ci -e ZAI_BASE_URL=http://127.0.0.1:1 \
+              "$image"
+            ok=""
+            for i in $(seq 1 30); do
+              if curl -fsS -o /dev/null http://localhost:19300/login; then ok=1; break; fi
+              sleep 1
+            done
+            docker logs "$name" | tail -40
+            docker rm -f "$name"
+            if [ -z "$ok" ]; then echo "$image did not serve /login"; exit 1; fi
+          done
 
-      - name: Run menubar browser tests
-        env:
-          CGO_LDFLAGS: -framework UniformTypeIdentifiers
-          ONWATCH_E2E_GO_BUILD_TAGS: menubar,desktop,production
+  # Catches flake.nix drift such as a stale vendorHash after go.sum changes.
+  nix:
+    runs-on: ubuntu-latest
+    name: Nix
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Build
+        run: nix build .#onwatch --print-build-logs
+
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [lint, test, test-alpine, build, e2e, installer, docker, nix]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed
         run: |
-          cd tests/e2e
-          pytest tests/test_menubar.py -v
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
+            echo "A required job did not pass:"
+            echo '${{ toJSON(needs) }}'
+            exit 1
+          fi

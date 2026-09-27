@@ -87,7 +87,9 @@ def remove_instance_files(db_path: str, home: str) -> None:
         try:
             os.unlink(path)
         except OSError:
-            pass
+            # Already gone, or still locked on Windows while the daemon exits;
+            # start_onwatch clears leftovers before the next run.
+            continue
     if os.path.exists(home):
         shutil.rmtree(home, ignore_errors=True)
 
@@ -112,21 +114,23 @@ def start_onwatch(port: int, db_path: str, home: str, provider_env: dict) -> sub
         "ANTHROPIC_SOURCE": "statusline",
     })
     env.update(provider_env)
-    proc = subprocess.Popen(
-        [
-            ONWATCH_BINARY,
-            "--debug",
-            f"--port={port}",
-            "--interval=10",
-            "--test",
-            f"--db={db_path}",
-        ],
-        env=env,
-        # A file, not a pipe: an unread pipe fills up and blocks the daemon.
-        # CI prints these logs when a job fails.
-        stdout=open(TMP_DIR / f"onwatch-e2e-{port}.log", "w"),
-        stderr=subprocess.STDOUT,
-    )
+    # A file, not a pipe: an unread pipe fills up and blocks the daemon. CI
+    # prints these logs when a job fails. The child keeps its own handle, so
+    # ours can be closed as soon as the process starts.
+    with open(TMP_DIR / f"onwatch-e2e-{port}.log", "w") as log:
+        proc = subprocess.Popen(
+            [
+                ONWATCH_BINARY,
+                "--debug",
+                f"--port={port}",
+                "--interval=10",
+                "--test",
+                f"--db={db_path}",
+            ],
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
     ready = _wait_for_http(f"http://localhost:{port}/login", timeout=30)
     if not ready:
         _kill_process(proc)
