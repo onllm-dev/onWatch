@@ -1107,14 +1107,22 @@ func run() error {
 
 	var moonshotClient *api.MoonshotClient
 	if cfg.HasProvider("moonshot") {
-		moonshotClient = api.NewMoonshotClient(cfg.MoonshotAPIKey, logger)
-		logger.Info("Moonshot API client configured")
+		var moonshotOpts []api.MoonshotOption
+		if cfg.MoonshotBaseURL != "" {
+			moonshotOpts = append(moonshotOpts, api.WithMoonshotBaseURL(strings.TrimRight(cfg.MoonshotBaseURL, "/")))
+		}
+		moonshotClient = api.NewMoonshotClient(cfg.MoonshotAPIKey, logger, moonshotOpts...)
+		logger.Info("Moonshot API client configured", "base_url_override", cfg.MoonshotBaseURL != "")
 	}
 
 	var deepseekClient *api.DeepSeekClient
 	if cfg.HasProvider("deepseek") {
-		deepseekClient = api.NewDeepSeekClient(cfg.DeepSeekAPIKey, logger)
-		logger.Info("DeepSeek API client configured")
+		var deepseekOpts []api.DeepSeekOption
+		if cfg.DeepSeekBaseURL != "" {
+			deepseekOpts = append(deepseekOpts, api.WithDeepSeekBaseURL(strings.TrimRight(cfg.DeepSeekBaseURL, "/")))
+		}
+		deepseekClient = api.NewDeepSeekClient(cfg.DeepSeekAPIKey, logger, deepseekOpts...)
+		logger.Info("DeepSeek API client configured", "base_url_override", cfg.DeepSeekBaseURL != "")
 	}
 
 	// Gemini provider - env vars or auto-detect from ~/.gemini/oauth_creds.json
@@ -1498,7 +1506,11 @@ func run() error {
 	}
 	var opencodeAg *agent.OpenCodeAgent
 	if cfg.HasProvider("opencode") {
-		opencodeClient := api.NewOpenCodeClient(logger)
+		var opencodeOpts []api.OpenCodeClientOption
+		if cfg.OpenCodeGoBaseURL != "" {
+			opencodeOpts = append(opencodeOpts, api.WithOpenCodeBaseURL(cfg.OpenCodeGoBaseURL))
+		}
+		opencodeClient := api.NewOpenCodeClient(logger, opencodeOpts...)
 		opencodeSm := agent.NewSessionManager(db, "opencode", idleTimeout, logger)
 		opencodeAg = agent.NewOpenCodeAgent(opencodeClient, db, opencodeTr, cfg, cfg.PollInterval, logger, opencodeSm)
 	}

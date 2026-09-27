@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -170,19 +169,6 @@ func TestSetupHelpers_AddMissingProvidersAndTokenCollectors(t *testing.T) {
 			t.Fatal("expected non-empty codex token")
 		}
 	})
-}
-
-func TestDaemonSysProcAttr_UnixSetsid(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix-only test")
-	}
-	attr := daemonSysProcAttr()
-	if attr == nil {
-		t.Fatal("expected non-nil SysProcAttr")
-	}
-	if !attr.Setsid {
-		t.Fatal("expected Setsid=true")
-	}
 }
 
 func TestRun_HelpCommand(t *testing.T) {

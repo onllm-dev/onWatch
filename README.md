@@ -363,10 +363,13 @@ Additional environment variables:
 | `KIMI_CODE_ENABLED`      | Enable Kimi Code provider (default: auto when credentials present)|
 | `KIMI_CODE_CREDENTIALS`  | Path to kimi-code.json (default ~/.kimi-code/credentials/kimi-code.json)|
 | `MOONSHOT_API_KEY`       | Moonshot (Kimi) open-platform API key (enables balance tracking)|
+| `MOONSHOT_BASE_URL`      | Override the Moonshot API base URL (default `https://api.moonshot.ai`)|
 | `DEEPSEEK_API_KEY`       | DeepSeek platform API key (enables balance tracking)   |
+| `DEEPSEEK_BASE_URL`      | Override the DeepSeek API base URL (default `https://api.deepseek.com`)|
 | `OPENCODE_GO_API_KEY`    | OpenCode console service-account key with usage read access (enables quota tracking; preferred)|
 | `OPENCODE_GO_WORKSPACE_ID` | Session mode: OpenCode Go workspace ID (`wrk_...`)|
 | `OPENCODE_GO_AUTH_COOKIE` | Session mode: `__Host-console_session` cookie value from opencode.ai|
+| `OPENCODE_GO_BASE_URL`   | Override the OpenCode console base URL (default `https://opencode.ai`)|
 | `MISTRAL_ENABLED`       | Enable Mistral subscription and pay-as-you-go tracking (default: false) |
 | `MISTRAL_AUTH_COOKIE`   | Manual Mistral Cookie header; keep private |
 | `MISTRAL_BROWSER`       | auto, chrome, firefox, safari (macOS), or edge |

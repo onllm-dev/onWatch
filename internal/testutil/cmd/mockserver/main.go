@@ -11,6 +11,9 @@
 //	--syn-key     Expected Synthetic API key (default: syn_test_e2e_key)
 //	--zai-key     Expected Z.ai API key (default: zai_test_e2e_key)
 //	--anth-token  Expected Anthropic OAuth token (default: anth_test_e2e_token)
+//
+// It also mocks the OpenCode Go console status API and the DeepSeek and
+// Moonshot balance APIs (see providers.go).
 package main
 
 import (
@@ -99,6 +102,8 @@ type standaloneServer struct {
 	anthropicError     atomic.Int32
 	anthropicIdx       atomic.Int64
 	anthropicCount     atomic.Int64
+
+	providers providerMocks
 }
 
 func newStandaloneServer(synKey, zaiKey, anthToken string) *standaloneServer {
@@ -119,6 +124,7 @@ func newStandaloneServer(synKey, zaiKey, anthToken string) *standaloneServer {
 	srv.mux.HandleFunc("/admin/error", srv.handleAdminError)
 	srv.mux.HandleFunc("/admin/requests", srv.handleAdminRequests)
 	srv.mux.HandleFunc("/admin/reset", srv.handleAdminReset)
+	srv.providers.register(srv.mux)
 
 	return srv
 }
@@ -303,6 +309,9 @@ func (s *standaloneServer) handleAdminRequests(w http.ResponseWriter, _ *http.Re
 		"zai":       s.zaiCount.Load(),
 		"anthropic": s.anthropicCount.Load(),
 	}
+	for name, n := range s.providers.counts() {
+		counts[name] = n
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(counts)
@@ -317,6 +326,7 @@ func (s *standaloneServer) handleAdminReset(w http.ResponseWriter, r *http.Reque
 	s.syntheticError.Store(0)
 	s.zaiError.Store(0)
 	s.anthropicError.Store(0)
+	s.providers.reset()
 	s.syntheticCount.Store(0)
 	s.zaiCount.Store(0)
 	s.anthropicCount.Store(0)
