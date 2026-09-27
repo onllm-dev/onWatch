@@ -205,6 +205,26 @@ func TestMistralHeaderKeepsQuotedSessionCookie(t *testing.T) {
 	}
 }
 
+// Only names, sorted, ever leave a session this way - callers such as the
+// agent's own logging pass this straight to slog, and a cookie value is a
+// credential that must never reach a log line.
+func TestMistralSessionCookieNames(t *testing.T) {
+	s := MistralSession{Cookies: []sweetcookie.Cookie{
+		{Name: "csrftoken", Value: "secret-b", Domain: "admin.mistral.ai"},
+		{Name: "ory_session_abc", Value: "secret-a", Domain: ".mistral.ai"},
+	}}
+	names := s.CookieNames()
+	want := []string{"csrftoken@admin.mistral.ai", "ory_session_abc@.mistral.ai"}
+	if len(names) != len(want) || names[0] != want[0] || names[1] != want[1] {
+		t.Fatalf("names=%v want=%v", names, want)
+	}
+	for _, n := range names {
+		if strings.Contains(n, "secret") {
+			t.Fatalf("cookie value leaked into name list: %v", names)
+		}
+	}
+}
+
 // A pasted header keeps its quoting through the round trip.
 func TestManualMistralSessionKeepsQuotedValue(t *testing.T) {
 	s, err := ManualMistralSession(`ory_session_abc="MTc2NDU4+/=abc"; csrftoken=plain`)

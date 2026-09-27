@@ -352,3 +352,60 @@ func TestMistralPruneRemovesChildrenWithoutForeignKeys(t *testing.T) {
 		t.Fatalf("%d orphaned billing rows survived the prune", n)
 	}
 }
+
+func TestMistralCycleOverview(t *testing.T) {
+	s, e := New(":memory:")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// No cycles yet: an empty overview, not an error.
+	overview, e := s.MistralCycleOverview(ctx, "api_included")
+	if e != nil || len(overview) != 0 {
+		t.Fatalf("empty overview = %+v, err=%v", overview, e)
+	}
+
+	// Both quotas captured together in one snapshot, so the peak moment for
+	// api_included should carry vibe_included alongside it as a cross-quota.
+	apiQuota := api.MistralQuota{Name: "api_included", Used: 3, Limit: 10, Utilization: 30, CapturedAt: now}
+	vibeQuota := api.MistralQuota{Name: "vibe_included", Used: 20, Limit: 100, Utilization: 20, CapturedAt: now}
+	if e = s.SaveMistral(ctx, &api.MistralSnapshot{Identity: "a", CapturedAt: now, Status: "ok", Quotas: []api.MistralQuota{apiQuota, vibeQuota}}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.TrackMistral(ctx, "a", apiQuota); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.TrackMistral(ctx, "a", vibeQuota); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.SetSetting("mistral_identity", "a"); e != nil {
+		t.Fatal(e)
+	}
+
+	overview, e = s.MistralCycleOverview(ctx, "api_included")
+	if e != nil || len(overview) != 1 {
+		t.Fatalf("overview=%+v err=%v", overview, e)
+	}
+	row := overview[0]
+	if row.QuotaType != "api_included" || row.PeakValue != 30 {
+		t.Fatalf("row=%+v", row)
+	}
+	if len(row.CrossQuotas) != 2 {
+		t.Fatalf("cross quotas=%+v, want api_included and vibe_included", row.CrossQuotas)
+	}
+	var sawVibe bool
+	for _, cq := range row.CrossQuotas {
+		if cq.Name == "vibe_included" {
+			sawVibe = true
+			if cq.Value != 20 || cq.Percent != 20 {
+				t.Fatalf("vibe cross quota=%+v", cq)
+			}
+		}
+	}
+	if !sawVibe {
+		t.Fatalf("cross quotas missing vibe_included: %+v", row.CrossQuotas)
+	}
+}
