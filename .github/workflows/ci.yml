@@ -112,8 +112,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Test the musl/busybox userland as a normal host: onWatch switches to
+      # its Docker defaults (/data, foreground only) when /.dockerenv exists,
+      # and root bypasses the permission checks some tests rely on.
+      - name: Prepare non-root host
+        run: |
+          rm -f /.dockerenv
+          adduser -D tester
+          chown -R tester "$GITHUB_WORKSPACE"
+
       - name: Test
-        run: go test -timeout 15m -count=1 ./...
+        run: su tester -s /bin/sh -c "export PATH=/usr/local/go/bin:\$PATH; cd '$GITHUB_WORKSPACE' && go test -timeout 15m -count=1 ./..."
 
   # Build every release artifact exactly as release.yml does, so a PR cannot
   # break the release pipeline.
@@ -185,7 +194,7 @@ jobs:
           ONWATCH_E2E_GO_BUILD_TAGS: ${{ matrix.tags }}
         run: |
           cd tests/e2e
-          pytest -v
+          pytest -v --tracing retain-on-failure --output test-results
 
       - name: Show onWatch logs
         if: failure()
@@ -193,11 +202,22 @@ jobs:
         run: |
           python - <<'EOF'
           import glob, os, tempfile
-          for path in sorted(glob.glob(os.path.join(tempfile.gettempdir(), "onwatch-e2e-*.log"))):
+          tmp = tempfile.gettempdir()
+          # Daemon stdout, plus the log file it writes next to its database.
+          paths = glob.glob(os.path.join(tmp, "onwatch-e2e-*.log")) + glob.glob(os.path.join(tmp, ".onwatch-test.log"))
+          for path in sorted(paths):
               print(f"===== {path}")
               with open(path, errors="replace") as f:
                   print("".join(f.readlines()[-150:]))
           EOF
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-traces-${{ matrix.name }}
+          path: tests/e2e/test-results
+          if-no-files-found: ignore
 
   installer:
     name: Installer (${{ matrix.name }})

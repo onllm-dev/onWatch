@@ -108,6 +108,9 @@ def start_onwatch(port: int, db_path: str, home: str, provider_env: dict) -> sub
     env.update({
         "HOME": home,
         "USERPROFILE": home,  # Windows home directory
+        # Windows keeps the test PID file under LOCALAPPDATA; a shared one
+        # lets a second daemon stop the first on startup.
+        "LOCALAPPDATA": os.path.join(home, "AppData", "Local"),
         "ONWATCH_ADMIN_PASS": PASSWORD,
         "ONWATCH_TEST_MODE": "1",
         "ANTHROPIC_TOKEN": "anth_test_e2e_token",

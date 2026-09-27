@@ -52,6 +52,11 @@ def provider_server(servers) -> Generator[str, None, None]:
 
 @pytest.fixture
 def logged_in(page: Page, provider_server: str) -> Page:
+    # Kept for failure messages: a render that never happens is otherwise
+    # impossible to diagnose from CI output.
+    page.console_errors = []
+    page.on("pageerror", lambda e: page.console_errors.append(f"pageerror: {e}"))
+    page.on("console", lambda m: m.type == "error" and page.console_errors.append(f"console: {m.text}"))
     page.goto(f"{provider_server}/login")
     page.fill("#username", USERNAME)
     page.fill("#password", PASSWORD)
@@ -60,31 +65,53 @@ def logged_in(page: Page, provider_server: str) -> Page:
     return page
 
 
+def _current(page: Page, provider: str) -> str:
+    """The provider's /api/current body, for failure messages."""
+    return page.evaluate(
+        "async (p) => JSON.stringify(await (await fetch(`/api/current?provider=${p}`)).json())",
+        provider,
+    )
+
+
 def _open_tab(page: Page, provider: str, card_selector: str, count: int) -> None:
-    # The first poll runs at startup; reload until its snapshot is stored.
-    for _ in range(10):
+    # The first poll runs at startup and then every 10s; reload until the
+    # stored snapshot renders the cards.
+    last_error = None
+    for _ in range(12):
         page.goto(f"{BASE}/?provider={provider}")
         try:
+            # Functions, not bare expressions: the dashboard's CSP forbids
+            # unsafe-eval, which Playwright needs for an expression string.
             page.wait_for_function(
-                f"document.querySelectorAll('{card_selector}').length === {count}",
-                timeout=3000,
+                "([sel, n]) => document.querySelectorAll(sel).length === n",
+                arg=[card_selector, count],
+                timeout=4000,
             )
             return
-        except Exception:
+        except Exception as e:  # timeout or a navigation mid-wait; retry
+            last_error = e
             page.wait_for_timeout(1000)
-    raise AssertionError(f"{provider}: {count} cards never rendered")
+    grid = page.evaluate(
+        "(id) => { const g = document.getElementById(id); return g ? g.outerHTML.slice(0, 400) : 'missing'; }",
+        f"quota-grid-{provider}",
+    )
+    raise AssertionError(
+        f"{provider}: {count} cards never rendered ({str(last_error)[:300]}); url={page.url}; grid={grid}; "
+        f"errors={getattr(page, 'console_errors', [])}; mock requests={_mock_counts()}; "
+        f"/api/current={_current(page, provider)}"
+    )
 
 
 def _chart_labels(page: Page) -> list:
-    page.wait_for_function("State.chart && State.chart.data.datasets.length > 0", timeout=10000)
-    return page.evaluate("State.chart.data.datasets.map(d => d.label)")
+    page.wait_for_function("() => State.chart && State.chart.data.datasets.length > 0", timeout=10000)
+    return page.evaluate("() => State.chart.data.datasets.map(d => d.label)")
 
 
-def _logging_first_row(page: Page) -> str:
+def _expect_logging_row(page: Page, text: str) -> None:
+    # The table loads when scrolled into view; until then it shows the
+    # template's placeholder row, so wait for the value itself.
     page.locator(".cycles-section").scroll_into_view_if_needed()
-    row = page.locator("#cycles-tbody tr").first
-    expect(row).not_to_contain_text("No logging data", timeout=10000)
-    return row.inner_text()
+    expect(page.locator("#cycles-tbody tr").first).to_contain_text(text, timeout=15000)
 
 
 class TestOpenCodeSessionCookie:
@@ -104,7 +131,7 @@ class TestBalanceTabs:
         assert amounts == ["$4.02", "$0.32", "$3.70"]
         labels = _chart_labels(logged_in)
         assert labels == ["Total Balance", "Granted", "Topped Up"], "DeepSeek chart fell back to another provider"
-        assert "$4.02" in _logging_first_row(logged_in)
+        _expect_logging_row(logged_in, "$4.02")
 
     def test_moonshot_tab_renders_balances(self, logged_in: Page) -> None:
         _open_tab(logged_in, "moonshot", "#quota-grid-moonshot .balance-card", 3)
@@ -112,4 +139,4 @@ class TestBalanceTabs:
         assert amounts == ["19.47", "5.00", "14.47"]
         labels = _chart_labels(logged_in)
         assert labels == ["Available", "Voucher", "Cash"], "Moonshot chart fell back to another provider"
-        assert "19.47" in _logging_first_row(logged_in)
+        _expect_logging_row(logged_in, "19.47")

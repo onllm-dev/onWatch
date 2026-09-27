@@ -80,4 +80,4 @@ class TestDashboard:
         dashboard_page.wait_for_timeout(3000)
         text = dash.get_last_updated()
         assert text != ""
-        assert "Last updated" in text
+        assert text.startswith("Updated ")
