@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -45,6 +46,9 @@ func processCommandName(pid int) string {
 	if pid <= 0 {
 		return ""
 	}
+	if name, ok := procExeName(pid); ok {
+		return name
+	}
 	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
 	if err != nil {
 		return ""
@@ -54,4 +58,23 @@ func processCommandName(pid int) string {
 		return ""
 	}
 	return filepath.Base(name)
+}
+
+// procExeName reads the executable base name from /proc on Linux, where ps
+// may be missing (Nix build sandbox, distroless image) or busybox's, which
+// has no -p. ok is false when /proc has no entry for pid.
+func procExeName(pid int) (name string, ok bool) {
+	if runtime.GOOS != "linux" {
+		return "", false
+	}
+	dir := "/proc/" + strconv.Itoa(pid)
+	if exe, err := os.Readlink(dir + "/exe"); err == nil {
+		return filepath.Base(strings.TrimSuffix(exe, " (deleted)")), true
+	}
+	// exe is unreadable for other users' processes; comm is truncated to 15
+	// characters but readable.
+	if comm, err := os.ReadFile(dir + "/comm"); err == nil {
+		return strings.TrimSpace(string(comm)), true
+	}
+	return "", false
 }

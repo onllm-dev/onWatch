@@ -391,8 +391,10 @@ func TestGenerateLoad_CollectsMetricsDeterministically(t *testing.T) {
 			if m.Count < 1 {
 				t.Fatalf("expected at least one request for %s", m.Endpoint)
 			}
-			if m.MinTime <= 0 || m.MaxTime <= 0 || m.AvgTime <= 0 {
-				t.Fatalf("expected positive durations for %s, got min=%v avg=%v max=%v", m.Endpoint, m.MinTime, m.AvgTime, m.MaxTime)
+			// A local request can measure 0s on a coarse clock (Windows), so
+			// check the aggregates are consistent rather than strictly positive.
+			if m.MinTime < 0 || m.MinTime > m.AvgTime || m.AvgTime > m.MaxTime {
+				t.Fatalf("inconsistent durations for %s: min=%v avg=%v max=%v", m.Endpoint, m.MinTime, m.AvgTime, m.MaxTime)
 			}
 		}
 	})
