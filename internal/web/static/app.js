@@ -81,6 +81,10 @@ function getCurrentProvider() {
   if (museGrid) return 'muse';
   const commandCodeGrid = document.getElementById('quota-grid-commandcode');
   if (commandCodeGrid) return 'commandcode';
+  const moonshotGrid = document.getElementById('quota-grid-moonshot');
+  if (moonshotGrid) return 'moonshot';
+  const deepseekGrid = document.getElementById('quota-grid-deepseek');
+  if (deepseekGrid) return 'deepseek';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -1220,6 +1224,12 @@ const renewalCategories = {
   openrouter: [
     { label: 'Credits', groupBy: 'credits' }
   ],
+  moonshot: [
+    { label: 'Balance', groupBy: 'balance' }
+  ],
+  deepseek: [
+    { label: 'Balance', groupBy: 'balance' }
+  ],
   grok: [
     { label: 'Credits', groupBy: 'credits' }
   ],
@@ -1302,6 +1312,16 @@ const providerQuotaDisplayOverrides = {
     five_hour: '5-Hour Credits',
     weekly: 'Weekly Credits',
     monthly: 'Monthly Credits'
+  },
+  moonshot: {
+    available_balance: 'Available',
+    voucher_balance: 'Voucher',
+    cash_balance: 'Cash'
+  },
+  deepseek: {
+    total_balance: 'Total Balance',
+    granted_balance: 'Granted',
+    topped_up_balance: 'Topped Up'
   }
 };
 
@@ -2512,6 +2532,102 @@ function updateOpenRouterCard(credits) {
     statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${config.icon}"/></svg>${config.label}`;
   }
   if (resetEl) resetEl.textContent = hasLimit ? 'Remaining: ' + remainStr : '';
+}
+
+// ── Balance providers (Moonshot, DeepSeek) ──
+// These report a remaining balance with no limit, so their cards show the
+// amount instead of a utilization bar.
+const balanceProviderFields = {
+  moonshot: [
+    { key: 'available', historyKey: 'available_balance', label: 'Available', primary: true },
+    { key: 'voucher', historyKey: 'voucher_balance', label: 'Voucher' },
+    { key: 'cash', historyKey: 'cash_balance', label: 'Cash' }
+  ],
+  deepseek: [
+    { key: 'total', historyKey: 'total_balance', label: 'Total Balance', primary: true },
+    { key: 'granted', historyKey: 'granted_balance', label: 'Granted' },
+    { key: 'toppedUp', historyKey: 'topped_up_balance', label: 'Topped Up' }
+  ]
+};
+const balanceChartColors = [
+  { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
+  { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
+  { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
+];
+
+function isBalanceProvider(provider) {
+  return Object.prototype.hasOwnProperty.call(balanceProviderFields, provider);
+}
+
+// Moonshot does not report a currency, so its amounts are shown bare.
+function formatBalanceAmount(value, currency) {
+  const amount = Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (currency === 'USD') return '$' + amount;
+  if (currency === 'CNY') return '\u00A5' + amount;
+  return currency ? `${amount} ${currency}` : amount;
+}
+
+function renderBalanceCards(provider, balance, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!balance) {
+    container.innerHTML = '<p class="empty-state">No balance data available</p>';
+    return;
+  }
+  State.balanceCurrency = balance.currency || '';
+  const fields = balanceProviderFields[provider] || [];
+  if (container.querySelectorAll('.balance-card').length !== fields.length) {
+    const icon = '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>';
+    container.innerHTML = fields.map((field, i) => `<article class="quota-card balance-card" data-quota="${field.historyKey}" data-provider="${provider}" style="animation-delay: ${i * 60}ms">
+      <header class="card-header">
+        <h2 class="quota-title">
+          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+          ${field.label}
+        </h2>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" data-balance-amount></span>
+        <span class="usage-fraction" data-balance-detail></span>
+      </div>
+      ${field.primary ? `<footer class="card-footer">
+        <span class="status-badge" data-balance-status></span>
+      </footer>` : ''}
+    </article>`).join('');
+  }
+  updateBalanceCards(provider, balance, container);
+}
+
+function updateBalanceCards(provider, balance, container) {
+  const currency = balance.currency || '';
+  const rate = Number(balance.rate || 0);
+  const cards = container.querySelectorAll('.balance-card');
+  (balanceProviderFields[provider] || []).forEach((field, i) => {
+    const card = cards[i];
+    if (!card) return;
+    card.querySelector('[data-balance-amount]').textContent = formatBalanceAmount(balance[field.key], currency);
+    card.querySelector('[data-balance-detail]').textContent = field.primary && rate > 0
+      ? `Spending ${formatBalanceAmount(rate, currency)}/h`
+      : '';
+    const statusEl = card.querySelector('[data-balance-status]');
+    if (statusEl) {
+      const status = balance.status || 'healthy';
+      const statusCfg = statusConfig[status] || statusConfig.healthy;
+      statusEl.setAttribute('data-status', status);
+      statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>${statusCfg.label}`;
+    }
+  });
+}
+
+function buildBalanceDatasets(provider, rows, range) {
+  const fields = balanceProviderFields[provider] || [];
+  const datasets = buildFixedDatasetsForRows(rows, range, fields.map((field, i) => ({
+    label: field.label,
+    key: field.historyKey,
+    color: balanceChartColors[i % balanceChartColors.length].border,
+    bg: balanceChartColors[i % balanceChartColors.length].bg
+  })));
+  datasets.forEach((ds, i) => { ds.hidden = State.hiddenQuotas.has(fields[i].historyKey); });
+  return datasets;
 }
 
 function getQuotaStatus(percent) {
@@ -4746,6 +4862,9 @@ async function fetchCurrent() {
           }
         }
 
+      } else if (isBalanceProvider(provider)) {
+        renderBalanceCards(provider, data.balance, `quota-grid-${provider}`);
+
       } else if (provider === 'zai') {
         updateCard('tokensLimit', data.tokensLimit);
         updateCard('timeLimit', data.timeLimit);
@@ -5754,6 +5873,8 @@ function initChart() {
     defaultDatasets = []; // OpenCode datasets are dynamic
   } else if (provider === 'ollama') {
     defaultDatasets = []; // Ollama datasets are dynamic
+  } else if (isBalanceProvider(provider)) {
+    defaultDatasets = []; // Balance datasets are built when history data arrives
   } else if (provider === 'zai') {
     defaultDatasets = [
       { label: zaiQuotaLabel('tokensLimit', 'Tokens Limit'), data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chart-subscription').trim() || '#0D9488', backgroundColor: 'rgba(13, 148, 136, 0.06)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, hidden: State.hiddenQuotas.has('tokensLimit') },
@@ -5787,11 +5908,14 @@ function initChart() {
       ? []
     : provider === 'ollama'
       ? []
+    : isBalanceProvider(provider)
+      ? []
     : provider === 'api-integrations'
       ? []
     : ['subscription', 'search', 'toolCalls'];
 
   const isAPIIntegrations = provider === 'api-integrations';
+  const isBalance = isBalanceProvider(provider);
   State.chart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -5813,7 +5937,7 @@ function initChart() {
             meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
             ci.update('none');
             // Recalculate Y-axis based on visible datasets
-            State.chartYMax = computeYMax(ci.data.datasets, ci);
+            State.chartYMax = computeYMax(ci.data.datasets, ci, isBalance ? { cap: false } : {});
             ci.options.scales.y.max = State.chartYMax;
             ci.update();
           }
@@ -5842,6 +5966,9 @@ function initChart() {
                 }
                 return `${ctx.dataset.label}: ${formatNumber(Number(ctx.parsed.y || 0))}`;
               }
+              if (isBalance) {
+                return `${ctx.dataset.label}: ${formatBalanceAmount(ctx.parsed.y, State.balanceCurrency)}`;
+              }
               return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`;
             }
           }
@@ -5864,7 +5991,7 @@ function initChart() {
                 : ((State.apiIntegrationsSelectedMetric || 'tokenPerCall') === 'tokenPerCall'
                   ? formatNumber(Number(v || 0).toFixed(1))
                   : formatNumber(Number(v || 0))))
-              : v + '%'
+              : (isBalance ? formatBalanceAmount(v, State.balanceCurrency) : v + '%')
           },
           title: {
             display: isAPIIntegrations,
@@ -6373,6 +6500,16 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (isBalanceProvider(provider)) {
+      const lastRow = historyRows[historyRows.length - 1];
+      if (lastRow) State.balanceCurrency = lastRow.currency || '';
+      State.chart.data.datasets = buildBalanceDatasets(provider, historyRows, range);
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart, { cap: false });
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      return;
+    }
 
     if (provider === 'codex') {
       // Codex history: array of { capturedAt, five_hour, seven_day, ... }
@@ -7376,25 +7513,8 @@ function buildProviderCardDatasets(provider, rows, range) {
     const orFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
     return buildDynamicDatasetsForRows(rows, range, orDisplayNames, orColors, orFallback, 'openrouter');
   }
-  if (provider === 'moonshot') {
-    const msDisplayNames = { available_balance: 'Available', voucher_balance: 'Voucher', cash_balance: 'Cash' };
-    const msColors = {
-      available_balance: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
-      voucher_balance: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
-      cash_balance: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
-    };
-    const msFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
-    return buildDynamicDatasetsForRows(rows, range, msDisplayNames, msColors, msFallback, 'moonshot');
-  }
-  if (provider === 'deepseek') {
-    const dsDisplayNames = { total_balance: 'Total Balance', granted_balance: 'Granted', topped_up_balance: 'Topped Up' };
-    const dsColors = {
-      total_balance: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
-      granted_balance: { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.06)' },
-      topped_up_balance: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.06)' }
-    };
-    const dsFallback = [{ border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' }];
-    return buildDynamicDatasetsForRows(rows, range, dsDisplayNames, dsColors, dsFallback, 'deepseek');
+  if (isBalanceProvider(provider)) {
+    return buildBalanceDatasets(provider, rows, range);
   }
   if (provider === 'grok') {
     const grokDisplay = { credits: 'Credits' };
@@ -7883,7 +8003,7 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi', 'mistral', 'opencode', 'ollama', 'muse', 'commandcode']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi', 'mistral', 'opencode', 'ollama', 'muse', 'commandcode', 'moonshot', 'deepseek']);
 
   // All-accounts overview: fetch each account's logging history and merge,
   // tagging every row with its account name for the combined table.
@@ -7953,6 +8073,7 @@ async function fetchCycles() {
         crossQuotas: log.crossQuotas || [],
       }));
       State.cyclesQuotaNames = data.quotaNames || [];
+      if (isBalanceProvider(requestProvider)) State.balanceCurrency = data.currency || '';
       State.cyclesPage = 1;
       State.isLoggingHistory = true;
       renderCyclesTable();
@@ -8077,8 +8198,8 @@ function renderCyclesTable() {
 
   const provider = getCurrentProvider();
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'grok' || provider === 'kimi' || provider === 'moonshot' || provider === 'deepseek' || provider === 'mistral' || provider === 'opencode' || provider === 'ollama';
-  const deltaUsesPercent = usePercent && provider !== 'minimax' && provider !== 'moonshot' && provider !== 'deepseek';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'grok' || provider === 'kimi' || provider === 'mistral' || provider === 'opencode' || provider === 'ollama';
+  const deltaUsesPercent = usePercent && provider !== 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
   const showAccount = isAccountsOverviewMode(provider);
   const accountTh = showAccount ? '<th data-sort-key="account" role="button" tabindex="0">Account <span class="sort-arrow"></span></th>' : '';
@@ -8279,6 +8400,9 @@ function renderCyclesTable() {
             cellVal = limit > 0
               ? `${formatNumber(used)} / ${formatNumber(limit)} <span class="delta">(${percentText})</span>${deltaText}`
               : `${formatNumber(used)} <span class="delta">(${percentText})</span>${deltaText}`;
+          } else if (isBalanceProvider(provider)) {
+            const cq = getCrossQuotaValue(row, qn);
+            cellVal = cq ? escapeHTML(formatBalanceAmount(cq.value, State.balanceCurrency)) : '--';
           } else if (usePercent) {
             cellVal = fmtPctWithDelta(pct, delta);
           } else {
@@ -9425,6 +9549,7 @@ async function fetchCycleOverview() {
 
     State.allOverviewData = data.cycles || [];
     State.overviewQuotaNames = data.quotaNames || [];
+    if (isBalanceProvider(requestProvider)) State.balanceCurrency = data.currency || '';
     renderOverviewTable();
   } catch (e) {
     // cycle overview fetch error - non-critical
@@ -9559,7 +9684,7 @@ function renderOverviewTable() {
       if (showDurationDelta) {
         html += `
         <td>${duration}</td>
-        <td>${fmtOverviewWithRate(row.totalDelta, durationHrs, suffix)}</td>`;
+        <td>${isBalanceProvider(overviewProv) ? escapeHTML(formatBalanceAmount(row.totalDelta, State.balanceCurrency)) : fmtOverviewWithRate(row.totalDelta, durationHrs, suffix)}</td>`;
       }
 
       quotaNames.forEach(qn => {

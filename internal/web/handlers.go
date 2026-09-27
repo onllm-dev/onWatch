@@ -4213,46 +4213,11 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("moonshot") {
-		quotaType := "balance"
-		var msCycles []map[string]interface{}
-		if active, err := h.store.QueryActiveMoonshotCycle(quotaType); err == nil && active != nil {
-			msCycles = append(msCycles, moonshotCycleToMap(active))
-		}
-		if history, err := h.store.QueryMoonshotCycleHistory(quotaType, 50); err == nil {
-			for _, c := range history {
-				msCycles = append(msCycles, moonshotCycleToMap(c))
-			}
-		}
-		response["moonshot"] = map[string]interface{}{
-			"groupBy":    quotaType,
-			"provider":   "moonshot",
-			"quotaNames": []string{"balance"},
-			"cycles":     msCycles,
-		}
+		response["moonshot"] = h.moonshotCycleOverview()
 	}
 
 	if h.config.HasProvider("deepseek") {
-		quotaType := "balance"
-		var dsCycles []map[string]interface{}
-
-		// Use CNY as default if not specified elsewhere. DeepSeek could use USD,
-		// but tracking one primary currency for UI is sufficient for summary.
-		currency := "CNY"
-
-		if active, err := h.store.QueryActiveDeepSeekCycle(quotaType, currency); err == nil && active != nil {
-			dsCycles = append(dsCycles, deepseekCycleToMap(active))
-		}
-		if history, err := h.store.QueryDeepSeekCycleHistory(quotaType, currency, 50); err == nil {
-			for _, c := range history {
-				dsCycles = append(dsCycles, deepseekCycleToMap(c))
-			}
-		}
-		response["deepseek"] = map[string]interface{}{
-			"groupBy":    quotaType,
-			"provider":   "deepseek",
-			"quotaNames": []string{"balance"},
-			"cycles":     dsCycles,
-		}
+		response["deepseek"] = h.deepseekCycleOverview(h.deepseekCurrency(""))
 	}
 
 	if h.config.HasProvider("gemini") {
@@ -4490,8 +4455,7 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 		response["moonshot"] = h.buildMoonshotSummaryMap()
 	}
 	if h.config.HasProvider("deepseek") {
-		// DeepSeek could use either currency. Use CNY by default for summary view unless we know better
-		response["deepseek"] = h.buildDeepSeekSummaryMap("CNY")
+		response["deepseek"] = h.buildDeepSeekSummaryMap(h.deepseekCurrency(""))
 	}
 	if h.config.HasProvider("anthropic") {
 		response["anthropic"] = h.buildAnthropicSummaryMap()
@@ -5366,8 +5330,7 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 		response["moonshot"] = h.buildMoonshotInsights(hidden)
 	}
 	if h.config.HasProvider("deepseek") && providerTelemetryEnabled(visibility, "deepseek") {
-		// Use CNY for deepseek overall insights if not explicitly asked
-		response["deepseek"] = h.buildDeepSeekInsights("CNY", hidden)
+		response["deepseek"] = h.buildDeepSeekInsights(h.deepseekCurrency(""), hidden)
 	}
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
 		response["gemini"] = insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
@@ -8295,42 +8258,11 @@ func (h *Handler) cycleOverviewBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("moonshot") {
-		quotaType := "balance"
-		var msCycles []map[string]interface{}
-		if active, err := h.store.QueryActiveMoonshotCycle(quotaType); err == nil && active != nil {
-			msCycles = append(msCycles, moonshotCycleToMap(active))
-		}
-		if history, err := h.store.QueryMoonshotCycleHistory(quotaType, 50); err == nil {
-			for _, c := range history {
-				msCycles = append(msCycles, moonshotCycleToMap(c))
-			}
-		}
-		response["moonshot"] = map[string]interface{}{
-			"groupBy":    quotaType,
-			"provider":   "moonshot",
-			"quotaNames": []string{"balance"},
-			"cycles":     msCycles,
-		}
+		response["moonshot"] = h.moonshotCycleOverview()
 	}
 
 	if h.config.HasProvider("deepseek") {
-		quotaType := "balance"
-		currency := "CNY" // Could be made dynamic
-		var dsCycles []map[string]interface{}
-		if active, err := h.store.QueryActiveDeepSeekCycle(quotaType, currency); err == nil && active != nil {
-			dsCycles = append(dsCycles, deepseekCycleToMap(active))
-		}
-		if history, err := h.store.QueryDeepSeekCycleHistory(quotaType, currency, 50); err == nil {
-			for _, c := range history {
-				dsCycles = append(dsCycles, deepseekCycleToMap(c))
-			}
-		}
-		response["deepseek"] = map[string]interface{}{
-			"groupBy":    quotaType,
-			"provider":   "deepseek",
-			"quotaNames": []string{"balance"},
-			"cycles":     dsCycles,
-		}
+		response["deepseek"] = h.deepseekCycleOverview(h.deepseekCurrency(""))
 	}
 
 	if h.config.HasProvider("gemini") {

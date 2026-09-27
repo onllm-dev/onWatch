@@ -37,12 +37,12 @@ func (h *Handler) buildMoonshotCurrent() map[string]interface{} {
 
 		if latest != nil {
 			response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
-			
+
 			status := "healthy"
 			if latest.AvailableBalance == 0 {
 				status = "critical"
 			}
-			
+
 			balance := map[string]interface{}{
 				"name":        "Balance",
 				"description": "Moonshot Kimi API balance",
@@ -156,6 +156,7 @@ func (h *Handler) cyclesMoonshot(w http.ResponseWriter, r *http.Request) {
 func moonshotCycleToMap(cycle *store.MoonshotResetCycle) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":           cycle.ID,
+		"cycleId":      cycle.ID, // the dashboard cycle tables read cycleId
 		"quotaType":    cycle.QuotaType,
 		"cycleStart":   cycle.CycleStart.Format(time.RFC3339),
 		"cycleEnd":     nil,
@@ -279,40 +280,41 @@ func (h *Handler) buildMoonshotInsights(hidden map[string]bool) insightsResponse
 
 // cycleOverviewMoonshot returns Moonshot cycle overview.
 func (h *Handler) cycleOverviewMoonshot(w http.ResponseWriter, r *http.Request) {
-	if h.store == nil {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
-		return
-	}
+	respondJSON(w, http.StatusOK, h.moonshotCycleOverview())
+}
 
+// moonshotCycleOverview lists the active and recent balance cycles. Balance
+// cycles carry only a spend delta, so there are no per-quota columns.
+func (h *Handler) moonshotCycleOverview() map[string]interface{} {
 	quotaType := "balance"
-	var cycles []map[string]interface{}
-
-	if active, err := h.store.QueryActiveMoonshotCycle(quotaType); err == nil && active != nil {
-		cycles = append(cycles, moonshotCycleToMap(active))
-	}
-	if history, err := h.store.QueryMoonshotCycleHistory(quotaType, 50); err == nil {
-		for _, c := range history {
-			cycles = append(cycles, moonshotCycleToMap(c))
+	cycles := []map[string]interface{}{}
+	if h.store != nil {
+		if active, err := h.store.QueryActiveMoonshotCycle(quotaType); err == nil && active != nil {
+			cycles = append(cycles, moonshotCycleToMap(active))
+		}
+		if history, err := h.store.QueryMoonshotCycleHistory(quotaType, 50); err == nil {
+			for _, c := range history {
+				cycles = append(cycles, moonshotCycleToMap(c))
+			}
 		}
 	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	return map[string]interface{}{
 		"groupBy":    quotaType,
 		"provider":   "moonshot",
-		"quotaNames": []string{"balance"},
+		"quotaNames": []string{},
 		"cycles":     cycles,
-	})
+	}
 }
 
 // loggingHistoryMoonshot returns Moonshot polling history.
 func (h *Handler) loggingHistoryMoonshot(w http.ResponseWriter, r *http.Request) {
+	quotaNames := []string{"available_balance", "voucher_balance", "cash_balance"}
 	if h.store == nil {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"provider": "moonshot", "quotaNames": []string{}, "logs": []interface{}{}})
+		respondJSON(w, http.StatusOK, map[string]interface{}{"provider": "moonshot", "quotaNames": quotaNames, "logs": []interface{}{}})
 		return
 	}
 
 	start, end, limit := h.loggingHistoryRangeAndLimit(r)
-
 	snapshots, err := h.store.QueryMoonshotRange(start, end, limit)
 	if err != nil {
 		h.logger.Error("failed to query Moonshot logging history", "error", err)
@@ -320,55 +322,18 @@ func (h *Handler) loggingHistoryMoonshot(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	quotaNames := []string{"balance"}
-	type quotaVal struct {
-		Name     string
-		Value    float64
-		HasValue bool
-	}
-
-	capturedAt := make([]string, 0, len(snapshots))
+	capturedAt := make([]time.Time, 0, len(snapshots))
 	ids := make([]int64, 0, len(snapshots))
-	series := make([]map[string]quotaVal, 0, len(snapshots))
-
+	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
 	for _, snap := range snapshots {
-		capturedAt = append(capturedAt, snap.CapturedAt.Format(time.RFC3339))
+		capturedAt = append(capturedAt, snap.CapturedAt)
 		ids = append(ids, snap.ID)
-
-		row := map[string]quotaVal{
-			"balance": {
-				Name:     "balance",
-				Value:    snap.AvailableBalance,
-				HasValue: true,
-			},
-		}
-		series = append(series, row)
-	}
-
-	logs := make([]map[string]interface{}, 0, len(snapshots))
-	for i := range snapshots {
-		entry := map[string]interface{}{
-			"capturedAt": capturedAt[i],
-			"id":         ids[i],
-			"quotas":     map[string]interface{}{},
-		}
-		quotas := map[string]interface{}{}
-		for _, qn := range quotaNames {
-			if qv, ok := series[i][qn]; ok {
-				quotas[qn] = map[string]interface{}{
-					"name":     qv.Name,
-					"value":    qv.Value,
-					"hasValue": qv.HasValue,
-				}
-			}
-		}
-		entry["quotas"] = quotas
-		logs = append(logs, entry)
+		series = append(series, balanceCrossQuotas(quotaNames, snap.AvailableBalance, snap.VoucherBalance, snap.CashBalance))
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"provider":   "moonshot",
 		"quotaNames": quotaNames,
-		"logs":       logs,
+		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
 	})
 }
