@@ -151,8 +151,8 @@ func TestParseIDTokenExpiry_ValidJWT(t *testing.T) {
 	// Header: {"alg":"none"}
 	// Payload: {"exp":1893456000} (2030-01-01 00:00:00 UTC)
 	// Signature: (empty)
-	header := "eyJhbGciOiJub25lIn0" // {"alg":"none"} base64url encoded
-	payload := "eyJleHAiOjE4OTM0NTYwMDB9"   // {"exp":1893456000} base64url encoded
+	header := "eyJhbGciOiJub25lIn0"       // {"alg":"none"} base64url encoded
+	payload := "eyJleHAiOjE4OTM0NTYwMDB9" // {"exp":1893456000} base64url encoded
 	idToken := header + "." + payload + "."
 
 	expiry := ParseIDTokenExpiry(idToken)

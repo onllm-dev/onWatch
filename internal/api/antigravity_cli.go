@@ -56,11 +56,11 @@ type AntigravityCLIRunner struct {
 	rootCtx    context.Context
 	rootCancel context.CancelFunc
 
-	mu          sync.Mutex
-	sess        *agySession
-	lastUsed    time.Time
-	failures    int
-	watchdog    sync.Once
+	mu       sync.Mutex
+	sess     *agySession
+	lastUsed time.Time
+	failures int
+	watchdog sync.Once
 }
 
 // NewAntigravityCLIRunner creates a runner. It does not launch agy until the

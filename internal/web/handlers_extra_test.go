@@ -12123,8 +12123,8 @@ func TestSanitizeProviderSettings_NonEnumFieldsUntouched(t *testing.T) {
 		},
 		"anthropic": map[string]interface{}{
 			"api_poll_cycle_interval": float64(20),
-			"staleness_minutes":      float64(10),
-			"source":                 "api",
+			"staleness_minutes":       float64(10),
+			"source":                  "api",
 		},
 	}
 
@@ -12200,8 +12200,8 @@ func TestCountWorkTime(t *testing.T) {
 		{"empty range", mon, mon, "5-day", 0.0},
 		{"partial first day", mon, monPartial, "5-day", 0.25},
 		{"2 full + partial day", mon, wedNoon, "5-day", 2.5},
-		{"5-day to Sat noon", mon, satNoon, "5-day", 5.0},    // Sat doesn't count
-		{"6-day to Sat noon", mon, satNoon, "6-day", 5.5},    // Sat counts, partial
+		{"5-day to Sat noon", mon, satNoon, "5-day", 5.0}, // Sat doesn't count
+		{"6-day to Sat noon", mon, satNoon, "6-day", 5.5}, // Sat counts, partial
 		{"calendar to Sat noon", mon, satNoon, "calendar", 5.5},
 	}
 

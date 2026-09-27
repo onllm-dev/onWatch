@@ -31,10 +31,10 @@ type CopilotUserResponse struct {
 	QuotaSnapshots    map[string]*CopilotQuotaSnapshot `json:"quota_snapshots"`
 
 	// New format fields (free_limited_copilot plans)
-	LimitedUserQuotas       map[string]int `json:"limited_user_quotas"`
-	MonthlyQuotas           map[string]int `json:"monthly_quotas"`
-	LimitedUserSubscribedDay int           `json:"limited_user_subscribed_day"`
-	LimitedUserResetDate    string         `json:"limited_user_reset_date"`
+	LimitedUserQuotas        map[string]int `json:"limited_user_quotas"`
+	MonthlyQuotas            map[string]int `json:"monthly_quotas"`
+	LimitedUserSubscribedDay int            `json:"limited_user_subscribed_day"`
+	LimitedUserResetDate     string         `json:"limited_user_reset_date"`
 }
 
 // normalize synthesizes QuotaSnapshots from the new limited_user_quotas/monthly_quotas

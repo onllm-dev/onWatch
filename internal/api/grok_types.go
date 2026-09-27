@@ -27,12 +27,12 @@ type GrokBillingUsage struct {
 // GrokBillingResponse is the shape returned by `x.ai/billing` RPC (and synthesized from web probe).
 // All monetary are cents via GrokCent.
 type GrokBillingResponse struct {
-	BillingCycle    *GrokBillingCycle `json:"billingCycle"`
-	MonthlyLimit    *GrokCent         `json:"monthlyLimit"`
-	OnDemandCap     *GrokCent         `json:"onDemandCap"`
-	OnDemandEnabled *bool             `json:"on_demand_enabled"`
-	DisabledByConfig *bool            `json:"disabledByConfig"`
-	Usage           *GrokBillingUsage `json:"usage"`
+	BillingCycle     *GrokBillingCycle `json:"billingCycle"`
+	MonthlyLimit     *GrokCent         `json:"monthlyLimit"`
+	OnDemandCap      *GrokCent         `json:"onDemandCap"`
+	OnDemandEnabled  *bool             `json:"on_demand_enabled"`
+	DisabledByConfig *bool             `json:"disabledByConfig"`
+	Usage            *GrokBillingUsage `json:"usage"`
 }
 
 // GrokWebBillingSnapshot is the normalized result from the gRPC-web fallback.
@@ -60,14 +60,14 @@ type GrokQuota struct {
 
 // GrokSnapshot is the storage + UI representation.
 type GrokSnapshot struct {
-	ID             int64
-	CapturedAt     time.Time
-	AccountID      int64 // default 1 for single-account
-	Email          string
-	TeamID         string
-	LoginMethod    string
-	Quotas         []GrokQuota
-	RawJSON        string
+	ID          int64
+	CapturedAt  time.Time
+	AccountID   int64 // default 1 for single-account
+	Email       string
+	TeamID      string
+	LoginMethod string
+	Quotas      []GrokQuota
+	RawJSON     string
 	// LocalSessions is informational fallback data (may be nil).
 	LocalSessions *GrokLocalSessionSummary
 }

@@ -12,10 +12,10 @@ import (
 
 // Custom errors for OpenRouter API failures.
 var (
-	ErrOpenRouterUnauthorized  = errors.New("openrouter: unauthorized - invalid API key")
-	ErrOpenRouterRateLimited   = errors.New("openrouter: rate limited")
-	ErrOpenRouterServerError   = errors.New("openrouter: server error")
-	ErrOpenRouterNetworkError  = errors.New("openrouter: network error")
+	ErrOpenRouterUnauthorized    = errors.New("openrouter: unauthorized - invalid API key")
+	ErrOpenRouterRateLimited     = errors.New("openrouter: rate limited")
+	ErrOpenRouterServerError     = errors.New("openrouter: server error")
+	ErrOpenRouterNetworkError    = errors.New("openrouter: network error")
 	ErrOpenRouterInvalidResponse = errors.New("openrouter: invalid response")
 )
 

@@ -88,7 +88,7 @@ func (a *DeepSeekAgent) poll(ctx context.Context) {
 		a.logger.Error("Failed to fetch DeepSeek balance", "error", err)
 		return
 	}
-	
+
 	if !resp.IsAvailable {
 		a.logger.Info("DeepSeek service is currently not available")
 		return

@@ -11,21 +11,21 @@ import (
 // KimiUsagesResponse is the JSON shape from GET /coding/v1/usages
 // (same endpoint used by the official kimi-code CLI).
 type KimiUsagesResponse struct {
-	User     *KimiUser            `json:"user"`
-	Usage    *KimiUsageDetail     `json:"usage"`
-	Limits   []KimiWindowLimit    `json:"limits"`
-	Parallel *KimiParallel        `json:"parallel"`
-	Total    *KimiUsageDetail     `json:"totalQuota"`
-	Auth     *KimiAuthentication  `json:"authentication"`
-	SubType  string               `json:"subType"`
+	User     *KimiUser           `json:"user"`
+	Usage    *KimiUsageDetail    `json:"usage"`
+	Limits   []KimiWindowLimit   `json:"limits"`
+	Parallel *KimiParallel       `json:"parallel"`
+	Total    *KimiUsageDetail    `json:"totalQuota"`
+	Auth     *KimiAuthentication `json:"authentication"`
+	SubType  string              `json:"subType"`
 }
 
 // KimiUser holds identity/membership metadata from the usages endpoint.
 type KimiUser struct {
-	UserID       string            `json:"userId"`
-	Region       string            `json:"region"`
-	BusinessID   string            `json:"businessId"`
-	Membership   *KimiMembership   `json:"membership"`
+	UserID     string          `json:"userId"`
+	Region     string          `json:"region"`
+	BusinessID string          `json:"businessId"`
+	Membership *KimiMembership `json:"membership"`
 }
 
 // KimiMembership holds plan level (e.g. LEVEL_INTERMEDIATE).
@@ -43,7 +43,7 @@ type KimiUsageDetail struct {
 
 // KimiWindowLimit is a time-windowed rate limit (e.g. 300 minutes → 5h).
 type KimiWindowLimit struct {
-	Window *KimiWindow     `json:"window"`
+	Window *KimiWindow      `json:"window"`
 	Detail *KimiUsageDetail `json:"detail"`
 }
 
