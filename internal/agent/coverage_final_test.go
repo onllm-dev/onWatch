@@ -14,6 +14,7 @@ import (
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
@@ -371,7 +372,7 @@ func TestAnthropicAgent_PollAuthPauseAndResume(t *testing.T) {
 }
 
 func TestAnthropicAgent_PollRateLimitBypassWithOAuthRefresh(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testhome.SetTestHome(t, t.TempDir())
 
 	oauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -430,7 +431,7 @@ func TestAnthropicAgent_PollRateLimitBypassWithOAuthRefresh(t *testing.T) {
 }
 
 func TestAnthropicAgent_PollProactiveOAuthRefresh(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testhome.SetTestHome(t, t.TempDir())
 
 	oauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

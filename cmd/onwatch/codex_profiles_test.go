@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 func writeRefreshAuthJSON(t *testing.T, home, access, refresh, idToken, account string) {
@@ -113,7 +114,7 @@ func loadProfileForTest(t *testing.T, home, name string) *CodexProfile {
 
 func TestRefreshCodexProfile_SameAccount(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	writeRefreshAuthJSON(t, home, "new_access", "new_refresh", "new_id", "acc_same")
@@ -145,14 +146,12 @@ func TestRefreshCodexProfile_SameAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat profile: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("profile permissions = %o, want 600", info.Mode().Perm())
-	}
+	assertPerm(t, info, 0o600)
 }
 
 func TestRefreshCodexProfile_DifferentAccount_UserConfirms(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	writeRefreshAuthJSON(t, home, "new_access", "new_refresh", "new_id", "acc_new")
@@ -176,7 +175,7 @@ func TestRefreshCodexProfile_DifferentAccount_UserConfirms(t *testing.T) {
 
 func TestRefreshCodexProfile_DifferentAccount_UserDeclines(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	writeRefreshAuthJSON(t, home, "new_access", "new_refresh", "new_id", "acc_new")
@@ -205,7 +204,7 @@ func TestRefreshCodexProfile_DifferentAccount_UserDeclines(t *testing.T) {
 
 func TestRefreshCodexProfile_NewProfile(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	writeRefreshAuthJSON(t, home, "new_access", "new_refresh", "new_id", "acc_new")
@@ -228,7 +227,7 @@ func TestRefreshCodexProfile_NewProfile(t *testing.T) {
 
 func TestRefreshCodexProfile_NoAuthJSON(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	err := codexProfileRefresh("work", "")
@@ -242,7 +241,7 @@ func TestRefreshCodexProfile_NoAuthJSON(t *testing.T) {
 
 func TestCodexProfilesDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 
 	if got := codexProfilesDir(); got != filepath.Join(home, ".onwatch", "data", "codex-profiles") {
 		t.Fatalf("codexProfilesDir() = %q", got)
@@ -271,7 +270,7 @@ func TestPrintCodexHelp(t *testing.T) {
 
 func TestRunCodexCommand(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	origArgs := os.Args
@@ -352,7 +351,7 @@ func TestRunCodexCommand(t *testing.T) {
 
 func TestCodexProfileSaveListStatusDeleteFlow(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	writeRefreshAuthJSON(t, home, "save_access", "save_refresh", "save_id", "acct_one")
@@ -408,7 +407,7 @@ func TestCodexProfileSaveListStatusDeleteFlow(t *testing.T) {
 
 func TestCodexProfileSave_BlocksDuplicateAccount(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	// Both profile and new auth have the same account AND same user_id -> duplicate.
@@ -429,7 +428,7 @@ func TestCodexProfileSave_BlocksDuplicateAccount(t *testing.T) {
 
 func TestCodexProfileSave_InvalidNameAndMissingCredentials(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	if err := codexProfileSave("bad name", ""); err == nil || !strings.Contains(err.Error(), "invalid profile name") {
@@ -443,7 +442,7 @@ func TestCodexProfileSave_InvalidNameAndMissingCredentials(t *testing.T) {
 
 func TestListCodexProfiles_SkipsInvalidFilesAndDerivesName(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	profilesDir := filepath.Join(home, ".onwatch", "data", "codex-profiles")
@@ -472,7 +471,7 @@ func TestListCodexProfiles_SkipsInvalidFilesAndDerivesName(t *testing.T) {
 
 func TestCodexProfileStatus_NoCredentials(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	profilesDir := filepath.Join(home, ".onwatch", "data", "codex-profiles")
@@ -501,7 +500,7 @@ func TestCodexAuthRefreshPath_UsesCODEXHOMEAndDeleteMissingProfile(t *testing.T)
 	}
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 	if err := codexProfileDelete("missing"); err == nil || !strings.Contains(err.Error(), `profile "missing" not found`) {
 		t.Fatalf("codexProfileDelete(missing) = %v", err)
@@ -511,7 +510,7 @@ func TestCodexAuthRefreshPath_UsesCODEXHOMEAndDeleteMissingProfile(t *testing.T)
 func TestLoadCodexAuthForRefresh_FlatShapeAndErrors(t *testing.T) {
 	t.Run("supports flat auth.json shape", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		testhome.SetTestHome(t, home)
 		t.Setenv("CODEX_HOME", "")
 
 		codexDir := filepath.Join(home, ".codex")
@@ -597,7 +596,7 @@ func TestRunCodexCommand_AdditionalHelpPaths(t *testing.T) {
 
 func TestListCodexProfiles_ReadDirError(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	dataDir := filepath.Join(home, ".onwatch", "data")
@@ -617,7 +616,7 @@ func TestListCodexProfiles_ReadDirError(t *testing.T) {
 
 func TestCodexProfileSave_WarnsOnSameProfileAccountChange(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	writeRefreshAuthJSON(t, home, "new_access", "new_refresh", "new_id", "acct_new")
@@ -642,7 +641,7 @@ func TestCodexProfileRefresh_InvalidName(t *testing.T) {
 
 func TestCodexProfileSave_AllowsSameAccountDifferentUser(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	writeProfileFileWithUser(t, home, "personal", "old_access", "old_refresh", "acct_team", "user-one")
@@ -663,7 +662,7 @@ func TestCodexProfileSave_AllowsSameAccountDifferentUser(t *testing.T) {
 
 func TestCodexProfileSave_StoresUserIDFromIDToken(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	writeRefreshAuthJSONWithUser(t, home, "save_access", "save_refresh", "acct_one", "user-one")
@@ -680,7 +679,7 @@ func TestCodexProfileSave_StoresUserIDFromIDToken(t *testing.T) {
 
 func TestCodexProfileRefresh_UpdatesUserIDFromIDToken(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	writeProfileFileWithUser(t, home, "work", "old_access", "old_refresh", "acct_team", "user-one")
@@ -717,7 +716,7 @@ func TestIsDuplicateCodexProfile_Direct(t *testing.T) {
 
 func TestCodexProfileSave_AllowsSameAccountNoUserIDRegression(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	// Existing profile: same account, no user_id in JWT (legacy tokens)
@@ -748,7 +747,7 @@ func TestCodexProfileSave_AllowsSameAccountNoUserIDRegression(t *testing.T) {
 // account has no user_id. This is the Team upgrade scenario.
 func TestCodexProfileSave_AllowsNewUserAlongsideLegacyProfile(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
 	// Legacy profile: same account, no user_id in JWT
@@ -962,7 +961,7 @@ func TestLoadCodexAuthFromFile(t *testing.T) {
 
 func TestCodexProfileSaveWithAuthFile(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 	t.Setenv("CODEX_TOKEN", "")
 
@@ -1002,7 +1001,7 @@ func TestCodexProfileSaveWithAuthFile(t *testing.T) {
 
 func TestCodexProfileRefreshWithAuthFile(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 	t.Setenv("CODEX_TOKEN", "")
 

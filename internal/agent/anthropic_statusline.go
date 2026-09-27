@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -34,7 +36,55 @@ const statuslineFileName = "anthropic-statusline.json"
 //  1. Reads all of stdin into $I
 //  2. Saves $I to ~/.onwatch/data/anthropic-statusline.json (atomic via temp+mv)
 //  3. Pipes $I to stdout (so the next command in the pipe gets it)
-const bridgeSnippet = `bash -c 'I=$(cat);D=$HOME/.onwatch/data;mkdir -p "$D" 2>/dev/null;T="$D/.sl-$$";printf "%s" "$I">"$T"&&mv -f "$T" "$D/anthropic-statusline.json" 2>/dev/null||rm -f "$T" 2>/dev/null;printf "%s" "$I"'`
+//
+// This is the exact text written on macOS and Linux. It must stay byte-for-byte
+// stable: existing installs are recognised (and removed) by matching it.
+const bridgeSnippet = bridgeSnippetHead + `$HOME/.onwatch/data` + bridgeSnippetTail
+
+// bridgeSnippetHead and bridgeSnippetTail surround the data directory in the
+// bridge snippet. Splitting the snippet here lets Windows embed an absolute
+// data directory while every variant stays recognisable for removal.
+const (
+	bridgeSnippetHead = `bash -c 'I=$(cat);D=`
+	bridgeSnippetTail = `;mkdir -p "$D" 2>/dev/null;T="$D/.sl-$$";printf "%s" "$I">"$T"&&mv -f "$T" "$D/anthropic-statusline.json" 2>/dev/null||rm -f "$T" 2>/dev/null;printf "%s" "$I"'`
+)
+
+// bridgeStandaloneSuffix discards the snippet's stdout when the user has no
+// statusline command of their own.
+const bridgeStandaloneSuffix = " > /dev/null"
+
+// bridgeSnippetFor returns the bridge snippet for the given platform and
+// onWatch data directory.
+//
+// On Windows, Claude Code runs statusline commands through Git Bash, where
+// $HOME is not guaranteed to match the directory onWatch reads from:
+// os.UserHomeDir uses %USERPROFILE%, while Git Bash derives HOME from an
+// existing HOME variable or %HOMEDRIVE%%HOMEPATH% first. The snippet therefore
+// embeds the absolute data directory, with forward slashes because Git Bash
+// treats backslashes as escapes.
+func bridgeSnippetFor(goos, dataDir string) string {
+	if goos != "windows" || dataDir == "" {
+		return bridgeSnippet
+	}
+	dir := strings.ReplaceAll(dataDir, `\`, "/")
+	// Double-quote for the inner bash, then escape for the outer single quotes.
+	quoted := `"` + bashDoubleQuoteEscaper.Replace(dir) + `"`
+	quoted = strings.ReplaceAll(quoted, "'", `'\''`)
+	return bridgeSnippetHead + quoted + bridgeSnippetTail
+}
+
+// bashDoubleQuoteEscaper escapes the characters that stay special inside a
+// bash double-quoted string.
+var bashDoubleQuoteEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "`", "\\`")
+
+// bridgeGOOS is the platform whose bridge snippet this process writes. It is a
+// variable only so tests can exercise the Windows and Unix handling on any OS.
+var bridgeGOOS = runtime.GOOS
+
+// currentBridgeSnippet returns the bridge snippet for this platform.
+func currentBridgeSnippet() string {
+	return bridgeSnippetFor(bridgeGOOS, onwatchDataDir())
+}
 
 // bridgeMarker is a substring used to detect if the bridge snippet is already
 // present in the user's statusline command.
@@ -333,27 +383,161 @@ func hasBridgeSnippet(command string) bool {
 // addBridgeSnippet prepends the save snippet to the user's command via a pipe.
 // If the user has no command, returns just the save snippet (no pipe).
 func addBridgeSnippet(userCommand string) string {
+	snippet := currentBridgeSnippet()
 	if userCommand == "" {
 		// No user command - standalone: save data, no display output
-		return bridgeSnippet + " > /dev/null"
+		return snippet + bridgeStandaloneSuffix
 	}
 	// Prepend: save stdin to file, then pipe original stdin to user's command
-	return bridgeSnippet + " | " + userCommand
+	return snippet + " | " + userCommand
 }
 
 // removeBridgeSnippet strips our snippet from the command, returning the
 // user's original command. Returns empty string if nothing remains.
 func removeBridgeSnippet(command string) string {
-	// Remove "snippet | user-cmd" → "user-cmd"
-	if idx := strings.Index(command, bridgeSnippet+" | "); idx == 0 {
-		return strings.TrimSpace(command[len(bridgeSnippet+" | "):])
+	userCmd, _ := stripBridgeSnippet(command)
+	return userCmd
+}
+
+// stripBridgeSnippet removes a bridge snippet written by any onWatch version or
+// platform variant. ok is false when the command does not start with a bridge
+// snippet, in which case command is returned unchanged.
+func stripBridgeSnippet(command string) (userCmd string, ok bool) {
+	if !strings.HasPrefix(command, bridgeSnippetHead) {
+		return command, false
 	}
-	// Remove "snippet > /dev/null" → "" (standalone mode)
-	if command == bridgeSnippet+" > /dev/null" {
-		return ""
+	end := strings.Index(command, bridgeSnippetTail)
+	if end < 0 {
+		return command, false
 	}
-	// Not our command
-	return command
+	rest := command[end+len(bridgeSnippetTail):]
+	switch {
+	case strings.HasPrefix(rest, " | "):
+		// "snippet | user-cmd" -> "user-cmd"
+		return strings.TrimSpace(rest[len(" | "):]), true
+	case rest == bridgeStandaloneSuffix:
+		// "snippet > /dev/null" -> "" (standalone mode)
+		return "", true
+	}
+	return command, false
+}
+
+// bridgedCommand returns the statusline command with the current bridge
+// snippet in front, and whether it differs from currentCmd. A bridge that is
+// outdated for this platform (written for another data directory, or the
+// $HOME form older Windows builds wrote) is replaced in place. A command that
+// mentions the bridge file but was not written by onWatch is left alone.
+//
+// A recognised bridge from the other platform family is also left alone: a
+// settings.json synced between Windows and macOS/Linux would otherwise be
+// rewritten by each machine in turn, forever. Only Windows writes the quoted
+// absolute-path form, so macOS/Linux never rewrite it; Windows replaces the
+// $HOME form, which older Windows builds wrote, after which neither side
+// changes the synced command again.
+func bridgedCommand(currentCmd string) (string, bool) {
+	if !hasBridgeSnippet(currentCmd) {
+		return addBridgeSnippet(currentCmd), true
+	}
+	userCmd, ok := stripBridgeSnippet(currentCmd)
+	if !ok {
+		return currentCmd, false
+	}
+	if bridgeGOOS != "windows" && isWindowsBridgeSnippet(currentCmd) {
+		return currentCmd, false
+	}
+	newCmd := addBridgeSnippet(userCmd)
+	return newCmd, newCmd != currentCmd
+}
+
+// isWindowsBridgeSnippet reports whether command starts with the Windows form
+// of the bridge snippet, which embeds a quoted absolute data directory where
+// the macOS/Linux form has $HOME/.onwatch/data.
+func isWindowsBridgeSnippet(command string) bool {
+	if !strings.HasPrefix(command, bridgeSnippetHead) {
+		return false
+	}
+	return strings.HasPrefix(command[len(bridgeSnippetHead):], `"`)
+}
+
+// removeUnrunnableBridge strips an existing bridge snippet from Claude Code's
+// settings when no shell that can run it is available (Windows without Git
+// Bash, where Claude Code runs the statusline in PowerShell and the snippet
+// takes the user's own statusline down with it). The user's command is
+// restored; a standalone bridge leaves no statusline. Settings without a
+// bridge are not touched.
+func removeUnrunnableBridge(logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	settings, err := readClaudeSettings()
+	if err != nil {
+		return
+	}
+	userCmd, ok := stripBridgeSnippet(getCurrentStatusLineCommand(settings))
+	if !ok {
+		return
+	}
+	if userCmd == "" {
+		delete(settings, "statusLine")
+	} else {
+		setStatusLineCommand(settings, userCmd)
+	}
+	if err := writeClaudeSettings(settings); err != nil {
+		logger.Warn("Failed to remove statusline bridge that PowerShell cannot run", "error", err)
+		return
+	}
+	logger.Info("Removed statusline bridge from Claude Code settings: Git Bash not found, so Claude Code runs the statusline in PowerShell, which cannot run it")
+}
+
+// bridgeShellAvailable reports whether Claude Code will run the statusline
+// command in a shell that understands the bash snippet. On Windows, Claude
+// Code uses Git Bash when it is installed and PowerShell otherwise; under
+// PowerShell the snippet fails and takes the user's own statusline down with
+// it, so the bridge is only configured when Git Bash is present.
+var bridgeShellAvailable = func() bool {
+	if runtime.GOOS != "windows" {
+		return true
+	}
+	return findGitBash(os.Getenv, exec.LookPath, isRegularFile) != ""
+}
+
+// findGitBash locates Git for Windows' bash.exe the way a Windows user would
+// have it installed: an explicit CLAUDE_CODE_GIT_BASH_PATH, next to git.exe on
+// PATH, or a standard install location. Returns "" if none is found.
+func findGitBash(getenv func(string) string, lookPath func(string) (string, error), exists func(string) bool) string {
+	if p := strings.TrimSpace(getenv("CLAUDE_CODE_GIT_BASH_PATH")); p != "" && exists(p) {
+		return p
+	}
+	// git.exe lives in <root>\cmd, <root>\bin or <root>\mingw64\bin.
+	if gitPath, err := lookPath("git"); err == nil && gitPath != "" {
+		dir := filepath.Dir(gitPath)
+		for _, up := range []string{"..", filepath.Join("..", "..")} {
+			if c := filepath.Join(dir, up, "bin", "bash.exe"); exists(c) {
+				return c
+			}
+		}
+	}
+	var candidates []string
+	for _, env := range []string{"ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"} {
+		if root := getenv(env); root != "" {
+			candidates = append(candidates, filepath.Join(root, "Git", "bin", "bash.exe"))
+		}
+	}
+	if root := getenv("LOCALAPPDATA"); root != "" {
+		candidates = append(candidates, filepath.Join(root, "Programs", "Git", "bin", "bash.exe"))
+	}
+	for _, c := range candidates {
+		if exists(c) {
+			return c
+		}
+	}
+	return ""
+}
+
+// isRegularFile reports whether path exists and is not a directory.
+func isRegularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // readClaudeSettings reads and parses ~/.claude/settings.json.
@@ -466,6 +650,12 @@ func SetupStatuslineBridge(logger *slog.Logger) error {
 		return nil
 	}
 
+	if !bridgeShellAvailable() {
+		removeUnrunnableBridge(logger)
+		logger.Info("Claude Code statusline bridge disabled: Git Bash not found; statusline data unavailable on this machine (API polling still runs unless ANTHROPIC_SOURCE=statusline)")
+		return nil
+	}
+
 	// Ensure data directory exists for the statusline file
 	dataDir := onwatchDataDir()
 	if dataDir != "" {
@@ -480,20 +670,22 @@ func SetupStatuslineBridge(logger *slog.Logger) error {
 
 	currentCmd := getCurrentStatusLineCommand(settings)
 
-	if hasBridgeSnippet(currentCmd) {
+	// Prepend our snippet to whatever the user has (or standalone if empty).
+	// An outdated snippet is replaced in place.
+	newCmd, changed := bridgedCommand(currentCmd)
+	if !changed {
 		logger.Debug("Statusline bridge already configured")
 		return nil
 	}
-
-	// Prepend our snippet to whatever the user has (or standalone if empty)
-	newCmd := addBridgeSnippet(currentCmd)
 	setStatusLineCommand(settings, newCmd)
 	if err := writeClaudeSettings(settings); err != nil {
 		logger.Warn("Failed to configure statusline bridge", "error", err)
 		return nil
 	}
 
-	if currentCmd == "" {
+	if hasBridgeSnippet(currentCmd) {
+		logger.Info("Updated statusline bridge")
+	} else if currentCmd == "" {
 		logger.Info("Configured statusline bridge (standalone)")
 	} else {
 		logger.Info("Configured statusline bridge (prepended to existing command)")
@@ -515,6 +707,10 @@ func EnsureStatuslineBridge(logger *slog.Logger) {
 	if !isClaudeCodeInstalled() || isBridgeDisabled() {
 		return
 	}
+	if !bridgeShellAvailable() {
+		removeUnrunnableBridge(logger)
+		return
+	}
 
 	settings, err := readClaudeSettings()
 	if err != nil {
@@ -522,15 +718,17 @@ func EnsureStatuslineBridge(logger *slog.Logger) {
 	}
 
 	currentCmd := getCurrentStatusLineCommand(settings)
-	if hasBridgeSnippet(currentCmd) {
+	newCmd, changed := bridgedCommand(currentCmd)
+	if !changed {
 		return // Still healthy
 	}
 
-	// Bridge was removed (user changed their statusline) - re-prepend
-	newCmd := addBridgeSnippet(currentCmd)
+	// Bridge was removed (user changed their statusline) or is outdated - re-prepend
 	setStatusLineCommand(settings, newCmd)
 	if err := writeClaudeSettings(settings); err == nil {
-		if currentCmd == "" {
+		if hasBridgeSnippet(currentCmd) {
+			logger.Info("Statusline bridge updated")
+		} else if currentCmd == "" {
 			logger.Info("Statusline bridge re-established (standalone)")
 		} else {
 			logger.Info("Statusline bridge re-prepended to user command")

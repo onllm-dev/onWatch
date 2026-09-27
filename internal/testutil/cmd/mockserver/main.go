@@ -51,31 +51,51 @@ func main() {
 		log.Fatalf("failed to listen on %s: %v", addr, err)
 	}
 
+	log.Printf("mock server listening on http://localhost:%d", ln.Addr().(*net.TCPAddr).Port)
+	log.Printf("  Synthetic key: %s", *synKey)
+	log.Printf("  Z.ai key:      %s", *zaiKey)
+	log.Printf("  Anthropic tok: %s", *anthToken)
+
+	// Serve until interrupted. On Windows os.Interrupt arrives as a console
+	// Ctrl+C/Ctrl+Break; the e2e harness instead stops the process with
+	// TerminateProcess, which needs no handling here.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := serve(ctx, ln, srv.mux); err != nil {
+		log.Fatalf("server error: %v", err)
+	}
+}
+
+// serve runs handler on ln until ctx is cancelled, then shuts the server down
+// gracefully. It returns nil on a clean shutdown.
+func serve(ctx context.Context, ln net.Listener, handler http.Handler) error {
 	httpSrv := &http.Server{
-		Handler:      srv.mux,
+		Handler:      handler,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("mock server listening on http://localhost:%d", *port)
-		log.Printf("  Synthetic key: %s", *synKey)
-		log.Printf("  Z.ai key:      %s", *zaiKey)
-		log.Printf("  Anthropic tok: %s", *anthToken)
-		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
-		}
+		errCh <- httpSrv.Serve(ln)
 	}()
 
-	// Wait for interrupt
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("serve: %w", err)
+	case <-ctx.Done():
+	}
 
 	log.Println("shutting down...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	httpSrv.Shutdown(ctx)
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown: %w", err)
+	}
+	if err := <-errCh; err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("serve: %w", err)
+	}
+	return nil
 }
 
 // standaloneServer wraps the mock server logic without using httptest.Server,

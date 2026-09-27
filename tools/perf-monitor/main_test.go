@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -25,19 +26,144 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatalf("create stdout pipe: %v", err)
 	}
 	defer r.Close()
-	os.Stdout = w
-	defer func() { os.Stdout = oldStdout }()
+	// Closes the writer if fn fails the test before the explicit Close below,
+	// so the reader goroutine still sees EOF.
+	defer w.Close()
 
-	fn()
+	// Drain the pipe concurrently. Pipe buffers are small (a few KB on
+	// Windows), so reading only after fn returns deadlocks once fn writes
+	// more than the buffer holds.
+	type readResult struct {
+		out []byte
+		err error
+	}
+	done := make(chan readResult, 1)
+	go func() {
+		out, err := io.ReadAll(r)
+		done <- readResult{out: out, err: err}
+	}()
+
+	os.Stdout = w
+	func() {
+		defer func() { os.Stdout = oldStdout }()
+		fn()
+	}()
 
 	if err := w.Close(); err != nil {
 		t.Fatalf("close writer: %v", err)
 	}
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read stdout: %v", err)
+	res := <-done
+	if res.err != nil {
+		t.Fatalf("read stdout: %v", res.err)
 	}
-	return string(out)
+	return string(res.out)
+}
+
+// isolatePIDFile points the tool's PID file lookup at a fresh temp home and
+// returns the path it will read, with its directory created. HOME (Unix),
+// USERPROFILE and LOCALAPPDATA (Windows) are all redirected so the real
+// onWatch PID file is never read, signalled or removed.
+func isolatePIDFile(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	path := pidFilePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir pid dir: %v", err)
+	}
+	return path
+}
+
+// exitAtStartEnv makes a copy of this test binary exit 0 before flag parsing,
+// so it can stand in for an onwatch binary that dies during startup.
+const exitAtStartEnv = "PERF_MONITOR_EXIT_AT_START"
+
+func init() {
+	if os.Getenv(exitAtStartEnv) == "1" {
+		os.Exit(0)
+	}
+}
+
+// idleHelperEnv turns a re-executed copy of this test binary into an idle
+// process that exits cleanly on os.Interrupt, like the onWatch daemon.
+const idleHelperEnv = "PERF_MONITOR_IDLE_HELPER"
+
+func TestHelperIdleProcess(t *testing.T) {
+	if os.Getenv(idleHelperEnv) != "1" {
+		return
+	}
+	// Notify also re-enables SIGINT if the test run started with it ignored.
+	interrupted := make(chan os.Signal, 1)
+	signal.Notify(interrupted, os.Interrupt)
+	select {
+	case <-interrupted:
+		os.Exit(0)
+	case <-time.After(2 * time.Minute):
+		os.Exit(3)
+	}
+}
+
+// startIdleHelper starts an idle helper process running this test binary
+// (perf-monitor.test, so not an onWatch process). The returned channel closes
+// once the process has exited and been reaped.
+func startIdleHelper(t *testing.T) (*exec.Cmd, <-chan struct{}) {
+	t.Helper()
+	return startIdleHelperBinary(t, os.Args[0])
+}
+
+// startOnwatchNamedIdleHelper starts an idle helper from a copy of this test
+// binary named like the onWatch executable, so it passes isOnwatchProcess.
+func startOnwatchNamedIdleHelper(t *testing.T) (*exec.Cmd, <-chan struct{}) {
+	t.Helper()
+	selfPath, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test binary: %v", err)
+	}
+	self, err := os.ReadFile(selfPath)
+	if err != nil {
+		t.Fatalf("read test binary: %v", err)
+	}
+	bin := filepath.Join(t.TempDir(), onwatchBinaryName)
+	if err := os.WriteFile(bin, self, 0o755); err != nil {
+		t.Fatalf("write onwatch-named helper: %v", err)
+	}
+	return startIdleHelperBinary(t, bin)
+}
+
+func startIdleHelperBinary(t *testing.T, bin string) (*exec.Cmd, <-chan struct{}) {
+	t.Helper()
+	cmd := exec.Command(bin, "-test.run=^TestHelperIdleProcess$")
+	cmd.Env = append(os.Environ(), idleHelperEnv+"=1")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start helper process: %v", err)
+	}
+	exited := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(exited)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-exited
+	})
+	return cmd, exited
+}
+
+func TestParsePIDFile(t *testing.T) {
+	cases := map[string]int{
+		"1234:9211\n": 1234, // current onWatch format: pid:port
+		"1234\n":      1234, // older bare-pid format
+		"not-a-pid":   0,
+		"":            0,
+		"-5:9211":     0,
+	}
+	for in, want := range cases {
+		if got := parsePIDFile([]byte(in)); got != want {
+			t.Errorf("parsePIDFile(%q) = %d, want %d", in, got, want)
+		}
+	}
 }
 
 func TestCalculateStats_EmptySamples(t *testing.T) {
@@ -187,21 +313,7 @@ func TestSaveReport_WritesJSONFile(t *testing.T) {
 }
 
 func TestFindOnWatchProcess_InvalidPidFileFallsBackToPortScanAndReturnsZero(t *testing.T) {
-	home := t.TempDir()
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatalf("set HOME: %v", err)
-	}
-
-	var pidDir string
-	if runtime.GOOS == "darwin" {
-		pidDir = filepath.Join(home, "Library", "Application Support", "onwatch")
-	} else {
-		pidDir = filepath.Join(home, ".local", "share", "onwatch")
-	}
-	if err := os.MkdirAll(pidDir, 0o755); err != nil {
-		t.Fatalf("mkdir pid dir: %v", err)
-	}
-	pidFile := filepath.Join(pidDir, "onwatch.pid")
+	pidFile := isolatePIDFile(t)
 	if err := os.WriteFile(pidFile, []byte("not-a-pid"), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
@@ -242,19 +354,15 @@ func TestIsOnwatchProcess_UnknownPidReturnsFalse(t *testing.T) {
 	}
 }
 
-func TestIsOnwatchProcess_ProcessNameCoverageForCurrentProcess(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("ps-based process checks are only used on darwin/linux")
+// Only the executable's base name counts: the test binary (perf-monitor.test)
+// is not onWatch, a binary named onwatch is, wherever it lives.
+func TestIsOnwatchProcess_MatchesExecutableBaseName(t *testing.T) {
+	if isOnwatchProcess(os.Getpid()) {
+		t.Fatalf("the perf-monitor test binary must not be identified as onwatch (name %q)", processCommandName(os.Getpid()))
 	}
-
-	currentIsOnwatch := isOnwatchProcess(os.Getpid())
-	out, err := exec.Command("ps", "-p", strconv.Itoa(os.Getpid()), "-o", "comm=").Output()
-	if err != nil {
-		t.Fatalf("read current process name: %v", err)
-	}
-	want := strings.Contains(strings.ToLower(string(out)), "onwatch")
-	if currentIsOnwatch != want {
-		t.Fatalf("expected %v for current process name %q, got %v", want, string(out), currentIsOnwatch)
+	helper, _ := startOnwatchNamedIdleHelper(t)
+	if !isOnwatchProcess(helper.Process.Pid) {
+		t.Fatalf("a process running %s must be identified as onwatch (name %q)", onwatchBinaryName, processCommandName(helper.Process.Pid))
 	}
 }
 
@@ -295,71 +403,45 @@ func TestGenerateLoad_CollectsMetricsDeterministically(t *testing.T) {
 }
 
 func TestIsProcessRunning_CurrentAndNonexistentPID(t *testing.T) {
-	gotCurrent := isProcessRunning(os.Getpid())
-	proc, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatalf("find current process: %v", err)
+	if !isProcessRunning(os.Getpid()) {
+		t.Fatal("expected current process to be running")
 	}
-	wantCurrent := proc.Signal(os.Signal(nil)) == nil
-	if gotCurrent != wantCurrent {
-		t.Fatalf("expected current process running=%v, got %v", wantCurrent, gotCurrent)
-	}
-
 	if isProcessRunning(999999) {
 		t.Fatal("expected nonexistent pid to not be running")
+	}
+	if isProcessRunning(0) || isProcessRunning(-1) {
+		t.Fatal("expected non-positive pids to not be running")
+	}
+}
+
+func TestIsProcessRunning_ExitedProcess(t *testing.T) {
+	cmd, exited := startIdleHelper(t)
+	if !isProcessRunning(cmd.Process.Pid) {
+		t.Fatalf("expected helper %d to be running", cmd.Process.Pid)
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatalf("kill helper: %v", err)
+	}
+	<-exited
+	if isProcessRunning(cmd.Process.Pid) {
+		t.Fatalf("expected exited helper %d to not be running", cmd.Process.Pid)
 	}
 }
 
 func TestFindOnWatchProcess_ValidPIDInFileUsesIsProcessRunningBranch(t *testing.T) {
-	home := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	t.Cleanup(func() {
-		_ = os.Setenv("HOME", oldHome)
-	})
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatalf("set HOME: %v", err)
-	}
-
-	var pidDir string
-	if runtime.GOOS == "darwin" {
-		pidDir = filepath.Join(home, "Library", "Application Support", "onwatch")
-	} else {
-		pidDir = filepath.Join(home, ".local", "share", "onwatch")
-	}
-	if err := os.MkdirAll(pidDir, 0o755); err != nil {
-		t.Fatalf("mkdir pid dir: %v", err)
-	}
-	pidFile := filepath.Join(pidDir, "onwatch.pid")
-	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+	pidFile := isolatePIDFile(t)
+	// onWatch writes "pid:port".
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())+":65529"), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
 
-	got := findonWatchProcess(65529)
-	if got != 0 && got != os.Getpid() {
-		t.Fatalf("expected pid file branch to return 0 or current pid, got %d", got)
+	if got := findonWatchProcess(65529); got != os.Getpid() {
+		t.Fatalf("expected pid file branch to return current pid %d, got %d", os.Getpid(), got)
 	}
 }
 
 func TestStopOnWatch_RemovesInvalidPIDFileSafely(t *testing.T) {
-	home := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	t.Cleanup(func() {
-		_ = os.Setenv("HOME", oldHome)
-	})
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatalf("set HOME: %v", err)
-	}
-
-	var pidDir string
-	if runtime.GOOS == "darwin" {
-		pidDir = filepath.Join(home, "Library", "Application Support", "onwatch")
-	} else {
-		pidDir = filepath.Join(home, ".local", "share", "onwatch")
-	}
-	if err := os.MkdirAll(pidDir, 0o755); err != nil {
-		t.Fatalf("mkdir pid dir: %v", err)
-	}
-	pidFile := filepath.Join(pidDir, "onwatch.pid")
+	pidFile := isolatePIDFile(t)
 	if err := os.WriteFile(pidFile, []byte("invalid-pid"), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
@@ -489,8 +571,19 @@ func TestStartOnWatch_ProcessDiesDuringStartupReturnsZero(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
 
-	if err := os.WriteFile(filepath.Join(tempDir, "onwatch"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write failing onwatch script: %v", err)
+	// A copy of this test binary stands in for onwatch and exits at once on
+	// every platform. A shell script would not be executable on Windows.
+	t.Setenv(exitAtStartEnv, "1")
+	selfPath, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test binary: %v", err)
+	}
+	self, err := os.ReadFile(selfPath)
+	if err != nil {
+		t.Fatalf("read test binary: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, onwatchBinaryName), self, 0o755); err != nil {
+		t.Fatalf("write failing onwatch binary: %v", err)
 	}
 
 	pid := startonWatch(65524)
@@ -500,52 +593,56 @@ func TestStartOnWatch_ProcessDiesDuringStartupReturnsZero(t *testing.T) {
 }
 
 func TestStopOnWatch_ValidPIDFileSignalsProcess(t *testing.T) {
-	home := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	t.Cleanup(func() {
-		_ = os.Setenv("HOME", oldHome)
-	})
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatalf("set HOME: %v", err)
-	}
-
-	var pidDir string
-	if runtime.GOOS == "darwin" {
-		pidDir = filepath.Join(home, "Library", "Application Support", "onwatch")
-	} else {
-		pidDir = filepath.Join(home, ".local", "share", "onwatch")
-	}
-	if err := os.MkdirAll(pidDir, 0o755); err != nil {
-		t.Fatalf("mkdir pid dir: %v", err)
-	}
-
-	helpCmd := exec.Command("sh", "-c", "trap 'exit 0' INT TERM; while true; do sleep 1; done")
-	if err := helpCmd.Start(); err != nil {
-		t.Fatalf("start helper process: %v", err)
-	}
-	t.Cleanup(func() {
-		if helpCmd.Process != nil {
-			_ = helpCmd.Process.Kill()
-			_, _ = helpCmd.Process.Wait()
-		}
-	})
-
-	pidFile := filepath.Join(pidDir, "onwatch.pid")
-	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(helpCmd.Process.Pid)), 0o644); err != nil {
+	pidFile := isolatePIDFile(t)
+	helper, exited := startOnwatchNamedIdleHelper(t)
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(helper.Process.Pid)+":65523"), 0o644); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
 
 	stoponWatch(65523)
 
-	if isProcessRunning(helpCmd.Process.Pid) {
-		t.Fatalf("expected helper process %d to be stopped", helpCmd.Process.Pid)
+	select {
+	case <-exited:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("expected helper process %d to be stopped", helper.Process.Pid)
+	}
+	if isProcessRunning(helper.Process.Pid) {
+		t.Fatalf("expected helper process %d to be gone", helper.Process.Pid)
+	}
+	if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
+		t.Fatalf("expected pid file removed, stat err=%v", err)
+	}
+}
+
+// A PID file left behind by a crashed onWatch can name a PID that the OS has
+// since reused for an unrelated process. stoponWatch must treat it as stale:
+// never signal or kill it, and still remove the file.
+func TestStopOnWatch_StalePIDFileDoesNotKillOtherProcess(t *testing.T) {
+	pidFile := isolatePIDFile(t)
+	helper, exited := startIdleHelper(t)
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(helper.Process.Pid)+":65522"), 0o644); err != nil {
+		t.Fatalf("write pid file: %v", err)
+	}
+
+	stoponWatch(65522)
+
+	select {
+	case <-exited:
+		t.Fatalf("stoponWatch stopped non-onwatch process %d named in a stale PID file", helper.Process.Pid)
+	case <-time.After(1 * time.Second):
+	}
+	if !isProcessRunning(helper.Process.Pid) {
+		t.Fatalf("expected non-onwatch process %d to keep running", helper.Process.Pid)
+	}
+	if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
+		t.Fatalf("expected stale pid file removed, stat err=%v", err)
 	}
 }
 
 // runMainHelper re-executes this test binary as a child running main().
 //
 // The child is deliberately isolated: it runs in an empty directory with an
-// empty PATH, so startonWatch's binary search (./onwatch, ../onwatch,
+// empty PATH and a temp home, so startonWatch's binary search (./onwatch, ../onwatch,
 // ../../onwatch, then PATH) genuinely finds nothing. Without that isolation the
 // child locates the repo-root binary built by `app.sh --build` (or an installed
 // onwatch on PATH), starts a real daemon instead of failing, and then the
@@ -560,7 +657,11 @@ func runMainHelper(t *testing.T, envVar string) ([]byte, error) {
 
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run="+t.Name())
 	cmd.Dir = t.TempDir()
-	cmd.Env = append(os.Environ(), envVar+"=1", "PATH="+t.TempDir())
+	// A temp home keeps the child away from the real onWatch PID file, which
+	// --restart would otherwise use to stop the developer's running daemon.
+	home := t.TempDir()
+	cmd.Env = append(os.Environ(), envVar+"=1", "PATH="+t.TempDir(),
+		"HOME="+home, "USERPROFILE="+home, "LOCALAPPDATA="+filepath.Join(home, "AppData", "Local"))
 
 	output, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {

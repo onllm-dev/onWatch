@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 func stubMuseDetect(t *testing.T, creds *api.MuseCredentials) {
@@ -107,7 +108,7 @@ func readSetupTestFile(t *testing.T, path string) string {
 
 func TestFreshSetup_MuseOnly(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("PATH", "")
 	stubMuseDetect(t, &api.MuseCredentials{APIKey: "login-key", Model: "m", Source: "keychain"})
 

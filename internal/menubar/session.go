@@ -2,7 +2,7 @@ package menubar
 
 import (
 	"os"
-	"path/filepath"
+	"path"
 	"runtime"
 	"strings"
 )
@@ -54,8 +54,10 @@ func linuxSessionAvailable(getenv func(string) string, exists func(string) bool)
 	if strings.TrimSpace(getenv("DBUS_SESSION_BUS_ADDRESS")) != "" {
 		return true
 	}
+	// XDG_RUNTIME_DIR is always a slash-separated Linux path, so join with
+	// path (not filepath) to keep this check host-independent.
 	if dir := strings.TrimSpace(getenv("XDG_RUNTIME_DIR")); dir != "" {
-		return exists(filepath.Join(dir, "bus"))
+		return exists(path.Join(dir, "bus"))
 	}
 	return false
 }

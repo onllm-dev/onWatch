@@ -82,13 +82,20 @@ func TestRunningContextBoundsAnUnboundedCallerContext(t *testing.T) {
 		t.Fatal("test precondition: caller context must have no deadline")
 	}
 
+	// Stub both seams: unix lists processes via ps (execCommandContext), and
+	// Windows runs tasklist|findstr (runCommandContext). Whichever the host
+	// uses must receive a context bounded by ScanTimeout.
 	var seen context.Context
-	restore := execCommandContext
+	restoreExec, restoreRun := execCommandContext, runCommandContext
 	execCommandContext = func(c context.Context, name string, args ...string) ([]byte, error) {
 		seen = c
 		return nil, context.Canceled
 	}
-	t.Cleanup(func() { execCommandContext = restore })
+	runCommandContext = func(c context.Context, name string, args ...string) error {
+		seen = c
+		return context.Canceled
+	}
+	t.Cleanup(func() { execCommandContext, runCommandContext = restoreExec, restoreRun })
 
 	RunningContext(ctx, "x.exe", func(string) bool { return false })
 	if seen == nil {

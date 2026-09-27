@@ -15,6 +15,7 @@ import (
 
 	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
@@ -29,7 +30,7 @@ func newCodexManagerFixture(t *testing.T) *codexManagerFixture {
 	t.Helper()
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 	// Pin OpenCode detection under the temp HOME so DetectCodexCredentials never
 	// reads the host's real ~/.local/share/opencode/auth.json (issue #78 path).
@@ -120,7 +121,7 @@ func makeCodexIDToken(t *testing.T, exp time.Time, accountID, userID string) str
 
 func TestNewCodexAgentManager_Defaults(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 
 	manager := NewCodexAgentManager(nil, nil, 15*time.Second, nil)
 	if manager.logger == nil {
@@ -269,7 +270,7 @@ func TestCodexAgentManager_StartAgentForProfile_WiresNotifierChecksAndRefresh(t 
 func TestCodexAgentManager_StartDefaultAgent(t *testing.T) {
 	fx := newCodexManagerFixture(t)
 
-	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	authDir := filepath.Join(testHomeDir(t), ".codex")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
 		t.Fatalf("mkdir .codex: %v", err)
 	}
@@ -365,7 +366,7 @@ func TestCodexAgentManager_Run_LoadsProfilesAndStopsOnCancel(t *testing.T) {
 func TestCodexAgentManager_Run_UsesDefaultCredentialsWhenNoProfiles(t *testing.T) {
 	fx := newCodexManagerFixture(t)
 
-	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	authDir := filepath.Join(testHomeDir(t), ".codex")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
 		t.Fatalf("mkdir .codex: %v", err)
 	}
@@ -506,7 +507,7 @@ func TestCodexAgentManager_StartAgentForProfile_UsesAuthJSONWhenProfileTokenStal
 	profile.Tokens.IDToken = staleToken
 	profilePath := fx.writeProfile(t, profile)
 
-	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	authDir := filepath.Join(testHomeDir(t), ".codex")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
 		t.Fatalf("mkdir .codex: %v", err)
 	}
@@ -560,7 +561,7 @@ func TestCodexAgentManager_StartAgentForProfile_TokenSaveScopedToProfile(t *test
 	profilePath := fx.writeProfile(t, profile)
 
 	// Write something to global auth.json so we can verify it's NOT modified
-	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	authDir := filepath.Join(testHomeDir(t), ".codex")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
 		t.Fatalf("mkdir .codex: %v", err)
 	}
@@ -653,7 +654,7 @@ func TestCodexAgentManager_LoadAndStartProfiles_TeamUsersGetDistinctAccounts(t *
 func TestCodexAgentManager_StartDefaultAgent_UsesCompositeExternalID(t *testing.T) {
 	fx := newCodexManagerFixture(t)
 
-	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	authDir := filepath.Join(testHomeDir(t), ".codex")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
 		t.Fatalf("mkdir .codex: %v", err)
 	}
@@ -699,7 +700,7 @@ func TestCodexAgentManager_TeamProfileRejectsSystemCredsFromDifferentUser(t *tes
 	profile.Tokens.IDToken = tokenA
 	fx.writeProfile(t, profile)
 
-	authDir := filepath.Join(os.Getenv("HOME"), ".codex")
+	authDir := filepath.Join(testHomeDir(t), ".codex")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
 		t.Fatalf("mkdir .codex: %v", err)
 	}

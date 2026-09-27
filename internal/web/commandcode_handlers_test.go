@@ -11,6 +11,7 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
@@ -556,7 +557,7 @@ func TestIsProviderConfiguredCommandCode(t *testing.T) {
 			h := NewHandler(nil, nil, nil, nil, tc.cfg)
 			// Point detection at an empty home so the developer's real auth
 			// files cannot make the "nothing" case pass by accident.
-			t.Setenv("HOME", t.TempDir())
+			testhome.SetTestHome(t, t.TempDir())
 			t.Setenv("COMMAND_CODE_API_KEY", "")
 			t.Setenv("COMMANDCODE_API_KEY", "")
 			t.Setenv("COMMANDCODE_AUTH_PATH", "/nonexistent/auth.json")

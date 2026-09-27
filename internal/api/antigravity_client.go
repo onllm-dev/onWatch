@@ -47,6 +47,15 @@ type AntigravityClient struct {
 	httpClient *http.Client
 	connection *AntigravityConnection
 	logger     *slog.Logger
+	// runCommand runs a discovery tool (ps, lsof, ss, netstat, PowerShell,
+	// WMIC) and returns its stdout. Tests swap it to feed canned output on
+	// any host OS.
+	runCommand func(ctx context.Context, name string, args ...string) ([]byte, error)
+}
+
+// runExternalCommand is the default AntigravityClient.runCommand.
+func runExternalCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).Output()
 }
 
 // AntigravityOption configures an AntigravityClient.
@@ -82,7 +91,8 @@ func NewAntigravityClient(logger *slog.Logger, opts ...AntigravityOption) *Antig
 				},
 			},
 		},
-		logger: logger,
+		logger:     logger,
+		runCommand: runExternalCommand,
 	}
 
 	for _, opt := range opts {
@@ -235,8 +245,7 @@ func (c *AntigravityClient) detectProcess(ctx context.Context) (*AntigravityProc
 
 // detectProcessUnix finds the process on Unix-like systems.
 func (c *AntigravityClient) detectProcessUnix(ctx context.Context) (*AntigravityProcessInfo, error) {
-	cmd := exec.CommandContext(ctx, "ps", "aux")
-	output, err := cmd.Output()
+	output, err := c.runCommand(ctx, "ps", "aux")
 	if err != nil {
 		return nil, fmt.Errorf("antigravity: ps command failed: %w", err)
 	}
@@ -308,11 +317,9 @@ func (c *AntigravityClient) detectProcessWindows(ctx context.Context) (*Antigrav
 	}
 
 	// Fallback 2: WMIC (deprecated on newer Windows 11 but works on older builds)
-	cmd := exec.CommandContext(ctx, "wmic", "process", "where",
+	output, err := c.runCommand(ctx, "wmic", "process", "where",
 		"name like '%antigravity%' or commandline like '%antigravity%'",
 		"get", "processid,commandline", "/format:csv")
-
-	output, err := cmd.Output()
 	if err == nil {
 		if info := c.parseWMICOutput(string(output)); info != nil {
 			return info, nil
@@ -326,15 +333,17 @@ func (c *AntigravityClient) detectProcessWindows(ctx context.Context) (*Antigrav
 // This is the most reliable method on modern Windows as it searches command lines
 // for both "antigravity" and "language_server" process names.
 func (c *AntigravityClient) detectProcessWindowsCIM(ctx context.Context) (*AntigravityProcessInfo, error) {
-	// Single PowerShell command that finds all candidate processes by command line content
+	// Single PowerShell command that finds all candidate processes by command line content.
+	// The filter text itself contains "antigravity" and "language_server", so the
+	// querying powershell.exe would match its own filter; $PID excludes it here and
+	// isAntigravityProbeProcess drops any other probe (e.g. a concurrent instance).
 	psCmd := `Get-CimInstance Win32_Process | Where-Object {` +
-		` $_.CommandLine -and (` +
+		` $_.ProcessId -ne $PID -and $_.CommandLine -and (` +
 		`$_.CommandLine -like '*antigravity*' -or ` +
 		`$_.Name -like '*language_server*'` +
 		`)} | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json`
 
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", psCmd)
-	output, err := cmd.Output()
+	output, err := c.runCommand(ctx, "powershell", "-NoProfile", "-Command", psCmd)
 	if err != nil {
 		return nil, fmt.Errorf("antigravity: CIM query failed: %w", err)
 	}
@@ -365,7 +374,7 @@ func (c *AntigravityClient) detectProcessWindowsCIM(ctx context.Context) (*Antig
 
 	for _, proc := range processes {
 		cmdLine := proc.CommandLine
-		if cmdLine == "" {
+		if cmdLine == "" || isAntigravityProbeProcess(cmdLine) {
 			continue
 		}
 
@@ -413,7 +422,7 @@ func (c *AntigravityClient) parseWMICOutput(output string) *AntigravityProcessIn
 		}
 
 		commandLine := strings.Join(parts[1:len(parts)-1], ",")
-		if !strings.Contains(strings.ToLower(commandLine), "antigravity") {
+		if !strings.Contains(strings.ToLower(commandLine), "antigravity") || isAntigravityProbeProcess(commandLine) {
 			continue
 		}
 
@@ -442,10 +451,8 @@ func (c *AntigravityClient) parseWMICOutput(output string) *AntigravityProcessIn
 // detectProcessWindowsPowerShell uses PowerShell as fallback.
 func (c *AntigravityClient) detectProcessWindowsPowerShell(ctx context.Context) (*AntigravityProcessInfo, error) {
 	// Search both "antigravity" and "language_server" process names
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command",
+	output, err := c.runCommand(ctx, "powershell", "-NoProfile", "-Command",
 		"Get-Process | Where-Object { $_.ProcessName -like '*antigravity*' -or $_.ProcessName -like '*language_server*' } | Select-Object Id, ProcessName | ConvertTo-Json")
-
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, ErrAntigravityProcessNotFound
 	}
@@ -473,16 +480,16 @@ func (c *AntigravityClient) detectProcessWindowsPowerShell(ctx context.Context) 
 	bestScore := -1
 
 	for _, proc := range processes {
-		cmdLineCmd := exec.CommandContext(ctx, "powershell", "-Command",
+		// -NoProfile: output from a user profile script would otherwise be
+		// prepended to the command line read back here.
+		cmdOutput, err := c.runCommand(ctx, "powershell", "-NoProfile", "-Command",
 			fmt.Sprintf("(Get-CimInstance Win32_Process -Filter 'ProcessId = %d').CommandLine", proc.Id))
-
-		cmdOutput, err := cmdLineCmd.Output()
 		if err != nil {
 			continue
 		}
 
 		commandLine := strings.TrimSpace(string(cmdOutput))
-		if !strings.Contains(strings.ToLower(commandLine), "antigravity") {
+		if !strings.Contains(strings.ToLower(commandLine), "antigravity") || isAntigravityProbeProcess(commandLine) {
 			continue
 		}
 
@@ -523,8 +530,7 @@ func (c *AntigravityClient) discoverPorts(ctx context.Context, pid int) ([]int, 
 
 // discoverPortsMacOS uses lsof to find listening ports.
 func (c *AntigravityClient) discoverPortsMacOS(ctx context.Context, pid int) ([]int, error) {
-	cmd := exec.CommandContext(ctx, "lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-p", strconv.Itoa(pid))
-	output, err := cmd.Output()
+	output, err := c.runCommand(ctx, "lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-p", strconv.Itoa(pid))
 	if err != nil {
 		return nil, err
 	}
@@ -535,8 +541,7 @@ func (c *AntigravityClient) discoverPortsMacOS(ctx context.Context, pid int) ([]
 // discoverPortsLinux uses ss or netstat to find listening ports.
 func (c *AntigravityClient) discoverPortsLinux(ctx context.Context, pid int) ([]int, error) {
 	// Try ss first
-	cmd := exec.CommandContext(ctx, "ss", "-tlnp")
-	output, err := cmd.Output()
+	output, err := c.runCommand(ctx, "ss", "-tlnp")
 	if err == nil {
 		ports := parsePortsFromSS(string(output), pid)
 		if len(ports) > 0 {
@@ -545,8 +550,7 @@ func (c *AntigravityClient) discoverPortsLinux(ctx context.Context, pid int) ([]
 	}
 
 	// Fallback to netstat
-	cmd = exec.CommandContext(ctx, "netstat", "-tlnp")
-	output, err = cmd.Output()
+	output, err = c.runCommand(ctx, "netstat", "-tlnp")
 	if err != nil {
 		return nil, err
 	}
@@ -556,8 +560,7 @@ func (c *AntigravityClient) discoverPortsLinux(ctx context.Context, pid int) ([]
 
 // discoverPortsWindows uses netstat to find listening ports.
 func (c *AntigravityClient) discoverPortsWindows(ctx context.Context, pid int) ([]int, error) {
-	cmd := exec.CommandContext(ctx, "netstat", "-ano")
-	output, err := cmd.Output()
+	output, err := c.runCommand(ctx, "netstat", "-ano")
 	if err != nil {
 		return nil, err
 	}
@@ -672,6 +675,19 @@ func scoreWindowsCandidate(info *AntigravityProcessInfo) int {
 	return score
 }
 
+// isAntigravityProbeProcess reports whether a candidate command line is one of
+// onWatch's own discovery queries rather than Antigravity. The CIM and WMIC
+// filters carry the literal "antigravity" (and "language_server") in their own
+// command lines, so the querying powershell.exe or wmic.exe - or a concurrent
+// probe from another onWatch instance - otherwise matches itself. Left in, it
+// outscores nothing-found, which masks "not running" as a port failure and
+// skips the fallbacks; with an equally scored real server it can win outright.
+func isAntigravityProbeProcess(commandLine string) bool {
+	lower := strings.ToLower(commandLine)
+	return strings.Contains(lower, "win32_process") ||
+		(strings.Contains(lower, "wmic") && strings.Contains(lower, "process where"))
+}
+
 func parsePortsFromLsof(output string) []int {
 	var ports []int
 	portPattern := regexp.MustCompile(`:(\d+)\s+\(LISTEN\)`)
@@ -725,17 +741,21 @@ func parsePortsFromNetstat(output string, pid int) []int {
 	return ports
 }
 
+// parsePortsFromWindowsNetstat reads `netstat -ano` TCP rows:
+// Proto, Local Address, Foreign Address, State, PID. Rows whose state is
+// LISTENING are preferred. The State column is localized (e.g. "ABHÖREN" on
+// German Windows) and printed in the OEM code page, so when no row for the PID
+// says LISTENING, a listener is recognized by its unconnected foreign address
+// (port 0, as in 0.0.0.0:0 or [::]:0) instead. Bound-but-not-listening sockets
+// also show port 0 there, so rows in a known English non-listening state
+// (BOUND, CLOSED, ...) are skipped by that fallback.
 func parsePortsFromWindowsNetstat(output string, pid int) []int {
-	var ports []int
+	var listening, fallback []int
 	portPattern := regexp.MustCompile(`:(\d+)$`)
 
 	for _, line := range strings.Split(output, "\n") {
-		if !strings.Contains(line, "LISTENING") {
-			continue
-		}
-
 		parts := strings.Fields(line)
-		if len(parts) < 5 {
+		if len(parts) < 5 || !strings.EqualFold(parts[0], "TCP") {
 			continue
 		}
 
@@ -744,13 +764,43 @@ func parsePortsFromWindowsNetstat(output string, pid int) []int {
 			continue
 		}
 
-		localAddr := parts[1]
-		if match := portPattern.FindStringSubmatch(localAddr); len(match) > 1 {
-			if port, err := strconv.Atoi(match[1]); err == nil {
-				ports = append(ports, port)
-			}
+		match := portPattern.FindStringSubmatch(parts[1])
+		if len(match) < 2 {
+			continue
+		}
+		port, err := strconv.Atoi(match[1])
+		if err != nil {
+			continue
+		}
+
+		state := strings.ToUpper(strings.Join(parts[3:len(parts)-1], " "))
+		switch {
+		case state == "LISTENING":
+			listening = append(listening, port)
+		case strings.HasSuffix(parts[2], ":0") && !windowsNetstatNonListeningStates[state]:
+			fallback = append(fallback, port)
 		}
 	}
 
-	return ports
+	if len(listening) > 0 {
+		return listening
+	}
+	return fallback
+}
+
+// windowsNetstatNonListeningStates are the English netstat TCP states other
+// than LISTENING. The foreign-port-0 fallback skips them.
+var windowsNetstatNonListeningStates = map[string]bool{
+	"BOUND":        true,
+	"CLOSED":       true,
+	"CLOSE_WAIT":   true,
+	"CLOSING":      true,
+	"DELETE_TCB":   true,
+	"ESTABLISHED":  true,
+	"FIN_WAIT_1":   true,
+	"FIN_WAIT_2":   true,
+	"LAST_ACK":     true,
+	"SYN_RECEIVED": true,
+	"SYN_SENT":     true,
+	"TIME_WAIT":    true,
 }

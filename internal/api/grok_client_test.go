@@ -8,8 +8,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 func TestNewGrokClient_Basic(t *testing.T) {
@@ -64,7 +67,7 @@ func buildTestPayloadForNoUsageYet(t *testing.T) []byte {
 	// Field 1 (len) containing sub with field 6 (varint 1) and field 5 len containing field 1 (varint future ts)
 	// Rough wire that triggers hasUsagePeriod + future reset at preferred path.
 	// Use the frame builder from the code paths.
-	future := uint64(time.Now().Add(24*time.Hour).Unix())
+	future := uint64(time.Now().Add(24 * time.Hour).Unix())
 	// Build a tiny message: 1:{ 6: varint(1), 5: {1: varint(future)} }
 	inner5 := appendVarint(nil, (1<<3)|0, future)
 	inner5field := appendLenField(nil, 5, inner5)
@@ -155,5 +158,28 @@ func TestRPC_NoBinary(t *testing.T) {
 	_, err := c.tryRPC(t.Context(), &GrokCredentials{AccessToken: "x"})
 	if err == nil {
 		t.Error("expected binary not found err")
+	}
+}
+
+func TestGrokBinaryFallbackPaths_UsesUserHome(t *testing.T) {
+	home := t.TempDir()
+	testhome.SetTestHome(t, home)
+
+	paths := grokBinaryFallbackPaths()
+	if len(paths) == 0 {
+		t.Fatal("expected fallback paths")
+	}
+	if dir := filepath.Dir(paths[0]); dir != filepath.Join(home, ".local", "bin") {
+		t.Fatalf("per-user fallback dir = %q, want %q", dir, filepath.Join(home, ".local", "bin"))
+	}
+}
+
+func TestGrokBinaryFallbackPaths_NoHomeSkipsRelativePath(t *testing.T) {
+	testhome.SetTestHome(t, "")
+
+	for _, p := range grokBinaryFallbackPaths() {
+		if strings.Contains(filepath.ToSlash(p), ".local/bin") {
+			t.Fatalf("empty home must not produce a cwd-relative candidate, got %q", p)
+		}
 	}
 }

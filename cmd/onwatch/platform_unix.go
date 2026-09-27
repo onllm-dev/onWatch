@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -41,6 +42,22 @@ func processAlive(pid int) bool {
 		return false
 	}
 	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+// processCommandName returns the executable base name of pid ("" when
+// unknown). macOS ps prints the full path for comm, and only the base name may
+// count: otherwise any binary under a directory named onwatch would pass
+// isOnwatchProcess. This matches the Windows variant.
+func processCommandName(pid int) string {
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
+	if err != nil {
+		return ""
+	}
+	name := strings.TrimSpace(string(out))
+	if name == "" {
+		return ""
+	}
+	return filepath.Base(name)
 }
 
 func processZombie(pid int) bool {

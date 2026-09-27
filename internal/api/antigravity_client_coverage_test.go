@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -193,11 +194,43 @@ func TestParsePortsFromLsof_Empty(t *testing.T) {
 }
 
 func TestParsePortsFromWindowsNetstat_NoListening(t *testing.T) {
-	output := `  TCP    0.0.0.0:42100         0.0.0.0:0              ESTABLISHED     1234
+	// Non-listening TCP rows always have a connected foreign address; only a
+	// listener shows port 0 there (0.0.0.0:0 / [::]:0).
+	output := `  TCP    127.0.0.1:42100       10.0.0.1:443           ESTABLISHED     1234
+  TCP    127.0.0.1:42101       127.0.0.1:50000        TIME_WAIT       1234
+  TCP    127.0.0.1:42102       10.0.0.1:443           SYN_SENT        1234
+  UDP    0.0.0.0:42103         *:*                                    1234
 `
 	ports := parsePortsFromWindowsNetstat(output, 1234)
 	if len(ports) != 0 {
 		t.Errorf("expected 0 ports for non-LISTENING entries, got %d", len(ports))
+	}
+}
+
+// A socket that is bound but not listening (BOUND, or CLOSED after close)
+// also shows a foreign address of port 0. When the state column says
+// LISTENING somewhere, only those rows count.
+func TestParsePortsFromWindowsNetstat_PrefersListeningOverBound(t *testing.T) {
+	output := "  TCP    0.0.0.0:50001          0.0.0.0:0              BOUND           1234\r\n" +
+		"  TCP    127.0.0.1:42100        0.0.0.0:0              LISTENING       1234\r\n" +
+		"  TCP    127.0.0.1:50002        0.0.0.0:0              CLOSED          1234\r\n" +
+		"  TCP    [::]:42101             [::]:0                 LISTENING       1234\r\n"
+	ports := parsePortsFromWindowsNetstat(output, 1234)
+	if !slices.Equal(ports, []int{42100, 42101}) {
+		t.Fatalf("ports = %v, want [42100 42101]", ports)
+	}
+}
+
+// Without any LISTENING row (localized Windows), the foreign-port-0 fallback
+// still skips rows whose state is a known English non-listening state.
+func TestParsePortsFromWindowsNetstat_FallbackSkipsKnownNonListeningStates(t *testing.T) {
+	output := "  TCP    0.0.0.0:50001          0.0.0.0:0              BOUND           1234\r\n" +
+		"  TCP    127.0.0.1:50002        0.0.0.0:0              CLOSED          1234\r\n" +
+		"  TCP    127.0.0.1:50003        0.0.0.0:0              SYN_SENT        1234\r\n" +
+		"  TCP    127.0.0.1:7007         0.0.0.0:0              ECOUTE          1234\r\n"
+	ports := parsePortsFromWindowsNetstat(output, 1234)
+	if !slices.Equal(ports, []int{7007}) {
+		t.Fatalf("ports = %v, want [7007]", ports)
 	}
 }
 

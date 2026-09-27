@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/service"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 	"github.com/onllm-dev/onwatch/v2/internal/update"
 )
 
@@ -75,7 +77,7 @@ func newAutostartHarness(t *testing.T) *autostartHarness {
 func isolateHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	prevPID := pidFile
 	pidFile = filepath.Join(home, "onwatch.pid")
 	t.Cleanup(func() { pidFile = prevPID })
@@ -119,6 +121,57 @@ func TestRunningDaemonPID(t *testing.T) {
 	}
 	if _, ok := runningDaemonPID(); ok {
 		t.Error("own PID should report not running")
+	}
+
+	// A live onwatch process is reported running. The helper child is this
+	// test binary, onwatch.test(.exe), so it passes the onwatch-name check.
+	// This must hold on Windows too, where a signal-0 probe always fails.
+	cmd := startSleepSubprocess(t)
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d:9211", cmd.Process.Pid)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if pid, ok := runningDaemonPID(); !ok || pid != cmd.Process.Pid {
+		t.Errorf("runningDaemonPID() = %d, %v; want %d, true", pid, ok, cmd.Process.Pid)
+	}
+}
+
+func TestIsOnwatchProcess(t *testing.T) {
+	if !isOnwatchProcess(os.Getpid()) {
+		t.Error("the onwatch.test binary itself must be recognised as onwatch")
+	}
+	if isOnwatchProcess(0) || isOnwatchProcess(-1) {
+		t.Error("non-positive PIDs are never onwatch")
+	}
+}
+
+// A running daemon must be stopped before the updated one starts. On Windows
+// the old SIGTERM was a no-op and the daemon was never even seen as running.
+func TestRestartAfterUpdateStopsRunningDaemon(t *testing.T) {
+	isolateHome(t)
+	h := newAutostartHarness(t)
+	h.spawnPID = 4242
+
+	cmd := startSleepSubprocess(t)
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	t.Cleanup(func() { _ = cmd.Process.Kill(); <-exited })
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d:9211", cmd.Process.Pid)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, restartAfterUpdate)
+
+	if !strings.Contains(out, "Restarting daemon") {
+		t.Errorf("expected the running daemon to be detected, got: %s", out)
+	}
+	select {
+	case <-exited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the old daemon was not stopped")
+	}
+	if len(h.spawns) != 1 {
+		t.Errorf("expected exactly one daemon spawn, got %d", len(h.spawns))
 	}
 }
 
@@ -633,11 +686,13 @@ func TestTestDaemonIsolationEnv(t *testing.T) {
 		t.Fatal("a test binary must get isolation overrides")
 	}
 
-	var home, db, port string
+	var home, profile, db, port string
 	for _, kv := range env {
 		switch {
 		case strings.HasPrefix(kv, "HOME="):
 			home = strings.TrimPrefix(kv, "HOME=")
+		case strings.HasPrefix(kv, "USERPROFILE="):
+			profile = strings.TrimPrefix(kv, "USERPROFILE=")
 		case strings.HasPrefix(kv, "ONWATCH_DB_PATH="):
 			db = strings.TrimPrefix(kv, "ONWATCH_DB_PATH=")
 		case strings.HasPrefix(kv, "ONWATCH_PORT="):
@@ -653,6 +708,11 @@ func TestTestDaemonIsolationEnv(t *testing.T) {
 	realHome, _ := os.UserHomeDir()
 	if home == "" || home == realHome {
 		t.Errorf("HOME override = %q, must be a scratch directory", home)
+	}
+	// os.UserHomeDir reads USERPROFILE on Windows, so HOME alone would leave a
+	// Windows child in the real profile.
+	if profile != home {
+		t.Errorf("USERPROFILE override = %q, must match HOME %q", profile, home)
 	}
 	if db == "" || strings.HasPrefix(db, realHome) {
 		t.Errorf("ONWATCH_DB_PATH = %q, must not point into the real install", db)

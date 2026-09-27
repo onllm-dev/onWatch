@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -188,11 +189,7 @@ func (c *GrokClient) tryRPC(ctx context.Context, creds *GrokCredentials) (*GrokB
 	resolved, err := exec.LookPath(bin)
 	if err != nil {
 		// Try common install locations quickly
-		for _, cand := range []string{
-			filepath.Join(os.Getenv("HOME"), ".local", "bin", "grok"),
-			"/usr/local/bin/grok",
-			"/opt/homebrew/bin/grok",
-		} {
+		for _, cand := range grokBinaryFallbackPaths() {
 			if _, statErr := os.Stat(cand); statErr == nil {
 				resolved = cand
 				break
@@ -580,8 +577,8 @@ type ProtobufScanGo struct {
 		order int
 	}
 	varints []struct {
-		path  []uint64
-		val   uint64
+		path []uint64
+		val  uint64
 	}
 }
 
@@ -611,8 +608,8 @@ func scanProtobufGo(data []byte, depth int, path []uint64, order int) (ProtobufS
 		case 0:
 			if v, ok := readVarintGo(b, &idx); ok {
 				scan.varints = append(scan.varints, struct {
-					path  []uint64
-					val   uint64
+					path []uint64
+					val  uint64
 				}{fpath, v})
 			} else {
 				idx = start + 1
@@ -681,6 +678,22 @@ func (c *GrokClient) scanLocalSessions() *GrokLocalSessionSummary {
 	}
 	root := filepath.Join(home, "sessions")
 	return scanGrokSessionsDir(root, time.Now().AddDate(0, 0, -30))
+}
+
+// grokBinaryFallbackPaths lists install locations to try when grok is not on
+// PATH. The per-user location comes from os.UserHomeDir (USERPROFILE on
+// Windows, where HOME is normally unset) and is skipped when no home is known,
+// so an empty home never turns into a cwd-relative ".local/bin/grok" lookup.
+func grokBinaryFallbackPaths() []string {
+	name := "grok"
+	if runtime.GOOS == "windows" {
+		name = "grok.exe"
+	}
+	var paths []string
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		paths = append(paths, filepath.Join(home, ".local", "bin", name))
+	}
+	return append(paths, "/usr/local/bin/grok", "/opt/homebrew/bin/grok")
 }
 
 func GrokHomeDir() string {
