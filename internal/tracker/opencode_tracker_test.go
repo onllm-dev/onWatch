@@ -242,3 +242,45 @@ func TestOpenCodeTracker_UsageSummary(t *testing.T) {
 		t.Errorf("CurrentUtil = %f, want 20", summary.CurrentUtil)
 	}
 }
+
+// Usage-API five_hour: idle (no ResetsAt) → session opens → session expires.
+func TestOpenCodeTracker_Process_IdleCycleAdoptsSessionReset(t *testing.T) {
+	s := newTestOpenCodeStore(t)
+	tr := NewOpenCodeTracker(s, slog.Default())
+	now := time.Now().UTC().Truncate(time.Second)
+	sessionEnd := now.Add(5 * time.Hour)
+	step := func(at time.Time, util float64, reset *time.Time) {
+		t.Helper()
+		snap := &api.OpenCodeSnapshot{CapturedAt: at, Quotas: []api.OpenCodeQuota{
+			{Name: "five_hour", Utilization: util, Format: api.OpenCodeQuotaFormatPercent, ResetsAt: reset},
+		}}
+		if err := tr.Process(snap); err != nil {
+			t.Fatalf("Process: %v", err)
+		}
+	}
+	history := func() int {
+		t.Helper()
+		h, err := s.QueryOpenCodeCycleHistory("five_hour")
+		if err != nil {
+			t.Fatalf("QueryOpenCodeCycleHistory: %v", err)
+		}
+		return len(h)
+	}
+
+	step(now, 0, nil)
+	step(now.Add(time.Minute), 3, &sessionEnd)
+	if n := history(); n != 0 {
+		t.Fatalf("session start closed %d empty cycle(s), want 0", n)
+	}
+	active, err := s.QueryActiveOpenCodeCycle("five_hour")
+	if err != nil || active == nil || active.ResetsAt == nil || !active.ResetsAt.Equal(sessionEnd) ||
+		!active.CycleStart.Equal(now.Add(time.Minute)) {
+		t.Fatalf("active cycle = %+v (err %v), want start %v and ResetsAt %v", active, err, now.Add(time.Minute), sessionEnd)
+	}
+	step(now.Add(2*time.Hour), 9, &sessionEnd)
+	step(sessionEnd.Add(10*time.Minute), 0, nil)
+	h, err := s.QueryOpenCodeCycleHistory("five_hour")
+	if err != nil || len(h) != 1 || h[0].PeakUtilization != 9 {
+		t.Fatalf("history = %+v (err %v), want one closed cycle with peak 9", h, err)
+	}
+}

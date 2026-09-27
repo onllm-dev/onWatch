@@ -110,8 +110,18 @@ func (t *OpenCodeTracker) processQuota(quota api.OpenCodeQuota, capturedAt time.
 				resetReason = "api-based (ResetsAt changed)"
 			}
 		} else if quota.ResetsAt != nil && cycle.ResetsAt == nil {
-			resetDetected = true
-			resetReason = "api-based (new ResetsAt appeared)"
+			if cycle.PeakUtilization == 0 && cycle.TotalDelta == 0 {
+				// An idle cycle (e.g. no open 5-hour session) just learned its
+				// reset time: restart it now instead of closing an empty cycle.
+				if err := t.store.RestartOpenCodeCycle(quotaName, capturedAt, *quota.ResetsAt); err != nil {
+					return fmt.Errorf("failed to restart idle cycle: %w", err)
+				}
+				cycle.CycleStart, cycle.ResetsAt = capturedAt, quota.ResetsAt
+				t.lastResets[quotaName] = quota.ResetsAt.Format(time.RFC3339Nano)
+			} else {
+				resetDetected = true
+				resetReason = "api-based (new ResetsAt appeared)"
+			}
 		}
 	}
 
