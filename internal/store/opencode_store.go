@@ -235,6 +235,19 @@ func (s *Store) UpdateOpenCodeCycle(quotaName string, peak, delta float64) error
 	return nil
 }
 
+// RestartOpenCodeCycle moves the active cycle's start and reset time. Only
+// meant for a cycle that has recorded no usage yet.
+func (s *Store) RestartOpenCodeCycle(quotaName string, cycleStart, resetsAt time.Time) error {
+	_, err := s.db.Exec(
+		`UPDATE opencode_reset_cycles SET cycle_start = ?, resets_at = ? WHERE quota_name = ? AND cycle_end IS NULL`,
+		cycleStart.Format(time.RFC3339Nano), resetsAt.Format(time.RFC3339Nano), quotaName,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set opencode cycle reset: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) QueryActiveOpenCodeCycle(quotaName string) (*OpenCodeResetCycle, error) {
 	var cycle OpenCodeResetCycle
 	var cycleStart string

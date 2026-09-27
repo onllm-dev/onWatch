@@ -186,7 +186,7 @@ It is a thin client: it needs the onWatch daemon running (steps above) and finds
 - **Grok** -- xAI Grok Build / SuperGrok credits tracking via local `~/.grok/auth.json` (or `$GROK_HOME`), optional `grok agent stdio` RPC, and grok.com gRPC-web bearer probe (no browser cookie import). Primary "Credits" utilization against plan limit with reset countdown. Informational local session token stats also captured.
 - **Moonshot** -- Balance-based tracking for the Moonshot (Kimi) open-platform API. Available, Voucher, and Cash balance cards with drop-rate trends. Set `MOONSHOT_API_KEY`. See [Moonshot Setup](docs/MOONSHOT_SETUP.md).
 - **DeepSeek** -- Balance-based tracking for the DeepSeek platform API. Total, Granted, and Topped-Up balance cards with drop-rate trends. Set `DEEPSEEK_API_KEY`. See [DeepSeek Setup](docs/DEEPSEEK_SETUP.md).
-- **OpenCode Go** -- Subscription quota cards (5-Hour, Weekly, and Monthly when present) scraped from the authenticated OpenCode Go dashboard, with cycle history and deep insights. Set `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`. Separate from `OPENCODE_ENABLED`, which only feeds ChatGPT credentials into the Codex provider. See [OpenCode Setup](docs/OPENCODE_SETUP.md).
+- **OpenCode Go** -- Subscription quota cards (5-Hour, Weekly, and Monthly when present) read from the plan's own meters via the OpenCode console API (set `OPENCODE_GO_API_KEY`, a service-account key) or, as a legacy fallback, scraped from the authenticated dashboard (`OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`), with cycle history and deep insights. Separate from `OPENCODE_ENABLED`, which only feeds ChatGPT credentials into the Codex provider. See [OpenCode Setup](docs/OPENCODE_SETUP.md).
 - **Ollama Cloud** (beta) -- Included monthly usage in USD from the ollama.com API with plan-derived caps, per-model request counts, extra-usage spend, cycle history and insights. Set `OLLAMA_API_KEY`. See [Ollama Setup](docs/OLLAMA_SETUP.md).
 - **Muse** -- Meta Muse coding-plan quota tracking (5-hour prompts + weekly usage) from the same subscription snapshot `muse /usage` shows, via one minimal probe per poll. Opt-in: set `MUSE_ENABLED=true` and onWatch uses the key `muse login` stored (macOS Keychain / login file), or set `META_API_KEY` directly. Tracking stays off until you opt in, because each poll spends a prompt from your own 5h window. See [Muse Setup](docs/MUSE_SETUP.md).
 - **Command Code** -- Credit balance plus the 5-hour and weekly rate-limit windows from the Command Code API, with billing-period cost, request and token totals. Auto-detected from the `cmd` CLI login (or the pi / OMP auth store); set `COMMAND_CODE_API_KEY` for Docker and headless hosts. Polling reads billing endpoints only, so it spends no credits. See [Command Code Setup](docs/COMMANDCODE_SETUP.md).
@@ -363,8 +363,9 @@ Additional environment variables:
 | `KIMI_CODE_CREDENTIALS`  | Path to kimi-code.json (default ~/.kimi-code/credentials/kimi-code.json)|
 | `MOONSHOT_API_KEY`       | Moonshot (Kimi) open-platform API key (enables balance tracking)|
 | `DEEPSEEK_API_KEY`       | DeepSeek platform API key (enables balance tracking)   |
-| `OPENCODE_GO_WORKSPACE_ID` | OpenCode Go workspace ID (`wrk_...`) from the dashboard URL|
-| `OPENCODE_GO_AUTH_COOKIE` | OpenCode Go `auth` cookie value (enables quota tracking)|
+| `OPENCODE_GO_API_KEY`    | OpenCode console service-account key with usage read access (enables quota tracking; preferred)|
+| `OPENCODE_GO_WORKSPACE_ID` | Legacy scrape mode: OpenCode Go workspace ID (`wrk_...`) from the dashboard URL|
+| `OPENCODE_GO_AUTH_COOKIE` | Legacy scrape mode: OpenCode Go `auth` cookie value|
 | `OLLAMA_API_KEY`         | Ollama Cloud API key from ollama.com/settings/keys (enables usage tracking)|
 | `OLLAMA_MONTHLY_LIMIT`   | Ollama included usage cap in USD (0 = derive from plan)|
 | `OLLAMA_RESET_DAY`       | Ollama reset day of month, 1-31 (0 = learn from the first observed reset, starting from the account anniversary)|

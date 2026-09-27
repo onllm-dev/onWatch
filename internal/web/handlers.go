@@ -1222,7 +1222,7 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		}
 		return api.DetectKimiCredentials(h.logger) != nil
 	case "opencode":
-		return h.config != nil && strings.TrimSpace(h.config.OpenCodeGoWorkspaceID) != "" && strings.TrimSpace(h.config.OpenCodeGoAuthCookie) != ""
+		return h.config != nil && h.config.OpenCodeGoConfigured()
 	case "ollama":
 		return h.config != nil && strings.TrimSpace(h.config.OllamaAPIKey) != ""
 	case "muse":
@@ -1404,6 +1404,7 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.OpenCodeEnabled = src.OpenCodeEnabled
 	dst.OpenCodeGoWorkspaceID = src.OpenCodeGoWorkspaceID
 	dst.OpenCodeGoAuthCookie = src.OpenCodeGoAuthCookie
+	dst.OpenCodeGoAPIKey = src.OpenCodeGoAPIKey
 	dst.OllamaAPIKey = src.OllamaAPIKey
 	dst.OllamaMonthlyLimit = src.OllamaMonthlyLimit
 	dst.OllamaResetDay = src.OllamaResetDay
@@ -1632,6 +1633,10 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 		}
 		if cookie, _ := s["auth_cookie"].(string); cookie != "" {
 			cfg.OpenCodeGoAuthCookie = cookie
+		}
+		// Usage-API mode: a console service-account key (preferred over the cookie).
+		if key, _ := s["api_key"].(string); strings.TrimSpace(key) != "" {
+			cfg.OpenCodeGoAPIKey = strings.TrimSpace(key)
 		}
 	}
 	// Ollama Cloud: API key plus optional included-usage cap and reset day.

@@ -47,6 +47,7 @@ type Config struct {
 	// OpenCode Go provider configuration
 	OpenCodeGoWorkspaceID string // OPENCODE_GO_WORKSPACE_ID
 	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE
+	OpenCodeGoAPIKey      string // OPENCODE_GO_API_KEY: console service-account key (reads the plan's meters via go/status; preferred over the cookie scrape)
 	// Ollama Cloud provider configuration
 	OllamaAPIKey       string  // OLLAMA_API_KEY from ollama.com/settings/keys
 	OllamaMonthlyLimit float64 // OLLAMA_MONTHLY_LIMIT: included usage cap in USD (overrides the plan default; 0 = derive from plan)
@@ -246,6 +247,7 @@ var onwatchEnvKeys = []string{
 	"OPENCODE_ENABLED",
 	"OPENCODE_GO_WORKSPACE_ID",
 	"OPENCODE_GO_AUTH_COOKIE",
+	"OPENCODE_GO_API_KEY",
 	"OPENCODE_HOME",
 	"OLLAMA_API_KEY",
 	"OLLAMA_MONTHLY_LIMIT",
@@ -371,6 +373,7 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	cfg.OpenCodeEnabled = os.Getenv("OPENCODE_ENABLED") == "true"
 	cfg.OpenCodeGoWorkspaceID = strings.TrimSpace(os.Getenv("OPENCODE_GO_WORKSPACE_ID"))
 	cfg.OpenCodeGoAuthCookie = strings.TrimSpace(os.Getenv("OPENCODE_GO_AUTH_COOKIE"))
+	cfg.OpenCodeGoAPIKey = strings.TrimSpace(os.Getenv("OPENCODE_GO_API_KEY"))
 	cfg.OllamaAPIKey = strings.TrimSpace(os.Getenv("OLLAMA_API_KEY"))
 	if v := strings.TrimSpace(os.Getenv("OLLAMA_MONTHLY_LIMIT")); v != "" {
 		if f, err := strconv.ParseFloat(strings.TrimPrefix(v, "$"), 64); err == nil && f > 0 {
@@ -793,7 +796,7 @@ func (c *Config) AvailableProviders() []string {
 	if c.KimiToken != "" || c.KimiEnabled {
 		providers = append(providers, "kimi")
 	}
-	if c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "" {
+	if c.OpenCodeGoConfigured() {
 		providers = append(providers, "opencode")
 	}
 	if c.OllamaAPIKey != "" {
@@ -840,7 +843,7 @@ func (c *Config) HasProvider(name string) bool {
 	case "kimi":
 		return c.KimiToken != "" || c.KimiEnabled
 	case "opencode":
-		return c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != ""
+		return c.OpenCodeGoConfigured()
 	case "ollama":
 		return c.OllamaAPIKey != ""
 	case "muse":
@@ -902,7 +905,7 @@ func (c *Config) HasMultipleProviders() bool {
 	if c.KimiToken != "" || c.KimiEnabled {
 		count++
 	}
-	if c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "" {
+	if c.OpenCodeGoConfigured() {
 		count++
 	}
 	if c.OllamaAPIKey != "" {
@@ -989,6 +992,7 @@ func (c *Config) String() string {
 	opencodeDisplay := redactAPIKey(c.OpenCodeGoAuthCookie, "")
 	fmt.Fprintf(&sb, "  OpenCodeGoWorkspaceID: %s,\n", c.OpenCodeGoWorkspaceID)
 	fmt.Fprintf(&sb, "  OpenCodeGoAuthCookie: %s,\n", opencodeDisplay)
+	fmt.Fprintf(&sb, "  OpenCodeGoAPIKey: %s,\n", redactAPIKey(c.OpenCodeGoAPIKey, ""))
 	fmt.Fprintf(&sb, "  OllamaAPIKey: %s,\n", redactAPIKey(c.OllamaAPIKey, ""))
 	if c.OllamaMonthlyLimit > 0 {
 		fmt.Fprintf(&sb, "  OllamaMonthlyLimit: %.2f,\n", c.OllamaMonthlyLimit)
@@ -1170,4 +1174,10 @@ const DefaultAdminPass = "changeme"
 // a user may have changed from the dashboard.
 func (c *Config) IsDefaultPassword() bool {
 	return c.AdminPass == DefaultAdminPass
+}
+
+// OpenCodeGoConfigured reports whether OpenCode Go tracking has credentials:
+// a usage-API key (preferred) or the legacy workspace ID + auth cookie pair.
+func (c *Config) OpenCodeGoConfigured() bool {
+	return c.OpenCodeGoAPIKey != "" || (c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "")
 }

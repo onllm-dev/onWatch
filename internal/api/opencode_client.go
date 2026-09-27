@@ -11,11 +11,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	openCodeDashboardURLPrefix = "https://opencode.ai/workspace/"
+	openCodeDefaultBaseURL     = "https://opencode.ai"
+	openCodeDashboardURLPrefix = openCodeDefaultBaseURL + "/workspace/"
 	openCodeDashboardURLSuffix = "/go"
 	openCodeUserAgent          = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gecko/20100101 Firefox/148.0"
 	openCodeScrapeTimeout      = 10 * time.Second
@@ -29,13 +31,20 @@ var (
 	ErrOpenCodeNetworkError    = errors.New("opencode: network error")
 	ErrOpenCodeInvalidResponse = errors.New("opencode: invalid response")
 	ErrOpenCodeParseFailed     = errors.New("opencode: parse failed")
-	ErrOpenCodeMissingConfig   = errors.New("opencode: missing workspace id or auth cookie")
+	ErrOpenCodeMissingConfig   = errors.New("opencode: missing usage api key, or workspace id and auth cookie")
 )
 
 type OpenCodeClient struct {
 	httpClient         *http.Client
 	logger             *slog.Logger
 	dashboardURLPrefix string
+	goStatusURL        string
+	usageHTTPClient    *http.Client // longer timeout; derived from httpClient after options
+
+	usageMu     sync.Mutex
+	usageStatus *openCodeGoStatus // last good go/status, reused for openCodeUsageMinInterval
+	usageKey    string
+	usageAt     time.Time
 }
 
 type OpenCodeClientOption func(*OpenCodeClient)
@@ -56,6 +65,7 @@ func WithOpenCodeBaseURL(baseURL string) OpenCodeClientOption {
 	return func(c *OpenCodeClient) {
 		baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 		c.dashboardURLPrefix = baseURL + "/workspace/"
+		c.goStatusURL = baseURL + openCodeGoStatusPath
 	}
 }
 
@@ -80,10 +90,21 @@ func NewOpenCodeClient(logger *slog.Logger, opts ...OpenCodeClientOption) *OpenC
 		},
 		logger:             logger,
 		dashboardURLPrefix: openCodeDashboardURLPrefix,
+		goStatusURL:        openCodeDefaultBaseURL + openCodeGoStatusPath,
 	}
 	for _, o := range opts {
 		o(c)
 	}
+	usage := *c.httpClient
+	if usage.Timeout < openCodeUsageTimeout {
+		usage.Timeout = openCodeUsageTimeout
+	}
+	if t, ok := usage.Transport.(*http.Transport); ok {
+		t = t.Clone()
+		t.ResponseHeaderTimeout = openCodeUsageTimeout
+		usage.Transport = t
+	}
+	c.usageHTTPClient = &usage
 	return c
 }
 

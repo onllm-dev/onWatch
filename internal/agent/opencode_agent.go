@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 type openCodeFetcher interface {
 	FetchSnapshot(ctx context.Context, workspaceID, authCookie string) (*api.OpenCodeSnapshot, error)
+	FetchUsageSnapshot(ctx context.Context, apiKey string) (*api.OpenCodeSnapshot, error)
 }
 
 type OpenCodeAgent struct {
@@ -84,12 +86,13 @@ func (a *OpenCodeAgent) poll(ctx context.Context) {
 		return
 	}
 
-	workspaceID := a.cfg.OpenCodeGoWorkspaceID
-	authCookie := a.cfg.OpenCodeGoAuthCookie
-
-	snapshot, err := a.client.FetchSnapshot(ctx, workspaceID, authCookie)
+	snapshot, err := a.fetch(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
+			return
+		}
+		if errors.Is(err, api.ErrOpenCodeRateLimited) {
+			a.logger.Warn("OpenCode Go status API rate-limited; skipping this cycle")
 			return
 		}
 		a.logger.Error("Failed to fetch OpenCode quotas", "error", err)
@@ -131,4 +134,14 @@ func (a *OpenCodeAgent) poll(ctx context.Context) {
 		"plan_name", snapshot.PlanName,
 		"quota_count", len(snapshot.Quotas),
 	)
+}
+
+// fetch prefers the Go status API (service-account key), which reads the
+// plan's own meters, and falls back to scraping the Go dashboard with the
+// workspace ID + auth cookie.
+func (a *OpenCodeAgent) fetch(ctx context.Context) (*api.OpenCodeSnapshot, error) {
+	if key := a.cfg.OpenCodeGoAPIKey; key != "" {
+		return a.client.FetchUsageSnapshot(ctx, key)
+	}
+	return a.client.FetchSnapshot(ctx, a.cfg.OpenCodeGoWorkspaceID, a.cfg.OpenCodeGoAuthCookie)
 }
