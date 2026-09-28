@@ -85,21 +85,22 @@ func processZombie(pid int) bool {
 	return strings.Contains(strings.TrimSpace(string(out)), "Z")
 }
 
-// procExeName reads the executable base name from /proc on Linux, where ps
-// may be missing (Nix build sandbox, distroless image) or busybox's, which
-// has no -p. ok is false when /proc has no entry for pid.
+// procExeName reads the process name from /proc on Linux, where ps may be
+// missing (Nix build sandbox, distroless image) or busybox's, which has no
+// -p. ok is false when /proc has no entry for pid.
 func procExeName(pid int) (name string, ok bool) {
 	if runtime.GOOS != "linux" {
 		return "", false
 	}
 	dir := "/proc/" + strconv.Itoa(pid)
-	if exe, err := os.Readlink(dir + "/exe"); err == nil {
-		return filepath.Base(strings.TrimSuffix(exe, " (deleted)")), true
-	}
-	// exe is unreadable for other users' processes; comm is truncated to 15
-	// characters but readable.
+	// comm is the name the process was started as (what ps -o comm= shows),
+	// so a binary launched through a symlink named onwatch still matches.
+	// The kernel truncates it to 15 characters, which "onwatch" fits.
 	if comm, err := os.ReadFile(dir + "/comm"); err == nil {
 		return strings.TrimSpace(string(comm)), true
+	}
+	if exe, err := os.Readlink(dir + "/exe"); err == nil {
+		return filepath.Base(strings.TrimSuffix(exe, " (deleted)")), true
 	}
 	return "", false
 }
