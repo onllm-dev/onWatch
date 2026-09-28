@@ -247,5 +247,6 @@ def dashboard_page(authenticated_page):
 def settings_page(authenticated_page):
     """Navigate to the settings page and return the page."""
     authenticated_page.goto(f"{BASE_URL}/settings")
-    authenticated_page.wait_for_selector(".settings-page", timeout=10000)
+    # data-ready: every settings control is wired, not just rendered.
+    authenticated_page.wait_for_selector(".settings-page[data-ready]", timeout=15000)
     return authenticated_page

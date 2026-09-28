@@ -10036,6 +10036,9 @@ function isSettingsPage() {
 
 async function initSettingsPage() {
   setupSettingsTabs();
+  // The password form does not depend on loaded settings. Wire it before the
+  // awaits below, or a click during a slow load silently does nothing.
+  setupSettingsPassword();
   await setupMenubarSettings();
   populateTimezoneSelect();
   await loadSettings();
@@ -10045,9 +10048,10 @@ async function initSettingsPage() {
   setupSMTPTest();
   setupWebhookTest();
   setupPushNotifications();
-  setupSettingsPassword();
   setupThresholdSliders();
   setupOverrides();
+  // Signals that every settings control is wired (used by the e2e suite).
+  document.querySelector('.settings-page')?.setAttribute('data-ready', 'true');
 }
 
 function activateSettingsTab(tabName) {

@@ -16,7 +16,7 @@ class SettingsPage:
     def goto(self) -> None:
         """Navigate to the settings page."""
         self.page.goto(f"{BASE_URL}/settings")
-        self.page.wait_for_selector(".settings-page", timeout=10000)
+        self.page.wait_for_selector(".settings-page[data-ready]", timeout=15000)
 
     def select_tab(self, tab_name: str) -> None:
         """Click a settings tab by its data-tab attribute."""
