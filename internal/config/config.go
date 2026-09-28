@@ -22,6 +22,14 @@ const (
 
 // Config holds all application configuration.
 type Config struct {
+	MistralEnabled        bool
+	MistralDisabled       bool
+	MistralAuthCookie     string
+	MistralAuthMode       string
+	MistralBrowser        string
+	MistralBrowserProfile string
+	MistralRetention      time.Duration // MISTRAL_RETENTION (example: 2160h, 0 disables pruning)
+
 	// Synthetic provider configuration
 	SyntheticAPIKey string // SYNTHETIC_API_KEY
 
@@ -370,6 +378,19 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 		cfg.CodexShowAvailable = "usage"
 	}
 	// OpenCode feeds the Codex provider using ChatGPT OAuth stored by OpenCode.
+	cfg.MistralEnabled = os.Getenv("MISTRAL_ENABLED") == "true"
+	cfg.MistralDisabled = os.Getenv("MISTRAL_ENABLED") == "false"
+	cfg.MistralAuthCookie = strings.TrimSpace(os.Getenv("MISTRAL_AUTH_COOKIE"))
+	cfg.MistralBrowser = strings.TrimSpace(os.Getenv("MISTRAL_BROWSER"))
+	cfg.MistralBrowserProfile = strings.TrimSpace(os.Getenv("MISTRAL_BROWSER_PROFILE"))
+	cfg.MistralRetention = 90 * 24 * time.Hour
+	if env := strings.TrimSpace(os.Getenv("MISTRAL_RETENTION")); env != "" {
+		if env == "0" {
+			cfg.MistralRetention = 0
+		} else if v, err := time.ParseDuration(env); err == nil {
+			cfg.MistralRetention = v
+		}
+	}
 	cfg.OpenCodeEnabled = os.Getenv("OPENCODE_ENABLED") == "true"
 	cfg.OpenCodeGoWorkspaceID = strings.TrimSpace(os.Getenv("OPENCODE_GO_WORKSPACE_ID"))
 	cfg.OpenCodeGoAuthCookie = strings.TrimSpace(os.Getenv("OPENCODE_GO_AUTH_COOKIE"))
@@ -747,6 +768,9 @@ func (c *Config) Validate() error {
 	if c.APIIntegrationsRetention < 0 {
 		return fmt.Errorf("API integrations retention must be non-negative")
 	}
+	if c.MistralRetention < 0 {
+		return fmt.Errorf("Mistral retention must be non-negative")
+	}
 
 	return nil
 }
@@ -808,6 +832,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.CommandCodeAPIKey != "" || c.CommandCodeEnabled {
 		providers = append(providers, "commandcode")
 	}
+	if c.HasProvider("mistral") {
+		providers = append(providers, "mistral")
+	}
 	return providers
 }
 
@@ -842,6 +869,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.GrokToken != "" || c.GrokEnabled
 	case "kimi":
 		return c.KimiToken != "" || c.KimiEnabled
+	case "mistral":
+		return !c.MistralDisabled && (c.MistralEnabled || c.MistralAuthCookie != "")
 	case "opencode":
 		return c.OpenCodeGoConfigured()
 	case "ollama":
@@ -917,6 +946,9 @@ func (c *Config) HasMultipleProviders() bool {
 	if c.CommandCodeAPIKey != "" || c.CommandCodeEnabled {
 		count++
 	}
+	if c.HasProvider("mistral") {
+		count++
+	}
 	return count > 1
 }
 
@@ -968,6 +1000,7 @@ func (c *Config) String() string {
 	fmt.Fprintf(&sb, "  APIIntegrationsEnabled: %v,\n", c.APIIntegrationsEnabled)
 	fmt.Fprintf(&sb, "  APIIntegrationsDir: %s,\n", c.APIIntegrationsDir)
 	fmt.Fprintf(&sb, "  APIIntegrationsRetention: %v,\n", c.APIIntegrationsRetention)
+	fmt.Fprintf(&sb, "  MistralRetention: %v,\n", c.MistralRetention)
 
 	// Redact Cursor token
 	cursorDisplay := redactAPIKey(c.CursorToken, "")

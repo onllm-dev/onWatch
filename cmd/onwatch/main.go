@@ -1946,6 +1946,14 @@ func run() error {
 	if kimiAg != nil {
 		agentMgr.RegisterFactory("kimi", func() (agent.AgentRunner, error) { return kimiAg, nil })
 	}
+	if cfg.HasProvider("mistral") {
+		agentMgr.RegisterFactory("mistral", func() (agent.AgentRunner, error) {
+			mistralAg := agent.NewMistralAgent(db, cfg, logger)
+			mistralAg.SetNotifier(notifier)
+			mistralAg.SetPollingCheck(func() bool { return isPollingEnabled("mistral") })
+			return mistralAg, nil
+		})
+	}
 	if opencodeAg != nil {
 		agentMgr.RegisterFactory("opencode", func() (agent.AgentRunner, error) { return opencodeAg, nil })
 	}
@@ -2003,7 +2011,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode", "ollama", "muse", "commandcode"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode", "mistral", "ollama", "muse", "commandcode"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
@@ -2615,6 +2623,11 @@ func printHelp() {
 	fmt.Println("  MINIMAX_API_KEY         MiniMax API key")
 	fmt.Println("  MINIMAX_REGION          MiniMax region: global or cn (default: global)")
 	fmt.Println("  OPENROUTER_API_KEY      OpenRouter API key")
+	fmt.Println("  MISTRAL_ENABLED        Enable Mistral subscription and pay-as-you-go tracking")
+	fmt.Println("  MISTRAL_AUTH_COOKIE    Manual Mistral Cookie header (keep private)")
+	fmt.Println("  MISTRAL_BROWSER        auto, chrome, firefox, safari, or edge")
+	fmt.Println("  MISTRAL_BROWSER_PROFILE Browser profile path/name; optional ::container=ID")
+	fmt.Println("  MISTRAL_RETENTION      How long Mistral history is kept (default 2160h; 0 disables)")
 	fmt.Println("  OLLAMA_API_KEY          Ollama Cloud API key (ollama.com/settings/keys)")
 	fmt.Println("  OLLAMA_MONTHLY_LIMIT    Ollama included usage cap in USD (0 = derive from plan)")
 	fmt.Println("  OLLAMA_RESET_DAY        Ollama reset day of month (1-31; 0 = account anniversary)")

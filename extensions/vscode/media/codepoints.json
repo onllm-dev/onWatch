@@ -10,11 +10,12 @@
   "grok": 57353,
   "kimi": 57354,
   "minimax": 57355,
-  "moonshot": 57356,
-  "ollama": 57357,
-  "openai": 57358,
-  "opencode": 57359,
-  "openrouter": 57360,
-  "synthetic": 57361,
-  "zai": 57362
+  "mistral": 57356,
+  "moonshot": 57357,
+  "ollama": 57358,
+  "openai": 57359,
+  "opencode": 57360,
+  "openrouter": 57361,
+  "synthetic": 57362,
+  "zai": 57363
 }

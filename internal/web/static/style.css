@@ -4322,3 +4322,49 @@ body.accounts-overview-mode #sessions-section {
     animation: none;
   }
 }
+
+/* Plain-language explanation for providers that work differently from the
+   rest (currently Mistral). Shown once on the provider page and always in its
+   settings window. */
+.provider-intro {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent-teal);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.provider-intro-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.provider-intro-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.provider-intro-list li + li {
+  margin-top: 4px;
+}
+.provider-intro-list strong {
+  color: var(--text-primary);
+}
+.provider-intro-dismiss {
+  margin-top: 10px;
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.provider-intro-dismiss:hover {
+  border-color: var(--accent-teal);
+}
+.provider-intro-settings {
+  margin-bottom: 20px;
+}

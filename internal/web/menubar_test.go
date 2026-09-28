@@ -206,6 +206,61 @@ func TestMenubarSummaryIncludesCursorWhenEnabled(t *testing.T) {
 	}
 }
 
+// mistral_enabled must reflect config, not poll state: a provider card only
+// appears in Providers once it has quota data, which would hide anything
+// gated on it (e.g. the menubar's browser-access grant prompt) until after
+// the first successful poll.
+func TestMenubarSummaryReportsMistralEnabledIndependentlyOfPollData(t *testing.T) {
+	t.Setenv("ONWATCH_TEST_MODE", "1")
+
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+	}{
+		{"enabled", true},
+		{"disabled", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{
+				MistralEnabled: tc.enabled,
+				PollInterval:   60 * time.Second,
+				Port:           9211,
+				AdminUser:      "admin",
+				AdminPass:      "test",
+				DBPath:         "./test.db",
+			}
+			h := NewHandler(s, nil, nil, nil, cfg)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+			req.RemoteAddr = "127.0.0.1:12345"
+			rr := httptest.NewRecorder()
+			h.MenubarSummary(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+			}
+			var snap menubar.Snapshot
+			if err := json.Unmarshal(rr.Body.Bytes(), &snap); err != nil {
+				t.Fatalf("json.Unmarshal: %v", err)
+			}
+			if snap.MistralEnabled != tc.enabled {
+				t.Fatalf("MistralEnabled=%v, want %v", snap.MistralEnabled, tc.enabled)
+			}
+			for _, p := range snap.Providers {
+				if p.BaseProvider == "mistral" {
+					t.Fatalf("no Mistral poll data was saved, but a mistral provider card was returned: %#v", p)
+				}
+			}
+		})
+	}
+}
+
 func TestMenubarSummaryUsesConfiguredThresholds(t *testing.T) {
 	t.Setenv("ONWATCH_TEST_MODE", "1")
 

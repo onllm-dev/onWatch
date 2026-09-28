@@ -40,6 +40,8 @@ func defaultProviderTabLabel(key string) string {
 		return "Grok"
 	case "kimi":
 		return "Kimi"
+	case "mistral":
+		return "Mistral"
 	case "opencode":
 		return "OpenCode"
 	case "ollama":

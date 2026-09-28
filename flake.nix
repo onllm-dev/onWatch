@@ -19,7 +19,7 @@
           inherit version;
           src = ./.;
           subPackages = [ "cmd/onwatch" ];
-          vendorHash = "sha256-zagPclPZItTTUaMh+8Ph7k5ESqc3vETPNkhMQ493MoY=";
+          vendorHash = "sha256-/WAnFpl4zdWzrF1KL0xb0WZOwIGm5jLhHvZSYEbDlrQ=";
           ldflags = [
             "-s"
             "-w"

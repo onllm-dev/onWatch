@@ -17,6 +17,7 @@ export const GLYPHS: ReadonlySet<string> = new Set([
   "ollama",
   "openai",
   "opencode",
+  "mistral",
   "openrouter",
   "synthetic",
   "zai",

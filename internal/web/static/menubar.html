@@ -387,6 +387,10 @@
             mask-image: url("/static/icons/kimi.svg");
         }
 
+        .provider-icon-mistral {
+ -webkit-mask-image: url("/static/icons/mistral.svg");
+ mask-image: url("/static/icons/mistral.svg");
+ }
         .provider-icon-opencode {
             -webkit-mask-image: url("/static/icons/opencode.svg");
             mask-image: url("/static/icons/opencode.svg");
@@ -2248,6 +2252,7 @@
             }
 
             function sourceTagMarkup(quota) {
+                if (quota.is_stale) return '<span class="quota-source-tag">Stale data</span>';
                 if (!quota.source || quota.source !== 'api') return '';
                 const age = quota.age_seconds || 0;
                 let ageText = '';
@@ -2302,10 +2307,12 @@
                         <div class="provider-copy">
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
+                            ${provider.connection_status === 'reconnect' ? '<span class="quota-source-tag">Reconnect required</span>' : provider.connection_status === 'stale' ? '<span class="quota-source-tag">Updates unavailable</span>' : ''}
                             ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
                         </div>
                         <span class="provider-updated">${escapeHTML(compactUpdatedLabel(provider.updated_at))}</span>
                     </div>
+ ${provider.base_provider === "mistral" && provider.subtitle ? `<div class="quota-detail-meta">${escapeHTML(provider.subtitle)}</div>` : ""}
                 `;
             }
 
@@ -2762,7 +2769,9 @@
                     return "provider-icon-grok";
                 case "kimi":
                     return "provider-icon-kimi";
-                case "opencode":
+                case "mistral":
+ return "provider-icon-mistral";
+ case "opencode":
                     return "provider-icon-opencode";
                 case "ollama":
                     return "provider-icon-ollama";
@@ -2817,7 +2826,10 @@
                 const used = Number(quota.used);
                 if (Number.isFinite(limit) && limit > 0 && Number.isFinite(used) && used >= 0) {
                     if (quota.format === "currency") {
-                        return `$${formatUsd(used)}/$${formatUsd(limit)}`;
+                        if (quota.currency && quota.currency !== "USD") {
+ try {const fmt=new Intl.NumberFormat(undefined,{style:"currency",currency:quota.currency});return `${fmt.format(used)}/${fmt.format(limit)}`;} catch {return `${formatUsd(used)}/${formatUsd(limit)} ${quota.currency}`;}
+ }
+ return `$${formatUsd(used)}/$${formatUsd(limit)}`;
                     }
                     if (quota.format === "credits") {
                         return `${formatCredits(used)}/${formatCredits(limit)} cr`;
