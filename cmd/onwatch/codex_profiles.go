@@ -817,10 +817,13 @@ func listCodexProfiles() ([]CodexProfile, error) {
 	}
 
 	entries, err := os.ReadDir(profilesDir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
 	if err != nil {
+		// Only a missing directory means "no profiles yet". Windows reports a
+		// file in the directory's place as "path not found" too, which must
+		// not be mistaken for an empty profile list.
+		if _, statErr := os.Stat(profilesDir); os.IsNotExist(statErr) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("failed to read profiles directory: %w", err)
 	}
 

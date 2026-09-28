@@ -33,3 +33,18 @@ func TestOpenCodeGoConfiguredLegacyPairStillWorks(t *testing.T) {
 		t.Fatal("legacy workspace+cookie detection changed")
 	}
 }
+
+// Base-URL overrides point the balance and OpenCode clients at a proxy or a
+// mock server (the e2e suite uses them).
+func TestLoadProviderBaseURLOverrides(t *testing.T) {
+	t.Setenv("OPENCODE_GO_BASE_URL", " http://127.0.0.1:19212 ")
+	t.Setenv("DEEPSEEK_BASE_URL", "http://127.0.0.1:19213")
+	t.Setenv("MOONSHOT_BASE_URL", "http://127.0.0.1:19214")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.OpenCodeGoBaseURL != "http://127.0.0.1:19212" || cfg.DeepSeekBaseURL != "http://127.0.0.1:19213" || cfg.MoonshotBaseURL != "http://127.0.0.1:19214" {
+		t.Fatalf("base URLs = %q %q %q", cfg.OpenCodeGoBaseURL, cfg.DeepSeekBaseURL, cfg.MoonshotBaseURL)
+	}
+}

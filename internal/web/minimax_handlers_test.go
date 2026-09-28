@@ -87,12 +87,12 @@ func TestBuildMiniMaxCurrent_SharedQuota(t *testing.T) {
 	var resp struct {
 		SharedQuota bool `json:"sharedQuota"`
 		Quotas      []struct {
-			Name         string   `json:"name"`
-			DisplayName  string   `json:"displayName"`
-			Used         int      `json:"used"`
-			Remaining    int      `json:"remaining"`
-			Total        int      `json:"total"`
-			UsagePercent float64  `json:"usagePercent"`
+			Name         string  `json:"name"`
+			DisplayName  string  `json:"displayName"`
+			Used         int     `json:"used"`
+			Remaining    int     `json:"remaining"`
+			Total        int     `json:"total"`
+			UsagePercent float64 `json:"usagePercent"`
 		} `json:"quotas"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {

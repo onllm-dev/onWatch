@@ -29,11 +29,12 @@ class TestDataTables:
         headers = dashboard_page.query_selector_all(
             "#cycles-table thead th[data-sort-key]"
         )
-        assert len(headers) >= 5
+        # Logging history: row number, time, then one column per quota.
+        assert len(headers) >= 3
         sort_keys = [h.get_attribute("data-sort-key") for h in headers]
+        assert "id" in sort_keys
         assert "start" in sort_keys
-        assert "peak" in sort_keys
-        assert "total" in sort_keys
+        assert any(k.startswith("cq_") for k in sort_keys)
 
     def test_cycles_pagination_controls(self, dashboard_page: Page) -> None:
         """The cycles section should have pagination controls."""

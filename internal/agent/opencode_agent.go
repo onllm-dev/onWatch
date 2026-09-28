@@ -136,9 +136,8 @@ func (a *OpenCodeAgent) poll(ctx context.Context) {
 	)
 }
 
-// fetch prefers the Go status API (service-account key), which reads the
-// plan's own meters, and falls back to scraping the Go dashboard with the
-// workspace ID + auth cookie.
+// fetch reads the Go status API with the service-account key when one is set,
+// otherwise with the workspace ID + console session cookie.
 func (a *OpenCodeAgent) fetch(ctx context.Context) (*api.OpenCodeSnapshot, error) {
 	if key := a.cfg.OpenCodeGoAPIKey; key != "" {
 		return a.client.FetchUsageSnapshot(ctx, key)

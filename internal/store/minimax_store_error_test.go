@@ -53,7 +53,7 @@ func TestClosedDB_MiniMaxStoreFunctions(t *testing.T) {
 	})
 
 	t.Run("QueryActiveMiniMaxCycle", func(t *testing.T) {
-		_, err := s.QueryActiveMiniMaxCycle("MiniMax-M2", 2) 
+		_, err := s.QueryActiveMiniMaxCycle("MiniMax-M2", 2)
 		if err == nil {
 			t.Fatal("expected error from QueryActiveMiniMaxCycle on closed DB")
 		}

@@ -21,9 +21,9 @@ type GeminiQuotaResponse struct {
 
 // GeminiTierResponse is the response from loadCodeAssist.
 type GeminiTierResponse struct {
-	Tier                     string `json:"tier"`
-	CloudAICompanionProject  string `json:"cloudaicompanionProject"`
-	PlanName                 string `json:"planName,omitempty"`
+	Tier                    string `json:"tier"`
+	CloudAICompanionProject string `json:"cloudaicompanionProject"`
+	PlanName                string `json:"planName,omitempty"`
 }
 
 // GeminiQuota is a normalized per-model quota for storage.
@@ -168,11 +168,11 @@ func AggregateGeminiByFamily(quotas []GeminiQuota) []GeminiFamilyQuota {
 
 // geminiDisplayNames maps model IDs to human-readable labels.
 var geminiDisplayNames = map[string]string{
-	"gemini-2.5-pro":             "Gemini 2.5 Pro",
-	"gemini-2.5-flash":           "Gemini 2.5 Flash",
-	"gemini-2.5-flash-lite":      "Gemini 2.5 Flash Lite",
-	"gemini-3-pro-preview":       "Gemini 3 Pro",
-	"gemini-3-flash-preview":     "Gemini 3 Flash",
+	"gemini-2.5-pro":                "Gemini 2.5 Pro",
+	"gemini-2.5-flash":              "Gemini 2.5 Flash",
+	"gemini-2.5-flash-lite":         "Gemini 2.5 Flash Lite",
+	"gemini-3-pro-preview":          "Gemini 3 Pro",
+	"gemini-3-flash-preview":        "Gemini 3 Flash",
 	"gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash Lite",
 }
 

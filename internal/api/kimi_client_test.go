@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 func TestKimiClientFetchSnapshot(t *testing.T) {
@@ -99,7 +101,7 @@ func TestKimiClientFetchSnapshot_ForceRefreshOn401UnexpiredAccess(t *testing.T) 
 	defer srv.Close()
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("KIMI_CODE_HOME", "")
 	t.Setenv("KIMI_CODE_CREDENTIALS", "")
 	t.Setenv("KIMI_CREDENTIALS", "")
@@ -166,7 +168,7 @@ func kimiUsagesOK(w http.ResponseWriter, used string) {
 func setupKimiCodeCreds(t *testing.T, access, refresh string, expiresAt float64) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("KIMI_CODE_HOME", "")
 	t.Setenv("KIMI_CODE_CREDENTIALS", "")
 	t.Setenv("KIMI_CREDENTIALS", "")

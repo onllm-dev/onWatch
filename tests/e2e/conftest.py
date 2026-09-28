@@ -4,8 +4,9 @@ Session-scoped fixtures build and start the mock server and onwatch binary,
 then tear them down after all tests complete.
 """
 import os
-import signal
 import subprocess
+import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Generator
@@ -24,15 +25,33 @@ MOCK_URL = f"http://localhost:{MOCK_PORT}"
 USERNAME = "admin"
 PASSWORD = "testpass123"
 
-# Paths
+# Paths (tempdir + .exe so the suite also runs on Windows)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-MOCK_BINARY = "/tmp/mockserver-test"
-ONWATCH_BINARY = "/tmp/onwatch-test"
+TMP_DIR = Path(tempfile.gettempdir())
+EXE_SUFFIX = ".exe" if os.name == "nt" else ""
+MOCK_BINARY = str(TMP_DIR / f"mockserver-test{EXE_SUFFIX}")
+ONWATCH_BINARY = str(TMP_DIR / f"onwatch-test{EXE_SUFFIX}")
 # E2E isolation: override HOME so the canonical DB path (~/.onwatch/data/onwatch.db)
 # does not exist. This prevents main.go's fixExplicitDBPath() from redirecting to
 # the production database.
-E2E_HOME = "/tmp/onwatch-e2e-home"
-DB_PATH = "/tmp/onwatch-e2e.db"
+E2E_HOME = str(TMP_DIR / "onwatch-e2e-home")
+DB_PATH = str(TMP_DIR / "onwatch-e2e.db")
+
+
+def pytest_configure(config) -> None:
+    """Refuse to run on a developer Mac.
+
+    onWatch auto-detects Cursor credentials from the macOS Keychain (not from
+    HOME) and can refresh and rewrite them, so an e2e daemon on a signed-in
+    Mac could rotate real tokens. CI runners are clean; set
+    ONWATCH_E2E_ALLOW_HOST=1 only on a machine with no real credentials.
+    """
+    if sys.platform == "darwin" and not os.environ.get("CI") and os.environ.get("ONWATCH_E2E_ALLOW_HOST") != "1":
+        pytest.exit(
+            "e2e suite is CI-only on macOS: the daemon can read and refresh real "
+            "Keychain credentials. Set ONWATCH_E2E_ALLOW_HOST=1 on a clean machine.",
+            returncode=2,
+        )
 
 
 def _wait_for_http(url: str, timeout: float = 30.0, interval: float = 0.5) -> bool:
@@ -54,11 +73,72 @@ def _kill_process(proc: subprocess.Popen) -> None:
     """Kill a subprocess and wait for it to exit."""
     if proc.poll() is None:
         try:
-            proc.send_signal(signal.SIGTERM)
+            proc.terminate()  # SIGTERM on Unix, TerminateProcess on Windows
             proc.wait(timeout=5)
         except (subprocess.TimeoutExpired, OSError):
             proc.kill()
             proc.wait(timeout=5)
+
+
+def remove_instance_files(db_path: str, home: str) -> None:
+    """Remove an onwatch instance's database files and HOME directory."""
+    import shutil
+    for path in [db_path, f"{db_path}-journal", f"{db_path}-wal", f"{db_path}-shm"]:
+        try:
+            os.unlink(path)
+        except OSError:
+            # Already gone, or still locked on Windows while the daemon exits;
+            # start_onwatch clears leftovers before the next run.
+            continue
+    if os.path.exists(home):
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def start_onwatch(port: int, db_path: str, home: str, provider_env: dict) -> subprocess.Popen:
+    """Start the built onwatch binary in an isolated HOME and wait for /login.
+
+    Anthropic is pinned to a fake token in statusline mode: onWatch never
+    reads the real Claude Code keychain entry and never calls the usage or
+    OAuth refresh endpoints, so running the suite on a developer machine
+    cannot rotate (and log out) real credentials.
+    """
+    remove_instance_files(db_path, home)
+    os.makedirs(home, exist_ok=True)
+    env = os.environ.copy()
+    env.update({
+        "HOME": home,
+        "USERPROFILE": home,  # Windows home directory
+        # Windows keeps the test PID file under LOCALAPPDATA; a shared one
+        # lets a second daemon stop the first on startup.
+        "LOCALAPPDATA": os.path.join(home, "AppData", "Local"),
+        "ONWATCH_ADMIN_PASS": PASSWORD,
+        "ONWATCH_TEST_MODE": "1",
+        "ANTHROPIC_TOKEN": "anth_test_e2e_token",
+        "ANTHROPIC_SOURCE": "statusline",
+    })
+    env.update(provider_env)
+    # A file, not a pipe: an unread pipe fills up and blocks the daemon. CI
+    # prints these logs when a job fails. The child keeps its own handle, so
+    # ours can be closed as soon as the process starts.
+    with open(TMP_DIR / f"onwatch-e2e-{port}.log", "w") as log:
+        proc = subprocess.Popen(
+            [
+                ONWATCH_BINARY,
+                "--debug",
+                f"--port={port}",
+                "--interval=10",
+                "--test",
+                f"--db={db_path}",
+            ],
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+    ready = _wait_for_http(f"http://localhost:{port}/login", timeout=30)
+    if not ready:
+        _kill_process(proc)
+    assert ready, f"onWatch on port {port} did not start in time"
+    return proc
 
 
 @pytest.fixture(scope="session")
@@ -104,17 +184,6 @@ def mock_server() -> Generator[subprocess.Popen, None, None]:
 @pytest.fixture(scope="session")
 def onwatch_server(mock_server: subprocess.Popen) -> Generator[subprocess.Popen, None, None]:
     """Build and start the onwatch binary."""
-    # Clean up any stale DB and home directory
-    import shutil
-    for path in [DB_PATH, f"{DB_PATH}-journal", f"{DB_PATH}-wal", f"{DB_PATH}-shm"]:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-    if os.path.exists(E2E_HOME):
-        shutil.rmtree(E2E_HOME)
-    os.makedirs(E2E_HOME, exist_ok=True)
-
     # Build onwatch
     build_cmd = ["go", "build"]
     build_tags = os.environ.get("ONWATCH_E2E_GO_BUILD_TAGS", "").strip()
@@ -131,34 +200,11 @@ def onwatch_server(mock_server: subprocess.Popen) -> Generator[subprocess.Popen,
     )
     assert result.returncode == 0, f"onWatch build failed: {result.stderr}"
 
-    env = os.environ.copy()
-    env.update({
-        "HOME": E2E_HOME,
-        "ONWATCH_ADMIN_PASS": PASSWORD,
-        "ONWATCH_TEST_MODE": "1",
+    proc = start_onwatch(ONWATCH_PORT, DB_PATH, E2E_HOME, {
         "SYNTHETIC_API_KEY": "syn_test_e2e_key",
         "ZAI_API_KEY": "zai_test_e2e_key",
         "ZAI_BASE_URL": f"http://localhost:{MOCK_PORT}",
-        "ANTHROPIC_TOKEN": "anth_test_e2e_token",
     })
-
-    proc = subprocess.Popen(
-        [
-            ONWATCH_BINARY,
-            "--debug",
-            f"--port={ONWATCH_PORT}",
-            "--interval=10",
-            "--test",
-            f"--db={DB_PATH}",
-        ],
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-    # Wait for onwatch to be ready (login page returns 200)
-    ready = _wait_for_http(f"{BASE_URL}/login", timeout=30)
-    assert ready, "onWatch server did not start in time"
 
     yield proc
 
@@ -168,14 +214,7 @@ def onwatch_server(mock_server: subprocess.Popen) -> Generator[subprocess.Popen,
         os.unlink(ONWATCH_BINARY)
     except OSError:
         pass
-    for path in [DB_PATH, f"{DB_PATH}-journal", f"{DB_PATH}-wal", f"{DB_PATH}-shm"]:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-    import shutil
-    if os.path.exists(E2E_HOME):
-        shutil.rmtree(E2E_HOME, ignore_errors=True)
+    remove_instance_files(DB_PATH, E2E_HOME)
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -208,5 +247,6 @@ def dashboard_page(authenticated_page):
 def settings_page(authenticated_page):
     """Navigate to the settings page and return the page."""
     authenticated_page.goto(f"{BASE_URL}/settings")
-    authenticated_page.wait_for_selector(".settings-page", timeout=10000)
+    # data-ready: every settings control is wired, not just rendered.
+    authenticated_page.wait_for_selector(".settings-page[data-ready]", timeout=15000)
     return authenticated_page

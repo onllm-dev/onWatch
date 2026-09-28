@@ -296,3 +296,15 @@ func TestMistralScanErrorOmitsPath(t *testing.T) {
 		t.Fatalf("error leaks a filesystem path: %v", err)
 	}
 }
+
+// Browser stores are opened through a file: URI. On Windows the drive letter
+// must follow a slash, or SQLite reads "C:" as the URI authority and fails.
+func TestReadOnlySQLiteURI(t *testing.T) {
+	path, want := "/tmp/a b/Cookies", "file:///tmp/a%20b/Cookies?mode=ro"
+	if runtime.GOOS == "windows" {
+		path, want = `C:\Users\a b\Cookies`, "file:///C:/Users/a%20b/Cookies?mode=ro"
+	}
+	if got := readOnlySQLiteURI(path); got != want {
+		t.Fatalf("readOnlySQLiteURI(%q)=%q, want %q", path, got, want)
+	}
+}

@@ -2,8 +2,6 @@ package main
 
 import (
 	"bufio"
-	"os/exec"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -126,9 +124,6 @@ func indexOf(s, sub string) int {
 }
 
 func TestStopProcessAndProcessAlive(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses sleep(1)")
-	}
 	if processAlive(0) {
 		t.Fatal("processAlive(0) must be false")
 	}
@@ -136,10 +131,9 @@ func TestStopProcessAndProcessAlive(t *testing.T) {
 		t.Fatal("stopProcess(0) must be false")
 	}
 
-	cmd := exec.Command("sleep", "30")
-	if err := cmd.Start(); err != nil {
-		t.Skipf("cannot start sleep: %v", err)
-	}
+	// Re-exec the test binary as the long-running child rather than sleep(1),
+	// which does not exist on Windows.
+	cmd := startSleepSubprocess(t)
 	pid := cmd.Process.Pid
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
 

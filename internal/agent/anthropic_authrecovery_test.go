@@ -14,6 +14,7 @@ import (
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
@@ -31,7 +32,7 @@ func newAuthRecoveryFixture(t *testing.T, oauthHandler http.HandlerFunc) *authRe
 	t.Helper()
 
 	// Isolate credential writes from the developer's real Claude Code session.
-	t.Setenv("HOME", t.TempDir())
+	testhome.SetTestHome(t, t.TempDir())
 
 	var apiCalls, oauthCalls atomic.Int32
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -301,7 +302,7 @@ func TestAnthropicAgent_ProactiveRefresh_AppliesTokenWhenSaveFails(t *testing.T)
 
 	// Corrupt credentials file on disk makes WriteAnthropicCredentials fail.
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

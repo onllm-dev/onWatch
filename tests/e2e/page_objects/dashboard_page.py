@@ -148,7 +148,7 @@ class DashboardPage:
     def navigate_to_settings_password(self) -> None:
         """Navigate to the settings page and open the General tab for password."""
         self.page.click("#settings-btn")
-        self.page.wait_for_selector(".settings-page", timeout=5000)
+        self.page.wait_for_selector(".settings-page[data-ready]", timeout=15000)
         self.page.click('.settings-tab[data-tab="general"]')
         self.page.wait_for_selector("#panel-general:not([hidden])", timeout=5000)
 

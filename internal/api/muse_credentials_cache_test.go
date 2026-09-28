@@ -6,6 +6,8 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 // isolateMuseCredentials points every Muse credential source at an empty temp
@@ -13,7 +15,7 @@ import (
 func isolateMuseCredentials(t *testing.T) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("META_API_KEY", "")
 	t.Setenv("MUSE_AUTH_PATH", filepath.Join(home, "missing-auth.json"))
 	// MuseSettingsPath checks XDG_CONFIG_HOME before HOME, so without this

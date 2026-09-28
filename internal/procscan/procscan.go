@@ -49,7 +49,7 @@ func RunningContext(ctx context.Context, windowsImage string, match func(cmdline
 		}
 		// tasklist always exits 0; findstr verifies a real match.
 		query := `tasklist /FI "IMAGENAME eq ` + windowsImage + `" /NH 2>nul | findstr /I "` + windowsImage + `"`
-		return exec.CommandContext(ctx, "cmd", "/C", query).Run() == nil
+		return runCommandContext(ctx, "cmd", "/C", query) == nil
 	}
 	if match == nil {
 		return false
@@ -81,10 +81,18 @@ func validWindowsImage(name string) bool {
 	return true
 }
 
-// execCommandContext runs the process listing. A variable so tests can assert
-// the deadline the scan actually receives.
+// execCommandContext runs the unix process listing and returns its output. A
+// variable so tests can assert the deadline the scan actually receives.
 var execCommandContext = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
+}
+
+// runCommandContext runs the Windows tasklist|findstr check, which only needs
+// the exit status. Run (not Output) leaves stdout on the null device, so no
+// pipe is held open by the tasklist/findstr grandchildren after the deadline
+// kills cmd.exe. A variable so tests can assert the deadline on Windows too.
+var runCommandContext = func(ctx context.Context, name string, args ...string) error {
+	return exec.CommandContext(ctx, name, args...).Run()
 }
 
 // Scan reports whether any line of a process listing satisfies match.

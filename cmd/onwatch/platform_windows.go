@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"unsafe"
 )
 
 const createNoWindow = 0x08000000
@@ -13,6 +14,12 @@ const createNoWindow = 0x08000000
 // waitTimeout is WAIT_TIMEOUT: the process object is not signalled, so the
 // process is still running.
 const waitTimeout = uint32(0x00000102)
+
+// processQueryLimitedInformation is PROCESS_QUERY_LIMITED_INFORMATION, the
+// least access right that allows reading a process's image path.
+const processQueryLimitedInformation = 0x1000
+
+var procQueryFullProcessImageNameW = syscall.NewLazyDLL("kernel32.dll").NewProc("QueryFullProcessImageNameW")
 
 func daemonSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
@@ -63,4 +70,31 @@ func processAlive(pid int) bool {
 		return false
 	}
 	return state == waitTimeout
+}
+
+// processCommandName returns the image file name of pid, e.g. onwatch.exe
+// ("" when unknown). Windows has no ps, so ask the process object itself. Only
+// the base name counts: a full path such as C:\Users\x\.onwatch\bin\... would
+// let any binary under an "onwatch" directory pass for onWatch.
+func processCommandName(pid int) string {
+	if pid <= 0 {
+		return ""
+	}
+	handle, err := syscall.OpenProcess(processQueryLimitedInformation, false, uint32(pid))
+	if err != nil {
+		return ""
+	}
+	defer syscall.CloseHandle(handle)
+	buf := make([]uint16, 1024)
+	size := uint32(len(buf))
+	r, _, _ := procQueryFullProcessImageNameW.Call(
+		uintptr(handle),
+		0,
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(unsafe.Pointer(&size)),
+	)
+	if r == 0 {
+		return ""
+	}
+	return filepath.Base(syscall.UTF16ToString(buf[:size]))
 }

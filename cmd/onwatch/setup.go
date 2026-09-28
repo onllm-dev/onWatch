@@ -935,8 +935,14 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 	}
 
 	if !existing.geminiEnabled {
-		// Try to detect Gemini CLI credentials
-		if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".gemini", "oauth_creds.json")); err == nil {
+		// Try to detect Gemini CLI credentials. Use os.UserHomeDir, not $HOME:
+		// Windows keeps the profile in USERPROFILE.
+		geminiDetected := false
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			_, statErr := os.Stat(filepath.Join(home, ".gemini", "oauth_creds.json"))
+			geminiDetected = statErr == nil
+		}
+		if geminiDetected {
 			fmt.Printf("  %s ok %s  Gemini CLI credentials detected on this system\n", colorGreen, colorReset)
 			if promptYesNo(reader, "Enable Gemini tracking?", true) {
 				fmt.Fprintf(f, "\n# Gemini CLI - auto-detected from ~/.gemini/oauth_creds.json\nGEMINI_ENABLED=true\n")
