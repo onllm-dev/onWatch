@@ -113,10 +113,11 @@ func TestCodexClient_FetchUsage_FallbacksTo404BothPaths(t *testing.T) {
 }
 
 func TestCodexClient_FetchUsage_AccountIDHeaders(t *testing.T) {
-	var gotXAccount, gotChatClaudeAccount string
+	var gotXAccount, gotChatClaudeAccount, gotChatGPTAccount string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotXAccount = r.Header.Get("X-Account-Id")
 		gotChatClaudeAccount = r.Header.Get("ChatClaude-Account-Id")
+		gotChatGPTAccount = r.Header.Get("ChatGPT-Account-Id")
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":10,"reset_at":1766000000,"limit_window_seconds":18000}}}`)
 	}))
@@ -133,5 +134,8 @@ func TestCodexClient_FetchUsage_AccountIDHeaders(t *testing.T) {
 	}
 	if gotChatClaudeAccount != "acct_test" {
 		t.Errorf("ChatClaude-Account-Id = %q, want acct_test", gotChatClaudeAccount)
+	}
+	if gotChatGPTAccount != "acct_test" {
+		t.Errorf("ChatGPT-Account-Id = %q, want acct_test", gotChatGPTAccount)
 	}
 }

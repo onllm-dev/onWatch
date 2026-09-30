@@ -2823,16 +2823,17 @@ function syncCodexAutoStartBadges() {
   });
 }
 
-function renderCodexQuotaCards(quotas, containerId, planType) {
+function renderCodexQuotaCards(quotas, containerId, planType, usageSourceNote) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
+  const sourceNoteHTML = codexUsageSourceNoteHTML(usageSourceNote);
   if (visibleQuotas.length === 0) {
-    container.innerHTML = '<p class="empty-state">No Codex quota data available yet.</p>';
+    container.innerHTML = `${sourceNoteHTML}<p class="empty-state">No Codex quota data available yet.</p>`;
     return;
   }
 
-  container.innerHTML = visibleQuotas.map((q, i) => {
+  container.innerHTML = sourceNoteHTML + visibleQuotas.map((q, i) => {
     const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
     const displayName = q.displayName || codexDisplayNames[q.name] || q.name;
     const cardPercent = q.cardPercent != null ? q.cardPercent : (q.utilization || 0);
@@ -2890,11 +2891,18 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
 function formatCodexPlan(planType) {
   const normalized = normalizeCodexPlanType(planType);
   if (!normalized) return 'Unknown Plan';
+  const planLabels = { pro: 'Pro (More)', prolite: 'Pro', promax: 'Pro (Max)' };
+  if (planLabels[normalized]) return planLabels[normalized];
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+function codexUsageSourceNoteHTML(note) {
+  if (!note) return '';
+  return `<p class="codex-usage-source-note" role="note">${escapeHTML(note)}</p>`;
+}
+
 // Render Codex cards for a specific account (used in "both" view with multiple accounts)
-function renderCodexQuotaCardsForAccount(quotas, container, accountName, planType, accountId) {
+function renderCodexQuotaCardsForAccount(quotas, container, accountName, planType, accountId, usageSourceNote) {
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
   const safeAccountId = String(accountId || accountName || 'default').replace(/[^a-zA-Z0-9_-]/g, '-');
 
@@ -2905,6 +2913,7 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
     <span class="codex-account-plan">${formatCodexPlan(planType)}</span>
   `;
   container.appendChild(header);
+  container.insertAdjacentHTML('beforeend', codexUsageSourceNoteHTML(usageSourceNote));
 
   if (visibleQuotas.length === 0) {
     const empty = document.createElement('p');
@@ -2973,7 +2982,7 @@ function renderCodexAccountSections(accounts) {
     const section = document.createElement('section');
     section.className = 'codex-account-section';
     section.dataset.accountId = String(accountId);
-    renderCodexQuotaCardsForAccount(account.quotas || [], section, accountName, account.planType, accountId);
+    renderCodexQuotaCardsForAccount(account.quotas || [], section, accountName, account.planType, accountId, account.usageSourceNote);
     container.appendChild(section);
   });
 }
@@ -4942,7 +4951,7 @@ async function fetchCodexUsage(options = {}) {
 
     const renderedCount = container.querySelectorAll('.quota-card.codex-card').length;
     if (container.children.length === 0 || renderedCount !== visibleQuotas.length || planChanged) {
-      renderCodexQuotaCards(visibleQuotas, 'quota-grid-codex', State.codexPlanType);
+      renderCodexQuotaCards(visibleQuotas, 'quota-grid-codex', State.codexPlanType, payload.usageSourceNote);
     }
 
     visibleQuotas.forEach(q => updateCodexCard(q));
@@ -5030,6 +5039,7 @@ function accountOverviewCardHTML(provider, account, idx) {
       <span class="account-overview-name">${escapeHTML(accountName)}</span>
       ${badge ? `<span class="account-overview-badge">${escapeHTML(badge)}</span>` : ''}
     </header>
+    ${provider === 'codex' ? codexUsageSourceNoteHTML(account.usageSourceNote) : ''}
     <div class="account-overview-quotas">${quotaHTML}</div>
     <span class="account-overview-cta">View details &rarr;</span>
   </article>`;

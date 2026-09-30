@@ -8887,6 +8887,9 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 	if latest.PlanType != "" {
 		response["planType"] = latest.PlanType
 	}
+	if note := codexUsageSourceNote(latest.PlanType); note != "" {
+		response["usageSourceNote"] = note
+	}
 	if latest.CreditsBalance != nil {
 		response["creditsBalance"] = *latest.CreditsBalance
 	}
@@ -11249,6 +11252,14 @@ func codexPlanLabel(plan string) string {
 	if plan == "" {
 		return ""
 	}
+	switch strings.ToLower(strings.TrimSpace(plan)) {
+	case "pro":
+		return "Pro (More)"
+	case "prolite":
+		return "Pro"
+	case "promax":
+		return "Pro (Max)"
+	}
 	plan = strings.ReplaceAll(plan, "_", " ")
 	parts := strings.Fields(plan)
 	for i := range parts {
@@ -11258,6 +11269,15 @@ func codexPlanLabel(plan string) string {
 		parts[i] = strings.ToUpper(parts[i][:1]) + strings.ToLower(parts[i][1:])
 	}
 	return strings.Join(parts, " ")
+}
+
+const codexProUsageSourceNote = "Pro (More) weekly usage comes from Codex's usage API. Codex CLI /status may show a different effective percentage; onWatch displays the API-reported value unchanged."
+
+func codexUsageSourceNote(planType string) string {
+	if strings.EqualFold(strings.TrimSpace(planType), "pro") {
+		return codexProUsageSourceNote
+	}
+	return ""
 }
 
 func codexQuotaInsightLabel(name string) string {

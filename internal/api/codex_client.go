@@ -216,6 +216,8 @@ func (c *CodexClient) doUsageRequest(ctx context.Context, usageURL string) (*htt
 	if accountID := c.getAccountID(); accountID != "" {
 		req.Header.Set("X-Account-Id", accountID)
 		req.Header.Set("ChatClaude-Account-Id", accountID)
+		// Codex CLI's usage reader scopes account rate limits with this header.
+		req.Header.Set("ChatGPT-Account-Id", accountID)
 	}
 
 	resp, err := c.httpClient.Do(req)

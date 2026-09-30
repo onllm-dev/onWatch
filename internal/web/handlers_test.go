@@ -10572,6 +10572,9 @@ func TestCodexPlanLabel(t *testing.T) {
 	tests := []struct {
 		input, expected string
 	}{
+		{"pro", "Pro (More)"},
+		{"prolite", "Pro"},
+		{"promax", "Pro (Max)"},
 		{"pro_plan", "Pro Plan"},
 		{"free_tier", "Free Tier"},
 		{"", ""},
@@ -10583,6 +10586,37 @@ func TestCodexPlanLabel(t *testing.T) {
 		if result != tt.expected {
 			t.Errorf("codexPlanLabel(%q) = %q, want %q", tt.input, result, tt.expected)
 		}
+	}
+}
+
+func TestBuildCodexCurrent_ProUsageNoteKeepsAPIReportedUtilization(t *testing.T) {
+	t.Parallel()
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	if _, err := s.InsertCodexSnapshot(&api.CodexSnapshot{
+		CapturedAt: time.Now().UTC(),
+		PlanType:   "pro",
+		Quotas:     []api.CodexQuota{{Name: "seven_day", Utilization: 87}},
+	}); err != nil {
+		t.Fatalf("InsertCodexSnapshot: %v", err)
+	}
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
+	response := h.buildCodexCurrent(DefaultCodexAccountID)
+	if got := response["usageSourceNote"]; got != codexProUsageSourceNote {
+		t.Fatalf("usageSourceNote = %v, want %q", got, codexProUsageSourceNote)
+	}
+
+	quotas, ok := response["quotas"].([]map[string]interface{})
+	if !ok || len(quotas) != 1 {
+		t.Fatalf("quotas = %#v, want one quota", response["quotas"])
+	}
+	if got := quotas[0]["utilization"]; got != float64(87) {
+		t.Fatalf("utilization = %v, want API-reported 87", got)
 	}
 }
 

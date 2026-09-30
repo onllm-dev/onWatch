@@ -3722,6 +3722,21 @@ select.settings-input {
   gap: 8px;
 }
 
+.codex-usage-source-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+#quota-grid-codex > .codex-usage-source-note {
+  grid-column: 1 / -1;
+}
+
+.codex-account-section > .codex-usage-source-note {
+  margin: -2px 0 10px;
+}
+
 .codex-account-name {
   font-size: 13px;
   font-weight: 600;
