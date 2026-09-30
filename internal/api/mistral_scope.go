@@ -32,11 +32,11 @@ func restoreMistralScopes(ctx context.Context, cookies []sweetcookie.Cookie) ([]
 			return nil, ctx.Err()
 		}
 		if path == "" {
-			return nil, ErrMistralAuth
+			return nil, &MistralConnectionError{Reason: "import_failed"}
 		}
 		scopes, e := readMistralScopes(ctx, path, group[0].Source.Browser)
 		if e != nil {
-			return nil, ErrMistralAuth
+			return nil, ClassifyMistralImportError(string(group[0].Source.Browser), e, nil)
 		}
 		for _, c := range group {
 			key := mistralScopeKey(c.Domain, c.Name, c.Path, c.Container.ID)
@@ -72,6 +72,13 @@ func readMistralScopes(ctx context.Context, path string, browser sweetcookie.Bro
 	if browser == sweetcookie.BrowserSafari {
 		return readMistralSafariScopes(ctx, path)
 	}
+	// Preserve OS permission errors before SQLite turns them into a generic
+	// "unable to open database" error. Only metadata is read below.
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	_ = f.Close()
 	db, e := sql.Open("sqlite", readOnlySQLiteURI(path))
 	if e != nil {
 		return nil, e

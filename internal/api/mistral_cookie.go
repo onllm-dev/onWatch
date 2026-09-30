@@ -151,6 +151,9 @@ func MistralSources(browser, profile string) ([]MistralSource, error) {
 		var profiles []string
 		if b == "firefox" {
 			cfg, err := ini.Load(filepath.Join(root, "profiles.ini"))
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				scanErrs = append(scanErrs, mistralScanError(b, err))
+			}
 			if err == nil {
 				for _, section := range cfg.Sections() {
 					if !strings.HasPrefix(section.Name(), "Profile") {
@@ -198,10 +201,7 @@ func MistralSources(browser, profile string) ([]MistralSource, error) {
 // directory into the daemon log. A permission failure stays detectable
 // through fs.ErrPermission, so callers can still tell it apart.
 func mistralScanError(browser string, err error) error {
-	if errors.Is(err, fs.ErrPermission) {
-		return fmt.Errorf("%s: profile folder not readable: %w", browser, fs.ErrPermission)
-	}
-	return fmt.Errorf("%s: profile folder not readable", browser)
+	return ClassifyMistralImportError(browser, err, nil)
 }
 
 func ImportMistralSessions(ctx context.Context, source MistralSource, read MistralCookieReader) ([]MistralSession, error) {
@@ -218,24 +218,22 @@ func ImportMistralSessions(ctx context.Context, source MistralSource, read Mistr
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	b := sweetcookie.Browser(source.Browser)
-	if restoreScope && b == sweetcookie.BrowserSafari {
-		if _, e := readMistralSafariScopes(ctx, source.Profile); e != nil {
-			return nil, ErrMistralAuth
-		}
-	}
 	// Cookie names and hosts are stored in the clear; only values are
 	// encrypted. Checking them first means a profile that has never signed in
 	// to Mistral is skipped without touching the platform credential store,
 	// which is what raises a password prompt.
-	if scopes, e := readMistralScopes(ctx, mistralStorePath(source), b); e == nil && len(scopes) == 0 {
-		return nil, nil
+	scopes, scopeErr := readMistralScopes(ctx, mistralStorePath(source), b)
+	if scopeErr == nil && len(scopes) == 0 {
+		return nil, ClassifyMistralImportError(source.Browser, nil, nil)
+	} else if scopeErr != nil && restoreScope {
+		return nil, ClassifyMistralImportError(source.Browser, scopeErr, nil)
 	}
 	result, err := read(ctx, sweetcookie.Options{URL: "https://admin.mistral.ai/subscription", Origins: []string{"https://admin.mistral.ai/api/billing/v2/usage", "https://console.mistral.ai/api-ui/trpc/billing.vibeUsage"}, Browsers: []sweetcookie.Browser{b}, Profiles: map[sweetcookie.Browser]string{b: source.Profile}, Timeout: 90 * time.Second})
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 	if err != nil {
-		return nil, ErrMistralAuth
+		return nil, ClassifyMistralImportError(source.Browser, err, result.Warnings)
 	}
 	if restoreScope {
 		result.Cookies, err = restoreMistralScopes(ctx, result.Cookies)
@@ -261,9 +259,26 @@ func ImportMistralSessions(ctx context.Context, source MistralSource, read Mistr
 	sort.Ints(ids)
 	var sessions []MistralSession
 	for _, id := range ids {
+		hasSession := false
+		for _, c := range groups[id] {
+			if strings.HasPrefix(c.Name, "ory_session_") && c.Value != "" {
+				hasSession = true
+			}
+		}
+		if !hasSession {
+			continue
+		}
 		s := source
 		s.Container = id
 		sessions = append(sessions, MistralSession{s, groups[id]})
+	}
+	if len(sessions) == 0 {
+		// The library silently drops cookies it cannot decrypt. When matching
+		// metadata exists, an empty result alone is not evidence of logout.
+		if len(scopes) > 0 && len(result.Warnings) == 0 {
+			return nil, &MistralConnectionError{Reason: "import_failed", Browser: source.Browser}
+		}
+		return nil, ClassifyMistralImportError(source.Browser, nil, result.Warnings)
 	}
 	return sessions, nil
 }
@@ -278,6 +293,10 @@ func mistralStorePath(source MistralSource) string {
 	case sweetcookie.BrowserFirefox:
 		return filepath.Join(source.Profile, "cookies.sqlite")
 	default:
+		path := filepath.Join(source.Profile, "Network", "Cookies")
+		if file, err := os.Stat(path); err == nil && !file.IsDir() {
+			return path
+		}
 		return filepath.Join(source.Profile, "Cookies")
 	}
 }
