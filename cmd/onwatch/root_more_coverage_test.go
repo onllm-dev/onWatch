@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 func setTestArgs(t *testing.T, args []string) {
@@ -155,7 +156,7 @@ func TestSetupHelpers_AddMissingProvidersAndTokenCollectors(t *testing.T) {
 
 	t.Run("collectAnthropicToken and collectCodexToken stay deterministic", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		testhome.SetTestHome(t, home)
 		t.Setenv("CODEX_HOME", filepath.Join(home, "missing-codex"))
 
 		anthReader := bufio.NewReader(strings.NewReader("\nmanual-anth-token\n"))
@@ -172,19 +173,6 @@ func TestSetupHelpers_AddMissingProvidersAndTokenCollectors(t *testing.T) {
 	})
 }
 
-func TestDaemonSysProcAttr_UnixSetsid(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix-only test")
-	}
-	attr := daemonSysProcAttr()
-	if attr == nil {
-		t.Fatal("expected non-nil SysProcAttr")
-	}
-	if !attr.Setsid {
-		t.Fatal("expected Setsid=true")
-	}
-}
-
 func TestRun_HelpCommand(t *testing.T) {
 	setTestArgs(t, []string{"onwatch", "--help"})
 	out := captureStdout(t, func() {
@@ -199,7 +187,7 @@ func TestRun_HelpCommand(t *testing.T) {
 
 func TestMain_ErrorPath(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("ONWATCH_PORT", "1")
 	// Clear all API keys
 	for _, key := range []string{

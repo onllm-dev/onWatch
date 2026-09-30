@@ -54,7 +54,7 @@ func TestOpenCodeStore_QueryRangeLoadsQuotas(t *testing.T) {
 		snap := &api.OpenCodeSnapshot{
 			CapturedAt: base.Add(time.Duration(i) * time.Minute),
 			Quotas: []api.OpenCodeQuota{
-				{Name: "five_hour", Utilization: float64(i+1)*10, Format: api.OpenCodeQuotaFormatPercent},
+				{Name: "five_hour", Utilization: float64(i+1) * 10, Format: api.OpenCodeQuotaFormatPercent},
 			},
 		}
 		if _, err := s.InsertOpenCodeSnapshot(snap); err != nil {

@@ -54,9 +54,11 @@ func clampPercent(v int) int {
 
 // minimaxIntervalActive reports whether a percentage-based quota window belongs
 // to an active/subscribed plan whose percentage should be tracked. MiniMax uses:
-//   status 1 = active with quota remaining
-//   status 2 = active but exhausted (0% remaining = 100% used)
-//   status 3 = model not part of the subscription
+//
+//	status 1 = active with quota remaining
+//	status 2 = active but exhausted (0% remaining = 100% used)
+//	status 3 = model not part of the subscription
+//
 // Both 1 and 2 are live windows that must be recorded - status 2 is exactly when
 // the user has hit their limit and most needs the reading; status 3 is dropped.
 func minimaxIntervalActive(status *int) bool {

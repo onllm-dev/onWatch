@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/onllm-dev/onwatch/v2/internal/config"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 	"github.com/onllm-dev/onwatch/v2/internal/web"
 )
 
@@ -17,7 +18,7 @@ func TestConfigLoad_WithOnlyCodexAuthFile_AllowsEmptyProviderConfig(t *testing.T
 	homeDir := t.TempDir()
 	codexHome := t.TempDir()
 	t.Chdir(t.TempDir())
-	t.Setenv("HOME", homeDir)
+	testhome.SetTestHome(t, homeDir)
 	t.Setenv("CODEX_HOME", codexHome)
 	t.Setenv("SYNTHETIC_API_KEY", "")
 	t.Setenv("ZAI_API_KEY", "")
@@ -117,7 +118,7 @@ func TestDeriveEncryptionKey_UsesEncryptionSalt(t *testing.T) {
 func TestStatusLogCandidates(t *testing.T) {
 	t.Run("prefers db directory then home then cwd", func(t *testing.T) {
 		homeDir := t.TempDir()
-		t.Setenv("HOME", homeDir)
+		testhome.SetTestHome(t, homeDir)
 
 		dbPath := filepath.Join(t.TempDir(), "data", "onwatch.db")
 		got := statusLogCandidates(dbPath, "main.log", "menubar.log")
@@ -142,7 +143,7 @@ func TestStatusLogCandidates(t *testing.T) {
 
 	t.Run("adds pid dir when db path missing", func(t *testing.T) {
 		homeDir := t.TempDir()
-		t.Setenv("HOME", homeDir)
+		testhome.SetTestHome(t, homeDir)
 
 		oldPIDDir := pidDir
 		pidDir = t.TempDir()
@@ -166,7 +167,7 @@ func TestStatusLogCandidates(t *testing.T) {
 
 	t.Run("deduplicates repeated names", func(t *testing.T) {
 		homeDir := t.TempDir()
-		t.Setenv("HOME", homeDir)
+		testhome.SetTestHome(t, homeDir)
 
 		dbPath := filepath.Join(t.TempDir(), "data", "onwatch.db")
 		got := statusLogCandidates(dbPath, "main.log", "main.log")
@@ -345,9 +346,7 @@ func TestWriteEnvFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat env file: %v", err)
 	}
-	if stat.Mode().Perm() != 0o600 {
-		t.Fatalf("expected mode 0600, got %o", stat.Mode().Perm())
-	}
+	assertPerm(t, stat, 0o600)
 }
 
 func TestMaskValue(t *testing.T) {

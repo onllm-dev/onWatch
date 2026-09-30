@@ -47,7 +47,7 @@ type oauthRateLimitedError struct {
 	RetryAfter time.Duration
 }
 
-func (e *oauthRateLimitedError) Error() string   { return ErrOAuthRateLimited.Error() }
+func (e *oauthRateLimitedError) Error() string        { return ErrOAuthRateLimited.Error() }
 func (e *oauthRateLimitedError) Is(target error) bool { return errors.Is(target, ErrOAuthRateLimited) }
 
 // RetryAfter returns the Retry-After duration, or 0 if not available.

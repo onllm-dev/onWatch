@@ -64,9 +64,12 @@ _jctl_cmd() {
 # ─── Input Helpers ──────────────────────────────────────────────────
 
 # Generate a random 12-char alphanumeric password
+# Reads a bounded 512 bytes (~124 alphanumerics expected) rather than piping
+# the endless /dev/urandom through tr: when SIGPIPE is ignored (CI runners,
+# Node-spawned terminals) BSD tr never exits after head closes the pipe.
 generate_password() {
     local bytes
-    bytes=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 12) || true
+    bytes=$(head -c 512 /dev/urandom 2>/dev/null | LC_ALL=C tr -dc 'A-Za-z0-9' 2>/dev/null | head -c 12) || true
     printf '%s' "$bytes"
 }
 

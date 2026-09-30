@@ -353,4 +353,3 @@ func (h *Handler) buildKimiInsights(hidden map[string]bool) insightsResponse {
 	}
 	return resp
 }
-

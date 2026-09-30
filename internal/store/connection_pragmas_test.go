@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -40,5 +41,21 @@ func TestConnectionPragmasApplyToEveryConnection(t *testing.T) {
 				t.Errorf("connection %d: %s=%d, want %d", i+1, pragma, got, want)
 			}
 		}
+	}
+}
+
+func TestSQLiteDSNKeepsCallerQueryAndAddsMissingPragmas(t *testing.T) {
+	if got := sqliteDSN("/data/onwatch.db"); got != "/data/onwatch.db?"+sqliteConnectionPragmas {
+		t.Fatalf("plain path DSN = %q", got)
+	}
+	got := sqliteDSN("file:/data/onwatch.db?_txlock=immediate&_pragma=busy_timeout(9000)")
+	if !strings.HasPrefix(got, "file:/data/onwatch.db?_txlock=immediate&_pragma=busy_timeout(9000)&") {
+		t.Fatalf("caller query not kept: %q", got)
+	}
+	if strings.Contains(got, "busy_timeout(5000)") {
+		t.Fatalf("caller busy_timeout overridden: %q", got)
+	}
+	if !strings.Contains(got, "_pragma=foreign_keys(1)") {
+		t.Fatalf("missing pragmas not added: %q", got)
 	}
 }

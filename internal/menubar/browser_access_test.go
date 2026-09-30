@@ -45,7 +45,7 @@ func TestBlockedBrowserRootReportsUnreadable(t *testing.T) {
 }
 
 func TestBrowserDataRootsCoverChromiumAndFirefox(t *testing.T) {
-	roots := browserDataRoots("/Users/example")
+	roots := browserDataRoots(t.TempDir())
 	if len(roots) == 0 {
 		t.Skip("no browser data roots on this platform")
 	}

@@ -1,8 +1,8 @@
 package menubar
 
 import (
-	"encoding/json"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"strings"

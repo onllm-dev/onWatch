@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -157,5 +159,43 @@ func TestResolveAgyPath_EnvMissingFileErrors(t *testing.T) {
 	t.Setenv("ANTIGRAVITY_CLI_PATH", filepath.Join(t.TempDir(), "does-not-exist"))
 	if _, err := resolveAgyPath(); err == nil {
 		t.Error("expected error when ANTIGRAVITY_CLI_PATH points at a missing file")
+	}
+}
+
+// agy's language server rejects Connect-RPC calls that lack the CSRF token it
+// was launched with (issue #140). The runner must launch agy with a token and
+// send the same token on every call.
+func TestAgyRunner_SendsCSRFToken(t *testing.T) {
+	const token = "test-csrf-token"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Codeium-Csrf-Token") != token {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code":"unauthenticated","message":"missing CSRF token"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	r := NewAntigravityCLIRunner(nil)
+	defer r.Stop()
+	_, status, err := r.post(context.Background(), &AntigravityConnection{BaseURL: srv.URL, CSRFToken: token}, agyQuotaSummaryRPC)
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("post with token: status=%d err=%v", status, err)
+	}
+}
+
+func TestAgyLaunchArgs_PassCSRFToken(t *testing.T) {
+	a, err := newAgyCSRFToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := newAgyCSRFToken()
+	if len(a) < 32 || a == b {
+		t.Fatalf("tokens must be long and unique per launch: %q %q", a, b)
+	}
+	args := agyLaunchArgs(a)
+	if len(args) != 2 || args[0] != "--csrf_token" || args[1] != a {
+		t.Fatalf("agyLaunchArgs(%q) = %q", a, args)
 	}
 }

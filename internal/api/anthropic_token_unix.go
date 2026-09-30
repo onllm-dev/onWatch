@@ -16,20 +16,8 @@ import (
 	"time"
 )
 
-// testMode disables all keychain/keyring operations. Set to true in tests
-// to prevent tests from reading or writing real Claude Code credentials.
-// This is a critical safety guard - without it, tests can overwrite the user's
-// real OAuth tokens in the macOS Keychain, logging them out of Claude Code.
-var testMode bool
-
-// SetTestMode enables or disables test mode. When enabled, all keychain and
-// keyring operations are skipped, and only file-based credential storage is used.
-// Files are redirected by setting HOME to a temp dir in tests.
-func SetTestMode(enabled bool) {
-	testMode = enabled
-}
-
 // getCredentialsFilePath returns the path to the Claude credentials file.
+// It returns "" in test mode when the path would be the real account's file.
 func getCredentialsFilePath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -37,7 +25,7 @@ func getCredentialsFilePath() string {
 			home = u.HomeDir
 		}
 	}
-	if home == "" {
+	if home == "" || anthropicHomeBlocked(home) {
 		return ""
 	}
 	return filepath.Join(home, ".claude", ".credentials.json")
@@ -94,6 +82,10 @@ func detectAnthropicTokenPlatform(logger *slog.Logger) string {
 	}
 	if home == "" {
 		logger.Debug("Cannot determine home directory for credential file lookup")
+		return ""
+	}
+	if anthropicHomeBlocked(home) {
+		logger.Debug("Test mode: skipping the real credentials file")
 		return ""
 	}
 	credPath := filepath.Join(home, ".claude", ".credentials.json")

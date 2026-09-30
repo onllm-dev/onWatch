@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -49,11 +50,26 @@ func TestDetectMuseCredentialsFromAuthFile(t *testing.T) {
 func TestMuseAuthFileRejectsPermissiveMode(t *testing.T) {
 	dir := t.TempDir()
 	authPath := filepath.Join(dir, "auth.json")
-	if err := os.WriteFile(authPath, []byte(`{"providers":{"meta":{"api_key":"x"}}}`), 0o644); err != nil {
+	if err := os.WriteFile(authPath, []byte(`{"providers":{"meta":{"api_key":"x"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Chmod explicitly so the mode does not depend on the process umask.
+	if err := os.Chmod(authPath, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("MUSE_AUTH_PATH", authPath)
-	if got := readMuseAuthFileKey(); got != "" {
+	got := readMuseAuthFileKey()
+	if runtime.GOOS == "windows" {
+		// Windows has no unix mode bits: Go reports every writable file as
+		// 0666, and access is governed by ACLs that fs.FileMode cannot express.
+		// A mode check there would reject every `muse login` file, so the
+		// product deliberately trusts the file (museAuthFilePermsOK is a no-op).
+		if got != "x" {
+			t.Fatalf("Windows must accept the login file regardless of mode bits, got %q", got)
+		}
+		return
+	}
+	if got != "" {
 		t.Fatalf("permissive auth file must be ignored, got %q", got)
 	}
 }

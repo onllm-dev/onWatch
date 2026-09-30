@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,12 +89,23 @@ func TestFetchUsageSnapshot_SendsHeadersAndMapsMeters(t *testing.T) {
 	names := []string{}
 	for _, q := range snap.Quotas {
 		names = append(names, q.Name)
-		if q.Limit != 100 || q.Used != q.Utilization || q.Format != OpenCodeQuotaFormatPercent {
-			t.Fatalf("quota %+v, want percent of 100 with Used == Utilization", q)
+		if q.Format != OpenCodeQuotaFormatCurrency {
+			t.Fatalf("quota %+v, want currency format", q)
 		}
 	}
 	if strings.Join(names, ",") != "five_hour,weekly,monthly" {
 		t.Fatalf("quota names = %v", names)
+	}
+	// Micro-cents to USD: 1 USD = 100 cents = 1e8 micro-cents.
+	for name, want := range map[string][2]float64{
+		"five_hour": {0, 12},
+		"weekly":    {3.84204992, 30},
+		"monthly":   {3.84204992, 60},
+	} {
+		q := quotaByName(t, snap.Quotas, name)
+		if math.Abs(q.Used-want[0]) > 1e-9 || q.Limit != want[1] {
+			t.Fatalf("%s used/limit = %v/%v, want %v/%v USD", name, q.Used, q.Limit, want[0], want[1])
+		}
 	}
 	// 384204992 / 3000000000 = 12.807% and / 6000000000 = 6.403% (console: 12.81%, 6.40%).
 	for name, want := range map[string]float64{"five_hour": 0, "weekly": 12.8, "monthly": 6.4} {
@@ -184,7 +196,7 @@ func TestFetchUsageSnapshot_MapsHTTPErrorsWithoutEchoingBody(t *testing.T) {
 		{http.StatusBadGateway, ErrOpenCodeServerError},
 		{http.StatusBadRequest, ErrOpenCodeInvalidResponse},
 		{http.StatusNotFound, ErrOpenCodeInvalidResponse},
-		{http.StatusFound, ErrOpenCodeInvalidResponse},
+		{http.StatusFound, ErrOpenCodeUnauthorized}, // login redirect
 	}
 	for _, tc := range cases {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -271,18 +283,15 @@ func TestFetchUsageSnapshot_FailuresAreNotReused(t *testing.T) {
 	}
 }
 
-func TestNewOpenCodeClient_StatusGetsItsOwnTimeout(t *testing.T) {
+func TestNewOpenCodeClient_Timeout(t *testing.T) {
 	c := NewOpenCodeClient(nil)
-	if c.httpClient.Timeout != openCodeScrapeTimeout || c.usageHTTPClient.Timeout != openCodeUsageTimeout {
-		t.Fatalf("timeouts: scrape=%v status=%v", c.httpClient.Timeout, c.usageHTTPClient.Timeout)
+	if c.httpClient.Timeout != openCodeUsageTimeout {
+		t.Fatalf("timeout = %v, want %v", c.httpClient.Timeout, openCodeUsageTimeout)
 	}
-	if tr, ok := c.usageHTTPClient.Transport.(*http.Transport); !ok || tr.ResponseHeaderTimeout != openCodeUsageTimeout {
-		t.Fatalf("status transport = %+v", c.usageHTTPClient.Transport)
+	if tr, ok := c.httpClient.Transport.(*http.Transport); !ok || tr.ResponseHeaderTimeout != openCodeUsageTimeout {
+		t.Fatalf("transport = %+v", c.httpClient.Transport)
 	}
-	if tr := c.httpClient.Transport.(*http.Transport); tr.ResponseHeaderTimeout != openCodeScrapeTimeout {
-		t.Fatalf("scrape transport header timeout changed to %v", tr.ResponseHeaderTimeout)
-	}
-	if long := NewOpenCodeClient(nil, WithOpenCodeTimeout(45*time.Second)); long.usageHTTPClient.Timeout != 45*time.Second {
-		t.Fatalf("a longer configured timeout was shortened to %v", long.usageHTTPClient.Timeout)
+	if long := NewOpenCodeClient(nil, WithOpenCodeTimeout(45*time.Second)); long.httpClient.Timeout != 45*time.Second {
+		t.Fatalf("configured timeout = %v, want 45s", long.httpClient.Timeout)
 	}
 }

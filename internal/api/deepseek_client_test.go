@@ -111,9 +111,9 @@ func TestDeepSeekTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	snap := resp.ToSnapshot(time.Now())
-	
+
 	if snap.Currency != "CNY" {
 		t.Errorf("expected priority currency CNY, got %s", snap.Currency)
 	}

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/mattn/go-isatty"
@@ -296,11 +295,9 @@ func runningDaemonPID() (int, bool) {
 	if pid <= 0 || pid == os.Getpid() {
 		return 0, false
 	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return 0, false
-	}
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
+	// processAlive, not proc.Signal(0): Windows cannot deliver signals, so a
+	// signal probe reports every daemon there as not running.
+	if !processAlive(pid) {
 		return 0, false
 	}
 	// The PID file can name a PID the OS has since recycled onto an unrelated
@@ -315,11 +312,7 @@ func runningDaemonPID() (int, bool) {
 func waitForExit(pid int, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			return
-		}
-		if err := proc.Signal(syscall.Signal(0)); err != nil {
+		if !processAlive(pid) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -373,8 +366,9 @@ func restartAfterUpdate() {
 
 	if pid, running := runningDaemonPID(); running {
 		fmt.Println("Restarting daemon...")
-		if proc, err := os.FindProcess(pid); err == nil {
-			_ = proc.Signal(syscall.SIGTERM)
+		// stopProcess: SIGTERM on Unix, TerminateProcess on Windows, where
+		// proc.Signal(SIGTERM) always fails and the old daemon kept running.
+		if stopProcess(pid) {
 			waitForExit(pid, 5*time.Second)
 		}
 	} else {

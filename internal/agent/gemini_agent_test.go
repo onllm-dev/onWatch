@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -80,9 +81,10 @@ func TestGeminiAgent_Poll(t *testing.T) {
 
 func TestGeminiAgent_AuthFailurePause(t *testing.T) {
 	t.Parallel()
-	callCount := 0
+	// The handler can still be serving a request after Run returns.
+	var callCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		if r.URL.Path == "/v1internal:loadCodeAssist" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -105,7 +107,7 @@ func TestGeminiAgent_AuthFailurePause(t *testing.T) {
 	_ = agent.Run(ctx)
 
 	// Should have attempted multiple polls
-	if callCount == 0 {
+	if callCount.Load() == 0 {
 		t.Error("expected at least 1 API call")
 	}
 }
@@ -124,7 +126,7 @@ func TestGeminiAgent_TokenPersistenceOnRefresh(t *testing.T) {
 	t.Parallel()
 	refreshedAccessToken := "refreshed-access-token-xyz"
 	originalRefreshToken := "original-refresh-token-abc"
-	quotaCallCount := 0
+	var quotaCallCount atomic.Int32
 
 	// Mock server: first quota call returns 401, OAuth refresh succeeds, retry succeeds
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,8 +135,7 @@ func TestGeminiAgent_TokenPersistenceOnRefresh(t *testing.T) {
 		case "/v1internal:loadCodeAssist":
 			json.NewEncoder(w).Encode(api.GeminiTierResponse{Tier: "free"})
 		case "/v1internal:retrieveUserQuota":
-			quotaCallCount++
-			if quotaCallCount == 1 {
+			if quotaCallCount.Add(1) == 1 {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}

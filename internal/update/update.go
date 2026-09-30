@@ -41,6 +41,9 @@ var (
 	execCommand = exec.Command
 	sleepFn     = time.Sleep
 	exitFn      = os.Exit
+	// executablePath resolves the binary Apply replaces. Tests point it at a
+	// temp copy so they never overwrite the running test binary.
+	executablePath = os.Executable
 )
 
 // UpdateInfo holds the result of a version check.
@@ -354,7 +357,7 @@ func (u *Updater) Apply() error {
 	}
 
 	// Get current binary path
-	exePath, err := os.Executable()
+	exePath, err := executablePath()
 	if err != nil {
 		return fmt.Errorf("update.Apply: os.Executable: %w", err)
 	}
@@ -719,7 +722,7 @@ func (u *Updater) Restart() error {
 
 	if exePath == "" {
 		var err error
-		exePath, err = os.Executable()
+		exePath, err = executablePath()
 		if err != nil {
 			return fmt.Errorf("update.Restart: %w", err)
 		}

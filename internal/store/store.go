@@ -159,6 +159,27 @@ func preflightDatabasePath(dbPath string) error {
 // database file itself, so it stays with the one-off pragmas in New.
 const sqliteConnectionPragmas = "_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-500)"
 
+// sqliteDSN appends the connection pragmas to dbPath. A path that already
+// carries a query string keeps it, and only pragmas it does not set itself
+// are added, so a caller's parameters cannot silently drop busy_timeout.
+func sqliteDSN(dbPath string) string {
+	sep, existing := "?", ""
+	if i := strings.IndexByte(dbPath, '?'); i >= 0 {
+		sep, existing = "&", strings.ToLower(dbPath[i+1:])
+	}
+	var add []string
+	for _, p := range strings.Split(sqliteConnectionPragmas, "&") {
+		name := p[:strings.IndexByte(p, '(')] // "_pragma=busy_timeout"
+		if !strings.Contains(existing, name) {
+			add = append(add, p)
+		}
+	}
+	if len(add) == 0 {
+		return dbPath
+	}
+	return dbPath + sep + strings.Join(add, "&")
+}
+
 // New creates a new Store with the given database path
 func New(dbPath string) (*Store, error) {
 	if err := preflightDatabasePath(dbPath); err != nil {
@@ -169,13 +190,8 @@ func New(dbPath string) (*Store, error) {
 	// every connection the pool opens. Applied with db.Exec below they reached
 	// only one connection, leaving the pool's second one with foreign_keys off
 	// (ON DELETE CASCADE did nothing there), busy_timeout 0 (contended writes
-	// failed with SQLITE_BUSY at once) and SQLite's default 2MB page cache. A
-	// path that already carries a query string is left untouched.
-	dsn := dbPath
-	if !strings.Contains(dbPath, "?") {
-		dsn += "?" + sqliteConnectionPragmas
-	}
-	db, err := sql.Open("sqlite", dsn)
+	// failed with SQLITE_BUSY at once) and SQLite's default 2MB page cache.
+	db, err := sql.Open("sqlite", sqliteDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

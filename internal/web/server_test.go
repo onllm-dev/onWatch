@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 // freePort returns an available TCP port for testing
@@ -274,9 +276,28 @@ func TestServer_EmbeddedAssets(t *testing.T) {
 	server.Shutdown(ctx)
 }
 
+// TestMain isolates the package from the developer's real credentials and
+// state. api.SetTestMode(true) stops provider auto-detection from reading the
+// macOS Keychain or Linux keyring; it runs before the home is redirected so
+// the real home is recorded for the credential-file guard. The home directory
+// (HOME, USERPROFILE and LOCALAPPDATA) is then pointed at a throwaway sandbox
+// for the whole run and provider location overrides are cleared. Tests that
+// need their own home call testhome.SetTestHome.
 func TestMain(m *testing.M) {
-	// Ensure templates directory exists for tests
-	os.Exit(m.Run())
+	os.Exit(runTests(m))
+}
+
+func runTests(m *testing.M) int {
+	api.SetTestMode(true)
+
+	_, cleanup, err := testhome.SandboxHome()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "web tests: %v\n", err)
+		return 1
+	}
+	defer cleanup()
+
+	return m.Run()
 }
 
 func TestServer_RequiresCSRFHeader_OnPost(t *testing.T) {

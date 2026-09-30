@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"runtime"
+	"strconv"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -192,26 +197,112 @@ func TestStandaloneServer_AdminEndpointsValidateMethodBodyAndProvider(t *testing
 	}
 }
 
+// TestServe_ShutsDownCleanlyOnCancel covers the serve loop in-process on
+// every OS: it answers real HTTP requests and returns nil once its context is
+// cancelled (which is what SIGINT/SIGTERM do via signal.NotifyContext).
+func TestServe_ShutsDownCleanlyOnCancel(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv := newStandaloneServer("syn-key", "zai-key", "anth-token")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, ln, srv.mux) }()
+
+	resp, err := http.Get("http://" + ln.Addr().String() + "/admin/requests")
+	if err != nil {
+		t.Fatalf("GET /admin/requests: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected /admin/requests 200, got %d", resp.StatusCode)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serve returned %v, want nil on clean shutdown", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("serve did not return after its context was cancelled")
+	}
+}
+
+// TestMain_StartsAndShutsDownOnSignal runs main() in a child process and stops
+// it the way tests/e2e/conftest.py does: SIGTERM on unix (graceful shutdown,
+// clean exit) and TerminateProcess on Windows, where a child cannot be sent
+// os.Interrupt. On both it asserts the binary really serves before it stops.
 func TestMain_StartsAndShutsDownOnSignal(t *testing.T) {
 	if os.Getenv("ONWATCH_MOCKSERVER_MAIN_HELPER") == "1" {
-		os.Args = []string{"mockserver", "-port=0", "-syn-key=helper-syn", "-zai-key=helper-zai", "-anth-token=helper-anth"}
+		os.Args = []string{"mockserver", "-port=" + os.Getenv("ONWATCH_MOCKSERVER_MAIN_PORT"), "-syn-key=helper-syn", "-zai-key=helper-zai", "-anth-token=helper-anth"}
 		main()
 		return
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestMain_StartsAndShutsDownOnSignal")
-	cmd.Env = append(os.Environ(), "ONWATCH_MOCKSERVER_MAIN_HELPER=1")
+	port := freePort(t)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMain_StartsAndShutsDownOnSignal$")
+	cmd.Env = append(os.Environ(), "ONWATCH_MOCKSERVER_MAIN_HELPER=1", "ONWATCH_MOCKSERVER_MAIN_PORT="+strconv.Itoa(port))
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper process: %v", err)
 	}
+	waitErr := make(chan error, 1)
+	go func() { waitErr <- cmd.Wait() }()
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
 
-	time.Sleep(300 * time.Millisecond)
-	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+	url := "http://127.0.0.1:" + strconv.Itoa(port) + "/admin/requests"
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := http.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("expected /admin/requests 200, got %d", resp.StatusCode)
+			}
+			break
+		}
+		select {
+		case err := <-waitErr:
+			t.Fatalf("helper process exited before serving: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("helper process never served %s: %v", url, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if runtime.GOOS == "windows" {
+		if err := cmd.Process.Kill(); err != nil {
+			t.Fatalf("terminate helper process: %v", err)
+		}
+	} else if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatalf("signal helper process: %v", err)
 	}
-	if err := cmd.Wait(); err != nil {
-		t.Fatalf("wait helper process: %v", err)
+
+	select {
+	case err := <-waitErr:
+		// TerminateProcess forces a non-zero exit; only unix exits cleanly.
+		if runtime.GOOS != "windows" && err != nil {
+			t.Fatalf("helper process did not exit cleanly on SIGTERM: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("helper process did not exit after being stopped")
 	}
+}
+
+// freePort returns a TCP port that was free a moment ago.
+func freePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port
 }

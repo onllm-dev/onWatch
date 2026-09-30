@@ -14,6 +14,7 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 type mockProviderAgentController struct {
@@ -137,7 +138,7 @@ func TestHandler_ProviderVisibilityHelpers(t *testing.T) {
 func TestHandler_IsProviderConfiguredAndTryAutoDetect(t *testing.T) {
 	home := t.TempDir()
 	codexHome := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", codexHome)
 
 	if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), []byte(`{"tokens":{"access_token":"codex-auto"}}`), 0o600); err != nil {

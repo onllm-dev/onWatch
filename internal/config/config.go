@@ -54,8 +54,9 @@ type Config struct {
 	OpenCodeEnabled  bool   // OPENCODE_ENABLED=true: track ChatGPT via OpenCode auth.json (feeds Codex)
 	// OpenCode Go provider configuration
 	OpenCodeGoWorkspaceID string // OPENCODE_GO_WORKSPACE_ID
-	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE
-	OpenCodeGoAPIKey      string // OPENCODE_GO_API_KEY: console service-account key (reads the plan's meters via go/status; preferred over the cookie scrape)
+	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE: __Host-console_session cookie value (or a full cookie header)
+	OpenCodeGoAPIKey      string // OPENCODE_GO_API_KEY: console service-account key (preferred over the session cookie)
+	OpenCodeGoBaseURL     string // OPENCODE_GO_BASE_URL override for proxy setups (default https://opencode.ai)
 	// Ollama Cloud provider configuration
 	OllamaAPIKey       string  // OLLAMA_API_KEY from ollama.com/settings/keys
 	OllamaMonthlyLimit float64 // OLLAMA_MONTHLY_LIMIT: included usage cap in USD (overrides the plan default; 0 = derive from plan)
@@ -86,10 +87,12 @@ type Config struct {
 	OpenRouterAPIKey string // OPENROUTER_API_KEY
 
 	// Moonshot provider configuration
-	MoonshotAPIKey string // MOONSHOT_API_KEY
+	MoonshotAPIKey  string // MOONSHOT_API_KEY
+	MoonshotBaseURL string // MOONSHOT_BASE_URL override for proxy setups (default https://api.moonshot.ai)
 
 	// DeepSeek provider configuration
-	DeepSeekAPIKey string // DEEPSEEK_API_KEY
+	DeepSeekAPIKey  string // DEEPSEEK_API_KEY
+	DeepSeekBaseURL string // DEEPSEEK_BASE_URL override for proxy setups (default https://api.deepseek.com)
 
 	// Gemini provider configuration (auto-detected from ~/.gemini/oauth_creds.json or env vars)
 	GeminiEnabled      bool   // true if auto-detected or GEMINI_ENABLED=true
@@ -256,6 +259,7 @@ var onwatchEnvKeys = []string{
 	"OPENCODE_GO_WORKSPACE_ID",
 	"OPENCODE_GO_AUTH_COOKIE",
 	"OPENCODE_GO_API_KEY",
+	"OPENCODE_GO_BASE_URL",
 	"OPENCODE_HOME",
 	"OLLAMA_API_KEY",
 	"OLLAMA_MONTHLY_LIMIT",
@@ -273,7 +277,9 @@ var onwatchEnvKeys = []string{
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
 	"MOONSHOT_API_KEY",
+	"MOONSHOT_BASE_URL",
 	"DEEPSEEK_API_KEY",
+	"DEEPSEEK_BASE_URL",
 	"CURSOR_TOKEN",
 	"GROK_TOKEN",
 	"GROK_ENABLED",
@@ -395,6 +401,7 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	cfg.OpenCodeGoWorkspaceID = strings.TrimSpace(os.Getenv("OPENCODE_GO_WORKSPACE_ID"))
 	cfg.OpenCodeGoAuthCookie = strings.TrimSpace(os.Getenv("OPENCODE_GO_AUTH_COOKIE"))
 	cfg.OpenCodeGoAPIKey = strings.TrimSpace(os.Getenv("OPENCODE_GO_API_KEY"))
+	cfg.OpenCodeGoBaseURL = strings.TrimSpace(os.Getenv("OPENCODE_GO_BASE_URL"))
 	cfg.OllamaAPIKey = strings.TrimSpace(os.Getenv("OLLAMA_API_KEY"))
 	if v := strings.TrimSpace(os.Getenv("OLLAMA_MONTHLY_LIMIT")); v != "" {
 		if f, err := strconv.ParseFloat(strings.TrimPrefix(v, "$"), 64); err == nil && f > 0 {
@@ -446,9 +453,11 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// Moonshot provider
 	cfg.MoonshotAPIKey = strings.TrimSpace(os.Getenv("MOONSHOT_API_KEY"))
+	cfg.MoonshotBaseURL = strings.TrimSpace(os.Getenv("MOONSHOT_BASE_URL"))
 
 	// DeepSeek provider
 	cfg.DeepSeekAPIKey = strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
+	cfg.DeepSeekBaseURL = strings.TrimSpace(os.Getenv("DEEPSEEK_BASE_URL"))
 
 	// Gemini provider (auto-detected, env vars, or opt-out via GEMINI_ENABLED=false)
 	cfg.GeminiRefreshToken = strings.TrimSpace(os.Getenv("GEMINI_REFRESH_TOKEN"))
@@ -1210,7 +1219,7 @@ func (c *Config) IsDefaultPassword() bool {
 }
 
 // OpenCodeGoConfigured reports whether OpenCode Go tracking has credentials:
-// a usage-API key (preferred) or the legacy workspace ID + auth cookie pair.
+// a usage-API key (preferred) or the workspace ID + console session cookie pair.
 func (c *Config) OpenCodeGoConfigured() bool {
 	return c.OpenCodeGoAPIKey != "" || (c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "")
 }

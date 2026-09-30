@@ -17,7 +17,7 @@ func mustParseIP(t *testing.T, s string) net.IP {
 
 func TestAuthMode_DefaultLocal(t *testing.T) {
 	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
-	defer os.Clearenv()
+	defer clearTestEnv()
 
 	cfg, err := loadWithArgs(nil)
 	if err != nil {
@@ -36,7 +36,7 @@ func TestAuthMode_TrustedProxy(t *testing.T) {
 	os.Setenv("ONWATCH_AUTH_MODE", "trusted_proxy")
 	os.Setenv("ONWATCH_TRUSTED_PROXY_CIDRS", "172.30.0.0/16, 127.0.0.1")
 	os.Setenv("ONWATCH_TRUSTED_USER_HEADER", "X-authentik-username")
-	defer os.Clearenv()
+	defer clearTestEnv()
 
 	cfg, err := loadWithArgs(nil)
 	if err != nil {
@@ -56,7 +56,7 @@ func TestAuthMode_TrustedProxy(t *testing.T) {
 func TestAuthMode_TrustedProxyWithoutCIDRsFailsClosed(t *testing.T) {
 	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
 	os.Setenv("ONWATCH_AUTH_MODE", "trusted_proxy")
-	defer os.Clearenv()
+	defer clearTestEnv()
 
 	if _, err := loadWithArgs(nil); err == nil {
 		t.Fatal("expected error when trusted_proxy mode has no CIDRs, got nil")
@@ -66,7 +66,7 @@ func TestAuthMode_TrustedProxyWithoutCIDRsFailsClosed(t *testing.T) {
 func TestAuthMode_InvalidValueRejected(t *testing.T) {
 	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
 	os.Setenv("ONWATCH_AUTH_MODE", "oidc")
-	defer os.Clearenv()
+	defer clearTestEnv()
 
 	if _, err := loadWithArgs(nil); err == nil {
 		t.Fatal("expected error for invalid ONWATCH_AUTH_MODE, got nil")
@@ -77,7 +77,7 @@ func TestAuthMode_InvalidCIDRRejected(t *testing.T) {
 	os.Setenv("SYNTHETIC_API_KEY", "syn_test_key")
 	os.Setenv("ONWATCH_AUTH_MODE", "trusted_proxy")
 	os.Setenv("ONWATCH_TRUSTED_PROXY_CIDRS", "not-a-cidr")
-	defer os.Clearenv()
+	defer clearTestEnv()
 
 	if _, err := loadWithArgs(nil); err == nil {
 		t.Fatal("expected error for invalid CIDR, got nil")

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -78,8 +79,7 @@ func readMistralScopes(ctx context.Context, path string, browser sweetcookie.Bro
 		return nil, err
 	}
 	_ = f.Close()
-	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
-	db, e := sql.Open("sqlite", u.String())
+	db, e := sql.Open("sqlite", readOnlySQLiteURI(path))
 	if e != nil {
 		return nil, e
 	}
@@ -110,6 +110,17 @@ func readMistralScopes(ctx context.Context, path string, browser sweetcookie.Bro
 		addMistralScope(scopes, domain, name, path, container)
 	}
 	return scopes, rows.Err()
+}
+
+// readOnlySQLiteURI opens a browser cookie store read-only. SQLite URIs take
+// forward slashes, and a Windows drive path needs a leading slash
+// (file:///C:/...), or the drive letter is read as the URI authority.
+func readOnlySQLiteURI(path string) string {
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Scheme: "file", Path: p, RawQuery: "mode=ro"}).String()
 }
 func readMistralSafariScopes(ctx context.Context, path string) (map[string]string, error) {
 	f, e := os.Open(path)

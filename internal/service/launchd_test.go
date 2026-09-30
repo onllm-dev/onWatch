@@ -56,7 +56,9 @@ func TestPlistPathUsesLaunchAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlistPath: %v", err)
 	}
-	want := "/Users/tester/Library/LaunchAgents/dev.onllm.onwatch.plist"
+	// PlistPath joins with the host separator; the path is only used on
+	// macOS, but the helper must stay correct when the suite runs elsewhere.
+	want := filepath.Join("/Users/tester", "Library", "LaunchAgents", "dev.onllm.onwatch.plist")
 	if got != want {
 		t.Errorf("PlistPath = %q, want %q", got, want)
 	}

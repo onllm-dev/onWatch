@@ -15,6 +15,7 @@ import (
 
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 // ---------------------------------------------------------------------------
@@ -134,7 +135,7 @@ func TestRun_DaemonChildStartupError(t *testing.T) {
 	t.Setenv("ANTIGRAVITY_BASE_URL", "")
 	t.Setenv("ANTIGRAVITY_CSRF_TOKEN", "")
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	// The data directory is created on demand now, so block it with a regular
 	// file to keep exercising the "logging setup fails" path.
 	if err := os.MkdirAll(filepath.Join(home, ".onwatch"), 0o755); err != nil {
@@ -220,7 +221,7 @@ func TestFreshSetup_ZaiOnly(t *testing.T) {
 
 func TestFreshSetup_AllProviders(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	// Disable keychain tools so no auto-detect occurs for anthropic/codex
 	t.Setenv("PATH", "")
@@ -272,7 +273,7 @@ func TestFreshSetup_AllProviders(t *testing.T) {
 
 func TestFreshSetup_MultipleProviders_Choice6(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	// Disable keychain tools so no auto-detect occurs
 	t.Setenv("PATH", "")
@@ -316,7 +317,7 @@ func TestFreshSetup_MultipleProviders_Choice6(t *testing.T) {
 
 func TestFreshSetup_AnthropicOnly(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	// Disable keychain tools and PATH so no auto-detect occurs
 	t.Setenv("PATH", "")
 
@@ -342,7 +343,7 @@ func TestFreshSetup_AnthropicOnly(t *testing.T) {
 
 func TestFreshSetup_CodexOnly(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 
 	// No codex auth file -> fallback to manual entry
@@ -371,7 +372,7 @@ func TestFreshSetup_CodexOnly(t *testing.T) {
 
 func TestAddMissingProviders_AllSkipped(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	// Disable keychain tools so no auto-detect occurs
 	t.Setenv("PATH", "")
@@ -418,7 +419,7 @@ func TestAddMissingProviders_AllSkipped(t *testing.T) {
 
 func TestAddMissingProviders_ZaiSkippedAnthropicAdded(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	// Disable keychain tools so no auto-detect occurs
 	t.Setenv("PATH", "")
@@ -458,12 +459,9 @@ func TestAddMissingProviders_ZaiSkippedAnthropicAdded(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCollectAnthropicToken_AutoDetect_Accept(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix credential file path test")
-	}
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	// Disable keychain lookup tools so file fallback is used
 	t.Setenv("PATH", "")
 
@@ -487,12 +485,9 @@ func TestCollectAnthropicToken_AutoDetect_Accept(t *testing.T) {
 }
 
 func TestCollectAnthropicToken_AutoDetect_Decline(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix credential file path test")
-	}
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	// Disable keychain lookup tools so file fallback is used
 	t.Setenv("PATH", "")
 
@@ -787,12 +782,9 @@ func TestRunStatus_SelfPIDRunning(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_AnthropicAutoDetected(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix credential file path test")
-	}
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	// Disable keychain lookup tools so file fallback is used
 	t.Setenv("PATH", "")
@@ -842,7 +834,7 @@ func TestAddMissingProviders_AnthropicAutoDetected(t *testing.T) {
 
 func TestAddMissingProviders_FileOpenError(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	t.Setenv("PATH", "")
 
@@ -866,7 +858,7 @@ func TestAddMissingProviders_FileOpenError(t *testing.T) {
 
 func TestAddMissingProviders_ZaiAdded(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	t.Setenv("PATH", "")
 
@@ -907,7 +899,7 @@ func TestAddMissingProviders_ZaiAdded(t *testing.T) {
 
 func TestAddMissingProviders_AntigravityAdded(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	t.Setenv("PATH", "")
 
@@ -943,12 +935,76 @@ func TestAddMissingProviders_AntigravityAdded(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// addMissingProviders() - Gemini auto-detected from the home directory
+// ---------------------------------------------------------------------------
+
+// The Gemini CLI credential lookup must resolve the home directory the same
+// way everywhere: on Windows os.UserHomeDir reads USERPROFILE and $HOME is
+// normally unset, so reading $HOME directly never detected Gemini there.
+func TestAddMissingProviders_GeminiAutoDetectedFromHome(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		withCreds bool
+	}{
+		{"credentials present", true},
+		{"credentials absent", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			testhome.SetTestHome(t, home)
+			if tc.withCreds {
+				credPath := filepath.Join(home, ".gemini", "oauth_creds.json")
+				if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(credPath, []byte(`{}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			envFile := filepath.Join(t.TempDir(), ".env")
+			if err := os.WriteFile(envFile, []byte("SYNTHETIC_API_KEY=syn_existing\n"), 0o600); err != nil {
+				t.Fatalf("write env: %v", err)
+			}
+
+			// Every other provider is already configured, so the Gemini prompt
+			// is the first one asked. An empty answer takes the default: yes
+			// when credentials were detected, no otherwise.
+			existing := &existingEnv{
+				syntheticKey:       "syn_existing",
+				zaiKey:             "zai",
+				anthropicToken:     "anthropic",
+				codexToken:         "codex",
+				openCodeEnabled:    true,
+				antigravityEnabled: true,
+				grokEnabled:        true,
+				ollamaKey:          "ollama",
+			}
+			reader := bufio.NewReader(strings.NewReader("\n"))
+			captureStdout(t, func() {
+				if err := addMissingProviders(reader, envFile, existing); err != nil {
+					t.Fatalf("addMissingProviders error: %v", err)
+				}
+			})
+
+			data, err := os.ReadFile(envFile)
+			if err != nil {
+				t.Fatalf("read env: %v", err)
+			}
+			if got := strings.Contains(string(data), "GEMINI_ENABLED=true"); got != tc.withCreds {
+				t.Fatalf("GEMINI_ENABLED written = %v, want %v:\n%s", got, tc.withCreds, data)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // addMissingProviders() - codex manual path (no auto-detect)
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_CodexManualPath(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	t.Setenv("PATH", "")
 
@@ -987,12 +1043,9 @@ func TestAddMissingProviders_CodexManualPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAddMissingProviders_AnthropicAutoDetectDeclined(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix credential file path test")
-	}
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	t.Setenv("PATH", "")
 
@@ -1042,7 +1095,7 @@ func TestAddMissingProviders_AnthropicAutoDetectDeclined(t *testing.T) {
 
 func TestAddMissingProviders_CodexAutoDetectDeclined(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 
 	codexHome := t.TempDir()
 	t.Setenv("CODEX_HOME", codexHome)
@@ -1088,7 +1141,7 @@ func TestAddMissingProviders_CodexAutoDetectDeclined(t *testing.T) {
 
 func TestAddMissingProviders_SyntheticAdded(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	t.Setenv("PATH", "")
 
@@ -1128,7 +1181,7 @@ func TestAddMissingProviders_SyntheticAdded(t *testing.T) {
 
 func TestAddMissingProviders_CodexAutoDetected(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 
 	codexHome := t.TempDir()
 	t.Setenv("CODEX_HOME", codexHome)
@@ -1181,9 +1234,6 @@ func TestStopPreviousInstance_NonTestModeNoPIDFile(t *testing.T) {
 }
 
 func TestStopPreviousInstance_WithPIDFilePortAndListener(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only available on macOS/Linux")
-	}
 
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
@@ -1232,7 +1282,7 @@ func TestStopPreviousInstance_WithSelfPIDFile(t *testing.T) {
 
 func TestMigrateDBLocation_NewAlreadyExists(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 
 	// Create both old and new DB
 	oldDB := filepath.Join(home, ".onwatch", "onwatch.db")
@@ -1261,7 +1311,7 @@ func TestMigrateDBLocation_NewAlreadyExists(t *testing.T) {
 
 func TestMigrateDBLocation_OldPathEqualsNew(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 
 	// newPath == one of the oldPaths -> should skip (continue branch)
 	newDB := filepath.Join(home, ".onwatch", "onwatch.db")
@@ -1286,7 +1336,7 @@ func TestMigrateDBLocation_OldPathEqualsNew(t *testing.T) {
 func TestFreshSetup_NoProviderSelected_ReturnsError(t *testing.T) {
 	// Provide choice 7 (Multiple), answer "n" to everything.
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	// Disable keychain tools so no auto-detect occurs
 	t.Setenv("PATH", "")
@@ -1394,6 +1444,10 @@ func TestDaemonChildRun_HelperProcess(t *testing.T) {
 		port := ln.Addr().(*net.TCPAddr).Port
 		// Keep ln open so server can't bind - set the env var BEFORE calling main()
 		_ = os.Setenv("ONWATCH_PORT", strconv.Itoa(port))
+		// Bind the server to the exact address held above. The default
+		// 0.0.0.0 would still succeed on Windows, which lets a wildcard bind
+		// coexist with a 127.0.0.1 listener on the same port.
+		_ = os.Setenv("ONWATCH_HOST", "127.0.0.1")
 		os.Args = []string{"onwatch", "--debug", "--test"}
 		main() // server fails to bind → serverErr → run() logs error and exits
 		ln.Close()
@@ -1405,6 +1459,11 @@ func TestDaemonChildRun_HelperProcess(t *testing.T) {
 
 // runDaemonSubprocess starts a test subprocess in daemon/debug mode,
 // waits briefly, then sends SIGINT and waits for exit.
+//
+// Callers sandbox the child with HOME, USERPROFILE and LOCALAPPDATA all set to
+// a temp dir: os.UserHomeDir reads USERPROFILE on Windows and the Windows PID
+// directory lives under LOCALAPPDATA, so HOME alone would leave a Windows
+// child writing PID files into the real profile.
 func runDaemonSubprocess(t *testing.T, env []string, waitMs int) {
 	t.Helper()
 
@@ -1416,7 +1475,12 @@ func runDaemonSubprocess(t *testing.T, env []string, waitMs int) {
 	}
 
 	time.Sleep(time.Duration(waitMs) * time.Millisecond)
-	_ = cmd.Process.Signal(os.Interrupt)
+	// Windows cannot deliver os.Interrupt to another process; stop it the way
+	// onWatch itself does there (terminateProcess) instead of waiting out the
+	// timeout below.
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		_ = cmd.Process.Kill()
+	}
 
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -1457,6 +1521,8 @@ func TestDaemonChildRun_DebugModeAntigravity(t *testing.T) {
 		"COPILOT_TOKEN=",
 		"CODEX_TOKEN=",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_DB_PATH="+dbPath,
 		"ONWATCH_ADMIN_PASS=testpass",
@@ -1490,6 +1556,8 @@ func TestDaemonChildRun_DebugModeSyntheticProvider(t *testing.T) {
 		"CODEX_TOKEN=",
 		"ANTIGRAVITY_ENABLED=",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_DB_PATH="+dbPath,
 		"ONWATCH_ADMIN_PASS=testpass",
@@ -1524,6 +1592,8 @@ func TestDaemonChildRun_DebugModeAllProviders(t *testing.T) {
 		"CODEX_TOKEN=fake-codex-token",
 		"ANTIGRAVITY_ENABLED=true",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_DB_PATH="+dbPath,
 		"ONWATCH_ADMIN_PASS=testpass",
@@ -1536,9 +1606,6 @@ func TestDaemonChildRun_DebugModeAllProviders(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStop_NonTestMode_WithPIDFilePort_LocalListener(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only available on macOS/Linux")
-	}
 	// Skip if real onwatch is running - runStop(false) scans default ports as fallback
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 200*time.Millisecond)
@@ -1578,9 +1645,6 @@ func TestRunStop_NonTestMode_WithPIDFilePort_LocalListener(t *testing.T) {
 }
 
 func TestRunStop_NonTestMode_DefaultPortScan(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only available on macOS/Linux")
-	}
 
 	// Skip if a real onwatch is running on default ports
 	for _, p := range []int{9211, 8932} {
@@ -1611,9 +1675,6 @@ func TestRunStop_NonTestMode_DefaultPortScan(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_NonTestMode_WithLocalListener(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only available on macOS/Linux")
-	}
 	// Skip if a real onwatch is running on default ports
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 500*time.Millisecond)
@@ -1702,7 +1763,7 @@ func TestRunStatus_LegacyPIDFormat(t *testing.T) {
 
 func TestRunSetup_ExistingEnvNoProviders_FreshSetup(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("PATH", "")
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 
@@ -1748,7 +1809,7 @@ func TestRunSetup_ExistingEnvNoProviders_FreshSetup(t *testing.T) {
 
 func TestRunSetup_ExistingEnvSomeProviders_AddsMore(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("PATH", "")
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 
@@ -1786,7 +1847,7 @@ func TestRunSetup_ExistingEnvSomeProviders_AddsMore(t *testing.T) {
 
 func TestCollectMultipleProviders_AllNo(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("PATH", "")
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 
@@ -1815,7 +1876,7 @@ func TestCollectMultipleProviders_AllNo(t *testing.T) {
 
 func TestCollectMultipleProviders_AnthropicAndCodexAdded(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("PATH", "")
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 
@@ -1891,6 +1952,8 @@ func TestDaemonChildRun_DebugModeLogLevels(t *testing.T) {
 				"COPILOT_TOKEN=",
 				"CODEX_TOKEN=",
 				"HOME="+home,
+				"USERPROFILE="+home,
+				"LOCALAPPDATA="+home,
 				fmt.Sprintf("ONWATCH_PORT=%d", port),
 				"ONWATCH_DB_PATH="+dbPath,
 				"ONWATCH_ADMIN_PASS=testpass",
@@ -1941,9 +2004,6 @@ func TestDaemonChildRun_AutoTokenDetection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping daemon subprocess test in short mode")
 	}
-	if runtime.GOOS == "windows" {
-		t.Skip("unix credential file path test")
-	}
 
 	home := t.TempDir()
 	dbPath := filepath.Join(home, "onwatch.db")
@@ -1987,6 +2047,8 @@ func TestDaemonChildRun_AutoTokenDetection(t *testing.T) {
 		"COPILOT_TOKEN=",
 		"ANTIGRAVITY_ENABLED=true", // Need at least one provider
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		"CODEX_HOME="+codexHome,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_DB_PATH="+dbPath,
@@ -2029,6 +2091,8 @@ func TestDaemonize_ViaSubprocess(t *testing.T) {
 		"COPILOT_TOKEN=",
 		"CODEX_TOKEN=",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_DB_PATH="+dbPath,
 		"ONWATCH_ADMIN_PASS=testpass",
@@ -2051,13 +2115,24 @@ func TestDaemonize_ViaSubprocess(t *testing.T) {
 		t.Log("subprocess timed out - daemon may have started but took too long")
 	}
 
-	// Kill any spawned daemon children
-	// PID file goes to $HOME/.onwatch/onwatch.pid (not dbDir)
+	// Kill any spawned daemon children. The PID file goes to the child's
+	// defaultPIDDir (not dbDir): $HOME/.onwatch on Unix, %LOCALAPPDATA%\onwatch
+	// on Windows.
 	pidPath := filepath.Join(home, ".onwatch", "onwatch.pid")
+	if runtime.GOOS == "windows" {
+		pidPath = filepath.Join(home, "onwatch", "onwatch.pid")
+	}
 	if data, err := os.ReadFile(pidPath); err == nil {
 		if pid, err := strconv.Atoi(strings.Split(strings.TrimSpace(string(data)), ":")[0]); err == nil && pid > 0 {
 			if proc, err := os.FindProcess(pid); err == nil {
 				proc.Kill()
+			}
+			// The daemon holds its log file (inside home) open as stdout, and
+			// Windows cannot delete an open file, so wait for it to exit before
+			// t.TempDir cleanup. It is not our child, so poll instead of Wait.
+			deadline := time.Now().Add(5 * time.Second)
+			for processAlive(pid) && time.Now().Before(deadline) {
+				time.Sleep(50 * time.Millisecond)
 			}
 		}
 	}
@@ -2090,6 +2165,8 @@ func TestDaemonChildRun_MigrateDBPath(t *testing.T) {
 		"COPILOT_TOKEN=",
 		"CODEX_TOKEN=",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_ADMIN_PASS=testpass",
 		// No ONWATCH_DB_PATH -> uses default -> DBPathExplicit=false -> migrateDBLocation
@@ -2124,6 +2201,8 @@ func TestDaemonChildRun_DefaultPassword(t *testing.T) {
 		"COPILOT_TOKEN=",
 		"CODEX_TOKEN=",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_DB_PATH="+dbPath,
 		// No ONWATCH_ADMIN_PASS -> default password
@@ -2159,6 +2238,8 @@ func TestDaemonChildRun_WithAntigravityManualURL(t *testing.T) {
 		"COPILOT_TOKEN=",
 		"CODEX_TOKEN=",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_DB_PATH="+dbPath,
 		"ONWATCH_ADMIN_PASS=testpass",
@@ -2219,10 +2300,6 @@ func TestSleepHelperProcess_NeverRun(t *testing.T) {
 }
 
 func TestRunStop_WithLivePIDAndPort(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("SIGTERM not supported the same way on Windows")
-	}
-
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
@@ -2250,10 +2327,6 @@ func TestRunStop_WithLivePIDAndPort(t *testing.T) {
 }
 
 func TestRunStop_WithLivePIDLegacyFormat(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("SIGTERM not supported the same way on Windows")
-	}
-
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
@@ -2284,10 +2357,6 @@ func TestRunStop_WithLivePIDLegacyFormat(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_WithLivePIDAndPort(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("SIGTERM not supported the same way on Windows")
-	}
-
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
@@ -2315,10 +2384,6 @@ func TestRunStatus_WithLivePIDAndPort(t *testing.T) {
 }
 
 func TestRunStatus_WithLivePIDLegacyFormat(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("SIGTERM not supported the same way on Windows")
-	}
-
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
@@ -2349,10 +2414,6 @@ func TestRunStatus_WithLivePIDLegacyFormat(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestStopPreviousInstance_WithLivePID(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("SIGTERM not supported the same way on Windows")
-	}
-
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
@@ -2380,10 +2441,6 @@ func TestStopPreviousInstance_WithLivePID(t *testing.T) {
 }
 
 func TestStopPreviousInstance_WithLivePIDLegacyFormat(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("SIGTERM not supported the same way on Windows")
-	}
-
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
@@ -2410,7 +2467,7 @@ func TestStopPreviousInstance_WithLivePIDLegacyFormat(t *testing.T) {
 
 func TestMigrateDBLocation_MkdirFails(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 
 	// Create a file where the old DB is expected - to simulate "file exists" but in wrong place
 	oldDB := filepath.Join(home, ".onwatch", "onwatch.db")
@@ -2435,7 +2492,7 @@ func TestMigrateDBLocation_MkdirFails(t *testing.T) {
 
 func TestMigrateDBLocation_RenameFails(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 
 	// Create old DB
 	oldDB := filepath.Join(home, ".onwatch", "onwatch.db")
@@ -2542,6 +2599,8 @@ func TestDaemonChildRun_DebugModeAllProvidersWithCopilot(t *testing.T) {
 		"CODEX_TOKEN=codex-test-token",
 		"ANTIGRAVITY_ENABLED=true",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_DB_PATH="+dbPath,
 		"ONWATCH_ADMIN_PASS=testpass",
@@ -2554,10 +2613,6 @@ func TestDaemonChildRun_DebugModeAllProvidersWithCopilot(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_ShowsDashboardURL(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("SIGTERM not supported the same way on Windows")
-	}
-
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
@@ -2591,10 +2646,6 @@ func TestRunStatus_ShowsDashboardURL(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStop_ShowsPortInOutput(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("SIGTERM not supported the same way on Windows")
-	}
-
 	oldPIDFile := pidFile
 	pidFile = filepath.Join(t.TempDir(), "onwatch.pid")
 	t.Cleanup(func() { pidFile = oldPIDFile })
@@ -2628,9 +2679,6 @@ func TestDaemonChildRun_ServerError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping server error subprocess test in short mode")
 	}
-	if runtime.GOOS == "windows" {
-		t.Skip("server bind error test is unix-specific")
-	}
 
 	home := t.TempDir()
 	dbPath := filepath.Join(home, "onwatch.db")
@@ -2649,6 +2697,8 @@ func TestDaemonChildRun_ServerError(t *testing.T) {
 		"COPILOT_TOKEN=",
 		"CODEX_TOKEN=",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		"ONWATCH_DB_PATH="+dbPath,
 		"ONWATCH_ADMIN_PASS=testpass",
 		// ONWATCH_PORT is set by the subprocess itself (server_error_test mode)
@@ -2702,6 +2752,8 @@ func TestDaemonChildRun_FixExplicitDBPath(t *testing.T) {
 		"COPILOT_TOKEN=",
 		"CODEX_TOKEN=",
 		"HOME="+home,
+		"USERPROFILE="+home,
+		"LOCALAPPDATA="+home,
 		fmt.Sprintf("ONWATCH_PORT=%d", port),
 		"ONWATCH_DB_PATH="+explicitDB, // explicit path → DBPathExplicit=true → fixExplicitDBPath
 		"ONWATCH_ADMIN_PASS=testpass",
@@ -2713,10 +2765,6 @@ func TestDaemonChildRun_FixExplicitDBPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_WithLogAndDBFiles(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("SIGTERM not supported the same way on Windows")
-	}
-
 	oldPIDFile := pidFile
 	pidDir := t.TempDir()
 	pidFile = filepath.Join(pidDir, "onwatch.pid")
@@ -2734,15 +2782,17 @@ func TestRunStatus_WithLogAndDBFiles(t *testing.T) {
 	}
 
 	// Create the log file in the current dir so the stat check succeeds
-	// (testMode=true → logPath = ".onwatch-test.log")
+	// (testMode=true → logPath = ".onwatch-test.log"). Work in a temp dir so
+	// the test never writes into the package directory.
+	t.Chdir(t.TempDir())
 	logFile := ".onwatch-test.log"
 	if err := os.WriteFile(logFile, []byte("log data\n"), 0o600); err != nil {
 		t.Fatalf("write log file: %v", err)
 	}
-	t.Cleanup(func() { os.Remove(logFile) })
 
 	// Create DB file in home/.onwatch/data/onwatch.db
-	home, _ := os.UserHomeDir()
+	home := t.TempDir()
+	testhome.SetTestHome(t, home)
 	dbDir := filepath.Join(home, ".onwatch", "data")
 	if mkErr := os.MkdirAll(dbDir, 0o755); mkErr == nil {
 		dbFile := filepath.Join(dbDir, "onwatch.db")
@@ -3305,7 +3355,7 @@ func TestFixExplicitDBPath_ExplicitNotExist(t *testing.T) {
 	// test the case where explicit path doesn't exist by pointing cfg.DBPath
 	// to a nonexistent file within the temp home.
 	tmpHome := filepath.Dir(filepath.Dir(canonDir)) // the temp dir itself
-	t.Setenv("HOME", tmpHome)
+	testhome.SetTestHome(t, tmpHome)
 
 	cfg := &config.Config{
 		DBPath: filepath.Join(t.TempDir(), "nonexistent.db"),
@@ -3380,9 +3430,6 @@ func TestStopPreviousInstance_EmptyPIDFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStop_NonTestMode_PIDFilePortBranch(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only on macOS/Linux")
-	}
 	// Skip if real onwatch on default ports
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 500*time.Millisecond)
@@ -3426,9 +3473,6 @@ func TestRunStop_NonTestMode_PIDFilePortBranch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_NonTestMode_PIDFilePortBranch(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only on macOS/Linux")
-	}
 	// Skip if real onwatch on default ports
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 500*time.Millisecond)
@@ -3476,9 +3520,6 @@ func TestRunStatus_NonTestMode_PIDFilePortBranch(t *testing.T) {
 }
 
 func TestRunStatus_NonTestMode_NoPIDFileFallback(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only on macOS/Linux")
-	}
 	// Skip if real onwatch on default ports
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 500*time.Millisecond)
@@ -3508,9 +3549,6 @@ func TestRunStatus_NonTestMode_NoPIDFileFallback(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_NonTestMode_RunningProcessNoPort(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only on macOS/Linux")
-	}
 
 	oldPIDFile := pidFile
 	tmpDir := t.TempDir()
@@ -3544,9 +3582,6 @@ func TestRunStatus_NonTestMode_RunningProcessNoPort(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestStopPreviousInstance_NonTestMode_PortFallback(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only on macOS/Linux")
-	}
 
 	oldPIDFile := pidFile
 	oldPIDDir := pidDir
@@ -3574,9 +3609,6 @@ func TestStopPreviousInstance_NonTestMode_PortFallback(t *testing.T) {
 }
 
 func TestStopPreviousInstance_NonTestMode_PIDFileWithPort(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only on macOS/Linux")
-	}
 
 	oldPIDFile := pidFile
 	oldPIDDir := pidDir
@@ -3615,7 +3647,7 @@ func TestRun_SetupCommand(t *testing.T) {
 	// "all providers configured" early return instead of entering the
 	// interactive wizard (which loops forever on EOF stdin in CI).
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	installDir := filepath.Join(home, ".onwatch")
 	if err := os.MkdirAll(filepath.Join(installDir, "data"), 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -3669,7 +3701,7 @@ func TestRun_InProcessDaemonChild_ServerBindFails(t *testing.T) {
 	t.Setenv("ONWATCH_ADMIN_PASS", "testpass123")
 	t.Setenv("ONWATCH_PORT", strconv.Itoa(port))
 	t.Setenv("ONWATCH_LOG_LEVEL", "error")
-	t.Setenv("HOME", tmpDir)
+	testhome.SetTestHome(t, tmpDir)
 
 	oldPIDFile := pidFile
 	oldPIDDir := pidDir
@@ -3731,7 +3763,7 @@ func TestRun_InProcessDaemonChild_AllProviders(t *testing.T) {
 	t.Setenv("ONWATCH_ADMIN_PASS", "testpass456")
 	t.Setenv("ONWATCH_PORT", strconv.Itoa(port))
 	t.Setenv("ONWATCH_LOG_LEVEL", "error")
-	t.Setenv("HOME", tmpDir)
+	testhome.SetTestHome(t, tmpDir)
 
 	oldPIDFile := pidFile
 	oldPIDDir := pidDir
@@ -3779,7 +3811,7 @@ func TestCollectSyntheticKey_EmptyThenValid(t *testing.T) {
 
 func TestAddMissingProviders_AntigravityAlreadyEnabled(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testhome.SetTestHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "no-codex"))
 	t.Setenv("PATH", "")
 
@@ -3832,7 +3864,7 @@ func TestFixExplicitDBPath_AlreadyCanonical(t *testing.T) {
 
 func TestFixExplicitDBPath_CanonicalHasMoreData(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testhome.SetTestHome(t, tmpHome)
 
 	// Create canonical path with large data
 	canonDir := filepath.Join(tmpHome, ".onwatch", "data")
@@ -3868,7 +3900,7 @@ func TestFixExplicitDBPath_CanonicalHasMoreData(t *testing.T) {
 
 func TestFixExplicitDBPath_CanonicalDoesNotExist(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testhome.SetTestHome(t, tmpHome)
 
 	// No canonical path created
 
@@ -3893,7 +3925,7 @@ func TestFixExplicitDBPath_CanonicalDoesNotExist(t *testing.T) {
 
 func TestFixExplicitDBPath_ExplicitMissingCanonicalExists(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testhome.SetTestHome(t, tmpHome)
 
 	// Create canonical with data
 	canonDir := filepath.Join(tmpHome, ".onwatch", "data")
@@ -3984,9 +4016,6 @@ func TestInitEncryptionSalt_InvalidSaltInDB(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStop_NonTestMode_StalePIDWithPortFallback(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only on macOS/Linux")
-	}
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 500*time.Millisecond)
 		if err == nil {
@@ -4033,9 +4062,6 @@ func TestRunStop_NonTestMode_StalePIDWithPortFallback(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunStatus_NonTestMode_StalePIDNoPort(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("lsof only on macOS/Linux")
-	}
 	for _, p := range []int{9211, 8932} {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 500*time.Millisecond)
 		if err == nil {

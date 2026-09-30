@@ -204,16 +204,9 @@ func runMonitoring(pid, port int, totalDuration time.Duration) *Report {
 
 func findonWatchProcess(port int) int {
 	// Try PID file
-	pidFile := filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "onwatch", "onwatch.pid")
-	if runtime.GOOS != "darwin" {
-		pidFile = filepath.Join(os.Getenv("HOME"), ".local", "share", "onwatch", "onwatch.pid")
-	}
-
-	if data, err := os.ReadFile(pidFile); err == nil {
-		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && pid > 0 {
-			if isProcessRunning(pid) {
-				return pid
-			}
+	if data, err := os.ReadFile(pidFilePath()); err == nil {
+		if pid := parsePIDFile(data); pid > 0 && isProcessRunning(pid) {
+			return pid
 		}
 	}
 
@@ -234,21 +227,24 @@ func findonWatchProcess(port int) int {
 	return 0
 }
 
-func isProcessRunning(pid int) bool {
-	proc, _ := os.FindProcess(pid)
-	if proc == nil {
-		return false
+// parsePIDFile extracts the PID from onWatch's PID file, which holds
+// "pid:port" (older builds wrote a bare "pid"). Returns 0 if unparseable.
+func parsePIDFile(data []byte) int {
+	s := strings.TrimSpace(string(data))
+	if idx := strings.IndexByte(s, ':'); idx >= 0 {
+		s = s[:idx]
 	}
-	// Signal 0 check
-	return proc.Signal(os.Signal(nil)) == nil
+	pid, err := strconv.Atoi(s)
+	if err != nil || pid <= 0 {
+		return 0
+	}
+	return pid
 }
 
+// isOnwatchProcess reports whether pid runs an onWatch binary, judged by the
+// executable's base name (see processCommandName).
 func isOnwatchProcess(pid int) bool {
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(strings.ToLower(string(out)), "onwatch")
+	return strings.Contains(strings.ToLower(processCommandName(pid)), "onwatch")
 }
 
 // parseArgs reads the optional [port] [duration] positionals and the --restart
@@ -284,16 +280,16 @@ func parseArgs(args []string) (port int, duration time.Duration, shouldRestart b
 
 func stoponWatch(port int) {
 	// Try PID file first
-	pidFile := filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "onwatch", "onwatch.pid")
-	if runtime.GOOS != "darwin" {
-		pidFile = filepath.Join(os.Getenv("HOME"), ".local", "share", "onwatch", "onwatch.pid")
-	}
-
+	pidFile := pidFilePath()
 	if data, err := os.ReadFile(pidFile); err == nil {
-		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && pid > 0 {
+		// A PID file left by a crashed onWatch can name a PID the OS has
+		// since reused, so only a live onWatch process is stopped; anything
+		// else means the file is stale.
+		if pid := parsePIDFile(data); pid > 0 && isProcessRunning(pid) && isOnwatchProcess(pid) {
 			if proc, err := os.FindProcess(pid); err == nil {
-				proc.Signal(os.Interrupt)
-				fmt.Printf("   Stopped process (PID: %d) via PID file\n", pid)
+				if err := stopProcess(proc); err == nil {
+					fmt.Printf("   Stopped process (PID: %d) via PID file\n", pid)
+				}
 				time.Sleep(500 * time.Millisecond)
 			}
 		}
@@ -308,7 +304,7 @@ func stoponWatch(port int) {
 				if pid, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && pid > 0 {
 					if isOnwatchProcess(pid) {
 						if proc, err := os.FindProcess(pid); err == nil {
-							proc.Signal(os.Interrupt)
+							_ = stopProcess(proc)
 							fmt.Printf("   Stopped process (PID: %d) on port %d\n", pid, port)
 						}
 					}
@@ -319,36 +315,31 @@ func stoponWatch(port int) {
 }
 
 func startonWatch(port int) int {
-	// Find onwatch binary in various locations
-	possiblePaths := []string{
-		"./onwatch",
-		"../onwatch",
-		"../../onwatch",
-		"/Users/prakersh/project./onwatch/onwatch",
-	}
-
+	// Look for the onwatch binary near the working directory, then on PATH.
 	binaryPath := ""
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			binaryPath = path
+	for _, dir := range []string{".", "..", filepath.Join("..", "..")} {
+		candidate := filepath.Join(dir, onwatchBinaryName)
+		if _, err := os.Stat(candidate); err == nil {
+			binaryPath = candidate
 			break
 		}
 	}
 
-	if binaryPath == "" {
-		// Try PATH
+	workDir := ""
+	if binaryPath != "" {
+		if abs, err := filepath.Abs(binaryPath); err == nil {
+			binaryPath = abs
+		}
+		// Run from the binary's directory so it can find .env and database.
+		workDir = filepath.Dir(binaryPath)
+	} else {
+		// Try PATH (LookPath adds .exe on Windows)
 		binaryPath = "onwatch"
-	}
-
-	// Change to the binary's directory so it can find .env and database
-	binaryDir := filepath.Dir(binaryPath)
-	if binaryDir != "." && binaryDir != "" {
-		os.Chdir(binaryDir)
-		binaryPath = "./onwatch"
 	}
 
 	// Start onwatch in debug mode
 	cmd := exec.Command(binaryPath, "--debug", "--port", strconv.Itoa(port))
+	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
@@ -360,15 +351,22 @@ func startonWatch(port int) int {
 
 	pid := cmd.Process.Pid
 
+	// Reap the child so an early exit is seen as an exit: an unreaped child
+	// is a zombie on Unix and would still look alive to a signal-0 probe.
+	exited := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(exited)
+	}()
+
 	// Wait for it to be ready
 	fmt.Println("   Waiting for onWatch to be ready...")
 	for i := 0; i < 30; i++ {
-		time.Sleep(200 * time.Millisecond)
-
-		// Check if process is still running
-		if !isProcessRunning(pid) {
+		select {
+		case <-exited:
 			fmt.Println("   ❌ onWatch process died during startup")
 			return 0
+		case <-time.After(200 * time.Millisecond):
 		}
 
 		// Check if port is listening

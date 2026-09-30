@@ -6,244 +6,151 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
-	"time"
 )
 
-const ssrFixtureHTML = `<!DOCTYPE html><html><body>
-rollingUsage:$R[123]={usagePercent:4.5,resetInSec:6000}
-weeklyUsage:$R[124]={resetInSec:1209600,usagePercent:12.3}
-monthlyUsage:$R[125]={usagePercent:25.0,resetInSec:2592000}
-</body></html>`
-
-const dataSlotFixtureHTML = `<!DOCTYPE html><html><body>
-<div data-slot="usage-item">
-  <span data-slot="usage-label">Rolling Usage</span>
-  <span data-slot="usage-value">15%</span>
-  <span data-slot="reset-time">Resets in 1 hour 30 minutes</span>
-</div>
-<div data-slot="usage-item">
-  <span data-slot="usage-label">Weekly Usage</span>
-  <span data-slot="usage-value">22.5%</span>
-  <span data-slot="reset-now">Reset now</span>
-</div>
-<div data-slot="usage-item">
-  <span data-slot="usage-label">Monthly Usage</span>
-  <span data-slot="usage-value">40%</span>
-  <span data-slot="reset-time">Resets in 6 days 2 hours</span>
-</div>
-</body></html>`
-
-func TestOpenCodeClient_FetchSnapshot_SSR(t *testing.T) {
+func TestOpenCodeClient_FetchSnapshot_CookieModeReadsGoStatus(t *testing.T) {
+	var gotPath, gotCookie, gotOrg, gotAuth, gotAccept string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/workspace/ws-123/go" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		if cookie := r.Header.Get("Cookie"); cookie != "auth=secret-cookie" {
-			t.Errorf("unexpected cookie: %q", cookie)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(ssrFixtureHTML))
+		gotPath, gotCookie, gotOrg = r.URL.Path, r.Header.Get("Cookie"), r.Header.Get("x-org-id")
+		gotAuth, gotAccept = r.Header.Get("Authorization"), r.Header.Get("Accept")
+		_, _ = w.Write([]byte(goStatusBody))
 	}))
 	defer srv.Close()
 
-	client := newTestOpenCodeClient(t, srv)
-	snap, err := client.FetchSnapshot(context.Background(), "ws-123", "secret-cookie")
+	snap, err := newTestOpenCodeClient(t, srv).FetchSnapshot(context.Background(), " wrk_123 ", " sess-value ")
 	if err != nil {
 		t.Fatalf("FetchSnapshot: %v", err)
 	}
-	if len(snap.Quotas) != 3 {
-		t.Fatalf("quotas = %d, want 3", len(snap.Quotas))
+	if gotPath != "/console/api/go/status" {
+		t.Fatalf("path = %q, want /console/api/go/status", gotPath)
 	}
-
-	byName := mapQuotasByName(snap.Quotas)
-	if byName["five_hour"].Utilization != 4.5 {
-		t.Errorf("five_hour util = %v, want 4.5", byName["five_hour"].Utilization)
+	if gotCookie != "__Host-console_session=sess-value" || gotOrg != "wrk_123" {
+		t.Fatalf("cookie=%q x-org-id=%q", gotCookie, gotOrg)
 	}
-	if byName["weekly"].Utilization != 12.3 {
-		t.Errorf("weekly util = %v, want 12.3", byName["weekly"].Utilization)
+	if gotAuth != "" || gotAccept != "application/json" {
+		t.Fatalf("authorization=%q accept=%q, want no bearer and JSON", gotAuth, gotAccept)
 	}
-	if byName["monthly"].Utilization != 25.0 {
-		t.Errorf("monthly util = %v, want 25.0", byName["monthly"].Utilization)
+	if snap.PlanName != "OpenCode Go" || len(snap.Quotas) != 3 {
+		t.Fatalf("snapshot = %+v", snap)
 	}
-	for _, q := range snap.Quotas {
-		if q.Format != OpenCodeQuotaFormatPercent {
-			t.Errorf("quota %s format = %q, want percent", q.Name, q.Format)
-		}
-		if q.ResetsAt == nil {
-			t.Errorf("quota %s missing resetsAt", q.Name)
-		}
+	weekly := quotaByName(t, snap.Quotas, "weekly")
+	if weekly.Format != OpenCodeQuotaFormatCurrency || weekly.Limit != 30 || weekly.Utilization != 12.8 {
+		t.Fatalf("weekly = %+v, want $30 currency quota at 12.8%%", weekly)
 	}
-}
-
-func TestOpenCodeClient_FetchSnapshot_DataSlotFallback(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(dataSlotFixtureHTML))
-	}))
-	defer srv.Close()
-
-	client := newTestOpenCodeClient(t, srv)
-	snap, err := client.FetchSnapshot(context.Background(), "ws-abc", "tok")
-	if err != nil {
-		t.Fatalf("FetchSnapshot: %v", err)
-	}
-	if len(snap.Quotas) != 3 {
-		t.Fatalf("quotas = %d, want 3", len(snap.Quotas))
-	}
-	byName := mapQuotasByName(snap.Quotas)
-	if byName["five_hour"].Utilization != 15 {
-		t.Errorf("five_hour util = %v, want 15", byName["five_hour"].Utilization)
-	}
-	if byName["weekly"].Utilization != 22.5 {
-		t.Errorf("weekly util = %v, want 22.5", byName["weekly"].Utilization)
-	}
-	if byName["monthly"].Utilization != 40 {
-		t.Errorf("monthly util = %v, want 40", byName["monthly"].Utilization)
-	}
-
-	rollingReset := byName["five_hour"].ResetsAt.Sub(snap.CapturedAt)
-	if rollingReset < 89*time.Minute || rollingReset > 91*time.Minute {
-		t.Errorf("five_hour reset offset = %v, want ~90m", rollingReset)
-	}
-}
-
-func TestOpenCodeClient_FetchSnapshot_401(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("<html>login required secret</html>"))
-	}))
-	defer srv.Close()
-
-	client := newTestOpenCodeClient(t, srv)
-	_, err := client.FetchSnapshot(context.Background(), "ws", "cookie")
-	if !errors.Is(err, ErrOpenCodeUnauthorized) {
-		t.Fatalf("err = %v, want ErrOpenCodeUnauthorized", err)
-	}
-	if strings.Contains(err.Error(), "secret") {
-		t.Fatalf("error leaked response body: %v", err)
-	}
-}
-
-func TestOpenCodeClient_FetchSnapshot_RedirectIsUnauthorizedAndNotFollowed(t *testing.T) {
-	var redirectTargetHits int
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		redirectTargetHits++
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(ssrFixtureHTML))
-	}))
-	defer target.Close()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, target.URL+"/login", http.StatusFound)
-	}))
-	defer srv.Close()
-
-	client := newTestOpenCodeClient(t, srv)
-	_, err := client.FetchSnapshot(context.Background(), "ws", "secret-cookie")
-	if !errors.Is(err, ErrOpenCodeUnauthorized) {
-		t.Fatalf("err = %v, want ErrOpenCodeUnauthorized", err)
-	}
-	if redirectTargetHits != 0 {
-		t.Fatalf("redirect target received %d request(s), want 0", redirectTargetHits)
-	}
-}
-
-func TestOpenCodeClient_FetchSnapshot_Malformed(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("<html>no usage data</html>"))
-	}))
-	defer srv.Close()
-
-	client := newTestOpenCodeClient(t, srv)
-	_, err := client.FetchSnapshot(context.Background(), "ws", "cookie")
-	if !errors.Is(err, ErrOpenCodeParseFailed) {
-		t.Fatalf("err = %v, want ErrOpenCodeParseFailed", err)
-	}
-}
-
-func TestOpenCodeClient_FetchSnapshot_MissingConfig(t *testing.T) {
-	client := NewOpenCodeClient(nil)
-	_, err := client.FetchSnapshot(context.Background(), "", "cookie")
-	if !errors.Is(err, ErrOpenCodeMissingConfig) {
-		t.Fatalf("empty workspace err = %v", err)
-	}
-	_, err = client.FetchSnapshot(context.Background(), "ws", "")
-	if !errors.Is(err, ErrOpenCodeMissingConfig) {
-		t.Fatalf("empty cookie err = %v", err)
-	}
+	wantReset(t, quotaByName(t, snap.Quotas, "monthly"), "2026-10-24T15:00:25Z")
 }
 
 func TestOpenCodeClient_FetchSnapshot_CookieHeader(t *testing.T) {
-	var gotCookies []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotCookies = append(gotCookies, r.Header.Get("Cookie"))
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(ssrFixtureHTML))
-	}))
-	defer srv.Close()
-
-	client := newTestOpenCodeClient(t, srv)
 	for _, tt := range []struct {
-		name  string
-		value string
-		want  string
+		name, value, want string
 	}{
-		{name: "prefixed", value: "auth=already-set", want: "auth=already-set"},
-		{name: "raw padded", value: "token==", want: "auth=token=="},
+		{"bare value", "abc", "__Host-console_session=abc"},
+		{"bare value with base64 padding", "token==", "__Host-console_session=token=="},
+		{"named cookie", "__Host-console_session=abc", "__Host-console_session=abc"},
+		{"full cookie header", "theme=dark; __Host-console_session=abc", "theme=dark; __Host-console_session=abc"},
+		{"copied header line", "Cookie: __Host-console_session=abc", "__Host-console_session=abc"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.FetchSnapshot(context.Background(), "ws", tt.value)
-			if err != nil {
-				t.Fatalf("FetchSnapshot: %v", err)
-			}
-			if got := gotCookies[len(gotCookies)-1]; got != tt.want {
-				t.Errorf("cookie = %q, want %q", got, tt.want)
+			if got := openCodeConsoleCookieHeader(tt.value); got != tt.want {
+				t.Fatalf("cookie header = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestOpenCodeClient_FetchSnapshot_WorkspaceURLEncoded(t *testing.T) {
-	var gotRequestURI string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotRequestURI = r.RequestURI
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(ssrFixtureHTML))
-	}))
-	defer srv.Close()
-
-	client := newTestOpenCodeClient(t, srv)
-	_, err := client.FetchSnapshot(context.Background(), "ws/special id", "cookie")
-	if err != nil {
-		t.Fatalf("FetchSnapshot: %v", err)
-	}
-	if !strings.Contains(gotRequestURI, "ws%2Fspecial%20id") {
-		t.Errorf("request URI = %q, want encoded workspace id", gotRequestURI)
+func TestOpenCodeClient_FetchSnapshot_RejectedCookieExplainsWhichCookie(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusFound} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if status == http.StatusFound {
+				http.Redirect(w, r, "/auth/authorize", status)
+				return
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"_tag":"Unauthorized","secret":"BODY-MARKER"}`))
+		}))
+		_, err := newTestOpenCodeClient(t, srv).FetchSnapshot(context.Background(), "ws", "auth=Fe26.2**old")
+		srv.Close()
+		if !errors.Is(err, ErrOpenCodeUnauthorized) {
+			t.Fatalf("status %d: err = %v, want ErrOpenCodeUnauthorized", status, err)
+		}
+		if !strings.Contains(err.Error(), "__Host-console_session") {
+			t.Fatalf("status %d: error %q does not name the cookie to paste", status, err)
+		}
+		if strings.Contains(err.Error(), "BODY-MARKER") || strings.Contains(err.Error(), "Fe26") {
+			t.Fatalf("status %d: error leaks the body or cookie: %v", status, err)
+		}
 	}
 }
 
-func TestParseHumanReadableTime(t *testing.T) {
-	tests := []struct {
-		in   string
-		want float64
-		ok   bool
-	}{
-		{"1 hour 56 minutes", 6960, true},
-		{"6 days 2 hours", 525600, true},
-		{"reset now", 0, true},
-		{"not a duration", 0, false},
+func TestOpenCodeClient_FetchSnapshot_RedirectIsNotFollowed(t *testing.T) {
+	var targetHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits.Add(1)
+		_, _ = w.Write([]byte(goStatusBody))
+	}))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/login", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	if _, err := newTestOpenCodeClient(t, srv).FetchSnapshot(context.Background(), "ws", "cookie"); !errors.Is(err, ErrOpenCodeUnauthorized) {
+		t.Fatalf("err = %v, want ErrOpenCodeUnauthorized", err)
 	}
-	for _, tc := range tests {
-		got, ok := parseHumanReadableTime(tc.in)
-		if ok != tc.ok {
-			t.Errorf("parseHumanReadableTime(%q) ok = %v, want %v", tc.in, ok, tc.ok)
-			continue
+	if targetHits.Load() != 0 {
+		t.Fatalf("redirect target received %d request(s), want 0", targetHits.Load())
+	}
+}
+
+func TestOpenCodeClient_FetchSnapshot_Malformed(t *testing.T) {
+	srv := goStatusServer(t, `<html>no usage data</html>`)
+	if _, err := newTestOpenCodeClient(t, srv).FetchSnapshot(context.Background(), "ws", "cookie"); !errors.Is(err, ErrOpenCodeParseFailed) {
+		t.Fatalf("err = %v, want ErrOpenCodeParseFailed", err)
+	}
+}
+
+func TestOpenCodeClient_FetchSnapshot_MissingConfigMakesNoRequest(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
+	defer srv.Close()
+	client := newTestOpenCodeClient(t, srv)
+	if _, err := client.FetchSnapshot(context.Background(), "", "cookie"); !errors.Is(err, ErrOpenCodeMissingConfig) {
+		t.Fatalf("empty workspace err = %v", err)
+	}
+	if _, err := client.FetchSnapshot(context.Background(), "ws", " "); !errors.Is(err, ErrOpenCodeMissingConfig) {
+		t.Fatalf("empty cookie err = %v", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("requests = %d, want 0", calls.Load())
+	}
+}
+
+// The reuse window is per credential: a cookie never serves a cached API-key
+// status (or another workspace's), and vice versa.
+func TestOpenCodeClient_StatusReuseIsPerCredential(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(goStatusBody))
+	}))
+	defer srv.Close()
+	c := newTestOpenCodeClient(t, srv)
+	ctx := context.Background()
+	steps := []func() error{
+		func() error { _, err := c.FetchUsageSnapshot(ctx, "k"); return err },
+		func() error { _, err := c.FetchSnapshot(ctx, "ws", "k"); return err },
+		func() error { _, err := c.FetchSnapshot(ctx, "ws", "k"); return err },
+		func() error { _, err := c.FetchSnapshot(ctx, "ws2", "k"); return err },
+	}
+	for i, step := range steps {
+		if err := step(); err != nil {
+			t.Fatalf("step %d: %v", i, err)
 		}
-		if ok && got != tc.want {
-			t.Errorf("parseHumanReadableTime(%q) = %v, want %v", tc.in, got, tc.want)
-		}
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("status requests = %d, want 3 (key, cookie ws, cookie ws2)", calls.Load())
 	}
 }
 
@@ -262,12 +169,4 @@ func TestIsOpenCodeAuthError(t *testing.T) {
 func newTestOpenCodeClient(t *testing.T, srv *httptest.Server) *OpenCodeClient {
 	t.Helper()
 	return NewOpenCodeClient(nil, WithOpenCodeBaseURL(srv.URL))
-}
-
-func mapQuotasByName(quotas []OpenCodeQuota) map[string]OpenCodeQuota {
-	out := make(map[string]OpenCodeQuota, len(quotas))
-	for _, q := range quotas {
-		out[q.Name] = q
-	}
-	return out
 }

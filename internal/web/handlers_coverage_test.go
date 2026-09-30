@@ -14,6 +14,7 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 	"github.com/onllm-dev/onwatch/v2/internal/tracker"
 )
 
@@ -257,7 +258,7 @@ func TestHandlerTryAutoDetectAdditionalCoverage(t *testing.T) {
 
 	t.Run("anthropic and codex miss", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		testhome.SetTestHome(t, home)
 		t.Setenv("CODEX_HOME", filepath.Join(home, "codex-home"))
 
 		h := NewHandler(nil, nil, nil, nil, &config.Config{})
@@ -271,7 +272,7 @@ func TestHandlerTryAutoDetectAdditionalCoverage(t *testing.T) {
 
 	t.Run("anthropic success from credentials file", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		testhome.SetTestHome(t, home)
 		credsDir := filepath.Join(home, ".claude")
 		if err := os.MkdirAll(credsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -343,7 +344,7 @@ func TestHandlerReloadProvidersCoverage(t *testing.T) {
 
 		home := t.TempDir()
 		codexHome := t.TempDir()
-		t.Setenv("HOME", home)
+		testhome.SetTestHome(t, home)
 		t.Setenv("CODEX_HOME", codexHome)
 		t.Setenv("SYNTHETIC_API_KEY", "syn_reload_key")
 		t.Setenv("ZAI_API_KEY", "")

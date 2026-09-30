@@ -3,16 +3,20 @@ package update
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
 )
 
 func TestCompareVersions(t *testing.T) {
@@ -593,33 +597,92 @@ func TestApply_EmptyVersion(t *testing.T) {
 	}
 }
 
-func TestApply_DownloadAndReplace(t *testing.T) {
-	// Create a mock server that serves the release API and a binary download
-	var currentExe string
-	var err error
-	currentExe, err = os.Executable()
+// runningBinaryHelperEnv turns a copy of this test binary into an idle
+// process, so Apply can be exercised against a binary that is genuinely
+// executing - the real self-update situation. Windows refuses to delete a
+// running .exe, which is what drives replaceBinary's backup-rename path.
+const runningBinaryHelperEnv = "ONWATCH_UPDATE_TEST_RUNNING_BINARY"
+
+func TestHelperRunningBinary(t *testing.T) {
+	if os.Getenv(runningBinaryHelperEnv) != "1" {
+		return
+	}
+	time.Sleep(2 * time.Minute)
+}
+
+// startRunningBinaryCopy copies this test binary into a temp dir, starts the
+// copy as an idle process and returns its path. The process is killed and
+// reaped before the temp dir is removed, so Windows can delete the image.
+func startRunningBinaryCopy(t *testing.T) string {
+	t.Helper()
+	self, err := os.Executable()
 	if err != nil {
 		t.Fatalf("os.Executable: %v", err)
 	}
-
-	// Read real binary magic bytes from the current executable for validation
-	magic := make([]byte, 8)
-	f, err := os.Open(currentExe)
-	if err != nil {
-		t.Fatalf("open current exe: %v", err)
+	name := "onwatch"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
 	}
-	f.Read(magic)
-	f.Close()
+	exePath := filepath.Join(t.TempDir(), name)
 
-	// Create download server serving a valid binary (using real magic bytes)
+	src, err := os.Open(self)
+	if err != nil {
+		t.Fatalf("open test binary: %v", err)
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(exePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		t.Fatalf("create binary copy: %v", err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		t.Fatalf("copy test binary: %v", err)
+	}
+	if err := dst.Close(); err != nil {
+		t.Fatalf("close binary copy: %v", err)
+	}
+
+	cmd := exec.Command(exePath, "-test.run=^TestHelperRunningBinary$")
+	cmd.Env = append(os.Environ(), runningBinaryHelperEnv+"=1")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start binary copy: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	return exePath
+}
+
+// Apply must replace the binary it is running from. The target is a running
+// temp copy, never this test binary: replacing the test binary would corrupt
+// the package's own executable mid-run.
+func TestApply_DownloadAndReplace(t *testing.T) {
+	exePath := startRunningBinaryCopy(t)
+	oldExecutablePath := executablePath
+	t.Cleanup(func() { executablePath = oldExecutablePath })
+	executablePath = func() (string, error) { return exePath, nil }
+
+	// Serve a payload that passes validateBinary: this platform's magic bytes.
+	current, err := os.ReadFile(exePath)
+	if err != nil {
+		t.Fatalf("read binary copy: %v", err)
+	}
+	payload := append(append([]byte(nil), current[:8]...), []byte("rest-of-binary-content-padded-to-be-non-empty")...)
+
+	wantAsset := fmt.Sprintf("/v99.0.0/onwatch-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		wantAsset += ".exe"
+	}
 	dlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Serve a file with valid magic bytes
-		w.Write(magic)
-		w.Write([]byte("rest-of-binary-content-padded-to-be-non-empty"))
+		if r.URL.Path != wantAsset {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(payload)
 	}))
 	defer dlSrv.Close()
 
-	// Create API server that returns a newer version
 	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(githubRelease{TagName: "v99.0.0"})
 	}))
@@ -629,15 +692,32 @@ func TestApply_DownloadAndReplace(t *testing.T) {
 	u.apiURL = apiSrv.URL
 	u.downloadURL = dlSrv.URL
 
-	// Apply will try to replace the current executable, which we can't really do in test.
-	// But we can verify it gets past the download and validation steps.
-	err = u.Apply()
-	// We expect an error because either:
-	// 1. The download URL format won't match the mock server, or
-	// 2. We can't actually replace the running test binary
-	// The key is we exercised more of the Apply() code path.
-	if err == nil {
-		t.Log("Apply succeeded unexpectedly (may be OK on some platforms)")
+	if err := u.Apply(); err != nil {
+		t.Fatalf("Apply() = %v", err)
+	}
+
+	got, err := os.ReadFile(exePath)
+	if err != nil {
+		t.Fatalf("read replaced binary: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("binary not replaced: got %d bytes, want the %d-byte download", len(got), len(payload))
+	}
+
+	leftovers, err := filepath.Glob(filepath.Join(filepath.Dir(exePath), "onwatch.tmp.*"))
+	if err != nil {
+		t.Fatalf("glob temp downloads: %v", err)
+	}
+	if len(leftovers) != 0 {
+		t.Fatalf("temp download left behind: %v", leftovers)
+	}
+
+	wantApplied, err := filepath.EvalSymlinks(exePath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if u.lastAppliedPath != wantApplied {
+		t.Fatalf("lastAppliedPath = %q, want %q", u.lastAppliedPath, wantApplied)
 	}
 }
 
@@ -1003,12 +1083,7 @@ func TestCheck_RateLimitErrorMessage(t *testing.T) {
 func TestFindUnitFile_UserLevelPath(t *testing.T) {
 	serviceName := "onwatch-user-level-test.service"
 	tmpHome := t.TempDir()
-
-	origHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", origHome)
-	if err := os.Setenv("HOME", tmpHome); err != nil {
-		t.Fatalf("Setenv HOME: %v", err)
-	}
+	testhome.SetTestHome(t, tmpHome)
 
 	userDir := filepath.Join(tmpHome, ".config", "systemd", "user")
 	if err := os.MkdirAll(userDir, 0755); err != nil {
@@ -1186,7 +1261,7 @@ func TestMigrateSystemdUnit_UpdatesUserUnitAndReloads(t *testing.T) {
 	}
 
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testhome.SetTestHome(t, tmpHome)
 	t.Setenv("INVOCATION_ID", "invocation-test-id")
 
 	unitDir := filepath.Join(tmpHome, ".config", "systemd", "user")
@@ -1199,21 +1274,16 @@ func TestMigrateSystemdUnit_UpdatesUserUnitAndReloads(t *testing.T) {
 		t.Fatalf("WriteFile unitPath: %v", err)
 	}
 
-	binDir := t.TempDir()
-	markerFile := filepath.Join(binDir, "systemctl.called")
-	scriptPath := filepath.Join(binDir, "systemctl")
-	script := "#!/bin/sh\n" +
-		"echo \"$@\" >> \"" + markerFile + "\"\n" +
-		"exit 0\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
-		t.Fatalf("WriteFile systemctl stub: %v", err)
+	// Record the reload through the execCommand hook rather than a PATH stub:
+	// a shell-script stub is not executable on Windows. The recorded command
+	// runs this test binary with no tests selected, which exits 0 everywhere.
+	oldExecCommand := execCommand
+	t.Cleanup(func() { execCommand = oldExecCommand })
+	var calls []string
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		calls = append(calls, strings.Join(append([]string{name}, args...), " "))
+		return exec.Command(os.Args[0], "-test.run=^$")
 	}
-
-	pathSep := ":"
-	if runtime.GOOS == "windows" {
-		pathSep = ";"
-	}
-	t.Setenv("PATH", binDir+pathSep+os.Getenv("PATH"))
 
 	MigrateSystemdUnit(slog.Default())
 
@@ -1229,12 +1299,8 @@ func TestMigrateSystemdUnit_UpdatesUserUnitAndReloads(t *testing.T) {
 		t.Fatalf("expected RestartSec=5 in unit file, got:\n%s", updated)
 	}
 
-	calls, err := os.ReadFile(markerFile)
-	if err != nil {
-		t.Fatalf("expected systemctl to be called, read marker: %v", err)
-	}
-	if !strings.Contains(string(calls), "--user daemon-reload") {
-		t.Fatalf("expected user-level daemon-reload call, got: %s", string(calls))
+	if len(calls) != 1 || calls[0] != "systemctl --user daemon-reload" {
+		t.Fatalf("expected one user-level daemon-reload call, got: %q", calls)
 	}
 }
 

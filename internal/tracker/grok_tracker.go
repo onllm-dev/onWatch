@@ -13,7 +13,7 @@ import (
 type GrokTracker struct {
 	store      *store.Store
 	logger     *slog.Logger
-	lastValues map[int64]map[string]float64   // account -> quota -> last util
+	lastValues map[int64]map[string]float64 // account -> quota -> last util
 	lastResets map[int64]map[string]time.Time
 	hasLast    map[int64]bool
 

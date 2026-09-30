@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/store"
@@ -39,12 +40,12 @@ func (h *Handler) buildDeepSeekCurrent() map[string]interface{} {
 
 		if latest != nil {
 			response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
-			
+
 			status := "healthy"
 			if latest.TotalBalance == 0 {
 				status = "critical"
 			}
-			
+
 			balance := map[string]interface{}{
 				"name":        "Balance",
 				"description": "DeepSeek API balance",
@@ -132,10 +133,7 @@ func (h *Handler) cyclesDeepSeek(w http.ResponseWriter, r *http.Request) {
 	}
 
 	quotaType := "balance"
-	currency := r.URL.Query().Get("currency")
-	if currency == "" {
-		currency = "CNY" // Default
-	}
+	currency := h.deepseekCurrency(r.URL.Query().Get("currency"))
 	response := make([]map[string]interface{}, 0)
 
 	active, err := h.store.QueryActiveDeepSeekCycle(quotaType, currency)
@@ -166,6 +164,7 @@ func (h *Handler) cyclesDeepSeek(w http.ResponseWriter, r *http.Request) {
 func deepseekCycleToMap(cycle *store.DeepSeekResetCycle) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":           cycle.ID,
+		"cycleId":      cycle.ID, // the dashboard cycle tables read cycleId
 		"quotaType":    cycle.QuotaType,
 		"currency":     cycle.Currency,
 		"cycleStart":   cycle.CycleStart.Format(time.RFC3339),
@@ -181,12 +180,24 @@ func deepseekCycleToMap(cycle *store.DeepSeekResetCycle) map[string]interface{} 
 	return result
 }
 
+// deepseekCurrency resolves the currency to report: the requested one, else
+// the currency of the latest snapshot. DeepSeek accounts hold either CNY or
+// USD, and a view queried in the wrong currency comes back empty (#137).
+func (h *Handler) deepseekCurrency(requested string) string {
+	if requested = strings.ToUpper(strings.TrimSpace(requested)); requested != "" {
+		return requested
+	}
+	if h.store != nil {
+		if latest, err := h.store.QueryLatestDeepSeek(); err == nil && latest != nil && latest.Currency != "" {
+			return latest.Currency
+		}
+	}
+	return "CNY"
+}
+
 // summaryDeepSeek returns DeepSeek usage summary
 func (h *Handler) summaryDeepSeek(w http.ResponseWriter, r *http.Request) {
-	currency := r.URL.Query().Get("currency")
-	if currency == "" {
-		currency = "CNY"
-	}
+	currency := h.deepseekCurrency(r.URL.Query().Get("currency"))
 	respondJSON(w, http.StatusOK, h.buildDeepSeekSummaryMap(currency))
 }
 
@@ -244,10 +255,7 @@ func (h *Handler) buildDeepSeekSummaryMap(currency string) map[string]interface{
 // insightsDeepSeek returns DeepSeek insights
 func (h *Handler) insightsDeepSeek(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	currency := r.URL.Query().Get("currency")
-	if currency == "" {
-		currency = "CNY"
-	}
+	currency := h.deepseekCurrency(r.URL.Query().Get("currency"))
 	respondJSON(w, http.StatusOK, h.buildDeepSeekInsights(currency, hidden))
 }
 
@@ -268,7 +276,7 @@ func (h *Handler) buildDeepSeekInsights(currency string, hidden map[string]bool)
 		})
 		return resp
 	}
-	
+
 	if latest.Currency != currency {
 		// Only reporting for currently tracked currency
 		return resp
@@ -306,7 +314,7 @@ func (h *Handler) buildDeepSeekInsights(currency string, hidden map[string]bool)
 			}
 		}
 	}
-	
+
 	if !latest.IsAvailable {
 		resp.Insights = append(resp.Insights, insightItem{
 			Type: "warning", Severity: "high",
@@ -320,44 +328,42 @@ func (h *Handler) buildDeepSeekInsights(currency string, hidden map[string]bool)
 
 // cycleOverviewDeepSeek returns DeepSeek cycle overview.
 func (h *Handler) cycleOverviewDeepSeek(w http.ResponseWriter, r *http.Request) {
-	if h.store == nil {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
-		return
-	}
+	respondJSON(w, http.StatusOK, h.deepseekCycleOverview(h.deepseekCurrency(r.URL.Query().Get("currency"))))
+}
 
+// deepseekCycleOverview lists the active and recent balance cycles. Balance
+// cycles carry only a spend delta, so there are no per-quota columns.
+func (h *Handler) deepseekCycleOverview(currency string) map[string]interface{} {
 	quotaType := "balance"
-	currency := r.URL.Query().Get("currency")
-	if currency == "" {
-		currency = "CNY"
-	}
-	var cycles []map[string]interface{}
-
-	if active, err := h.store.QueryActiveDeepSeekCycle(quotaType, currency); err == nil && active != nil {
-		cycles = append(cycles, deepseekCycleToMap(active))
-	}
-	if history, err := h.store.QueryDeepSeekCycleHistory(quotaType, currency, 50); err == nil {
-		for _, c := range history {
-			cycles = append(cycles, deepseekCycleToMap(c))
+	cycles := []map[string]interface{}{}
+	if h.store != nil {
+		if active, err := h.store.QueryActiveDeepSeekCycle(quotaType, currency); err == nil && active != nil {
+			cycles = append(cycles, deepseekCycleToMap(active))
+		}
+		if history, err := h.store.QueryDeepSeekCycleHistory(quotaType, currency, 50); err == nil {
+			for _, c := range history {
+				cycles = append(cycles, deepseekCycleToMap(c))
+			}
 		}
 	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	return map[string]interface{}{
 		"groupBy":    quotaType,
 		"provider":   "deepseek",
-		"quotaNames": []string{"balance"},
+		"currency":   currency,
+		"quotaNames": []string{},
 		"cycles":     cycles,
-	})
+	}
 }
 
 // loggingHistoryDeepSeek returns DeepSeek polling history.
 func (h *Handler) loggingHistoryDeepSeek(w http.ResponseWriter, r *http.Request) {
+	quotaNames := []string{"total_balance", "granted_balance", "topped_up_balance"}
 	if h.store == nil {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"provider": "deepseek", "quotaNames": []string{}, "logs": []interface{}{}})
+		respondJSON(w, http.StatusOK, map[string]interface{}{"provider": "deepseek", "quotaNames": quotaNames, "logs": []interface{}{}})
 		return
 	}
 
 	start, end, limit := h.loggingHistoryRangeAndLimit(r)
-
 	snapshots, err := h.store.QueryDeepSeekRange(start, end, limit)
 	if err != nil {
 		h.logger.Error("failed to query DeepSeek logging history", "error", err)
@@ -365,55 +371,35 @@ func (h *Handler) loggingHistoryDeepSeek(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	quotaNames := []string{"balance"}
-	type quotaVal struct {
-		Name     string
-		Value    float64
-		HasValue bool
-	}
-
-	capturedAt := make([]string, 0, len(snapshots))
+	// Rows are labelled with one currency, so skip snapshots taken in another
+	// (an account that switched between CNY and USD).
+	currency := h.deepseekCurrency("")
+	capturedAt := make([]time.Time, 0, len(snapshots))
 	ids := make([]int64, 0, len(snapshots))
-	series := make([]map[string]quotaVal, 0, len(snapshots))
-
+	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
 	for _, snap := range snapshots {
-		capturedAt = append(capturedAt, snap.CapturedAt.Format(time.RFC3339))
+		if snap.Currency != "" && snap.Currency != currency {
+			continue
+		}
+		capturedAt = append(capturedAt, snap.CapturedAt)
 		ids = append(ids, snap.ID)
-
-		row := map[string]quotaVal{
-			"balance": {
-				Name:     "balance",
-				Value:    snap.TotalBalance,
-				HasValue: true,
-			},
-		}
-		series = append(series, row)
-	}
-
-	logs := make([]map[string]interface{}, 0, len(snapshots))
-	for i := range snapshots {
-		entry := map[string]interface{}{
-			"capturedAt": capturedAt[i],
-			"id":         ids[i],
-			"quotas":     map[string]interface{}{},
-		}
-		quotas := map[string]interface{}{}
-		for _, qn := range quotaNames {
-			if qv, ok := series[i][qn]; ok {
-				quotas[qn] = map[string]interface{}{
-					"name":     qv.Name,
-					"value":    qv.Value,
-					"hasValue": qv.HasValue,
-				}
-			}
-		}
-		entry["quotas"] = quotas
-		logs = append(logs, entry)
+		series = append(series, balanceCrossQuotas(quotaNames, snap.TotalBalance, snap.GrantedBalance, snap.ToppedUpBalance))
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"provider":   "deepseek",
+		"currency":   currency,
 		"quotaNames": quotaNames,
-		"logs":       logs,
+		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
 	})
+}
+
+// balanceCrossQuotas maps balance amounts to logging-history cells. Balances
+// have no limit, so only the value is set.
+func balanceCrossQuotas(names []string, values ...float64) map[string]loggingHistoryCrossQuota {
+	row := make(map[string]loggingHistoryCrossQuota, len(names))
+	for i, name := range names {
+		row[name] = loggingHistoryCrossQuota{Name: name, Value: values[i], HasValue: true}
+	}
+	return row
 }

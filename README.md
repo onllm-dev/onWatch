@@ -19,7 +19,7 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 
 **Compatibility & Docs**
 
-[![Version](https://img.shields.io/badge/Version-v2.14.5-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.14.5)
+[![Version](https://img.shields.io/badge/Version-v2.14.6-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.14.6)
 [![VS Code Marketplace](https://vsmarketplacebadges.dev/version-short/onllm-dev.onwatch.svg?style=for-the-badge&label=VS%20Code&logo=visualstudiocode&logoColor=white&color=007ACC)](https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
@@ -186,7 +186,7 @@ It is a thin client: it needs the onWatch daemon running (steps above) and finds
 - **Grok** -- xAI Grok Build / SuperGrok credits tracking via local `~/.grok/auth.json` (or `$GROK_HOME`), optional `grok agent stdio` RPC, and grok.com gRPC-web bearer probe (no browser cookie import). Primary "Credits" utilization against plan limit with reset countdown. Informational local session token stats also captured.
 - **Moonshot** -- Balance-based tracking for the Moonshot (Kimi) open-platform API. Available, Voucher, and Cash balance cards with drop-rate trends. Set `MOONSHOT_API_KEY`. See [Moonshot Setup](docs/MOONSHOT_SETUP.md).
 - **DeepSeek** -- Balance-based tracking for the DeepSeek platform API. Total, Granted, and Topped-Up balance cards with drop-rate trends. Set `DEEPSEEK_API_KEY`. See [DeepSeek Setup](docs/DEEPSEEK_SETUP.md).
-- **OpenCode Go** -- Subscription quota cards (5-Hour, Weekly, and Monthly when present) read from the plan's own meters via the OpenCode console API (set `OPENCODE_GO_API_KEY`, a service-account key) or, as a legacy fallback, scraped from the authenticated dashboard (`OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`), with cycle history and deep insights. Separate from `OPENCODE_ENABLED`, which only feeds ChatGPT credentials into the Codex provider. See [OpenCode Setup](docs/OPENCODE_SETUP.md).
+- **OpenCode Go** -- Subscription quota cards (5-Hour, Weekly, and Monthly when present) read from the plan's own meters (used and limit in USD) via the OpenCode console API, using a service-account key (`OPENCODE_GO_API_KEY`) or your browser session (`OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`), with cycle history and deep insights. Separate from `OPENCODE_ENABLED`, which only feeds ChatGPT credentials into the Codex provider. See [OpenCode Setup](docs/OPENCODE_SETUP.md).
 - **Mistral** (beta) - Separate included API and Vibe Code allowances plus pay-as-you-go charges, with browser-cookie import or manual authentication. See [Mistral Setup](docs/MISTRAL_SETUP.md).
 - **Ollama Cloud** (beta) -- Included monthly usage in USD from the ollama.com API with plan-derived caps, per-model request counts, extra-usage spend, cycle history and insights. Set `OLLAMA_API_KEY`. See [Ollama Setup](docs/OLLAMA_SETUP.md).
 - **Muse** -- Meta Muse coding-plan quota tracking (5-hour prompts + weekly usage) from the same subscription snapshot `muse /usage` shows, via one minimal probe per poll. Opt-in: set `MUSE_ENABLED=true` and onWatch uses the key `muse login` stored (macOS Keychain / login file), or set `META_API_KEY` directly. Tracking stays off until you opt in, because each poll spends a prompt from your own 5h window. See [Muse Setup](docs/MUSE_SETUP.md).
@@ -363,10 +363,13 @@ Additional environment variables:
 | `KIMI_CODE_ENABLED`      | Enable Kimi Code provider (default: auto when credentials present)|
 | `KIMI_CODE_CREDENTIALS`  | Path to kimi-code.json (default ~/.kimi-code/credentials/kimi-code.json)|
 | `MOONSHOT_API_KEY`       | Moonshot (Kimi) open-platform API key (enables balance tracking)|
+| `MOONSHOT_BASE_URL`      | Override the Moonshot API base URL (default `https://api.moonshot.ai`)|
 | `DEEPSEEK_API_KEY`       | DeepSeek platform API key (enables balance tracking)   |
+| `DEEPSEEK_BASE_URL`      | Override the DeepSeek API base URL (default `https://api.deepseek.com`)|
 | `OPENCODE_GO_API_KEY`    | OpenCode console service-account key with usage read access (enables quota tracking; preferred)|
-| `OPENCODE_GO_WORKSPACE_ID` | Legacy scrape mode: OpenCode Go workspace ID (`wrk_...`) from the dashboard URL|
-| `OPENCODE_GO_AUTH_COOKIE` | Legacy scrape mode: OpenCode Go `auth` cookie value|
+| `OPENCODE_GO_WORKSPACE_ID` | Session mode: OpenCode Go workspace ID (`wrk_...`)|
+| `OPENCODE_GO_AUTH_COOKIE` | Session mode: `__Host-console_session` cookie value from opencode.ai|
+| `OPENCODE_GO_BASE_URL`   | Override the OpenCode console base URL (default `https://opencode.ai`)|
 | `MISTRAL_ENABLED`       | Enable Mistral subscription and pay-as-you-go tracking (default: false) |
 | `MISTRAL_AUTH_COOKIE`   | Manual Mistral Cookie header; keep private |
 | `MISTRAL_BROWSER`       | auto, chrome, firefox, safari (macOS), or edge |

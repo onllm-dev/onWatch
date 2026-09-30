@@ -185,13 +185,13 @@ func (s *Store) QueryGrokRange(accountID int64, start, end time.Time, limit ...i
 	byID := make(map[int64]*api.GrokSnapshot)
 	for rows.Next() {
 		var (
-			id                            int64
-			capturedAt                    string
-			email, teamID, loginMethod    sql.NullString
-			rawJSON                       string
-			accID                         int64
-			qName, qResets, qStatus       sql.NullString
-			qUtil                         sql.NullFloat64
+			id                         int64
+			capturedAt                 string
+			email, teamID, loginMethod sql.NullString
+			rawJSON                    string
+			accID                      int64
+			qName, qResets, qStatus    sql.NullString
+			qUtil                      sql.NullFloat64
 		)
 		if err := rows.Scan(&id, &capturedAt, &email, &teamID, &loginMethod, &rawJSON, &accID,
 			&qName, &qUtil, &qResets, &qStatus); err != nil {
@@ -234,14 +234,14 @@ func (s *Store) QueryGrokRange(accountID int64, start, end time.Time, limit ...i
 
 // GrokResetCycle mirrors the reset cycle for the grok provider.
 type GrokResetCycle struct {
-	ID               int64
-	AccountID        int64
-	QuotaName        string
-	CycleStart       time.Time
-	CycleEnd         *time.Time
-	ResetsAt         *time.Time
-	PeakUtilization  float64
-	TotalDelta       float64
+	ID              int64
+	AccountID       int64
+	QuotaName       string
+	CycleStart      time.Time
+	CycleEnd        *time.Time
+	ResetsAt        *time.Time
+	PeakUtilization float64
+	TotalDelta      float64
 }
 
 // InsertGrokResetCycle creates a new cycle row.
