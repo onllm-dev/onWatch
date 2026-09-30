@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>onWatch Menubar</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="__ONWATCH_BASE_PATH__/static/mistral-recovery.css?v=__ONWATCH_MISTRAL_ASSET_VERSION__">
     <style>
         :root {
             color-scheme: dark;
@@ -478,6 +479,18 @@
             color: var(--text-muted);
             font-size: var(--font-xs);
             white-space: nowrap;
+        }
+
+        .mistral-recovery {
+            gap: var(--space-sm);
+            margin: var(--space-sm) 0;
+            font-size: var(--font-sm);
+            line-height: 1.3;
+        }
+
+        .mistral-retry {
+            padding: 4px 8px;
+            border-radius: 6px;
         }
 
         .minimal-view {
@@ -1432,10 +1445,12 @@
         </section>
     </main>
 
+    <script src="__ONWATCH_BASE_PATH__/static/mistral-recovery.js?v=__ONWATCH_MISTRAL_ASSET_VERSION__"></script>
     <script>
         window.__ONWATCH_MENUBAR__ = __ONWATCH_MENUBAR_BOOTSTRAP__;
 
         (() => {
+            const API_BASE = __ONWATCH_BASE_PATH_JSON__;
             const MENUBAR_VERSION = "__ONWATCH_MENUBAR_VERSION__";
             const STATUS_STORAGE_KEY = "menubar_status_display";
             const VIEW_STORAGE_KEY = "menubar_view_mode";
@@ -1529,6 +1544,24 @@
             let resizeFrame = 0;
             let resizeTimer = 0;
             let autoSaveTimer = null;
+            const mistralRecovery = new window.MistralRecovery({
+                root: body, endpoint: API_BASE + '/api/menubar/mistral/retry',
+                grant: window.__onwatchCanGrantBrowserAccess ? () => sendNativeAction('grant_browser_access') : undefined,
+                refresh: async signal => {
+                    await loadSnapshot(signal);
+                    return (state.snapshot?.providers || []).find(p => p.base_provider === 'mistral')?.connection;
+                },
+                render: () => render()
+            });
+            window.__onwatchBrowserGrantResult = (result, refresh = true) => {
+                mistralRecovery.grantResult(result);
+                if (refresh && result !== 'idle' && result !== 'pending') void loadSnapshot();
+            };
+            window.__onwatchMenubarRefresh = () => {
+                mistralRecovery.suspended = false;
+                sendNativeAction('browser_access_status');
+                void refreshData();
+            };
 
             if (footerVersion) {
                 footerVersion.textContent = `v${MENUBAR_VERSION || "-"}`;
@@ -1600,7 +1633,7 @@
 
             async function loadPreferences() {
                 try {
-                    const response = await fetch("/api/menubar/preferences", {
+                    const response = await fetch(API_BASE + "/api/menubar/preferences", {
                         credentials: "same-origin",
                         headers: { "Accept": "application/json" }
                     });
@@ -1638,11 +1671,12 @@
                 }
             }
 
-            async function loadSnapshot() {
+            async function loadSnapshot(signal) {
                 state.loading = state.snapshot == null;
                 render();
                 try {
-                    const response = await fetch("/api/menubar/summary", {
+                    const response = await fetch(API_BASE + "/api/menubar/summary", {
+                        signal,
                         credentials: "same-origin",
                         headers: { "Accept": "application/json" }
                     });
@@ -1652,6 +1686,7 @@
                     state.snapshot = await response.json();
                     state.error = "";
                 } catch (error) {
+                    if (signal) throw error;
                     state.error = error && error.message ? error.message : "Unable to load menubar data.";
                 } finally {
                     state.loading = false;
@@ -1704,6 +1739,7 @@
             }
 
             function closeMenubar() {
+                mistralRecovery.hide();
                 // Native hosts (macOS WKWebView / GNOME WebKitGTK) hide the popover.
                 if (sendNativeAction("close")) {
                     return;
@@ -1728,7 +1764,7 @@
                 state.saving = true;
                 renderSettings();
                 try {
-                    const response = await fetch("/api/menubar/preferences", {
+                    const response = await fetch(API_BASE + "/api/menubar/preferences", {
                         method: "PUT",
                         credentials: "same-origin",
                         headers: {
@@ -1783,7 +1819,7 @@
                 settingsNote.textContent = "saving…";
                 renderSettings();
                 try {
-                    const response = await fetch("/api/menubar/preferences", {
+                    const response = await fetch(API_BASE + "/api/menubar/preferences", {
                         method: "PUT",
                         credentials: "same-origin",
                         headers: {
@@ -2307,12 +2343,13 @@
                         <div class="provider-copy">
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
-                            ${provider.connection_status === 'reconnect' ? '<span class="quota-source-tag">Reconnect required</span>' : provider.connection_status === 'stale' ? '<span class="quota-source-tag">Updates unavailable</span>' : ''}
+                            ${provider.connection?.reason === 'browser_access_denied' ? '<span class="quota-source-tag">Browser access required</span>' : provider.connection_status === 'reconnect' ? '<span class="quota-source-tag">Reconnect required</span>' : provider.connection_status === 'stale' ? '<span class="quota-source-tag">Updates unavailable</span>' : ''}
                             ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
                         </div>
                         <span class="provider-updated">${escapeHTML(compactUpdatedLabel(provider.updated_at))}</span>
                     </div>
  ${provider.base_provider === "mistral" && provider.subtitle ? `<div class="quota-detail-meta">${escapeHTML(provider.subtitle)}</div>` : ""}
+ ${provider.base_provider === 'mistral' ? mistralRecovery.markup(provider.connection, provider.connection_status) : ''}
                 `;
             }
 

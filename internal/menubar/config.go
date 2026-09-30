@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
 // SnapshotProvider returns the latest menubar snapshot.
@@ -21,6 +23,7 @@ type Config struct {
 	BinaryPath       string
 	TestMode         bool
 	SnapshotProvider SnapshotProvider
+	MistralRetry     func() error
 }
 
 // Settings holds persisted menubar preferences.
@@ -104,17 +107,18 @@ type Aggregate struct {
 
 // ProviderCard is the top-level card rendered for each provider.
 type ProviderCard struct {
-	ID               string         `json:"id"`
-	BaseProvider     string         `json:"base_provider"`
-	Label            string         `json:"label"`
-	Subtitle         string         `json:"subtitle,omitempty"`
-	ConnectionStatus string         `json:"connection_status,omitempty"`
-	Status           string         `json:"status"`
-	HighestPercent   float64        `json:"highest_percent"`
-	UpdatedAt        string         `json:"updated_at,omitempty"`
-	Quotas           []QuotaMeter   `json:"quotas"`
-	Trends           []TrendSeries  `json:"trends,omitempty"`
-	Promo            *ProviderPromo `json:"promo,omitempty"`
+	ID               string                 `json:"id"`
+	BaseProvider     string                 `json:"base_provider"`
+	Label            string                 `json:"label"`
+	Subtitle         string                 `json:"subtitle,omitempty"`
+	ConnectionStatus string                 `json:"connection_status,omitempty"`
+	Connection       *api.MistralConnection `json:"connection,omitempty"`
+	Status           string                 `json:"status"`
+	HighestPercent   float64                `json:"highest_percent"`
+	UpdatedAt        string                 `json:"updated_at,omitempty"`
+	Quotas           []QuotaMeter           `json:"quotas"`
+	Trends           []TrendSeries          `json:"trends,omitempty"`
+	Promo            *ProviderPromo         `json:"promo,omitempty"`
 }
 
 // ProviderPromo carries promo metadata for a provider card.

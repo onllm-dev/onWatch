@@ -16,6 +16,7 @@ var mistralDisplayNames = map[string]string{"api_included": "Included API usage"
 func (h *Handler) buildMistralCurrent() map[string]interface{} {
 	showBilling := h.showMistralBilling()
 	result := map[string]interface{}{"quotas": []interface{}{}, "status": "waiting", "showBilling": showBilling, "billing": map[string]interface{}{"amount": nil, "status": "unavailable"}}
+	result["connection"] = h.mistralConnection()
 	if h.store == nil {
 		return result
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"html"
 	"net"
 	"net/http"
 	"os"
@@ -233,6 +234,7 @@ func isLocalMenubarPublicPath(path string) bool {
 		path == "/api/menubar/summary" ||
 		path == "/api/menubar/preferences" ||
 		path == "/api/menubar/refresh" ||
+		path == "/api/menubar/mistral/retry" ||
 		path == "/api/menubar/tray-title"
 }
 
@@ -577,12 +579,17 @@ func (h *Handler) renderMenubarHTML(view menubar.ViewType, settings *menubar.Set
 	if err != nil {
 		return "", err
 	}
-	html := strings.Replace(string(page), "__ONWATCH_MENUBAR_BOOTSTRAP__", string(bootstrap), 1)
+	content := strings.Replace(string(page), "__ONWATCH_MENUBAR_BOOTSTRAP__", string(bootstrap), 1)
+	content = strings.ReplaceAll(content, "__ONWATCH_MISTRAL_ASSET_VERSION__", mistralRecoveryAssetVersion)
+	basePath := h.getBasePath()
+	baseJSON, _ := json.Marshal(basePath)
+	content = strings.ReplaceAll(content, "__ONWATCH_BASE_PATH_JSON__", string(baseJSON))
+	content = strings.ReplaceAll(content, "__ONWATCH_BASE_PATH__", html.EscapeString(basePath))
 	version := strings.TrimSpace(h.version)
 	if version == "" {
 		version = "dev"
 	}
-	return strings.Replace(html, "__ONWATCH_MENUBAR_VERSION__", version, 1), nil
+	return strings.Replace(content, "__ONWATCH_MENUBAR_VERSION__", version, 1), nil
 }
 
 func (h *Handler) buildMenubarProviderOptions(settings *menubar.Settings) ([]menubarProviderOption, error) {
@@ -745,12 +752,21 @@ func providerQuotaKey(provider menubarProviderOption, quotaKey string) string {
 
 func normalizeProviderCard(id, label, subtitle string, payload map[string]interface{}, warningPercent, criticalPercent int) *menubar.ProviderCard {
 	quotas := normalizeQuotas(payload, warningPercent, criticalPercent)
-	if len(quotas) == 0 {
+	var connection *api.MistralConnection
+	if id == "mistral" {
+		if c, ok := payload["connection"].(api.MistralConnection); ok {
+			connection = &c
+		}
+	}
+	if len(quotas) == 0 && (connection == nil || connection.Reason == "" && !connection.CanRetry && !connection.Retrying) {
 		return nil
 	}
 	status := "healthy"
 	connectionStatus := stringValue(payload, "status")
 	if connectionStatus == "reconnect" || connectionStatus == "stale" {
+		status = "warning"
+	}
+	if connection != nil && connection.Reason != "" {
 		status = "warning"
 	}
 	highest := 0.0
@@ -780,6 +796,7 @@ func normalizeProviderCard(id, label, subtitle string, payload map[string]interf
 		Label:            label,
 		Subtitle:         subtitle,
 		ConnectionStatus: connectionStatus,
+		Connection:       connection,
 		Status:           status,
 		HighestPercent:   highest,
 		UpdatedAt:        timeAgo(parseCapturedAt(payload)),
