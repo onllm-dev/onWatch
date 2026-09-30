@@ -180,7 +180,7 @@ func TestMistralProfileWithoutMistralCookiesIsNotDecrypted(t *testing.T) {
 		return sweetcookie.Result{}, nil
 	}
 	sessions, err := ImportMistralSessions(context.Background(), MistralSource{Browser: "chrome", Profile: dir, Container: -1}, read)
-	if err != nil || len(sessions) != 0 {
+	if !errors.Is(err, ErrMistralAuth) || len(sessions) != 0 {
 		t.Fatalf("sessions=%d err=%v", len(sessions), err)
 	}
 }

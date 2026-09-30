@@ -21,8 +21,13 @@ type RunnerFactory func() (AgentRunner, error)
 type AgentManager struct {
 	mu        sync.RWMutex
 	factories map[string]RunnerFactory
-	running   map[string]context.CancelFunc
+	running   map[string]*runningAgent
 	logger    *slog.Logger
+}
+
+type runningAgent struct {
+	cancel context.CancelFunc
+	runner AgentRunner
 }
 
 // NewAgentManager creates a new manager.
@@ -32,7 +37,7 @@ func NewAgentManager(logger *slog.Logger) *AgentManager {
 	}
 	return &AgentManager{
 		factories: make(map[string]RunnerFactory),
-		running:   make(map[string]context.CancelFunc),
+		running:   make(map[string]*runningAgent),
 		logger:    logger,
 	}
 }
@@ -85,7 +90,8 @@ func (m *AgentManager) Start(key string) error {
 		cancel()
 		return nil
 	}
-	m.running[key] = cancel
+	entry := &runningAgent{cancel: cancel, runner: runner}
+	m.running[key] = entry
 	m.mu.Unlock()
 
 	go func() {
@@ -94,7 +100,9 @@ func (m *AgentManager) Start(key string) error {
 			m.logger.Error("Agent error", "provider", key, "error", err)
 		}
 		m.mu.Lock()
-		delete(m.running, key)
+		if m.running[key] == entry {
+			delete(m.running, key)
+		}
 		m.mu.Unlock()
 	}()
 
@@ -104,13 +112,13 @@ func (m *AgentManager) Start(key string) error {
 // Stop cancels the running provider agent, if present.
 func (m *AgentManager) Stop(key string) {
 	m.mu.Lock()
-	cancel, running := m.running[key]
+	entry, running := m.running[key]
 	if running {
 		delete(m.running, key)
 	}
 	m.mu.Unlock()
 	if running {
-		cancel()
+		entry.cancel()
 		m.logger.Info("Stopped agent", "provider", key)
 	}
 }
@@ -119,10 +127,10 @@ func (m *AgentManager) Stop(key string) {
 func (m *AgentManager) StopAll() {
 	m.mu.Lock()
 	cancels := make([]context.CancelFunc, 0, len(m.running))
-	for key, cancel := range m.running {
+	for key, entry := range m.running {
 		delete(m.running, key)
 		m.logger.Info("Stopped agent", "provider", key)
-		cancels = append(cancels, cancel)
+		cancels = append(cancels, entry.cancel)
 	}
 	m.mu.Unlock()
 

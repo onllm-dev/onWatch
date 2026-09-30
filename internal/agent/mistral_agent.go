@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
@@ -20,25 +21,33 @@ type mistralFetcher interface {
 	FetchSnapshot(context.Context, api.MistralSession) (*api.MistralSnapshot, error)
 }
 type MistralAgent struct {
-	client          mistralFetcher
-	store           *store.Store
-	tr              *tracker.MistralTracker
-	cfg             *config.Config
-	logger          *slog.Logger
-	sm              *SessionManager
-	notifier        *notify.NotificationEngine
-	pollingCheck    func() bool
-	read            api.MistralCookieReader
-	session         *api.MistralSession
-	source          *api.MistralSource
-	imported        time.Time
-	next            time.Time
-	paused          bool
-	failures        int
-	importFailures  int
-	lastPrune       time.Time
-	sessionIdentity string
-	lastQuotas      map[string]api.MistralQuota
+	client           mistralFetcher
+	store            *store.Store
+	tr               *tracker.MistralTracker
+	cfg              *config.Config
+	logger           *slog.Logger
+	sm               *SessionManager
+	notifier         *notify.NotificationEngine
+	pollingCheck     func() bool
+	read             api.MistralCookieReader
+	session          *api.MistralSession
+	source           *api.MistralSource
+	imported         time.Time
+	next             time.Time
+	paused           bool
+	failures         int
+	importFailures   int
+	lastPrune        time.Time
+	sessionIdentity  string
+	lastQuotas       map[string]api.MistralQuota
+	retryMu          sync.Mutex
+	retryCh          chan struct{}
+	retryPending     bool
+	retryRunning     bool
+	pollActive       bool
+	lastRetryRequest time.Time
+	serverNotBefore  time.Time
+	connection       api.MistralConnection
 }
 
 func NewMistralAgent(s *store.Store, cfg *config.Config, logger *slog.Logger) *MistralAgent {
@@ -46,7 +55,7 @@ func NewMistralAgent(s *store.Store, cfg *config.Config, logger *slog.Logger) *M
 		logger = slog.Default()
 	}
 	cfgCopy := *cfg
-	return &MistralAgent{client: api.NewMistralClient(), store: s, cfg: &cfgCopy, logger: logger, tr: tracker.NewMistralTracker(s), sm: NewSessionManager(s, "mistral", 15*time.Minute, logger)}
+	return &MistralAgent{client: api.NewMistralClient(), store: s, cfg: &cfgCopy, logger: logger, tr: tracker.NewMistralTracker(s), sm: NewSessionManager(s, "mistral", 15*time.Minute, logger), retryCh: make(chan struct{}, 1)}
 }
 func (a *MistralAgent) SetNotifier(n *notify.NotificationEngine) {
 	a.notifier = n
@@ -88,6 +97,8 @@ func (a *MistralAgent) Run(ctx context.Context) error {
 	if e := a.store.SetSetting("mistral_identity", identity); e != nil {
 		a.logger.Warn("Mistral identity selection deferred to first poll", "error", e)
 	}
+	a.connectionError(nil)
+	a.persistConnection()
 	a.poll(ctx)
 	for {
 		select {
@@ -95,6 +106,8 @@ func (a *MistralAgent) Run(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			a.poll(ctx)
+		case <-a.retryCh:
+			a.retryPoll(ctx)
 		}
 	}
 }
@@ -116,6 +129,7 @@ func (a *MistralAgent) importSession(ctx context.Context) (*api.MistralSnapshot,
 		return nil, api.ErrMistralAuth
 	}
 	var sources []api.MistralSource
+	var importError error
 	if a.source != nil {
 		sources = []api.MistralSource{*a.source}
 	} else {
@@ -125,12 +139,13 @@ func (a *MistralAgent) importSession(ctx context.Context) (*api.MistralSnapshot,
 		// whatever profiles were found.
 		if e != nil {
 			a.logger.Warn("Mistral profile discovery incomplete", "error", e)
+			importError = e
 		}
 		if len(sources) == 0 {
 			if e != nil {
 				return nil, e
 			}
-			return nil, api.ErrMistralAuth
+			return nil, &api.MistralConnectionError{Reason: "no_session", Browser: a.cfg.MistralBrowser}
 		}
 	}
 	// Covers a prompted credential-store read per candidate source; each
@@ -145,6 +160,7 @@ func (a *MistralAgent) importSession(ctx context.Context) (*api.MistralSnapshot,
 				return nil, ctx.Err()
 			}
 			a.logger.Warn("Mistral source unreadable", "browser", source.Browser, "error", e)
+			importError = e
 			continue
 		}
 		a.logger.Info("Mistral source read", "browser", source.Browser, "sessions", len(sessions))
@@ -160,6 +176,7 @@ func (a *MistralAgent) importSession(ctx context.Context) (*api.MistralSnapshot,
 				}
 				// Cookies were read but Mistral would not serve this session.
 				a.logger.Warn("Mistral session not usable", "browser", source.Browser, "cookies", session.CookieNames(), "error", e)
+				importError = e
 				continue
 			}
 			a.source = &session.Source
@@ -177,12 +194,19 @@ func (a *MistralAgent) importSession(ctx context.Context) (*api.MistralSnapshot,
 			return snap, nil
 		}
 	}
-	return nil, api.ErrMistralAuth
+	if importError != nil {
+		return nil, importError
+	}
+	return nil, &api.MistralConnectionError{Reason: "no_session", Browser: a.cfg.MistralBrowser}
 }
 func (a *MistralAgent) poll(ctx context.Context) {
-	if a.pollingCheck != nil && !a.pollingCheck() || time.Now().Before(a.next) {
+	if ctx.Err() != nil || a.pollingCheck != nil && !a.pollingCheck() || time.Now().Before(a.next) {
 		return
 	}
+	a.retryMu.Lock()
+	a.pollActive = true
+	a.retryMu.Unlock()
+	defer func() { a.retryMu.Lock(); a.pollActive = false; a.retryMu.Unlock(); a.persistConnection() }()
 	var snap *api.MistralSnapshot
 	var e error
 	// Only re-read the browser when there is no usable session, or while paused
@@ -207,7 +231,8 @@ func (a *MistralAgent) poll(ctx context.Context) {
 			a.status("reconnect")
 			// Without this the provider sits in "reconnect" with no way to tell
 			// a denied keychain prompt from a signed-out browser.
-			a.logger.Warn("Mistral credential import failed; sign in to Mistral in the selected browser or use manual cookies", "error", e, "browser", a.cfg.MistralBrowser, "profileSet", a.cfg.MistralBrowserProfile != "")
+			a.connectionError(e)
+			a.logger.Warn("Mistral credential import failed", "error", e, "browser", a.cfg.MistralBrowser, "profileSet", a.cfg.MistralBrowserProfile != "")
 			// Back off progressively. A retry re-reads the credential store,
 			// which can prompt for a password, so a setup that is simply not
 			// signed in must not keep asking every ten minutes.
@@ -233,11 +258,22 @@ func (a *MistralAgent) poll(ctx context.Context) {
 		_, importErr := a.importSession(ctx)
 		if importErr == nil {
 			snap, e = a.client.FetchSnapshot(ctx, *a.session)
+			if e != nil && !errors.Is(e, api.ErrMistralAuth) {
+				if ctx.Err() == nil {
+					a.backoff(e)
+				}
+				return
+			}
 		}
 		if snap == nil && partial != nil {
 			snap = partial
 		}
 		if e != nil || mistralSessionRejected(snap, nil) {
+			if importErr != nil {
+				a.connectionError(importErr)
+			} else {
+				a.connectionError(api.ErrMistralAuth)
+			}
 			a.paused = true
 			a.status("reconnect")
 			a.next = time.Now().Add(10 * time.Minute)
@@ -259,11 +295,14 @@ func (a *MistralAgent) poll(ctx context.Context) {
 		a.status("reconnect")
 	} else {
 		a.status(snap.Status)
+		a.connectionError(nil)
 	}
 	if snap.RetryAfter > 0 {
 		a.next = time.Now().Add(min(snap.RetryAfter, time.Hour))
+		a.respectServerDelay(snap.RetryAfter)
 	}
 	if e = a.store.SaveMistral(ctx, snap); e != nil {
+		a.connectionError(e)
 		a.logger.Error("Mistral storage failed")
 		return
 	}
@@ -320,10 +359,14 @@ func (a *MistralAgent) backoff(e error) {
 	a.failures = min(a.failures+1, 6)
 	delay := time.Duration(1<<a.failures) * 30 * time.Second
 	var he *api.MistralHTTPError
+	if errors.As(e, &he) {
+		a.respectServerDelay(he.RetryAfter)
+	}
 	if errors.As(e, &he) && he.RetryAfter > delay {
 		delay = he.RetryAfter
 	}
 	a.next = time.Now().Add(min(delay, time.Hour))
 	a.status("stale")
+	a.connectionError(e)
 	a.logger.Warn("Mistral polling failed", "error", e)
 }
