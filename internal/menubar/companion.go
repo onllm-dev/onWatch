@@ -35,6 +35,7 @@ type trayController struct {
 
 	mistralMu      sync.RWMutex
 	mistralEnabled bool
+	grantFlow      browserGrantFlow
 }
 
 func (c *trayController) setMistralEnabled(enabled bool) {
@@ -91,6 +92,9 @@ func (c *trayController) onReady() {
 		logger.Warn("native menubar host unavailable, using browser fallback", "error", err)
 	} else {
 		c.popover = popover
+		if host, ok := popover.(interface{ SetBrowserGrantHandler(func() string) }); ok {
+			host.SetBrowserGrantHandler(c.grantBrowserAccess)
+		}
 		// Warm the WebView so the first tray click does not flash a blank page
 		// while /menubar navigates. Subsequent opens reuse the loaded document.
 		if err := popover.Preload(c.menubarURL()); err != nil {
@@ -142,6 +146,20 @@ func (c *trayController) onExit() {
 // watchBrowserAccess shows the grant action only while a browser data
 // directory exists but cannot be read, and re-checks after each attempt so the
 // item disappears once access has been granted.
+func (c *trayController) grantBrowserAccess() string {
+	if !c.isMistralEnabled() {
+		return "unavailable"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "unavailable"
+	}
+	return c.grantFlow.run(func() string { return blockedBrowserRoot(browserDataRoots(home)) },
+		func(path string) (bool, string) {
+			return requestFolderAccess(path, "Select this folder to let onWatch read your browser cookies for Mistral. onWatch reads only Mistral session cookies from it.")
+		}, func(path string) error { _, err := os.ReadDir(path); return err }, c.cfg.MistralRetry)
+}
+
 func (c *trayController) watchBrowserAccess(grantItem *systray.MenuItem) {
 	logger := slog.Default()
 	previous := "\x00"
@@ -182,8 +200,7 @@ func (c *trayController) watchBrowserAccess(grantItem *systray.MenuItem) {
 					continue
 				}
 			}
-			granted, detail := requestFolderAccess(blocked, "Select this folder to let onWatch read your browser cookies for Mistral. onWatch reads only Mistral session cookies from it.")
-			logger.Info("Browser access grant requested", "folder", filepath.Base(blocked), "chosen", granted, "detail", detail)
+			logger.Info("Browser access request finished", "result", c.grantBrowserAccess())
 			blocked = refresh()
 		}
 	}
