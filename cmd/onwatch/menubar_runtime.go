@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -232,6 +233,7 @@ func runMenubarCommand() error {
 
 	mbCfg := settings.ToConfig(cfg.Port, httpSnapshotProvider(cfg.Port))
 	mbCfg.TestMode = cfg.TestMode
+	mbCfg.MistralRetry = httpMistralRetry(cfg.Port, cfg.BasePath)
 
 	pidPath := menubarPIDPath(cfg.TestMode)
 	if err := writeRuntimePID(pidPath); err != nil {
@@ -280,6 +282,29 @@ func httpSnapshotProvider(port int) menubar.SnapshotProvider {
 			return nil, fmt.Errorf("menubar snapshot decode failed: %w", err)
 		}
 		return &snapshot, nil
+	}
+}
+
+func httpMistralRetry(port int, basePath string) func() error {
+	url := fmt.Sprintf("http://localhost:%d%s/api/menubar/mistral/retry", port, basePath)
+	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("X-Requested-With", "onWatch")
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("Mistral retry request failed")
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusAccepted {
+			return fmt.Errorf("Mistral retry returned HTTP %d", resp.StatusCode)
+		}
+		return nil
 	}
 }
 

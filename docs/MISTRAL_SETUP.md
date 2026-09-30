@@ -20,9 +20,9 @@ Settings > Providers > Mistral > Manual, then paste your Mistral Cookie header. 
 
 ## macOS permissions
 
-Automatic import needs two one-time permissions on macOS:
+Automatic import needs two permissions on macOS:
 
-1. **Browser folder access.** macOS blocks background apps from reading another app's data folder. Right-click the onWatch tray icon and choose **Grant Browser Access...**, then pick your browser in the folder panel. A locally rebuilt binary will need re-granting.
+1. **Browser folder access.** macOS blocks background apps from reading another app's data folder. In the native macOS menubar card, click **Grant Browser Access** above **Retry connection**. Alternatively, right-click the onWatch tray icon and choose **Grant Browser Access...**. Confirm the browser folder in the system panel (selected by default). Once access is verified, onWatch automatically requests a Mistral retry; cancelling does not retry. A rebuilt or updated binary may need a new grant. Dashboard and browser fallback views retain the right-click guidance.
 2. **Keychain access.** You'll see a prompt that `security` wants to use **Chrome Safe Storage** - this decrypts the cookie file, it's not asking for your Mistral password. Enter your Mac login password and choose **Allow** (or **Allow Once** if you'd rather be asked again next time).
 
 Prefer to skip both prompts? Sign into Mistral in Firefox instead and select Firefox as your browser, or use manual cookie mode.
@@ -57,7 +57,11 @@ Settings saved in onWatch override these environment variables. The cookie field
 
 ## Refresh behaviour
 
-onWatch polls every 120 seconds by default. If your session is rejected, it retries the import once immediately; after that it pauses polling until a fresh login is detected, without switching to a different account on its own. Usage history is kept for 90 days by default - change this with `MISTRAL_RETENTION` (a Go duration like `720h`, or `0` to keep everything).
+onWatch polls every 120 seconds by default. If your session is rejected, it retries the import once immediately; after that it pauses polling until a fresh login is detected, without switching to a different account on its own. Repeated import failures increase the automatic retry delay from 20 minutes to at most 5 hours 20 minutes, to avoid repeatedly prompting for your password.
+
+Connection messages distinguish browser folder permissions, Keychain/keyring access, unreadable cookie storage, missing logins, and rejected sessions. After addressing the message, use **Retry connection** on the Mistral dashboard or menubar card. It retries the selected source immediately without restarting the daemon, even if the cookie has not changed. Repeated clicks are coalesced, with a 30-second cooldown after a request; Mistral's own rate-limit deadlines still apply. A queued retry may need you to answer a credential-store prompt. The ordinary refresh icon only reloads saved usage.
+
+The last successful values retain their original timestamps until a successful poll. Usage history is kept for 90 days by default - change this with `MISTRAL_RETENTION` (a Go duration like `720h`, or `0` to keep everything).
 
 ## Testing
 
@@ -68,3 +72,11 @@ ONWATCH_MISTRAL_LIVE=1 GOFLAGS='-run=TestMistralLive -v' ./app.sh --test
 ```
 
 The default test suite uses synthetic data only. A synthetic dashboard preview is also available with `ONWATCH_MISTRAL_PREVIEW=1 GOFLAGS='-run=TestMistralPreview -v' ./app.sh --test`.
+
+On macOS, run the native grant callback and UI regressions with race detection:
+
+```sh
+GOFLAGS='-tags=menubar,desktop,production,granttest -run=TestBrowserGrant|TestMistralRecoveryUI' ./app.sh --test
+```
+
+The `granttest` harness exercises the real C-to-Go callback and Cocoa completion queue with simulated permission results, including host destruction during a request. It does not grant browser permissions and is excluded from production builds. The actual system permission picker still requires an in-situ check.

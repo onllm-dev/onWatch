@@ -8,6 +8,9 @@ package menubar
 
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdint.h>
+
+void onwatch_grant_register(void* handle, uint64_t token);
 
 void* onwatch_popover_create(int width, int height);
 void onwatch_popover_destroy(void* handle);
@@ -25,8 +28,15 @@ import (
 )
 
 type webViewPopover struct {
-	handle    unsafe.Pointer
-	loadedURL string
+	handle     unsafe.Pointer
+	loadedURL  string
+	grantToken uint64
+}
+
+func (p *webViewPopover) SetBrowserGrantHandler(fn func() string) {
+	unregisterGrantHandler(p.grantToken)
+	p.grantToken = registerGrantHandler(fn)
+	C.onwatch_grant_register(p.handle, C.uint64_t(p.grantToken))
 }
 
 func cBool(value C.bool) bool {
@@ -82,6 +92,7 @@ func (p *webViewPopover) Destroy() {
 		return
 	}
 	C.onwatch_popover_destroy(p.handle)
+	unregisterGrantHandler(p.grantToken)
 	p.handle = nil
 }
 
