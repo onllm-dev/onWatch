@@ -13012,7 +13012,7 @@ function mistralIntroPoints(where) {
   const manual = where === 'settings' ? 'choose <strong>Manual cookies</strong> below' : 'choose <strong>Manual cookies</strong> in Mistral\'s settings';
   return [
     '<strong>Uses your browser login.</strong> Unlike most providers, Mistral isn\'t tracked with an API key. onWatch reads your usage from the Mistral website using the login saved in your browser. It only reads Mistral\'s own login cookies, and never saves them.',
-    '<strong>On a Mac, you may see a password prompt.</strong> macOS may ask for your Mac password (sometimes twice) so onWatch can read your browser\'s saved logins. That\'s macOS asking, not Mistral, and it can ask again after onWatch restarts. If Mistral keeps showing <em>Reconnect</em>, right-click the onWatch menubar icon and choose <strong>Grant Browser Access</strong>, then pick the folder it suggests.',
+    '<strong>On a Mac, you may see a password prompt.</strong> macOS may ask for your Mac password so onWatch can read your browser\'s saved logins. If browser access is denied, right-click the onWatch menubar icon and choose <strong>Grant Browser Access</strong>, then pick the folder it suggests. onWatch retries after access is granted. You can also use <strong>Retry connection</strong> after signing in or allowing a credential prompt.',
     '<strong>Prefer not to use your browser?</strong> Sign in to Mistral with Firefox, which avoids the password prompt, or ' + manual + ' and paste your Mistral cookie yourself.'
   ];
 }
@@ -13040,6 +13040,27 @@ function mistralMoney(value,currency) {
   if (value == null || !Number.isFinite(value)) return 'Unavailable';
   try {return new Intl.NumberFormat(undefined,{style:'currency',currency}).format(value);} catch {return value.toFixed(2)+' '+(currency || '');}
 }
+let mistralRecovery = null;
+let mistralConnectionData = null;
+function renderMistralConnection(data) {
+  const element = document.getElementById('mistral-connection-status');
+  if (!element) return;
+  mistralConnectionData = data;
+  if (!mistralRecovery) {
+    mistralRecovery = new window.MistralRecovery({
+      root:element, endpoint:`${API_BASE}/api/mistral/retry`,
+      refresh:async signal => {
+        const response = await authFetch(`${API_BASE}/api/current?provider=mistral`, {signal});
+        if (!response.ok) throw new Error('Mistral status unavailable');
+        const fresh = await response.json();
+        renderMistralCards(fresh);
+        return fresh.connection;
+      },
+      render:() => { element.innerHTML = mistralRecovery.markup(mistralConnectionData.connection, mistralConnectionData.status); }
+    });
+  }
+  element.innerHTML = mistralRecovery.markup(data.connection, data.status);
+}
 function renderMistralCards(data) {
   renderMistralIntro();
   const container=document.getElementById('quota-grid-mistral'); if(!container) return;
@@ -13063,5 +13084,5 @@ function renderMistralCards(data) {
   if (data.showBilling !== false) {
     add('Pay-as-you-go spend',mistralMoney(b.amount,b.currency),b.amount==null?'Mistral has not returned a reliable spend amount.':new Date(b.periodStart).toLocaleDateString()+' - '+new Date(b.periodEnd).toLocaleDateString(),b.capturedAt&&b.amount!=null?(b.status==='stale'?'Stale · ':'')+'Updated '+new Date(b.capturedAt).toLocaleString():'You can hide PAYG in Settings > Providers > Mistral.',null);
   }
-  const status=document.getElementById('mistral-connection-status');if(status) status.textContent=data.status==='reconnect'?'Reconnect: sign in to Mistral in the selected browser, or update manual cookies.':data.status==='partial'?'Some Mistral data is unavailable. Last successful values retain their original timestamps.':data.status==='stale'?'Mistral is temporarily unavailable. Retrying automatically.':'';
+  renderMistralConnection(data);
 }

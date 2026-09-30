@@ -1,0 +1,23 @@
+.mistral-recovery {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+  font-size: var(--font-md, 13px);
+  line-height: 1.5;
+}
+.mistral-recovery > span { flex: 1 1 180px; opacity: .8; }
+.mistral-recovery-actions { display: flex; flex-direction: column; gap: 6px; }
+.mistral-retry {
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.mistral-retry:hover:not(:disabled) { background: rgba(128,128,128,.12); }
+.mistral-retry:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.mistral-retry:disabled { opacity: .5; cursor: default; }

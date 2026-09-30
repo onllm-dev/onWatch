@@ -255,7 +255,7 @@ func sessionAuthMiddlewareWithTrustedProxy(sessions *SessionStore, basePath stri
 			}
 
 			// Local tray surface is intentionally public for localhost requests.
-			if isLocalMenubarPublicPath(path) && isLoopbackRequest(r) {
+			if isLocalMenubarPublicPath(strings.TrimPrefix(path, basePath)) && isLoopbackRequest(r) {
 				next.ServeHTTP(w, r)
 				return
 			}

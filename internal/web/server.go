@@ -69,6 +69,8 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/menubar/preferences"), handler.MenubarPreferences)
 	mux.HandleFunc(p("/api/menubar/tray-title"), handler.MenubarTrayTitle)
 	mux.HandleFunc(p("/api/menubar/refresh"), handler.MenubarRefresh)
+	mux.HandleFunc(p("/api/menubar/mistral/retry"), handler.RetryMistral)
+	mux.HandleFunc(p("/api/mistral/retry"), handler.RetryMistral)
 	mux.HandleFunc(p("/api/menubar/test"), handler.MenubarTest)
 	mux.HandleFunc(p("/api/sessions"), handler.Sessions)
 	mux.HandleFunc(p("/api/insights"), handler.Insights)

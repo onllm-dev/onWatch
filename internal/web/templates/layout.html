@@ -15,6 +15,7 @@
     <link rel="preload" href="{{.BasePath}}/static/style.css?v={{.Version}}" as="style">
     <link rel="preload" href="{{.BasePath}}/static/app.js?v={{.Version}}" as="script">
     <link rel="stylesheet" href="{{.BasePath}}/static/style.css?v={{.Version}}">
+    <link rel="stylesheet" href="{{.BasePath}}/static/mistral-recovery.css?v={{mistralRecoveryVersion}}">
     <script src="{{.BasePath}}/static/theme-init.js?v={{.Version}}"></script>
 </head>
 <body>
@@ -22,6 +23,7 @@
     {{template "content" .}}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js" defer></script>
+    <script src="{{.BasePath}}/static/mistral-recovery.js?v={{mistralRecoveryVersion}}" defer></script>
     <script src="{{.BasePath}}/static/app.js?v={{.Version}}" defer></script>
 </body>
 </html>
