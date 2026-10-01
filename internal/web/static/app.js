@@ -6865,8 +6865,9 @@ function buildAllProviderEntries() {
           provider: 'codex',
           cardKey,
           title: `Codex - Account: ${accountName}`,
-          badge: toTitleCase(account.planType || ''),
+          badge: account.planType ? formatCodexPlan(account.planType) : '',
           planType: account.planType || '',
+          usageSourceNote: account.usageSourceNote || '',
           quotas: normalizeBothQuotas('codex', account),
           insights: insightPayload,
           historyRows: Array.isArray(historyPayload?.history)
@@ -7610,6 +7611,7 @@ function renderAllProvidersView() {
     return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
       ${cardHeader}
       <div class="provider-card-body">
+        ${entry.provider === 'codex' ? codexUsageSourceNoteHTML(entry.usageSourceNote) : ''}
         <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas, entry.provider)}</div>
         ${entry.provider === "mistral" && entry.showBilling ? `<p>Pay-as-you-go: ${escapeHTML(mistralMoney(entry.billing?.amount,entry.billing?.currency))}</p>` : ""}
         ${(() => {

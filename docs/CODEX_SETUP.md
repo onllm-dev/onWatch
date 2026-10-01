@@ -357,9 +357,9 @@ Environment overrides (the dashboard toggles take precedence at runtime):
 
 - `CODEX_AUTO_START_5H=true` / `CODEX_AUTO_START_7D=true` - default-on without the UI.
 - `CODEX_STARTER_MODEL` - override the model used for the starter request (default
-  `gpt-5.5`). ChatGPT-account Codex access supports only a small set of models
-  (currently `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`); set this if the default is
-  rejected.
+  `gpt-6-luna`). Model availability depends on your ChatGPT plan and workspace
+  settings; set this to a model available to your account if the default is
+  rejected. See [Codex models](https://learn.chatgpt.com/docs/models).
 
 > Beta: the Codex Responses request shape can change upstream. If starter pings
 > fail, check the logs and try a different `CODEX_STARTER_MODEL`.

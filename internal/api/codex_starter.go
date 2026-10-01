@@ -17,10 +17,10 @@ import (
 const codexResponsesURL = "https://chatgpt.com/backend-api/codex/responses"
 
 // defaultCodexStarterModel is the model used for the auto quota-starter ping.
-// ChatGPT-account Codex access only supports a small set of models (currently
-// gpt-5.5, gpt-5.4, gpt-5.4-mini); codex-specific slugs are rejected. The model
-// is overridable via CODEX_STARTER_MODEL without a rebuild (this feature is Beta).
-const defaultCodexStarterModel = "gpt-5.5"
+// GPT-6 Luna keeps this fixed-response request lightweight. Model availability
+// depends on the ChatGPT plan; override CODEX_STARTER_MODEL without a rebuild
+// when needed (this feature is Beta).
+const defaultCodexStarterModel = "gpt-6-luna"
 
 // CodexStarterModel returns the model id used for the auto quota-starter ping,
 // allowing a CODEX_STARTER_MODEL env override for the (Beta) feature.

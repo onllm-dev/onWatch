@@ -14,6 +14,7 @@ import (
 )
 
 func TestBuildCodexStarterRequest(t *testing.T) {
+	t.Setenv("CODEX_STARTER_MODEL", "")
 	req, err := buildCodexStarterRequest(context.Background(), codexResponsesURL, "tok_abc", "acct_123")
 	if err != nil {
 		t.Fatalf("buildCodexStarterRequest error: %v", err)
@@ -52,8 +53,8 @@ func TestBuildCodexStarterRequest(t *testing.T) {
 	if _, ok := parsed["instructions"].(string); !ok {
 		t.Errorf("instructions missing or not a string")
 	}
-	if parsed["model"] != defaultCodexStarterModel {
-		t.Errorf("model = %v, want %q", parsed["model"], defaultCodexStarterModel)
+	if parsed["model"] != "gpt-6-luna" {
+		t.Errorf("model = %v, want gpt-6-luna", parsed["model"])
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onllm-dev/onwatch/v2/internal/api"
 	"github.com/onllm-dev/onwatch/v2/internal/notify"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 	"github.com/onllm-dev/onwatch/v2/internal/testutil/testhome"
@@ -173,6 +176,63 @@ func TestCodexAgentManager_LoadAndStartProfiles(t *testing.T) {
 	}
 	if len(accounts) != 2 {
 		t.Fatalf("provider account count = %d, want 2", len(accounts))
+	}
+}
+
+func TestCodexAgentManager_ProfileUsageRequests_KeepAccountIDsIsolated(t *testing.T) {
+	fx := newCodexManagerFixture(t)
+	type usageRequest struct {
+		authorization string
+		accountID     string
+	}
+	requests := make(chan usageRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- usageRequest{
+			authorization: r.Header.Get("Authorization"),
+			accountID:     r.Header.Get("ChatGPT-Account-Id"),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":25,"reset_at":1766000000,"limit_window_seconds":18000}}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	profiles := []CodexProfile{
+		{Name: "work", AccountID: "acct-work", SavedAt: time.Now().UTC()},
+		{Name: "personal", AccountID: "acct-personal", SavedAt: time.Now().UTC()},
+	}
+	for i := range profiles {
+		profiles[i].Tokens.AccessToken = profiles[i].Name + "-token"
+		fx.writeProfile(t, profiles[i])
+	}
+	if err := fx.manager.loadAndStartProfiles(); err != nil {
+		t.Fatalf("loadAndStartProfiles: %v", err)
+	}
+	for _, profile := range profiles {
+		instance := fx.instance(profile.Name)
+		if instance == nil {
+			t.Fatalf("missing agent for profile %q", profile.Name)
+		}
+		// Background polling is disabled by the fixture. Redirect each real
+		// manager-created client before exercising its usage request.
+		api.WithCodexBaseURL(server.URL)(instance.Agent.client)
+	}
+
+	// Return to the first profile after the second to detect shared account
+	// metadata as well as missing account headers.
+	for _, profile := range []CodexProfile{profiles[0], profiles[1], profiles[0]} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		_, err := fx.instance(profile.Name).Agent.client.FetchUsage(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("FetchUsage(%s): %v", profile.Name, err)
+		}
+		request := <-requests
+		if request.accountID != profile.AccountID {
+			t.Errorf("profile %s account header = %q, want %q", profile.Name, request.accountID, profile.AccountID)
+		}
+		if request.authorization != "Bearer "+profile.Tokens.AccessToken {
+			t.Errorf("profile %s authorization did not use its own token", profile.Name)
+		}
 	}
 }
 
