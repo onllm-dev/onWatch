@@ -221,6 +221,11 @@ func (h *Handler) MenubarRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func isLoopbackRequest(r *http.Request) bool {
+	// A reverse proxy on the same host connects from loopback on behalf of
+	// remote clients. Forwarded requests are never treated as local.
+	if r.Header.Get("X-Forwarded-For") != "" || r.Header.Get("X-Real-IP") != "" || r.Header.Get("Forwarded") != "" {
+		return false
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr

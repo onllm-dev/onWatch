@@ -48,17 +48,25 @@ func TestMistralRetryHTTP(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := NewServer(9211, h, slog.Default(), "admin", hash, "", bp, "", nil)
+			// Base-path deployments sit behind a proxy, so the tray path is
+			// never public there.
+			localTray := func(want int) int {
+				if bp != "" {
+					return 401
+				}
+				return want
+			}
 			for _, tc := range []struct {
 				name, path, method, addr string
 				header, auth             bool
 				want                     int
 			}{
-				{"local tray", "/api/menubar/mistral/retry", "POST", "127.0.0.1:9", true, false, 202},
+				{"local tray", "/api/menubar/mistral/retry", "POST", "127.0.0.1:9", true, false, localTray(202)},
 				{"remote tray", "/api/menubar/mistral/retry", "POST", "192.0.2.1:9", true, false, 401},
 				{"dashboard unauth", "/api/mistral/retry", "POST", "127.0.0.1:9", true, false, 401},
 				{"dashboard auth", "/api/mistral/retry", "POST", "192.0.2.1:9", true, true, 202},
 				{"csrf", "/api/menubar/mistral/retry", "POST", "127.0.0.1:9", false, false, 403},
-				{"method", "/api/menubar/mistral/retry", "GET", "127.0.0.1:9", true, false, 405},
+				{"method", "/api/menubar/mistral/retry", "GET", "127.0.0.1:9", true, false, localTray(405)},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					r := httptest.NewRequest(tc.method, bp+tc.path, nil)
