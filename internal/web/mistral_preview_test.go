@@ -39,7 +39,7 @@ func (p *mistralPreviewRecovery) RequestRetry(string) error {
 	}
 	return p.db.SetSetting("mistral_status", "ok")
 }
-func (p *mistralPreviewRecovery) ConnectionState(string) (api.MistralConnection, bool) {
+func (p *mistralPreviewRecovery) ConnectionState(string) (api.ProviderConnection, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.started.IsZero() {
@@ -47,7 +47,7 @@ func (p *mistralPreviewRecovery) ConnectionState(string) (api.MistralConnection,
 		c.CanRetry = true
 		return c, true
 	}
-	return api.MistralConnection{Retrying: time.Since(p.started) < 3*time.Second, CanRetry: time.Since(p.started) >= 3*time.Second}, true
+	return api.ProviderConnection{Retrying: time.Since(p.started) < 3*time.Second, CanRetry: time.Since(p.started) >= 3*time.Second}, true
 }
 
 // Opt-in local preview uses synthetic data only and never reads browser cookies.

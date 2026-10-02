@@ -47,7 +47,7 @@ type MistralAgent struct {
 	pollActive       bool
 	lastRetryRequest time.Time
 	serverNotBefore  time.Time
-	connection       api.MistralConnection
+	connection       api.ProviderConnection
 }
 
 func NewMistralAgent(s *store.Store, cfg *config.Config, logger *slog.Logger) *MistralAgent {

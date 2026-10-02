@@ -33,7 +33,7 @@ func (a *MistralAgent) RequestRetry() error {
 	return nil
 }
 
-func (a *MistralAgent) ConnectionState() api.MistralConnection {
+func (a *MistralAgent) ConnectionState() api.ProviderConnection {
 	a.retryMu.Lock()
 	c := a.connection
 	c.Retrying = a.retryPending || a.retryRunning || a.pollActive
@@ -63,7 +63,7 @@ func (a *MistralAgent) retryPoll(ctx context.Context) {
 }
 
 func (a *MistralAgent) connectionError(err error) {
-	c := api.MistralConnection{}
+	c := api.ProviderConnection{}
 	if err != nil {
 		var diagnostic *api.MistralConnectionError
 		if errors.As(err, &diagnostic) {

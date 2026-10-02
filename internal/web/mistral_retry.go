@@ -13,16 +13,16 @@ import (
 
 type mistralRetryControllerAPI interface {
 	RequestRetry(string) error
-	ConnectionState(string) (api.MistralConnection, bool)
+	ConnectionState(string) (api.ProviderConnection, bool)
 }
 
-func (h *Handler) mistralConnection() api.MistralConnection {
+func (h *Handler) mistralConnection() api.ProviderConnection {
 	if controller, ok := h.agentManager.(mistralRetryControllerAPI); ok {
 		if c, running := controller.ConnectionState("mistral"); running {
 			return c
 		}
 	}
-	var c api.MistralConnection
+	var c api.ProviderConnection
 	if h.store != nil {
 		if raw, err := h.store.GetSetting("mistral_connection"); err == nil {
 			_ = json.Unmarshal([]byte(raw), &c)

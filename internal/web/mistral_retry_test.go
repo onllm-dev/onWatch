@@ -28,8 +28,8 @@ func (m *mistralRetryController) RequestRetry(key string) error {
 	m.calls++
 	return m.err
 }
-func (m *mistralRetryController) ConnectionState(string) (api.MistralConnection, bool) {
-	return api.MistralConnection{Reason: "browser_access_denied", Message: "Allow browser access.", CanRetry: true}, m.running
+func (m *mistralRetryController) ConnectionState(string) (api.ProviderConnection, bool) {
+	return api.ProviderConnection{Reason: "browser_access_denied", Message: "Allow browser access.", CanRetry: true}, m.running
 }
 
 func TestMistralRetryHTTP(t *testing.T) {
@@ -103,7 +103,7 @@ func TestMistralConnectionWithoutHistory(t *testing.T) {
 	h := NewHandler(db, nil, nil, nil, &config.Config{MistralEnabled: true})
 	h.SetAgentManager(&mistralRetryController{running: true})
 	current := h.buildMistralCurrent()
-	c := current["connection"].(api.MistralConnection)
+	c := current["connection"].(api.ProviderConnection)
 	if c.Reason != "browser_access_denied" || !c.CanRetry {
 		t.Fatalf("%+v", c)
 	}

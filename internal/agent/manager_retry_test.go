@@ -23,8 +23,8 @@ func (r *managedRetryRunner) Run(ctx context.Context) error {
 	return nil
 }
 func (r *managedRetryRunner) RequestRetry() error { r.retries.Add(1); return nil }
-func (r *managedRetryRunner) ConnectionState() api.MistralConnection {
-	return api.MistralConnection{CanRetry: true}
+func (r *managedRetryRunner) ConnectionState() api.ProviderConnection {
+	return api.ProviderConnection{CanRetry: true}
 }
 
 func TestAgentManagerRetryUsesCurrentInstance(t *testing.T) {

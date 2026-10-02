@@ -752,9 +752,9 @@ func providerQuotaKey(provider menubarProviderOption, quotaKey string) string {
 
 func normalizeProviderCard(id, label, subtitle string, payload map[string]interface{}, warningPercent, criticalPercent int) *menubar.ProviderCard {
 	quotas := normalizeQuotas(payload, warningPercent, criticalPercent)
-	var connection *api.MistralConnection
+	var connection *api.ProviderConnection
 	if id == "mistral" {
-		if c, ok := payload["connection"].(api.MistralConnection); ok {
+		if c, ok := payload["connection"].(api.ProviderConnection); ok {
 			connection = &c
 		}
 	}

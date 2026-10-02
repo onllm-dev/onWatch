@@ -16,7 +16,7 @@ func (e *RetryCooldownError) Error() string { return "provider retry is cooling 
 // RetryableRunner is optional; providers opt in without changing AgentRunner.
 type RetryableRunner interface {
 	RequestRetry() error
-	ConnectionState() api.MistralConnection
+	ConnectionState() api.ProviderConnection
 }
 
 func (m *AgentManager) RequestRetry(key string) error {
@@ -33,7 +33,7 @@ func (m *AgentManager) RequestRetry(key string) error {
 	return runner.RequestRetry()
 }
 
-func (m *AgentManager) ConnectionState(key string) (api.MistralConnection, bool) {
+func (m *AgentManager) ConnectionState(key string) (api.ProviderConnection, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	entry := m.running[key]
@@ -42,5 +42,5 @@ func (m *AgentManager) ConnectionState(key string) (api.MistralConnection, bool)
 			return runner.ConnectionState(), true
 		}
 	}
-	return api.MistralConnection{}, false
+	return api.ProviderConnection{}, false
 }

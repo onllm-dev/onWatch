@@ -4,17 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"strings"
-	"time"
 )
-
-// MistralConnection contains only safe diagnostics, never cookies or OS errors.
-type MistralConnection struct {
-	Reason      string     `json:"reason"`
-	Message     string     `json:"message"`
-	Retrying    bool       `json:"retrying"`
-	NextRetryAt *time.Time `json:"nextRetryAt,omitempty"`
-	CanRetry    bool       `json:"canRetry"`
-}
 
 // MistralConnectionError deliberately does not retain the raw library error:
 // warning strings can contain cookie values, command output, or private paths.
@@ -29,7 +19,7 @@ func (e *MistralConnectionError) Is(target error) bool {
 	return target == ErrMistralAuth || e.permission && target == fs.ErrPermission
 }
 
-func (e *MistralConnectionError) Connection() MistralConnection {
+func (e *MistralConnectionError) Connection() ProviderConnection {
 	browser := map[string]string{"chrome": "Chrome", "edge": "Microsoft Edge", "firefox": "Firefox", "safari": "Safari"}[e.Browser]
 	if browser == "" {
 		browser = "the selected browser"
@@ -49,7 +39,7 @@ func (e *MistralConnectionError) Connection() MistralConnection {
 	case "session_rejected":
 		message = "Mistral rejected the saved session. Sign in again in " + browser + ", then retry connection, or update manual cookies."
 	}
-	return MistralConnection{Reason: e.Reason, Message: message}
+	return ProviderConnection{Reason: e.Reason, Message: message}
 }
 
 // ClassifyMistralImportError uses a small allowlist of known library diagnostics.
