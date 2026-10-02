@@ -214,8 +214,8 @@ func (c *CodexClient) doUsageRequest(ctx context.Context, usageURL string) (*htt
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "onwatch/1.0")
 	if accountID := c.getAccountID(); accountID != "" {
-		req.Header.Set("X-Account-Id", accountID)
-		req.Header.Set("ChatClaude-Account-Id", accountID)
+		// Codex CLI's usage reader scopes account rate limits with this header.
+		req.Header.Set("ChatGPT-Account-Id", accountID)
 	}
 
 	resp, err := c.httpClient.Do(req)

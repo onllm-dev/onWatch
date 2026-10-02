@@ -282,10 +282,31 @@ only after it actually returns usage, and is dropped again as soon as it stops
 working or the token changes - so a temporary failure can never pin polling to a
 dead endpoint.
 
+### Usage percentages and plan labels
+
+onWatch scopes usage requests to the selected profile with Codex's
+`ChatGPT-Account-Id` header. It does not send alternative account headers.
+
+A running default profile stays tied to the account it started with. Switching
+the active Codex login does not make that profile adopt the other account's
+tokens or overwrite its credentials. Save the new account as a named profile,
+or restart onWatch to use the new default login.
+
+Codex's `pro`, `prolite`, and `promax` plan values display as **Pro (More)**,
+**Pro**, and **Pro (Max)**. The server supplies the same label to every
+dashboard account view.
+
+For Pro (More), the usage API and CLI `/status` can report different percentages
+for the same reset cycle. onWatch preserves the usage API percentage and shows
+a source note on the dashboard. There is no verified conversion rule for this
+difference; matching reset times alone does not establish the allowance used
+by each source.
+
 ### Token security
 
 - Keep `.env` out of version control
-- onWatch only sends the token to Codex usage endpoints
+- onWatch sends the token to Codex usage endpoints and, when enabled, the
+  quota-starter endpoint
 - Usage history stays local in SQLite
 
 ---
@@ -357,9 +378,9 @@ Environment overrides (the dashboard toggles take precedence at runtime):
 
 - `CODEX_AUTO_START_5H=true` / `CODEX_AUTO_START_7D=true` - default-on without the UI.
 - `CODEX_STARTER_MODEL` - override the model used for the starter request (default
-  `gpt-5.5`). ChatGPT-account Codex access supports only a small set of models
-  (currently `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`); set this if the default is
-  rejected.
+  `gpt-6-luna`). Model availability depends on your ChatGPT plan and workspace
+  settings; set this to a model available to your account if the default is
+  rejected. See [Codex models](https://learn.chatgpt.com/docs/models).
 
 > Beta: the Codex Responses request shape can change upstream. If starter pings
 > fail, check the logs and try a different `CODEX_STARTER_MODEL`.

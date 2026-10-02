@@ -144,9 +144,10 @@ func isUnstartedCodexWindow(quotaName string, resetsAt *time.Time, now time.Time
 }
 
 // SetCodexAccountID sets the Codex account_id used for the ChatGPT-Account-ID
-// header on auto quota-starter pings.
+// header on usage requests and auto quota-starter pings.
 func (a *CodexAgent) SetCodexAccountID(id string) {
 	a.codexAccountID = id
+	a.client.SetAccountID(id)
 }
 
 // SetAutoStartCheck wires a callback that reports, fresh per poll, whether the

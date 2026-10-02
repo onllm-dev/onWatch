@@ -2,9 +2,10 @@ package api
 
 import (
 	"context"
-	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -113,25 +114,65 @@ func TestCodexClient_FetchUsage_FallbacksTo404BothPaths(t *testing.T) {
 }
 
 func TestCodexClient_FetchUsage_AccountIDHeaders(t *testing.T) {
-	var gotXAccount, gotChatClaudeAccount string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotXAccount = r.Header.Get("X-Account-Id")
-		gotChatClaudeAccount = r.Header.Get("ChatClaude-Account-Id")
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":10,"reset_at":1766000000,"limit_window_seconds":18000}}}`)
-	}))
-	defer server.Close()
+	for _, fallback := range []bool{false, true} {
+		name := "primary"
+		if fallback {
+			name = "fallback"
+		}
+		t.Run(name, func(t *testing.T) {
+			client := NewCodexClient("token", discardLoggerClient(), WithCodexBaseURL("https://example.invalid/backend-api/wham/usage"))
+			var requests []*http.Request
+			client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				requests = append(requests, req)
+				status := http.StatusOK
+				if fallback && req.URL.Path == "/backend-api/wham/usage" {
+					status = http.StatusNotFound
+				}
+				return &http.Response{
+					StatusCode: status,
+					Body:       io.NopCloser(strings.NewReader(`{"plan_type":"pro"}`)),
+					Header:     make(http.Header),
+				}, nil
+			})
 
-	client := NewCodexClient("token", discardLoggerClient(), WithCodexBaseURL(server.URL))
-	client.SetAccountID("acct_test")
-	_, err := client.FetchUsage(context.Background())
-	if err != nil {
-		t.Fatalf("FetchUsage: %v", err)
-	}
-	if gotXAccount != "acct_test" {
-		t.Errorf("X-Account-Id = %q, want acct_test", gotXAccount)
-	}
-	if gotChatClaudeAccount != "acct_test" {
-		t.Errorf("ChatClaude-Account-Id = %q, want acct_test", gotChatClaudeAccount)
+			for _, accountID := range []string{"", "acct_test", ""} {
+				client.SetAccountID(accountID)
+				// Re-probe both paths for every account state while retaining the
+				// same client so clearing the ID also detects stale headers.
+				client.clearFallbackBaseURL()
+				requests = nil
+				if _, err := client.FetchUsage(context.Background()); err != nil {
+					t.Fatalf("FetchUsage: %v", err)
+				}
+				paths := []string{"/backend-api/wham/usage"}
+				if fallback {
+					paths = append(paths, "/api/codex/usage")
+				}
+				if len(requests) != len(paths) {
+					t.Fatalf("requests = %d, want %d", len(requests), len(paths))
+				}
+				for i, req := range requests {
+					if req.URL.Path != paths[i] {
+						t.Errorf("request path = %q, want %q", req.URL.Path, paths[i])
+					}
+					if req.Header.Get("Authorization") != "Bearer token" {
+						t.Error("Authorization did not preserve bearer authentication")
+					}
+					if got := req.Header.Get("ChatGPT-Account-Id"); got != accountID {
+						t.Errorf("%s ChatGPT-Account-Id = %q, want %q", req.URL.Path, got, accountID)
+					}
+					if accountID == "" {
+						if _, exists := req.Header[http.CanonicalHeaderKey("ChatGPT-Account-Id")]; exists {
+							t.Error("ChatGPT-Account-Id should be absent without an account ID")
+						}
+					}
+					for _, obsolete := range []string{"X-Account-Id", "ChatClaude-Account-Id"} {
+						if _, exists := req.Header[http.CanonicalHeaderKey(obsolete)]; exists {
+							t.Errorf("%s obsolete %s header should be absent", req.URL.Path, obsolete)
+						}
+					}
+				}
+			}
+		})
 	}
 }

@@ -2440,7 +2440,7 @@ button, input, select { font-family: inherit; }
 @media (min-width: 769px) and (max-width: 1023px) {
   .quota-grid { grid-template-columns: repeat(2, 1fr); }
   #quota-grid-gemini { grid-template-columns: repeat(3, 1fr); }
-  .quota-card:nth-child(3) { grid-column: 1 / -1; }
+  .quota-card:nth-of-type(3) { grid-column: 1 / -1; }
   .table-controls { flex-wrap: wrap; }
   .both-view { grid-template-columns: 1fr; }
   .chart-container.both-charts { grid-template-columns: 1fr; }
@@ -3720,6 +3720,21 @@ select.settings-input {
   justify-content: space-between;
   margin-bottom: 12px;
   gap: 8px;
+}
+
+.codex-usage-source-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+#quota-grid-codex > .codex-usage-source-note {
+  grid-column: 1 / -1;
+}
+
+.codex-account-section > .codex-usage-source-note {
+  margin: -2px 0 10px;
 }
 
 .codex-account-name {

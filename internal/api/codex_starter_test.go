@@ -14,6 +14,7 @@ import (
 )
 
 func TestBuildCodexStarterRequest(t *testing.T) {
+	t.Setenv("CODEX_STARTER_MODEL", "")
 	req, err := buildCodexStarterRequest(context.Background(), codexResponsesURL, "tok_abc", "acct_123")
 	if err != nil {
 		t.Fatalf("buildCodexStarterRequest error: %v", err)
@@ -30,6 +31,11 @@ func TestBuildCodexStarterRequest(t *testing.T) {
 	}
 	if got := req.Header.Get("ChatGPT-Account-ID"); got != "acct_123" {
 		t.Errorf("ChatGPT-Account-ID = %q, want acct_123", got)
+	}
+	for _, obsolete := range []string{"X-Account-Id", "ChatClaude-Account-Id"} {
+		if _, exists := req.Header[http.CanonicalHeaderKey(obsolete)]; exists {
+			t.Errorf("obsolete %s header should be absent", obsolete)
+		}
 	}
 	if got := req.Header.Get("Content-Type"); got != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", got)
@@ -52,8 +58,8 @@ func TestBuildCodexStarterRequest(t *testing.T) {
 	if _, ok := parsed["instructions"].(string); !ok {
 		t.Errorf("instructions missing or not a string")
 	}
-	if parsed["model"] != defaultCodexStarterModel {
-		t.Errorf("model = %v, want %q", parsed["model"], defaultCodexStarterModel)
+	if parsed["model"] != "gpt-6-luna" {
+		t.Errorf("model = %v, want gpt-6-luna", parsed["model"])
 	}
 }
 
@@ -62,8 +68,10 @@ func TestBuildCodexStarterRequest_NoAccountIDOmitsHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	if _, ok := req.Header["Chatgpt-Account-Id"]; ok {
-		t.Errorf("ChatGPT-Account-ID header should be absent when account id empty")
+	for _, header := range []string{"ChatGPT-Account-Id", "X-Account-Id", "ChatClaude-Account-Id"} {
+		if _, exists := req.Header[http.CanonicalHeaderKey(header)]; exists {
+			t.Errorf("%s header should be absent when account ID is empty", header)
+		}
 	}
 }
 
@@ -79,24 +87,40 @@ func TestCodexStarterModel_EnvOverride(t *testing.T) {
 }
 
 func TestSendStarterPing_Success(t *testing.T) {
-	var gotAuth, gotAccount string
+	headers := make(chan http.Header, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		gotAccount = r.Header.Get("ChatGPT-Account-ID")
+		headers <- r.Header.Clone()
+		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "data: {}\n\n")
 	}))
 	defer srv.Close()
 
 	client := NewCodexClient("tok_live", nil, WithCodexStarterURL(srv.URL))
-	if err := client.SendStarterPing(context.Background(), "acct_xyz"); err != nil {
-		t.Fatalf("SendStarterPing error: %v", err)
-	}
-	if gotAuth != "Bearer tok_live" {
-		t.Errorf("server saw Authorization = %q", gotAuth)
-	}
-	if gotAccount != "acct_xyz" {
-		t.Errorf("server saw ChatGPT-Account-ID = %q", gotAccount)
+	for _, accountID := range []string{"acct_xyz", ""} {
+		if err := client.SendStarterPing(context.Background(), accountID); err != nil {
+			t.Fatalf("SendStarterPing error: %v", err)
+		}
+		got := <-headers
+		if got.Get("Authorization") != "Bearer tok_live" {
+			t.Error("Authorization did not preserve bearer authentication")
+		}
+		if got.Get("Accept") != "text/event-stream" {
+			t.Error("starter request did not accept an event stream")
+		}
+		if gotAccount := got.Get("ChatGPT-Account-Id"); gotAccount != accountID {
+			t.Errorf("server saw ChatGPT-Account-Id = %q, want %q", gotAccount, accountID)
+		}
+		if accountID == "" {
+			if _, exists := got[http.CanonicalHeaderKey("ChatGPT-Account-Id")]; exists {
+				t.Error("ChatGPT-Account-Id should be absent without an account ID")
+			}
+		}
+		for _, obsolete := range []string{"X-Account-Id", "ChatClaude-Account-Id"} {
+			if _, exists := got[http.CanonicalHeaderKey(obsolete)]; exists {
+				t.Errorf("obsolete %s header should be absent", obsolete)
+			}
+		}
 	}
 }
 

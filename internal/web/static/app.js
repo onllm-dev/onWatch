@@ -2823,16 +2823,17 @@ function syncCodexAutoStartBadges() {
   });
 }
 
-function renderCodexQuotaCards(quotas, containerId, planType) {
+function renderCodexQuotaCards(quotas, containerId, planType, usageSourceNote) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
+  const sourceNoteHTML = codexUsageSourceNoteHTML(usageSourceNote);
   if (visibleQuotas.length === 0) {
-    container.innerHTML = '<p class="empty-state">No Codex quota data available yet.</p>';
+    container.innerHTML = `${sourceNoteHTML}<p class="empty-state">No Codex quota data available yet.</p>`;
     return;
   }
 
-  container.innerHTML = visibleQuotas.map((q, i) => {
+  container.innerHTML = sourceNoteHTML + visibleQuotas.map((q, i) => {
     const icon = anthropicQuotaIcons[q.name] || '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>';
     const displayName = q.displayName || codexDisplayNames[q.name] || q.name;
     const cardPercent = q.cardPercent != null ? q.cardPercent : (q.utilization || 0);
@@ -2887,24 +2888,31 @@ function renderCodexQuotaCards(quotas, containerId, planType) {
   });
 }
 
-function formatCodexPlan(planType) {
+function formatCodexPlan(planType, planLabel) {
+  if (typeof planLabel === 'string' && planLabel.trim()) return planLabel.trim();
   const normalized = normalizeCodexPlanType(planType);
   if (!normalized) return 'Unknown Plan';
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  return toTitleCase(normalized);
+}
+
+function codexUsageSourceNoteHTML(note) {
+  if (!note) return '';
+  return `<p class="codex-usage-source-note" role="note">${escapeHTML(note)}</p>`;
 }
 
 // Render Codex cards for a specific account (used in "both" view with multiple accounts)
-function renderCodexQuotaCardsForAccount(quotas, container, accountName, planType, accountId) {
+function renderCodexQuotaCardsForAccount(quotas, container, accountName, planType, accountId, usageSourceNote, planLabel) {
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
   const safeAccountId = String(accountId || accountName || 'default').replace(/[^a-zA-Z0-9_-]/g, '-');
 
   const header = document.createElement('div');
   header.className = 'codex-account-header';
   header.innerHTML = `
-    <span class="codex-account-name">${accountName}</span>
-    <span class="codex-account-plan">${formatCodexPlan(planType)}</span>
+    <span class="codex-account-name">${escapeHTML(accountName)}</span>
+    <span class="codex-account-plan">${escapeHTML(formatCodexPlan(planType, planLabel))}</span>
   `;
   container.appendChild(header);
+  container.insertAdjacentHTML('beforeend', codexUsageSourceNoteHTML(usageSourceNote));
 
   if (visibleQuotas.length === 0) {
     const empty = document.createElement('p');
@@ -2926,7 +2934,7 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const cardKey = `codex-${safeAccountId}-${q.name}`;
 
-    return `<article class="quota-card codex-card" id="card-${cardKey}" data-quota="${q.name}" data-provider="codex" data-account-id="${accountId}" aria-label="${accountName} ${displayName}" style="animation-delay: ${i * 60}ms">
+    return `<article class="quota-card codex-card" id="card-${cardKey}" data-quota="${q.name}" data-provider="codex" data-account-id="${accountId}" aria-label="${escapeHTML(`${accountName} ${displayName}`)}" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
@@ -2973,7 +2981,7 @@ function renderCodexAccountSections(accounts) {
     const section = document.createElement('section');
     section.className = 'codex-account-section';
     section.dataset.accountId = String(accountId);
-    renderCodexQuotaCardsForAccount(account.quotas || [], section, accountName, account.planType, accountId);
+    renderCodexQuotaCardsForAccount(account.quotas || [], section, accountName, account.planType, accountId, account.usageSourceNote, account.planLabel);
     container.appendChild(section);
   });
 }
@@ -4941,8 +4949,10 @@ async function fetchCodexUsage(options = {}) {
     if (!container) return;
 
     const renderedCount = container.querySelectorAll('.quota-card.codex-card').length;
-    if (container.children.length === 0 || renderedCount !== visibleQuotas.length || planChanged) {
-      renderCodexQuotaCards(visibleQuotas, 'quota-grid-codex', State.codexPlanType);
+    const sourceNote = payload.usageSourceNote || '';
+    const sourceNoteChanged = (container.querySelector('.codex-usage-source-note')?.textContent || '') !== sourceNote;
+    if (container.children.length === 0 || renderedCount !== visibleQuotas.length || planChanged || quotaNamesChanged || sourceNoteChanged) {
+      renderCodexQuotaCards(visibleQuotas, 'quota-grid-codex', State.codexPlanType, payload.usageSourceNote);
     }
 
     visibleQuotas.forEach(q => updateCodexCard(q));
@@ -5003,7 +5013,8 @@ function accountOverviewQuotas(provider, account) {
 function accountOverviewCardHTML(provider, account, idx) {
   const accountId = account.accountId || account.id || idx + 1;
   const accountName = account.accountName || account.name || `Account ${accountId}`;
-  const badge = provider === 'codex' && account.planType ? formatCodexPlan(account.planType) : '';
+  const badge = provider === 'codex' && (account.planLabel || account.planType)
+    ? formatCodexPlan(account.planType, account.planLabel) : '';
   const rows = accountOverviewQuotas(provider, account);
   const quotaHTML = rows.length === 0
     ? '<p class="empty-state">No quota data yet.</p>'
@@ -5030,6 +5041,7 @@ function accountOverviewCardHTML(provider, account, idx) {
       <span class="account-overview-name">${escapeHTML(accountName)}</span>
       ${badge ? `<span class="account-overview-badge">${escapeHTML(badge)}</span>` : ''}
     </header>
+    ${provider === 'codex' ? codexUsageSourceNoteHTML(account.usageSourceNote) : ''}
     <div class="account-overview-quotas">${quotaHTML}</div>
     <span class="account-overview-cta">View details &rarr;</span>
   </article>`;
@@ -6855,8 +6867,9 @@ function buildAllProviderEntries() {
           provider: 'codex',
           cardKey,
           title: `Codex - Account: ${accountName}`,
-          badge: toTitleCase(account.planType || ''),
+          badge: account.planLabel || account.planType ? formatCodexPlan(account.planType, account.planLabel) : '',
           planType: account.planType || '',
+          usageSourceNote: account.usageSourceNote || '',
           quotas: normalizeBothQuotas('codex', account),
           insights: insightPayload,
           historyRows: Array.isArray(historyPayload?.history)
@@ -7600,6 +7613,7 @@ function renderAllProvidersView() {
     return `<section class="provider-card ${collapsed ? 'collapsed' : ''}" data-card-key="${entry.cardKey}" data-provider="${entry.provider}">
       ${cardHeader}
       <div class="provider-card-body">
+        ${entry.provider === 'codex' ? codexUsageSourceNoteHTML(entry.usageSourceNote) : ''}
         <div class="provider-kpis">${renderProviderKPIHTML(entry.quotas, entry.provider)}</div>
         ${entry.provider === "mistral" && entry.showBilling ? `<p>Pay-as-you-go: ${escapeHTML(mistralMoney(entry.billing?.amount,entry.billing?.currency))}</p>` : ""}
         ${(() => {
