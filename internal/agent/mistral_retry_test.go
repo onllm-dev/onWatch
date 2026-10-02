@@ -154,3 +154,46 @@ func TestMistralRetryCancelledDoesNotImport(t *testing.T) {
 		t.Fatal("cancelled request still pending")
 	}
 }
+
+func TestMistralRetryKeepsBackoffForBareRateLimit(t *testing.T) {
+	for _, status := range []int{429, 503} {
+		db, err := store.New(":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := NewMistralAgent(db, &config.Config{MistralEnabled: true}, nil)
+		// No Retry-After header: a manual retry must not reset the backoff.
+		a.backoff(&api.MistralHTTPError{Status: status})
+		var cooldown *RetryCooldownError
+		if err := a.RequestRetry(); !errors.As(err, &cooldown) || cooldown.RetryAfter < time.Minute {
+			t.Fatalf("HTTP %d without Retry-After allowed an immediate retry: %v", status, err)
+		}
+		if a.ConnectionState().CanRetry {
+			t.Fatalf("HTTP %d: retry offered during server cooldown", status)
+		}
+		db.Close()
+	}
+}
+
+// Browser access can be granted while a scheduled poll is still failing on the
+// old permissions; the follow-up retry must run once that poll ends.
+func TestMistralRetryQueuedDuringScheduledPoll(t *testing.T) {
+	db, err := store.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	a := NewMistralAgent(db, &config.Config{MistralEnabled: true}, nil)
+	a.retryMu.Lock()
+	a.pollActive = true
+	a.retryMu.Unlock()
+	if err := a.RequestRetry(); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.retryCh) != 1 {
+		t.Fatal("retry requested during an active poll was dropped")
+	}
+	if c := a.ConnectionState(); !c.Retrying || c.CanRetry {
+		t.Fatalf("active poll must report retrying: %+v", c)
+	}
+}

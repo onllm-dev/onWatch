@@ -360,10 +360,8 @@ func (a *MistralAgent) backoff(e error) {
 	delay := time.Duration(1<<a.failures) * 30 * time.Second
 	var he *api.MistralHTTPError
 	if errors.As(e, &he) {
-		a.respectServerDelay(he.RetryAfter)
-	}
-	if errors.As(e, &he) && he.RetryAfter > delay {
-		delay = he.RetryAfter
+		a.respectServerDelay(he.ServerDelay())
+		delay = max(delay, he.ServerDelay())
 	}
 	a.next = time.Now().Add(min(delay, time.Hour))
 	a.status("stale")

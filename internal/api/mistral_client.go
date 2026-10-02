@@ -20,6 +20,15 @@ type MistralHTTPError struct {
 
 func (e *MistralHTTPError) Error() string { return fmt.Sprintf("mistral: HTTP %d", e.Status) }
 
+// ServerDelay is how long Mistral asked us to wait. Rate limits and server
+// errors without a Retry-After header still wait at least two minutes.
+func (e *MistralHTTPError) ServerDelay() time.Duration {
+	if e.Status == http.StatusTooManyRequests || e.Status >= 500 {
+		return max(e.RetryAfter, 2*time.Minute)
+	}
+	return e.RetryAfter
+}
+
 type MistralClient struct{ http *http.Client }
 
 func NewMistralClient() *MistralClient {
@@ -104,10 +113,7 @@ func (c *MistralClient) FetchSnapshot(ctx context.Context, s MistralSession) (*M
 	for _, err := range []error{subErr, billErr} {
 		var httpErr *MistralHTTPError
 		if errors.As(err, &httpErr) {
-			snap.RetryAfter = max(snap.RetryAfter, httpErr.RetryAfter)
-			if httpErr.Status >= 500 {
-				snap.RetryAfter = max(snap.RetryAfter, 2*time.Minute)
-			}
+			snap.RetryAfter = max(snap.RetryAfter, httpErr.ServerDelay())
 		}
 		if errors.Is(err, ErrMistralAuth) {
 			snap.AuthFailed = true

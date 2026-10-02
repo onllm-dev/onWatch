@@ -158,6 +158,27 @@ func TestMistralPartialRateLimit(t *testing.T) {
 	}
 }
 
+// A bare 429 must still back off; otherwise the next poll or a manual retry
+// hits the rate limit again straight away.
+func TestMistralPartialRateLimitWithoutRetryAfter(t *testing.T) {
+	s, _ := ManualMistralSession("ory_session_test=secret")
+	client := NewMistralClient()
+	client.http.Transport = mistralTransport(func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Path, "billing") {
+			return &http.Response{StatusCode: 429, Header: make(http.Header), Body: http.NoBody}, nil
+		}
+		page := `<h2>Included API usage</h2><p>€1 €10</p>`
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(page))}, nil
+	})
+	snap, e := client.FetchSnapshot(context.Background(), s)
+	if e != nil || snap.RetryAfter != 2*time.Minute {
+		t.Fatalf("snap=%+v e=%v", snap, e)
+	}
+	if d := (&MistralHTTPError{Status: 404}).ServerDelay(); d != 0 {
+		t.Fatalf("non-throttling status must not add a delay, got %v", d)
+	}
+}
+
 // A profile that has never signed in to Mistral must not reach the platform
 // credential store: that is what raises a macOS Keychain password prompt, and
 // prompting for a profile that cannot possibly help is pure user annoyance.
