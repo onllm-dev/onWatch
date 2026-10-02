@@ -177,16 +177,24 @@ func TestRestart_SpawnsAppliedBinary(t *testing.T) {
 		t.Fatalf("Restart() = %v", err)
 	}
 
+	// The spawned shell creates the marker with O_TRUNC before printf writes, so
+	// a poll can catch a transient 0-byte file. Only a non-empty value that
+	// disagrees with the expected marker is a real failure; an empty read just
+	// means the write has not landed yet.
+	var last string
 	for i := 0; i < 40; i++ {
 		if data, err := os.ReadFile(markerPath); err == nil {
-			if string(data) != "spawned" {
-				t.Fatalf("spawn marker = %q, want spawned", string(data))
+			last = string(data)
+			if last == "spawned" {
+				return
 			}
-			return
+			if last != "" {
+				t.Fatalf("spawn marker = %q, want spawned", last)
+			}
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatal("spawned marker was not written by restarted process")
+	t.Fatalf("spawned marker was not written by restarted process (last read %q)", last)
 }
 
 func TestRestart_SystemdBranchUsesSystemctl(t *testing.T) {
