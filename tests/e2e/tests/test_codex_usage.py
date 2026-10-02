@@ -30,6 +30,7 @@ def _account(account_id: int = 1, plan: str = "pro", note: str = SOURCE_NOTE) ->
         "accountId": account_id,
         "accountName": f"Account {account_id}",
         "planType": plan,
+        "planLabel": {"pro": "Pro (More)", "prolite": "Pro", "promax": "Pro (Max)"}.get(plan, ""),
         "usageSourceNote": note,
         "quotas": [
             {"name": "five_hour", "utilization": 10},
@@ -78,7 +79,77 @@ def test_multi_account_codex_notes_stay_with_their_account(codex_page: Page) -> 
     expect(plus.locator(".codex-usage-source-note")).to_have_count(0)
 
 
-@pytest.mark.parametrize("width", [375, 900, 1280])
+def test_codex_plan_label_comes_from_server_in_all_account_views(codex_page: Page) -> None:
+    account = _account()
+    account["planLabel"] = 'Server plan <More>'
+    codex_page.evaluate("""account => {
+        State.allProvidersCurrent = {codexAccounts: [account]};
+        renderAllProvidersView();
+        document.getElementById('quota-grid-codex').innerHTML = accountOverviewCardHTML('codex', account, 0);
+        const legacy = document.createElement('div');
+        legacy.id = 'codex-accounts-container-both';
+        document.body.append(legacy);
+        renderCodexAccountSections([account]);
+    }""", account)
+    expect(codex_page.locator(".provider-card-badge")).to_have_text(account["planLabel"])
+    expect(codex_page.locator(".account-overview-badge")).to_have_text(account["planLabel"])
+    expect(codex_page.locator(".codex-account-plan")).to_have_text(account["planLabel"])
+
+
+def test_codex_multiword_plan_fallback(codex_page: Page) -> None:
+    account = _account(plan="  SELF_SERVE_BUSINESS_PROLITE  ", note="")
+    codex_page.evaluate("""account => {
+        State.allProvidersCurrent = {codexAccounts: [account]};
+        renderAllProvidersView();
+    }""", account)
+    expect(codex_page.locator(".provider-card-badge")).to_have_text("Self Serve Business Prolite")
+
+
+def test_codex_legacy_account_name_is_escaped(codex_page: Page) -> None:
+    account = _account()
+    account["accountName"] = '\" onpointerover="window.nameInjected=true" data-injected="yes"><img src=x>Work'
+    codex_page.evaluate("""account => {
+        const container = document.createElement('div');
+        container.id = 'codex-accounts-container-both';
+        document.body.append(container);
+        renderCodexAccountSections([account]);
+    }""", account)
+    expect(codex_page.locator(".codex-account-name")).to_have_text(account["accountName"])
+    expect(codex_page.locator(".codex-account-name img")).to_have_count(0)
+    labels = {"five_hour": "5-Hour Limit", "seven_day": "Weekly All-Model", "code_review": "Review Requests"}
+    for name, label in labels.items():
+        card = codex_page.locator(f'#codex-accounts-container-both [data-quota="{name}"]')
+        expect(card).to_have_attribute("aria-label", f'{account["accountName"]} {label}')
+        assert card.get_attribute("onpointerover") is None
+        assert card.get_attribute("data-injected") is None
+    assert codex_page.evaluate("window.nameInjected") is None
+
+
+def test_codex_note_updates_without_plan_or_quota_count_change(codex_page: Page) -> None:
+    account = _account(note="")
+    codex_page.evaluate("account => fetchCodexUsage({data: account, mode: 'codex'})", account)
+    expect(codex_page.locator("#quota-grid-codex .codex-usage-source-note")).to_have_count(0)
+    for note in [SOURCE_NOTE, "Updated source note", ""]:
+        account["usageSourceNote"] = note
+        codex_page.evaluate("account => fetchCodexUsage({data: account, mode: 'codex'})", account)
+        rendered_note = codex_page.locator("#quota-grid-codex .codex-usage-source-note")
+        expect(rendered_note).to_have_count(1 if note else 0)
+        if note:
+            expect(rendered_note).to_have_text(note)
+
+
+def test_codex_quota_name_change_replaces_same_number_of_cards(codex_page: Page) -> None:
+    account = _account()
+    account["quotas"] = [{"name": "five_hour", "utilization": 10}]
+    codex_page.evaluate("account => fetchCodexUsage({data: account, mode: 'codex'})", account)
+    expect(codex_page.locator('#quota-grid-codex [data-quota="five_hour"]')).to_have_count(1)
+    account["quotas"] = [{"name": "seven_day", "utilization": 87}]
+    codex_page.evaluate("account => fetchCodexUsage({data: account, mode: 'codex'})", account)
+    expect(codex_page.locator('#quota-grid-codex [data-quota="five_hour"]')).to_have_count(0)
+    expect(codex_page.locator('#quota-grid-codex [data-quota="seven_day"]')).to_have_count(1)
+
+
+@pytest.mark.parametrize("width", [375, 768, 769, 900, 1280])
 def test_codex_note_preserves_quota_card_layout(codex_page: Page, width: int) -> None:
     codex_page.set_viewport_size({"width": width, "height": 1000})
     codex_page.evaluate("""account => {
@@ -94,7 +165,7 @@ def test_codex_note_preserves_quota_card_layout(codex_page: Page, width: int) ->
     review = grid.locator('[data-quota="code_review"]').bounding_box()
     assert bounds and hour and weekly and review
     assert abs(hour["width"] - weekly["width"]) < 1
-    if width == 900:
+    if 769 <= width <= 1023:
         assert abs(review["width"] - bounds["width"]) < 1
         assert review["y"] > weekly["y"]
     else:

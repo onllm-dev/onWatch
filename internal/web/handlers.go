@@ -8886,6 +8886,7 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 	if latest.PlanType != "" {
 		response["planType"] = latest.PlanType
+		response["planLabel"] = codexPlanLabel(latest.PlanType)
 	}
 	if note := codexUsageSourceNote(latest.PlanType); note != "" {
 		response["usageSourceNote"] = note

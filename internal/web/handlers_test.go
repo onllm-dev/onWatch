@@ -10575,6 +10575,8 @@ func TestCodexPlanLabel(t *testing.T) {
 		{"pro", "Pro (More)"},
 		{"prolite", "Pro"},
 		{"promax", "Pro (Max)"},
+		{"self_serve_business_prolite", "Self Serve Business Prolite"},
+		{"  PRO  ", "Pro (More)"},
 		{"pro_plan", "Pro Plan"},
 		{"free_tier", "Free Tier"},
 		{"", ""},
@@ -10607,6 +10609,9 @@ func TestBuildCodexCurrent_ProUsageNoteKeepsAPIReportedUtilization(t *testing.T)
 
 	h := NewHandler(s, nil, nil, nil, createTestConfigWithCodex())
 	response := h.buildCodexCurrent(DefaultCodexAccountID)
+	if got := response["planLabel"]; got != "Pro (More)" {
+		t.Fatalf("planLabel = %v, want Pro (More)", got)
+	}
 	if got := response["usageSourceNote"]; got != codexProUsageSourceNote {
 		t.Fatalf("usageSourceNote = %v, want %q", got, codexProUsageSourceNote)
 	}

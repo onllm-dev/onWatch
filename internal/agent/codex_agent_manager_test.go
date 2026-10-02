@@ -353,6 +353,129 @@ func TestCodexAgentManager_StartDefaultAgent(t *testing.T) {
 	}
 }
 
+func TestCodexAgentManager_DefaultProfileRejectsChangedIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		trackedAccountID string
+		trackedUserID    string
+		accountID        string
+		userID           string
+	}{
+		{name: "different account", trackedAccountID: "acct-default", trackedUserID: "user-default", accountID: "acct-other", userID: "user-other"},
+		{name: "different workspace user", trackedAccountID: "acct-default", trackedUserID: "user-default", accountID: "acct-default", userID: "user-other"},
+		{name: "metadata-free default with known foreign account", accountID: "acct-other", userID: "user-other"},
+		{name: "missing account with different user", trackedUserID: "user-default", userID: "user-other"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fx := newCodexManagerFixture(t)
+			authDir := filepath.Join(testHomeDir(t), ".codex")
+			if err := os.MkdirAll(authDir, 0o700); err != nil {
+				t.Fatalf("mkdir .codex: %v", err)
+			}
+			authPath := filepath.Join(authDir, "auth.json")
+			originalIDToken := makeCodexIDToken(t, time.Now().Add(24*time.Hour), test.trackedAccountID, test.trackedUserID)
+			originalAuth := `{"tokens":{"access_token":"original-token","refresh_token":"original-refresh","id_token":"` + originalIDToken + `","account_id":"` + test.trackedAccountID + `"}}`
+			if err := os.WriteFile(authPath, []byte(originalAuth), 0o600); err != nil {
+				t.Fatalf("write original auth.json: %v", err)
+			}
+			if err := fx.manager.startDefaultAgent(); err != nil {
+				t.Fatalf("startDefaultAgent: %v", err)
+			}
+			instance := fx.instance("default")
+			if instance == nil {
+				t.Fatal("missing default agent")
+			}
+
+			rotatedAuth := strings.ReplaceAll(originalAuth, "original-token", "rotated-token")
+			if err := os.WriteFile(authPath, []byte(rotatedAuth), 0o600); err != nil {
+				t.Fatalf("write rotated auth.json: %v", err)
+			}
+			if token := instance.Agent.tokenRefresh(); token != "rotated-token" {
+				t.Error("default agent rejected its own rotated access token")
+			} else {
+				instance.Agent.client.SetToken(token)
+			}
+
+			foreignIDToken := makeCodexIDToken(t, time.Now().Add(48*time.Hour), test.accountID, test.userID)
+			foreignAuth := `{"tokens":{"access_token":"foreign-token","refresh_token":"foreign-refresh","id_token":"` + foreignIDToken + `","account_id":"` + test.accountID + `"}}`
+			if err := os.WriteFile(authPath, []byte(foreignAuth), 0o600); err != nil {
+				t.Fatalf("write switched auth.json: %v", err)
+			}
+			if instance.Agent.tokenRefresh() != "" {
+				t.Error("foreign credentials should leave the current access token unchanged")
+			}
+			if instance.Agent.credsRefresh() != nil {
+				t.Error("default agent accepted another identity's refresh credentials")
+			}
+			if err := instance.Agent.tokenSave("refreshed-token", "refreshed-refresh", originalIDToken, 604800); err == nil {
+				t.Error("default agent saved refreshed credentials over another identity")
+			}
+			data, err := os.ReadFile(authPath)
+			if err != nil {
+				t.Fatalf("read auth.json: %v", err)
+			}
+			if string(data) != foreignAuth {
+				t.Error("another identity's auth.json was modified")
+			}
+		})
+	}
+}
+
+func TestCodexAgentManager_DefaultProfileAcceptsOwnTokenRotation(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		accountID string
+		userID    string
+	}{
+		{name: "known identity", accountID: "acct-default", userID: "user-default"},
+		{name: "no identity metadata"},
+		{name: "missing account with known user", userID: "user-default"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fx := newCodexManagerFixture(t)
+			authDir := filepath.Join(testHomeDir(t), ".codex")
+			if err := os.MkdirAll(authDir, 0o700); err != nil {
+				t.Fatalf("mkdir .codex: %v", err)
+			}
+			authPath := filepath.Join(authDir, "auth.json")
+			idToken := makeCodexIDToken(t, time.Now().Add(24*time.Hour), test.accountID, test.userID)
+			originalAuth := `{"tokens":{"access_token":"original-token","refresh_token":"original-refresh","id_token":"` + idToken + `","account_id":"` + test.accountID + `"}}`
+			if err := os.WriteFile(authPath, []byte(originalAuth), 0o600); err != nil {
+				t.Fatalf("write original auth.json: %v", err)
+			}
+			if err := fx.manager.startDefaultAgent(); err != nil {
+				t.Fatalf("startDefaultAgent: %v", err)
+			}
+			instance := fx.instance("default")
+			if instance == nil {
+				t.Fatal("missing default agent")
+			}
+
+			rotatedAuth := `{"tokens":{"access_token":"rotated-token","refresh_token":"rotated-refresh","id_token":"` + idToken + `","account_id":"` + test.accountID + `"}}`
+			if err := os.WriteFile(authPath, []byte(rotatedAuth), 0o600); err != nil {
+				t.Fatalf("write rotated auth.json: %v", err)
+			}
+			if instance.Agent.tokenRefresh() != "rotated-token" {
+				t.Error("default agent rejected its own rotated access token")
+			}
+			creds := instance.Agent.credsRefresh()
+			if creds == nil || creds.AccessToken != "rotated-token" || creds.RefreshToken != "rotated-refresh" {
+				t.Error("default agent rejected its own rotated refresh credentials")
+			}
+			if err := instance.Agent.tokenSave("refreshed-token", "refreshed-refresh", idToken, 604800); err != nil {
+				t.Fatalf("tokenSave: %v", err)
+			}
+			updated := api.DetectCodexCredentials(fx.logger)
+			if updated == nil || updated.AccessToken != "refreshed-token" || updated.RefreshToken != "refreshed-refresh" {
+				t.Error("default agent did not persist its own refreshed credentials")
+			}
+			if updated == nil || updated.AccountID != test.accountID || updated.UserID != test.userID {
+				t.Error("saving refreshed credentials changed the default profile identity")
+			}
+		})
+	}
+}
+
 func TestCodexAgentManager_ErrorAndFallbackPaths(t *testing.T) {
 	fx := newCodexManagerFixture(t)
 

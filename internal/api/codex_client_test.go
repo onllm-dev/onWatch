@@ -126,14 +126,14 @@ func TestCodexClient_FetchUsage_ContextCancelled(t *testing.T) {
 }
 
 func TestCodexClient_FetchUsage_FallbacksToWhamOnCodexPath404(t *testing.T) {
-	var gotPath atomic.Value
-	var gotChatClaudeAccount atomic.Value
-	var gotXAccount atomic.Value
+	type usageRequest struct {
+		path    string
+		headers http.Header
+	}
+	requests := make(chan usageRequest, 2)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath.Store(r.URL.Path)
-		gotChatClaudeAccount.Store(r.Header.Get("ChatClaude-Account-Id"))
-		gotXAccount.Store(r.Header.Get("X-Account-Id"))
+		requests <- usageRequest{path: r.URL.Path, headers: r.Header.Clone()}
 		switch r.URL.Path {
 		case "/api/codex/usage":
 			w.WriteHeader(http.StatusNotFound)
@@ -160,17 +160,22 @@ func TestCodexClient_FetchUsage_FallbacksToWhamOnCodexPath404(t *testing.T) {
 		t.Fatalf("PlanType = %q, want pro", resp.PlanType)
 	}
 
-	path, _ := gotPath.Load().(string)
-	if path != "/backend-api/wham/usage" {
-		t.Fatalf("last request path = %q, want /backend-api/wham/usage", path)
-	}
-	chatClaudeAccount, _ := gotChatClaudeAccount.Load().(string)
-	if chatClaudeAccount != "acct_123" {
-		t.Fatalf("ChatClaude-Account-Id = %q, want acct_123", chatClaudeAccount)
-	}
-	xAccount, _ := gotXAccount.Load().(string)
-	if xAccount != "acct_123" {
-		t.Fatalf("X-Account-Id = %q, want acct_123", xAccount)
+	for _, path := range []string{"/api/codex/usage", "/backend-api/wham/usage"} {
+		request := <-requests
+		if request.path != path {
+			t.Errorf("request path = %q, want %q", request.path, path)
+		}
+		if accountID := request.headers.Get("ChatGPT-Account-Id"); accountID != "acct_123" {
+			t.Errorf("%s ChatGPT-Account-Id = %q, want acct_123", path, accountID)
+		}
+		if request.headers.Get("Authorization") != "Bearer oauth_token" {
+			t.Errorf("%s Authorization did not preserve bearer authentication", path)
+		}
+		for _, obsolete := range []string{"X-Account-Id", "ChatClaude-Account-Id"} {
+			if _, exists := request.headers[http.CanonicalHeaderKey(obsolete)]; exists {
+				t.Errorf("%s obsolete %s header should be absent", path, obsolete)
+			}
+		}
 	}
 }
 

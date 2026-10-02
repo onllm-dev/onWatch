@@ -2911,17 +2911,17 @@ func TestAntigravityClient_FetchQuotas_ContextCancelledMidRequest(t *testing.T) 
 // ---------------------------------------------------------------------------
 
 func TestCodexClient_AccountIDHeader(t *testing.T) {
-	var gotAccountID string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAccountID = r.Header.Get("X-Account-Id")
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"plan_type":"pro","rate_limit":{}}`))
-	}))
-	defer server.Close()
-
 	logger := discardLoggerCredentials()
-	client := NewCodexClient("test-token", logger, WithCodexBaseURL(server.URL))
+	client := NewCodexClient("test-token", logger, WithCodexBaseURL("https://example.invalid"))
+	var headers http.Header
+	client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		headers = req.Header.Clone()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"plan_type":"pro","rate_limit":{}}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
 	client.SetAccountID("test-account-123")
 
 	_, err := client.FetchUsage(context.Background())
@@ -2929,8 +2929,13 @@ func TestCodexClient_AccountIDHeader(t *testing.T) {
 		t.Fatalf("FetchUsage failed: %v", err)
 	}
 
-	if gotAccountID != "test-account-123" {
-		t.Errorf("X-Account-Id = %q, want 'test-account-123'", gotAccountID)
+	if gotAccountID := headers.Get("ChatGPT-Account-Id"); gotAccountID != "test-account-123" {
+		t.Errorf("ChatGPT-Account-Id = %q, want test-account-123", gotAccountID)
+	}
+	for _, obsolete := range []string{"X-Account-Id", "ChatClaude-Account-Id"} {
+		if _, exists := headers[http.CanonicalHeaderKey(obsolete)]; exists {
+			t.Errorf("obsolete %s header should be absent", obsolete)
+		}
 	}
 }
 

@@ -2888,12 +2888,11 @@ function renderCodexQuotaCards(quotas, containerId, planType, usageSourceNote) {
   });
 }
 
-function formatCodexPlan(planType) {
+function formatCodexPlan(planType, planLabel) {
+  if (typeof planLabel === 'string' && planLabel.trim()) return planLabel.trim();
   const normalized = normalizeCodexPlanType(planType);
   if (!normalized) return 'Unknown Plan';
-  const planLabels = { pro: 'Pro (More)', prolite: 'Pro', promax: 'Pro (Max)' };
-  if (planLabels[normalized]) return planLabels[normalized];
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  return toTitleCase(normalized);
 }
 
 function codexUsageSourceNoteHTML(note) {
@@ -2902,15 +2901,15 @@ function codexUsageSourceNoteHTML(note) {
 }
 
 // Render Codex cards for a specific account (used in "both" view with multiple accounts)
-function renderCodexQuotaCardsForAccount(quotas, container, accountName, planType, accountId, usageSourceNote) {
+function renderCodexQuotaCardsForAccount(quotas, container, accountName, planType, accountId, usageSourceNote, planLabel) {
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
   const safeAccountId = String(accountId || accountName || 'default').replace(/[^a-zA-Z0-9_-]/g, '-');
 
   const header = document.createElement('div');
   header.className = 'codex-account-header';
   header.innerHTML = `
-    <span class="codex-account-name">${accountName}</span>
-    <span class="codex-account-plan">${formatCodexPlan(planType)}</span>
+    <span class="codex-account-name">${escapeHTML(accountName)}</span>
+    <span class="codex-account-plan">${escapeHTML(formatCodexPlan(planType, planLabel))}</span>
   `;
   container.appendChild(header);
   container.insertAdjacentHTML('beforeend', codexUsageSourceNoteHTML(usageSourceNote));
@@ -2935,7 +2934,7 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
     const statusCfg = statusConfig[status] || statusConfig.healthy;
     const cardKey = `codex-${safeAccountId}-${q.name}`;
 
-    return `<article class="quota-card codex-card" id="card-${cardKey}" data-quota="${q.name}" data-provider="codex" data-account-id="${accountId}" aria-label="${accountName} ${displayName}" style="animation-delay: ${i * 60}ms">
+    return `<article class="quota-card codex-card" id="card-${cardKey}" data-quota="${q.name}" data-provider="codex" data-account-id="${accountId}" aria-label="${escapeHTML(`${accountName} ${displayName}`)}" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
         <h2 class="quota-title">
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
@@ -2982,7 +2981,7 @@ function renderCodexAccountSections(accounts) {
     const section = document.createElement('section');
     section.className = 'codex-account-section';
     section.dataset.accountId = String(accountId);
-    renderCodexQuotaCardsForAccount(account.quotas || [], section, accountName, account.planType, accountId, account.usageSourceNote);
+    renderCodexQuotaCardsForAccount(account.quotas || [], section, accountName, account.planType, accountId, account.usageSourceNote, account.planLabel);
     container.appendChild(section);
   });
 }
@@ -4950,7 +4949,9 @@ async function fetchCodexUsage(options = {}) {
     if (!container) return;
 
     const renderedCount = container.querySelectorAll('.quota-card.codex-card').length;
-    if (container.children.length === 0 || renderedCount !== visibleQuotas.length || planChanged) {
+    const sourceNote = payload.usageSourceNote || '';
+    const sourceNoteChanged = (container.querySelector('.codex-usage-source-note')?.textContent || '') !== sourceNote;
+    if (container.children.length === 0 || renderedCount !== visibleQuotas.length || planChanged || quotaNamesChanged || sourceNoteChanged) {
       renderCodexQuotaCards(visibleQuotas, 'quota-grid-codex', State.codexPlanType, payload.usageSourceNote);
     }
 
@@ -5012,7 +5013,8 @@ function accountOverviewQuotas(provider, account) {
 function accountOverviewCardHTML(provider, account, idx) {
   const accountId = account.accountId || account.id || idx + 1;
   const accountName = account.accountName || account.name || `Account ${accountId}`;
-  const badge = provider === 'codex' && account.planType ? formatCodexPlan(account.planType) : '';
+  const badge = provider === 'codex' && (account.planLabel || account.planType)
+    ? formatCodexPlan(account.planType, account.planLabel) : '';
   const rows = accountOverviewQuotas(provider, account);
   const quotaHTML = rows.length === 0
     ? '<p class="empty-state">No quota data yet.</p>'
@@ -6865,7 +6867,7 @@ function buildAllProviderEntries() {
           provider: 'codex',
           cardKey,
           title: `Codex - Account: ${accountName}`,
-          badge: account.planType ? formatCodexPlan(account.planType) : '',
+          badge: account.planLabel || account.planType ? formatCodexPlan(account.planType, account.planLabel) : '',
           planType: account.planType || '',
           usageSourceNote: account.usageSourceNote || '',
           quotas: normalizeBothQuotas('codex', account),
