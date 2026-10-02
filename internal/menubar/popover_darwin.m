@@ -41,9 +41,20 @@ bool onwatch_grant_origin_allowed(const char *configuredURL, const char *scheme,
     port == (configured.port ? configured.port.integerValue : 80);
 }
 
+// Reply for a grant or status message. A rejected grant from the main frame
+// still answers so the page never waits forever; subframes get nothing, and
+// nothing may reset an open picker. Status replays report only an open picker:
+// finished results were delivered live, and replaying them would resurrect
+// stale feedback on every popover open.
+const char *onwatch_grant_reply(bool allowed, bool mainFrame, bool grant, bool pending) {
+  if (!allowed) return mainFrame && grant && !pending ? "unavailable" : NULL;
+  return pending ? "pending" : "idle";
+}
+
 @interface OnWatchPopoverController : NSObject <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
 @property(nonatomic, assign) uint64_t grantToken;
 @property(nonatomic, assign) BOOL grantPending;
+// Last completion, kept for the granttest harness; it is not replayed.
 @property(nonatomic, copy) NSString *grantResult;
 @property(nonatomic, strong) OnWatchBorderlessPanel *panel;
 @property(nonatomic, strong) NSView *containerView;
@@ -465,19 +476,21 @@ bool onwatch_grant_origin_allowed(const char *configuredURL, const char *scheme,
 
   if ([action isEqualToString:@"grant_browser_access"] || [action isEqualToString:@"browser_access_status"]) {
     WKSecurityOrigin *origin = message.frameInfo.securityOrigin;
-    if (!self.grantToken || !onwatch_grant_origin_allowed(self.loadedURLString.UTF8String,
-        origin.protocol.UTF8String, origin.host.UTF8String, (int)origin.port, message.frameInfo.isMainFrame)) {
-      return;
-    }
-    if ([action isEqualToString:@"grant_browser_access"] && !self.grantPending) {
+    BOOL allowed = self.grantToken && onwatch_grant_origin_allowed(self.loadedURLString.UTF8String,
+        origin.protocol.UTF8String, origin.host.UTF8String, (int)origin.port, message.frameInfo.isMainFrame);
+    BOOL grant = [action isEqualToString:@"grant_browser_access"];
+    if (allowed && grant && !self.grantPending) {
       self.grantPending = YES;
       self.grantResult = @"pending";
       onwatchGoGrantBrowserAccess(self.grantToken);
     }
-    NSString *result = self.grantResult ?: @"idle";
+    const char *reply = onwatch_grant_reply(allowed, message.frameInfo.isMainFrame, grant, self.grantPending);
+    if (!reply) {
+      return;
+    }
     // Status replay accompanies the page's own refresh, so it must not fetch
     // another snapshot. Only a new completion requests an extra refresh.
-    [self.webView evaluateJavaScript:[NSString stringWithFormat:@"window.__onwatchBrowserGrantResult && window.__onwatchBrowserGrantResult('%@', false)", result] completionHandler:nil];
+    [self.webView evaluateJavaScript:[NSString stringWithFormat:@"window.__onwatchBrowserGrantResult && window.__onwatchBrowserGrantResult('%s', false)", reply] completionHandler:nil];
     return;
   }
 

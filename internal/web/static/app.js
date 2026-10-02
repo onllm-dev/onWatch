@@ -13190,6 +13190,7 @@ let mistralConnectionData = null;
 function renderMistralConnection(data) {
   const element = document.getElementById('mistral-connection-status');
   if (!element) return;
+  if (!window.MistralRecovery) { element.textContent = data.connection?.message || ''; return; }
   mistralConnectionData = data;
   if (!mistralRecovery) {
     mistralRecovery = new window.MistralRecovery({

@@ -1544,7 +1544,8 @@
             let resizeFrame = 0;
             let resizeTimer = 0;
             let autoSaveTimer = null;
-            const mistralRecovery = new window.MistralRecovery({
+            // Without the recovery script the rest of the quick view must still work.
+            const mistralRecovery = !window.MistralRecovery ? { suspended: false, markup: () => "", grantResult() {}, hide() {} } : new window.MistralRecovery({
                 root: body, endpoint: API_BASE + '/api/menubar/mistral/retry',
                 grant: window.__onwatchCanGrantBrowserAccess ? () => sendNativeAction('grant_browser_access') : undefined,
                 refresh: async signal => {

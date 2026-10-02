@@ -35,3 +35,27 @@ func TestBrowserGrantHandlerRemoval(t *testing.T) {
 		t.Fatal("destroyed host retained callback")
 	}
 }
+
+func TestBrowserGrantReply(t *testing.T) {
+	for _, tc := range []struct {
+		name                               string
+		allowed, mainFrame, grant, pending bool
+		want                               string
+	}{
+		// A rejected grant must answer, or the page waits forever.
+		{"rejected grant", false, true, true, false, "unavailable"},
+		{"rejected status", false, true, false, false, ""},
+		// Untrusted frames must not drive the trusted page's grant state.
+		{"rejected subframe grant", false, false, true, false, ""},
+		{"rejected grant while picker open", false, true, true, true, ""},
+		{"grant started", true, true, true, true, "pending"},
+		{"status while picker open", true, true, false, true, "pending"},
+		// Finished results were delivered live; replaying them on every
+		// popover open would resurrect stale feedback.
+		{"status after completion", true, true, false, false, "idle"},
+	} {
+		if got := grantReply(tc.allowed, tc.mainFrame, tc.grant, tc.pending); got != tc.want {
+			t.Fatalf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}

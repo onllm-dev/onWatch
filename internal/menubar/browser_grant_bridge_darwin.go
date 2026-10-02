@@ -8,6 +8,7 @@ package menubar
 #include <stdbool.h>
 void onwatch_grant_finish(uint64_t token, const char *result);
 bool onwatch_grant_origin_allowed(const char *configuredURL, const char *scheme, const char *host, int port, bool mainFrame);
+const char *onwatch_grant_reply(bool allowed, bool mainFrame, bool grant, bool pending);
 */
 import "C"
 
@@ -22,6 +23,14 @@ func grantOriginAllowed(configured, scheme, host string, port int, mainFrame boo
 	defer C.free(unsafe.Pointer(cScheme))
 	defer C.free(unsafe.Pointer(cHost))
 	return bool(C.onwatch_grant_origin_allowed(cURL, cScheme, cHost, C.int(port), C.bool(mainFrame)))
+}
+
+func grantReply(allowed, mainFrame, grant, pending bool) string {
+	reply := C.onwatch_grant_reply(C.bool(allowed), C.bool(mainFrame), C.bool(grant), C.bool(pending))
+	if reply == nil {
+		return ""
+	}
+	return C.GoString(reply)
 }
 
 var grantHandlers = struct {

@@ -56,6 +56,8 @@ global.window = new EventTarget(); global.document = new EventTarget(); document
  grant.requestGrant(); grant.requestGrant(); assert.equal(grants,1);
  assert(grant.markup({reason:'browser_access_denied',canRetry:true}).includes('disabled'));
  grant.grantResult('cancelled'); assert(!grant.granting); assert(grant.feedback.includes('cancelled'));
+ grant.granting = true; grant.grantResult('idle'); assert(!grant.granting,'idle replay must release a page that missed the completion');
+ grant.grantResult('idle'); assert(grant.feedback.includes('cancelled'),'idle replay must not clear feedback');
  assert(!grant.markup({reason:'no_session',canRetry:true}).includes('Grant Browser Access'));
  grant.grantResult('retrying'); assert(!grant.granting);
  grant.hide(); grant.grantResult('retrying'); assert.equal(timers.size,0,'native completion must not resume a closed view');
@@ -79,6 +81,41 @@ global.window = new EventTarget(); global.document = new EventTarget(); document
  window.__onwatchBrowserGrantResult('retrying',true);
  assert.equal(loads,1,'new completion must refresh the snapshot');
 })().catch(error=>{console.error(error);process.exitCode=1;});
+`
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node)
+	cmd.Stdin = strings.NewReader(test)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, output)
+	}
+}
+
+// The quick view must keep working for every provider if the recovery
+// controller script fails to load.
+func TestMenubarSurvivesMissingMistralRecovery(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node required for browser controller tests")
+	}
+	page, err := staticFS.ReadFile("static/menubar.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(page), "const mistralRecovery =")
+	end := strings.Index(string(page), "window.__onwatchBrowserGrantResult =")
+	if start < 0 || end < start {
+		t.Fatal("recovery bootstrap not found")
+	}
+	test := `
+const assert = require('node:assert/strict');
+global.window = {};
+const body = {}; const API_BASE = ''; const sendNativeAction = () => false;
+const loadSnapshot = async () => {}; const render = () => {}; const state = {};
+` + string(page)[start:end] + `
+assert.equal(mistralRecovery.markup({reason:'no_session',canRetry:true}, 'reconnect'), '');
+mistralRecovery.grantResult('cancelled'); mistralRecovery.hide();
+mistralRecovery.suspended = false;
 `
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -40,7 +40,8 @@
       catch (_) { this.grantResult('unavailable'); }
     }
     grantResult(result) {
-      if (result === 'idle') return;
+      // No picker is open; a page that missed the completion must not keep waiting.
+      if (result === 'idle') { if (this.granting) { this.granting = false; this.render(); } return; }
       this.granting = result === 'pending';
       const messages = {
         cancelled: 'Browser access request cancelled.',
