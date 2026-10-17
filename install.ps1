@@ -1024,6 +1024,46 @@ function Offer-GitHubStar {
     }
 }
 
+# Offers start-at-login (a per-user Task Scheduler task that also restarts
+# onWatch after a crash). A "no" is remembered in .autostart-declined, shared
+# with `onwatch setup` and `onwatch update`. ONWATCH_AUTOSTART=no is the
+# opt-out. An existing task is re-registered: the upgrade stopped its
+# supervisor along with every other onWatch process.
+function Offer-Autostart {
+    $binaryPath = Join-Path $BIN_DIR "onwatch.exe"
+    $declined = Join-Path (Join-Path $env:USERPROFILE ".onwatch") ".autostart-declined"
+
+    schtasks.exe /Query /TN onWatch *> $null
+    if ($LASTEXITCODE -eq 0) {
+        & $binaryPath service install *> $null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "Start at login is on (Task Scheduler task 'onWatch')"
+        } else {
+            Write-Warn "Could not refresh the auto-start task - run: onwatch service install"
+        }
+        return
+    }
+    if ($env:ONWATCH_AUTOSTART -match '^(n|no|0|false)$') { return }
+    if (Test-Path $declined) { return }
+    if (-not [Environment]::UserInteractive) {
+        Write-Info "Start onWatch at login with: onwatch service install"
+        return
+    }
+
+    Write-Host ""
+    try {
+        $answer = Read-PromptWithDefault "Start onWatch automatically at login (and restart it if it crashes)? (Y/n)" "Y"
+    } catch {
+        return
+    }
+    if ($answer -match '^[Yy]') {
+        & $binaryPath service install
+    } else {
+        Set-Content -Path $declined -Value "onwatch service install" -ErrorAction SilentlyContinue
+        Write-Info "Skipped. Enable it later with: onwatch service install"
+    }
+}
+
 function Main {
     Write-Host ""
     Write-Host "  ${BOLD}onWatch Installer${NC}"
@@ -1057,6 +1097,7 @@ function Main {
     Write-Host "    ${CYAN}onwatch stop${NC}      # Stop"
     Write-Host "    ${CYAN}onwatch status${NC}    # Status"
     Write-Host "    ${CYAN}onwatch --debug${NC}   # Run in foreground (logs to stdout)"
+    Write-Host "    ${CYAN}onwatch service install${NC}  # Start at login, restart after a crash"
 
     # Add to PATH
     Add-ToPath
@@ -1064,6 +1105,8 @@ function Main {
     # Start the service
     Write-Host ""
     Start-OnWatch
+
+    try { Offer-Autostart } catch { }
 
     try { Offer-GitHubStar } catch { }
 

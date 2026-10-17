@@ -30,18 +30,25 @@ func TestLinuxSessionAvailable(t *testing.T) {
 func TestWindowsSessionAvailable(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name string
-		env  map[string]string
-		want bool
+		name      string
+		env       map[string]string
+		sessionID uint32
+		known     bool
+		want      bool
 	}{
-		{"console session", map[string]string{"SESSIONNAME": "Console"}, true},
-		{"rdp session", map[string]string{"SESSIONNAME": "RDP-Tcp#3"}, true},
-		{"service session", nil, false},
-		{"opt out", map[string]string{"SESSIONNAME": "Console", "ONWATCH_DISABLE_TRAY": "1"}, false},
+		{"console session", map[string]string{"SESSIONNAME": "Console"}, 1, true, true},
+		{"rdp session", map[string]string{"SESSIONNAME": "RDP-Tcp#3"}, 2, true, true},
+		// Task Scheduler (the auto-start task) does not set SESSIONNAME, but
+		// still runs onWatch in the user's interactive session.
+		{"task scheduler logon", nil, 1, true, true},
+		{"service session", nil, 0, true, false},
+		{"session unknown", nil, 0, false, false},
+		{"opt out", map[string]string{"SESSIONNAME": "Console", "ONWATCH_DISABLE_TRAY": "1"}, 1, true, false},
 	}
 	for _, tc := range cases {
 		getenv := func(k string) string { return tc.env[k] }
-		if got := windowsSessionAvailable(getenv); got != tc.want {
+		sessionID := func() (uint32, bool) { return tc.sessionID, tc.known }
+		if got := windowsSessionAvailable(getenv, sessionID); got != tc.want {
 			t.Fatalf("%s: windowsSessionAvailable() = %v, want %v", tc.name, got, tc.want)
 		}
 	}

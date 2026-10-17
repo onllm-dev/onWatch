@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -17,16 +18,19 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/update"
 )
 
-// Auto-start (launchd) plumbing, indirected so tests never shell out to
-// launchctl and never touch the user's real LaunchAgents directory.
+// Auto-start (launchd on macOS, Task Scheduler on Windows) plumbing,
+// indirected so tests never shell out to launchctl or schtasks and never touch
+// the user's real LaunchAgents directory or task list.
 var (
-	autostartInstall   = service.Install
-	autostartUninstall = service.Uninstall
-	autostartRestart   = service.Restart
-	autostartInstalled = service.IsInstalled
-	autostartLoaded    = service.Loaded
-	autostartOptions   = service.DefaultOptions
-	autostartSupported = service.Supported
+	autostartInstall        = service.Install
+	autostartUninstall      = service.Uninstall
+	autostartRestart        = service.Restart
+	autostartInstalled      = service.IsInstalled
+	autostartLoaded         = service.Loaded
+	autostartOptions        = service.DefaultOptions
+	autostartSupported      = service.Supported
+	autostartLocation       = service.Location
+	autostartStopSupervisor = service.StopSupervisor
 )
 
 // autostartDeclinedFile marks that the user said no to auto-start, so setup and
@@ -116,7 +120,8 @@ func offerAutostart(reader *bufio.Reader) {
 	}
 }
 
-// installAutostart writes and loads the launchd agent, printing what it did.
+// installAutostart registers the launchd agent or Windows task, printing what
+// it did.
 func installAutostart() error {
 	opts, err := autostartOptions()
 	if err != nil {
@@ -136,14 +141,19 @@ func installAutostart() error {
 func runService() error {
 	action := serviceAction()
 
+	// The Windows auto-start task's entry point, not a user command.
+	if action == "run" {
+		return runSupervisor()
+	}
+
 	if !autostartSupported() {
 		switch action {
 		case "status":
-			fmt.Println("Auto-start management is macOS-only.")
+			fmt.Println("Auto-start management covers macOS (launchd) and Windows (Task Scheduler).")
 			fmt.Println("On Linux, install.sh creates a systemd unit: systemctl --user status onwatch")
 			return nil
 		default:
-			return fmt.Errorf("onwatch service: auto-start management is macOS-only (Linux uses systemd)")
+			return fmt.Errorf("onwatch service: auto-start management covers macOS (launchd) and Windows (Task Scheduler); Linux uses systemd")
 		}
 	}
 
@@ -160,7 +170,9 @@ func runService() error {
 		}
 		recordAutostartDecline()
 		fmt.Println("Auto-start disabled. onWatch will no longer start at login.")
-		if wasRunning {
+		// launchctl bootout takes the job down with the agent; removing the
+		// Windows task only ends the supervisor and leaves the daemon running.
+		if wasRunning && runtime.GOOS == "darwin" {
 			fmt.Println("The launchd-managed instance was stopped with it - restart onWatch with: onwatch")
 		}
 		return nil
@@ -194,8 +206,13 @@ func printServiceStatus() {
 		fmt.Println("  Enable with: onwatch service install")
 		return
 	}
-	path, _ := service.PlistPath()
+	path, _ := autostartLocation()
 	fmt.Println("Auto-start: installed")
+	if runtime.GOOS == "windows" {
+		fmt.Printf("  Task:   %s (Task Scheduler)\n", path)
+		fmt.Println("  onWatch starts at logon, and its supervisor restarts it after a crash.")
+		return
+	}
 	fmt.Printf("  Agent:  %s\n", service.Label)
 	fmt.Printf("  Plist:  %s\n", path)
 	if autostartLoaded() {
@@ -205,12 +222,24 @@ func printServiceStatus() {
 	}
 }
 
+// serviceManagerName names what owns onWatch when auto-start is installed.
+func serviceManagerName() string {
+	if runtime.GOOS == "windows" {
+		return "Task Scheduler"
+	}
+	return "launchd"
+}
+
 func printServiceHelp() {
+	manager := "launchd agent"
+	if runtime.GOOS == "windows" {
+		manager = "Task Scheduler task"
+	}
 	fmt.Println("Usage: onwatch service <install|uninstall|status>")
 	fmt.Println()
-	fmt.Println("  install     Start onWatch automatically at login (launchd agent)")
-	fmt.Println("  uninstall   Remove the launchd agent")
-	fmt.Println("  status      Show whether the launchd agent is installed and loaded")
+	fmt.Printf("  install     Start onWatch automatically at login and restart it after a crash (%s)\n", manager)
+	fmt.Printf("  uninstall   Remove the %s\n", manager)
+	fmt.Printf("  status      Show whether the %s is installed\n", manager)
 }
 
 // --- post-update restart -------------------------------------------------
@@ -236,7 +265,8 @@ func restartArgs(args []string) []string {
 func daemonEnv(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "_ONWATCH_DAEMON=") || strings.HasPrefix(kv, "_ONWATCH_LAUNCHD=") {
+		if strings.HasPrefix(kv, "_ONWATCH_DAEMON=") || strings.HasPrefix(kv, "_ONWATCH_LAUNCHD=") ||
+			strings.HasPrefix(kv, service.EnvSupervised+"=") {
 			continue
 		}
 		out = append(out, kv)
@@ -333,15 +363,18 @@ var inContainer = func() bool {
 // was running before. An update that silently leaves the daemon stopped is the
 // bug this exists to prevent.
 func restartAfterUpdate() {
-	// When launchd owns the process, let it do the restart so the job stays
-	// supervised and keeps its auto-start behaviour.
+	// When launchd or the Windows auto-start task owns the process, let it do
+	// the restart so the job stays supervised and keeps its auto-start
+	// behaviour.
 	if autostartSupported() && autostartInstalled() && autostartLoaded() {
-		fmt.Println("Restarting via launchd...")
+		manager := serviceManagerName()
+		fmt.Printf("Restarting via %s...\n", manager)
 		if err := autostartRestart(); err == nil {
-			fmt.Printf("onWatch restarted (launchd agent %s)\n", service.Label)
+			location, _ := autostartLocation()
+			fmt.Printf("onWatch restarted (%s %s)\n", manager, location)
 			return
 		}
-		fmt.Fprintln(os.Stderr, "Warning: launchctl kickstart failed, falling back to a direct restart")
+		fmt.Fprintf(os.Stderr, "Warning: %s restart failed, falling back to a direct restart\n", manager)
 	}
 
 	// systemd owns the lifecycle on Linux: spawning here would create an

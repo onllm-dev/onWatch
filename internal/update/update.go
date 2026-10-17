@@ -699,10 +699,10 @@ func (u *Updater) Restart() error {
 		return nil // unreachable
 	}
 
-	// launchd (macOS) owns the process when the auto-start agent is installed.
-	// Spawning a replacement ourselves would orphan the job: launchd would
-	// still believe it is stopped and nothing would restart onWatch after a
-	// crash. Hand the restart to launchctl instead.
+	// launchd (macOS) or the auto-start task (Windows) owns the process when
+	// auto-start is installed. Spawning a replacement ourselves would orphan
+	// the job: nothing would restart onWatch after a crash. Hand the restart
+	// to the service manager instead.
 	if launchdSupported() && launchdInstalled() && launchdLoaded() {
 		u.logger.Info("Running under launchd - triggering agent restart", "label", service.Label)
 		if err := launchdRestart(); err == nil {
@@ -780,7 +780,8 @@ func (u *Updater) fallbackSystemctlRestart() error {
 func daemonSpawnEnv(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "_ONWATCH_DAEMON=") || strings.HasPrefix(kv, "_ONWATCH_LAUNCHD=") {
+		if strings.HasPrefix(kv, "_ONWATCH_DAEMON=") || strings.HasPrefix(kv, "_ONWATCH_LAUNCHD=") ||
+			strings.HasPrefix(kv, service.EnvSupervised+"=") {
 			continue
 		}
 		out = append(out, kv)

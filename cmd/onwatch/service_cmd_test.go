@@ -208,8 +208,8 @@ func TestRestartAfterUpdatePrefersLaunchd(t *testing.T) {
 	if len(h.spawns) != 0 {
 		t.Errorf("launchd owns the process - must not spawn a second daemon, got %v", h.spawns)
 	}
-	if !strings.Contains(out, "launchd") {
-		t.Errorf("expected launchd mentioned in output, got: %s", out)
+	if !strings.Contains(out, serviceManagerName()) {
+		t.Errorf("expected %s mentioned in output, got: %s", serviceManagerName(), out)
 	}
 }
 
@@ -437,7 +437,7 @@ func TestRunServiceUnsupportedPlatform(t *testing.T) {
 
 	os.Args = []string{"onwatch", "service", "install"}
 	if err := runService(); err == nil {
-		t.Error("expected an error installing a launchd agent off macOS")
+		t.Error("expected an error installing auto-start on an unsupported platform")
 	}
 
 	os.Args = []string{"onwatch", "service", "status"}
@@ -446,8 +446,8 @@ func TestRunServiceUnsupportedPlatform(t *testing.T) {
 			t.Fatalf("status: %v", err)
 		}
 	})
-	if !strings.Contains(out, "macOS-only") {
-		t.Errorf("expected a macOS-only note, got: %s", out)
+	if !strings.Contains(out, "macOS (launchd) and Windows (Task Scheduler)") {
+		t.Errorf("expected a note naming the supported platforms, got: %s", out)
 	}
 }
 

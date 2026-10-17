@@ -1,9 +1,10 @@
 // Package service manages the OS-level auto-start integration for onWatch.
 //
 // On macOS this is a per-user launchd agent (~/Library/LaunchAgents), which is
-// what makes onWatch come back after a reboot or logout. Linux uses systemd
-// units created by install.sh (see internal/update for unit migration), so the
-// helpers here are macOS-only and report Supported() == false elsewhere.
+// what makes onWatch come back after a reboot or logout. On Windows it is a
+// per-user Task Scheduler task running a small supervisor (taskscheduler.go).
+// Linux uses systemd units created by install.sh (see internal/update for unit
+// migration), so Supported() reports false there.
 package service
 
 import (
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 )
+
+const runtimeGOOS = runtime.GOOS
 
 // Label is the launchd job label for the onWatch agent.
 const Label = "dev.onllm.onwatch"
@@ -44,8 +47,8 @@ type Options struct {
 	Home    string // HOME for the job's environment
 }
 
-// Supported reports whether launchd auto-start is available on this platform.
-func Supported() bool { return runtime.GOOS == "darwin" }
+// Supported reports whether auto-start is managed here on this platform.
+func Supported() bool { return goos == "darwin" || goos == "windows" }
 
 // UnderLaunchd reports whether this process was started by the launchd agent.
 // The agent runs onWatch in the foreground - launchd owns the lifecycle, so the
@@ -61,8 +64,12 @@ func PlistPath() (string, error) {
 	return filepath.Join(home, "Library", "LaunchAgents", Label+".plist"), nil
 }
 
-// IsInstalled reports whether the LaunchAgent plist exists on disk.
+// IsInstalled reports whether the LaunchAgent plist exists on disk, or on
+// Windows whether the task is registered.
 func IsInstalled() bool {
+	if goos == "windows" {
+		return taskInstalled()
+	}
 	path, err := PlistPath()
 	if err != nil {
 		return false
@@ -167,6 +174,9 @@ func escapeXML(s string) string {
 // domain. It returns the plist path. Safe to call when already installed - the
 // job is booted out and re-bootstrapped so the new plist takes effect.
 func Install(o Options) (string, error) {
+	if goos == "windows" {
+		return installTask(o)
+	}
 	path, err := PlistPath()
 	if err != nil {
 		return "", err
@@ -212,6 +222,9 @@ func Install(o Options) (string, error) {
 // Uninstall unloads the agent and removes the plist. It is a no-op when no
 // agent is installed.
 func Uninstall() error {
+	if goos == "windows" {
+		return uninstallTask()
+	}
 	path, err := PlistPath()
 	if err != nil {
 		return err
@@ -226,13 +239,20 @@ func Uninstall() error {
 // Restart asks launchd to stop and respawn the agent, so launchd stays the
 // owner of the process across an update.
 func Restart() error {
+	if goos == "windows" {
+		return restartTask()
+	}
 	if err := runCommand("launchctl", "kickstart", "-k", service()); err != nil {
 		return fmt.Errorf("service: launchctl kickstart: %w", err)
 	}
 	return nil
 }
 
-// Loaded reports whether launchd currently knows about the agent.
+// Loaded reports whether launchd currently knows about the agent. A registered
+// Windows task is always loaded: Task Scheduler runs it at every logon.
 func Loaded() bool {
+	if goos == "windows" {
+		return taskInstalled()
+	}
 	return runCommand("launchctl", "print", service()) == nil
 }

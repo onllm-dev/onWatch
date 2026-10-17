@@ -25,7 +25,7 @@ func sessionAvailableFor(goos string, getenv func(string) string, exists func(st
 	case "linux":
 		return linuxSessionAvailable(getenv, exists)
 	case "windows":
-		return windowsSessionAvailable(getenv)
+		return windowsSessionAvailable(getenv, processSessionID)
 	default:
 		return false
 	}
@@ -62,14 +62,20 @@ func linuxSessionAvailable(getenv func(string) string, exists func(string) bool)
 	return false
 }
 
-// windowsSessionAvailable relies on SESSIONNAME, which Windows sets for
-// interactive logon sessions (Console, RDP-Tcp#n) and leaves unset for
-// services running in session 0.
-func windowsSessionAvailable(getenv func(string) string) bool {
+// windowsSessionAvailable reports whether the process runs in an interactive
+// logon session. Explorer sets SESSIONNAME (Console, RDP-Tcp#n), but Task
+// Scheduler - which starts the auto-start supervisor - does not, so the
+// process's session ID is the fallback: services run in session 0, every
+// interactive logon in a later one.
+func windowsSessionAvailable(getenv func(string) string, sessionID func() (uint32, bool)) bool {
 	if trayDisabled(getenv) {
 		return false
 	}
-	return strings.TrimSpace(getenv("SESSIONNAME")) != ""
+	if strings.TrimSpace(getenv("SESSIONNAME")) != "" {
+		return true
+	}
+	id, ok := sessionID()
+	return ok && id != 0
 }
 
 func fileExists(path string) bool {

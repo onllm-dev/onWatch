@@ -149,6 +149,7 @@ func menubarHelpText() string {
 func stopPreviousInstance(port int, testMode bool) {
 	myPID := os.Getpid()
 	stopped := false
+	var stoppedPIDs []int
 
 	if productionPIDFileOffLimits() {
 		return
@@ -174,6 +175,7 @@ func stopPreviousInstance(port int, testMode bool) {
 			if stopProcess(pid) {
 				fmt.Printf("Stopped previous instance (PID %d) via PID file\n", pid)
 				stopped = true
+				stoppedPIDs = append(stoppedPIDs, pid)
 			}
 		}
 		os.Remove(pidFile)
@@ -194,6 +196,7 @@ func stopPreviousInstance(port int, testMode bool) {
 						if stopProcess(foundPID) {
 							fmt.Printf("Stopped previous instance (PID %d) on port %d\n", foundPID, filePort)
 							stopped = true
+							stoppedPIDs = append(stoppedPIDs, foundPID)
 						}
 					}
 				}
@@ -216,6 +219,7 @@ func stopPreviousInstance(port int, testMode bool) {
 					if stopProcess(pid) {
 						fmt.Printf("Stopped previous instance (PID %d) on port %d\n", pid, port)
 						stopped = true
+						stoppedPIDs = append(stoppedPIDs, pid)
 					}
 				}
 			}
@@ -223,6 +227,12 @@ func stopPreviousInstance(port int, testMode bool) {
 	}
 
 	if stopped {
+		// Termination is asynchronous: on Windows the port stays bound until
+		// the process is really gone, and binding it any earlier fails the
+		// new daemon's startup.
+		for _, pid := range stoppedPIDs {
+			waitForExit(pid, 5*time.Second)
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
 }
@@ -776,9 +786,10 @@ func run() error {
 	}
 
 	isDaemonChild := os.Getenv("_ONWATCH_DAEMON") == "1"
-	// launchd supervises the process itself: forking into the background would
-	// make launchd think the job died and relaunch it in a loop.
-	underLaunchd := service.UnderLaunchd()
+	// launchd (or the Windows auto-start supervisor) owns the process: forking
+	// into the background would make it think the job died and relaunch it in
+	// a loop.
+	underLaunchd := service.UnderSupervisor()
 
 	// Write early diagnostic to stderr (inherited log file fd) BEFORE slog is configured.
 	// If the daemon child crashes during init, this ensures the log file isn't empty.
@@ -2177,6 +2188,14 @@ func runStop(testMode bool) error {
 	if productionPIDFileOffLimits() {
 		fmt.Printf("No running %s instance found\n", label)
 		return nil
+	}
+
+	// End the Windows auto-start supervisor first: a stop that lands while it
+	// waits to restart a crashed daemon would otherwise be undone.
+	if !testMode {
+		if err := autostartStopSupervisor(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not end the auto-start task: %v\n", err)
+		}
 	}
 
 	// Method 1: PID file (handles both "PID" and "PID:PORT" formats)

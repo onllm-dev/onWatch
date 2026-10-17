@@ -45,6 +45,8 @@ func TestMain(m *testing.M) {
 	autostartInstall = func(service.Options) (string, error) { return "", nil }
 	autostartUninstall = func() error { return nil }
 	autostartRestart = func() error { return nil }
+	autostartLocation = func() (string, error) { return "/tmp/fake/dev.onllm.onwatch.plist", nil }
+	autostartStopSupervisor = func() error { return nil }
 	startDaemonProcess = func(string) (int, error) { return 0, nil }
 	stdinIsTerminal = func() bool { return false }
 	systemctlRestart = func() error { return nil }
