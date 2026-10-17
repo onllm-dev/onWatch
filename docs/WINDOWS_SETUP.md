@@ -278,6 +278,31 @@ To run in debug mode (shows console window):
 
 ---
 
+## Start at Login
+
+Let onWatch start itself when you log in and come back if it ever crashes:
+
+```powershell
+cd "$env:USERPROFILE\.onwatch"
+.\bin\onwatch.exe service install     # register and start now
+.\bin\onwatch.exe service status      # check it
+.\bin\onwatch.exe service uninstall   # remove it (onWatch keeps running)
+```
+
+`service install` registers a per-user Task Scheduler task named `onWatch`; no
+administrator rights are needed. The task starts at logon, works on battery,
+and has no run-time limit. It runs a small supervisor (`onwatch service run`,
+about 13 MB) that keeps the daemon running and restarts it 10 seconds after a
+crash, backing off to 5 minutes if it keeps crashing. Nothing flashes on
+screen at logon: the task runs in a headless console.
+
+`onwatch stop` stops onWatch until your next login, exactly like on macOS;
+`onwatch update` and dashboard updates restart it through the task, so it stays
+supervised. `onwatch setup` and `onwatch update` offer to enable auto-start if
+it is off.
+
+---
+
 ## Running as a Windows Service (Advanced)
 
 For production deployments, you can run onWatch as a Windows Service using [NSSM](https://nssm.cc/) (Non-Sucking Service Manager):
@@ -312,20 +337,22 @@ The Windows binary includes the onWatch tray companion. When you start
 `onwatch.exe` from your own session (the installer does this), a small icon
 appears in the notification area:
 
-- The icon shows the selected quota percentage on a colored disc: slate when
+- The icon shows the selected quota percentage on a colored badge: slate when
   healthy, amber at the warning threshold, red at critical, gray with a dash
-  when the daemon is unreachable.
+  when the daemon is unreachable. It is drawn at the exact tray size for your
+  display scaling, so it stays sharp at 125% and above.
 - Hover for a per-provider summary.
-- Left-click opens the quick view in a frameless Microsoft Edge window
-  anchored above the taskbar. Click again to close it.
-- Right-click for the menu: one row per provider, Open Quick View, Open
-  Dashboard, Refresh Now, Quit.
+- Left-click opens the quick view as a native flyout (WebView2) anchored above
+  the taskbar. Click the icon again, click anywhere else, or press Esc to
+  close it.
+- Right-click for the menu: one row per provider with a status dot, Open
+  Quick View, Open Dashboard, Refresh Now, Quit.
 
 Choose which quota the icon shows under **Settings > Menubar** in the
 dashboard. Set `ONWATCH_DISABLE_TRAY=1` in `.env` to run without the icon.
 The tray does not appear when onWatch runs as a Windows service, because
-services have no desktop session; start `onwatch.exe menubar` at logon
-instead (a shortcut in `shell:startup` works). Details in
+services have no desktop session; use [Start at Login](#start-at-login)
+instead, which runs onWatch in your session. Details in
 [TRAY_LINUX_WINDOWS.md](TRAY_LINUX_WINDOWS.md).
 
 ## Troubleshooting

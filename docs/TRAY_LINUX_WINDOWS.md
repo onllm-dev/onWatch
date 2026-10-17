@@ -3,19 +3,21 @@
 onWatch ships the same menubar companion on every desktop platform. macOS
 draws the compact quota text next to a template icon and opens a native
 popover. Linux and Windows cannot show text beside a tray icon, so the
-companion bakes the number into the icon and opens the same quick view in a
-frameless browser window. Everything is pure Go: no cgo, no GTK, no WebView2
-runtime, and the release binaries stay static.
+companion bakes the number into the icon. Windows opens the quick view in a
+native WebView2 flyout; Linux opens it in a frameless browser window.
+Everything is pure Go: no cgo, no GTK, and the release binaries stay static.
+WebView2 is loaded at runtime from the Evergreen runtime that ships with
+Windows 10 and 11.
 
 ## What you get
 
 | Piece | macOS | Linux | Windows |
 |---|---|---|---|
-| Tray icon | Template mark + title text (`6%·4%·1%`) | Status-colored disc with the selected percent | Status-colored disc with the selected percent |
+| Tray icon | Template mark + title text (`6%·4%·1%`) | Status-colored badge with the selected percent | Status-colored badge with the selected percent, rendered at the exact tray size for the display scale |
 | Hover | Tooltip | Tooltip (KDE, Cinnamon, XFCE, MATE, GNOME with AppIndicator) | Tooltip, capped at 127 characters by Windows |
-| Left click | Native popover with `/menubar` | Quick view window (Chromium-family `--app` mode) or the menu, depending on the desktop | Quick view window anchored above the taskbar |
+| Left click | Native popover with `/menubar` | Quick view window (Chromium-family `--app` mode) or the menu, depending on the desktop | Native flyout (WebView2) anchored above the taskbar |
 | Right click | Menu | Menu | Menu |
-| Menu | One row per provider, Open Quick View, Open Dashboard, Refresh Now, Quit | same | same |
+| Menu | One row per provider, Open Quick View, Open Dashboard, Refresh Now, Quit | same, with a status dot per provider | same, with a status dot per provider, following the dark or light app theme |
 
 The icon color follows the quota it shows: slate when healthy, amber at the
 warning threshold, red at critical, gray with a dash when the daemon is
@@ -39,9 +41,11 @@ up, when all of these hold:
   or `$XDG_RUNTIME_DIR/bus`. A `systemd --user` unit has this on every modern
   desktop. A system-wide unit running as root does not, so no tray is spawned
   there. Containers are skipped.
-- **Windows**: an interactive logon session, detected through `SESSIONNAME`.
-  The installer starts the daemon in your session, so the tray appears
-  automatically. A Windows service in session 0 gets no tray.
+- **Windows**: an interactive logon session, detected through `SESSIONNAME`
+  or, when Task Scheduler started onWatch (which leaves `SESSIONNAME` unset),
+  through the process's session ID. The installer and the auto-start task
+  both run the daemon in your session, so the tray appears automatically. A
+  Windows service in session 0 gets no tray.
 
 Set `ONWATCH_DISABLE_TRAY=1` to keep the daemon headless on a desktop.
 
@@ -75,8 +79,9 @@ Exec=onwatch menubar
 X-GNOME-Autostart-enabled=true
 ```
 
-On Windows, create a shortcut to `onwatch.exe menubar` in
-`shell:startup`.
+On Windows, `onwatch service install` starts the whole daemon, tray included,
+at logon (see [WINDOWS_SETUP.md](WINDOWS_SETUP.md#start-at-login)). For a tray
+alone, create a shortcut to `onwatch.exe menubar` in `shell:startup`.
 
 ## Linux desktop support
 
@@ -91,6 +96,28 @@ extensions.gnome.org) or use the
 same quota text directly in the top bar.
 
 ## The quick view window
+
+### Windows: native flyout
+
+Clicking the icon opens `http://localhost:<port>/menubar` in a WebView2
+control hosted by a borderless tool window, the Windows counterpart of the
+macOS popover:
+
+- no title bar, no taskbar button, no Alt-Tab entry; rounded corners and the
+  system border on Windows 11,
+- created once and kept warm, so it opens instantly, and refreshed on every
+  open,
+- sized to its content (the page reports its height, as on macOS), scaled for
+  the display it opens on,
+- closed by a second click on the icon, a click anywhere else, Esc, or the
+  page's close button,
+- links leave for your default browser; the profile lives in
+  `%LOCALAPPDATA%\onwatch\webview2`.
+
+When the WebView2 runtime is missing, or `ONWATCH_QUICKVIEW_BROWSER` is set,
+Windows falls back to the browser window described next.
+
+### Linux (and the Windows fallback): app-mode browser window
 
 Clicking the icon opens `http://localhost:<port>/menubar` in a Chromium-family
 browser running in `--app` mode: no address bar, popover size (360x680), a
@@ -108,9 +135,11 @@ Set `ONWATCH_QUICKVIEW_BROWSER=/path/to/browser` to force one. When no
 Chromium-family browser exists, the companion opens the quick view in your
 default browser instead.
 
-On Windows the window is anchored to the display under the cursor and pressed
-against whichever edge holds the taskbar. Every open logs what it saw and where
-it put the window:
+### Placement on Windows
+
+On Windows the quick view is anchored to the display under the cursor and
+pressed against whichever edge holds the taskbar. Every browser-window open
+logs what it saw and where it put the window:
 
 ```
 level=INFO msg="quick view anchor" cursor=1830,1417 work_area=0,0,2560,1400 work_area_source=monitor window=1552,712 size=360x680
@@ -150,5 +179,8 @@ have a tray.
   gone, the icon disappears on its own within about 30 seconds.
 - **Quick view opens in a full browser**: no Chromium-family browser was
   found. Install one or set `ONWATCH_QUICKVIEW_BROWSER`.
+- **Quick view opens in an Edge window with a title bar (Windows)**: the
+  WebView2 runtime was not found; `menubar.log` says so at startup. Install
+  the Evergreen runtime from Microsoft, or unset `ONWATCH_QUICKVIEW_BROWSER`.
 - **Logs**: `~/.onwatch/data/menubar.log` (Linux, macOS) or
   `%LOCALAPPDATA%\onwatch\data\menubar.log` (Windows).
