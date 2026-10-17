@@ -19,3 +19,13 @@ func setupTrayIcon() {
 func updateTrayVisual(v trayVisual) {
 	systray.SetTitle(v.Title)
 }
+
+func setTrayTooltip(text string) {
+	systray.SetTooltip(text)
+}
+
+// setMenuLineStatus is a no-op on macOS, where the menu bar title already
+// carries the status color.
+func setMenuLineStatus(*systray.MenuItem, string) {}
+
+func prepareTrayProcess() {}

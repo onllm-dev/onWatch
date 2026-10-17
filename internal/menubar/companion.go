@@ -30,8 +30,9 @@ type trayController struct {
 	cfg     *Config
 	popover menubarPopover
 
-	menuMu        sync.Mutex
-	providerItems []*systray.MenuItem
+	menuMu         sync.Mutex
+	providerItems  []*systray.MenuItem
+	providerStatus map[*systray.MenuItem]string
 
 	mistralMu      sync.RWMutex
 	mistralEnabled bool
@@ -62,6 +63,7 @@ func runCompanion(cfg *Config) error {
 	defer close(stop)
 	go watchRefreshRequests(stop, cfg.TestMode, controller.refreshStatus)
 
+	prepareTrayProcess()
 	slog.Default().Debug("Initializing systray")
 	systray.Run(controller.onReady, controller.onExit)
 	return nil
@@ -83,7 +85,7 @@ func (c *trayController) onReady() {
 	logger.Info("Systray initialized, setting icon")
 
 	setupTrayIcon()
-	systray.SetTooltip("onWatch")
+	setTrayTooltip("onWatch")
 	systray.SetOnTapped(func() {
 		c.toggleMenubar()
 	})
@@ -235,9 +237,18 @@ func (c *trayController) watchProviderItems() {
 func (c *trayController) updateMenu(lines []MenuLine) {
 	c.menuMu.Lock()
 	defer c.menuMu.Unlock()
+	if c.providerStatus == nil {
+		c.providerStatus = make(map[*systray.MenuItem]string, len(c.providerItems))
+	}
 	for i, item := range c.providerItems {
 		if i < len(lines) {
 			item.SetTitle(lines[i].Text)
+			// Re-sending an unchanged icon would rebuild the menu bitmap on
+			// every refresh.
+			if status, ok := c.providerStatus[item]; !ok || status != lines[i].Status {
+				setMenuLineStatus(item, lines[i].Status)
+				c.providerStatus[item] = lines[i].Status
+			}
 			item.Show()
 			continue
 		}
@@ -283,7 +294,7 @@ func (c *trayController) refreshStatus() {
 	logger := slog.Default()
 	if c == nil || c.cfg == nil || c.cfg.SnapshotProvider == nil {
 		updateTrayVisual(trayVisual{Title: "onWatch", Text: "-", Status: trayStatusOffline})
-		systray.SetTooltip("onWatch menubar companion")
+		setTrayTooltip("onWatch menubar companion")
 		return
 	}
 
@@ -294,7 +305,7 @@ func (c *trayController) refreshStatus() {
 	}
 	if snapshot == nil {
 		updateTrayVisual(trayVisual{Title: "--", Text: "-", Status: trayStatusOffline})
-		systray.SetTooltip(TrayTooltipText(nil, trayTooltipLimit))
+		setTrayTooltip(TrayTooltipText(nil, trayTooltipLimit))
 		c.updateMenu(nil)
 		return
 	}
@@ -314,7 +325,7 @@ func (c *trayController) refreshStatus() {
 		IconOnly: settings.StatusDisplay.Mode == StatusDisplayIconOnly,
 	}
 	updateTrayVisual(visual)
-	systray.SetTooltip(TrayTooltipText(snapshot, trayTooltipLimit))
+	setTrayTooltip(TrayTooltipText(snapshot, trayTooltipLimit))
 	c.updateMenu(BuildMenuLines(snapshot))
 	logger.Debug("Tray icon set successfully", "title", visual.Title, "badge", visual.Text, "status", visual.Status)
 }

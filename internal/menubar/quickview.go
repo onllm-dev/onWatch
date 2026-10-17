@@ -7,13 +7,13 @@ import (
 	"strings"
 )
 
-// Quick view window resolution for Linux and Windows. The macOS companion
+// Quick view window resolution for Linux, and for Windows when the WebView2
+// flyout (quickview_webview2_windows.go) is unavailable. The macOS companion
 // shows /menubar inside a native WKWebView popover. Without cgo the closest
-// equivalent is a Chromium-family browser in --app mode: a frameless window
-// with no address bar, sized like the popover and anchored near the tray.
-// Edge ships with every supported Windows release, so Windows users get this
-// out of the box; on Linux any Chromium-family browser qualifies and the
-// default browser is the fallback.
+// equivalent here is a Chromium-family browser in --app mode: a frameless
+// window with no address bar, sized like the popover and anchored near the
+// tray. Edge ships with every supported Windows release; on Linux any
+// Chromium-family browser qualifies and the default browser is the fallback.
 
 var errNotFound = errors.New("not found")
 

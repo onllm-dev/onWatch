@@ -11,13 +11,19 @@ import (
 	"math"
 	"strings"
 	"sync"
+
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/math/fixed"
 )
 
 // Tray icon rendering for platforms whose tray cannot show text beside the
 // icon (Windows, Linux StatusNotifierItem). The compact metric that macOS
-// draws as a title is baked into the icon instead: a status-colored disc
-// carrying the percentage in a chunky pixel font that stays legible at
-// 16 px. Everything here is pure Go so CGO_ENABLED=0 builds keep working.
+// draws as a title is baked into the icon instead: a status-colored rounded
+// badge carrying the percentage in Go Bold, rasterized for the exact pixel
+// size the shell asks for so it stays sharp at every display scale.
+// Everything here is pure Go so CGO_ENABLED=0 builds keep working.
 
 var (
 	trayColorHealthy  = color.RGBA{R: 0x64, G: 0x74, B: 0x8b, A: 0xff} // slate, quiet
@@ -26,31 +32,11 @@ var (
 	trayColorCritical = color.RGBA{R: 0xef, G: 0x44, B: 0x44, A: 0xff} // matches --critical
 	trayColorOffline  = color.RGBA{R: 0x9c, G: 0xa3, B: 0xaf, A: 0xff}
 	trayColorText     = color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+
+	trayColorHealthyDot = color.RGBA{R: 0x22, G: 0xc5, B: 0x5e, A: 0xff} // matches --healthy
 )
 
-const (
-	trayGlyphWidth    = 5
-	trayGlyphHeight   = 7
-	trayStatusOffline = "offline"
-)
-
-// trayGlyphs is a 5x7 pixel font covering what a quota badge needs.
-var trayGlyphs = map[rune][]string{
-	'0': {"01110", "10001", "10011", "10101", "11001", "10001", "01110"},
-	'1': {"00100", "01100", "00100", "00100", "00100", "00100", "01110"},
-	'2': {"01110", "10001", "00001", "00010", "00100", "01000", "11111"},
-	'3': {"11111", "00010", "00100", "00010", "00001", "10001", "01110"},
-	'4': {"00010", "00110", "01010", "10010", "11111", "00010", "00010"},
-	'5': {"11111", "10000", "11110", "00001", "00001", "10001", "01110"},
-	'6': {"00110", "01000", "10000", "11110", "10001", "10001", "01110"},
-	'7': {"11111", "00001", "00010", "00100", "01000", "01000", "01000"},
-	'8': {"01110", "10001", "10001", "01110", "10001", "10001", "01110"},
-	'9': {"01110", "10001", "10001", "01111", "00001", "00010", "01100"},
-	'%': {"11000", "11001", "00010", "00100", "01000", "10011", "00011"},
-	'-': {"00000", "00000", "00000", "11111", "00000", "00000", "00000"},
-	'!': {"00100", "00100", "00100", "00100", "00100", "00000", "00100"},
-	'+': {"00000", "00100", "00100", "11111", "00100", "00100", "00000"},
-}
+const trayStatusOffline = "offline"
 
 func trayColorForStatus(status string) color.RGBA {
 	switch strings.ToLower(strings.TrimSpace(status)) {
@@ -65,20 +51,6 @@ func trayColorForStatus(status string) color.RGBA {
 	default:
 		return trayColorHealthy
 	}
-}
-
-// trayGlyphScale picks an integer glyph scale for a square icon of the given
-// size. Above 16 px the scale stays even so the OS can halve the bitmap for a
-// smaller slot without blurring the 1 px strokes.
-func trayGlyphScale(size int) int {
-	scale := size / 16
-	if scale < 1 {
-		return 1
-	}
-	if scale > 1 && scale%2 == 1 {
-		scale--
-	}
-	return scale
 }
 
 // TrayIconText decides what the badge shows for the given tray segments.
@@ -110,67 +82,136 @@ func TrayIconText(segments []TraySegment, online bool) string {
 	return fmt.Sprintf("%d", int(math.Round(seg.Percent)))
 }
 
-// RenderTrayBadge draws a status-colored disc with white text centered in it.
+// traySupersample is the per-axis sample count used to anti-alias shapes.
+const traySupersample = 4
+
+// RenderTrayBadge draws a status-colored rounded square with white text
+// centered in it. The square leaves the digits more room than a disc, which
+// is what keeps two digits legible in a 16 px slot.
 func RenderTrayBadge(size int, text, status string) *image.RGBA {
 	if size < 8 {
 		size = 8
 	}
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	fill := trayColorForStatus(status)
-	center := float64(size) / 2
-	radius := center
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			dx := float64(x) + 0.5 - center
-			dy := float64(y) + 0.5 - center
-			if dx*dx+dy*dy <= radius*radius {
-				img.SetRGBA(x, y, fill)
-			}
-		}
-	}
+	radius := float64(size) * 0.28
+	fillRoundedRect(img, fill, radius)
 	drawTrayText(img, text, trayColorText)
 	return img
 }
 
-func drawTrayText(img *image.RGBA, text string, fg color.RGBA) {
-	runes := []rune(text)
-	if len(runes) == 0 {
-		return
+// RenderStatusDot draws a small anti-aliased status disc, used to mark
+// provider rows in the tray menu.
+func RenderStatusDot(size int, status string) *image.RGBA {
+	if size < 8 {
+		size = 8
 	}
-	size := img.Bounds().Dx()
-	scale := trayGlyphScale(size)
-	// Shrink to fit if the text is wider than the disc allows.
-	textWidth := func(s int) int { return (len(runes)*trayGlyphWidth + (len(runes) - 1)) * s }
-	inner := int(float64(size) * 0.78)
-	for scale > 1 && textWidth(scale) > inner {
-		scale--
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	fill := trayColorForStatus(status)
+	// The badge keeps healthy quiet, but in a list of rows a slate dot reads
+	// as "disabled"; use the page's --healthy green instead.
+	if fill == trayColorHealthy {
+		fill = trayColorHealthyDot
 	}
-	w := textWidth(scale)
-	h := trayGlyphHeight * scale
-	x0 := (size - w) / 2
-	y0 := (size - h) / 2
-	for i, r := range runes {
-		glyph, ok := trayGlyphs[r]
-		if !ok {
-			continue
-		}
-		gx := x0 + i*(trayGlyphWidth+1)*scale
-		for row, bits := range glyph {
-			for col, bit := range bits {
-				if bit != '1' {
-					continue
-				}
-				px := gx + col*scale
-				py := y0 + row*scale
-				for sy := 0; sy < scale; sy++ {
-					for sx := 0; sx < scale; sx++ {
-						if image.Pt(px+sx, py+sy).In(img.Bounds()) {
-							img.SetRGBA(px+sx, py+sy, fg)
-						}
+	center := float64(size) / 2
+	radius := float64(size) * 0.3
+	paintCoverage(img, fill, func(x, y float64) bool {
+		dx, dy := x-center, y-center
+		return dx*dx+dy*dy <= radius*radius
+	})
+	return img
+}
+
+func fillRoundedRect(img *image.RGBA, fill color.RGBA, radius float64) {
+	size := float64(img.Bounds().Dx())
+	paintCoverage(img, fill, func(x, y float64) bool {
+		// Distance from the point to the inner rectangle the corners round off.
+		cx := math.Max(radius-x, math.Max(x-(size-radius), 0))
+		cy := math.Max(radius-y, math.Max(y-(size-radius), 0))
+		return cx*cx+cy*cy <= radius*radius
+	})
+}
+
+// paintCoverage fills each pixel with fill at an alpha proportional to how
+// many of its sub-samples fall inside the shape.
+func paintCoverage(img *image.RGBA, fill color.RGBA, inside func(x, y float64) bool) {
+	b := img.Bounds()
+	const n = traySupersample
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			hits := 0
+			for sy := 0; sy < n; sy++ {
+				for sx := 0; sx < n; sx++ {
+					if inside(float64(x)+(float64(sx)+0.5)/n, float64(y)+(float64(sy)+0.5)/n) {
+						hits++
 					}
 				}
 			}
+			if hits == 0 {
+				continue
+			}
+			a := uint32(fill.A) * uint32(hits) / (n * n)
+			// image.RGBA stores premultiplied color.
+			img.SetRGBA(x, y, color.RGBA{
+				R: uint8(uint32(fill.R) * a / 0xff),
+				G: uint8(uint32(fill.G) * a / 0xff),
+				B: uint8(uint32(fill.B) * a / 0xff),
+				A: uint8(a),
+			})
 		}
+	}
+}
+
+var (
+	trayFontOnce sync.Once
+	trayFont     *opentype.Font
+)
+
+func trayTextFont() *opentype.Font {
+	trayFontOnce.Do(func() {
+		f, err := opentype.Parse(gobold.TTF)
+		if err == nil {
+			trayFont = f
+		}
+	})
+	return trayFont
+}
+
+// drawTrayText centers text in the badge, starting with digits about two
+// thirds of the icon tall and shrinking until the ink fits inside a 1 px
+// (or larger, on big icons) inset.
+func drawTrayText(img *image.RGBA, text string, fg color.RGBA) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	f := trayTextFont()
+	if f == nil {
+		return
+	}
+	size := img.Bounds().Dx()
+	inset := size / 16
+	if inset < 1 {
+		inset = 1
+	}
+	avail := size - 2*inset
+	for px := float64(size) * 0.9; px >= 5; px -= 0.5 {
+		face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: px, DPI: 72, Hinting: font.HintingFull})
+		if err != nil {
+			return
+		}
+		bounds, _ := font.BoundString(face, text)
+		minX, minY := bounds.Min.X.Floor(), bounds.Min.Y.Floor()
+		w, h := bounds.Max.X.Ceil()-minX, bounds.Max.Y.Ceil()-minY
+		// Cap the ink height so digits never crowd the top and bottom edges.
+		if w > avail || h > avail || float64(h) > float64(size)*0.66 {
+			_ = face.Close()
+			continue
+		}
+		d := &font.Drawer{Dst: img, Src: image.NewUniform(fg), Face: face}
+		d.Dot = fixed.P((size-w+1)/2-minX, (size-h+1)/2-minY)
+		d.DrawString(text)
+		_ = face.Close()
+		return
 	}
 }
 

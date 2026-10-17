@@ -26,35 +26,90 @@ func TestTrayIconStyleForStatus(t *testing.T) {
 	}
 }
 
-func TestTrayGlyphsCoverDigitsAndSymbols(t *testing.T) {
+// inkBox returns the bounding box of pixels dominated by the white text. Every
+// status fill has a channel below 0x99, so a pixel whose darkest channel is at
+// least that bright is mostly text even after anti-aliasing.
+func inkBox(img *image.RGBA) image.Rectangle {
+	box := image.Rectangle{}
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := img.RGBAAt(x, y)
+			if c.A == 0xff && min(c.R, c.G, c.B) >= 0x99 {
+				box = box.Union(image.Rect(x, y, x+1, y+1))
+			}
+		}
+	}
+	return box
+}
+
+func TestRenderTrayBadgeTextFitsEverySize(t *testing.T) {
 	t.Parallel()
-	for _, r := range "0123456789%-!+" {
-		glyph, ok := trayGlyphs[r]
-		if !ok {
-			t.Fatalf("missing glyph for %q", r)
-		}
-		if len(glyph) != trayGlyphHeight {
-			t.Fatalf("glyph %q has %d rows, want %d", r, len(glyph), trayGlyphHeight)
-		}
-		for i, row := range glyph {
-			if len(row) != trayGlyphWidth {
-				t.Fatalf("glyph %q row %d has width %d, want %d", r, i, len(row), trayGlyphWidth)
+	for _, size := range []int{16, 20, 24, 32, 40, 48} {
+		for _, text := range []string{"88", "3!", "!", "-", "7"} {
+			img := RenderTrayBadge(size, text, "warning")
+			box := inkBox(img)
+			if box.Empty() {
+				t.Fatalf("size %d text %q: no solid text pixels", size, text)
+			}
+			if box.Min.X < 1 || box.Min.Y < 1 || box.Max.X > size-1 || box.Max.Y > size-1 {
+				t.Fatalf("size %d text %q: ink %v touches the badge edge", size, text, box)
 			}
 		}
 	}
 }
 
-func TestTrayGlyphScaleStaysEvenAboveSixteen(t *testing.T) {
+func TestRenderTrayBadgeDigitsGrowWithIconSize(t *testing.T) {
 	t.Parallel()
-	cases := map[int]int{16: 1, 20: 1, 24: 1, 32: 2, 40: 2, 48: 2, 64: 4}
-	for size, want := range cases {
-		if got := trayGlyphScale(size); got != want {
-			t.Fatalf("trayGlyphScale(%d) = %d, want %d", size, got, want)
+	// The old pixel font stayed 7 px tall from 16 to 31 px, which is what made
+	// the badge unreadable at 125-175% display scaling.
+	prev := 0
+	for _, size := range []int{16, 20, 24, 32, 48} {
+		h := inkBox(RenderTrayBadge(size, "88", "healthy")).Dy()
+		if h <= prev {
+			t.Fatalf("size %d: digit height %d did not grow past %d", size, h, prev)
+		}
+		if h*2 < size {
+			t.Fatalf("size %d: digit height %d is under half the icon", size, h)
+		}
+		prev = h
+	}
+}
+
+func TestRenderTrayBadgeAntialiasesEdges(t *testing.T) {
+	t.Parallel()
+	img := RenderTrayBadge(24, "", "critical")
+	partial := false
+	for y := 0; y < 24 && !partial; y++ {
+		for x := 0; x < 24; x++ {
+			if a := img.RGBAAt(x, y).A; a > 0 && a < 255 {
+				partial = true
+				break
+			}
+		}
+	}
+	if !partial {
+		t.Fatal("expected partially covered pixels along the rounded corners")
+	}
+}
+
+func TestRenderStatusDotIsCenteredStatusDisc(t *testing.T) {
+	t.Parallel()
+	img := RenderStatusDot(16, "critical")
+	if got := img.RGBAAt(8, 8); got != trayColorCritical {
+		t.Fatalf("expected critical center, got %v", got)
+	}
+	if got := RenderStatusDot(16, "healthy").RGBAAt(8, 8); got != trayColorHealthyDot {
+		t.Fatalf("expected green healthy dot, got %v", got)
+	}
+	for _, p := range []image.Point{{0, 0}, {15, 0}, {0, 15}, {15, 15}, {0, 8}} {
+		if a := img.RGBAAt(p.X, p.Y).A; a != 0 {
+			t.Fatalf("expected transparent margin at %v, alpha=%d", p, a)
 		}
 	}
 }
 
-func TestRenderTrayBadgeDrawsColoredDiscWithWhiteText(t *testing.T) {
+func TestRenderTrayBadgeDrawsColoredBadgeWithWhiteText(t *testing.T) {
 	t.Parallel()
 	img := RenderTrayBadge(32, "82", "critical")
 	if img == nil {
@@ -63,13 +118,13 @@ func TestRenderTrayBadgeDrawsColoredDiscWithWhiteText(t *testing.T) {
 	if b := img.Bounds(); b.Dx() != 32 || b.Dy() != 32 {
 		t.Fatalf("unexpected bounds %v", b)
 	}
-	// Corner stays transparent because the badge is a disc.
+	// Corner stays transparent because the badge is rounded.
 	if a := img.RGBAAt(0, 0).A; a != 0 {
 		t.Fatalf("expected transparent corner, alpha=%d", a)
 	}
-	// A point on the disc but outside the text area carries the status color.
-	if got := img.RGBAAt(3, 16); got != trayColorCritical {
-		t.Fatalf("expected critical fill at disc edge, got %v", got)
+	// The straight left edge, clear of the text, carries the status color.
+	if got := img.RGBAAt(0, 16); got != trayColorCritical {
+		t.Fatalf("expected critical fill at badge edge, got %v", got)
 	}
 	// Some pixel inside must be white text.
 	foundWhite := false
@@ -86,7 +141,7 @@ func TestRenderTrayBadgeDrawsColoredDiscWithWhiteText(t *testing.T) {
 	}
 }
 
-func TestRenderTrayBadgeEmptyTextIsPlainDisc(t *testing.T) {
+func TestRenderTrayBadgeEmptyTextIsPlainBadge(t *testing.T) {
 	t.Parallel()
 	img := RenderTrayBadge(16, "", "healthy")
 	for y := 0; y < 16; y++ {
@@ -278,7 +333,7 @@ func TestTrayBadgeStatus(t *testing.T) {
 func TestTrayIconImageOfflineIgnoresIconOnly(t *testing.T) {
 	t.Parallel()
 	img := trayIconImage(trayVisual{Text: "-", Status: "healthy", Online: false, IconOnly: true}, 16)
-	if got := img.RGBAAt(2, 8); got != trayColorOffline {
-		t.Fatalf("expected offline disc, got %v", got)
+	if got := img.RGBAAt(1, 8); got != trayColorOffline {
+		t.Fatalf("expected offline badge, got %v", got)
 	}
 }

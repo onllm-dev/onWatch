@@ -1823,10 +1823,25 @@
                 await Promise.all([loadPreferences(), loadSnapshot()]);
             }
 
+            // Native popover hosts: macOS registers one WKScriptMessageHandler per
+            // channel; Windows (WebView2) has a single string channel, so the
+            // message is wrapped with its channel name for the host to route.
+            function nativeHandler(name) {
+                const webkit = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers[name];
+                if (webkit && typeof webkit.postMessage === "function") {
+                    return webkit;
+                }
+                const webview2 = window.chrome && window.chrome.webview;
+                if (webview2 && typeof webview2.postMessage === "function") {
+                    return { postMessage: (body) => webview2.postMessage(JSON.stringify({ channel: name, body })) };
+                }
+                return null;
+            }
+
             function sendNativeAction(action) {
                 try {
-                    const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.onwatchAction;
-                    if (handler && typeof handler.postMessage === "function") {
+                    const handler = nativeHandler("onwatchAction");
+                    if (handler) {
                         handler.postMessage(action);
                         return true;
                     }
@@ -1865,7 +1880,7 @@
 
             function closeMenubar() {
                 mistralRecovery.hide();
-                // Native hosts (macOS WKWebView / GNOME WebKitGTK) hide the popover.
+                // Native hosts (macOS WKWebView / Windows WebView2) hide the popover.
                 if (sendNativeAction("close")) {
                     return;
                 }
@@ -2941,10 +2956,7 @@
             let resizeReportDelivered = false;
 
             function resizeHostPresent() {
-                return !!(
-                    (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.onwatchResize)
-                    || (window.parent && window.parent !== window)
-                );
+                return !!(nativeHandler("onwatchResize") || (window.parent && window.parent !== window));
             }
 
             function reportPreferredHeight() {
@@ -2962,8 +2974,9 @@
                 if (window.parent && window.parent !== window) {
                     window.parent.postMessage(payload, "*");
                 }
-                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.onwatchResize) {
-                    window.webkit.messageHandlers.onwatchResize.postMessage({ height });
+                const resizeHandler = nativeHandler("onwatchResize");
+                if (resizeHandler) {
+                    resizeHandler.postMessage({ height });
                 }
                 // Consider the report delivered only when a host channel exists.
                 // A bare window.postMessage with no listener is not delivery.

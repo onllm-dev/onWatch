@@ -42,6 +42,13 @@ func TestMenubarResizeReportRetriesUntilDelivered(t *testing.T) {
 		t.Fatal("resize report logic not found in menubar.html")
 	}
 	slice := html[start:end]
+	// The report goes through the shared native bridge helper.
+	helperStart := strings.Index(html, "function nativeHandler(name)")
+	helperEnd := strings.Index(html, "function sendNativeAction(action)")
+	if helperStart < 0 || helperEnd < helperStart {
+		t.Fatal("native bridge helper not found in menubar.html")
+	}
+	slice = html[helperStart:helperEnd] + slice
 
 	test := `
 const assert = require('node:assert/strict');
@@ -78,6 +85,14 @@ assert.equal(delivered.length, 1, 'a delivered same-height report must be deboun
 resizeReportDelivered = false;
 reportPreferredHeight();
 assert.equal(delivered.length, 2, 're-armed report must be delivered again');
+
+// WebView2 (Windows) has one string channel: the report carries its channel.
+const webview2 = [];
+window.parent = null;
+window.chrome = { webview: { postMessage: (raw) => webview2.push(JSON.parse(raw)) } };
+resizeReportDelivered = false;
+reportPreferredHeight();
+assert.deepEqual(webview2, [{ channel: 'onwatchResize', body: { height: 300 } }]);
 `
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

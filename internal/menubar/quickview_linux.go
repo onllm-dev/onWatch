@@ -9,3 +9,7 @@ import "syscall"
 func quickViewSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
+
+func newMenubarPopover(width, height int) (menubarPopover, error) {
+	return newAppModePopover(width, height)
+}

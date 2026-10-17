@@ -16,6 +16,9 @@ var (
 	procGetMonitorInfoW  = user32.NewProc("GetMonitorInfoW")
 	procSystemParameters = user32.NewProc("SystemParametersInfoW")
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
+
+	shcore               = syscall.NewLazyDLL("shcore.dll")
+	procGetDpiForMonitor = shcore.NewProc("GetDpiForMonitor")
 )
 
 const (
@@ -23,6 +26,7 @@ const (
 	smCXScreen              = 0
 	smCYScreen              = 1
 	monitorDefaultToNearest = 2
+	mdtEffectiveDPI         = 0
 )
 
 type winPoint struct{ X, Y int32 }
@@ -39,21 +43,27 @@ type winMonitorInfo struct {
 	DwFlags   uint32
 }
 
-// quickViewAnchor places the window next to the cursor that clicked the tray,
-// pressed against the taskbar edge of the display that owns that taskbar, so
-// it opens where the macOS popover would even when the taskbar is not on the
-// primary display.
+// quickViewAnchor places the browser fallback window next to the cursor that
+// clicked the tray, pressed against the taskbar edge of the display that owns
+// that taskbar, so it opens where the macOS popover would even when the
+// taskbar is not on the primary display.
+//
+// The companion is per-monitor DPI aware, so the cursor and work area arrive
+// in physical pixels while Chromium reads --window-position in DIPs: lay the
+// window out in physical pixels, then convert the corner back.
 func quickViewAnchor(width, height int) *windowPosition {
 	var pt winPoint
 	if r, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt))); r == 0 {
 		return nil
 	}
 	rect, source := workAreaAt(pt)
-	pos := quickViewPosition(
+	dpi := dpiAt(pt)
+	physical := quickViewPosition(
 		cursorPoint{X: int(pt.X), Y: int(pt.Y)},
 		screenRect{Left: int(rect.Left), Top: int(rect.Top), Right: int(rect.Right), Bottom: int(rect.Bottom)},
-		width, height,
+		scaleForDPI(width, dpi), scaleForDPI(height, dpi),
 	)
+	pos := windowPosition{X: unscaleForDPI(physical.X, dpi), Y: unscaleForDPI(physical.Y, dpi)}
 	// Placement across side-docked taskbars, secondary displays and mixed DPI
 	// can only be confirmed on real hardware, so every open records what it
 	// saw and what it decided - that is the report issue #125 asks for.
@@ -61,6 +71,7 @@ func quickViewAnchor(width, height int) *windowPosition {
 		"cursor", fmt.Sprintf("%d,%d", pt.X, pt.Y),
 		"work_area", fmt.Sprintf("%d,%d,%d,%d", rect.Left, rect.Top, rect.Right, rect.Bottom),
 		"work_area_source", source,
+		"dpi", dpi,
 		"window", fmt.Sprintf("%d,%d", pos.X, pos.Y),
 		"size", fmt.Sprintf("%dx%d", width, height),
 	)
@@ -84,6 +95,18 @@ func workAreaAt(pt winPoint) (winRect, string) {
 }
 
 func monitorWorkArea(pt winPoint) (winRect, bool) {
+	hmon := monitorFromPoint(pt)
+	if hmon == 0 {
+		return winRect{}, false
+	}
+	info := winMonitorInfo{CbSize: uint32(unsafe.Sizeof(winMonitorInfo{}))}
+	if r, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&info))); r == 0 {
+		return winRect{}, false
+	}
+	return info.RcWork, true
+}
+
+func monitorFromPoint(pt winPoint) uintptr {
 	var hmon uintptr
 	if unsafe.Sizeof(uintptr(0)) == 8 {
 		// POINT is passed by value; on 64-bit Windows the 8-byte struct
@@ -93,12 +116,18 @@ func monitorWorkArea(pt winPoint) (winRect, bool) {
 	} else {
 		hmon, _, _ = procMonitorFromPoint.Call(uintptr(pt.X), uintptr(pt.Y), monitorDefaultToNearest)
 	}
-	if hmon == 0 {
-		return winRect{}, false
+	return hmon
+}
+
+// dpiAt is the effective DPI of the monitor under pt (96 at 100% scaling),
+// falling back to the system DPI before Windows 8.1.
+func dpiAt(pt winPoint) int {
+	if hmon := monitorFromPoint(pt); hmon != 0 && procGetDpiForMonitor.Find() == nil {
+		var dpiX, dpiY uint32
+		r, _, _ := procGetDpiForMonitor.Call(hmon, mdtEffectiveDPI, uintptr(unsafe.Pointer(&dpiX)), uintptr(unsafe.Pointer(&dpiY)))
+		if r == 0 && dpiX > 0 {
+			return int(dpiX)
+		}
 	}
-	info := winMonitorInfo{CbSize: uint32(unsafe.Sizeof(winMonitorInfo{}))}
-	if r, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&info))); r == 0 {
-		return winRect{}, false
-	}
-	return info.RcWork, true
+	return systemDPI()
 }

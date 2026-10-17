@@ -12,8 +12,9 @@ import (
 )
 
 // quickViewWindow hosts /menubar in a Chromium-family browser running in
-// --app mode with a private profile, giving Linux and Windows a popover-like
-// window the companion can open and close from the tray.
+// --app mode with a private profile, giving Linux (and Windows without the
+// WebView2 runtime) a popover-like window the companion can open and close
+// from the tray.
 type quickViewWindow struct {
 	mu         sync.Mutex
 	browser    string
@@ -23,7 +24,7 @@ type quickViewWindow struct {
 	cmd        *exec.Cmd
 }
 
-func newMenubarPopover(width, height int) (menubarPopover, error) {
+func newAppModePopover(width, height int) (menubarPopover, error) {
 	browser, ok := findAppModeBrowser(runtime.GOOS, exec.LookPath, fileExists, os.Getenv)
 	if !ok {
 		return nil, errNativePopoverUnavailable

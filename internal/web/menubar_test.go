@@ -530,6 +530,14 @@ func TestMenubarPageRendersLoopbackBootstrap(t *testing.T) {
 	if !strings.Contains(body, `if (sendNativeAction("open_dashboard"))`) {
 		t.Fatalf("expected native dashboard action bridge usage, got body: %s", body)
 	}
+	// The Windows (WebView2) host has one string channel; messages carry their
+	// channel name so internal/menubar/popover_bridge.go can route them.
+	if !strings.Contains(body, `webview2.postMessage(JSON.stringify({ channel: name, body }))`) {
+		t.Fatalf("expected WebView2 bridge wrapping messages with their channel, got body: %s", body)
+	}
+	if !strings.Contains(body, `const resizeHandler = nativeHandler("onwatchResize");`) {
+		t.Fatalf("expected resize reports to use the shared native bridge, got body: %s", body)
+	}
 	// Regression: close must not navigate to "/" (loads dashboard/login in tray WebView).
 	if strings.Contains(body, `function closeMenubar()`) {
 		// Extract a coarse slice of closeMenubar for the dangerous redirect.
