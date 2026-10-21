@@ -788,3 +788,82 @@ func TestMigrateSchema_AddsResetCreditColumns(t *testing.T) {
 		}
 	}
 }
+
+// The parser degrades an expiry it cannot trust (already past on a fast local
+// clock, or equal to granted_at) to "unknown". A later sync must not overwrite
+// a stored, valid expiry with NULL and flip expiry_unknown on.
+func TestSyncCodexResetCredits_KeepsStoredExpiryWhenIncomingIsUnknown(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	expiry := rcTime(t, "2026-10-19T09:00:00Z")
+	if err := s.SyncCodexResetCredits(1, []CodexResetCreditRecord{{
+		CreditID:  "credit-1",
+		Status:    "available",
+		ExpiresAt: expiry,
+	}}, now); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+
+	// The next fetch reported an available credit with an expiry the parser
+	// could not trust, which arrives as nil + ExpiryUnknown.
+	if err := s.SyncCodexResetCredits(1, []CodexResetCreditRecord{{
+		CreditID:      "credit-1",
+		Status:        "available",
+		ExpiryUnknown: true,
+	}}, now.Add(30*time.Minute)); err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+
+	rows, err := s.QueryCodexResetCredits(1)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	row := rows[0]
+	if row.ExpiresAt == nil || !row.ExpiresAt.Equal(*expiry) {
+		t.Fatalf("ExpiresAt = %v, want the stored valid %v", row.ExpiresAt, expiry)
+	}
+	if row.ExpiryUnknown {
+		t.Fatal("ExpiryUnknown = true, want false: a known expiry was downgraded")
+	}
+}
+
+// A credit the backend genuinely reports as never-expiring clears the stored
+// expiry: only an unknown (untrustworthy) value keeps it.
+func TestSyncCodexResetCredits_NeverExpiringClearsStoredExpiry(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	if err := s.SyncCodexResetCredits(1, []CodexResetCreditRecord{{
+		CreditID:  "credit-1",
+		Status:    "available",
+		ExpiresAt: rcTime(t, "2026-10-19T09:00:00Z"),
+	}}, now); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+	if err := s.SyncCodexResetCredits(1, []CodexResetCreditRecord{{
+		CreditID: "credit-1",
+		Status:   "available",
+	}}, now.Add(30*time.Minute)); err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+
+	rows, err := s.QueryCodexResetCredits(1)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ExpiresAt != nil || rows[0].ExpiryUnknown {
+		t.Fatalf("row = %#v, want a cleared, known never-expiring expiry", rows)
+	}
+}

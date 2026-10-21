@@ -68,9 +68,24 @@ func (s *Store) SyncCodexResetCredits(accountID int64, credits []CodexResetCredi
 				title = excluded.title,
 				description = excluded.description,
 				granted_at = excluded.granted_at,
-				expires_at = excluded.expires_at,
+				-- An unknown expiry (already past on a fast local clock, or equal
+				-- to granted_at) must not erase a stored, valid one. A credit the
+				-- backend genuinely reports as never-expiring still clears it.
+				expires_at = CASE
+					WHEN excluded.expiry_unknown = 1
+						AND codex_reset_credits.expires_at IS NOT NULL
+						AND codex_reset_credits.expiry_unknown = 0
+					THEN codex_reset_credits.expires_at
+					ELSE excluded.expires_at
+				END,
 				unsupported_by_plan = excluded.unsupported_by_plan,
-				expiry_unknown = excluded.expiry_unknown,
+				expiry_unknown = CASE
+					WHEN excluded.expiry_unknown = 1
+						AND codex_reset_credits.expires_at IS NOT NULL
+						AND codex_reset_credits.expiry_unknown = 0
+					THEN 0
+					ELSE excluded.expiry_unknown
+				END,
 				last_seen = excluded.last_seen,
 				gone_at = NULL`,
 			accountID,
