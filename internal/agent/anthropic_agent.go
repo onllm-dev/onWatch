@@ -310,18 +310,24 @@ func (a *AnthropicAgent) Run(ctx context.Context) error {
 // limit data; polling reads the same file every interval. Re-inserting it each
 // time adds rows with an identical captured_at and inflates the history
 // without new information.
-func (a *AnthropicAgent) insertStatuslineSnapshot(snapshot *api.AnthropicSnapshot) (bool, error) {
+//
+// Dedupe compares the raw filesystem mtime, never the snapshot's CapturedAt:
+// a future mtime is clamped for display, so the clamped value would differ on
+// every poll and re-insert forever.
+func (a *AnthropicAgent) insertStatuslineSnapshot(snapshot *api.AnthropicSnapshot, rawMtime time.Time) (bool, error) {
 	if snapshot == nil {
 		return false, nil
 	}
-	captured := snapshot.CapturedAt
-	if !a.lastStatuslineMtime.IsZero() && captured.Equal(a.lastStatuslineMtime) {
+	if rawMtime.IsZero() {
+		rawMtime = snapshot.CapturedAt
+	}
+	if !a.lastStatuslineMtime.IsZero() && rawMtime.Equal(a.lastStatuslineMtime) {
 		return false, nil
 	}
 	if _, err := a.store.InsertAnthropicSnapshot(snapshot); err != nil {
 		return false, err
 	}
-	a.lastStatuslineMtime = captured
+	a.lastStatuslineMtime = rawMtime
 	return true, nil
 }
 
@@ -337,8 +343,9 @@ func (a *AnthropicAgent) pollStatuslineOnly() bool {
 		return false
 	}
 	now := time.Now().UTC()
+	rawMtime, _ := readStatuslineMtime(a.statuslinePath)
 	snapshot := statuslineToSnapshot(rl, readStatuslineCapturedAt(a.statuslinePath, now))
-	inserted, err := a.insertStatuslineSnapshot(snapshot)
+	inserted, err := a.insertStatuslineSnapshot(snapshot, rawMtime)
 	return err == nil && inserted
 }
 
@@ -655,8 +662,10 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 			now := time.Now().UTC()
 			// Stamp the snapshot with the file's mtime, not the poll time: the
 			// payload has no timestamp and may be up to the staleness window old.
+			// Dedupe uses the raw mtime so a future (clamped) mtime still dedupes.
+			rawMtime, _ := readStatuslineMtime(a.statuslinePath)
 			snapshot := statuslineToSnapshot(rl, readStatuslineCapturedAt(a.statuslinePath, now))
-			inserted, err := a.insertStatuslineSnapshot(snapshot)
+			inserted, err := a.insertStatuslineSnapshot(snapshot, rawMtime)
 			if err != nil {
 				a.logger.Error("Failed to insert statusline snapshot", "error", err)
 				return // don't fall through to API polling on DB error

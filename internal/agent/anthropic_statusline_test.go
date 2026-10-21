@@ -700,3 +700,51 @@ func TestStatuslinePollSkipsUnchangedFile(t *testing.T) {
 		t.Fatalf("stored rows = %d, want two after the file changed", len(after))
 	}
 }
+
+// A future mtime (clock skew, or a file synced from another host) is clamped
+// for display, but dedupe must use the raw mtime. Otherwise the clamped value
+// changes every poll, so an unchanged file inserts a row per poll and is
+// labelled fresh forever.
+func TestStatuslinePoll_FutureMtimeStillDedupes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "anthropic-statusline.json")
+	payload := `{"rate_limits":{"five_hour":{"used_percentage":42}}}`
+	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	future := time.Now().Add(2 * time.Hour)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	defer st.Close()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	a := NewAnthropicAgent(nil, st, nil, 120*time.Second, logger, nil)
+	a.statuslinePath = path
+	a.statuslineStaleness = time.Hour
+	a.apiPollingDisabled = true
+
+	if !a.pollStatuslineOnly() {
+		t.Fatal("first poll must insert the statusline snapshot")
+	}
+	for i := 0; i < 3; i++ {
+		if a.pollStatuslineOnly() {
+			t.Fatalf("poll %d inserted a duplicate: the raw mtime never changed", i+2)
+		}
+	}
+
+	rows, err := st.QueryAnthropicRange(
+		time.Now().Add(-24*time.Hour).Truncate(time.Second),
+		time.Now().Add(24*time.Hour).Truncate(time.Second),
+	)
+	if err != nil {
+		t.Fatalf("range: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("stored rows = %d, want exactly one for an unchanged file", len(rows))
+	}
+}
