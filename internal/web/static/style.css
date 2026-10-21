@@ -3801,6 +3801,52 @@ select.settings-input {
   padding: 2px 8px;
 }
 
+/* Banked reset credits (issue #152): compact chip in the account header, or a
+   muted dot when the detail endpoint is unavailable. */
+.codex-account-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.codex-reset-credits-chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--surface-card-alt);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.codex-resets-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: 0 0 auto;
+  vertical-align: middle;
+  margin: 0 6px 2px 0;
+  opacity: 0.6;
+}
+
+#quota-grid-codex > .codex-resets-dot {
+  grid-column: 1 / -1;
+}
+
+#quota-grid-codex > .codex-reset-credits-chip {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.codex-account-header .codex-resets-dot {
+  margin: 0;
+}
+
 .codex-account-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(var(--layout-card-min), 1fr));

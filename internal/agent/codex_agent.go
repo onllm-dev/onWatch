@@ -50,6 +50,17 @@ const (
 // Codex tokens expire weekly, so refreshing 6 hours early provides a comfortable buffer.
 const codexTokenRefreshThreshold = 6 * time.Hour
 
+// codexResetCreditsFetchInterval is how often the reset-credit detail endpoint
+// is polled. The Codex CLI itself fetches details sparsely rather than on every
+// usage refresh, and the count is already in the usage response, so details
+// only need to refresh slowly (issue #152).
+const codexResetCreditsFetchInterval = 30 * time.Minute
+
+// codexResetCreditNotifyLead is how close to expiry a banked reset credit must
+// be before onWatch sends its single warning. Fixed constant for Phase 1; the
+// existing notification settings can silence the type but not change the lead.
+const codexResetCreditNotifyLead = 24 * time.Hour
+
 // CodexTokenRefreshFunc is called before each poll to get a fresh Codex token.
 type CodexTokenRefreshFunc func() string
 
@@ -265,6 +276,17 @@ type CodexAgent struct {
 	starterFires   []time.Time
 	starterGen     uint64
 	starterSeen    map[string]codexResetObservation
+
+	// Banked reset credits (issue #152). resetCreditsCheckedAt is the last
+	// detail fetch, resetCreditsCount the usage count seen at that time (with
+	// resetCreditsCountKnown distinguishing absent from 0), and
+	// resetCreditsFetchedOnce forces a baseline fetch on the first poll.
+	// All three are owned by the poll goroutine.
+	resetCreditsCheckedAt   time.Time
+	resetCreditsCount       int64
+	resetCreditsCountKnown  bool
+	resetCreditsFetchedOnce bool
+	profileLabel            string // human account label for reset-credit notifications
 }
 
 // codexResetObservation is a window's reset time as seen by one poll, with
@@ -324,6 +346,168 @@ func isUnstartedCodexWindow(quotaName string, resetsAt *time.Time, now time.Time
 func (a *CodexAgent) SetCodexAccountID(id string) {
 	a.codexAccountID = id
 	a.client.SetAccountID(id)
+}
+
+// SetProfileLabel sets a human-readable account label used in notifications
+// (the profile name, never a token).
+func (a *CodexAgent) SetProfileLabel(label string) {
+	a.profileLabel = strings.TrimSpace(label)
+}
+
+// resetCreditsDue reports whether this poll should fetch reset-credit details:
+// once for a baseline, then on the slow cadence, or immediately when the usage
+// count changed since the last fetch.
+func (a *CodexAgent) resetCreditsDue(now time.Time, snapshot *api.CodexSnapshot) bool {
+	if !a.resetCreditsFetchedOnce {
+		return true
+	}
+	count := snapshot.ResetCreditsAvailableCount
+	if count.Valid && (!a.resetCreditsCountKnown || count.Value != a.resetCreditsCount) {
+		return true
+	}
+	return now.Sub(a.resetCreditsCheckedAt) >= codexResetCreditsFetchInterval
+}
+
+// maybeFetchResetCredits refreshes banked reset credits when due. It is strictly
+// informational: every failure is logged at debug/info and leaves usage
+// polling, pause state and the #147 failure counters untouched. It never
+// refreshes tokens and never redeems anything.
+func (a *CodexAgent) maybeFetchResetCredits(ctx context.Context, snapshot *api.CodexSnapshot, now time.Time) {
+	if a.store == nil {
+		return
+	}
+	if !a.resetCreditsDue(now, snapshot) {
+		return
+	}
+
+	// Mark the attempt before the request so a hanging or failing endpoint is
+	// retried only after the slow cadence, never on every usage poll.
+	a.resetCreditsFetchedOnce = true
+	a.resetCreditsCheckedAt = now
+	if count := snapshot.ResetCreditsAvailableCount; count.Valid {
+		a.resetCreditsCount = count.Value
+		a.resetCreditsCountKnown = true
+	}
+
+	resp, err := a.client.FetchResetCredits(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		a.recordResetCreditsUnavailable(now)
+		a.logger.Debug("Codex reset credits unavailable",
+			"error", err, "account_id", a.accountID)
+		return
+	}
+
+	records := make([]store.CodexResetCreditRecord, 0, len(resp.Credits))
+	parsed := make([]api.CodexResetCredit, 0, len(resp.Credits))
+	for _, c := range resp.Credits {
+		records = append(records, store.CodexResetCreditRecord{
+			CreditID:          c.ID,
+			Status:            c.Status.String(),
+			ResetType:         c.ResetType,
+			Title:             c.Title,
+			Description:       c.Description,
+			GrantedAt:         c.GrantedAt,
+			ExpiresAt:         c.ExpiresAt,
+			UnsupportedByPlan: c.UnsupportedByPlan,
+			ExpiryUnknown:     c.ExpiryUnknown,
+		})
+		parsed = append(parsed, c)
+	}
+	if err := a.store.SyncCodexResetCredits(a.accountID, records, now); err != nil {
+		a.logger.Warn("Failed to store Codex reset credits", "error", err, "account_id", a.accountID)
+		// Storage failed, so nothing below can be trusted; the next due fetch retries.
+		a.recordResetCreditsUnavailable(now)
+		return
+	}
+
+	// nil when the detail payload omitted the count: unknown, never 0.
+	if err := a.store.SetCodexResetCreditCheckStatus(a.accountID, "ok", resp.AvailableCount, resp.ApplicableAvailableCount, now); err != nil {
+		a.logger.Warn("Failed to record Codex reset-credit check", "error", err, "account_id", a.accountID)
+	}
+
+	a.notifyExpiringResetCredits(ctx, parsed, now)
+}
+
+// recordResetCreditsUnavailable stores the last-check outcome as unavailable.
+func (a *CodexAgent) recordResetCreditsUnavailable(now time.Time) {
+	if err := a.store.SetCodexResetCreditCheckStatus(a.accountID, "unavailable", nil, nil, now); err != nil {
+		a.logger.Debug("Failed to record Codex reset-credit check status", "error", err, "account_id", a.accountID)
+	}
+}
+
+// notifyExpiringResetCredits sends at most one warning per credit inside the
+// lead window. The notified_at marker is claimed atomically before sending;
+// a send that reached no channel releases the claim so a later fetch retries.
+// Never-expiring credits are skipped by construction (the store query requires
+// a non-null expiry).
+func (a *CodexAgent) notifyExpiringResetCredits(ctx context.Context, credits []api.CodexResetCredit, now time.Time) {
+	if a.notifier == nil {
+		return
+	}
+	pending, err := a.store.QueryCodexResetCreditsNeedingExpiryNotice(a.accountID, now, codexResetCreditNotifyLead)
+	if err != nil {
+		a.logger.Warn("Failed to query Codex credits needing expiry notice", "error", err, "account_id", a.accountID)
+		return
+	}
+	if len(pending) == 0 {
+		return
+	}
+	byID := make(map[string]api.CodexResetCredit, len(credits))
+	for _, c := range credits {
+		byID[c.ID] = c
+	}
+	accountName := a.resetCreditsAccountName()
+	for _, row := range pending {
+		if ctx.Err() != nil {
+			return
+		}
+		if row.ExpiresAt == nil {
+			continue
+		}
+		claimedAt := time.Now().UTC()
+		claimed, err := a.store.ClaimCodexResetCreditNotice(a.accountID, row.CreditID, claimedAt)
+		if err != nil {
+			a.logger.Warn("Failed to claim Codex reset-credit notice", "error", err, "account_id", a.accountID)
+			continue
+		}
+		if !claimed {
+			continue // another poller or a previous run already sent it
+		}
+
+		title := row.Title
+		if credit, ok := byID[row.CreditID]; ok && credit.Title != "" {
+			title = credit.Title
+		}
+		sent := a.notifier.SendResetCreditExpiryNotification(notify.ResetCreditExpiryAlert{
+			AccountID:   fmt.Sprintf("%d", a.accountID),
+			AccountName: accountName,
+			CreditID:    row.CreditID,
+			Title:       title,
+			ExpiresAt:   *row.ExpiresAt,
+		})
+		if !sent {
+			if err := a.store.ReleaseCodexResetCreditNotice(a.accountID, row.CreditID, claimedAt); err != nil {
+				a.logger.Debug("Failed to release Codex reset-credit notice claim", "error", err)
+			}
+			continue
+		}
+		a.logger.Info("Sent Codex reset-credit expiry notification",
+			"credit_id", row.CreditID,
+			"expires_at", row.ExpiresAt.UTC(),
+			"account_id", a.accountID)
+	}
+}
+
+// resetCreditsAccountName returns the human label used in notifications. It
+// prefers the configured profile label and never falls back to credentials.
+func (a *CodexAgent) resetCreditsAccountName() string {
+	if a.profileLabel != "" {
+		return a.profileLabel
+	}
+	return fmt.Sprintf("Codex account %d", a.accountID)
 }
 
 // SetAutoStartCheck wires a callback that reports, fresh per poll, whether the
@@ -1102,6 +1286,11 @@ func (a *CodexAgent) poll(ctx context.Context) {
 	// Auto quota-starter (Beta): start any enabled window that is observed
 	// unstarted (reset countdown pinned at ~full window length).
 	a.maybeAutoStartWindows(ctx, snapshot.Quotas, now, sp)
+
+	// Banked reset credits (issue #152): slow cadence, read-only. Failures are
+	// contained inside maybeFetchResetCredits and never touch usage state.
+	// The clock hook keeps the cadence deterministic in tests.
+	a.maybeFetchResetCredits(ctx, snapshot, a.currentTime().UTC())
 
 	if a.notifier != nil {
 		for _, q := range snapshot.Quotas {

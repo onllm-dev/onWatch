@@ -2823,11 +2823,83 @@ function syncCodexAutoStartBadges() {
   });
 }
 
+// Banked reset credits (issue #152): a compact chip with the plan-usable count
+// and a tooltip for the nearest expiry. The detail endpoint can be unavailable
+// (API-key auth, older backend): the chip still shows the usage count and a
+// muted dot carries the "Resets unavailable" note. A count is never invented -
+// unknown stays hidden.
+function codexResetCreditsUsableCount(rc) {
+  if (!rc) return null;
+  if (typeof rc.applicable_count === 'number') return rc.applicable_count;
+  if (typeof rc.available_count === 'number') return rc.available_count;
+  return null;
+}
+
+function codexResetCreditsTooltip(rc) {
+  const credits = (Array.isArray(rc.credits) ? rc.credits : [])
+    .filter(c => !c.unsupported_by_plan);
+  const expiries = credits.map(c => c.expires_at).filter(Boolean);
+  let tip;
+  if (expiries.length === 0) {
+    if (rc.status !== 'ok' || credits.some(c => c.expiry_unknown)) {
+      tip = 'expiry unknown';
+    } else if (codexResetCreditsUsableCount(rc) === 0) {
+      tip = 'no banked resets';
+    } else {
+      tip = 'does not expire';
+    }
+  } else {
+    const soonest = expiries.reduce((a, b) => (new Date(a) <= new Date(b) ? a : b));
+    const ms = new Date(soonest).getTime() - Date.now();
+    tip = (!isFinite(ms) || ms <= 0) ? 'expires now' : `next expires in ${formatDuration(Math.floor(ms / 1000))}`;
+  }
+  if (typeof rc.applicable_count === 'number' && typeof rc.available_count === 'number' &&
+      rc.applicable_count < rc.available_count) {
+    const diff = rc.available_count - rc.applicable_count;
+    tip += `; ${diff} not usable on current plan`;
+  }
+  return tip;
+}
+
+function codexResetCreditsHTML(rc) {
+  if (!rc || !rc.status) return '';
+  const unavailable = rc.status === 'unavailable'
+    ? '<span class="codex-resets-dot" role="img" aria-label="Resets unavailable" title="Resets unavailable"></span>'
+    : '';
+  const count = codexResetCreditsUsableCount(rc);
+  if (count == null || !isFinite(count) || count < 0) return unavailable;
+  const label = `${count} ${count === 1 ? 'reset' : 'resets'}`;
+  const chip = `<span class="codex-reset-credits-chip" role="img" aria-label="Banked reset credits: ${escapeHTML(label)}" title="${escapeHTML(codexResetCreditsTooltip(rc))}">${label}</span>`;
+  return unavailable + chip;
+}
+
+// codexResetCreditsKeyFromData renders the chip identity used to decide whether
+// a re-render is needed. Only count and status are compared: the tooltip is a
+// live relative time and must not force a re-render on every poll.
+function codexResetCreditsKeyFromData(rc) {
+  if (!rc || !rc.status) return '';
+  const count = codexResetCreditsUsableCount(rc);
+  const countKey = count == null ? '' : String(count);
+  return `${rc.status === 'unavailable' ? 'unavailable' : 'ok'}|${countKey}`;
+}
+
+// codexResetCreditsKey reads the chip identity that is actually rendered in the
+// given container, matching codexResetCreditsKeyFromData. The dot and the chip
+// can coexist, so both are looked up independently.
+function codexResetCreditsKey(container) {
+  if (!container) return '';
+  const status = container.querySelector('.codex-resets-dot') ? 'unavailable' : 'ok';
+  const chip = container.querySelector('.codex-reset-credits-chip');
+  const count = chip ? parseInt((chip.textContent || '').trim(), 10) : NaN;
+  return `${status}|${isFinite(count) ? count : ''}`;
+}
+
 function renderCodexQuotaCards(quotas, containerId, planType, usageSourceNote, pause) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
-  const sourceNoteHTML = codexPauseNoticeHTML(pause) + codexUsageSourceNoteHTML(usageSourceNote);
+  const resetsHTML = codexResetCreditsHTML(pause && pause.resetCredits);
+  const sourceNoteHTML = codexPauseNoticeHTML(pause) + resetsHTML + codexUsageSourceNoteHTML(usageSourceNote);
   if (visibleQuotas.length === 0) {
     container.innerHTML = `${sourceNoteHTML}<p class="empty-state">No Codex quota data available yet.</p>`;
     return;
@@ -2919,7 +2991,10 @@ function renderCodexQuotaCardsForAccount(quotas, container, accountName, planTyp
   header.className = 'codex-account-header';
   header.innerHTML = `
     <span class="codex-account-name">${escapeHTML(accountName)}</span>
-    <span class="codex-account-plan">${escapeHTML(formatCodexPlan(planType, planLabel))}</span>
+    <span class="codex-account-meta">
+      ${codexResetCreditsHTML(pause && pause.resetCredits)}
+      <span class="codex-account-plan">${escapeHTML(formatCodexPlan(planType, planLabel))}</span>
+    </span>
   `;
   container.appendChild(header);
   container.insertAdjacentHTML('beforeend', codexPauseNoticeHTML(pause));
@@ -4994,7 +5069,8 @@ async function fetchCodexUsage(options = {}) {
     const sourceNoteChanged = (container.querySelector('.codex-usage-source-note')?.textContent || '') !== sourceNote;
     const pausedChanged = (container.querySelector('.codex-paused-dot') != null) !== Boolean(payload.paused);
     const staleChanged = (container.querySelector('.quota-card.stale-card') != null) !== Boolean(payload.isStale);
-    if (container.children.length === 0 || renderedCount !== visibleQuotas.length || planChanged || quotaNamesChanged || sourceNoteChanged || pausedChanged || staleChanged) {
+    const resetsChanged = codexResetCreditsKey(container) !== codexResetCreditsKeyFromData(payload.resetCredits);
+    if (container.children.length === 0 || renderedCount !== visibleQuotas.length || planChanged || quotaNamesChanged || sourceNoteChanged || pausedChanged || staleChanged || resetsChanged) {
       renderCodexQuotaCards(visibleQuotas, 'quota-grid-codex', State.codexPlanType, payload.usageSourceNote, payload);
     }
 
@@ -10289,6 +10365,9 @@ async function loadSettings() {
       if (resetCheck) resetCheck.checked = n.notify_reset !== false;
       const authErrorCheck = document.getElementById('notify-auth-error');
       if (authErrorCheck) authErrorCheck.checked = !!n.notify_auth_error;
+      // Absent means the default (on) for the reset-credit expiry warning.
+      const resetCreditCheck = document.getElementById('notify-reset-credit-expiry');
+      if (resetCreditCheck) resetCreditCheck.checked = n.notify_reset_credit_expiry !== false;
       const repeatCheck = document.getElementById('notify-repeat');
       if (repeatCheck) repeatCheck.checked = !!n.notify_repeat;
       setVal('notify-cooldown', n.cooldown_minutes || 30);
@@ -12123,6 +12202,7 @@ function gatherSettings() {
       notify_critical: document.getElementById('notify-critical')?.checked ?? true,
       notify_reset: document.getElementById('notify-reset')?.checked ?? true,
       notify_auth_error: document.getElementById('notify-auth-error')?.checked ?? false,
+      notify_reset_credit_expiry: document.getElementById('notify-reset-credit-expiry')?.checked ?? true,
       notify_repeat: document.getElementById('notify-repeat')?.checked ?? false,
       cooldown_minutes: parseInt(document.getElementById('notify-cooldown')?.value) || 30,
       channels: {
@@ -12380,6 +12460,7 @@ function loadWebhookSettings(webhook) {
     'webhook-event-critical': 'critical',
     'webhook-event-reset': 'reset',
     'webhook-event-auth-error': 'auth_error',
+    'webhook-event-reset-credit-expiry': 'reset_credit_expiry',
     'webhook-event-starter-success': 'starter_success',
     'webhook-event-starter-failure': 'starter_failure',
   };
@@ -12415,6 +12496,7 @@ function collectWebhookSettings() {
       critical: document.getElementById('webhook-event-critical')?.checked ?? false,
       reset: document.getElementById('webhook-event-reset')?.checked ?? false,
       auth_error: document.getElementById('webhook-event-auth-error')?.checked ?? false,
+      reset_credit_expiry: document.getElementById('webhook-event-reset-credit-expiry')?.checked ?? false,
       starter_success: document.getElementById('webhook-event-starter-success')?.checked ?? false,
       starter_failure: document.getElementById('webhook-event-starter-failure')?.checked ?? false,
     },

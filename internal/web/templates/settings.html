@@ -199,6 +199,10 @@
                         <span>Auth error alerts</span>
                     </label>
                     <label class="settings-checkbox-row settings-checkbox-row-compact">
+                        <input type="checkbox" id="webhook-event-reset-credit-expiry">
+                        <span>Reset credit expiry alerts (Codex)</span>
+                    </label>
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="webhook-event-starter-success">
                         <span>Quota-starter success (Codex auto quota-starter)</span>
                     </label>
@@ -252,6 +256,10 @@
                     <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="notify-reset" checked>
                         <span>Reset notifications (quota cycle resets)</span>
+                    </label>
+                    <label class="settings-checkbox-row settings-checkbox-row-compact">
+                        <input type="checkbox" id="notify-reset-credit-expiry" checked>
+                        <span>Reset credit expiry alerts (warns 24h before a banked Codex reset expires)</span>
                     </label>
                     <label class="settings-checkbox-row settings-checkbox-row-compact">
                         <input type="checkbox" id="notify-auth-error">

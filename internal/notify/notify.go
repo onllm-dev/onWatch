@@ -62,6 +62,8 @@ type NotificationTypes struct {
 	Critical  bool `json:"critical"`
 	Reset     bool `json:"reset"`
 	AuthError bool `json:"auth_error"` // Auth failure notifications
+	// ResetCreditExpiry warns before a banked Codex reset credit expires.
+	ResetCreditExpiry bool `json:"reset_credit_expiry"`
 }
 
 // QuotaStatus represents the current state of a quota for notification evaluation.
@@ -86,7 +88,7 @@ func New(s *store.Store, logger *slog.Logger) *NotificationEngine {
 			Critical:  95,
 			Overrides: make(map[string]ThresholdOverride),
 			Cooldown:  defaultNotificationCooldown,
-			Types:     NotificationTypes{Warning: true, Critical: true, Reset: false},
+			Types:     NotificationTypes{Warning: true, Critical: true, Reset: false, ResetCreditExpiry: true},
 			Channels:  NotificationChannels{Email: true, Push: true},
 		},
 	}
@@ -124,16 +126,17 @@ func (e *NotificationEngine) Config() NotificationConfig {
 
 // notificationSettingsJSON matches the JSON shape saved by the handler's UpdateSettings.
 type notificationSettingsJSON struct {
-	WarningThreshold  float64               `json:"warning_threshold"`
-	CriticalThreshold float64               `json:"critical_threshold"`
-	NotifyWarning     bool                  `json:"notify_warning"`
-	NotifyCritical    bool                  `json:"notify_critical"`
-	NotifyReset       bool                  `json:"notify_reset"`
-	NotifyAuthError   bool                  `json:"notify_auth_error"`
-	NotifyRepeat      bool                  `json:"notify_repeat"`
-	CooldownMinutes   int                   `json:"cooldown_minutes"`
-	Channels          *NotificationChannels `json:"channels,omitempty"`
-	Overrides         []struct {
+	WarningThreshold        float64               `json:"warning_threshold"`
+	CriticalThreshold       float64               `json:"critical_threshold"`
+	NotifyWarning           bool                  `json:"notify_warning"`
+	NotifyCritical          bool                  `json:"notify_critical"`
+	NotifyReset             bool                  `json:"notify_reset"`
+	NotifyAuthError         bool                  `json:"notify_auth_error"`
+	NotifyResetCreditExpiry *bool                 `json:"notify_reset_credit_expiry"`
+	NotifyRepeat            bool                  `json:"notify_repeat"`
+	CooldownMinutes         int                   `json:"cooldown_minutes"`
+	Channels                *NotificationChannels `json:"channels,omitempty"`
+	Overrides               []struct {
 		QuotaKey       string  `json:"quota_key"`
 		Provider       string  `json:"provider"`
 		Warning        float64 `json:"warning"`
@@ -178,6 +181,9 @@ func (e *NotificationEngine) Reload() error {
 		Critical:  notif.NotifyCritical,
 		Reset:     notif.NotifyReset,
 		AuthError: notif.NotifyAuthError,
+		// Default on when the setting is absent: an expiring banked reset is
+		// value the user asked to be warned about.
+		ResetCreditExpiry: notif.NotifyResetCreditExpiry == nil || *notif.NotifyResetCreditExpiry,
 	}
 
 	overrides := make(map[string]ThresholdOverride, len(notif.Overrides))
@@ -989,7 +995,102 @@ func (e *NotificationEngine) SendStarterEvent(ev StarterEvent) {
 	channels.deliverWebhook(e.logger, payload)
 }
 
+// ResetCreditExpiryAlert describes a banked Codex reset credit that is about to
+// expire. The message names the account (label, never tokens) and when the
+// credit expires.
+type ResetCreditExpiryAlert struct {
+	AccountID   string
+	AccountName string
+	CreditID    string
+	Title       string
+	ExpiresAt   time.Time
+}
+
+// SendResetCreditExpiryNotification delivers one expiry warning for a banked
+// reset credit (issue #152). Dedupe lives in the credit row (notified_at), so
+// this is the transport only: the caller claims the row first.
+//
+// It returns true when at least one configured channel accepted the message, so
+// the caller can release a claim whose delivery reached nothing and retry on a
+// later fetch.
+func (e *NotificationEngine) SendResetCreditExpiryNotification(alert ResetCreditExpiryAlert) bool {
+	e.mu.RLock()
+	cfg := e.cfg
+	channels := channelSet{
+		mailer:  e.mailer,
+		push:    e.pushSender,
+		webhook: e.webhookSender,
+		enabled: e.cfg.Channels,
+	}
+	e.mu.RUnlock()
+
+	// Respect the shared notification type switch: turning operational alerts
+	// off silences these too.
+	if !cfg.Types.ResetCreditExpiry {
+		return false
+	}
+
+	account := strings.TrimSpace(alert.AccountName)
+	if account == "" {
+		account = "Codex account " + alert.AccountID
+	}
+	creditTitle := strings.TrimSpace(alert.Title)
+	if creditTitle == "" {
+		creditTitle = "Reset credit"
+	}
+	expires := alert.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
+
+	subject := fmt.Sprintf("[RESET CREDIT] %s credit expires %s", titleCase("codex"), expires)
+	message := fmt.Sprintf(
+		"A banked Codex reset credit for %s expires at %s (%s). For reference, the Codex CLI exposes it under /usage, where you can redeem it before it expires.",
+		account, expires, creditTitle,
+	)
+
+	sent := false
+	if channels.enabled.Email && channels.mailer != nil {
+		if err := channels.mailer.Send(subject, message); err != nil {
+			e.logger.Error("failed to send reset-credit expiry email", "error", err, "account", alert.AccountID)
+		} else {
+			sent = true
+		}
+	}
+	if channels.enabled.Push && channels.push != nil {
+		subs, err := e.store.GetPushSubscriptions()
+		if err != nil {
+			e.logger.Error("failed to get push subscriptions", "error", err)
+		} else {
+			for _, sub := range subs {
+				ps := PushSubscription{Endpoint: sub.Endpoint}
+				ps.Keys.P256dh = sub.P256dh
+				ps.Keys.Auth = sub.Auth
+				if err := channels.push.Send(ps, subject, message); err != nil {
+					e.logger.Error("failed to send reset-credit expiry push", "error", err, "endpoint", sub.Endpoint)
+					if strings.Contains(err.Error(), "410") {
+						e.store.DeletePushSubscription(sub.Endpoint)
+					}
+				} else {
+					sent = true
+				}
+			}
+		}
+	}
+	if channels.deliverWebhook(e.logger, WebhookPayload{
+		Event:     EventResetCreditExpiry,
+		Provider:  "codex",
+		QuotaKey:  alert.CreditID,
+		AccountID: alert.AccountID,
+		ResetAt:   alert.ExpiresAt.UTC().Format(time.RFC3339),
+		Title:     subject,
+		Message:   message,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}) {
+		sent = true
+	}
+	return sent
+}
+
 // SendTestWebhook posts a test payload to verify the webhook configuration.
+
 // It ignores the per-event toggles so the endpoint can be verified during setup.
 func (e *NotificationEngine) SendTestWebhook() error {
 	e.mu.RLock()

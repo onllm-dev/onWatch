@@ -482,8 +482,44 @@ func (s *Store) createTables() error {
 			account_id INTEGER NOT NULL DEFAULT 1,
 			plan_type TEXT,
 			credits_balance REAL,
+			reset_credits_count INTEGER,
 			raw_json TEXT,
 			quota_count INTEGER DEFAULT 0
+		);
+
+		-- Banked Codex reset credits per account (issue #152). A credit that
+		-- disappears from the detail response is marked gone, never deleted.
+		-- notified_at is the expiry-warning dedupe marker: one notification per
+		-- credit, persisted across restarts.
+		CREATE TABLE IF NOT EXISTS codex_reset_credits (
+			account_id INTEGER NOT NULL DEFAULT 1,
+			credit_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			reset_type TEXT NOT NULL DEFAULT '',
+			title TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			granted_at TEXT,
+			expires_at TEXT,
+			unsupported_by_plan INTEGER NOT NULL DEFAULT 0,
+			expiry_unknown INTEGER NOT NULL DEFAULT 0,
+			first_seen TEXT NOT NULL,
+			last_seen TEXT NOT NULL,
+			gone_at TEXT,
+			notified_at TEXT,
+			PRIMARY KEY (account_id, credit_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_codex_reset_credits_expiry ON codex_reset_credits(expires_at);
+		CREATE INDEX IF NOT EXISTS idx_codex_reset_credits_account ON codex_reset_credits(account_id, status);
+
+		-- Last outcome of the reset-credits detail fetch per account. Kept
+		-- separate from the credits themselves so "unavailable" is visible even
+		-- when the account has no tracked rows.
+		CREATE TABLE IF NOT EXISTS codex_reset_credit_checks (
+			account_id INTEGER PRIMARY KEY,
+			status TEXT NOT NULL,
+			available_count INTEGER,
+			applicable_count INTEGER,
+			last_checked_at TEXT NOT NULL
 		);
 
 		CREATE TABLE IF NOT EXISTS codex_quota_values (
@@ -1213,6 +1249,40 @@ func (s *Store) migrateSchema() error {
 		VALUES (1, 'codex', 'default', datetime('now'))
 	`); err != nil {
 		return fmt.Errorf("failed to insert default codex account: %w", err)
+	}
+
+	// Additive reset-credit columns for databases created before they existed
+	// (issue #152 follow-up). Missing optional tables are tolerated like the
+	// rest of this migration.
+	for _, stmt := range []string{
+		`ALTER TABLE codex_snapshots ADD COLUMN applicable_credits_count INTEGER`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("reset-credit migration failed: %w", err)
+			}
+		}
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE codex_reset_credits ADD COLUMN unsupported_by_plan INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE codex_reset_credits ADD COLUMN expiry_unknown INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE codex_reset_credit_checks ADD COLUMN applicable_count INTEGER`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("reset-credit migration failed: %w", err)
+			}
+		}
+	}
+
+	// Add reset_credits_count to codex_snapshots (issue #152). NULL means the
+	// usage response did not report a count - unknown, not zero.
+	if _, err := s.db.Exec(`
+		ALTER TABLE codex_snapshots ADD COLUMN reset_credits_count INTEGER
+	`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "no such table") {
+			return fmt.Errorf("failed to add reset_credits_count to codex_snapshots: %w", err)
+		}
 	}
 
 	// Add account_id column to codex_snapshots for multi-account support

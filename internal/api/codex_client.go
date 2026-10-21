@@ -203,6 +203,117 @@ func codexBodySnippet(body []byte) string {
 	return text
 }
 
+// buildCodexResetCreditsURL derives the reset-credits detail URL from a working
+// usage URL. Codex serves two path styles and the detail path mirrors the one
+// the account's usage poll resolved (issue #152).
+func buildCodexResetCreditsURL(usageURL string) (string, bool) {
+	u, err := url.Parse(usageURL)
+	if err != nil {
+		return "", false
+	}
+	switch {
+	case strings.Contains(u.Path, "/backend-api/wham/usage"):
+		u.Path = strings.Replace(u.Path, "/backend-api/wham/usage", "/backend-api/wham/rate-limit-reset-credits", 1)
+	case strings.Contains(u.Path, "/api/codex/usage"):
+		u.Path = strings.Replace(u.Path, "/api/codex/usage", "/api/codex/rate-limit-reset-credits", 1)
+	default:
+		return "", false
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), true
+}
+
+// FetchResetCredits lists this account's banked reset credits. It is read-only:
+// there is deliberately no redemption call in onWatch.
+//
+// The request reuses the account's current access token - it never refreshes -
+// and a failure is reported as ErrCodexResetCreditsUnavailable so callers can
+// treat it as informational and leave usage polling, pause state and failure
+// counters untouched. No call is retried.
+func (c *CodexClient) FetchResetCredits(ctx context.Context) (*CodexResetCreditsResponse, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	usageURL := c.baseURL
+	if fallback := c.getFallbackBaseURL(); fallback != "" {
+		usageURL = fallback
+	}
+	detailURL, ok := buildCodexResetCreditsURL(usageURL)
+	if !ok {
+		return nil, fmt.Errorf("%w: cannot derive detail URL", ErrCodexResetCreditsUnavailable)
+	}
+
+	resp, err := c.doUsageRequest(reqCtx, detailURL)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("%w: %v", ErrCodexResetCreditsUnavailable, err)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		// The usage poll sometimes needs the alternate path; probe it once here
+		// too, without caching anything (the usage poll owns endpoint selection).
+		altURL, altOK := buildCodexFallbackResetCreditsURL(detailURL)
+		if !altOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("%w: 404", ErrCodexResetCreditsUnavailable)
+		}
+		resp.Body.Close()
+		resp, err = c.doUsageRequest(reqCtx, altURL)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, fmt.Errorf("%w: %v", ErrCodexResetCreditsUnavailable, err)
+		}
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
+		// API-key auth and stale tokens are both expected rejections. Never
+		// refresh here: the normal usage poll owns auth handling.
+		return nil, fmt.Errorf("%w: status %d", ErrCodexResetCreditsUnavailable, resp.StatusCode)
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("%w: 404", ErrCodexResetCreditsUnavailable)
+	default:
+		return nil, fmt.Errorf("%w: status %d", ErrCodexResetCreditsUnavailable, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<17))
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading body: %v", ErrCodexResetCreditsUnavailable, err)
+	}
+	parsed, err := ParseCodexResetCreditsResponse(body)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrCodexResetCreditsUnavailable, err)
+	}
+	return parsed, nil
+}
+
+// buildCodexFallbackResetCreditsURL maps a detail URL to the alternate detail
+// path. It mirrors buildCodexFallbackBaseURL for the usage endpoints.
+func buildCodexFallbackResetCreditsURL(detailURL string) (string, bool) {
+	u, err := url.Parse(detailURL)
+	if err != nil {
+		return "", false
+	}
+	switch {
+	case strings.Contains(u.Path, "/api/codex/rate-limit-reset-credits"):
+		u.Path = strings.Replace(u.Path, "/api/codex/rate-limit-reset-credits", "/backend-api/wham/rate-limit-reset-credits", 1)
+	case strings.Contains(u.Path, "/backend-api/wham/rate-limit-reset-credits"):
+		u.Path = strings.Replace(u.Path, "/backend-api/wham/rate-limit-reset-credits", "/api/codex/rate-limit-reset-credits", 1)
+	default:
+		return "", false
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), true
+}
+
 func (c *CodexClient) doUsageRequest(ctx context.Context, usageURL string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, usageURL, nil)
 	if err != nil {

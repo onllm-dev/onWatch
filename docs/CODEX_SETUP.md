@@ -395,6 +395,63 @@ Environment overrides (the dashboard toggles take precedence at runtime):
 
 ---
 
+## Banked reset credits
+
+ChatGPT plans can bank full resets ("reset credits") that clear your current
+Codex usage limits. onWatch shows each account's banked credits and warns before
+one expires. **onWatch never redeems a credit** - this phase is read-only.
+
+What the dashboard shows, per Codex account:
+
+- A compact chip with the plan-usable count, e.g. `2 resets`. When the backend
+  reports `applicable_available_count`, that is the count shown (credits the
+  current plan cannot use are excluded); otherwise `available_count` is used.
+- Hovering the chip shows the nearest usable expiry as a relative time, e.g.
+  `next expires in 3d 4h`, or `does not expire` when no credit has an expiry.
+  When some credits are not usable on the current plan the tooltip adds a line
+  such as `1 not usable on current plan`.
+- A muted dot (tooltip "Resets unavailable") sits next to the chip when the
+  detail endpoint cannot be read - for example with API-key auth, a 404 on an
+  older backend, or a stale token. The chip keeps showing the count from the
+  usage response when it is known; without any known count only the dot shows.
+- An expiry the backend reports that is not trustworthy (equal to the grant
+  time, or already past while the credit is still offered) is shown as
+  `expiry unknown` rather than a past date.
+
+How it works:
+
+- The usage poll already returns `rate_limit_reset_credits.available_count`
+  (and `applicable_available_count` when present); those counts are stored with
+  each snapshot. An absent count is treated as unknown, never as zero, and the
+  latest detail-fetch count falls back to the snapshot count when it is absent.
+- The credit list comes from `GET /backend-api/wham/rate-limit-reset-credits`
+  (or `/api/codex/rate-limit-reset-credits` on the alternate backend), using
+  the same OAuth token and `ChatGPT-Account-Id` header as the usage poll. The
+  detail URL follows whichever usage path works for that account.
+- Details are fetched at most every **30 minutes per account**, plus
+  immediately when the usage count changes. Never on every poll.
+- Credits that disappear from a response are marked gone in the local database
+  (`codex_reset_credits`) rather than deleted, so notification dedupe is stable.
+- A credit with a null `expires_at` never expires. Credits marked
+  `is_supported_by_plan: false` do not count toward the next expiry or the
+  expiry warning.
+
+Notifications:
+
+- One notification per credit when it is within **24 hours** of expiring. The
+  message names the account (profile label), the expiry time, and points to the
+  Codex CLI `/usage` menu, where "Redeem reset" is the entry point.
+- Deduplicated persistently with a `notified_at` timestamp on the credit row, so
+  a restart or a second poller never re-sends.
+- Credits that never expire, have an unknown expiry, or are not usable on the
+  current plan are never notified.
+- Silence the type with **Settings -> Notifications -> Reset credit expiry
+  alerts**; webhook deliveries use the `reset_credit_expiry` event.
+- Detail-endpoint failures never affect usage polling, pause state, or auth
+  failure counters.
+
+---
+
 ## See Also
 
 - [README](../README.md) — Quick start and provider overview

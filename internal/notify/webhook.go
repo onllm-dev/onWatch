@@ -67,12 +67,13 @@ type WebhookConfig struct {
 
 // WebhookEvents controls which events are delivered to the webhook endpoint.
 type WebhookEvents struct {
-	Warning        bool `json:"warning"`
-	Critical       bool `json:"critical"`
-	Reset          bool `json:"reset"`
-	AuthError      bool `json:"auth_error"`
-	StarterSuccess bool `json:"starter_success"`
-	StarterFailure bool `json:"starter_failure"`
+	Warning           bool `json:"warning"`
+	Critical          bool `json:"critical"`
+	Reset             bool `json:"reset"`
+	AuthError         bool `json:"auth_error"`
+	StarterSuccess    bool `json:"starter_success"`
+	StarterFailure    bool `json:"starter_failure"`
+	ResetCreditExpiry bool `json:"reset_credit_expiry"`
 }
 
 // Enabled reports whether the named event should be delivered.
@@ -90,6 +91,8 @@ func (e WebhookEvents) Enabled(event string) bool {
 		return e.StarterSuccess
 	case EventStarterFailure:
 		return e.StarterFailure
+	case EventResetCreditExpiry:
+		return e.ResetCreditExpiry
 	default:
 		return false
 	}
@@ -97,13 +100,14 @@ func (e WebhookEvents) Enabled(event string) bool {
 
 // Event names used in webhook payloads and in the notification dedupe log.
 const (
-	EventWarning        = "warning"
-	EventCritical       = "critical"
-	EventReset          = "reset"
-	EventAuthError      = "auth_error"
-	EventStarterSuccess = "starter_success"
-	EventStarterFailure = "starter_failure"
-	EventTest           = "test"
+	EventWarning           = "warning"
+	EventCritical          = "critical"
+	EventReset             = "reset"
+	EventAuthError         = "auth_error"
+	EventStarterSuccess    = "starter_success"
+	EventStarterFailure    = "starter_failure"
+	EventResetCreditExpiry = "reset_credit_expiry"
+	EventTest              = "test"
 )
 
 // WebhookPayload is the JSON body POSTed to the configured endpoint.

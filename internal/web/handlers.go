@@ -7760,14 +7760,15 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// Handle notification settings
 	if raw, ok := body["notifications"]; ok {
 		var notif struct {
-			WarningThreshold  float64 `json:"warning_threshold"`
-			CriticalThreshold float64 `json:"critical_threshold"`
-			NotifyWarning     bool    `json:"notify_warning"`
-			NotifyCritical    bool    `json:"notify_critical"`
-			NotifyReset       bool    `json:"notify_reset"`
-			NotifyAuthError   bool    `json:"notify_auth_error"`
-			NotifyRepeat      bool    `json:"notify_repeat"`
-			CooldownMinutes   int     `json:"cooldown_minutes"`
+			WarningThreshold        float64 `json:"warning_threshold"`
+			CriticalThreshold       float64 `json:"critical_threshold"`
+			NotifyWarning           bool    `json:"notify_warning"`
+			NotifyCritical          bool    `json:"notify_critical"`
+			NotifyReset             bool    `json:"notify_reset"`
+			NotifyAuthError         bool    `json:"notify_auth_error"`
+			NotifyResetCreditExpiry *bool   `json:"notify_reset_credit_expiry"`
+			NotifyRepeat            bool    `json:"notify_repeat"`
+			CooldownMinutes         int     `json:"cooldown_minutes"`
 			// Channels is a pointer so an omitted value keeps the stored
 			// selection instead of silently resetting every channel to off.
 			Channels  *notify.NotificationChannels `json:"channels,omitempty"`
@@ -7817,14 +7818,22 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Preserve the stored channel selection when the client omits it.
-		if notif.Channels == nil {
+		// Preserve the stored channel selection and the reset-credit toggle
+		// when the client omits them. The reset-credit warning defaults on when
+		// it has never been saved.
+		if notif.Channels == nil || notif.NotifyResetCreditExpiry == nil {
 			if existingJSON, _ := h.store.GetSetting("notifications"); existingJSON != "" {
 				var existing struct {
-					Channels *notify.NotificationChannels `json:"channels"`
+					Channels                *notify.NotificationChannels `json:"channels"`
+					NotifyResetCreditExpiry *bool                        `json:"notify_reset_credit_expiry"`
 				}
 				if json.Unmarshal([]byte(existingJSON), &existing) == nil {
-					notif.Channels = existing.Channels
+					if notif.Channels == nil {
+						notif.Channels = existing.Channels
+					}
+					if notif.NotifyResetCreditExpiry == nil {
+						notif.NotifyResetCreditExpiry = existing.NotifyResetCreditExpiry
+					}
 				}
 			}
 		}
@@ -9703,8 +9712,116 @@ func (h *Handler) buildCodexCurrentOK(accountID int64) (response map[string]inte
 		}
 	}
 	response["quotas"] = quotas
+	response["resetCredits"] = h.buildCodexResetCredits(accountID, latest)
 	applyDisplayModeToResponse(response, displayMode)
 	return response, true, hasData
+}
+
+// buildCodexResetCredits shapes the read-only banked reset-credit view for one
+// account (issue #152). It only adds fields and never fails the response: a
+// missing check row is reported as "unknown", and an absent usage count stays
+// null rather than 0.
+func (h *Handler) buildCodexResetCredits(accountID int64, latest *api.CodexSnapshot) map[string]interface{} {
+	out := map[string]interface{}{
+		"status":           "unknown",
+		"available_count":  nil,
+		"applicable_count": nil,
+		"next_expires_at":  nil,
+		"credits":          []interface{}{},
+		"last_checked_at":  nil,
+	}
+	if h.store == nil {
+		return out
+	}
+
+	// Counts from the latest snapshot are always available, even when the
+	// detail endpoint cannot be reached.
+	if latest != nil && latest.ResetCreditsAvailableCount.Valid {
+		out["available_count"] = latest.ResetCreditsAvailableCount.Value
+	}
+	if latest != nil && latest.ResetCreditsApplicableCount.Valid {
+		out["applicable_count"] = latest.ResetCreditsApplicableCount.Value
+	}
+
+	check, err := h.store.QueryCodexResetCreditCheckStatus(accountID)
+	if err != nil {
+		h.logger.Error("failed to query Codex reset-credit check", "error", err, "account_id", accountID)
+		return out
+	}
+	if check != nil {
+		switch check.Status {
+		case "ok":
+			out["status"] = "ok"
+			// The detail response's own counts are authoritative once it has
+			// served data; a NULL count stays unknown and falls back to the
+			// snapshot value (never 0).
+			if check.AvailableCount != nil {
+				out["available_count"] = *check.AvailableCount
+			}
+			if check.ApplicableCount != nil {
+				out["applicable_count"] = *check.ApplicableCount
+			}
+		case "unavailable":
+			out["status"] = "unavailable"
+		}
+		if !check.LastCheckedAt.IsZero() {
+			out["last_checked_at"] = check.LastCheckedAt.UTC().Format(time.RFC3339)
+		}
+	}
+
+	rows, err := h.store.QueryCodexResetCredits(accountID)
+	if err != nil {
+		h.logger.Error("failed to query Codex reset credits", "error", err, "account_id", accountID)
+		return out
+	}
+
+	credits := make([]interface{}, 0, len(rows))
+	available := make([]store.CodexResetCreditRecord, 0, len(rows))
+	for _, row := range rows {
+		if row.GoneAt != nil || row.Status != "available" {
+			continue
+		}
+		available = append(available, row)
+	}
+	// The store already orders by expiry with never-expiring last. Keep that
+	// order, but put plan-usable credits first: the soonest usable expiry
+	// drives next_expires_at and the card tooltip.
+	sort.SliceStable(available, func(i, j int) bool {
+		left, right := available[i], available[j]
+		if left.UnsupportedByPlan != right.UnsupportedByPlan {
+			return !left.UnsupportedByPlan
+		}
+		switch {
+		case left.ExpiresAt == nil && right.ExpiresAt == nil:
+			return left.CreditID < right.CreditID
+		case left.ExpiresAt == nil:
+			return false
+		case right.ExpiresAt == nil:
+			return true
+		default:
+			return left.ExpiresAt.Before(*right.ExpiresAt)
+		}
+	})
+	for _, row := range available {
+		entry := map[string]interface{}{
+			"id":                  row.CreditID,
+			"status":              row.Status,
+			"reset_type":          row.ResetType,
+			"title":               row.Title,
+			"expires_at":          nil,
+			"unsupported_by_plan": row.UnsupportedByPlan,
+			"expiry_unknown":      row.ExpiryUnknown,
+		}
+		if row.ExpiresAt != nil {
+			entry["expires_at"] = row.ExpiresAt.UTC().Format(time.RFC3339)
+			if out["next_expires_at"] == nil && !row.UnsupportedByPlan {
+				out["next_expires_at"] = row.ExpiresAt.UTC().Format(time.RFC3339)
+			}
+		}
+		credits = append(credits, entry)
+	}
+	out["credits"] = credits
+	return out
 }
 
 func codexUtilStatus(util float64) string {

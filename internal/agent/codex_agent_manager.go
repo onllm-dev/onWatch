@@ -712,6 +712,8 @@ func (m *CodexAgentManager) startAgentForProfile(profile CodexProfile) error {
 	// Auto quota-starter (Beta): give the agent its Codex account_id (for the
 	// ChatGPT-Account-ID header) and the per-window enablement check.
 	agent.SetCodexAccountID(profile.AccountID)
+	// Human label for reset-credit notifications (profile name, never a token).
+	agent.SetProfileLabel(profile.Name)
 	if m.autoStartCheck != nil {
 		agent.SetAutoStartCheck(m.autoStartCheck)
 	}

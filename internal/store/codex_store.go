@@ -43,6 +43,13 @@ func (s *Store) InsertCodexSnapshot(snapshot *api.CodexSnapshot) (int64, error) 
 	if snapshot.CreditsBalance != nil {
 		creditsBalance = *snapshot.CreditsBalance
 	}
+	var resetCreditsCount, applicableCreditsCount interface{}
+	if snapshot.ResetCreditsAvailableCount.Valid {
+		resetCreditsCount = snapshot.ResetCreditsAvailableCount.Value
+	}
+	if snapshot.ResetCreditsApplicableCount.Valid {
+		applicableCreditsCount = snapshot.ResetCreditsApplicableCount.Value
+	}
 
 	accountID := snapshot.AccountID
 	if accountID == 0 {
@@ -50,11 +57,13 @@ func (s *Store) InsertCodexSnapshot(snapshot *api.CodexSnapshot) (int64, error) 
 	}
 
 	result, err := tx.Exec(
-		`INSERT INTO codex_snapshots (captured_at, account_id, plan_type, credits_balance, raw_json, quota_count) VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO codex_snapshots (captured_at, account_id, plan_type, credits_balance, reset_credits_count, applicable_credits_count, raw_json, quota_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		snapshot.CapturedAt.Format(time.RFC3339Nano),
 		accountID,
 		snapshot.PlanType,
 		creditsBalance,
+		resetCreditsCount,
+		applicableCreditsCount,
 		snapshot.RawJSON,
 		len(snapshot.Quotas),
 	)
@@ -101,11 +110,12 @@ func (s *Store) QueryLatestCodex(accountID int64) (*api.CodexSnapshot, error) {
 	var capturedAt string
 	var planType sql.NullString
 	var creditsBalance sql.NullFloat64
+	var resetCreditsCount, applicableCreditsCount sql.NullInt64
 
 	err := s.db.QueryRow(
-		`SELECT id, captured_at, plan_type, credits_balance, quota_count, account_id FROM codex_snapshots WHERE account_id = ? ORDER BY captured_at DESC LIMIT 1`,
+		`SELECT id, captured_at, plan_type, credits_balance, reset_credits_count, applicable_credits_count, quota_count, account_id FROM codex_snapshots WHERE account_id = ? ORDER BY captured_at DESC LIMIT 1`,
 		accountID,
-	).Scan(&snapshot.ID, &capturedAt, &planType, &creditsBalance, new(int), &snapshot.AccountID)
+	).Scan(&snapshot.ID, &capturedAt, &planType, &creditsBalance, &resetCreditsCount, &applicableCreditsCount, new(int), &snapshot.AccountID)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -124,6 +134,12 @@ func (s *Store) QueryLatestCodex(accountID int64) (*api.CodexSnapshot, error) {
 	}
 	if creditsBalance.Valid {
 		snapshot.CreditsBalance = &creditsBalance.Float64
+	}
+	if resetCreditsCount.Valid {
+		snapshot.ResetCreditsAvailableCount = api.CodexOptionalInt64{Value: resetCreditsCount.Int64, Valid: true}
+	}
+	if applicableCreditsCount.Valid {
+		snapshot.ResetCreditsApplicableCount = api.CodexOptionalInt64{Value: applicableCreditsCount.Int64, Valid: true}
 	}
 
 	rows, err := s.db.Query(
@@ -163,13 +179,13 @@ func (s *Store) QueryCodexRange(accountID int64, start, end time.Time, limit ...
 	if accountID == 0 {
 		accountID = DefaultCodexAccountID
 	}
-	query := `SELECT id, captured_at, plan_type, credits_balance, quota_count, account_id FROM codex_snapshots
+	query := `SELECT id, captured_at, plan_type, credits_balance, reset_credits_count, applicable_credits_count, quota_count, account_id FROM codex_snapshots
 		WHERE account_id = ? AND captured_at BETWEEN ? AND ? ORDER BY captured_at ASC`
 	args := []interface{}{accountID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)}
 	if len(limit) > 0 && limit[0] > 0 {
-		query = `SELECT id, captured_at, plan_type, credits_balance, quota_count, account_id
+		query = `SELECT id, captured_at, plan_type, credits_balance, reset_credits_count, applicable_credits_count, quota_count, account_id
 			FROM (
-				SELECT id, captured_at, plan_type, credits_balance, quota_count, account_id
+				SELECT id, captured_at, plan_type, credits_balance, reset_credits_count, applicable_credits_count, quota_count, account_id
 				FROM codex_snapshots
 				WHERE account_id = ? AND captured_at BETWEEN ? AND ?
 				ORDER BY captured_at DESC
@@ -191,7 +207,8 @@ func (s *Store) QueryCodexRange(accountID int64, start, end time.Time, limit ...
 		var capturedAt string
 		var planType sql.NullString
 		var creditsBalance sql.NullFloat64
-		if err := rows.Scan(&snap.ID, &capturedAt, &planType, &creditsBalance, new(int), &snap.AccountID); err != nil {
+		var resetCreditsCount, applicableCreditsCount sql.NullInt64
+		if err := rows.Scan(&snap.ID, &capturedAt, &planType, &creditsBalance, &resetCreditsCount, &applicableCreditsCount, new(int), &snap.AccountID); err != nil {
 			return nil, fmt.Errorf("failed to scan codex snapshot: %w", err)
 		}
 		parsedCapturedAt, err := parseCodexTime(capturedAt, "codex snapshot captured_at")
@@ -204,6 +221,12 @@ func (s *Store) QueryCodexRange(accountID int64, start, end time.Time, limit ...
 		}
 		if creditsBalance.Valid {
 			snap.CreditsBalance = &creditsBalance.Float64
+		}
+		if resetCreditsCount.Valid {
+			snap.ResetCreditsAvailableCount = api.CodexOptionalInt64{Value: resetCreditsCount.Int64, Valid: true}
+		}
+		if applicableCreditsCount.Valid {
+			snap.ResetCreditsApplicableCount = api.CodexOptionalInt64{Value: applicableCreditsCount.Int64, Valid: true}
 		}
 		snapshots = append(snapshots, &snap)
 	}
@@ -1034,6 +1057,48 @@ func (s *Store) MergeCodexAccountData(targetID, sourceID int64) error {
 		targetID, sourceID,
 	); err != nil {
 		return fmt.Errorf("failed to merge reset cycles: %w", err)
+	}
+
+	// Move tracked reset credits. UPDATE OR REPLACE resolves a credit ID that
+	// exists on both rows by deleting the target row and inserting the source
+	// one. The target's notification marker and earliest first_seen must survive
+	// that, and the merged row must stay live if either side was live - a stale
+	// gone_at on the source must not hide a live target credit. Copy those
+	// values onto the source rows first, with parameterized SQL.
+	if _, err := tx.Exec(
+		`UPDATE codex_reset_credits AS src SET
+			notified_at = COALESCE(src.notified_at, (
+				SELECT tgt.notified_at FROM codex_reset_credits AS tgt
+				WHERE tgt.account_id = ? AND tgt.credit_id = src.credit_id
+			)),
+			first_seen = MIN(src.first_seen, COALESCE((
+				SELECT tgt.first_seen FROM codex_reset_credits AS tgt
+				WHERE tgt.account_id = ? AND tgt.credit_id = src.credit_id
+			), src.first_seen)),
+			gone_at = CASE
+				WHEN src.gone_at IS NULL OR EXISTS (
+					SELECT 1 FROM codex_reset_credits AS tgt
+					WHERE tgt.account_id = ? AND tgt.credit_id = src.credit_id AND tgt.gone_at IS NULL
+				) THEN NULL
+				ELSE src.gone_at
+			END
+		WHERE src.account_id = ?`,
+		targetID, targetID, targetID, sourceID,
+	); err != nil {
+		return fmt.Errorf("failed to merge reset-credit metadata: %w", err)
+	}
+	if _, err := tx.Exec(
+		`UPDATE OR REPLACE codex_reset_credits SET account_id = ? WHERE account_id = ?`,
+		targetID, sourceID,
+	); err != nil {
+		return fmt.Errorf("failed to merge reset credits: %w", err)
+	}
+	// The target's last-check row stands; both accounts polled the same identity.
+	if _, err := tx.Exec(
+		`DELETE FROM codex_reset_credit_checks WHERE account_id = ?`,
+		sourceID,
+	); err != nil {
+		return fmt.Errorf("failed to merge reset-credit checks: %w", err)
 	}
 
 	// Mark source account as deleted
