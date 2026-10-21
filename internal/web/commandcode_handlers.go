@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -85,10 +86,10 @@ func (h *Handler) computeCommandCodeRate(quotaName string, currentUtil float64, 
 			first := points[0]
 			last := points[len(points)-1]
 			elapsed := last.CapturedAt.Sub(first.CapturedAt)
-			if elapsed >= 5*time.Minute {
-				if delta := last.Utilization - first.Utilization; delta > 0 {
-					result.Rate = delta / elapsed.Hours()
-				}
+			// Match the OpenCode window: a short burst cannot support an
+			// hourly projection, especially over a multi-week window.
+			if elapsed >= 20*time.Minute {
+				result.Rate = math.Max(0, last.Utilization-first.Utilization) / elapsed.Hours()
 				result.HasRate = true
 			}
 		}
@@ -135,20 +136,15 @@ func buildCommandCodeBurnRateInsight(quota api.CommandCodeQuota, rate commandCod
 	}
 
 	if !rate.HasRate {
-		item.Type = "forecast"
-		item.Severity = "info"
-		item.Metric = "Analyzing..."
-		item.Sublabel = sublabel
-		item.Desc = fmt.Sprintf("Currently at %.0f%%. Collecting more snapshots to estimate burn rate and refine reset projection.", quota.Utilization)
 		return item
 	}
 
 	if rate.Rate < 0.01 {
 		item.Type = "forecast"
 		item.Severity = "positive"
-		item.Metric = "Idle"
+		item.Metric = "Flat"
 		item.Sublabel = sublabel
-		item.Desc = fmt.Sprintf("Currently at %.0f%%. No meaningful burn detected recently, so this quota looks stable through the rest of the cycle.", quota.Utilization)
+		item.Desc = fmt.Sprintf("Currently at %.0f%%. No measurable increase in the last 30 minutes, so this window is on pace to finish near %.0f%%.", quota.Utilization, projected)
 		return item
 	}
 
@@ -586,9 +582,12 @@ func (h *Handler) buildCommandCodeInsights(hidden map[string]bool, _ time.Durati
 		}
 	}
 
+	now := time.Now()
 	for _, quota := range quotas {
-		// A quota with no cap has no meaningful percentage to forecast.
-		if quota.Limit <= 0 {
+		// A dollar balance has no percentage to forecast: the remaining credit
+		// is already a headline stat, so a "Monthly Burn Rate" here would be a
+		// projection of the raw spend, not utilization.
+		if quota.Limit <= 0 || quota.Format == api.CommandCodeQuotaFormatCurrency {
 			continue
 		}
 		rate := h.computeCommandCodeRate(quota.Name, quota.Utilization, summaries[quota.Name])
@@ -596,22 +595,60 @@ func (h *Handler) buildCommandCodeInsights(hidden map[string]bool, _ time.Durati
 		if hidden[insightKey] {
 			continue
 		}
-		value := "Analyzing..."
-		if rate.HasRate {
-			value = fmt.Sprintf("%.1f%%/hr", rate.Rate)
-		}
 		insight := buildCommandCodeBurnRateInsight(quota, rate)
+		if insight.Metric == "" {
+			continue
+		}
 		resp.Stats = append(resp.Stats, commandCodeInsightStat{
 			Key:      insightKey,
 			Label:    fmt.Sprintf("%s Burn Rate", commandCodeDisplayName(quota.Name)),
-			Value:    value,
+			Value:    insight.Metric,
 			Sublabel: insight.Sublabel,
 			Metric:   insight.Metric,
 			Severity: insight.Severity,
 			Desc:     insight.Desc,
 		})
+		if insight.Severity == "negative" || insight.Severity == "warning" {
+			resp.Insights = appendWindowInsight(resp.Insights, insight)
+		}
+		if quota.ResetsAt != nil && !hidden["reset_"+quota.Name] {
+			creditsLeft := quota.Limit - quota.Used
+			resetIn := quota.ResetsAt.Sub(now)
+			if resetIn <= 0 {
+				continue
+			}
+			projected := quota.Used + rate.Rate*resetIn.Hours()
+			desc := fmt.Sprintf("%s resets in %s with %.2f credits left. No measurable burn right now, so the window should finish with credits to spare.", commandCodeDisplayName(quota.Name), formatDuration(resetIn), creditsLeft)
+			switch {
+			case rate.HasRate && projected >= quota.Limit:
+				desc = fmt.Sprintf("%s resets in %s. At the current rate the remaining %.2f credits would run out first.", commandCodeDisplayName(quota.Name), formatDuration(resetIn), creditsLeft)
+			case rate.HasRate && projected >= quota.Limit*0.8:
+				desc = fmt.Sprintf("%s resets in %s and current burn projects %.2f of %.2f credits used, close to the cap.", commandCodeDisplayName(quota.Name), formatDuration(resetIn), projected, quota.Limit)
+			case rate.HasRate:
+				desc = fmt.Sprintf("%s resets in %s. Current burn projects %.2f of %.2f credits used, leaving about %.2f.", commandCodeDisplayName(quota.Name), formatDuration(resetIn), projected, quota.Limit, quota.Limit-projected)
+			}
+			severity := "info"
+			switch {
+			case rate.HasRate && projected >= quota.Limit:
+				severity = "negative"
+			case rate.HasRate && projected >= quota.Limit*0.8:
+				severity = "warning"
+			case rate.HasRate:
+				severity = "positive"
+			}
+			resp.Insights = appendWindowInsight(resp.Insights, insightItem{
+				Key:      "reset_" + quota.Name,
+				Type:     "window",
+				Severity: severity,
+				Title:    commandCodeDisplayName(quota.Name) + " Reset",
+				Metric:   formatDuration(resetIn),
+				Sublabel: fmt.Sprintf("%.2f of %.2f credits left", creditsLeft, quota.Limit),
+				Desc:     desc,
+			})
+		}
 	}
 
+	resp.Stats, resp.Insights = boundWindowInsights(resp.Stats, resp.Insights)
 	return resp
 }
 

@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -96,14 +97,13 @@ func (h *Handler) computeOpenCodeRate(quotaName string, currentUtil float64, sum
 			first := points[0]
 			last := points[len(points)-1]
 			elapsed := last.CapturedAt.Sub(first.CapturedAt)
-			if elapsed >= 5*time.Minute {
-				delta := last.Utilization - first.Utilization
-				if delta > 0 {
-					result.Rate = delta / elapsed.Hours()
-					result.HasRate = true
-				} else {
-					result.HasRate = true
-				}
+			// A handful of polls over the full window is the only trustworthy
+			// basis for an hourly rate; extrapolating from a short burst
+			// produces the misleading double-digit rates the dashboard used to
+			// show for the monthly window.
+			if elapsed >= 20*time.Minute {
+				result.Rate = math.Max(0, last.Utilization-first.Utilization) / elapsed.Hours()
+				result.HasRate = true
 			}
 		}
 	}
@@ -130,6 +130,8 @@ func (h *Handler) computeOpenCodeRate(quotaName string, currentUtil float64, sum
 	return result
 }
 
+// buildOpenCodeBurnRateInsight returns the card for a measured rate, or an
+// empty Metric until a window long enough to measure exists.
 func buildOpenCodeBurnRateInsight(quota api.OpenCodeQuota, rate opencodeQuotaRate) insightItem {
 	item := insightItem{
 		Key:   fmt.Sprintf("forecast_%s", quota.Name),
@@ -150,20 +152,16 @@ func buildOpenCodeBurnRateInsight(quota api.OpenCodeQuota, rate opencodeQuotaRat
 	}
 
 	if !rate.HasRate {
-		item.Type = "forecast"
-		item.Severity = "info"
-		item.Metric = "Analyzing..."
-		item.Sublabel = sublabel
-		item.Desc = fmt.Sprintf("Currently at %.0f%%. Collecting more snapshots to estimate burn rate and refine reset projection.", quota.Utilization)
 		return item
 	}
 
 	if rate.Rate < 0.01 {
+		// A measured flat window is a real result, not a missing one.
 		item.Type = "forecast"
 		item.Severity = "positive"
-		item.Metric = "Idle"
+		item.Metric = "Flat"
 		item.Sublabel = sublabel
-		item.Desc = fmt.Sprintf("Currently at %.0f%%. No meaningful burn detected recently, so this quota looks stable through the rest of the cycle.", quota.Utilization)
+		item.Desc = fmt.Sprintf("Currently at %.0f%%. No measurable increase in the last 30 minutes, so this window is on pace to finish near %.0f%%.", quota.Utilization, projected)
 		return item
 	}
 
@@ -573,33 +571,90 @@ func (h *Handler) buildOpenCodeInsights(hidden map[string]bool, _ time.Duration)
 			}
 		}
 	}
-	if len(selected) == 0 {
-		selected = quotas
-	}
-
+	// The three upstream windows are distinct meters; an unrecognised quota has
+	// no display name or documented reset semantics, so it is not charted here.
+	now := time.Now()
 	for _, quota := range selected {
 		rate := h.computeOpenCodeRate(quota.Name, quota.Utilization, summaries[quota.Name])
 		insightKey := fmt.Sprintf("forecast_%s", quota.Name)
-		if hidden[insightKey] {
+		if !hidden[insightKey] {
+			insight := buildOpenCodeBurnRateInsight(quota, rate)
+			if insight.Metric != "" {
+				resp.Stats = append(resp.Stats, opencodeInsightStat{
+					Key:      insightKey,
+					Label:    fmt.Sprintf("%s Burn Rate", opencodeDisplayName(quota.Name)),
+					Value:    insight.Metric,
+					Sublabel: insight.Sublabel,
+					Metric:   insight.Metric,
+					Severity: insight.Severity,
+					Desc:     insight.Desc,
+				})
+				if insight.Severity == "negative" || insight.Severity == "warning" {
+					resp.Insights = appendWindowInsight(resp.Insights, insight)
+				}
+			}
+		}
+		if quota.ResetsAt == nil || hidden["reset_"+quota.Name] {
 			continue
 		}
-		value := "Analyzing..."
-		if rate.HasRate {
-			value = fmt.Sprintf("%.1f%%/hr", rate.Rate)
+		resetIn := quota.ResetsAt.Sub(now)
+		if resetIn <= 0 {
+			continue
 		}
-		insight := buildOpenCodeBurnRateInsight(quota, rate)
-		resp.Stats = append(resp.Stats, opencodeInsightStat{
-			Key:      insightKey,
-			Label:    fmt.Sprintf("%s Burn Rate", opencodeDisplayName(quota.Name)),
-			Value:    value,
-			Sublabel: insight.Sublabel,
-			Metric:   insight.Metric,
-			Severity: insight.Severity,
-			Desc:     insight.Desc,
+		display := opencodeDisplayName(quota.Name)
+		remaining := 100 - quota.Utilization
+		desc := fmt.Sprintf("%s resets in %s with %.0f%% of the window still available.", display, formatDuration(resetIn), remaining)
+		severity := "info"
+		switch {
+		case rate.HasRate && rate.ExhaustsFirst:
+			severity = "negative"
+			desc = fmt.Sprintf("%s resets in %s. At the current burn the remaining %.0f%% would be used in %s, before the window resets.", display, formatDuration(resetIn), remaining, formatDuration(rate.TimeToExhaust))
+		case rate.HasRate && rate.ProjectedPct >= 80:
+			severity = "warning"
+			desc = fmt.Sprintf("%s resets in %s and current burn projects %.0f%% by then, close to the limit.", display, formatDuration(resetIn), rate.ProjectedPct)
+		case rate.HasRate:
+			severity = "positive"
+			desc = fmt.Sprintf("%s resets in %s. Current burn projects %.0f%% by then, leaving about %.0f%%.", display, formatDuration(resetIn), rate.ProjectedPct, 100-rate.ProjectedPct)
+		}
+		resp.Insights = appendWindowInsight(resp.Insights, insightItem{
+			Key:      "reset_" + quota.Name,
+			Type:     "window",
+			Severity: severity,
+			Title:    display + " Reset",
+			Metric:   formatDuration(resetIn),
+			Sublabel: fmt.Sprintf("%.0f%% used", quota.Utilization),
+			Desc:     desc,
 		})
 	}
 
+	resp.Stats, resp.Insights = boundWindowInsights(resp.Stats, resp.Insights)
 	return resp
+}
+
+// maxProviderInsights bounds the dashboard insight payload per CLAUDE.md.
+const maxProviderInsights = 50
+
+// boundWindowInsights caps the payload without dropping stats the page needs.
+func boundWindowInsights[T any](stats []T, insights []insightItem) ([]T, []insightItem) {
+	room := maxProviderInsights - len(stats)
+	if room < 0 {
+		room = 0
+	}
+	if len(insights) > room {
+		insights = insights[:room]
+	}
+	return stats, insights
+}
+
+// appendWindowInsight appends unless the key is already present, keeping the
+// window-provider payloads free of duplicate cards.
+func appendWindowInsight(items []insightItem, item insightItem) []insightItem {
+	for _, existing := range items {
+		if existing.Key == item.Key {
+			return items
+		}
+	}
+	return append(items, item)
 }
 
 func (h *Handler) loggingHistoryOpenCode(w http.ResponseWriter, r *http.Request) {
