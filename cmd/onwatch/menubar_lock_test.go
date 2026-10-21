@@ -99,12 +99,17 @@ func TestCompanionLogSinkFallbackGoesToStderr(t *testing.T) {
 	// A directory path cannot be opened as a file, forcing the failure path on
 	// every platform.
 	badPath := t.TempDir()
-	sink, err := companionLogSink(badPath, false)
+	sink, closer, err := companionLogSink(badPath, false)
 	if err == nil {
 		t.Fatal("expected an error opening a directory as the log file")
 	}
 	if sink != os.Stderr {
 		t.Fatal("the fallback sink must be stderr so crash traces reach the daemon log")
+	}
+	// os.Stderr is an *os.File and so satisfies io.Closer; handing it back
+	// would let the caller close the process's stderr and lose crash traces.
+	if closer != nil {
+		t.Fatal("the stderr fallback must not be closable")
 	}
 }
 

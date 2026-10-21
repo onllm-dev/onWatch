@@ -54,15 +54,19 @@ func companionRelayWriter(logFile io.Writer, cfg *config.Config) io.Writer {
 // as "log_path". Debug mode logs to stdout and stderr, as before. A failure to
 // open the file falls back to stderr (the daemon records crash stderr in its
 // own log) rather than stdout, which the daemon now drains without recording.
-func companionLogSink(path string, debugMode bool) (io.Writer, error) {
+//
+// The returned closer is non-nil only when the file was opened here. Debug
+// mode and the stderr fallback must never be closed: closing os.Stderr would
+// swallow the panic traces the daemon captures from a crashed companion.
+func companionLogSink(path string, debugMode bool) (io.Writer, io.Closer, error) {
 	if debugMode {
-		return io.MultiWriter(os.Stdout, os.Stderr), nil
+		return io.MultiWriter(os.Stdout, os.Stderr), nil, nil
 	}
 	logFile, err := config.OpenRotatingLogFile(path)
 	if err != nil {
-		return os.Stderr, err
+		return os.Stderr, nil, err
 	}
-	return logFile, nil
+	return logFile, logFile, nil
 }
 
 func menubarPIDPath(testMode bool) string {
@@ -358,13 +362,19 @@ func runMenubarCommand() error {
 	// stderr after a crash and logs it as "Menubar companion crashed ...
 	// stderr=..." in the daemon log, so a crash is never lost just because the
 	// companion could not open its own log.
-	logSink, logErr := companionLogSink(menubarLogPath(cfg), cfg.DebugMode)
+	logSink, logCloser, logErr := companionLogSink(menubarLogPath(cfg), cfg.DebugMode)
 	if logErr != nil {
 		// stderr, not stdout: the daemon drains stdout without recording it.
 		slog.Default().Warn("menubar log unavailable, logging to stderr", "error", logErr)
 	}
-	if closer, ok := logSink.(io.Closer); ok {
-		defer closer.Close()
+	if logCloser != nil {
+		defer func() {
+			if err := logCloser.Close(); err != nil {
+				// slog still writes to the file being closed, so report the
+				// failure directly on stderr.
+				fmt.Fprintf(os.Stderr, "failed to close menubar log: %v\n", err)
+			}
+		}()
 	}
 
 	logger := slog.New(slog.NewTextHandler(logSink, &slog.HandlerOptions{Level: slog.LevelInfo}))
