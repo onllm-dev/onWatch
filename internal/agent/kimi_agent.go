@@ -88,9 +88,11 @@ func (a *KimiAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch Kimi Code usages", "error", err)
+		pollFailed("kimi", "", err)
 		return
 	}
 
+	pollSucceeded("kimi", "")
 	if _, err := a.store.InsertKimiSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert Kimi snapshot", "error", err)
 		return

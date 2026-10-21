@@ -91,9 +91,11 @@ func (a *GrokAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch Grok usage", "error", err)
+		pollFailed("grok", "", err)
 		return
 	}
 
+	pollSucceeded("grok", "")
 	if _, err := a.store.InsertGrokSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert Grok snapshot", "error", err)
 		return

@@ -91,12 +91,14 @@ func (a *MiniMaxAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch MiniMax remains", "error", err)
+		pollFailed("minimax", pollStatusAccountKey(a.accountID), err)
 		return
 	}
 
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
 
+	pollSucceeded("minimax", pollStatusAccountKey(a.accountID))
 	if _, err := a.store.InsertMiniMaxSnapshot(snapshot, a.accountID); err != nil {
 		a.logger.Error("Failed to insert MiniMax snapshot", "error", err)
 	}

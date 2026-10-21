@@ -608,11 +608,16 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 			a.logger.Warn("Statusline data invalid, falling back to API polling")
 		} else {
 			now := time.Now().UTC()
-			snapshot := statuslineToSnapshot(rl, now)
+			// Stamp the snapshot with the file's mtime, not the poll time: the
+			// payload has no timestamp and may be up to the staleness window old.
+			snapshot := statuslineToSnapshot(rl, readStatuslineCapturedAt(a.statuslinePath, now))
 			if _, err := a.store.InsertAnthropicSnapshot(snapshot); err != nil {
 				a.logger.Error("Failed to insert statusline snapshot", "error", err)
 				return // don't fall through to API polling on DB error
 			}
+			// The statusline path is a successful refresh even when the OAuth
+			// API later fails this cycle: freshness is what the record means.
+			pollSucceeded("anthropic", "")
 			if a.tracker != nil {
 				if err := a.tracker.Process(snapshot); err != nil {
 					a.logger.Error("Anthropic tracker processing failed", "error", err)
@@ -646,6 +651,14 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 	// the documented contract of statusline-only mode - common in headless usage
 	// (SDK/--print/remote-control) where no interactive TUI refreshes the file.
 	if a.apiPollingDisabled {
+		// Statusline-only mode. The file is either absent or older than the
+		// staleness window: the card's data cannot advance, and the reason is
+		// the source itself rather than a network/auth failure.
+		if a.statuslinePath != "" && !isStatuslineFresh(a.statuslinePath, a.statuslineStaleness) {
+			if registry := GetPollStatusRegistry(); registry != nil {
+				registry.Report("anthropic", "", PollOutcomeSourceStale)
+			}
+		}
 		return
 	}
 
@@ -834,6 +847,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 						} else {
 							a.logger.Error("Retry after token refresh failed", "error", err)
 						}
+						pollFailed("anthropic", "", err)
 						return
 					}
 					// Success! Fall through to process the response
@@ -920,6 +934,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 			}
 		} else {
 			a.logger.Error("Failed to fetch Anthropic quotas", "error", err)
+			pollFailed("anthropic", "", err)
 			return
 		}
 	} else {
@@ -932,6 +947,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 	}
 
 processResponse:
+	pollSucceeded("anthropic", "")
 	// Reaching here means a poll succeeded, whether directly or via one of the
 	// recovery paths that goto here. Clear all auth failure and retry
 	// scheduling so a later pause starts from a fresh backoff rather than

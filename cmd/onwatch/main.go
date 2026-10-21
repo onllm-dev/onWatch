@@ -1881,7 +1881,14 @@ func run() error {
 		})
 	}
 
+	// One in-memory registry of last-poll outcome classes (network, auth,
+	// rate_limit, ...) so a stale menubar card can say why. Agents publish to
+	// the process-wide instance; the handler reads the same one.
+	pollStatus := agent.NewPollStatusRegistry()
+	agent.SetPollStatusRegistry(pollStatus)
+
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
+	handler.SetPollStatusRegistry(pollStatus)
 	handler.SetVersion(version)
 	handler.SetNotifier(notifier)
 	if anthropicTr != nil {

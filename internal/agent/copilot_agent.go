@@ -89,10 +89,12 @@ func (a *CopilotAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch Copilot quotas", "error", err)
+		pollFailed("copilot", "", err)
 		return
 	}
 
 	// Convert API response to snapshot
+	pollSucceeded("copilot", "")
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
 

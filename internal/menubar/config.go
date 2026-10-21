@@ -128,6 +128,15 @@ type ProviderCard struct {
 	// Clients compute the age label from it against their own wall clock, so
 	// the label keeps counting up even when the daemon cannot be reached.
 	UpdatedAtTime string `json:"updated_at_time,omitempty"`
+	// Stale marks data older than the provider's expected refresh cadence.
+	// It is a freshness flag only: Status still describes usage severity.
+	Stale bool `json:"stale,omitempty"`
+	// StaleReason is a short user-facing phrase ("network error") or empty for
+	// the generic age text. It never contains raw provider error text.
+	StaleReason string `json:"stale_reason,omitempty"`
+	// StaleAfterSeconds lets the client re-evaluate staleness locally on its
+	// age ticker, so a card turns stale even when the daemon is unreachable.
+	StaleAfterSeconds int64 `json:"stale_after_seconds,omitempty"`
 }
 
 // ProviderPromo carries promo metadata for a provider card.

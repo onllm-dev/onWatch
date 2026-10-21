@@ -168,10 +168,12 @@ func (a *AntigravityAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch Antigravity quotas", "source", source, "error", err)
+		pollFailed("antigravity", "", err)
 		return
 	}
 
 	// Store snapshot
+	pollSucceeded("antigravity", "")
 	if _, err := a.store.InsertAntigravitySnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert Antigravity snapshot", "error", err)
 	}

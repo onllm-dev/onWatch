@@ -168,6 +168,7 @@ func (a *CursorAgent) poll(ctx context.Context) {
 					}
 				}
 				a.authPaused = true
+				pollPaused("cursor", "")
 				a.logger.Warn("Cursor polling paused due to auth failures",
 					"fail_count", a.authFailCount,
 				)
@@ -178,10 +179,12 @@ func (a *CursorAgent) poll(ctx context.Context) {
 		if api.IsCursorSessionExpired(err) {
 			a.logger.Error("Cursor session expired - user must re-authenticate", "error", err)
 			a.authPaused = true
+			pollFailed("cursor", "", err)
 			return
 		}
 
 		a.logger.Error("Failed to fetch Cursor quotas", "error", err)
+		pollFailed("cursor", "", err)
 		return
 	}
 
@@ -189,6 +192,7 @@ func (a *CursorAgent) poll(ctx context.Context) {
 	a.authPaused = false
 
 processSnapshot:
+	pollSucceeded("cursor", "")
 	if _, err := a.store.InsertCursorSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert Cursor snapshot", "error", err)
 	}

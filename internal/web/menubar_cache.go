@@ -238,7 +238,7 @@ func (h *Handler) menubarSnapshotForRequest(ctx context.Context) (*menubar.Snaps
 	if err != nil {
 		return nil, err
 	}
-	return data.Snapshot, nil
+	return h.menubarStaleData(data).Snapshot, nil
 }
 
 // menubarGenerationChanged reports whether the snapshot generation moved past

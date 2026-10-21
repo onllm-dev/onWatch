@@ -57,6 +57,10 @@
                call to action, not just high usage. */
             --attention: #fbbf24;
             --attention-halo: rgba(251, 191, 36, 0.22);
+            /* Stale (older than the provider cadence): amber label, hollow dot.
+               Deliberately distinct from --attention so a stale-only card does
+               not read as needing a user action. */
+            --stale: #fbbf24;
         }
 
         :root[data-theme="light"] {
@@ -88,6 +92,7 @@
             /* Darker amber on the light card so the dot keeps contrast. */
             --attention: #d97706;
             --attention-halo: rgba(217, 119, 6, 0.2);
+            --stale: #b45309;
         }
 
         * {
@@ -522,6 +527,80 @@
            halo around the dot, visible on both card surfaces. */
         .provider-status-dot.status-attention {
             box-shadow:
+                0 0 0 1.5px var(--attention),
+                0 0 0 3.5px var(--attention-halo);
+        }
+
+        /* Stale data: the age label turns amber and the severity dot becomes a
+           hollow ring (severity color stays the ring, fill is transparent).
+           The card keeps its numbers; staleness never changes severity. On an
+           attention card both treatments show: attention keeps its halo and
+           the stale ring sits inside it. */
+        .provider-updated.is-stale {
+            color: var(--stale);
+            font-weight: 600;
+            cursor: default;
+        }
+
+        /* Wrapper that carries the stale age tooltip; positioned so the tip
+           anchors to the label, not to the card. */
+        .provider-age {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            border-radius: 6px;
+        }
+
+        .provider-age:focus-visible {
+            outline: 2px solid var(--focus);
+            outline-offset: 2px;
+        }
+
+        .provider-age:hover .provider-status-tip,
+        .provider-age:focus-within .provider-status-tip,
+        .provider-age:focus .provider-status-tip {
+            display: block;
+        }
+
+        .provider-age.tip-above .provider-status-tip {
+            top: auto;
+            bottom: calc(100% + 6px);
+        }
+
+        .provider-status-dot.is-stale {
+            background: transparent;
+            box-shadow: inset 0 0 0 1.5px var(--healthy);
+        }
+
+        .provider-status-dot.status-warning.is-stale {
+            box-shadow: inset 0 0 0 1.5px var(--warning);
+        }
+
+        .provider-status-dot.status-critical.is-stale,
+        .provider-status-dot.status-danger.is-stale {
+            box-shadow: inset 0 0 0 1.5px var(--critical);
+        }
+
+        /* Both states at once: the hollow severity ring stays the inner ring,
+           and the attention halo sits outside it. */
+        .provider-status-dot.status-attention.is-stale {
+            box-shadow:
+                inset 0 0 0 1.5px var(--healthy),
+                0 0 0 1.5px var(--attention),
+                0 0 0 3.5px var(--attention-halo);
+        }
+
+        .provider-status-dot.status-warning.status-attention.is-stale {
+            box-shadow:
+                inset 0 0 0 1.5px var(--warning),
+                0 0 0 1.5px var(--attention),
+                0 0 0 3.5px var(--attention-halo);
+        }
+
+        .provider-status-dot.status-critical.status-attention.is-stale,
+        .provider-status-dot.status-danger.status-attention.is-stale {
+            box-shadow:
+                inset 0 0 0 1.5px var(--critical),
                 0 0 0 1.5px var(--attention),
                 0 0 0 3.5px var(--attention-halo);
         }
@@ -1754,9 +1833,16 @@
                 mistralRecovery.grantResult(result);
                 if (refresh && result !== 'idle' && result !== 'pending') void loadSnapshot();
             };
+            // Native hosts call this from the popover show path. It is the
+            // same coalesced fresh fetch, not a no-op soft refresh.
+            window.__onwatchMenubarShown = () => {
+                requestFreshSnapshot();
+            };
             window.__onwatchMenubarRefresh = () => {
                 mistralRecovery.suspended = false;
                 sendNativeAction('browser_access_status');
+                // Always a real fetch (cache: "no-store"), coalesced with any
+                // in-flight request by the generation guard.
                 void refreshData();
             };
 
@@ -1822,18 +1908,17 @@
             // the bottom of the scrollable body. Event delegation keeps this
             // working across re-renders, and the tip is shown by CSS hover, so
             // mouseover/focus is the first moment it has a measurable box.
-            document.addEventListener("mouseover", (event) => {
-                const status = event.target instanceof Element ? event.target.closest(".provider-status") : null;
+            const positionTipFor = (event) => {
+                if (!(event.target instanceof Element)) {
+                    return;
+                }
+                const status = event.target.closest(".provider-status, .provider-age");
                 if (status) {
                     positionStatusTip(status);
                 }
-            });
-            document.addEventListener("focusin", (event) => {
-                const status = event.target instanceof Element ? event.target.closest(".provider-status") : null;
-                if (status) {
-                    positionStatusTip(status);
-                }
-            });
+            };
+            document.addEventListener("mouseover", positionTipFor);
+            document.addEventListener("focusin", positionTipFor);
             window.addEventListener("resize", queueResizeReport);
             // A host that missed the first report (bridge or iframe listener not
             // yet ready) must still get a later one. Re-arm the debounce on
@@ -1843,9 +1928,17 @@
                 queueResizeReport();
             };
             document.addEventListener("visibilitychange", () => {
-                if (!document.hidden) rearmResizeReport();
+                if (!document.hidden) {
+                    rearmResizeReport();
+                    // Timers are throttled or suspended in a hidden popover, so
+                    // catch up immediately on show instead of waiting a tick.
+                    requestFreshSnapshot();
+                }
             });
-            window.addEventListener("focus", rearmResizeReport);
+            window.addEventListener("focus", () => {
+                rearmResizeReport();
+                requestFreshSnapshot();
+            });
 
             init();
 
@@ -1865,6 +1958,7 @@
                 try {
                     const response = await fetch(API_BASE + "/api/menubar/preferences", {
                         credentials: "same-origin",
+                        cache: "no-store",
                         headers: { "Accept": "application/json" }
                     });
                     if (!response.ok) {
@@ -1954,6 +2048,7 @@
                     const response = await fetch(API_BASE + "/api/menubar/summary", {
                         signal,
                         credentials: "same-origin",
+                        cache: "no-store",
                         headers: { "Accept": "application/json" }
                     });
                     if (!response.ok) {
@@ -1977,6 +2072,30 @@
 
             async function refreshData() {
                 await Promise.all([loadPreferences(), loadSnapshot()]);
+            }
+
+            // requestFreshSnapshot is the show/visibility path: every time the
+            // popover becomes visible (native show, window focus, tab
+            // visibility) ask for a summary, so a page whose timers were
+            // suspended catches up immediately. It rides the existing
+            // generation guard and coalesces with any in-flight fetch, so a
+            // burst of show/focus events cannot stack requests.
+            let pendingFreshSnapshot = false;
+            let freshSnapshotInFlight = false;
+            function requestFreshSnapshot() {
+                if (freshSnapshotInFlight) {
+                    pendingFreshSnapshot = true;
+                    return;
+                }
+                freshSnapshotInFlight = true;
+                pendingFreshSnapshot = false;
+                void loadSnapshot().finally(() => {
+                    freshSnapshotInFlight = false;
+                    if (pendingFreshSnapshot) {
+                        pendingFreshSnapshot = false;
+                        requestFreshSnapshot();
+                    }
+                });
             }
 
             // Native popover hosts: macOS registers one WKScriptMessageHandler per
@@ -2063,6 +2182,7 @@
                     const response = await fetch(API_BASE + "/api/menubar/preferences", {
                         method: "PUT",
                         credentials: "same-origin",
+                        cache: "no-store",
                         headers: {
                             "Accept": "application/json",
                             "Content-Type": "application/json",
@@ -2118,6 +2238,7 @@
                     const response = await fetch(API_BASE + "/api/menubar/preferences", {
                         method: "PUT",
                         credentials: "same-origin",
+                        cache: "no-store",
                         headers: {
                             "Accept": "application/json",
                             "Content-Type": "application/json",
@@ -2641,11 +2762,50 @@
                 return "Healthy";
             }
 
+            // providerStaleNow re-evaluates staleness against this client's
+            // wall clock, so a long-lived popover (or one whose daemon is
+            // unreachable) marks a card stale without a new response. The
+            // server's flag is authoritative; stale_after_seconds lets the 30s
+            // age ticker make the same decision locally.
+            function providerStaleNow(provider) {
+                if (!provider) {
+                    return false;
+                }
+                if (provider.stale === true) {
+                    return true;
+                }
+                const after = Number(provider.stale_after_seconds || 0);
+                if (!(after > 0)) {
+                    return false;
+                }
+                const then = Date.parse(provider.updated_at_time || provider.updatedAtTime || "");
+                if (!Number.isFinite(then) || then <= 0) {
+                    return false;
+                }
+                return (Date.now() - then) / 1000 > after;
+            }
+
+            // providerStaleTooltip is the hover/focus text for a stale card.
+            // A class reason ("network error") is paired with the age; the
+            // generic server reason already reads as "no update in 14m".
+            function providerStaleTooltip(provider) {
+                const reason = String(provider && provider.stale_reason || "").trim();
+                if (!reason) {
+                    return "no update in " + providerAgeLabel(provider);
+                }
+                if (reason.indexOf("no update in") === 0) {
+                    return reason;
+                }
+                const age = providerAgeLabel(provider);
+                const ageText = age === "now" ? "just now" : age + " ago";
+                return "Last updated " + ageText + " - " + reason;
+            }
+
             // providerAttention is the action a card needs from the user, or
-            // null when there is nothing to do. Staleness is deliberately not
-            // an attention state: the age label already carries it, and a
-            // second stale indicator is what the inline tag used to be
-            // (minimal-UI rule, issue #147).
+            // null when there is nothing to do. Staleness is a separate, age
+            // driven state (amber label, hollow dot): it is not an attention
+            // state, because old data usually needs no user action. Attention
+            // wins the dot tooltip wording when both apply.
             function providerAttention(provider) {
                 if (!provider) {
                     return null;
@@ -2676,6 +2836,9 @@
                 if (attention) {
                     return attention;
                 }
+                if (providerStaleNow(provider)) {
+                    return providerStaleTooltip(provider);
+                }
                 const peak = Math.round(clampPercent(provider && provider.highest_percent));
                 return `${standardStatusLabel(provider)} - peak ${peak}%`;
             }
@@ -2688,10 +2851,17 @@
             function providerStatusMarkup(provider) {
                 const status = String(provider && provider.status || "healthy");
                 const dotTitle = providerDotTitle(provider);
-                const attentionClass = providerAttention(provider) ? " status-attention" : "";
+                const attention = providerAttention(provider);
+                const attentionClass = attention ? " status-attention" : "";
+                const stale = providerStaleNow(provider);
+                const staleClass = stale ? " is-stale" : "";
+                // The ticker re-evaluates from these attributes: updated time,
+                // cadence, and both candidate tooltip texts, so a card can go
+                // stale while the daemon is unreachable without a re-render.
+                const severityTitle = `${standardStatusLabel(provider)} - peak ${Math.round(clampPercent(provider.highest_percent))}%`;
                 return `
-                    <span class="provider-status" tabindex="0" role="img" aria-label="${escapeHTML(dotTitle)}">
-                        <span class="provider-status-dot status-${escapeHTML(status)}${attentionClass}"></span>
+                    <span class="provider-status" tabindex="0" role="img" aria-label="${escapeHTML(dotTitle)}" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-stale-after="${escapeHTML(String(provider.stale_after_seconds || 0))}" data-attention-title="${escapeHTML(attention || '')}" data-severity-title="${escapeHTML(severityTitle)}">
+                        <span class="provider-status-dot status-${escapeHTML(status)}${attentionClass}${staleClass}"></span>
                         <span class="provider-status-tip" role="tooltip" aria-hidden="true">${escapeHTML(dotTitle)}</span>
                     </span>
                 `;
@@ -2713,6 +2883,22 @@
                 }
             }
 
+            // providerAgeMarkup renders the freshness label. A stale label is
+            // amber and gets the same custom tooltip as the dot (hover or
+            // focus), with no inline text added to the card.
+            function providerAgeMarkup(provider) {
+                const stale = providerStaleNow(provider);
+                const label = providerAgeLabel(provider);
+                if (!stale) {
+                    return `<span class="provider-updated" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-updated-fallback="${escapeHTML(provider.updated_at || '')}" data-stale-after="${escapeHTML(String(provider.stale_after_seconds || 0))}">${escapeHTML(label)}</span>`;
+                }
+                const tooltip = providerStaleTooltip(provider);
+                return `<span class="provider-age" tabindex="0" role="img" aria-label="${escapeHTML(tooltip)}" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-stale-after="${escapeHTML(String(provider.stale_after_seconds || 0))}" data-stale-tooltip="${escapeHTML(tooltip)}">
+                    <span class="provider-updated is-stale" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-updated-fallback="${escapeHTML(provider.updated_at || '')}" data-stale-after="${escapeHTML(String(provider.stale_after_seconds || 0))}">${escapeHTML(label)}</span>
+                    <span class="provider-status-tip" role="tooltip" aria-hidden="true">${escapeHTML(tooltip)}</span>
+                </span>`;
+            }
+
             // standardHeaderMarkup keeps the icon next to a normally colored
             // name, then a compact right cluster with the freshness label and a
             // status dot whose tooltip carries the status.
@@ -2725,7 +2911,7 @@
                             ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
                         </div>
                         <span class="provider-meta">
-                            <span class="provider-updated" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-updated-fallback="${escapeHTML(provider.updated_at || '')}">${escapeHTML(providerAgeLabel(provider))}</span>
+                            ${providerAgeMarkup(provider)}
                             ${providerStatusMarkup(provider)}
                         </span>
                     </div>
@@ -2829,7 +3015,7 @@
                             ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
                         </div>
                         <span class="provider-meta">
-                            <span class="provider-updated" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-updated-fallback="${escapeHTML(provider.updated_at || '')}">${escapeHTML(providerAgeLabel(provider))}</span>
+                            ${providerAgeMarkup(provider)}
                             ${providerStatusMarkup(provider)}
                         </span>
                     </div>
@@ -3795,13 +3981,61 @@
             // popover (or one whose daemon is unreachable) keeps counting up
             // without a repaint.
             function updateAgeLabels() {
+                // Staleness is re-evaluated locally on every tick from the
+                // recorded capture time and stale_after_seconds. That is what
+                // turns a card stale while the daemon is unreachable, when no
+                // new snapshot can arrive. If any card crossed the threshold,
+                // re-render once so the dot ring and stale tooltips match; the
+                // numbers themselves never change here.
+                let staleChanged = false;
+                document.querySelectorAll(".provider-status[data-updated-at]").forEach((el) => {
+                    const raw = el.getAttribute("data-updated-at") || "";
+                    if (!raw) {
+                        return;
+                    }
+                    const was = el.querySelector(".provider-status-dot.is-stale") !== null;
+                    const stale = providerStaleFromAttributes(raw, el.getAttribute("data-stale-after"));
+                    if (was !== stale) {
+                        staleChanged = true;
+                    }
+                });
+                if (staleChanged) {
+                    render();
+                    return;
+                }
                 document.querySelectorAll(".provider-updated[data-updated-at]").forEach((el) => {
                     const raw = el.getAttribute("data-updated-at") || "";
                     const fallback = el.getAttribute("data-updated-fallback") || "";
                     if (!raw) {
                         return;
                     }
-                    el.textContent = ageLabelFromTimestamp(raw, fallback);
+                    const text = ageLabelFromTimestamp(raw, fallback);
+                    el.textContent = text;
+                    // Keep the stale tooltip's age phrase current while it is
+                    // hovered, without rebuilding the DOM.
+                    const wrapper = el.closest(".provider-age");
+                    const tip = wrapper && wrapper.querySelector(".provider-status-tip");
+                    if (tip) {
+                        tip.textContent = staleTooltipText(raw, text, wrapper.getAttribute("data-stale-tooltip") || "");
+                    }
+                });
+                // Dot tooltips carry the same age phrase for stale cards.
+                document.querySelectorAll(".provider-status-dot.is-stale").forEach((dot) => {
+                    const status = dot.closest(".provider-status");
+                    if (!status) {
+                        return;
+                    }
+                    const tip = status.querySelector(".provider-status-tip");
+                    if (!tip) {
+                        return;
+                    }
+                    const existing = tip.textContent || "";
+                    if (!/^(Last updated |no update in )/.test(existing)) {
+                        // Attention wording wins; do not overwrite it.
+                        return;
+                    }
+                    const raw = status.getAttribute("data-updated-at") || "";
+                    tip.textContent = staleTooltipText(raw, ageLabelFromTimestamp(raw, ""), existing);
                 });
                 if (state.snapshot) {
                     headerUpdated.textContent = ageLabelFromTimestamp(
@@ -3809,6 +4043,33 @@
                         state.snapshot.updated_ago
                     );
                 }
+            }
+
+            // providerStaleFromAttributes is the DOM-only staleness check used
+            // by the ticker (matches providerStaleNow without a card object).
+            function providerStaleFromAttributes(raw, staleAfter) {
+                const after = Number(staleAfter || 0);
+                if (!(after > 0) || !raw) {
+                    return false;
+                }
+                const then = Date.parse(raw);
+                if (!Number.isFinite(then) || then <= 0) {
+                    return false;
+                }
+                return (Date.now() - then) / 1000 > after;
+            }
+
+            // staleTooltipText refreshes the age inside an existing stale
+            // tooltip while keeping its original reason suffix.
+            function staleTooltipText(raw, currentLabel, existing) {
+                const suffixMatch = String(existing || "").match(/ - (.+)$/);
+                if (!suffixMatch) {
+                    // Generic reason ("no update in 14m"): rebuild from the age.
+                    const age = currentLabel === "now" ? "0m" : currentLabel;
+                    return "no update in " + age;
+                }
+                const ageText = currentLabel === "now" ? "just now" : currentLabel + " ago";
+                return "Last updated " + ageText + " - " + suffixMatch[1];
             }
 
             function resetRefreshTimer() {

@@ -432,10 +432,12 @@ const char *onwatch_grant_reply(bool allowed, bool mainFrame, bool grant, bool p
 - (void)softRefreshIfLoaded {
   // Ask the warm page to re-fetch snapshot without a full document navigation.
   // Full reloads on every open were the main cause of the popover flash.
+  // __onwatchMenubarShown always triggers a real, no-store summary fetch; the
+  // page coalesces show/focus events so they cannot stack requests.
   if (!self.loadedURLString.length || !self.webView) {
     return;
   }
-  [self.webView evaluateJavaScript:@"window.__onwatchMenubarRefresh && window.__onwatchMenubarRefresh()"
+  [self.webView evaluateJavaScript:@"window.__onwatchMenubarShown && window.__onwatchMenubarShown()"
                  completionHandler:nil];
 }
 
@@ -723,4 +725,47 @@ bool onwatch_popover_is_shown(void *handle) {
     shown = [onwatch_popover_controller(handle) isShown];
   });
   return shown;
+}
+
+// onwatch_status_item_title sets the system status item's title with an
+// optional attribute dictionary, on the main thread, mirroring the popover's
+// own main-thread dispatch. It returns false when no status item is reachable
+// so the caller can fall back to systray's plain SetTitle. The status item is
+// owned by fyne/systray's app delegate; it is found the same way the popover
+// controller finds it (KVC "statusItem"), and only a read is performed here.
+int onwatch_status_item_title(const char *title, int dim) {
+  __block int applied = 0;
+  __block NSString *text = title ? [NSString stringWithUTF8String:title] : @"";
+  if (!text) {
+    text = @"";
+  }
+  __block bool shouldDim = dim != 0;
+  onwatch_run_on_main_sync(^{
+    id delegate = NSApp.delegate;
+    if (!delegate) {
+      return;
+    }
+    NSStatusItem *item = nil;
+    @try {
+      id candidate = [delegate valueForKey:@"statusItem"];
+      if ([candidate isKindOfClass:[NSStatusItem class]]) {
+        item = (NSStatusItem *)candidate;
+      }
+    } @catch (NSException *exception) {
+      item = nil;
+    }
+    NSStatusBarButton *button = item.button;
+    if (!button) {
+      return;
+    }
+    // secondaryLabelColor follows the menu bar appearance (light and dark), so
+    // a dimmed title still reads as a disabled/secondary item in both themes.
+    NSColor *color = shouldDim ? [NSColor secondaryLabelColor] : [NSColor labelColor];
+    // No font attribute: the status button keeps its own menu bar font, only
+    // the color changes.
+    NSDictionary *attributes = @{NSForegroundColorAttributeName : color};
+    button.attributedTitle = [[NSAttributedString alloc] initWithString:text attributes:attributes];
+    applied = 1;
+  });
+  return applied;
 }

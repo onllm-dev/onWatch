@@ -586,3 +586,58 @@ func TestEnsureStatuslineBridge_DetectsUserChange(t *testing.T) {
 		t.Errorf("expected user's new command preserved, got: %s", cmd)
 	}
 }
+
+// --- captured-at tests ---
+
+// The statusline payload has no timestamp, so the snapshot must be stamped
+// with the file's mtime. Re-stamping it with the poll time makes data up to
+// the staleness window old display as "now" (stale-data audit).
+func TestStatuslineCapturedAtUsesFileMtime(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "anthropic-statusline.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	mtime := time.Now().Add(-3 * time.Minute).Truncate(time.Second)
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	now := time.Now().UTC()
+	got := readStatuslineCapturedAt(path, now)
+	if !got.Equal(mtime.UTC()) {
+		t.Fatalf("capturedAt = %v, want file mtime %v", got, mtime.UTC())
+	}
+
+	snap := statuslineToSnapshot(&StatuslineRateLimits{
+		FiveHour: &StatuslineWindow{UsedPercentage: 10},
+	}, got)
+	if !snap.CapturedAt.Equal(mtime.UTC()) {
+		t.Fatalf("snapshot CapturedAt = %v, want %v", snap.CapturedAt, mtime.UTC())
+	}
+}
+
+func TestStatuslineCapturedAtFallsBackToNow(t *testing.T) {
+	now := time.Now().UTC()
+	if got := readStatuslineCapturedAt("/nonexistent/statusline.json", now); !got.Equal(now) {
+		t.Fatalf("missing file capturedAt = %v, want %v", got, now)
+	}
+}
+
+// A file whose mtime is in the future (clock skew) must not produce a card
+// that is "fresh" for hours. Clamp it to now.
+func TestStatuslineCapturedAtClampsFutureMtime(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "anthropic-statusline.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	future := time.Now().Add(2 * time.Hour)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	now := time.Now().UTC()
+	if got := readStatuslineCapturedAt(path, now); !got.Equal(now) {
+		t.Fatalf("future mtime capturedAt = %v, want clamped %v", got, now)
+	}
+}

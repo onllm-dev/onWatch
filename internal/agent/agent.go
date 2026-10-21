@@ -104,11 +104,13 @@ func (a *Agent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch quotas", "error", err)
+		pollFailed("synthetic", "", err)
 		a.metrics.RecordCycleFailed("synthetic", "", "fetch_failed")
 		return
 	}
 
 	// Create snapshot from response
+	pollSucceeded("synthetic", "")
 	snapshot := &api.Snapshot{
 		CapturedAt: time.Now().UTC(),
 		Sub:        resp.Subscription,

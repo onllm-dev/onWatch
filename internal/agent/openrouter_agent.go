@@ -92,10 +92,12 @@ func (a *OpenRouterAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch OpenRouter usage", "error", err)
+		pollFailed("openrouter", "", err)
 		return
 	}
 
 	// Convert to snapshot and store
+	pollSucceeded("openrouter", "")
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
 

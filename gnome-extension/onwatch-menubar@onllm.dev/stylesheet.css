@@ -45,3 +45,9 @@
 .onwatch-menubar-stale {
   opacity: 0.55;
 }
+
+/* One provider segment whose data is older than its cadence. Numbers stay;
+   opacity only, so the panel tint keeps working in light and dark themes. */
+.onwatch-menubar-segment-stale {
+  opacity: 0.55;
+}

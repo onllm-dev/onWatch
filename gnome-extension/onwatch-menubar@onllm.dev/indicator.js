@@ -429,6 +429,8 @@ class OnWatchIndicator extends PanelMenu.Button {
         this._clearStale();
         this._renderSegments(segments, title, online);
         this.set_reactive(true);
+        // The server puts one line per stale provider in the tooltip; nothing
+        // extra is needed here, and the panel menu stays minimal.
         // Must not throw after a successful render (old bug wiped UI to "-").
         this._setName(tooltip || title || 'onWatch');
     }
@@ -614,7 +616,11 @@ class OnWatchIndicator extends PanelMenu.Button {
             }
 
             const slot = new St.BoxLayout({
-                style_class: 'onwatch-menubar-slot',
+                // A stale provider keeps its numbers but reads dimmed, matching
+                // the popover's amber/hollow treatment on the panel surface.
+                style_class: seg.stale
+                    ? 'onwatch-menubar-slot onwatch-menubar-segment-stale'
+                    : 'onwatch-menubar-slot',
                 y_align: Clutter.ActorAlign.CENTER,
             });
 
@@ -627,8 +633,12 @@ class OnWatchIndicator extends PanelMenu.Button {
                 y_align: Clutter.ActorAlign.CENTER,
                 style_class: 'onwatch-menubar-label',
             });
-            if (seg.label)
-                label.set_accessible_name?.(`${seg.label} ${seg.text || ''}`.trim());
+            if (seg.label) {
+                const accessible = seg.stale
+                    ? `${seg.label} ${seg.text || ''} - stale${seg.stale_reason ? `: ${seg.stale_reason}` : ''}`.trim()
+                    : `${seg.label} ${seg.text || ''}`.trim();
+                label.set_accessible_name?.(accessible);
+            }
             slot.add_child(label);
             this._box.add_child(slot);
         });

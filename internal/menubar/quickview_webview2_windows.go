@@ -442,8 +442,10 @@ func (p *webView2Popover) show() {
 		return
 	}
 	p.visible = true
-	// Re-fetch on the warm page instead of reloading it, as macOS does.
-	p.chromium.Eval("window.__onwatchMenubarRefresh && window.__onwatchMenubarRefresh()")
+	// Re-fetch on the warm page instead of reloading it, as macOS does. The
+	// show hook always issues a real, no-store summary fetch and coalesces
+	// with any in-flight request.
+	p.chromium.Eval("window.__onwatchMenubarShown && window.__onwatchMenubarShown()")
 	p.lastAutoHide = time.Time{}
 	hwnd := p.windowHandle()
 	_, _, _ = procShowWindow.Call(hwnd, swShow)

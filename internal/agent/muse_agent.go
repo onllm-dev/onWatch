@@ -195,9 +195,11 @@ func (a *MuseAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch Muse quotas", "error", err)
+		pollFailed("muse", "", err)
 		return
 	}
 
+	pollSucceeded("muse", "")
 	if _, err := a.store.InsertMuseSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert Muse snapshot", "error", err)
 		return

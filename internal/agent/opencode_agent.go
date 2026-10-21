@@ -107,9 +107,11 @@ func (a *OpenCodeAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch OpenCode quotas", "error", err)
+		pollFailed("opencode", "", err)
 		return
 	}
 
+	pollSucceeded("opencode", "")
 	if _, err := a.store.InsertOpenCodeSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert OpenCode snapshot", "error", err)
 		return

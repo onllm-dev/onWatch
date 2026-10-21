@@ -117,7 +117,7 @@ func (c *OpenCodeClient) FetchUsageSnapshot(ctx context.Context, apiKey string) 
 	if apiKey == "" {
 		return nil, ErrOpenCodeMissingAPIKey
 	}
-	usage, err := c.zenUsage(ctx, "key\x00"+apiKey, func(req *http.Request) {
+	usage, filledAt, err := c.zenUsage(ctx, "key\x00"+apiKey, func(req *http.Request) {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	})
 	if err != nil {
@@ -133,7 +133,9 @@ func (c *OpenCodeClient) FetchUsageSnapshot(ctx context.Context, apiKey string) 
 		return nil, err
 	}
 	return &OpenCodeSnapshot{
-		CapturedAt:  time.Now().UTC(),
+		// A document served from the 60s reuse window was fetched earlier;
+		// stamping it now would make up to a minute-old data read as fresh.
+		CapturedAt:  filledAt.UTC(),
 		AccountType: OpenCodeAccountTypePro,
 		PlanName:    "OpenCode Go",
 		Quotas:      quotas,
@@ -142,18 +144,18 @@ func (c *OpenCodeClient) FetchUsageSnapshot(ctx context.Context, apiKey string) 
 
 // zenUsage returns the usage document, reusing a recent one for the same
 // credential so a short poll interval does not query the API every few seconds.
-func (c *OpenCodeClient) zenUsage(ctx context.Context, credKey string, authorize func(*http.Request)) (*openCodeZenUsage, error) {
+func (c *OpenCodeClient) zenUsage(ctx context.Context, credKey string, authorize func(*http.Request)) (*openCodeZenUsage, time.Time, error) {
 	c.usageMu.Lock()
 	defer c.usageMu.Unlock()
 	if c.usageStatus != nil && c.usageKey == credKey && time.Since(c.usageAt) < openCodeUsageMinInterval {
-		return c.usageStatus, nil
+		return c.usageStatus, c.usageAt, nil
 	}
 	usage, err := c.fetchZenUsage(ctx, authorize)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	c.usageStatus, c.usageKey, c.usageAt = usage, credKey, time.Now()
-	return usage, nil
+	return usage, c.usageAt, nil
 }
 
 func (c *OpenCodeClient) fetchZenUsage(ctx context.Context, authorize func(*http.Request)) (*openCodeZenUsage, error) {
@@ -246,7 +248,7 @@ func (c *OpenCodeClient) FetchSnapshot(ctx context.Context, workspaceID, session
 // credential and maps it. credKey identifies the credential for the reuse
 // window.
 func (c *OpenCodeClient) goStatusSnapshot(ctx context.Context, credKey string, authorize func(*http.Request)) (*OpenCodeSnapshot, error) {
-	status, err := c.goStatus(ctx, credKey, authorize)
+	status, filledAt, err := c.goStatus(ctx, credKey, authorize)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +257,8 @@ func (c *OpenCodeClient) goStatusSnapshot(ctx context.Context, credKey string, a
 		return nil, err
 	}
 	return &OpenCodeSnapshot{
-		CapturedAt:  time.Now().UTC(),
+		// Fill time, not serve time: see FetchUsageSnapshot.
+		CapturedAt:  filledAt.UTC(),
 		AccountType: OpenCodeAccountTypePro,
 		PlanName:    "OpenCode Go",
 		Quotas:      quotas,
@@ -265,25 +268,25 @@ func (c *OpenCodeClient) goStatusSnapshot(ctx context.Context, credKey string, a
 // goStatus returns the console status, reusing a recent one for the same
 // credential so a short poll interval does not query the console every few
 // seconds.
-func (c *OpenCodeClient) goStatus(ctx context.Context, credKey string, authorize func(*http.Request)) (*openCodeGoStatus, error) {
+func (c *OpenCodeClient) goStatus(ctx context.Context, credKey string, authorize func(*http.Request)) (*openCodeGoStatus, time.Time, error) {
 	c.usageMu.Lock()
 	defer c.usageMu.Unlock()
 	if c.goStatusCache != nil && c.usageKey == credKey && time.Since(c.usageAt) < openCodeUsageMinInterval {
-		return c.goStatusCache, nil
+		return c.goStatusCache, c.usageAt, nil
 	}
 	body, err := c.getJSON(ctx, c.goStatusURL, authorize)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	var status openCodeGoStatus
 	if err := json.Unmarshal(body, &status); err != nil {
-		return nil, fmt.Errorf("%w: go status: %v", ErrOpenCodeParseFailed, err)
+		return nil, time.Time{}, fmt.Errorf("%w: go status: %v", ErrOpenCodeParseFailed, err)
 	}
 	if _, err := status.quotas(); err != nil {
-		return nil, err // never cache a document that cannot be shown
+		return nil, time.Time{}, err // never cache a document that cannot be shown
 	}
 	c.goStatusCache, c.usageKey, c.usageAt = &status, credKey, time.Now()
-	return &status, nil
+	return &status, c.usageAt, nil
 }
 
 // getJSON performs a GET with the shared headers, applies authorize, and maps

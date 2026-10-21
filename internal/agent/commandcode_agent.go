@@ -98,9 +98,11 @@ func (a *CommandCodeAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch Command Code quotas", "error", err)
+		pollFailed("commandcode", "", err)
 		return
 	}
 
+	pollSucceeded("commandcode", "")
 	if _, err := a.store.InsertCommandCodeSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert Command Code snapshot", "error", err)
 		return

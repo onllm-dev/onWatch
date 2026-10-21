@@ -100,6 +100,34 @@ func RenderTrayBadge(size int, text, status string) *image.RGBA {
 	return img
 }
 
+// trayDimAlpha is how much opacity a stale badge keeps. It matches the
+// secondary-label feel of a dimmed title: still readable, visibly quieter.
+const trayDimAlpha = 0x8c // about 55%
+
+// RenderTrayBadgeDimmed draws the same badge at reduced opacity. Desktop
+// shells have no title to dim and no per-pixel alpha hook into systray, so the
+// badge itself carries the stale state.
+func RenderTrayBadgeDimmed(size int, text, status string) *image.RGBA {
+	img := RenderTrayBadge(size, text, status)
+	dimImage(img, trayDimAlpha)
+	return img
+}
+
+// dimImage scales every pixel's alpha by factor/255. image.RGBA stores
+// premultiplied color, so each channel scales with the alpha.
+func dimImage(img *image.RGBA, factor uint32) {
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			i := img.PixOffset(x, y)
+			img.Pix[i+0] = uint8(uint32(img.Pix[i+0]) * factor / 0xff)
+			img.Pix[i+1] = uint8(uint32(img.Pix[i+1]) * factor / 0xff)
+			img.Pix[i+2] = uint8(uint32(img.Pix[i+2]) * factor / 0xff)
+			img.Pix[i+3] = uint8(uint32(img.Pix[i+3]) * factor / 0xff)
+		}
+	}
+}
+
 // RenderStatusDot draws a small anti-aliased status disc, used to mark
 // provider rows in the tray menu.
 func RenderStatusDot(size int, status string) *image.RGBA {
@@ -372,6 +400,8 @@ type trayVisual struct {
 	Status   string // color driver: healthy|warning|danger|critical|offline
 	Online   bool
 	IconOnly bool
+	// Dim marks a stale title (and, on Linux/Windows, a stale badge).
+	Dim bool
 }
 
 // trayIconImage renders the icon for one visual at the given size.
@@ -382,6 +412,9 @@ func trayIconImage(v trayVisual, size int) *image.RGBA {
 	}
 	if v.IconOnly && v.Online {
 		return RenderTrayLogo(size, status)
+	}
+	if v.Dim {
+		return RenderTrayBadgeDimmed(size, v.Text, status)
 	}
 	return RenderTrayBadge(size, v.Text, status)
 }

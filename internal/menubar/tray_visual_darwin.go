@@ -15,9 +15,10 @@ func setupTrayIcon() {
 }
 
 // updateTrayVisual keeps the macOS behaviour: template icon plus the compact
-// title text beside it.
+// title text beside it. A stale visual dims the title to the secondary label
+// color, which follows light and dark menu bar appearance.
 func updateTrayVisual(v trayVisual) {
-	systray.SetTitle(v.Title)
+	setTrayTitle(v.Title, v.Dim)
 }
 
 func setTrayTooltip(text string) {

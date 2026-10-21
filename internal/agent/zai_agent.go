@@ -93,10 +93,12 @@ func (a *ZaiAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch Z.ai quotas", "error", err)
+		pollFailed("zai", "", err)
 		return
 	}
 
 	// Convert to snapshot and store
+	pollSucceeded("zai", "")
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
 

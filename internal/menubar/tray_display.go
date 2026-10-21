@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 )
 
 // TraySegment is one compact metric slot for tray UIs that can show an icon
@@ -15,6 +16,11 @@ type TraySegment struct {
 	Text         string  `json:"text"` // e.g. "42%" or "2 ⚠"
 	Icon         string  `json:"icon"` // icon stem: anthropic, zai, openai, ...
 	Percent      float64 `json:"percent,omitempty"`
+	// Stale marks a segment whose provider data is older than its cadence.
+	// GNOME dims the segment and lists the reason in the tooltip.
+	Stale bool `json:"stale,omitempty"`
+	// StaleReason is the short reason class/age phrase, if known.
+	StaleReason string `json:"stale_reason,omitempty"`
 }
 
 // TrayTitle formats the compact metric shown next to the macOS tray icon.
@@ -96,6 +102,7 @@ func multiProviderSegments(snapshot *Snapshot, display StatusDisplay) []TraySegm
 		if base == "" {
 			base = provider.ID
 		}
+		stale, reason := segmentStaleState(provider)
 		out = append(out, TraySegment{
 			ProviderID:   provider.ID,
 			BaseProvider: base,
@@ -103,6 +110,8 @@ func multiProviderSegments(snapshot *Snapshot, display StatusDisplay) []TraySegm
 			Text:         fmt.Sprintf("%d%%", int(math.Round(percent))),
 			Icon:         trayIconStem(base, provider.ID),
 			Percent:      percent,
+			Stale:        stale,
+			StaleReason:  reason,
 		})
 	}
 	return out
@@ -170,4 +179,19 @@ func joinTrayParts(parts []string) string {
 		return parts[0]
 	}
 	return strings.Join(parts, "·")
+}
+
+// segmentStaleState reports whether a segment's provider is stale and the
+// reason phrase for the tooltip. It uses the same local re-evaluation as the
+// tray title, so a GNOME tick after the daemon went quiet still dims the
+// segment.
+func segmentStaleState(provider ProviderCard) (bool, string) {
+	if !cardStaleAt(provider, time.Now()) {
+		return false, ""
+	}
+	reason := strings.TrimSpace(provider.StaleReason)
+	if reason == "" {
+		return true, cardAgeText(provider, time.Now())
+	}
+	return true, reason
 }

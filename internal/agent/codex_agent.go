@@ -683,6 +683,7 @@ func (a *CodexAgent) pauseAuth(failedToken string) bool {
 	if a.authRetryAt.IsZero() {
 		a.authRetryAt = a.currentTime().Add(codexAuthPausedRetryInterval)
 	}
+	pollPaused("codex", pollStatusAccountKey(a.accountID))
 	a.publishPauseState()
 	return newlyPaused
 }
@@ -1254,9 +1255,11 @@ func (a *CodexAgent) poll(ctx context.Context) {
 			// log it and leave the auth failure budget untouched.
 			a.logger.Warn("Codex usage request blocked by a challenge response",
 				"error", err, "account_id", a.accountID)
+			pollFailed("codex", pollStatusAccountKey(a.accountID), err)
 			return
 		} else {
 			a.logger.Error("Failed to fetch Codex usage", "error", err)
+			pollFailed("codex", pollStatusAccountKey(a.accountID), err)
 			return
 		}
 	} else {
@@ -1268,6 +1271,7 @@ func (a *CodexAgent) poll(ctx context.Context) {
 		}
 	}
 
+	pollSucceeded("codex", pollStatusAccountKey(a.accountID))
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
 	snapshot.AccountID = a.accountID // Set the database account ID

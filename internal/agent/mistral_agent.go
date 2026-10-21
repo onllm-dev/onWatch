@@ -229,6 +229,7 @@ func (a *MistralAgent) poll(ctx context.Context) {
 				return
 			}
 			a.status("reconnect")
+			pollFailed("mistral", "", e)
 			// Without this the provider sits in "reconnect" with no way to tell
 			// a denied keychain prompt from a signed-out browser.
 			a.connectionError(e)
@@ -276,6 +277,7 @@ func (a *MistralAgent) poll(ctx context.Context) {
 			}
 			a.paused = true
 			a.status("reconnect")
+			pollFailed("mistral", "", api.ErrMistralAuth)
 			a.next = time.Now().Add(10 * time.Minute)
 			if snap == nil {
 				return
@@ -293,9 +295,11 @@ func (a *MistralAgent) poll(ctx context.Context) {
 	a.failures = 0
 	if a.paused {
 		a.status("reconnect")
+		pollPaused("mistral", "")
 	} else {
 		a.status(snap.Status)
 		a.connectionError(nil)
+		pollSucceeded("mistral", "")
 	}
 	if snap.RetryAfter > 0 {
 		a.next = time.Now().Add(min(snap.RetryAfter, time.Hour))
@@ -365,6 +369,7 @@ func (a *MistralAgent) backoff(e error) {
 	}
 	a.next = time.Now().Add(min(delay, time.Hour))
 	a.status("stale")
+	pollFailed("mistral", "", e)
 	a.connectionError(e)
 	a.logger.Warn("Mistral polling failed", "error", e)
 }

@@ -1,6 +1,7 @@
 package menubar
 
 import (
+	"strings"
 	"time"
 )
 
@@ -57,6 +58,12 @@ type trayPlan struct {
 // values. age is the stale age to show, tooltipLimit caps the tooltip (0 = no
 // cap; the platform passes its own trayTooltipLimit).
 func planTrayRefresh(snapshot *Snapshot, stale bool, age time.Duration, freshSettings *Settings, cachedSettings *Settings, lastVisual trayVisual, tooltipLimit int) trayPlan {
+	return planTrayRefreshAt(snapshot, stale, age, freshSettings, cachedSettings, lastVisual, tooltipLimit, time.Now())
+}
+
+// planTrayRefreshAt is planTrayRefresh with an explicit clock, so staleness
+// re-evaluation is deterministic in tests.
+func planTrayRefreshAt(snapshot *Snapshot, stale bool, age time.Duration, freshSettings *Settings, cachedSettings *Settings, lastVisual trayVisual, tooltipLimit int, now time.Time) trayPlan {
 	if snapshot == nil {
 		// Only reached before any snapshot has ever succeeded.
 		return trayPlan{
@@ -83,8 +90,12 @@ func planTrayRefresh(snapshot *Snapshot, stale bool, age time.Duration, freshSet
 		Status:   TrayBadgeStatus(snapshot, segments),
 		Online:   true,
 		IconOnly: settings.StatusDisplay.Mode == StatusDisplayIconOnly,
+		// Staleness is decided per card from honest capture times, so the
+		// title dims while the daemon is up but one provider stopped polling.
+		Dim: TrayTitleDimmed(snapshot, settings, now),
 	}
 	tooltip := TrayTooltipText(snapshot, tooltipLimit)
+	staleLines := StaleProviderTooltipLines(snapshot, now)
 	if stale {
 		// Numbers stay; only the status/icon tint and the tooltip change. If a
 		// last-good visual exists and this run could not build one (no cached
@@ -97,6 +108,10 @@ func planTrayRefresh(snapshot *Snapshot, stale bool, age time.Duration, freshSet
 			visual.IconOnly = lastVisual.IconOnly
 		}
 		tooltip = TrayTooltipStaleText(snapshot, tooltipLimit, age)
+	} else if len(staleLines) > 0 {
+		// The refresh succeeded; some providers inside it are old. Keep the
+		// normal provider line and append one line per stale provider.
+		tooltip = truncateTooltip(tooltip+"\n"+strings.Join(staleLines, "\n"), tooltipLimit)
 	}
 	return trayPlan{
 		Snapshot:      snapshot,

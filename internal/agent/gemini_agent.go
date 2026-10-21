@@ -252,6 +252,7 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 							if a.authFailCount >= maxGeminiAuthFailures {
 								a.authPaused = true
 								a.lastFailedToken = newTokens.AccessToken
+								pollPaused("gemini", "")
 								a.logger.Error("Gemini polling PAUSED due to repeated auth failures")
 								a.sendAuthErrorNotification(
 									"Authentication Failed",
@@ -270,6 +271,7 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 					a.authFailCount++
 					if a.authFailCount >= maxGeminiAuthFailures {
 						a.authPaused = true
+						pollPaused("gemini", "")
 						a.logger.Error("Gemini polling PAUSED due to repeated auth failures")
 						a.sendAuthErrorNotification(
 							"Authentication Failed",
@@ -285,12 +287,14 @@ func (a *GeminiAgent) poll(ctx context.Context) {
 			}
 		} else {
 			a.logger.Error("Failed to fetch Gemini quotas", "error", err)
+			pollFailed("gemini", "", err)
 			return
 		}
 	} else {
 		a.authFailCount = 0
 	}
 
+	pollSucceeded("gemini", "")
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
 

@@ -280,9 +280,29 @@ func isValidStatuslineData(rl *StatuslineRateLimits) bool {
 	return hasValid
 }
 
+// readStatuslineCapturedAt returns the statusline file's mtime, which is the
+// only honest data time it carries: the payload has no timestamp of its own.
+// A missing or unreadable file falls back to now so a poll that somehow loses
+// the race with the writer still stamps something plausible rather than zero.
+func readStatuslineCapturedAt(path string, now time.Time) time.Time {
+	if path != "" {
+		if info, err := os.Stat(path); err == nil {
+			if mtime := info.ModTime().UTC(); !mtime.After(now) {
+				return mtime
+			}
+			return now
+		}
+	}
+	return now
+}
+
 // statuslineToSnapshot converts statusline rate limit data to an AnthropicSnapshot
 // compatible with the existing store and tracker pipeline.
 // Both statusline and the OAuth API report utilization as 0-100 percentage values.
+//
+// capturedAt must be the statusline file's mtime (see readStatuslineCapturedAt),
+// not the poll time: the data can be up to statuslineStalenessDefault old, and
+// re-stamping it now would make stale data display as fresh.
 func statuslineToSnapshot(rl *StatuslineRateLimits, capturedAt time.Time) *api.AnthropicSnapshot {
 	snapshot := &api.AnthropicSnapshot{
 		CapturedAt: capturedAt,

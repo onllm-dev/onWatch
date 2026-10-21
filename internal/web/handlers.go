@@ -133,7 +133,10 @@ type Handler struct {
 	metrics            *metrics.Metrics
 	version            string
 	codexPauseReporter CodexPauseReporter
-	menubarSettingsMu  sync.Mutex
+	// pollStatus is the agent-side last-poll-outcome registry (classes only,
+	// never raw error text) used to explain stale menubar cards.
+	pollStatus        *agent.PollStatusRegistry
+	menubarSettingsMu sync.Mutex
 	// menubarLastGood holds the last successfully built card per menubar card
 	// ID (one entry per provider, or per account for Codex/MiniMax). When a
 	// provider's storage read fails, the snapshot serves this card unchanged -
@@ -142,6 +145,12 @@ type Handler struct {
 	// Bounded by the number of provider cards.
 	menubarLastGoodMu sync.Mutex
 	menubarLastGood   map[string]menubar.ProviderCard
+	// menubarOldest remembers the oldest per-quota capture time seen for a
+	// card while that quota was still inside its builder's query window. Quotas
+	// that age out disappear from the payload, so the current payload alone
+	// cannot tell how old the card is; this keeps the age honest. Bounded by
+	// the number of cards and pruned with the last-good cache.
+	menubarOldest map[string]time.Time
 	// menubarSnapshotData caches the last successfully built data so the
 	// summary, tray-title and preferences endpoints can answer without
 	// rebuilding roughly 60-90 SQL statements on every request. Only one build
@@ -980,6 +989,14 @@ func (h *Handler) SettingsPage(w http.ResponseWriter, r *http.Request) {
 // respondJSON sends a JSON response
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	// Every API response is live quota data; a stale browser cache served as
+	// "now" is indistinguishable from fresh data and defeats the age labels
+	// (macOS WKWebView was observed serving a day-old menubar summary). This is
+	// applied at respondJSON rather than per menubar endpoint because the
+	// dashboard has the same problem and no API response here is cacheable;
+	// the service worker does not cache /api/ paths, so no other client relied
+	// on revalidation.
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
 }

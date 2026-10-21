@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/onllm-dev/onwatch/v2/internal/agent"
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 )
 
@@ -29,6 +30,13 @@ type menubarProviderOption struct {
 	Subtitle     string               `json:"subtitle,omitempty"`
 	Visible      bool                 `json:"visible"`
 	Quotas       []menubarQuotaOption `json:"quotas"`
+}
+
+// SetPollStatusRegistry wires the agent-side last-poll-outcome registry. The
+// menubar reads it only to explain a stale card ("network error"); it never
+// carries raw error text.
+func (h *Handler) SetPollStatusRegistry(r *agent.PollStatusRegistry) {
+	h.pollStatus = r
 }
 
 // Capabilities returns runtime capabilities for the current build.
@@ -91,6 +99,11 @@ func (h *Handler) MenubarTrayTitle(w http.ResponseWriter, r *http.Request) {
 			}
 			if len(parts) > 0 {
 				tooltip = strings.Join(parts, " · ")
+			}
+			// Stale providers get their own lines; GNOME shows the tooltip and
+			// dims the matching segments from the same flag.
+			if lines := menubar.StaleProviderTooltipLines(snapshot, time.Now()); len(lines) > 0 {
+				tooltip += "\n" + strings.Join(lines, "\n")
 			}
 		}
 	}
@@ -279,7 +292,10 @@ func isLocalMenubarPublicPath(path string) bool {
 // menubar into a 500. Only when no settings have ever been read does it fail.
 func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 	built, err := h.buildMenubarSnapshotWithAllProviders()
-	return built.Snapshot, err
+	if err != nil {
+		return nil, err
+	}
+	return h.menubarStaleData(built).Snapshot, nil
 }
 
 // buildMenubarSnapshotWithAllProviders builds the filtered snapshot the
@@ -320,6 +336,84 @@ func (h *Handler) buildMenubarSnapshotWithAllProviders() (menubarBuiltData, erro
 		AllProviders: allProviders,
 		Settings:     normalized,
 	}, nil
+}
+
+// applyMenubarStaleness marks cards whose data is older than their provider's
+// expected cadence. It mutates the cards in place (they were just built for
+// this snapshot) and never changes Status: stale is a freshness flag, not a
+// severity.
+//
+// The card's UpdatedAtTime comes from its honest capture time (oldest quota
+// for multi-quota providers); the threshold comes from the ONE table in
+// menubar_stale.go. The registry only supplies the reason class.
+func (h *Handler) applyMenubarStaleness(providers []menubar.ProviderCard, visibility map[string]map[string]bool) {
+	if len(providers) == 0 {
+		return
+	}
+	now := h.menubarNowTime().UTC()
+	interval := time.Duration(h.getPollIntervalSec()) * time.Second
+	registry := h.pollStatus
+	if registry == nil {
+		registry = agent.GetPollStatusRegistry()
+	}
+	for i := range providers {
+		card := &providers[i]
+		base := card.BaseProvider
+		if base == "" {
+			base = providerKeyBase(card.ID)
+		}
+		polling := true
+		if pv, ok := visibility[card.ID]; ok {
+			if value, exists := pv["polling"]; exists {
+				polling = value
+			}
+		} else if pv, ok := visibility[base]; ok {
+			if value, exists := pv["polling"]; exists {
+				polling = value
+			}
+		}
+		var account string
+		if idx := strings.IndexByte(card.ID, ':'); idx >= 0 {
+			account = card.ID[idx+1:]
+		}
+		var outcome agent.PollOutcome
+		if registry != nil {
+			if got, ok := registry.Get(base, account); ok {
+				outcome = got
+			}
+		}
+		window := staleAfterFor(staleContext{
+			Provider:     card.ID,
+			Base:         base,
+			Polling:      polling,
+			PollInterval: interval,
+			Status:       card.ConnectionStatus,
+			Outcome:      outcome,
+		})
+		if window <= 0 {
+			// Manual (polling:false) providers never age out for network
+			// reasons: their age grows by design until the dashboard refreshes
+			// them. The card still carries its real age label.
+			card.StaleAfterSeconds = 0
+			continue
+		}
+		card.StaleAfterSeconds = int64(window.Seconds())
+		captured, err := time.Parse(time.RFC3339, card.UpdatedAtTime)
+		if err != nil || captured.IsZero() {
+			continue
+		}
+		age := now.Sub(captured)
+		if age <= window {
+			continue
+		}
+		card.Stale = true
+		if outcome != "" {
+			card.StaleReason = outcome.Reason()
+		}
+		if card.StaleReason == "" {
+			card.StaleReason = menubar.StaleReasonText(age)
+		}
+	}
 }
 
 func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidden bool) ([]menubar.ProviderCard, time.Time) {
@@ -519,6 +613,29 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	return providers, latest
 }
 
+// menubarStaleData returns a copy of the built data with staleness freshly
+// evaluated at serve time. The cached build itself is immutable and may be up
+// to menubarFreshWindow old; staleness depends on the wall clock, so it is
+// recomputed on every read. That is what makes a card turn stale while the
+// daemon is otherwise healthy but one provider stopped polling.
+func (h *Handler) menubarStaleData(data menubarBuiltData) menubarBuiltData {
+	if data.Snapshot == nil {
+		return data
+	}
+	visibility := h.providerVisibilityMap()
+	fresh := make([]menubar.ProviderCard, len(data.Snapshot.Providers))
+	copy(fresh, data.Snapshot.Providers)
+	h.applyMenubarStaleness(fresh, visibility)
+
+	snapshotCopy := *data.Snapshot
+	snapshotCopy.Providers = fresh
+	return menubarBuiltData{
+		Snapshot:     &snapshotCopy,
+		AllProviders: data.AllProviders,
+		Settings:     data.Settings,
+	}
+}
+
 // menubarResolveCard normalizes one provider payload into a card and applies
 // the last-good cache. decorate, when non-nil, runs on a freshly built card
 // before it is cached.
@@ -570,9 +687,95 @@ func (h *Handler) menubarResolveCard(id, label, subtitle string, payload map[str
 	if decorate != nil {
 		decorate(card)
 	}
-	captured := parseCapturedAt(payload)
+	captured := h.applyMenubarOldestCapturedAt(card, id, payload)
 	h.storeMenubarCard(id, card)
 	return card, captured
+}
+
+// applyMenubarOldestCapturedAt sets the card's age source to the OLDEST quota
+// capture time for the providers whose builders merge per-quota snapshots.
+// Their payload capturedAt is the newest quota's time, so a fresh quota hides
+// a days-old one and the card reads as fresh. This is menubar-only: dashboard
+// responses keep reporting the newest time (the API contract there).
+//
+// Providers without per-quota timestamps keep the payload capturedAt. The
+// returned time feeds LatestAt, so it is the same honest capture time the age
+// label shows.
+func (h *Handler) applyMenubarOldestCapturedAt(card *menubar.ProviderCard, id string, payload map[string]interface{}) time.Time {
+	current := parseCapturedAt(payload)
+	base := providerKeyBase(id)
+	switch base {
+	case "anthropic", "mistral", "cursor":
+	default:
+		return current
+	}
+	// Quotas whose data comes from different snapshots (Anthropic's per-quota
+	// merge, Mistral's per-quota latest rows) disappear from the payload once
+	// they age out of the query window, so the payload alone cannot tell how
+	// old the card really is. Remember the oldest quota time seen while it was
+	// present. A fresh build never lowers it; a read failure serves the cached
+	// card, which already carries it.
+	oldest, ok := oldestQuotaCapturedAt(payload)
+	if !ok || oldest.IsZero() {
+		return current
+	}
+	if remembered, ok := h.menubarOldestCapturedAt(id); ok && remembered.Before(oldest) {
+		oldest = remembered
+	}
+	if !current.IsZero() && current.Before(oldest) {
+		// The builder's own time is older still (for example a statusline
+		// snapshot newer quotas do not cover); keep the older one.
+		return current
+	}
+	card.UpdatedAtTime = oldest.UTC().Format(time.RFC3339)
+	card.UpdatedAt = timeAgo(oldest)
+	return oldest
+}
+
+// menubarOldestCapturedAt returns the last remembered oldest quota time.
+func (h *Handler) menubarOldestCapturedAt(id string) (time.Time, bool) {
+	h.menubarLastGoodMu.Lock()
+	defer h.menubarLastGoodMu.Unlock()
+	oldest, ok := h.menubarOldest[id]
+	return oldest, ok
+}
+
+// oldestQuotaCapturedAt scans the payload quotas for the earliest
+// lastUpdatedAt. It reports false when no quota carries a timestamp.
+func oldestQuotaCapturedAt(payload map[string]interface{}) (time.Time, bool) {
+	var rawQuotas []interface{}
+	switch typed := payload["quotas"].(type) {
+	case []interface{}:
+		rawQuotas = typed
+	case []map[string]interface{}:
+		rawQuotas = make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			rawQuotas = append(rawQuotas, item)
+		}
+	default:
+		return time.Time{}, false
+	}
+	var oldest time.Time
+	found := false
+	for _, raw := range rawQuotas {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		value := stringValue(item, "lastUpdatedAt")
+		if value == "" {
+			continue
+		}
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil || parsed.IsZero() {
+			continue
+		}
+		if !found || parsed.Before(oldest) {
+			oldest = parsed
+			found = true
+		}
+	}
+	return oldest, found
 }
 
 // menubarCachedCard serves the last good card for a provider whose storage read
@@ -594,6 +797,7 @@ func (h *Handler) forgetMenubarCard(id string) {
 	h.menubarLastGoodMu.Lock()
 	defer h.menubarLastGoodMu.Unlock()
 	delete(h.menubarLastGood, id)
+	delete(h.menubarOldest, id)
 }
 
 func (h *Handler) storeMenubarCard(id string, card *menubar.ProviderCard) {
@@ -603,6 +807,14 @@ func (h *Handler) storeMenubarCard(id string, card *menubar.ProviderCard) {
 		h.menubarLastGood = make(map[string]menubar.ProviderCard, 8)
 	}
 	h.menubarLastGood[id] = *card
+	if h.menubarOldest == nil {
+		h.menubarOldest = make(map[string]time.Time, 8)
+	}
+	if parsed, err := time.Parse(time.RFC3339, card.UpdatedAtTime); err == nil {
+		h.menubarOldest[id] = parsed
+	} else {
+		delete(h.menubarOldest, id)
+	}
 }
 
 // pruneMenubarLastGood drops cached cards for providers this build did not
@@ -614,6 +826,7 @@ func (h *Handler) pruneMenubarLastGood(attempted map[string]struct{}) {
 	for id := range h.menubarLastGood {
 		if _, ok := attempted[id]; !ok {
 			delete(h.menubarLastGood, id)
+			delete(h.menubarOldest, id)
 		}
 	}
 }

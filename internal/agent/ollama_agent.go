@@ -95,11 +95,13 @@ func (a *OllamaAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch Ollama quotas", "error", err)
+		pollFailed("ollama", "", err)
 		return
 	}
 
 	a.applyLearnedReset(snapshot)
 
+	pollSucceeded("ollama", "")
 	if _, err := a.store.InsertOllamaSnapshot(snapshot); err != nil {
 		a.logger.Error("Failed to insert Ollama snapshot", "error", err)
 		return

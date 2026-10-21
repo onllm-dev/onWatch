@@ -273,6 +273,43 @@ func TestFetchUsageSnapshot_ReusesARecentStatus(t *testing.T) {
 	}
 }
 
+// A status served from the 60s reuse window was fetched earlier. Stamping the
+// snapshot with the serve time makes up to a minute-old data read as fresh.
+func TestFetchUsageSnapshot_ReuseKeepsTheFillTime(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(zenUsageBody))
+	}))
+	defer srv.Close()
+	c := NewOpenCodeClient(nil, WithOpenCodeBaseURL(srv.URL))
+
+	first, err := c.FetchUsageSnapshot(context.Background(), "k")
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	// Simulate a poll one full interval later: the client cache is deliberately
+	// aged just inside the window so it is reused.
+	c.usageMu.Lock()
+	servedAt := time.Now().Add(-openCodeUsageMinInterval + 5*time.Second)
+	c.usageAt = servedAt
+	c.usageMu.Unlock()
+
+	second, err := c.FetchUsageSnapshot(context.Background(), "k")
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("status requests = %d, want 1 (reused)", calls.Load())
+	}
+	if !second.CapturedAt.Truncate(time.Second).Equal(servedAt.Truncate(time.Second)) {
+		t.Fatalf("reused CapturedAt = %v, want the cache fill time %v", second.CapturedAt, servedAt)
+	}
+	if second.CapturedAt.After(first.CapturedAt) {
+		t.Fatalf("reused CapturedAt moved forward: %v after %v", second.CapturedAt, first.CapturedAt)
+	}
+}
+
 func TestFetchUsageSnapshot_FailuresAreNotReused(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

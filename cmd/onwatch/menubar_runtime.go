@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,6 +22,39 @@ import (
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
 	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
+
+// closeLog closes an optional log file.
+func closeLog(file *os.File) {
+	if file != nil {
+		_ = file.Close()
+	}
+}
+
+// companionOwnsLog reports whether the spawned companion writes menubar.log
+// itself. It matches runMenubarCommand: debug mode keeps the log on
+// stdout/stderr, everything else opens the file.
+func companionOwnsLog(cfg *config.Config) bool {
+	return cfg != nil && !cfg.DebugMode && !cfg.TestMode
+}
+
+// companionRelayWriter returns the daemon-side stdout sink, or nil when the
+// companion owns the log file (the daemon then drains the pipe only, so a
+// hung daemon cannot block the companion's writes once the 16KB pipe fills).
+func companionRelayWriter(logFile io.Writer, cfg *config.Config) io.Writer {
+	if companionOwnsLog(cfg) {
+		return nil
+	}
+	if cfg != nil && cfg.DebugMode {
+		return io.MultiWriter(logFile, os.Stdout)
+	}
+	return logFile
+}
+
+// openCompanionLog opens the companion log in append mode at the same path the
+// daemon passes in its startup log line ("log_path").
+func openCompanionLog(path string) (io.WriteCloser, error) {
+	return config.OpenRotatingLogFile(path)
+}
 
 func menubarPIDPath(testMode bool) string {
 	name := "onwatch-menubar.pid"
@@ -135,29 +169,38 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%d", daemonPIDEnv, os.Getpid()))
 	cmd.SysProcAttr = companionSysProcAttr()
 
-	logFile, err := config.OpenRotatingLogFile(menubarLogPath(cfg))
-	if err != nil {
-		return fmt.Errorf("failed to open menubar log file: %w", err)
+	// The daemon-side log file only exists for the legacy relay path (debug
+	// mode or test mode). In the normal path the companion opens menubar.log
+	// itself, so a long daemon stall cannot let its 16KB pipe fill and block
+	// the companion's refresh worker.
+	var logFile *os.File
+	var relayStdout io.Writer
+	if !companionOwnsLog(cfg) {
+		logFile, err = config.OpenRotatingLogFile(menubarLogPath(cfg))
+		if err != nil {
+			return fmt.Errorf("failed to open menubar log file: %w", err)
+		}
+		relayStdout = companionRelayWriter(logFile, cfg)
 	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		_ = logFile.Close()
+		closeLog(logFile)
 		return fmt.Errorf("failed to capture menubar stdout: %w", err)
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		_ = logFile.Close()
+		closeLog(logFile)
 		return fmt.Errorf("failed to capture menubar stderr: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		_ = logFile.Close()
+		closeLog(logFile)
 		return err
 	}
 	if err := writeRuntimePID(path); err != nil {
 		_ = cmd.Process.Kill()
-		_ = logFile.Close()
+		closeLog(logFile)
 		return fmt.Errorf("failed to write menubar pid file: %w", err)
 	}
 	logger.Info("Menubar companion started", "pid", cmd.Process.Pid, "log_path", menubarLogPath(cfg))
@@ -166,23 +209,32 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 	stdoutDone := make(chan struct{})
 	stderrDone := make(chan struct{})
 
+	// The companion opens menubar.log itself. Relaying its pipes into the same
+	// file would write every line twice; when the companion owns the log the
+	// daemon drains the pipes only (an undrained pipe blocks the companion),
+	// keeping stderr for crash diagnostics.
 	go func() {
 		defer close(stdoutDone)
-		writer := io.Writer(logFile)
-		if cfg.DebugMode {
-			writer = io.MultiWriter(logFile, os.Stdout)
+		if relayStdout == nil {
+			_, _ = io.Copy(io.Discard, stdoutPipe)
+			return
 		}
-		_, _ = io.Copy(writer, stdoutPipe)
+		_, _ = io.Copy(relayStdout, stdoutPipe)
 	}()
 
 	go func() {
 		defer close(stderrDone)
-		if cfg.DebugMode {
-			writer := io.MultiWriter(logFile, os.Stderr, &stderrBuf)
-			_, _ = io.Copy(writer, stderrPipe)
-			return
+		writer := io.Writer(&stderrBuf)
+		if relayStdout != nil {
+			// Legacy path: the daemon still owns the log file.
+			if cfg.DebugMode {
+				writer = io.MultiWriter(logFile, os.Stderr, &stderrBuf)
+			} else {
+				writer = io.MultiWriter(logFile, &stderrBuf)
+			}
+		} else if cfg.DebugMode {
+			writer = io.MultiWriter(os.Stderr, &stderrBuf)
 		}
-		writer := io.MultiWriter(logFile, &stderrBuf)
 		_, _ = io.Copy(writer, stderrPipe)
 	}()
 
@@ -191,7 +243,7 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 		<-stdoutDone
 		<-stderrDone
 		_ = os.Remove(path)
-		_ = logFile.Close()
+		closeLog(logFile)
 
 		if err != nil {
 			exitCode := -1
@@ -216,9 +268,36 @@ func runMenubarCommand() error {
 		return fmt.Errorf("menubar companion is not available in this build")
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// A second companion must exit before it creates a tray icon. A daemon
+	// restart can launch a new companion while the old one is still inside its
+	// watcher grace period; the old one releases the lock when it exits.
+	lock, err := acquireMenubarLock(cfg.TestMode)
+	if err != nil {
+		if errors.Is(err, errMenubarCompanionRunning) {
+			return nil
+		}
+		return fmt.Errorf("failed to acquire menubar lock: %w", err)
+	}
+	defer lock.Close()
+
+	// Write the log here instead of relying on the daemon to read stdout over a
+	// pipe. A daemon hung for a long time stops draining that 16KB pipe, and
+	// the companion's log writes then block its refresh worker.
+	logSink := io.Writer(os.Stdout)
+	if cfg.DebugMode {
+		logSink = io.MultiWriter(os.Stdout, os.Stderr)
+	} else {
+		logFile, err := config.OpenRotatingLogFile(menubarLogPath(cfg))
+		if err == nil {
+			defer logFile.Close()
+			logSink = logFile
+		}
+		// Fall back to stdout; the daemon's relay then still records the lines.
+	}
+
+	logger := slog.New(slog.NewTextHandler(logSink, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
-	logger.Info("Menubar runtime starting", "pid", os.Getpid(), "port", cfg.Port, "db_path", cfg.DBPath, "test_mode", cfg.TestMode)
+	logger.Info("Menubar runtime starting", "pid", os.Getpid(), "port", cfg.Port, "db_path", cfg.DBPath, "test_mode", cfg.TestMode, "log_path", menubarLogPath(cfg))
 
 	db, err := store.New(cfg.DBPath)
 	if err != nil {
