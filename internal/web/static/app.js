@@ -5212,16 +5212,24 @@ async function renderMultiAccountChart(provider, range, requestSeq) {
     const accId = acc.accountId || acc.id;
     try {
       const res = await authFetch(`${API_BASE}/api/history?range=${range}&provider=${provider}&account=${encodeURIComponent(accId)}`);
-      if (!res.ok) return { acc, data: [] };
+      if (!res.ok) return { acc, error: `HTTP ${res.status}`, status: res.status };
       const data = await res.json();
+      const bodyError = historyBodyError(provider, data);
+      if (bodyError) return { acc, error: bodyError, status: res.status };
       return { acc, data: Array.isArray(data) ? data : [] };
     } catch (e) {
-      return { acc, data: [] };
+      return { acc, error: e && e.message ? e.message : String(e), status: 0 };
     }
   }));
 
   if (State.historyRequestSeq !== requestSeq) return;
   if (!isAccountsOverviewMode(provider)) return;
+
+  const failed = histories.find(h => h.error);
+  if (failed) {
+    warnHistoryFailure(provider, range, failed.error, failed.status);
+    return;
+  }
 
   const ctx = document.getElementById('usage-chart');
   if (!ctx || typeof Chart === 'undefined') return;
