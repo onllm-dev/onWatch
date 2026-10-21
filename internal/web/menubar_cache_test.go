@@ -1246,3 +1246,125 @@ func TestLatestKimiSnapshotFallsBackWhenLatestReadFails(t *testing.T) {
 		t.Fatalf("fallback quotas = %+v, want the older 42%% row", latest.Quotas)
 	}
 }
+
+// blockHandlerStore takes an exclusive SQLite lock over the handler's
+// shared-cache database through a second connection. While it is held, any
+// read on the handler's pool waits for a lock (up to busy_timeout), which is
+// exactly what a summary request must never do once it has cached data to
+// serve. The returned release function rolls the lock back.
+func blockHandlerStore(t *testing.T, dsn string) func() {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.Exec("BEGIN EXCLUSIVE"); err != nil {
+		db.Close()
+		t.Fatalf("BEGIN EXCLUSIVE: %v", err)
+	}
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			_, _ = db.Exec("ROLLBACK")
+			_ = db.Close()
+		})
+	}
+	t.Cleanup(release)
+	return release
+}
+
+// Finding 1: serving a cached snapshot must make zero database calls. The
+// summary, tray-title and preferences GET paths all used to read settings or
+// provider visibility outside the cache wait budget, so with both pool
+// connections busy they queued for a connection (and a cancelled request could
+// not interrupt the wait). Here the database is locked outright: a request
+// that touches it stalls in SQLite, one that serves the cache answers at once.
+func TestMenubarCachedEndpointsMakeNoDBReads(t *testing.T) {
+	seed := func(t *testing.T) (*Handler, string) {
+		t.Helper()
+		h, s, dsn := newCacheTestHandler(t, nil)
+		h.menubarFreshFor = time.Minute
+		h.menubarWaitFor = 250 * time.Millisecond
+		insertTestCursorSnapshot(t, s, time.Now().UTC().Add(-5*time.Minute), api.CursorAccountIndividual, "Pro", []api.CursorQuota{
+			{Name: "total_usage", Used: 40, Limit: 100, Utilization: 40, Format: api.CursorFormatPercent},
+		})
+		if rr := getSummary(h); rr.Code != http.StatusOK {
+			t.Fatalf("seed summary status = %d body=%s", rr.Code, rr.Body.String())
+		}
+		return h, dsn
+	}
+
+	requests := []struct {
+		name string
+		call func(h *Handler) *httptest.ResponseRecorder
+	}{
+		{"summary", func(h *Handler) *httptest.ResponseRecorder { return getSummary(h) }},
+		{"tray-title", func(h *Handler) *httptest.ResponseRecorder {
+			rr := httptest.NewRecorder()
+			h.MenubarTrayTitle(rr, httptest.NewRequest(http.MethodGet, "/api/menubar/tray-title", nil))
+			return rr
+		}},
+		{"preferences", func(h *Handler) *httptest.ResponseRecorder {
+			rr := httptest.NewRecorder()
+			h.MenubarPreferences(rr, httptest.NewRequest(http.MethodGet, "/api/menubar/preferences", nil))
+			return rr
+		}},
+	}
+
+	for _, request := range requests {
+		t.Run(request.name, func(t *testing.T) {
+			h, dsn := seed(t)
+			release := blockHandlerStore(t, dsn)
+
+			done := make(chan *httptest.ResponseRecorder, 1)
+			go func() { done <- request.call(h) }()
+
+			select {
+			case rr := <-done:
+				if rr.Code != http.StatusOK {
+					t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+				}
+			case <-time.After(1500 * time.Millisecond):
+				release()
+				t.Fatalf("a cached %s request blocked on the database; it must make no DB calls", request.name)
+			}
+			release()
+		})
+	}
+}
+
+// Finding 1 (Opus review): a failed visibility read must not change staleness.
+// The build captured the visibility map, so serving it must not re-read the
+// setting - and a broken settings table must not make manual (polling:false)
+// providers look stale.
+func TestMenubarCachedStalenessUsesBuildVisibility(t *testing.T) {
+	h, s, dsn := newCacheTestHandler(t, nil)
+	h.menubarFreshFor = time.Minute
+	if err := s.SetSetting("provider_visibility", `{"cursor":{"polling":false,"dashboard":true}}`); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	insertTestCursorSnapshot(t, s, time.Now().UTC().Add(-20*time.Minute), api.CursorAccountIndividual, "Pro", []api.CursorQuota{
+		{Name: "total_usage", Used: 40, Limit: 100, Utilization: 40, Format: api.CursorFormatPercent},
+	})
+
+	first := decodeSummary(t, getSummary(h))
+	card, ok := menubarCardByID(&first, "cursor")
+	if !ok {
+		t.Fatalf("cursor card missing: %+v", first.Providers)
+	}
+	if card.Stale || card.StaleAfterSeconds != 0 {
+		t.Fatalf("manual provider marked stale from the start: stale=%v window=%ds", card.Stale, card.StaleAfterSeconds)
+	}
+
+	breakProviderStorage(t, dsn, "settings")
+
+	again := decodeSummary(t, getSummary(h))
+	card, ok = menubarCardByID(&again, "cursor")
+	if !ok {
+		t.Fatalf("cursor card missing after a settings read failure: %+v", again.Providers)
+	}
+	if card.Stale || card.StaleAfterSeconds != 0 {
+		t.Fatalf("manual provider was marked stale because the visibility read failed: stale=%v window=%ds", card.Stale, card.StaleAfterSeconds)
+	}
+}

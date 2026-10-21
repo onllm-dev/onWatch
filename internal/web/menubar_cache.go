@@ -20,10 +20,13 @@ import (
 //
 // The daemon now keeps the last successfully built data in memory and only ever
 // runs one build at a time. Concurrent requests share the in-flight build
-// (singleflight). A request with fresh cached data is answered with no database
-// work at all; otherwise it waits a short, bounded time for a build and falls
-// back to the cached data if that build is still running, letting it finish in
-// the background. The cached snapshot keeps its original generated_at/latest_at,
+// (singleflight). A request with fresh cached data, and one that falls back to
+// stale data after the wait budget, both answer from memory: the build captured
+// the settings, provider visibility and cards the response needs, so serving a
+// snapshot never queries the database on the request's own goroutine. Otherwise
+// the request waits a short, bounded time for the build; if that build is still
+// running the request answers from the cache and the build finishes in the
+// background. The cached snapshot keeps its original generated_at/latest_at,
 // so the popover's ordering guard still accepts a newer build after a cached
 // response, and staleness shows only through each card's age label (which
 // counts up from updated_at_time).
@@ -56,13 +59,15 @@ var errMenubarSnapshotTimeout = fmt.Errorf("menubar snapshot build timed out")
 
 // menubarBuiltData is the product of one build: the filtered snapshot the
 // clients see, the unfiltered card list (menubar-hidden providers included)
-// that the preferences endpoint needs, and the settings the build used. One
-// build supplies all three, so preferences never issue a second set of
-// queries.
+// that the preferences endpoint needs, the settings the build used and the
+// provider visibility map it applied. One build supplies all four, so serving
+// the cached snapshot (summary, tray title, preferences) never issues another
+// query: settings and visibility are read once, inside the build.
 type menubarBuiltData struct {
 	Snapshot     *menubar.Snapshot
 	AllProviders []menubar.ProviderCard
 	Settings     *menubar.Settings
+	Visibility   map[string]map[string]bool
 }
 
 // menubarSnapshotBuild is one in-flight build. Every request that arrives while
@@ -341,14 +346,12 @@ func (h *Handler) menubarLastSettingsSnapshot() *menubar.Settings {
 	return h.menubarLastSettings
 }
 
-// menubarSettingsWithFallback returns current settings, falling back to the
-// last successfully read settings and then defaults. It never fails, so the
-// tray-title handler can always format a title.
-func (h *Handler) menubarSettingsWithFallback() *menubar.Settings {
-	settings, err := h.menubarSettings()
-	if err == nil {
-		h.recordMenubarLastSettings(settings)
-		return settings
+// menubarServeSettings picks the settings a cached response formats with: the
+// ones the build captured, then the last settings read successfully, then
+// defaults. No database access, so a stale snapshot can always be served.
+func (h *Handler) menubarServeSettings(data menubarBuiltData) *menubar.Settings {
+	if data.Settings != nil {
+		return data.Settings.Normalize()
 	}
 	if last := h.menubarLastSettingsSnapshot(); last != nil {
 		return last

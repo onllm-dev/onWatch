@@ -70,15 +70,17 @@ func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
 // same rules as the macOS menubar companion, so GNOME can stay in sync without
 // reimplementing formatting.
 func (h *Handler) MenubarTrayTitle(w http.ResponseWriter, r *http.Request) {
-	snapshot, err := h.menubarSnapshotForRequest(r.Context())
+	data, err := h.menubarDataForRequest(r.Context())
 	if err != nil {
 		h.logger.Error("failed to build menubar snapshot for tray title", "error", err)
 		respondMenubarSnapshotError(w, err, "failed to build menubar tray title")
 		return
 	}
-	// Never fail the tray title on a settings read error: the last settings
-	// that were read successfully (or defaults) still format a usable title.
-	settings := h.menubarSettingsWithFallback()
+	snapshot := h.menubarStaleData(data).Snapshot
+	// Format from the settings the build captured (last good on a failed read):
+	// a cached or stale response must not issue another settings query, and the
+	// title must never fail on a settings read error.
+	settings := h.menubarServeSettings(data)
 	title := menubar.TrayTitle(snapshot, settings)
 	segments := menubar.TraySegments(snapshot, settings)
 	tooltip := ""
@@ -192,9 +194,10 @@ func (h *Handler) MenubarPreferences(w http.ResponseWriter, r *http.Request) {
 			respondMenubarSnapshotError(w, err, "failed to load menubar preferences")
 			return
 		}
-		// Settings are read fresh: one cheap primary-key lookup, and it keeps
-		// the response correct even when the cached build predates a save.
-		effective := h.menubarSettingsWithFallback()
+		// Settings come from the same captured build, so a cached GET makes no
+		// database call at all. A save invalidates the cache, so the next GET
+		// rebuilds with the new settings.
+		effective := h.menubarServeSettings(data)
 		respondJSON(w, http.StatusOK, menubarPreferencesResponse(effective, h.buildMenubarProviderOptions(effective, data.AllProviders)))
 	case http.MethodPut:
 		if h.store == nil {
@@ -314,7 +317,7 @@ func (h *Handler) buildMenubarSnapshotWithAllProviders() (menubarBuiltData, erro
 
 	// Build with hidden cards included, then filter, so one pass supplies both
 	// the snapshot and the options list.
-	allProviders, latest := h.buildMenubarProviders(settings, true)
+	allProviders, latest, visibility := h.buildMenubarProviders(settings, true)
 	normalized := settings.Normalize()
 	providers := filterMenubarProviders(allProviders, normalized.VisibleProviders)
 	if providers == nil {
@@ -335,6 +338,7 @@ func (h *Handler) buildMenubarSnapshotWithAllProviders() (menubarBuiltData, erro
 		},
 		AllProviders: allProviders,
 		Settings:     normalized,
+		Visibility:   visibility,
 	}, nil
 }
 
@@ -424,7 +428,7 @@ func (h *Handler) applyMenubarStaleness(providers []menubar.ProviderCard, visibi
 	}
 }
 
-func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidden bool) ([]menubar.ProviderCard, time.Time) {
+func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidden bool) ([]menubar.ProviderCard, time.Time, map[string]map[string]bool) {
 	normalized := settings.Normalize()
 	if h.menubarProvidersBuildHook != nil {
 		h.menubarProvidersBuildHook()
@@ -596,7 +600,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		// An empty build still serialises as [] rather than null.
 		providers = []menubar.ProviderCard{}
 	}
-	return providers, latest
+	return providers, latest, visibility
 }
 
 // menubarStaleData returns a copy of the built data with staleness freshly
@@ -604,14 +608,18 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 // to menubarFreshWindow old; staleness depends on the wall clock, so it is
 // recomputed on every read. That is what makes a card turn stale while the
 // daemon is otherwise healthy but one provider stopped polling.
+//
+// It reuses the visibility map the build captured. Re-reading it here would put
+// a context-free settings query on every cached response - including the 3s
+// stale fallback, which exists precisely for moments when the database cannot
+// answer - and a failed read would silently treat every provider as polling.
 func (h *Handler) menubarStaleData(data menubarBuiltData) menubarBuiltData {
 	if data.Snapshot == nil {
 		return data
 	}
-	visibility := h.providerVisibilityMap()
 	fresh := make([]menubar.ProviderCard, len(data.Snapshot.Providers))
 	copy(fresh, data.Snapshot.Providers)
-	h.applyMenubarStaleness(fresh, visibility)
+	h.applyMenubarStaleness(fresh, data.Visibility)
 
 	snapshotCopy := *data.Snapshot
 	snapshotCopy.Providers = fresh
@@ -619,6 +627,7 @@ func (h *Handler) menubarStaleData(data menubarBuiltData) menubarBuiltData {
 		Snapshot:     &snapshotCopy,
 		AllProviders: data.AllProviders,
 		Settings:     data.Settings,
+		Visibility:   data.Visibility,
 	}
 }
 

@@ -84,7 +84,7 @@ func TestMenubarProvidersAttachPeakOnlyToDeepSeekServingCards(t *testing.T) {
 	h := NewHandler(s, nil, nil, nil, cfg)
 	h.SetVersion("test-version")
 
-	providers, _ := h.buildMenubarProviders(menubar.DefaultSettings(), true)
+	providers, _, _ := h.buildMenubarProviders(menubar.DefaultSettings(), true)
 	byID := make(map[string]menubar.ProviderCard, len(providers))
 	for _, card := range providers {
 		byID[card.ID] = card
