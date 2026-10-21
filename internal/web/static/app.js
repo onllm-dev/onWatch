@@ -6108,6 +6108,25 @@ function updateChartTheme() {
   State.chart.update('none');
 }
 
+// historyBodyError reports why a successful HTTP response still cannot be
+// charted. An empty array is a real empty range, not an error.
+function historyBodyError(provider, data) {
+  if (data == null || typeof data !== 'object') return 'invalid body';
+  if (data.error) return String(data.error);
+  if (provider === 'both') {
+    return Array.isArray(data) ? 'invalid body' : '';
+  }
+  if (provider === 'antigravity') {
+    if (Array.isArray(data) || (!Array.isArray(data.labels) && !Array.isArray(data.datasets))) return 'invalid body';
+    return '';
+  }
+  return Array.isArray(data) ? '' : 'invalid body';
+}
+
+function warnHistoryFailure(provider, range, reason, status) {
+  console.warn('[onWatch] history fetch failed', { provider, range, status, reason });
+}
+
 async function fetchHistory(range) {
   if (range === undefined) {
     const activeBtn = document.querySelector('.range-btn[data-range].active');
@@ -6128,8 +6147,15 @@ async function fetchHistory(range) {
   try {
     if (requestProvider === 'api-integrations') {
       const res = await authFetch(`${API_BASE}/api/api-integrations/history?range=${range}`);
-      if (!res.ok) throw new Error('Failed to fetch API integrations history');
+      if (!res.ok) {
+        warnHistoryFailure(requestProvider, range, `HTTP ${res.status}`, res.status);
+        return;
+      }
       const data = await res.json();
+      if (!data || typeof data !== 'object' || data.error) {
+        warnHistoryFailure(requestProvider, range, (data && data.error) || 'invalid body', res.status);
+        return;
+      }
 
       if (State.historyRequestSeq !== requestSeq) return;
       if (getCurrentProvider() !== requestProvider) return;
@@ -6142,8 +6168,16 @@ async function fetchHistory(range) {
     }
 
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&${providerParam()}`);
-    if (!res.ok) throw new Error('Failed to fetch history');
+    if (!res.ok) {
+      warnHistoryFailure(requestProvider, range, `HTTP ${res.status}`, res.status);
+      return;
+    }
     const data = await res.json();
+    const bodyError = historyBodyError(requestProvider, data);
+    if (bodyError) {
+      warnHistoryFailure(requestProvider, range, bodyError, res.status);
+      return;
+    }
 
     let apiIntegrationsHistoryData = null;
     if (requestProvider === 'both' && State.apiIntegrationsVisibility?.dashboard !== false) {
@@ -6677,7 +6711,7 @@ async function fetchHistory(range) {
     State.chart.options.scales.y.max = State.chartYMax;
     State.chart.update();
   } catch (err) {
-    // history fetch error - chart shows empty state
+    warnHistoryFailure(requestProvider, range, err && err.message ? err.message : String(err), 0);
   }
 }
 
