@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -196,3 +197,86 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 
 var _ io.Writer = (*countingWriter)(nil)
 var _ = slog.Default
+
+// startLockHolderSubprocess starts a helper process that acquires the menubar
+// lock and holds it until killed, so lock ownership belongs to a different pid
+// as it does in production.
+func startLockHolderSubprocess(t *testing.T, testMode bool) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=TestMenubarLockHolderHelperProcess_NeverRun")
+	cmd.Env = append(os.Environ(), "GO_MENUBAR_LOCK_HOLDER=1")
+	if testMode {
+		cmd.Env = append(cmd.Env, "GO_MENUBAR_LOCK_HOLDER_TESTMODE=1")
+	}
+	cmd.Env = append(cmd.Env, fmt.Sprintf("GO_MENUBAR_LOCK_HOLDER_DIR=%s", pidDir))
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start lock holder: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if owner, held := menubarLockOwnerProbe(testMode); held && owner == cmd.Process.Pid {
+			return cmd
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = cmd.Process.Kill()
+	_, _ = cmd.Process.Wait()
+	t.Fatal("lock holder did not acquire the menubar lock")
+	return nil
+}
+
+// TestMenubarLockHolderHelperProcess_NeverRun holds the menubar lock in a
+// child process until it is killed. It exits immediately unless asked to.
+func TestMenubarLockHolderHelperProcess_NeverRun(t *testing.T) {
+	if os.Getenv("GO_MENUBAR_LOCK_HOLDER") != "1" {
+		return
+	}
+	if dir := os.Getenv("GO_MENUBAR_LOCK_HOLDER_DIR"); dir != "" {
+		pidDir = dir
+	}
+	testMode := os.Getenv("GO_MENUBAR_LOCK_HOLDER_TESTMODE") == "1"
+	lock, err := acquireMenubarLock(testMode)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lock holder: %v\n", err)
+		os.Exit(2)
+	}
+	defer lock.Close()
+	time.Sleep(2 * time.Minute)
+}
+
+// Finding 2: the companion publishes its pid only after taking the lock, so a
+// shutdown can find the tray owner through the lock when the pid file is
+// missing. Without the lock fallback the companion would survive an
+// "onwatch stop" and keep a dead tray icon.
+func TestStopMenubarFindsLockOwnerWithoutPIDFile(t *testing.T) {
+	prevPIDDir := pidDir
+	pidDir = t.TempDir()
+	defer func() { pidDir = prevPIDDir }()
+
+	holder := startLockHolderSubprocess(t, false)
+	t.Cleanup(func() {
+		if holder.Process != nil {
+			_ = holder.Process.Kill()
+			_, _ = holder.Process.Wait()
+		}
+	})
+	if readRuntimePID(menubarPIDPath(false)) != 0 {
+		t.Fatal("the lock holder must not have written a pid file")
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- stopMenubarProcess(false) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("stopMenubarProcess: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("stopMenubarProcess did not return")
+	}
+	_, _ = holder.Process.Wait()
+	if processAlive(holder.Process.Pid) {
+		t.Fatalf("the lock-owning companion %d survived the stop", holder.Process.Pid)
+	}
+}

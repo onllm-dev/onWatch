@@ -17,8 +17,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -110,4 +113,48 @@ func (l *menubarLock) Close() error {
 	err := l.file.Close()
 	l.file = nil
 	return err
+}
+
+// menubarLockOwnerProbe reports the pid recorded inside the lock file and
+// whether the lock is currently held. It never takes the lock: it opens the
+// lock file read-only (so the holder is unaffected) and tries a non-blocking
+// lock on that second handle. blocked means another process holds it; owner is
+// that process's pid as written at acquisition (0 when unknown).
+//
+// The pid inside the lock is written by the holder and only trusted while the
+// lock is held, so it distinguishes the companion from an unrelated process
+// that happens to reuse the pid in the runtime pid file.
+func menubarLockOwnerProbe(testMode bool) (owner int, blocked bool) {
+	path := menubarLockPath(testMode)
+	file, err := os.OpenFile(path, os.O_RDWR, 0o644)
+	if err != nil {
+		return 0, false
+	}
+	defer file.Close()
+
+	if ok, lockErr := lockFileExclusive(file); lockErr != nil {
+		return 0, false
+	} else if ok {
+		unlockFile(file)
+		return 0, false
+	}
+
+	// Held by someone: read the pid the holder wrote at offset 0. The read is
+	// done on the same handle so Windows' mandatory lock semantics cannot get
+	// in the way (the locked range starts past the text).
+	if _, err := file.Seek(0, io.SeekStart); err == nil {
+		if data, readErr := io.ReadAll(io.LimitReader(file, 32)); readErr == nil {
+			if pid, convErr := strconv.Atoi(strings.TrimSpace(string(data))); convErr == nil && pid > 0 {
+				owner = pid
+			}
+		}
+	}
+	return owner, true
+}
+
+// menubarLockHeld reports whether some process currently holds the menubar
+// single-instance lock.
+func menubarLockHeld(testMode bool) bool {
+	_, blocked := menubarLockOwnerProbe(testMode)
+	return blocked
 }

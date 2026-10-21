@@ -92,6 +92,18 @@ func writeRuntimePID(path string) error {
 	return writeRuntimePIDValue(path, os.Getpid())
 }
 
+// publishIncumbentMenubarPID rewrites the pid file with the lock holder's pid
+// when a companion loses the lock race. probe is the lock probe to use.
+func publishIncumbentMenubarPID(testMode bool, probe func(bool) (int, bool)) {
+	owner, held := probe(testMode)
+	if !held || owner <= 0 || owner == os.Getpid() {
+		return
+	}
+	if err := writeRuntimePIDValue(menubarPIDPath(testMode), owner); err != nil {
+		slog.Default().Warn("failed to record the incumbent menubar pid", "error", err)
+	}
+}
+
 // writeRuntimePIDValue records pid in the runtime pid file. The daemon writes
 // the spawned child's pid, never its own: while the companion waits up to 10s
 // for the single-instance lock, a shutdown that read the daemon's own pid back
@@ -101,6 +113,20 @@ func writeRuntimePIDValue(path string, pid int) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(fmt.Sprintf("%d", pid)), 0644)
+}
+
+// removeRuntimePIDIfOwner removes path only when it still records pid. A
+// delayed cleanup from an older child must never delete a newer child's pid
+// record, which is how the incumbent companion lost its pid file when a
+// replacement exited first.
+func removeRuntimePIDIfOwner(path string, pid int) {
+	if pid <= 0 {
+		return
+	}
+	if readRuntimePID(path) != pid {
+		return
+	}
+	_ = os.Remove(path)
 }
 
 func processRunning(pid int) bool {
@@ -136,6 +162,17 @@ const menubarStopPollInterval = 100 * time.Millisecond
 func stopMenubarProcess(testMode bool) error {
 	path := menubarPIDPath(testMode)
 	pid := readRuntimePID(path)
+	// The companion publishes its pid only after taking the single-instance
+	// lock, so the lock names the tray owner even when the pid file is missing
+	// or still holds a stale, reused pid. Without this a shutdown either found
+	// nothing to stop or refused to signal an unrelated process and left the
+	// companion running.
+	owner, held := menubarLockOwnerProbe(testMode)
+	if pid <= 0 {
+		pid = owner
+	} else if held && owner > 0 && owner != pid && !isOnwatchProcess(pid) && processRunning(owner) {
+		pid = owner
+	}
 	if pid <= 0 {
 		return nil
 	}
@@ -186,7 +223,9 @@ func stopMenubarProcess(testMode bool) error {
 			time.Sleep(menubarStopPollInterval)
 		}
 	}
-	_ = os.Remove(path)
+	// Only the record naming the stopped companion is removed: the exiting
+	// child (or an incumbent that took ownership back) may have rewritten it.
+	removeRuntimePIDIfOwner(path, pid)
 	return nil
 }
 
@@ -271,11 +310,11 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 		closeLog(logFile)
 		return err
 	}
-	if err := writeRuntimePIDValue(path, cmd.Process.Pid); err != nil {
-		_ = cmd.Process.Kill()
-		closeLog(logFile)
-		return fmt.Errorf("failed to write menubar pid file: %w", err)
-	}
+	// The pid file is deliberately NOT written here. Its owner is whoever holds
+	// the single-instance lock, and the child publishes its own pid only after
+	// acquiring it. A replacement that loses the lock exits without a tray;
+	// recording its pid now would leave that dead pid (or a later, unrelated
+	// owner of it) in the file while the real incumbent runs untracked.
 	logger.Info("Menubar companion started", "pid", cmd.Process.Pid, "log_path", menubarLogPath(cfg))
 
 	var stderrBuf bytes.Buffer
@@ -315,7 +354,10 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 		err := cmd.Wait()
 		<-stdoutDone
 		<-stderrDone
-		_ = os.Remove(path)
+		// Only this child's own record is removed. When a replacement loses the
+		// lock to the incumbent, it exits cleanly and its cleanup must not erase
+		// the pid of the companion that is still running.
+		removeRuntimePIDIfOwner(path, cmd.Process.Pid)
 		closeLog(logFile)
 
 		if err != nil {
@@ -348,11 +390,26 @@ func runMenubarCommand() error {
 	lock, err := acquireMenubarLockWait(cfg.TestMode, menubarLockWaitTimeout, menubarLockRetryInterval)
 	if err != nil {
 		if errors.Is(err, errMenubarCompanionRunning) {
+			// The incumbent keeps the tray. Publish its ownership so a daemon
+			// that launched this losing replacement still finds a pid file.
+			publishIncumbentMenubarPID(cfg.TestMode, menubarLockOwnerProbe)
 			return nil
 		}
 		return fmt.Errorf("failed to acquire menubar lock: %w", err)
 	}
 	defer lock.Close()
+
+	// The pid file names the process that actually owns the tray, written only
+	// once the lock is held. The daemon deliberately does not write the
+	// spawned child's pid before this point: a replacement that loses the lock
+	// exits without a tray, and its early record would then describe a process
+	// that never published itself.
+	pidPath := menubarPIDPath(cfg.TestMode)
+	if err := writeRuntimePID(pidPath); err != nil {
+		return fmt.Errorf("failed to write menubar pid file: %w", err)
+	}
+	ownPID := os.Getpid()
+	defer removeRuntimePIDIfOwner(pidPath, ownPID)
 
 	// Write the log here instead of relying on the daemon to read stdout over a
 	// pipe. A daemon hung for a long time stops draining that 16KB pipe, and
@@ -395,12 +452,6 @@ func runMenubarCommand() error {
 	mbCfg := settings.ToConfig(cfg.Port, httpSnapshotProvider(cfg.Port))
 	mbCfg.TestMode = cfg.TestMode
 	mbCfg.MistralRetry = httpMistralRetry(cfg.Port, cfg.BasePath)
-
-	pidPath := menubarPIDPath(cfg.TestMode)
-	if err := writeRuntimePID(pidPath); err != nil {
-		return fmt.Errorf("failed to write menubar pid file: %w", err)
-	}
-	defer os.Remove(pidPath)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -69,5 +70,39 @@ func TestStopMenubarProcessNeverSignalsSelfOrParent(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("a corrupt pid file naming %d must be removed", pid)
 		}
+	}
+}
+
+// Finding 2: a replacement that loses the lock to the incumbent must not erase
+// the incumbent's pid record. Sequence: the old companion holds the lock, its
+// pid file is gone, a replacement is launched, the replacement exits without a
+// tray, and then its waiter cleans up.
+func TestLosingReplacementKeepsIncumbentPID(t *testing.T) {
+	prevPIDDir := pidDir
+	pidDir = t.TempDir()
+	defer func() { pidDir = prevPIDDir }()
+
+	incumbent := startLockHolderSubprocess(t, false)
+	t.Cleanup(func() { _ = incumbent.Process.Kill(); _, _ = incumbent.Process.Wait() })
+
+	path := menubarPIDPath(false)
+	_ = os.Remove(path)
+
+	// The replacement cannot take the lock; it must hand pid ownership to the
+	// incumbent instead of leaving the file absent or naming itself.
+	if _, err := acquireMenubarLockWait(false, 250*time.Millisecond, 50*time.Millisecond); !errors.Is(err, errMenubarCompanionRunning) {
+		t.Fatalf("replacement acquire err = %v, want errMenubarCompanionRunning", err)
+	}
+	publishIncumbentMenubarPID(false, menubarLockOwnerProbe)
+	if got := readRuntimePID(path); got != incumbent.Process.Pid {
+		t.Fatalf("pid file = %d, want the incumbent %d", got, incumbent.Process.Pid)
+	}
+
+	// The replacement child exits and its waiter runs cleanup. It must not
+	// erase a record that names the incumbent.
+	lostChild := incumbent.Process.Pid + 1
+	removeRuntimePIDIfOwner(path, lostChild)
+	if got := readRuntimePID(path); got != incumbent.Process.Pid {
+		t.Fatalf("a losing replacement's cleanup erased the incumbent's pid (got %d)", got)
 	}
 }
