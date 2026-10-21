@@ -209,6 +209,16 @@ func (s *Store) QueryCommandCodeRange(start, end time.Time, limit ...int) ([]*ap
 		args = append(args, limit[0])
 	}
 
+	return s.queryCommandCodeSnapshots(query, args)
+}
+
+// QueryCommandCodeChartRange samples the entire range with at most 200 snapshots.
+func (s *Store) QueryCommandCodeChartRange(start, end time.Time) ([]*api.CommandCodeSnapshot, error) {
+	query := windowChartQuery("commandcode_snapshots", "id, captured_at, account_name, account_id, org_id, plan, status, monthly_credits, purchased_credits, free_credits, remaining_credits, period_start, period_end, period_cost, period_requests, period_tokens")
+	return s.queryCommandCodeSnapshots(query, []interface{}{start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano)})
+}
+
+func (s *Store) queryCommandCodeSnapshots(query string, args []interface{}) ([]*api.CommandCodeSnapshot, error) {
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query commandcode range: %w", err)

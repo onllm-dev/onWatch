@@ -333,7 +333,7 @@ func (h *Handler) historyOpenCode(w http.ResponseWriter, r *http.Request) {
 		start = now.Add(-7 * 24 * time.Hour)
 	}
 
-	snapshots, err := h.store.QueryOpenCodeRange(start, now, 200)
+	snapshots, err := h.store.QueryOpenCodeChartRange(start, now)
 	if err != nil {
 		h.logger.Error("failed to query OpenCode history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")

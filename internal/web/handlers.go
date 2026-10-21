@@ -3993,7 +3993,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if h.config.HasProvider("opencode") && providerTelemetryEnabled(visibility, "opencode") && h.store != nil {
-		snapshots, err := h.store.QueryOpenCodeRange(start, now, 200)
+		snapshots, err := h.store.QueryOpenCodeChartRange(start, now)
 		if err == nil {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
@@ -4059,7 +4059,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("commandcode") && providerTelemetryEnabled(visibility, "commandcode") && h.store != nil {
-		snapshots, err := h.store.QueryCommandCodeRange(start, now, 200)
+		snapshots, err := h.store.QueryCommandCodeChartRange(start, now)
 		if err == nil {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1

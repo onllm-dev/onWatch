@@ -330,7 +330,7 @@ func (h *Handler) historyCommandCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start, end := parseProviderHistoryRange(r.URL.Query().Get("range"))
-	snapshots, err := h.store.QueryCommandCodeRange(start, end, 200)
+	snapshots, err := h.store.QueryCommandCodeChartRange(start, end)
 	if err != nil {
 		h.logger.Error("failed to query Command Code history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")

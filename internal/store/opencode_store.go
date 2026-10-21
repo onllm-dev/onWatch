@@ -141,6 +141,16 @@ func (s *Store) QueryOpenCodeRange(start, end time.Time, limit ...int) ([]*api.O
 		args = append(args, limit[0])
 	}
 
+	return s.queryOpenCodeSnapshots(query, args)
+}
+
+// QueryOpenCodeChartRange samples the entire range with at most 200 snapshots.
+func (s *Store) QueryOpenCodeChartRange(start, end time.Time) ([]*api.OpenCodeSnapshot, error) {
+	query := windowChartQuery("opencode_snapshots", "id, captured_at, account_type, plan_name, quota_count")
+	return s.queryOpenCodeSnapshots(query, []interface{}{start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano)})
+}
+
+func (s *Store) queryOpenCodeSnapshots(query string, args []interface{}) ([]*api.OpenCodeSnapshot, error) {
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query opencode range: %w", err)
@@ -537,4 +547,13 @@ func (s *Store) QueryOpenCodeCycleOverview(groupBy string, limit int) ([]CycleOv
 	}
 
 	return overviewRows, nil
+}
+
+// Table and columns are internal constants, never request input.
+func windowChartQuery(table, columns string) string {
+	return `SELECT ` + columns + ` FROM (
+  SELECT ` + columns + `, ROW_NUMBER() OVER (ORDER BY captured_at, id) AS rn,
+   COUNT(*) OVER () AS total FROM ` + table + ` WHERE captured_at BETWEEN ? AND ?
+ ) WHERE rn = total OR (rn - 1) % MAX(1, (total - 2) / 199 + 1) = 0
+ ORDER BY captured_at, id`
 }
