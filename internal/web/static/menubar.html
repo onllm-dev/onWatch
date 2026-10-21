@@ -1940,8 +1940,6 @@
                 requestFreshSnapshot();
             });
 
-            init();
-
             async function init() {
                 applyTheme();
                 // Paint the last-known snapshot immediately, then fetch. Ages
@@ -4182,6 +4180,14 @@
                     .replaceAll("\"", "&quot;")
                     .replaceAll("'", "&#39;");
             }
+
+            // Start last, after every top-level binding in this IIFE has been
+            // evaluated. init() renders before it fetches, and render() and the
+            // snapshot-restore path touch bindings declared further down (for
+            // example the snapshot generation counters). Calling it earlier
+            // threw a temporal-dead-zone ReferenceError and left the popover
+            // stuck on "Loading".
+            init();
         })();
     </script>
 </body>

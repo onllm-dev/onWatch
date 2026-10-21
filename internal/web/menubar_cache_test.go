@@ -150,7 +150,9 @@ func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 	}
 	h.menubarAfterBuildHook = func(*menubar.Snapshot, error) { backgroundDone <- struct{}{} }
 
-	time.Sleep(2 * time.Millisecond) // past the 1ms freshness window
+	// Force every cached snapshot to be stale deterministically: a 2ms sleep
+	// against a 1ms window still leaves the freshness decision to scheduling.
+	h.menubarFreshFor = -time.Nanosecond
 
 	start := time.Now()
 	stale := decodeSummary(t, getSummary(h))
@@ -174,7 +176,6 @@ func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 	close(gate)
 	waitClosed(t, backgroundDone)
 
-	time.Sleep(2 * time.Millisecond)
 	fresh := decodeSummary(t, getSummary(h))
 	if !fresh.GeneratedAt.After(cached.GeneratedAt) {
 		t.Fatalf("post-build snapshot generated_at = %s, want newer than %s", fresh.GeneratedAt, cached.GeneratedAt)
@@ -549,7 +550,13 @@ func (h *Handler) waitForRegisteredBuild(t *testing.T, generation uint64) {
 // runs at most twice regardless of how many invalidations happened.
 func TestMenubarCacheInvalidationBurstCausesOneExtraBuild(t *testing.T) {
 	h, s, _ := newCacheTestHandler(t, nil)
-	h.menubarFreshFor = -time.Second
+	// The freshness window must stay positive. Nothing is cached yet (the first
+	// build is gated below), so every waiter starts in the no-cache branch; once
+	// the current generation's build completes it stores fresh data, and late
+	// waiters must be served that data. A non-positive window would force every
+	// re-looping waiter to start yet another build after a successful one,
+	// which made this assertion depend on goroutine scheduling on slow runners.
+	h.menubarFreshFor = time.Minute
 	h.menubarWaitFor = 5 * time.Second
 	insertTestCursorSnapshot(t, s, time.Now().UTC().Add(-5*time.Minute), api.CursorAccountIndividual, "Pro", []api.CursorQuota{
 		{Name: "total_usage", Used: 40, Limit: 100, Utilization: 40, Format: api.CursorFormatPercent},

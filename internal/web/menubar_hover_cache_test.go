@@ -323,3 +323,32 @@ function render() {}
 `
 	runMenubarNode(t, script)
 }
+
+// init() runs before the first fetch and its first render, so every binding
+// the render and snapshot-restore paths read must already be initialized.
+// Calling init() from the middle of the IIFE (above the snapshot generation
+// counters) threw a temporal-dead-zone ReferenceError and left the popover
+// stuck on "Loading" with no provider cards.
+func TestMenubarInitRunsAfterTopLevelBindings(t *testing.T) {
+	html := readMenubarHTML(t)
+
+	initCall := strings.Index(html, "\n            init();")
+	if initCall < 0 {
+		t.Fatal("menubar.html is missing the top-level init() call")
+	}
+	for _, declaration := range []string{
+		"let snapshotGeneration = 0;",
+		"let appliedSnapshotGeneration = 0;",
+		"let appliedSnapshotTime = null;",
+		"let resizeReportDelivered = false;",
+		"let _menubarPromos = [];",
+	} {
+		declarationIndex := strings.Index(html, declaration)
+		if declarationIndex < 0 {
+			t.Fatalf("menubar.html is missing %q", declaration)
+		}
+		if declarationIndex > initCall {
+			t.Fatalf("init() runs before the top-level binding %q; a render from init would throw a ReferenceError", declaration)
+		}
+	}
+}

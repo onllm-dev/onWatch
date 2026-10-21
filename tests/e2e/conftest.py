@@ -3,6 +3,7 @@
 Session-scoped fixtures build and start the mock server and onwatch binary,
 then tear them down after all tests complete.
 """
+import json
 import os
 import subprocess
 import sys
@@ -94,16 +95,40 @@ def remove_instance_files(db_path: str, home: str) -> None:
         shutil.rmtree(home, ignore_errors=True)
 
 
+def seed_anthropic_statusline(home: str) -> None:
+    """Write fresh statusline data that the Anthropic agent reads from disk.
+
+    The menubar no longer fabricates cards for providers with no stored data
+    (the spec requires real data or an omitted provider). Synthetic and
+    Anthropic read their data from the network, which the e2e suite must not
+    touch, so Anthropic's statusline file is the one local, real-data path:
+    the daemon parses it exactly as it parses Claude Code's output and stores
+    a genuine snapshot. This keeps more than one provider card in the menubar
+    (Z.ai comes from the mock) without hitting any API.
+    """
+    data_dir = Path(home) / ".onwatch" / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "rate_limits": {
+            "five_hour": {"used_percentage": 42.0, "resets_at": int(time.time()) + 3600},
+            "seven_day": {"used_percentage": 18.0, "resets_at": int(time.time()) + 86400},
+        }
+    }
+    (data_dir / "anthropic-statusline.json").write_text(json.dumps(payload))
+
+
 def start_onwatch(port: int, db_path: str, home: str, provider_env: dict) -> subprocess.Popen:
     """Start the built onwatch binary in an isolated HOME and wait for /login.
 
     Anthropic is pinned to a fake token in statusline mode: onWatch never
     reads the real Claude Code keychain entry and never calls the usage or
     OAuth refresh endpoints, so running the suite on a developer machine
-    cannot rotate (and log out) real credentials.
+    cannot rotate (and log out) real credentials. Fresh statusline data is
+    seeded in the isolated HOME so the provider has real stored data.
     """
     remove_instance_files(db_path, home)
     os.makedirs(home, exist_ok=True)
+    seed_anthropic_statusline(home)
     env = os.environ.copy()
     env.update({
         "HOME": home,
