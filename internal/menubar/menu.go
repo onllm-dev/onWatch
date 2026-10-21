@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 )
 
 // MenuLine is one per-provider row shown in the tray context menu.
@@ -56,28 +57,65 @@ func TrayTooltipText(snapshot *Snapshot, maxRunes int) string {
 	if snapshot == nil {
 		return "onWatch: daemon unreachable"
 	}
-	var text string
-	if len(snapshot.Providers) == 0 {
-		text = "onWatch: no provider data"
-	} else {
-		parts := make([]string, 0, len(snapshot.Providers))
-		for _, provider := range snapshot.Providers {
-			label := strings.TrimSpace(provider.Label)
-			if label == "" {
-				label = provider.ID
-			}
-			parts = append(parts, fmt.Sprintf("%s %d%%", label, int(math.Round(provider.HighestPercent))))
-		}
-		text = strings.Join(parts, " · ")
-	}
+	text := trayProviderLines(snapshot)
 	if updated := strings.TrimSpace(snapshot.UpdatedAgo); updated != "" {
 		text += "\nupdated " + updated
 	}
-	if maxRunes > 0 {
-		runes := []rune(text)
-		if len(runes) > maxRunes {
-			text = string(runes[:maxRunes-3]) + "..."
-		}
+	return truncateTooltip(text, maxRunes)
+}
+
+// TrayTooltipStaleText renders the hover text when the last refresh failed and
+// the tray is showing a cached snapshot. The provider lines are identical; only
+// the freshness line differs, and it is computed from age (client wall-clock
+// time since the last successful fetch) so it keeps counting up while the
+// daemon is unreachable. The snapshot's own UpdatedAgo is frozen at build time
+// and would stall on the stale value.
+func TrayTooltipStaleText(snapshot *Snapshot, maxRunes int, age time.Duration) string {
+	if snapshot == nil {
+		return "onWatch: daemon unreachable"
 	}
-	return text
+	return truncateTooltip(trayProviderLines(snapshot)+"\nlast updated "+formatAgeAgo(age), maxRunes)
+}
+
+// trayProviderLines is the shared "Label NN%" body of both tooltips.
+func trayProviderLines(snapshot *Snapshot) string {
+	if len(snapshot.Providers) == 0 {
+		return "onWatch: no provider data"
+	}
+	parts := make([]string, 0, len(snapshot.Providers))
+	for _, provider := range snapshot.Providers {
+		label := strings.TrimSpace(provider.Label)
+		if label == "" {
+			label = provider.ID
+		}
+		parts = append(parts, fmt.Sprintf("%s %d%%", label, int(math.Round(provider.HighestPercent))))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func truncateTooltip(text string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return text
+	}
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	return string(runes[:maxRunes-3]) + "..."
+}
+
+// formatAgeAgo renders a duration as a compact age string. It is computed from
+// exact timestamps so it grows smoothly on its scale (no integer-day step
+// jumps): "just now", "2m ago", "1h ago", "2d ago".
+func formatAgeAgo(age time.Duration) string {
+	if age < time.Minute {
+		return "just now"
+	}
+	if age < time.Hour {
+		return fmt.Sprintf("%dm ago", int(age.Minutes()))
+	}
+	if age < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(age.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(age.Hours()/24))
 }

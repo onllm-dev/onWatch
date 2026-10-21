@@ -101,46 +101,80 @@ type CodexPauseReporter interface {
 
 // Handler handles HTTP requests for the web dashboard
 type Handler struct {
-	store               *store.Store
-	tracker             *tracker.Tracker
-	zaiTracker          *tracker.ZaiTracker
-	anthropicTracker    *tracker.AnthropicTracker
-	copilotTracker      *tracker.CopilotTracker
-	codexTracker        *tracker.CodexTracker
-	antigravityTracker  *tracker.AntigravityTracker
-	minimaxTracker      *tracker.MiniMaxTracker
-	geminiTracker       *tracker.GeminiTracker
-	openrouterTracker   *tracker.OpenRouterTracker
-	moonshotTracker     *tracker.MoonshotTracker
-	deepseekTracker     *tracker.DeepSeekTracker
-	cursorTracker       *tracker.CursorTracker
-	grokTracker         *tracker.GrokTracker
-	kimiTracker         *tracker.KimiTracker
-	opencodeTracker     *tracker.OpenCodeTracker
-	ollamaTracker       *tracker.OllamaTracker
-	museTracker         *tracker.MuseTracker
-	commandCodeTracker  *tracker.CommandCodeTracker
-	updater             *update.Updater
-	notifier            Notifier
-	agentManager        ProviderAgentController
-	minimaxAgentMgr     MiniMaxAccountReloader
-	logger              *slog.Logger
-	dashboardTmpl       *template.Template
-	loginTmpl           *template.Template
-	settingsTmpl        *template.Template
-	sessions            *SessionStore
-	config              *config.Config
-	metrics             *metrics.Metrics
-	version             string
-	codexPauseReporter  CodexPauseReporter
-	menubarSettingsMu   sync.Mutex
-	smtpTestMu          sync.Mutex
-	smtpTestLastSent    time.Time
-	webhookTestMu       sync.Mutex
-	webhookTestLastSent time.Time
-	pushTestMu          sync.Mutex
-	pushTestLastSent    time.Time
-	rateLimiter         *LoginRateLimiter // Per-IP rate limiting for login attempts
+	store              *store.Store
+	tracker            *tracker.Tracker
+	zaiTracker         *tracker.ZaiTracker
+	anthropicTracker   *tracker.AnthropicTracker
+	copilotTracker     *tracker.CopilotTracker
+	codexTracker       *tracker.CodexTracker
+	antigravityTracker *tracker.AntigravityTracker
+	minimaxTracker     *tracker.MiniMaxTracker
+	geminiTracker      *tracker.GeminiTracker
+	openrouterTracker  *tracker.OpenRouterTracker
+	moonshotTracker    *tracker.MoonshotTracker
+	deepseekTracker    *tracker.DeepSeekTracker
+	cursorTracker      *tracker.CursorTracker
+	grokTracker        *tracker.GrokTracker
+	kimiTracker        *tracker.KimiTracker
+	opencodeTracker    *tracker.OpenCodeTracker
+	ollamaTracker      *tracker.OllamaTracker
+	museTracker        *tracker.MuseTracker
+	commandCodeTracker *tracker.CommandCodeTracker
+	updater            *update.Updater
+	notifier           Notifier
+	agentManager       ProviderAgentController
+	minimaxAgentMgr    MiniMaxAccountReloader
+	logger             *slog.Logger
+	dashboardTmpl      *template.Template
+	loginTmpl          *template.Template
+	settingsTmpl       *template.Template
+	sessions           *SessionStore
+	config             *config.Config
+	metrics            *metrics.Metrics
+	version            string
+	codexPauseReporter CodexPauseReporter
+	menubarSettingsMu  sync.Mutex
+	// menubarLastGood holds the last successfully built card per menubar card
+	// ID (one entry per provider, or per account for Codex/MiniMax). When a
+	// provider's storage read fails, the snapshot serves this card unchanged -
+	// including its original updated_at_time - so a client's age keeps counting
+	// up instead of the card vanishing or turning into a fake-fresh zero.
+	// Bounded by the number of provider cards.
+	menubarLastGoodMu sync.Mutex
+	menubarLastGood   map[string]menubar.ProviderCard
+	// menubarSnapshotData caches the last successfully built data so the
+	// summary, tray-title and preferences endpoints can answer without
+	// rebuilding roughly 60-90 SQL statements on every request. Only one build
+	// runs at a time.
+	menubarSnapshotMu    sync.Mutex
+	menubarSnapshotData  menubarBuiltData
+	menubarSnapshotAt    time.Time
+	menubarSnapshotGen   uint64
+	menubarSnapshotBuild *menubarSnapshotBuild
+	menubarBuildMu       sync.Mutex
+	// menubarLastSettings is the last settings read that succeeded. When a
+	// later read fails, a snapshot can still be built from it (gap A) instead
+	// of answering 500.
+	menubarLastSettingsMu sync.Mutex
+	menubarLastSettings   *menubar.Settings
+	// Test and diagnostics hooks. Nil in production.
+	menubarNow            func() time.Time
+	menubarBuildHook      func(context.Context) (menubarBuiltData, error)
+	menubarJoinHook       func()
+	menubarAfterBuildHook func(*menubar.Snapshot, error)
+	// menubarProvidersBuildHook counts entries into the provider build, so a
+	// test can prove the preferences endpoint never starts its own.
+	menubarProvidersBuildHook func()
+	menubarFreshFor           time.Duration
+	menubarWaitFor            time.Duration
+	menubarNoCacheFor         time.Duration
+	smtpTestMu                sync.Mutex
+	smtpTestLastSent          time.Time
+	webhookTestMu             sync.Mutex
+	webhookTestLastSent       time.Time
+	pushTestMu                sync.Mutex
+	pushTestLastSent          time.Time
+	rateLimiter               *LoginRateLimiter // Per-IP rate limiting for login attempts
 }
 
 // DefaultCodexAccountID is the default account ID for single-account setups.
@@ -457,6 +491,7 @@ func (h *Handler) codexProfileSave(w http.ResponseWriter, r *http.Request) {
 			externalID = profile.AccountID
 		}
 		h.store.GetOrCreateProviderAccountByExternalID("codex", req.Name, externalID)
+		h.invalidateMenubarSnapshot()
 	}
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
@@ -498,6 +533,7 @@ func (h *Handler) codexProfileDelete(w http.ResponseWriter, r *http.Request) {
 	// Mark profile as deleted in database
 	if h.store != nil {
 		h.store.MarkProviderAccountDeleted("codex", name)
+		h.invalidateMenubarSnapshot()
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -592,6 +628,7 @@ func (h *Handler) codexProfileRefresh(w http.ResponseWriter, r *http.Request) {
 			externalID = profile.AccountID
 		}
 		h.store.GetOrCreateProviderAccountByExternalID("codex", name, externalID)
+		h.invalidateMenubarSnapshot()
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -601,33 +638,55 @@ func (h *Handler) codexProfileRefresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// menubarAccountUsage pairs one account's current payload with the outcome of
+// the storage read that built it, so the menubar can serve its last good card
+// instead of an empty payload when that read failed.
+type menubarAccountUsage struct {
+	Usage   map[string]interface{}
+	ReadOK  bool
+	HasData bool
+}
+
 func (h *Handler) codexUsageAccounts() []map[string]interface{} {
+	usages, _ := h.codexUsageAccountsOK()
+	accounts := make([]map[string]interface{}, 0, len(usages))
+	for _, usage := range usages {
+		accounts = append(accounts, usage.Usage)
+	}
+	return accounts
+}
+
+// codexUsageAccountsOK is codexUsageAccounts with an explicit enumeration
+// outcome and the read outcome of each account's builder. enumerated is false
+// only when the account list itself could not be read; callers that cache
+// per-account data must then keep their known accounts and prune nothing.
+func (h *Handler) codexUsageAccountsOK() (accounts []menubarAccountUsage, enumerated bool) {
 	if h.store == nil {
-		return []map[string]interface{}{}
+		return nil, true
 	}
 
 	// Only return active (non-deleted) accounts for dashboard rendering
-	accounts, err := h.store.QueryActiveProviderAccounts("codex")
+	rows, err := h.store.QueryActiveProviderAccounts("codex")
 	if err != nil {
 		h.logger.Error("failed to query Codex accounts", "error", err)
-		return []map[string]interface{}{}
+		return nil, false
 	}
-	if len(accounts) == 0 {
-		accounts = []store.ProviderAccount{
+	if len(rows) == 0 {
+		rows = []store.ProviderAccount{
 			{ID: DefaultCodexAccountID, Name: "default"},
 		}
 	}
 
-	usages := make([]map[string]interface{}, 0, len(accounts))
-	for _, acc := range accounts {
-		usage := h.buildCodexCurrent(acc.ID)
+	accounts = make([]menubarAccountUsage, 0, len(rows))
+	for _, acc := range rows {
+		usage, readOK, hasData := h.buildCodexCurrentOK(acc.ID)
 		usage["accountId"] = acc.ID
 		usage["accountName"] = acc.Name
 		usage["id"] = acc.ID
 		usage["name"] = acc.Name
-		usages = append(usages, usage)
+		accounts = append(accounts, menubarAccountUsage{Usage: usage, ReadOK: readOK, HasData: hasData})
 	}
-	return usages
+	return accounts, true
 }
 
 func codexUsageAccountID(usage map[string]interface{}) int64 {
@@ -889,6 +948,10 @@ func (h *Handler) triggerMenubarRefresh() {
 	if h == nil {
 		return
 	}
+	// The companion re-fetches the summary; make sure that fetch rebuilds
+	// instead of serving the snapshot from before the change that triggered
+	// this refresh.
+	h.invalidateMenubarSnapshot()
 	testMode := false
 	if h.config != nil {
 		testMode = h.config.TestMode
@@ -1118,7 +1181,12 @@ func (h *Handler) saveAPIIntegrationsVisibility(vis map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	return h.store.SetSetting("api_integrations_visibility", string(data))
+	if err := h.store.SetSetting("api_integrations_visibility", string(data)); err != nil {
+		return err
+	}
+	// Dashboard visibility gates provider card selection.
+	h.invalidateMenubarSnapshot()
+	return nil
 }
 
 func providerPollingValue(entry interface{}) (bool, bool) {
@@ -1350,7 +1418,13 @@ func (h *Handler) saveProviderVisibility(vis map[string]map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	return h.store.SetSetting("provider_visibility", string(data))
+	if err := h.store.SetSetting("provider_visibility", string(data)); err != nil {
+		return err
+	}
+	// Dashboard visibility and polling state select which cards the menubar
+	// shows.
+	h.invalidateMenubarSnapshot()
+	return nil
 }
 
 func (h *Handler) setProviderVisibility(provider string, polling, dashboard *bool) error {
@@ -1378,6 +1452,16 @@ func (h *Handler) tryAutoDetect(provider string) bool {
 	if h.config == nil {
 		return false
 	}
+	if h.autoDetectProvider(provider) {
+		// Credentials discovered here can enable a provider, which changes the
+		// menubar's card set.
+		h.invalidateMenubarSnapshot()
+		return true
+	}
+	return false
+}
+
+func (h *Handler) autoDetectProvider(provider string) bool {
 	switch provider {
 	case "mistral":
 		// Enabling schedules discovery in the agent; never read browsers in HTTP handlers.
@@ -2336,6 +2420,7 @@ func (h *Handler) ReloadProviders(w http.ResponseWriter, r *http.Request) {
 			applyProviderSettingsFromDBLocked(h.store, h.config, h.logger)
 		}
 	})
+	h.invalidateMenubarSnapshot()
 
 	if h.agentManager != nil {
 		vis := h.providerVisibilityMap()
@@ -2546,40 +2631,74 @@ func (h *Handler) currentGrok(w http.ResponseWriter, r *http.Request) {
 // quota values. Some polls store an empty snapshot (transient API response), so
 // falling back keeps the card/insights populated instead of flickering empty.
 func (h *Handler) latestGrokSnapshot() *api.GrokSnapshot {
+	latest, _, _ := h.latestGrokSnapshotOK()
+	return latest
+}
+
+// latestGrokSnapshotOK is latestGrokSnapshot plus the outcome of the reads it
+// actually performed. ok is false when the latest read, or the 7-day fallback
+// read it needed, failed. A latest snapshot with quotas needs no fallback read,
+// so only that first read decides success then.
+//
+// A failed latest read still tries the 7-day fallback (the dashboard builder
+// behaved that way before the menubar refactor). When the fallback supplies
+// data, the snapshot is returned with ok=false so the menubar keeps serving its
+// last good card while the dashboard still renders the older rows.
+func (h *Handler) latestGrokSnapshotOK() (latest *api.GrokSnapshot, ok bool, hasData bool) {
 	if h.store == nil {
-		return nil
+		return nil, true, false
 	}
 	latest, err := h.store.QueryLatestGrok(store.DefaultGrokAccountID)
+	if err != nil {
+		latest = nil
+	}
 	if err == nil && latest != nil && len(latest.Quotas) > 0 {
-		return latest
+		return latest, true, true
 	}
 	now := time.Now().UTC()
-	if snaps, rerr := h.store.QueryGrokRange(store.DefaultGrokAccountID, now.Add(-7*24*time.Hour), now); rerr == nil {
-		for i := len(snaps) - 1; i >= 0; i-- {
-			if len(snaps[i].Quotas) > 0 {
-				return snaps[i]
-			}
+	snaps, rerr := h.store.QueryGrokRange(store.DefaultGrokAccountID, now.Add(-7*24*time.Hour), now)
+	if rerr != nil {
+		return latest, false, false
+	}
+	for i := len(snaps) - 1; i >= 0; i-- {
+		if len(snaps[i].Quotas) > 0 {
+			return snaps[i], err == nil, true
 		}
 	}
-	return latest
+	return latest, err == nil, latest != nil
 }
 
 // buildGrokCurrent builds the response for the Grok provider using the dedicated store
 // and tracker. Returns a structure with "quotas" array (for the custom Grok card renderer)
 // plus identity info from the auth.json snapshot.
 func (h *Handler) buildGrokCurrent() map[string]interface{} {
+	response, _, _ := h.buildGrokCurrentOK()
+	// Main's dashboard builder reports the build time here; the stored time is
+	// used only by the menubar age label.
+	response["capturedAt"] = time.Now().UTC().Format(time.RFC3339)
+	return response
+}
+
+// buildGrokCurrentOK is buildGrokCurrent with an explicit storage outcome.
+// readOK reports the outcome of the very read that supplied the payload,
+// including the fallback range read, so the menubar never treats a failed read
+// as a successful empty one.
+func (h *Handler) buildGrokCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"provider":   "grok",
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
 	}
 
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
-	latest := h.latestGrokSnapshot()
+	latest, readOK, hasData := h.latestGrokSnapshotOK()
+	if !readOK && !hasData {
+		return response, false, false
+	}
 	if latest == nil {
 		// No data yet (agent may not have run, or first poll pending). Return empty quotas but identity if we can detect.
 		if creds := api.DetectGrokCredentials(h.logger); creds != nil {
@@ -2587,8 +2706,13 @@ func (h *Handler) buildGrokCurrent() map[string]interface{} {
 			response["team_id"] = creds.TeamID
 			response["login_method"] = creds.LoginMethod()
 		}
-		return response
+		return response, true, false
 	}
+
+	// The menubar age label reads capturedAt, so it must be the stored snapshot
+	// time, not the build time: a provider whose polls have stopped must show a
+	// growing age even while the daemon keeps serving snapshots.
+	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 
 	// Build quotas array matching what renderGrokQuotaCards expects.
 	// Also provide displayName/label so menubar normalizeQuotas shows nice "Credits".
@@ -2651,7 +2775,7 @@ func (h *Handler) buildGrokCurrent() map[string]interface{} {
 		}
 	}
 
-	return response
+	return response, readOK, hasData
 }
 
 // historyGrok serves /api/history?provider=grok . Returns a flat array of points
@@ -3005,22 +3129,43 @@ func (h *Handler) currentSynthetic(w http.ResponseWriter, r *http.Request) {
 
 // buildSyntheticCurrent builds the Synthetic current quota response map.
 func (h *Handler) buildSyntheticCurrent() map[string]interface{} {
+	response, _, _ := h.buildSyntheticCurrentOK()
+	return response
+}
+
+// buildSyntheticCurrentOK is buildSyntheticCurrent with an explicit storage
+// outcome. The menubar needs to tell a read failure apart from a genuine
+// first run: the fallback map is stamped time.Now(), so serving it after a
+// failure would show a fake-fresh zero card. readOK is false only when the
+// store read itself failed; hasData reports whether a stored snapshot backed
+// the payload.
+func (h *Handler) buildSyntheticCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt":   now.Format(time.RFC3339),
 		"subscription": buildEmptyQuotaResponse("Subscription", "Main API request quota for your plan"),
 		"search":       buildEmptyQuotaResponse("Search (Hourly)", "Search endpoint calls, resets every hour"),
 		"toolCalls":    buildEmptyQuotaResponse("Tool Call Discounts", "Discounted tool call requests"),
 	}
 
+	// Without a tracker the builder cannot read the store, so it can only
+	// produce the fabricated fallback. Report that as a failure: the menubar
+	// keeps the last good card instead of showing a fake-fresh zero.
+	if h.store != nil && h.tracker == nil {
+		applyDisplayModeToResponse(response, h.getDisplayMode("synthetic"))
+		return response, false, false
+	}
+
 	if h.store != nil && h.tracker != nil {
 		latest, err := h.store.QueryLatest()
 		if err != nil {
 			h.logger.Error("failed to query latest snapshot", "error", err)
-			return response
+			applyDisplayModeToResponse(response, h.getDisplayMode("synthetic"))
+			return response, false, false
 		}
 
 		if latest != nil {
+			hasData = true
 			response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 			response["subscription"] = buildQuotaResponse("Subscription", "Main API request quota for your plan", latest.Sub, h.tracker, "subscription")
 			response["search"] = buildQuotaResponse("Search (Hourly)", "Search endpoint calls, resets every hour", latest.Search, h.tracker, "search")
@@ -3029,7 +3174,7 @@ func (h *Handler) buildSyntheticCurrent() map[string]interface{} {
 	}
 
 	applyDisplayModeToResponse(response, h.getDisplayMode("synthetic"))
-	return response
+	return response, true, hasData
 }
 
 // currentZai returns Z.ai quota status
@@ -3039,8 +3184,17 @@ func (h *Handler) currentZai(w http.ResponseWriter, r *http.Request) {
 
 // buildZaiCurrent builds the Z.ai current quota response map.
 func (h *Handler) buildZaiCurrent() map[string]interface{} {
+	response, _, _ := h.buildZaiCurrentOK()
+	return response
+}
+
+// buildZaiCurrentOK is buildZaiCurrent with an explicit storage outcome. readOK
+// is false only when the store read itself failed; the menubar then serves the
+// last good card instead of this time.Now()-stamped fallback. hasData reports
+// whether a stored snapshot backed the payload.
+func (h *Handler) buildZaiCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt":  now.Format(time.RFC3339),
 		"tokensLimit": buildEmptyZaiQuotaResponse("Tokens Limit", "Token consumption budget"),
 		"timeLimit":   buildEmptyZaiQuotaResponse("Time Limit", "Tool call time budget"),
@@ -3051,10 +3205,12 @@ func (h *Handler) buildZaiCurrent() map[string]interface{} {
 		latest, err := h.store.QueryLatestZai()
 		if err != nil {
 			h.logger.Error("failed to query latest Z.ai snapshot", "error", err)
-			return response
+			applyDisplayModeToResponse(response, h.getDisplayMode("zai"))
+			return response, false, false
 		}
 
 		if latest != nil {
+			hasData = true
 			response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 			tokensResp := buildZaiTokensQuotaResponse(latest)
 			timeResp := buildZaiTimeQuotaResponse(latest)
@@ -3078,7 +3234,7 @@ func (h *Handler) buildZaiCurrent() map[string]interface{} {
 	}
 
 	applyDisplayModeToResponse(response, h.getDisplayMode("zai"))
-	return response
+	return response, true, hasData
 }
 
 func buildEmptyQuotaResponse(name, description string) map[string]interface{} {
@@ -4010,8 +4166,17 @@ func (h *Handler) currentOpenRouter(w http.ResponseWriter, r *http.Request) {
 
 // buildOpenRouterCurrent builds the OpenRouter current credits response map.
 func (h *Handler) buildOpenRouterCurrent() map[string]interface{} {
+	response, _, _ := h.buildOpenRouterCurrentOK()
+	return response
+}
+
+// buildOpenRouterCurrentOK is buildOpenRouterCurrent with an explicit storage
+// outcome. readOK is false only when the store read itself failed; the menubar
+// then serves the last good card instead of this time.Now()-stamped fallback.
+// hasData reports whether a stored snapshot backed the payload.
+func (h *Handler) buildOpenRouterCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"credits": map[string]interface{}{
 			"name":        "Credits",
@@ -4030,10 +4195,11 @@ func (h *Handler) buildOpenRouterCurrent() map[string]interface{} {
 		latest, err := h.store.QueryLatestOpenRouter()
 		if err != nil {
 			h.logger.Error("failed to query latest OpenRouter snapshot", "error", err)
-			return response
+			return response, false, false
 		}
 
 		if latest != nil {
+			hasData = true
 			response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 			credits := map[string]interface{}{
 				"name":        "Credits",
@@ -4074,7 +4240,7 @@ func (h *Handler) buildOpenRouterCurrent() map[string]interface{} {
 		}
 	}
 
-	return response
+	return response, true, hasData
 }
 
 // historyOpenRouter returns OpenRouter usage history
@@ -6395,8 +6561,16 @@ func (h *Handler) currentAnthropic(w http.ResponseWriter, r *http.Request) {
 // Merges data from the latest snapshot (statusline or API) with per-quota
 // freshness information so the UI can show all quotas with age indicators.
 func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
+	response, _, _ := h.buildAnthropicCurrentOK()
+	return response
+}
+
+// buildAnthropicCurrentOK is buildAnthropicCurrent with an explicit storage
+// outcome. The builder prefers the per-quota merge and falls back to the single
+// latest snapshot, so only a failure of both reads is a storage failure.
+func (h *Handler) buildAnthropicCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
 	}
@@ -6405,7 +6579,7 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 	}
 
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
 	// Get per-quota latest values (merges statusline + API snapshots).
@@ -6415,11 +6589,21 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 	if err != nil {
 		h.logger.Error("failed to query latest per-quota Anthropic data", "error", err)
 		// Fall back to single-snapshot approach
-		return h.buildAnthropicCurrentFallback(response)
+		response, snapOK, snapData := h.buildAnthropicCurrentFallbackOK(response)
+		if !snapOK {
+			return response, false, false
+		}
+		return response, true, snapData
 	}
 
 	if len(latestPerQuota) == 0 {
-		return response
+		// The per-quota table is empty; the single-snapshot read can still hold
+		// an older API poll, and its outcome decides success.
+		response, snapOK, snapData := h.buildAnthropicCurrentFallbackOK(response)
+		if !snapOK {
+			return response, false, false
+		}
+		return response, true, snapData
 	}
 
 	// Find the most recent capturedAt across all quotas
@@ -6441,7 +6625,9 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 		return latestPerQuota[i].Name < latestPerQuota[j].Name
 	})
 
-	var quotas []map[string]interface{}
+	// Initialise so an empty result serialises as [] like the public builder
+	// always did, not null.
+	quotas := make([]map[string]interface{}, 0, len(latestPerQuota))
 	for _, q := range latestPerQuota {
 		age := now.Sub(q.CapturedAt)
 		qMap := map[string]interface{}{
@@ -6471,15 +6657,25 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 	}
 	response["quotas"] = quotas
 	applyDisplayModeToResponse(response, h.getDisplayMode("anthropic"))
-	return response
+	return response, true, true
 }
 
 // buildAnthropicCurrentFallback uses the single latest snapshot when per-quota
 // merge fails. This preserves the original behavior as a safety net.
 func (h *Handler) buildAnthropicCurrentFallback(response map[string]interface{}) map[string]interface{} {
+	response, _, _ = h.buildAnthropicCurrentFallbackOK(response)
+	return response
+}
+
+// buildAnthropicCurrentFallbackOK is buildAnthropicCurrentFallback with an
+// explicit storage outcome.
+func (h *Handler) buildAnthropicCurrentFallbackOK(response map[string]interface{}) (result map[string]interface{}, readOK bool, hasData bool) {
 	latest, err := h.store.QueryLatestAnthropic()
-	if err != nil || latest == nil {
-		return response
+	if err != nil {
+		return response, false, false
+	}
+	if latest == nil {
+		return response, true, false
 	}
 
 	now := time.Now().UTC()
@@ -6494,7 +6690,9 @@ func (h *Handler) buildAnthropicCurrentFallback(response map[string]interface{})
 		}
 		return orderedQuotas[i].Name < orderedQuotas[j].Name
 	})
-	var quotas []map[string]interface{}
+	// Initialise so an empty result serialises as [] rather than null, as the
+	// public builder always did.
+	quotas := make([]map[string]interface{}, 0, len(orderedQuotas))
 	age := now.Sub(latest.CapturedAt)
 	for _, q := range orderedQuotas {
 		qMap := map[string]interface{}{
@@ -6523,7 +6721,7 @@ func (h *Handler) buildAnthropicCurrentFallback(response map[string]interface{})
 	}
 	response["quotas"] = quotas
 	applyDisplayModeToResponse(response, h.getDisplayMode("anthropic"))
-	return response
+	return response, true, true
 }
 
 // anthropicUtilStatus returns a status string based on utilization percentage.
@@ -7736,6 +7934,7 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "failed to save provider visibility settings")
 			return
 		}
+		h.invalidateMenubarSnapshot()
 		if h.agentManager != nil {
 			for _, p := range providerCatalog() {
 				enabled := h.providerPollingEnabled(p.Key, vis)
@@ -7912,6 +8111,11 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		// UI resends every field, so a no-op or display-only save must not
 		// disrupt a healthy agent (nor re-run Mistral's browser cookie import).
 		h.reconcileProviderAgents(updatedProviders, providerSettingsNeedRestart(provSettings, storedSettings, clearedFields))
+		// Invalidate only after the live config reflects the save. A build
+		// that starts in between would otherwise carry the new generation but
+		// read the old provider/credential state, and cache it for the whole
+		// freshness window.
+		h.invalidateMenubarSnapshot()
 		// Strip sensitive fields before returning to client
 		stripProviderSecrets(existing)
 		result["provider_settings"] = existing
@@ -8804,24 +9008,31 @@ func (h *Handler) currentCopilot(w http.ResponseWriter, r *http.Request) {
 
 // buildCopilotCurrent builds the Copilot current quota response map.
 func (h *Handler) buildCopilotCurrent() map[string]interface{} {
+	response, _, _ := h.buildCopilotCurrentOK()
+	return response
+}
+
+// buildCopilotCurrentOK is buildCopilotCurrent with an explicit storage outcome.
+// readOK is false only when the store read itself failed.
+func (h *Handler) buildCopilotCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
 	}
 
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
 	latest, err := h.store.QueryLatestCopilot()
 	if err != nil {
 		h.logger.Error("failed to query latest Copilot snapshot", "error", err)
-		return response
+		return response, false, false
 	}
 
 	if latest == nil {
-		return response
+		return response, true, false
 	}
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
@@ -8862,7 +9073,7 @@ func (h *Handler) buildCopilotCurrent() map[string]interface{} {
 	}
 	response["quotas"] = quotas
 	applyDisplayModeToResponse(response, h.getDisplayMode("copilot"))
-	return response
+	return response, true, true
 }
 
 // copilotUsageStatus returns a status string based on usage percentage.
@@ -9348,8 +9559,17 @@ func (h *Handler) getCodexPaceMode() string {
 }
 
 func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
+	response, _, _ := h.buildCodexCurrentOK(accountID)
+	return response
+}
+
+// buildCodexCurrentOK is buildCodexCurrent with an explicit storage outcome.
+// readOK is false only when the store read itself failed; the menubar then
+// serves the last good card instead of the fallback payload stamped now.
+// hasData reports whether a stored snapshot backed the payload.
+func (h *Handler) buildCodexCurrentOK(accountID int64) (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
 	}
@@ -9370,17 +9590,18 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 	}
 
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
 	latest, err := h.store.QueryLatestCodex(accountID)
 	if err != nil {
 		h.logger.Error("failed to query latest Codex snapshot", "error", err)
-		return response
+		return response, false, false
 	}
 	if latest == nil {
-		return response
+		return response, true, false
 	}
+	hasData = true
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 	// Snapshot age drives the dashboard's stale-card treatment: a polling-disabled
@@ -9483,7 +9704,7 @@ func (h *Handler) buildCodexCurrent(accountID int64) map[string]interface{} {
 	}
 	response["quotas"] = quotas
 	applyDisplayModeToResponse(response, displayMode)
-	return response
+	return response, true, hasData
 }
 
 func codexUtilStatus(util float64) string {
@@ -9519,25 +9740,32 @@ func (h *Handler) currentAntigravity(w http.ResponseWriter, r *http.Request) {
 
 // buildAntigravityCurrent builds the Antigravity current quota response map.
 func (h *Handler) buildAntigravityCurrent() map[string]interface{} {
+	response, _, _ := h.buildAntigravityCurrentOK()
+	return response
+}
+
+// buildAntigravityCurrentOK is buildAntigravityCurrent with an explicit storage
+// outcome. readOK is false only when the store read itself failed.
+func (h *Handler) buildAntigravityCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
 		"pools":      []interface{}{},
 	}
 
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
 	latest, err := h.store.QueryLatestAntigravity()
 	if err != nil {
 		h.logger.Error("failed to query latest Antigravity snapshot", "error", err)
-		return response
+		return response, false, false
 	}
 
 	if latest == nil {
-		return response
+		return response, true, false
 	}
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
@@ -9565,7 +9793,7 @@ func (h *Handler) buildAntigravityCurrent() map[string]interface{} {
 			response["lowestPool"] = lowest
 		}
 		applyDisplayModeToResponse(response, h.getDisplayMode("antigravity"))
-		return response
+		return response, true, true
 	}
 
 	groups := api.GroupAntigravityModelsByLogicalQuota(latest.Models)
@@ -9618,7 +9846,7 @@ func (h *Handler) buildAntigravityCurrent() map[string]interface{} {
 	}
 
 	applyDisplayModeToResponse(response, h.getDisplayMode("antigravity"))
-	return response
+	return response, true, true
 }
 
 // buildAntigravityCLIQuotas renders agy CLI bucket rows (one card per bucket,
@@ -10176,34 +10404,47 @@ func (h *Handler) defaultMiniMaxAccountID() int64 {
 // minimaxUsageAccounts returns current usage for all active MiniMax accounts.
 // Mirrors codexUsageAccounts() pattern.
 func (h *Handler) minimaxUsageAccounts() []map[string]interface{} {
+	usages, _ := h.minimaxUsageAccountsOK()
+	accounts := make([]map[string]interface{}, 0, len(usages))
+	for _, usage := range usages {
+		accounts = append(accounts, usage.Usage)
+	}
+	return accounts
+}
+
+// minimaxUsageAccountsOK is minimaxUsageAccounts with an explicit enumeration
+// outcome and the read outcome of each account's builder. enumerated is false
+// only when the account list itself could not be read; callers that cache
+// per-account data must then keep their known accounts and prune nothing.
+func (h *Handler) minimaxUsageAccountsOK() (accounts []menubarAccountUsage, enumerated bool) {
 	if h.store == nil {
-		return []map[string]interface{}{}
+		return nil, true
 	}
 
-	accounts, err := h.store.QueryActiveProviderAccounts("minimax")
+	rows, err := h.store.QueryActiveProviderAccounts("minimax")
 	if err != nil {
 		h.logger.Error("failed to query MiniMax accounts", "error", err)
-		return []map[string]interface{}{}
+		return nil, false
 	}
-	if len(accounts) == 0 {
+	if len(rows) == 0 {
 		defID := h.defaultMiniMaxAccountID()
 		if defID > 0 {
-			accounts = []store.ProviderAccount{
+			rows = []store.ProviderAccount{
 				{ID: defID, Name: "default"},
 			}
 		}
 	}
 
-	usages := make([]map[string]interface{}, 0, len(accounts))
-	for _, acc := range accounts {
-		usage := h.buildMiniMaxCurrent(acc.ID)
+	accounts = make([]menubarAccountUsage, 0, len(rows))
+	for _, acc := range rows {
+		usage, readOK, hasData := h.buildMiniMaxCurrentOK(acc.ID)
 		usage["accountId"] = acc.ID
 		usage["accountName"] = acc.Name
 		usage["id"] = acc.ID
 		usage["name"] = acc.Name
-		usages = append(usages, usage)
+		accounts = append(accounts, menubarAccountUsage{Usage: usage, ReadOK: readOK, HasData: hasData})
 	}
-	return usages
+	return accounts, true
 }
 
 func minimaxUsageAccountID(usage map[string]interface{}) int64 {
@@ -10352,6 +10593,7 @@ func (h *Handler) minimaxAccountCreate(w http.ResponseWriter, r *http.Request) {
 	if h.minimaxAgentMgr != nil {
 		h.minimaxAgentMgr.Reload()
 	}
+	h.invalidateMenubarSnapshot()
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"message": "account created",
@@ -10439,6 +10681,7 @@ func (h *Handler) minimaxAccountUpdate(w http.ResponseWriter, r *http.Request) {
 	if h.minimaxAgentMgr != nil {
 		h.minimaxAgentMgr.Reload()
 	}
+	h.invalidateMenubarSnapshot()
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "account updated", "id": id})
 }
@@ -10470,6 +10713,7 @@ func (h *Handler) minimaxAccountDelete(w http.ResponseWriter, r *http.Request) {
 	if h.minimaxAgentMgr != nil {
 		h.minimaxAgentMgr.Reload()
 	}
+	h.invalidateMenubarSnapshot()
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "account deleted", "id": id})
 }
@@ -10523,24 +10767,34 @@ func (h *Handler) currentMiniMax(w http.ResponseWriter, r *http.Request) {
 
 // buildMiniMaxCurrent builds current MiniMax response.
 func (h *Handler) buildMiniMaxCurrent(accountID int64) map[string]interface{} {
+	response, _, _ := h.buildMiniMaxCurrentOK(accountID)
+	return response
+}
+
+// buildMiniMaxCurrentOK is buildMiniMaxCurrent with an explicit storage
+// outcome. readOK is false only when the store read itself failed; the menubar
+// then serves the last good card instead of the fallback payload stamped now.
+// hasData reports whether a stored snapshot backed the payload.
+func (h *Handler) buildMiniMaxCurrentOK(accountID int64) (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt":  now.Format(time.RFC3339),
 		"quotas":      []interface{}{},
 		"sharedQuota": false,
 	}
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
 	latest, err := h.store.QueryLatestMiniMax(accountID)
 	if err != nil {
 		h.logger.Error("failed to query latest MiniMax snapshot", "error", err)
-		return response
+		return response, false, false
 	}
 	if latest == nil {
-		return response
+		return response, true, false
 	}
+	hasData = true
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 
@@ -10638,7 +10892,7 @@ func (h *Handler) buildMiniMaxCurrent(accountID int64) map[string]interface{} {
 	}
 	response["quotas"] = quotas
 	applyDisplayModeToResponse(response, h.getDisplayMode("minimax"))
-	return response
+	return response, true, hasData
 }
 
 func minimaxSharedModelSummary(models []string) string {

@@ -189,20 +189,34 @@ func buildCursorBurnRateInsight(quota api.CursorQuota, rate cursorQuotaRate) ins
 }
 
 func (h *Handler) buildCursorCurrent() map[string]interface{} {
+	response, _, _ := h.buildCursorCurrentOK()
+	return response
+}
+
+// buildCursorCurrentOK is buildCursorCurrent with an explicit storage outcome.
+// readOK is false only when the read that supplied the payload failed. The
+// per-quota read is only a refinement of the latest snapshot, so its failure
+// still leaves a real payload behind; it falls back to the snapshot quotas just
+// as buildCursorCurrent always has.
+func (h *Handler) buildCursorCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
 	}
 
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
 	latest, err := h.store.QueryLatestCursor()
-	if err != nil || latest == nil {
-		return response
+	if err != nil {
+		return response, false, false
 	}
+	if latest == nil {
+		return response, true, false
+	}
+	hasData = true
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 	response["accountType"] = string(latest.AccountType)
@@ -237,7 +251,7 @@ func (h *Handler) buildCursorCurrent() map[string]interface{} {
 			response["quotas"] = append(response["quotas"].([]interface{}), quotaMap)
 		}
 		applyDisplayModeToResponse(response, h.getDisplayMode("cursor"))
-		return response
+		return response, true, hasData
 	}
 
 	sort.SliceStable(latestPerQuota, func(i, j int) bool {
@@ -280,7 +294,7 @@ func (h *Handler) buildCursorCurrent() map[string]interface{} {
 	}
 	response["quotas"] = quotas
 	applyDisplayModeToResponse(response, h.getDisplayMode("cursor"))
-	return response
+	return response, true, hasData
 }
 
 func (h *Handler) historyCursor(w http.ResponseWriter, r *http.Request) {

@@ -17,22 +17,29 @@ func (h *Handler) currentGemini(w http.ResponseWriter, r *http.Request) {
 
 // buildGeminiCurrent builds current Gemini response.
 func (h *Handler) buildGeminiCurrent() map[string]interface{} {
+	response, _, _ := h.buildGeminiCurrentOK()
+	return response
+}
+
+// buildGeminiCurrentOK is buildGeminiCurrent with an explicit storage outcome.
+// readOK is false only when the store read itself failed.
+func (h *Handler) buildGeminiCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
 	}
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
 	latest, err := h.store.QueryLatestGemini()
 	if err != nil {
 		h.logger.Error("failed to query latest Gemini snapshot", "error", err)
-		return response
+		return response, false, false
 	}
 	if latest == nil {
-		return response
+		return response, true, false
 	}
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
@@ -71,7 +78,7 @@ func (h *Handler) buildGeminiCurrent() map[string]interface{} {
 	}
 	response["quotas"] = quotas
 	applyDisplayModeToResponse(response, h.getDisplayMode("gemini"))
-	return response
+	return response, true, true
 }
 
 // historyGemini returns Gemini usage history as a flat array.

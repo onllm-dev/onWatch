@@ -37,6 +37,19 @@ type trayController struct {
 	mistralMu      sync.RWMutex
 	mistralEnabled bool
 	grantFlow      browserGrantFlow
+
+	// refreshWorker serializes snapshot fetches, caches the last good snapshot
+	// and runs every refresh on one goroutine. See tray_refresh.go.
+	refresh *refreshWorker
+
+	// cachedSettings and lastVisual are the last successfully applied tray
+	// preferences and visual. They are read and written only by the refresh
+	// worker's apply callback, which is the only goroutine that runs a refresh,
+	// so they need no separate lock. On a failed preferences fetch the
+	// controller reuses them instead of DefaultSettings, so a daemon outage
+	// cannot blank the title or badge.
+	cachedSettings *Settings
+	lastVisual     trayVisual
 }
 
 func (c *trayController) setMistralEnabled(enabled bool) {
@@ -59,9 +72,14 @@ func runCompanion(cfg *Config) error {
 	quitFn = nil
 
 	controller := &trayController{cfg: cfg}
+	controller.refresh = newRefreshWorker(controller.fetchSnapshot, controller.applyRefresh)
 	stop := make(chan struct{})
 	defer close(stop)
-	go watchRefreshRequests(stop, cfg.TestMode, controller.refreshStatus)
+	// One worker serves every refresh for the process lifetime: the startup
+	// fetch, menu clicks, daemon refresh requests and the periodic tick all
+	// publish to the same channel, so they run one at a time in order.
+	go controller.refresh.RunWorker(stop)
+	go watchRefreshRequests(stop, cfg.TestMode, controller.refresh.Request)
 
 	prepareTrayProcess()
 	slog.Default().Debug("Initializing systray")
@@ -127,7 +145,10 @@ func (c *trayController) onReady() {
 		systray.Quit()
 	}
 
-	c.refreshStatus()
+	// The first refresh can block up to the fetch timeout; the worker runs it
+	// off the systray thread so the menu lays out immediately (a blocking first
+	// refresh delayed the first menu layout on Linux).
+	c.refresh.Request()
 	logger.Info("Menubar ready and visible")
 
 	go c.watchMenu(quickViewItem, dashboardItem, refreshItem, quitItem)
@@ -216,7 +237,9 @@ func (c *trayController) watchMenu(quickViewItem, dashboardItem, refreshItem, qu
 		case <-dashboardItem.ClickedCh:
 			_ = browser.OpenURL(c.dashboardURL())
 		case <-refreshItem.ClickedCh:
-			c.refreshStatus()
+			// The worker runs the fetch on its own goroutine, so a slow daemon
+			// cannot block the other menu clicks systray hands over.
+			c.refresh.Request()
 		case <-quitItem.ClickedCh:
 			_ = stopCompanion()
 			return
@@ -280,17 +303,33 @@ func (c *trayController) showMenubar() {
 	_ = browser.OpenURL(url)
 }
 
+// refreshLoop publishes a periodic refresh. The tick and the on-demand
+// requests share the worker's buffer-1 channel, so a tick that lands during a
+// run coalesces into the same follow-up run instead of stacking.
 func (c *trayController) refreshLoop() {
 	interval := time.Duration(normalizeRefreshSeconds(c.cfg.RefreshSeconds)) * time.Second
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		c.refreshStatus()
+		c.refresh.Request()
 	}
 }
 
-func (c *trayController) refreshStatus() {
+// fetchSnapshot is the worker's fetch step. A controller without a provider
+// (tests, or a partial config) yields no data, and applyRefresh renders the
+// offline state, so a nil function is never called.
+func (c *trayController) fetchSnapshot() (*Snapshot, error) {
+	if c == nil || c.cfg == nil || c.cfg.SnapshotProvider == nil {
+		return nil, nil
+	}
+	return c.cfg.SnapshotProvider()
+}
+
+// applyRefresh is the worker's apply step: it fetches preferences, builds the
+// plan and updates the tray. It runs on the single refresh worker goroutine,
+// so it can touch the cached settings and last visual without extra locking.
+func (c *trayController) applyRefresh(snapshot *Snapshot, stale bool, age time.Duration, fetchErr error) {
 	logger := slog.Default()
 	if c == nil || c.cfg == nil || c.cfg.SnapshotProvider == nil {
 		updateTrayVisual(trayVisual{Title: "onWatch", Text: "-", Status: trayStatusOffline})
@@ -298,36 +337,44 @@ func (c *trayController) refreshStatus() {
 		return
 	}
 
-	snapshot, err := c.cfg.SnapshotProvider()
-	if err != nil {
-		logger.Error("failed to refresh menubar snapshot", "error", err)
-		snapshot = nil
+	if stale {
+		// Keep the last known numbers. A failure may recolor the icon and
+		// update the tooltip, but must not wipe the title or the menu.
+		logger.Warn("failed to refresh menubar snapshot, keeping last known values", "error", fetchErr)
+	} else if fetchErr != nil {
+		logger.Error("failed to refresh menubar snapshot", "error", fetchErr)
 	}
-	if snapshot == nil {
-		updateTrayVisual(trayVisual{Title: "--", Text: "-", Status: trayStatusOffline})
-		setTrayTooltip(TrayTooltipText(nil, trayTooltipLimit))
+
+	// Preferences are fetched even on a stale summary so a recovered daemon
+	// picks up changed selections. A failed fetch returns nil and the plan
+	// falls back to the last good preferences, never to DefaultSettings while
+	// numbers are cached.
+	var freshSettings *Settings
+	if snapshot != nil {
+		settings, err := c.fetchPreferences()
+		if err != nil {
+			logger.Debug("failed to refresh menubar preferences, keeping last known", "error", err)
+		} else {
+			freshSettings = settings
+		}
+	}
+
+	plan := planTrayRefresh(snapshot, stale, age, freshSettings, c.cachedSettings, c.lastVisual, trayTooltipLimit)
+	if plan.FreshSettings {
+		c.cachedSettings = plan.Settings
+	}
+	if plan.Offline {
+		updateTrayVisual(plan.Visual)
+		setTrayTooltip(plan.Tooltip)
 		c.updateMenu(nil)
 		return
 	}
-	c.setMistralEnabled(snapshot.MistralEnabled)
-
-	settings, err := c.fetchPreferences()
-	if err != nil {
-		logger.Debug("failed to refresh menubar preferences, using defaults", "error", err)
-		settings = DefaultSettings()
-	}
-	segments := TraySegments(snapshot, settings)
-	visual := trayVisual{
-		Title:    TrayTitle(snapshot, settings),
-		Text:     TrayIconText(segments, true),
-		Status:   TrayBadgeStatus(snapshot, segments),
-		Online:   true,
-		IconOnly: settings.StatusDisplay.Mode == StatusDisplayIconOnly,
-	}
-	updateTrayVisual(visual)
-	setTrayTooltip(TrayTooltipText(snapshot, trayTooltipLimit))
-	c.updateMenu(BuildMenuLines(snapshot))
-	logger.Debug("Tray icon set successfully", "title", visual.Title, "badge", visual.Text, "status", visual.Status)
+	c.setMistralEnabled(plan.Snapshot.MistralEnabled)
+	updateTrayVisual(plan.Visual)
+	c.lastVisual = plan.Visual
+	setTrayTooltip(plan.Tooltip)
+	c.updateMenu(plan.MenuLines)
+	logger.Debug("Tray icon set successfully", "title", plan.Visual.Title, "badge", plan.Visual.Text, "status", plan.Visual.Status, "stale", plan.Stale)
 }
 
 func (c *trayController) menubarURL() string {

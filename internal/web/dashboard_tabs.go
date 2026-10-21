@@ -286,7 +286,12 @@ func (h *Handler) saveDashboardProviderLabels(labels map[string]string) error {
 	if err != nil {
 		return err
 	}
-	return h.store.SetSetting(settingDashboardProviderLabels, string(data))
+	if err := h.store.SetSetting(settingDashboardProviderLabels, string(data)); err != nil {
+		return err
+	}
+	// Card labels come from the dashboard tab names.
+	h.invalidateMenubarSnapshot()
+	return nil
 }
 
 // filterDashboardProviders applies dashboard visibility, optional tools tab, and "both".

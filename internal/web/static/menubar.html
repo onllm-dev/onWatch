@@ -52,6 +52,11 @@
             --critical: #ef4444;
             --track: rgba(255, 255, 255, 0.08);
             --focus: rgba(96, 165, 250, 0.42);
+            /* "Needs action" dot: a saturated amber, deliberately brighter and
+               more orange than --warning so a paused/reconnect card reads as a
+               call to action, not just high usage. */
+            --attention: #fbbf24;
+            --attention-halo: rgba(251, 191, 36, 0.22);
         }
 
         :root[data-theme="light"] {
@@ -80,6 +85,9 @@
             --text-secondary: rgba(15, 23, 42, 0.78);
             --track: rgba(15, 23, 42, 0.12);
             --focus: rgba(37, 99, 235, 0.45);
+            /* Darker amber on the light card so the dot keeps contrast. */
+            --attention: #d97706;
+            --attention-halo: rgba(217, 119, 6, 0.2);
         }
 
         * {
@@ -505,6 +513,75 @@
         .provider-status-dot.status-critical,
         .provider-status-dot.status-danger {
             background: var(--critical);
+        }
+
+        /* Attention state: the card needs a user action (re-auth, reconnect,
+           browser access). It deliberately does NOT touch background, so the
+           severity classes keep owning the fill: a paused account at 100%
+           still reads red. Attention is a separate amber ring plus a soft
+           halo around the dot, visible on both card surfaces. */
+        .provider-status-dot.status-attention {
+            box-shadow:
+                0 0 0 1.5px var(--attention),
+                0 0 0 3.5px var(--attention-halo);
+        }
+
+        /* Hover/focus tooltip for the dot. Native title tooltips are unreliable
+           inside the non-activating macOS WKWebView panel, so the reason and
+           the action are rendered here. */
+        .provider-status {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+        }
+
+        .provider-status:focus-visible {
+            outline: 2px solid var(--focus);
+            outline-offset: 2px;
+        }
+
+        .provider-status-tip {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            z-index: 40;
+            max-width: 220px;
+            width: max-content;
+            padding: 5px 8px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-card-strong);
+            color: var(--text-primary);
+            font-size: var(--font-xs);
+            font-weight: 500;
+            line-height: 1.3;
+            letter-spacing: 0;
+            text-align: left;
+            white-space: normal;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+            pointer-events: none;
+        }
+
+        /* display, not opacity: a hidden absolutely positioned tip still
+           contributes scrollable overflow, which would add phantom scroll space
+           to the popover body. */
+        .provider-status:hover .provider-status-tip,
+        .provider-status:focus-within .provider-status-tip,
+        .provider-status:focus .provider-status-tip {
+            display: block;
+        }
+
+        /* The scrollable body clips a tip that hangs past its bottom edge, so a
+           card near the bottom flips its tip above the dot. */
+        .provider-status.tip-above .provider-status-tip {
+            top: auto;
+            bottom: calc(100% + 6px);
+        }
+
+        :root[data-theme="light"] .provider-status-tip {
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.16);
         }
 
         .mistral-recovery {
@@ -1568,6 +1645,11 @@
             const VIEW_STORAGE_KEY = "menubar_view_mode";
             const ORDER_STORAGE_KEY = "menubar_provider_order";
             const THEME_STORAGE_KEY = "menubar_theme_mode";
+            // The last successful summary, so the popover paints instantly on
+            // open instead of flashing a loading card. One versioned entry,
+            // overwritten on every success.
+            const SNAPSHOT_CACHE_KEY = "menubar_snapshot_cache";
+            const SNAPSHOT_CACHE_VERSION = 1;
             const VIEW_ORDER = ["minimal", "standard", "detailed"];
             const THEME_MODES = ["system", "light", "dark"];
 
@@ -1653,6 +1735,7 @@
             const settingsNote = document.getElementById("settings-note");
             const footerVersion = document.getElementById("footer-version");
             let refreshTimer = null;
+            let ageTickTimer = null;
             let resizeFrame = 0;
             let resizeTimer = 0;
             let lastReportedHeight = null;
@@ -1735,6 +1818,22 @@
             settingsBody.addEventListener("dragover", handleSettingsDragOver);
             settingsBody.addEventListener("drop", handleSettingsDrop);
             settingsBody.addEventListener("dragend", handleSettingsDragEnd);
+            // Flip a status tooltip above its dot when it would be clipped by
+            // the bottom of the scrollable body. Event delegation keeps this
+            // working across re-renders, and the tip is shown by CSS hover, so
+            // mouseover/focus is the first moment it has a measurable box.
+            document.addEventListener("mouseover", (event) => {
+                const status = event.target instanceof Element ? event.target.closest(".provider-status") : null;
+                if (status) {
+                    positionStatusTip(status);
+                }
+            });
+            document.addEventListener("focusin", (event) => {
+                const status = event.target instanceof Element ? event.target.closest(".provider-status") : null;
+                if (status) {
+                    positionStatusTip(status);
+                }
+            });
             window.addEventListener("resize", queueResizeReport);
             // A host that missed the first report (bridge or iframe listener not
             // yet ready) must still get a later one. Re-arm the debounce on
@@ -1752,6 +1851,12 @@
 
             async function init() {
                 applyTheme();
+                // Paint the last-known snapshot immediately, then fetch. Ages
+                // are computed from the stored timestamps, so a restored
+                // snapshot shows its real age rather than looking live. The
+                // guarded variant clears a cache that cannot render and falls
+                // back to the empty state, so startup always reaches the fetch.
+                restoreCachedSnapshotSafely();
                 render();
                 await Promise.all([loadPreferences(), loadSnapshot()]);
             }
@@ -1796,8 +1901,54 @@
                 }
             }
 
+            // Manual, periodic, native-show and recovery refreshes can overlap.
+            // Each request takes a generation when it starts, and a response
+            // is applied and persisted only if it is newer than the last one
+            // applied. The snapshot's generated_at is a second guard, so a
+            // request that started later but carries an older build cannot
+            // roll the numbers and ages backwards either.
+            let snapshotGeneration = 0;
+            let appliedSnapshotGeneration = 0;
+            let appliedSnapshotTime = null;
+
+            function snapshotBuildTime(snapshot) {
+                const raw = snapshot && (snapshot.generated_at || snapshot.generatedAt);
+                const parsed = raw ? Date.parse(raw) : NaN;
+                return Number.isFinite(parsed) ? parsed : null;
+            }
+
+            function isNewerSnapshot(generation, snapshot) {
+                if (generation <= appliedSnapshotGeneration) {
+                    return false;
+                }
+                const built = snapshotBuildTime(snapshot);
+                if (built !== null && appliedSnapshotTime !== null && built < appliedSnapshotTime) {
+                    return false;
+                }
+                return true;
+            }
+
+            function applySnapshot(generation, snapshot) {
+                if (!isNewerSnapshot(generation, snapshot)) {
+                    return false;
+                }
+                appliedSnapshotGeneration = generation;
+                const built = snapshotBuildTime(snapshot);
+                if (built !== null) {
+                    appliedSnapshotTime = built;
+                }
+                state.snapshot = snapshot;
+                state.error = "";
+                // Live state and the persisted cache follow the same rule.
+                writeCachedSnapshot(snapshot);
+                return true;
+            }
+
             async function loadSnapshot(signal) {
-                state.loading = state.snapshot == null;
+                const generation = ++snapshotGeneration;
+                if (generation > appliedSnapshotGeneration) {
+                    state.loading = state.snapshot == null;
+                }
                 render();
                 try {
                     const response = await fetch(API_BASE + "/api/menubar/summary", {
@@ -1808,13 +1959,18 @@
                     if (!response.ok) {
                         throw new Error(`summary ${response.status}`);
                     }
-                    state.snapshot = await response.json();
-                    state.error = "";
+                    applySnapshot(generation, await response.json());
                 } catch (error) {
                     if (signal) throw error;
-                    state.error = error && error.message ? error.message : "Unable to load menubar data.";
+                    // A superseded request's failure must not replace the error
+                    // state of a newer, already-applied snapshot.
+                    if (generation >= appliedSnapshotGeneration) {
+                        state.error = error && error.message ? error.message : "Unable to load menubar data.";
+                    }
                 } finally {
-                    state.loading = false;
+                    if (generation >= appliedSnapshotGeneration) {
+                        state.loading = false;
+                    }
                     render();
                 }
             }
@@ -2201,7 +2357,13 @@
                 headerValue.classList.remove("hidden");
                 headerValue.setAttribute("aria-hidden", "false");
                 headerCount.textContent = `${providers.length} ${providers.length === 1 ? "provider" : "providers"}`;
-                headerUpdated.textContent = compactUpdatedLabel(state.snapshot && state.snapshot.updated_ago);
+                // Header age tracks the newest provider data (latest_at), not
+                // the snapshot build time, so it keeps growing when every
+                // provider has stopped polling.
+                headerUpdated.textContent = ageLabelFromTimestamp(
+                    state.snapshot && state.snapshot.latest_at,
+                    state.snapshot && state.snapshot.updated_ago
+                );
             }
 
             function renderBody() {
@@ -2479,38 +2641,92 @@
                 return "Healthy";
             }
 
-            // The status dot carries the status; the tooltip explains a paused or
-            // stale card without inline text (minimal-UI rule, issue #147).
-            function providerDotTitle(provider) {
-                const peak = Math.round(clampPercent(provider && provider.highest_percent));
-                const updated = compactUpdatedLabel(provider && provider.updated_at);
-                const connection = String(provider && provider.connection_status || "");
+            // providerAttention is the action a card needs from the user, or
+            // null when there is nothing to do. Staleness is deliberately not
+            // an attention state: the age label already carries it, and a
+            // second stale indicator is what the inline tag used to be
+            // (minimal-UI rule, issue #147).
+            function providerAttention(provider) {
+                if (!provider) {
+                    return null;
+                }
+                if (provider.connection && provider.connection.reason === "browser_access_denied") {
+                    return "Browser access required - allow access from the menu";
+                }
+                const connection = String(provider.connection_status || "");
+                if (connection === "reconnect") {
+                    return "Reconnect required - open the dashboard to reconnect";
+                }
                 if (connection === "paused") {
-                    return `Re-authentication required - last updated ${updated}`;
+                    const base = String(provider.base_provider || provider.id || "").split(":")[0];
+                    if (base === "codex") {
+                        return "Codex auth failed - run `codex auth`";
+                    }
+                    const label = String(provider.label || "Provider");
+                    return `${label} auth failed - re-authenticate to resume`;
                 }
-                if (connection === "stale") {
-                    return `Updates unavailable - last updated ${updated}`;
+                return null;
+            }
+
+            // providerDotTitle is the dot's accessible label and tooltip text:
+            // the action the card needs when it has one, otherwise the usage
+            // severity the dot has always carried.
+            function providerDotTitle(provider) {
+                const attention = providerAttention(provider);
+                if (attention) {
+                    return attention;
                 }
+                const peak = Math.round(clampPercent(provider && provider.highest_percent));
                 return `${standardStatusLabel(provider)} - peak ${peak}%`;
+            }
+
+            // providerStatusMarkup is the right-hand status cluster: the dot
+            // plus its hover/focus tooltip. The tooltip is a custom element
+            // because native title tooltips do not show reliably inside the
+            // non-activating macOS WKWebView panel. The dot keeps an
+            // aria-label so the reason is announced without the tooltip.
+            function providerStatusMarkup(provider) {
+                const status = String(provider && provider.status || "healthy");
+                const dotTitle = providerDotTitle(provider);
+                const attentionClass = providerAttention(provider) ? " status-attention" : "";
+                return `
+                    <span class="provider-status" tabindex="0" role="img" aria-label="${escapeHTML(dotTitle)}">
+                        <span class="provider-status-dot status-${escapeHTML(status)}${attentionClass}"></span>
+                        <span class="provider-status-tip" role="tooltip" aria-hidden="true">${escapeHTML(dotTitle)}</span>
+                    </span>
+                `;
+            }
+
+            // positionStatusTip flips a tip that would hang past the bottom of
+            // the scrollable body up above its dot, so the text is never
+            // clipped by the popover edge. The tip is display:none until it is
+            // shown, so this runs on hover/focus, when it has a real box.
+            function positionStatusTip(el) {
+                el.classList.remove("tip-above");
+                const tip = el.querySelector(".provider-status-tip");
+                if (!tip) {
+                    return;
+                }
+                const container = body.getBoundingClientRect();
+                if (tip.getBoundingClientRect().bottom > container.bottom - 2) {
+                    el.classList.add("tip-above");
+                }
             }
 
             // standardHeaderMarkup keeps the icon next to a normally colored
             // name, then a compact right cluster with the freshness label and a
             // status dot whose tooltip carries the status.
             function standardHeaderMarkup(provider) {
-                const status = String(provider && provider.status || "healthy");
-                const dotTitle = providerDotTitle(provider);
                 return `
                     <div class="provider-header">
                         <div class="provider-copy">
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
-                            ${provider.connection?.reason === 'browser_access_denied' ? '<span class="quota-source-tag">Browser access required</span>' : provider.connection_status === 'reconnect' ? '<span class="quota-source-tag">Reconnect required</span>' : provider.connection_status === 'stale' ? '<span class="quota-source-tag">Updates unavailable</span>' : ''}
                             ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
                         </div>
                         <span class="provider-meta">
-                            <span class="provider-updated">${escapeHTML(compactUpdatedLabel(provider.updated_at))}</span>
-                            <span class="provider-status-dot status-${escapeHTML(status)}" title="${escapeHTML(dotTitle)}" aria-label="${escapeHTML(dotTitle)}"></span>
+                            <span class="provider-updated" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-updated-fallback="${escapeHTML(provider.updated_at || '')}">${escapeHTML(providerAgeLabel(provider))}</span>
+                            ${providerStatusMarkup(provider)}
                         </span>
                     </div>
  ${provider.base_provider === "mistral" && provider.subtitle ? `<div class="quota-detail-meta">${escapeHTML(provider.subtitle)}</div>` : ""}
@@ -2610,10 +2826,12 @@
                         <div class="provider-copy">
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
-                            ${provider.connection?.reason === 'browser_access_denied' ? '<span class="quota-source-tag">Browser access required</span>' : provider.connection_status === 'reconnect' ? '<span class="quota-source-tag">Reconnect required</span>' : provider.connection_status === 'stale' ? '<span class="quota-source-tag">Updates unavailable</span>' : provider.connection_status === 'paused' ? '<span class="quota-source-tag">Re-auth required</span>' : ''}
                             ${provider.promo ? `<a class="promo-tag ${isPromoOffPeak(provider.promo) ? 'promo-offpeak' : 'promo-peak'}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHTML(promoLabel(provider.promo))}</a>` : ''}
                         </div>
-                        <span class="provider-updated">${escapeHTML(compactUpdatedLabel(provider.updated_at))}</span>
+                        <span class="provider-meta">
+                            <span class="provider-updated" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-updated-fallback="${escapeHTML(provider.updated_at || '')}">${escapeHTML(providerAgeLabel(provider))}</span>
+                            ${providerStatusMarkup(provider)}
+                        </span>
                     </div>
  ${provider.base_provider === "mistral" && provider.subtitle ? `<div class="quota-detail-meta">${escapeHTML(provider.subtitle)}</div>` : ""}
  ${provider.base_provider === 'mistral' ? mistralRecovery.markup(provider.connection, provider.connection_status) : ''}
@@ -2842,6 +3060,116 @@
                 }
             }
 
+            // isRenderableProviderCard checks the nested shape the renderer
+            // dereferences. A version-1 entry such as providers:[null] is
+            // valid JSON but throws on item.id during the first sort, so the
+            // cache must reject it before any render.
+            function isRenderableProviderCard(provider) {
+                return provider !== null && typeof provider === "object" && !Array.isArray(provider)
+                    && typeof provider.id === "string" && provider.id !== ""
+                    && Array.isArray(provider.quotas)
+                    && provider.quotas.every((quota) => quota !== null && typeof quota === "object" && !Array.isArray(quota));
+            }
+
+            // A provider with an empty quota list is legitimate; a missing or
+            // null quota list is not (the server always emits an array).
+            function isRenderableSnapshot(snapshot) {
+                return snapshot !== null && typeof snapshot === "object" && !Array.isArray(snapshot)
+                    && Array.isArray(snapshot.providers)
+                    && snapshot.providers.every(isRenderableProviderCard);
+            }
+
+            // readCachedSnapshot returns the last successful summary, or null
+            // when there is none, it is corrupt, or it was written by a
+            // different cache version. A bad entry is cleared so it cannot keep
+            // failing on every open.
+            function readCachedSnapshot() {
+                let raw;
+                try {
+                    raw = localStorage.getItem(SNAPSHOT_CACHE_KEY);
+                } catch (error) {
+                    return null;
+                }
+                if (!raw) {
+                    return null;
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(raw);
+                } catch (error) {
+                    clearCachedSnapshot();
+                    return null;
+                }
+                const snapshot = parsed && parsed.snapshot;
+                if (!parsed || parsed.version !== SNAPSHOT_CACHE_VERSION
+                    || !isRenderableSnapshot(snapshot)) {
+                    clearCachedSnapshot();
+                    return null;
+                }
+                return snapshot;
+            }
+
+            function writeCachedSnapshot(snapshot) {
+                if (!isRenderableSnapshot(snapshot)) {
+                    return;
+                }
+                try {
+                    localStorage.setItem(SNAPSHOT_CACHE_KEY, JSON.stringify({
+                        version: SNAPSHOT_CACHE_VERSION,
+                        savedAt: new Date().toISOString(),
+                        snapshot
+                    }));
+                } catch (error) {
+                    // Ignore local storage errors inside the popover.
+                }
+            }
+
+            function clearCachedSnapshot() {
+                try {
+                    localStorage.removeItem(SNAPSHOT_CACHE_KEY);
+                } catch (error) {
+                    // Ignore local storage errors inside the popover.
+                }
+            }
+
+            // restoreCachedSnapshot paints the last-known data before the first
+            // fetch. It never replaces data already in memory, so a slow open
+            // cannot roll a fresher render back to an older snapshot.
+            function restoreCachedSnapshot() {
+                if (state.snapshot) {
+                    return;
+                }
+                const cached = readCachedSnapshot();
+                if (!cached) {
+                    return;
+                }
+                state.snapshot = cached;
+                state.loading = false;
+            }
+
+            // restoreCachedSnapshotSafely is the startup path: a cache entry
+            // that passes structural validation can still fail to render. If
+            // it does, drop the entry and reset to the empty loading state so
+            // initialization can fetch instead of wedging every open.
+            function restoreCachedSnapshotSafely() {
+                restoreCachedSnapshot();
+                if (!state.snapshot) {
+                    return;
+                }
+                try {
+                    render();
+                } catch (error) {
+                    clearCachedSnapshot();
+                    state.snapshot = null;
+                    state.loading = true;
+                    try {
+                        render();
+                    } catch (ignored) {
+                        // Normal initialization below still fetches.
+                    }
+                }
+            }
+
             function resolveThemeMode() {
                 const draft = state.settingsOpen && state.draft ? state.draft : state.preferences;
                 return normalizeTheme(draft && draft.theme);
@@ -2853,6 +3181,10 @@
                 const effective = mode === "system" ? (state.systemPrefersDark ? "dark" : "light") : mode;
                 root.setAttribute("data-theme", effective);
                 root.style.colorScheme = effective;
+                // Tell a native host the page's effective theme so it can match
+                // its own background layers, even when onWatch's theme differs
+                // from the OS. Hosts without the channel ignore this.
+                sendNativeAction({ action: "theme", theme: effective });
             }
 
             function queueResizeReport() {
@@ -3217,6 +3549,44 @@
                 return label === "0m" ? "now" : label;
             }
 
+            // ageLabelFromTimestamp renders an age from a raw RFC3339 timestamp
+            // against this client's wall clock, so it keeps counting up even when
+            // the daemon is unreachable. Falls back to the server's pre-rendered
+            // string when no timestamp is available.
+            function ageLabelFromTimestamp(raw, fallback) {
+                if (!raw) {
+                    return compactUpdatedLabel(fallback);
+                }
+                const then = Date.parse(raw);
+                // Reject unparseable, non-positive, and absurdly old timestamps.
+                // A zero time.Time serializes as 0001-01-01, which would read as
+                // hundreds of thousands of days; fall back instead.
+                const minValid = Date.UTC(2000, 0, 1);
+                if (!Number.isFinite(then) || then <= 0 || then < minValid) {
+                    return compactUpdatedLabel(fallback);
+                }
+                const seconds = Math.max(0, (Date.now() - then) / 1000);
+                if (seconds < 60) {
+                    return "now";
+                }
+                if (seconds < 3600) {
+                    return Math.floor(seconds / 60) + "m";
+                }
+                if (seconds < 86400) {
+                    return Math.floor(seconds / 3600) + "h";
+                }
+                return Math.floor(seconds / 86400) + "d";
+            }
+
+            // providerAgeLabel counts from the provider's own last successful
+            // data time (updated_at_time), not the snapshot build time.
+            function providerAgeLabel(provider) {
+                if (!provider) {
+                    return "--";
+                }
+                return ageLabelFromTimestamp(provider.updated_at_time || provider.updatedAtTime, provider.updated_at);
+            }
+
             function compactResetLabel(quota) {
                 return compactTimeLabel(quota.time_until_reset || quota.reset_at);
             }
@@ -3420,6 +3790,27 @@
                 return Math.max(0, Math.min(100, numeric));
             }
 
+            // updateAgeLabels refreshes every provider age label from its
+            // recorded timestamp without rebuilding the DOM, so a long-lived
+            // popover (or one whose daemon is unreachable) keeps counting up
+            // without a repaint.
+            function updateAgeLabels() {
+                document.querySelectorAll(".provider-updated[data-updated-at]").forEach((el) => {
+                    const raw = el.getAttribute("data-updated-at") || "";
+                    const fallback = el.getAttribute("data-updated-fallback") || "";
+                    if (!raw) {
+                        return;
+                    }
+                    el.textContent = ageLabelFromTimestamp(raw, fallback);
+                });
+                if (state.snapshot) {
+                    headerUpdated.textContent = ageLabelFromTimestamp(
+                        state.snapshot.latest_at,
+                        state.snapshot.updated_ago
+                    );
+                }
+            }
+
             function resetRefreshTimer() {
                 if (refreshTimer) {
                     window.clearInterval(refreshTimer);
@@ -3427,6 +3818,15 @@
                 refreshTimer = window.setInterval(() => {
                     void loadSnapshot();
                 }, Math.max(Number(state.preferences.refresh_seconds) || 60, 10) * 1000);
+                // Age labels are computed from client wall-clock time, so they
+                // must be refreshed between fetches: that is what lets them keep
+                // counting up when the daemon is unreachable and the fetch above
+                // fails. Update the text in place (no re-render, no flash) and
+                // make no API calls.
+                if (ageTickTimer) {
+                    window.clearInterval(ageTickTimer);
+                }
+                ageTickTimer = window.setInterval(updateAgeLabels, 30000);
             }
 
             // Promo countdown: update tags every 30s without API calls

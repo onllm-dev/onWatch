@@ -175,20 +175,33 @@ func buildOllamaBurnRateInsight(quota api.OllamaQuota, rate ollamaQuotaRate) ins
 }
 
 func (h *Handler) buildOllamaCurrent() map[string]interface{} {
+	response, _, _ := h.buildOllamaCurrentOK()
+	return response
+}
+
+// buildOllamaCurrentOK is buildOllamaCurrent with an explicit storage outcome.
+// readOK is false only when the read that supplied the payload failed. The
+// per-quota read is a refinement, so its failure still leaves the latest
+// snapshot payload intact.
+func (h *Handler) buildOllamaCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
 	}
 
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
 	latest, err := h.store.QueryLatestOllama()
-	if err != nil || latest == nil {
-		return response
+	if err != nil {
+		return response, false, false
 	}
+	if latest == nil {
+		return response, true, false
+	}
+	hasData = true
 
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 	response["plan"] = latest.Plan
@@ -245,7 +258,7 @@ func (h *Handler) buildOllamaCurrent() map[string]interface{} {
 			response["quotas"] = append(response["quotas"].([]interface{}), quotaFromLatest(q, latest.CapturedAt))
 		}
 		applyDisplayModeToResponse(response, h.getDisplayMode("ollama"))
-		return response
+		return response, true, hasData
 	}
 
 	sort.SliceStable(latestPerQuota, func(i, j int) bool {
@@ -270,7 +283,7 @@ func (h *Handler) buildOllamaCurrent() map[string]interface{} {
 	}
 	response["quotas"] = quotas
 	applyDisplayModeToResponse(response, h.getDisplayMode("ollama"))
-	return response
+	return response, true, hasData
 }
 
 func (h *Handler) historyOllama(w http.ResponseWriter, r *http.Request) {

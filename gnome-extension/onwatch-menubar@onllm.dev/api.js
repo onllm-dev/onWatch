@@ -6,7 +6,14 @@ import GLib from 'gi://GLib';
 import Soup from 'gi://Soup';
 
 const DEFAULT_PORT = 9211;
-const SESSION = new Soup.Session({timeout: 3});
+
+/**
+ * Per-attempt timeout for daemon requests, matching the Go tray client
+ * (`cmd/onwatch/menubar_runtime.go`): 15 s, with one retry driven by the
+ * caller. libsoup sets this per session, so it lives here next to the session.
+ */
+export const SESSION_TIMEOUT_SECONDS = 15;
+const SESSION = new Soup.Session({timeout: SESSION_TIMEOUT_SECONDS});
 
 /**
  * @returns {number}
@@ -44,30 +51,43 @@ export function baseURL(port = resolvePort()) {
 }
 
 /**
+ * GET a daemon JSON endpoint.
+ *
+ * Resolves with the decoded body on success and rejects on any failure
+ * (network error, non-2xx status, empty body, malformed JSON). Callers must
+ * tell success from failure by catching; there is no fake-offline payload, so
+ * a caller can keep showing its last good data instead of wiping the screen.
+ *
  * @param {string} path
  * @param {number} [port]
- * @returns {Promise<?object>}
+ * @param {?Gio.Cancellable} [cancellable] cancels the request when the caller
+ *        is torn down
+ * @returns {Promise<object>}
  */
-export async function fetchJSON(path, port = resolvePort()) {
+export async function fetchJSON(path, port = resolvePort(), cancellable = null) {
     const url = `${baseURL(port)}${path}`;
     const message = Soup.Message.new('GET', url);
     if (!message)
-        return null;
+        throw new Error(`onWatch: invalid request URL ${url}`);
 
+    const bytes = await SESSION.send_and_read_async(
+        message,
+        GLib.PRIORITY_DEFAULT,
+        cancellable);
+
+    const status = message.get_status();
+    if (status !== Soup.Status.OK)
+        throw new Error(`onWatch: ${path} returned ${status}`);
+
+    const data = bytes.get_data();
+    if (!data || data.length === 0)
+        throw new Error(`onWatch: ${path} returned an empty body`);
+
+    const text = new TextDecoder().decode(data);
     try {
-        const bytes = await SESSION.send_and_read_async(
-            message,
-            GLib.PRIORITY_DEFAULT,
-            null);
-        if (message.get_status() !== Soup.Status.OK)
-            return null;
-        const data = bytes.get_data();
-        if (!data || data.length === 0)
-            return null;
-        const text = new TextDecoder().decode(data);
         return JSON.parse(text);
-    } catch (_e) {
-        return null;
+    } catch (e) {
+        throw new Error(`onWatch: ${path} returned invalid JSON: ${e.message}`);
     }
 }
 
@@ -75,24 +95,24 @@ export async function fetchJSON(path, port = resolvePort()) {
  * Compact tray title matching macOS TrayTitle (server-side), plus segments
  * with icon stems for the GNOME top bar.
  *
+ * Rejects when the daemon cannot be reached, so the indicator can retain its
+ * last good render. `latestAt` is passed through when the payload carries a
+ * `latest_at` timestamp (used for the stale "last updated Xm ago" label).
+ *
  * @param {number} [port]
- * @returns {Promise<{title: string, tooltip: string, online: boolean, segments: object[]}>}
+ * @param {?Gio.Cancellable} [cancellable]
+ * @returns {Promise<{title: string, tooltip: string, online: boolean, segments: object[], latestAt: ?string}>}
  */
-export async function fetchTrayTitle(port = resolvePort()) {
-    const body = await fetchJSON('/api/menubar/tray-title', port);
-    if (!body) {
-        return {
-            title: '—',
-            tooltip: 'onWatch daemon offline',
-            online: false,
-            segments: [],
-        };
-    }
+export async function fetchTrayTitle(port = resolvePort(), cancellable = null) {
+    const body = await fetchJSON('/api/menubar/tray-title', port, cancellable);
+    if (!body || typeof body !== 'object')
+        throw new Error('onWatch: tray-title returned no payload');
     return {
-        title: body.title || '—',
+        title: body.title || '',
         tooltip: body.tooltip || 'onWatch',
         online: body.online !== false,
         segments: Array.isArray(body.segments) ? body.segments : [],
+        latestAt: typeof body.latest_at === 'string' ? body.latest_at : null,
     };
 }
 

@@ -23,12 +23,15 @@ const (
 	hostMessageClose
 	hostMessageOpenDashboard
 	hostMessageOpenURL
+	hostMessageTheme
 )
 
 type hostMessage struct {
 	Kind   hostMessageKind
 	Height float64
 	URL    string
+	// Theme is the page's effective theme ("dark" or "light") after applyTheme.
+	Theme string
 }
 
 // parseHostMessage decodes one page message. Anything malformed or not meant
@@ -57,6 +60,7 @@ func parseHostMessage(raw string) hostMessage {
 		var action struct {
 			Action string `json:"action"`
 			URL    string `json:"url"`
+			Theme  string `json:"theme"`
 		}
 		if err := json.Unmarshal(envelope.Body, &action.Action); err != nil {
 			if err := json.Unmarshal(envelope.Body, &action); err != nil {
@@ -70,6 +74,10 @@ func parseHostMessage(raw string) hostMessage {
 			return hostMessage{Kind: hostMessageOpenDashboard}
 		case "open_url":
 			return hostMessage{Kind: hostMessageOpenURL, URL: action.URL}
+		case "theme":
+			if action.Theme == "dark" || action.Theme == "light" {
+				return hostMessage{Kind: hostMessageTheme, Theme: action.Theme}
+			}
 		}
 	}
 	return hostMessage{}

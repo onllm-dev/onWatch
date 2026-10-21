@@ -28,6 +28,26 @@ const ICON_SIZE = 14;
 const HOVER_OPEN_DELAY_MS = 750;
 
 /**
+ * Format an age in ms the same way the Go tray does
+ * (`internal/menubar/menu.go` formatAgeAgo): "just now", "12m ago",
+ * "3h ago", "2d ago".
+ *
+ * @param {number} ageMs
+ * @returns {string}
+ */
+function formatAgeAgo(ageMs) {
+    const minutes = Math.floor(Math.max(0, ageMs) / 60_000);
+    if (minutes < 1)
+        return 'just now';
+    if (minutes < 60)
+        return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24)
+        return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+}
+
+/**
  * Build a native color for ColorizeEffect.tint.
  * Prefer Clutter.Color.from_string; fall back to Cogl if needed.
  *
@@ -77,10 +97,30 @@ class OnWatchIndicator extends PanelMenu.Button {
         this._host = new PanelHostController(extensionDir);
         this._refreshId = 0;
         this._hoverOpenId = 0;
+        // Set first thing in destroy(). Every continuation after an await and
+        // every timer creation checks it, so a request that outlives the
+        // indicator cannot touch destroyed actors or start new timers.
+        this._destroyed = false;
+        // Cancels the in-flight soup request on destroy, where libsoup allows
+        // it. One cancellable per indicator, reused by every attempt.
+        this._cancellable = new Gio.Cancellable();
         this._giconCache = new Map();
         this._icons = [];
-        // Native color object (from theme node or from_string) — never a plain {}
+        // Native color object (from theme node or from_string) - never a plain {}
         this._tintColor = colorFromCss('#f2f2f2');
+        // Last good render, kept so a failed refresh can change only the tint
+        // and tooltip instead of wiping the numbers. Null until the first
+        // success, which is the only case that shows the offline placeholder.
+        this._lastGood = null;
+        // True while a refresh is in flight, so overlapping ticks coalesce
+        // instead of stacking requests against a slow daemon.
+        this._refreshInFlight = false;
+        // Set when a refresh is requested while one is already running; the
+        // in-flight run loops once more so the request is not dropped.
+        this._refreshPending = false;
+        this._staleAgeId = 0;
+        // True while the tray is showing retained (stale) data.
+        this._staleMode = false;
 
         console.log('onWatch menubar: colorize-v4 starting');
 
@@ -129,17 +169,36 @@ class OnWatchIndicator extends PanelMenu.Button {
 
         this._refreshTitle().catch(e => console.error('onWatch: initial refresh failed', e));
         this._refreshId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, REFRESH_MS_DEFAULT, () => {
+            if (this._destroyed) {
+                this._refreshId = 0;
+                return GLib.SOURCE_REMOVE;
+            }
             this._refreshTitle().catch(e => console.error('onWatch: refresh failed', e));
             return GLib.SOURCE_CONTINUE;
         });
     }
 
     destroy() {
+        // Mark disposed before any teardown: a refresh that is already past
+        // its await must see this and return without touching actors or
+        // creating timers.
+        this._destroyed = true;
         if (this._refreshId) {
             GLib.source_remove(this._refreshId);
             this._refreshId = 0;
         }
+        this._stopStaleAgeTimer();
         this._cancelHoverOpen();
+        // Abort the in-flight request (libsoup reports it as a cancelled
+        // error, which _refreshTitle swallows for a destroyed instance).
+        try {
+            this._cancellable?.cancel();
+        } catch (e) {
+            console.debug?.('onWatch: cancel on destroy failed', e);
+        }
+        this._cancellable = null;
+        this._lastGood = null;
+        this._staleMode = false;
         this._host?.destroy();
         this._host = null;
         this._giconCache?.clear();
@@ -184,7 +243,7 @@ class OnWatchIndicator extends PanelMenu.Button {
             return Math.max(0, Math.min(255, Math.round(v)));
         };
         try {
-            // Prefer this button's fg (same as tray text) — light text ⇒ dark panel.
+            // Prefer this button's fg (same as tray text) - light text ⇒ dark panel.
             const node = this.get_theme_node() || Main.panel?.get_theme_node?.();
             if (!node)
                 return true;
@@ -202,14 +261,20 @@ class OnWatchIndicator extends PanelMenu.Button {
      * @param {string} _reason
      */
     async _openPanel(_reason) {
+        if (this._destroyed)
+            return;
         try {
             const url = menubarPageURL(this._port, {
                 systemPrefersDark: this._panelPrefersDark(),
             });
             await this._host.show(url);
         } catch (e) {
+            if (this._destroyed)
+                return;
             console.error('onWatch: failed to open panel', e);
-            this._setOffline('!');
+            // A panel-host failure must not wipe the tray numbers either.
+            if (!this._lastGood)
+                this._setOffline('!');
         }
     }
 
@@ -221,19 +286,151 @@ class OnWatchIndicator extends PanelMenu.Button {
     }
 
     /**
+     * Show the offline placeholder. Only reached when there has never been a
+     * successful response, so there is no last good render to keep.
+     *
      * @param {string} text
      * @param {boolean} [offline]
      */
     _setOffline(text, offline = true) {
+        if (this._destroyed)
+            return;
+        this._stopStaleAgeTimer();
+        this._staleMode = false;
         this._clearBox();
         const label = new St.Label({
-            text: text || '—',
+            text: text || '--',
             y_align: Clutter.ActorAlign.CENTER,
             style_class: offline
                 ? 'onwatch-menubar-label onwatch-menubar-offline'
                 : 'onwatch-menubar-label',
         });
         this._box.add_child(label);
+    }
+
+    _stopStaleAgeTimer() {
+        if (this._staleAgeId) {
+            GLib.source_remove(this._staleAgeId);
+            this._staleAgeId = 0;
+        }
+    }
+
+    /**
+     * Age to display for retained data: from the payload's `latest_at` when it
+     * carries one, otherwise from when the last successful fetch landed. Keeps
+     * counting up while the daemon is unreachable, so it never freezes at the
+     * build-time value the Go tray also avoids.
+     *
+     * @param {?string} latestAt ISO timestamp from the response, if any
+     * @returns {number} age in ms, or 0 when nothing is known
+     */
+    _staleAgeMs(latestAt) {
+        const parse = value => {
+            if (!value)
+                return 0;
+            const t = Date.parse(value);
+            return Number.isFinite(t) ? t : 0;
+        };
+        let from = parse(latestAt);
+        if (!from && this._lastGood)
+            from = parse(this._lastGood.latestAt) || this._lastGood.fetchedAtMs;
+        if (!from)
+            return 0;
+        return Math.max(0, Date.now() - from);
+    }
+
+    /**
+     * Tick the stale tooltip while retained data is on screen, so "last
+     * updated 12m ago" advances instead of sticking at the first failure.
+     */
+    _startStaleAgeTimer() {
+        if (this._destroyed)
+            return;
+        this._stopStaleAgeTimer();
+        this._staleAgeId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 60_000, () => {
+            if (this._destroyed || !this._staleMode || !this._lastGood) {
+                this._staleAgeId = 0;
+                return GLib.SOURCE_REMOVE;
+            }
+            this._applyStaleChrome();
+            return GLib.SOURCE_CONTINUE;
+        });
+    }
+
+    /**
+     * Update only the tint and accessible tooltip for retained data, leaving
+     * the rendered title/segments untouched.
+     */
+    _applyStaleChrome() {
+        if (this._destroyed || !this._lastGood)
+            return;
+        const age = this._staleAgeMs(this._lastGood.latestAt);
+        this._setName(`onWatch: offline, last updated ${formatAgeAgo(age)}`);
+    }
+
+    /**
+     * Mark the tray stale: keep the last good numbers, change only the tint
+     * and the accessible tooltip/label.
+     *
+     * @param {string} reason
+     */
+    _markStale(reason) {
+        if (this._destroyed)
+            return;
+        if (!this._lastGood) {
+            this._setOffline('--', true);
+            this._setName('onWatch daemon offline');
+            return;
+        }
+        this._staleMode = true;
+        // Offline tint on the retained segments without rebuilding them.
+        // Remove first so repeated failures cannot stack duplicate classes.
+        this._box.remove_style_class_name('onwatch-menubar-stale');
+        this._box.add_style_class_name('onwatch-menubar-stale');
+        this._applyStaleChrome();
+        this._startStaleAgeTimer();
+        console.debug?.(`onWatch: retaining last good data (${reason})`);
+    }
+
+    /**
+     * Clear the stale tint after a successful refresh.
+     */
+    _clearStale() {
+        if (this._destroyed)
+            return;
+        this._stopStaleAgeTimer();
+        this._staleMode = false;
+        this._box.remove_style_class_name('onwatch-menubar-stale');
+    }
+
+    /**
+     * Render a successful payload and remember it as the last good render.
+     *
+     * @param {{title: string, tooltip: string, online: boolean, segments: object[], latestAt: ?string}} payload
+     */
+    _applySuccess(payload) {
+        if (this._destroyed)
+            return;
+        const {title, tooltip, online, segments, latestAt} = payload;
+        // A response that reports itself offline is not a success: retain the
+        // last good numbers rather than replacing them with a placeholder.
+        if (!online) {
+            this._markStale('daemon reported offline');
+            return;
+        }
+        this._lastGood = {
+            title,
+            tooltip,
+            online,
+            segments,
+            latestAt: latestAt || null,
+            fetchedAtMs: Date.now(),
+        };
+        this._clearStale();
+        this._renderSegments(segments, title, online);
+        this.set_reactive(true);
+        // Must not throw after a successful render (old bug wiped UI to "-").
+        this._setName(tooltip || title || 'onWatch');
     }
 
     /**
@@ -249,14 +446,14 @@ class OnWatchIndicator extends PanelMenu.Button {
             else if (typeof this.setAccessibleName === 'function')
                 this.setAccessibleName(name);
         } catch (e) {
-            // Non-fatal — never wipe the tray for a11y failures.
+            // Non-fatal - never wipe the tray for a11y failures.
             console.debug?.('onWatch: set accessible name skipped', e);
         }
     }
 
     /**
      * Sample native foreground color from a live label (inherits panel theme).
-     * Keep the GObject color struct — ColorizeEffect rejects plain objects.
+     * Keep the GObject color struct - ColorizeEffect rejects plain objects.
      */
     _updateTintFromTheme() {
         let sample = null;
@@ -392,10 +589,12 @@ class OnWatchIndicator extends PanelMenu.Button {
      * @param {boolean} online
      */
     _renderSegments(segments, fallbackTitle, online) {
+        if (this._destroyed)
+            return;
         this._clearBox();
 
         if (!online) {
-            this._setOffline('—', true);
+            this._setOffline('--', true);
             return;
         }
 
@@ -435,30 +634,93 @@ class OnWatchIndicator extends PanelMenu.Button {
         });
 
         GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            if (this._destroyed)
+                return GLib.SOURCE_REMOVE;
             this._updateTintFromTheme();
             this._applyTintToIcons();
             return GLib.SOURCE_REMOVE;
         });
         GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
+            if (this._destroyed)
+                return GLib.SOURCE_REMOVE;
             this._updateTintFromTheme();
             this._applyTintToIcons();
             return GLib.SOURCE_REMOVE;
         });
     }
 
-    async _refreshTitle() {
+    /**
+     * One fetch attempt. Kept separate so the retry loop reads clearly.
+     *
+     * @returns {Promise<object>}
+     */
+    _fetchOnce() {
         this._port = resolvePort();
+        return fetchTrayTitle(this._port, this._cancellable);
+    }
+
+    /**
+     * Fetch with one retry, matching the Go tray client: a timeout is often a
+     * transient write burst that clears within a moment, and a single miss
+     * must not be treated as failure. Fully async; never blocks the Shell.
+     *
+     * @returns {Promise<object>}
+     */
+    async _fetchWithRetry() {
         try {
-            const {title, tooltip, online, segments} = await fetchTrayTitle(this._port);
-            this._renderSegments(segments, title, online);
-            this.set_reactive(true);
-            // Must not throw after a successful render (old bug wiped UI to "—").
-            this._setName(tooltip || title || 'onWatch');
-        } catch (e) {
-            console.error('onWatch: _refreshTitle failed', e);
-            // Only show offline if we have nothing useful on screen.
-            if (!this._box.get_n_children || this._box.get_n_children() === 0)
-                this._setOffline('—', true);
+            return await this._fetchOnce();
+        } catch (firstErr) {
+            if (this._destroyed)
+                throw firstErr;
+            try {
+                return await this._fetchOnce();
+            } catch (retryErr) {
+                throw new Error(`${firstErr.message} (retry: ${retryErr.message})`);
+            }
+        }
+    }
+
+    /**
+     * Refresh the tray. Coalesces overlapping calls: if one is already in
+     * flight, mark a pending request and return; the in-flight run loops once
+     * more so the request is not dropped but also does not stack requests
+     * against a slow daemon.
+     *
+     * Every continuation after an await checks `_destroyed`. destroy() cancels
+     * the soup request, so a late failure or success lands here with the flag
+     * set and returns without touching actors or arming a timer.
+     */
+    async _refreshTitle() {
+        if (this._destroyed)
+            return;
+        if (this._refreshInFlight) {
+            this._refreshPending = true;
+            return;
+        }
+        this._refreshInFlight = true;
+        try {
+            do {
+                this._refreshPending = false;
+                if (this._destroyed)
+                    return;
+                try {
+                    const payload = await this._fetchWithRetry();
+                    // The await is the suspension point: the indicator may
+                    // have been destroyed while the request was in flight.
+                    if (this._destroyed)
+                        return;
+                    this._applySuccess(payload);
+                } catch (e) {
+                    if (this._destroyed)
+                        return;
+                    console.error('onWatch: _refreshTitle failed', e);
+                    // Keep the last good numbers; only the tint and tooltip
+                    // change. Offline placeholder only before any success.
+                    this._markStale(e.message || 'fetch failed');
+                }
+            } while (this._refreshPending && !this._destroyed);
+        } finally {
+            this._refreshInFlight = false;
         }
     }
 });

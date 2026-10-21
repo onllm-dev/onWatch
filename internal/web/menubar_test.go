@@ -992,6 +992,147 @@ func TestBuildMenubarSnapshotKimiResetFields(t *testing.T) {
 	}
 }
 
+// The per-card age label must count from the provider's own last stored
+// snapshot time, not the summary build time. Otherwise a provider whose polls
+// have stopped would keep reading "now" as long as the daemon serves snapshots
+// for other providers.
+func TestBuildMenubarSnapshotProviderAgeUsesStoredCapturedAt(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	capturedAt := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+	reset := time.Now().UTC().Add(3 * time.Hour)
+	if _, err := s.InsertGrokSnapshot(&api.GrokSnapshot{
+		CapturedAt: capturedAt,
+		AccountID:  1,
+		Quotas:     []api.GrokQuota{{Name: "credits", Utilization: 10, ResetsAt: &reset, Status: "healthy"}},
+	}); err != nil {
+		t.Fatalf("InsertGrokSnapshot: %v", err)
+	}
+
+	cfg := &config.Config{
+		GrokEnabled:  true,
+		GrokToken:    "g",
+		PollInterval: 60 * time.Second,
+		Port:         9211,
+		AdminUser:    "admin",
+		AdminPass:    "test",
+	}
+	h := NewHandler(s, nil, nil, nil, cfg)
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		t.Fatalf("BuildMenubarSnapshot: %v", err)
+	}
+	grok := findMenubarProviderCard(t, snapshot, "grok")
+	if grok.UpdatedAt != "2h ago" {
+		t.Fatalf("grok UpdatedAt = %q, want %q (from capturedAt, not build time)", grok.UpdatedAt, "2h ago")
+	}
+	// The raw timestamp rides along so clients can compute the age themselves.
+	wantTime := capturedAt.UTC().Format(time.RFC3339)
+	if grok.UpdatedAtTime != wantTime {
+		t.Fatalf("grok UpdatedAtTime = %q, want %q (stored capturedAt)", grok.UpdatedAtTime, wantTime)
+	}
+	// The header age must track the newest provider data, not the build time.
+	if snapshot.LatestAt.IsZero() {
+		t.Fatal("snapshot LatestAt is zero; the header age would read the build time")
+	}
+	if !snapshot.LatestAt.Equal(capturedAt) {
+		t.Fatalf("snapshot LatestAt = %s, want %s (newest capturedAt)", snapshot.LatestAt, capturedAt)
+	}
+	if snapshot.GeneratedAt.Before(snapshot.LatestAt) {
+		t.Fatalf("GeneratedAt %s is before LatestAt %s", snapshot.GeneratedAt, snapshot.LatestAt)
+	}
+}
+
+// With no provider data, latest_at must be omitted entirely, not serialized as
+// the zero time ("0001-01-01T00:00:00Z"), which a client would render as
+// hundreds of thousands of days.
+func TestBuildMenubarSnapshotOmitsZeroLatestAt(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	// No snapshots inserted and no provider enabled: nothing to report.
+	h := NewHandler(s, nil, nil, nil, &config.Config{
+		PollInterval: 60 * time.Second,
+		Port:         9211,
+		AdminUser:    "admin",
+		AdminPass:    "test",
+	})
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		t.Fatalf("BuildMenubarSnapshot: %v", err)
+	}
+	if !snapshot.LatestAt.IsZero() {
+		t.Fatalf("LatestAt = %s, want zero", snapshot.LatestAt)
+	}
+
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if strings.Contains(string(raw), "latest_at") {
+		t.Fatalf("zero latest_at must be omitted, got %s", raw)
+	}
+	if strings.Contains(string(raw), "0001-01-01") {
+		t.Fatalf("zero time leaked into JSON: %s", raw)
+	}
+}
+
+// Kimi's capturedAt must be the stored snapshot time, not the build time, so
+// the menubar age for a stalled Kimi poll keeps growing.
+func TestBuildMenubarSnapshotKimiCapturedAtIsStoredTime(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	capturedAt := time.Now().UTC().Add(-90 * time.Minute).Truncate(time.Second)
+	reset := time.Now().UTC().Add(3 * time.Hour)
+	if _, err := s.InsertKimiSnapshot(&api.KimiSnapshot{
+		CapturedAt: capturedAt,
+		AccountID:  1,
+		UserID:     "u1",
+		Quotas:     []api.KimiQuota{{Name: api.KimiQuotaSevenDay, Utilization: 40, ResetsAt: &reset, Status: "healthy"}},
+	}); err != nil {
+		t.Fatalf("InsertKimiSnapshot: %v", err)
+	}
+
+	cfg := &config.Config{
+		KimiEnabled:  true,
+		KimiToken:    "kimi-test",
+		PollInterval: 60 * time.Second,
+		Port:         9211,
+		AdminUser:    "admin",
+		AdminPass:    "test",
+	}
+	h := NewHandler(s, nil, nil, nil, cfg)
+
+	// The menubar builder (buildKimiCurrentOK) carries the stored time. The
+	// dashboard builder restamps capturedAt with the build time, as main did,
+	// so check the age-label work on the menubar payload.
+	payload, _, _ := h.buildKimiCurrentOK()
+	got, _ := payload["capturedAt"].(string)
+	if got != capturedAt.Format(time.RFC3339) {
+		t.Fatalf("kimi capturedAt = %q, want %q (stored snapshot time)", got, capturedAt.Format(time.RFC3339))
+	}
+
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		t.Fatalf("BuildMenubarSnapshot: %v", err)
+	}
+	kimi := findMenubarProviderCard(t, snapshot, "kimi")
+	if kimi.UpdatedAt != "1h ago" {
+		t.Fatalf("kimi UpdatedAt = %q, want %q", kimi.UpdatedAt, "1h ago")
+	}
+}
+
 func TestMenubarPageAllowsEditorFrames(t *testing.T) {
 	h, s := newMenubarTestHandler(t)
 	defer s.Close()

@@ -85,10 +85,15 @@ const (
 // Snapshot is the normalized UI contract shared by the desktop app and the
 // browser-testable menubar page.
 type Snapshot struct {
-	GeneratedAt time.Time      `json:"generated_at"`
-	UpdatedAgo  string         `json:"updated_ago"`
-	Aggregate   Aggregate      `json:"aggregate"`
-	Providers   []ProviderCard `json:"providers"`
+	GeneratedAt time.Time `json:"generated_at"`
+	UpdatedAgo  string    `json:"updated_ago"`
+	// LatestAt is the newest provider capturedAt behind UpdatedAgo. Clients use
+	// it for the header age so it reflects data freshness, not build time.
+	// omitzero (not omitempty) drops the zero time.Time; omitempty would emit
+	// "0001-01-01T00:00:00Z", which a client renders as about 739000 days.
+	LatestAt  time.Time      `json:"latest_at,omitzero"`
+	Aggregate Aggregate      `json:"aggregate"`
+	Providers []ProviderCard `json:"providers"`
 	// MistralEnabled reflects config, not poll state: a provider card only
 	// appears in Providers once it has quota data, which would hide anything
 	// gated on it until after the first successful poll.
@@ -119,6 +124,10 @@ type ProviderCard struct {
 	Quotas           []QuotaMeter            `json:"quotas"`
 	Trends           []TrendSeries           `json:"trends,omitempty"`
 	Promo            *ProviderPromo          `json:"promo,omitempty"`
+	// UpdatedAtTime is the provider's last successful data time as RFC3339.
+	// Clients compute the age label from it against their own wall clock, so
+	// the label keeps counting up even when the daemon cannot be reached.
+	UpdatedAtTime string `json:"updated_at_time,omitempty"`
 }
 
 // ProviderPromo carries promo metadata for a provider card.

@@ -20,44 +20,80 @@ func (h *Handler) currentKimi(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) latestKimiSnapshot() *api.KimiSnapshot {
+	latest, _, _ := h.latestKimiSnapshotOK()
+	return latest
+}
+
+// latestKimiSnapshotOK is latestKimiSnapshot plus the outcome of the reads it
+// actually performed. ok is false when the latest read, or the 7-day fallback
+// read it needed, failed.
+//
+// A failed latest read still tries the 7-day fallback (the dashboard builder
+// behaved that way before the menubar refactor). When the fallback supplies
+// data, the snapshot is returned with ok=false so the menubar keeps serving its
+// last good card while the dashboard still renders the older rows.
+func (h *Handler) latestKimiSnapshotOK() (latest *api.KimiSnapshot, ok bool, hasData bool) {
 	if h.store == nil {
-		return nil
+		return nil, true, false
 	}
 	latest, err := h.store.QueryLatestKimi(store.DefaultKimiAccountID)
+	if err != nil {
+		latest = nil
+	}
 	if err == nil && latest != nil && len(latest.Quotas) > 0 {
-		return latest
+		return latest, true, true
 	}
 	now := time.Now().UTC()
-	if snaps, rerr := h.store.QueryKimiRange(store.DefaultKimiAccountID, now.Add(-7*24*time.Hour), now); rerr == nil {
-		for i := len(snaps) - 1; i >= 0; i-- {
-			if len(snaps[i].Quotas) > 0 {
-				return snaps[i]
-			}
+	snaps, rerr := h.store.QueryKimiRange(store.DefaultKimiAccountID, now.Add(-7*24*time.Hour), now)
+	if rerr != nil {
+		return latest, false, false
+	}
+	for i := len(snaps) - 1; i >= 0; i-- {
+		if len(snaps[i].Quotas) > 0 {
+			return snaps[i], err == nil, true
 		}
 	}
-	return latest
+	return latest, err == nil, latest != nil
 }
 
 // buildKimiCurrent builds the /api/current?provider=kimi payload.
 func (h *Handler) buildKimiCurrent() map[string]interface{} {
+	response, _, _ := h.buildKimiCurrentOK()
+	// Main's dashboard builder reports the build time here; the stored
+	// snapshot time is only for the menubar age label.
+	response["capturedAt"] = time.Now().UTC().Format(time.RFC3339)
+	return response
+}
+
+// buildKimiCurrentOK is buildKimiCurrent with an explicit storage outcome.
+// readOK reports the outcome of the read that supplied the payload, including
+// the fallback range read.
+func (h *Handler) buildKimiCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
-	response := map[string]interface{}{
+	response = map[string]interface{}{
 		"provider":   "kimi",
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
 	}
 	if h.store == nil {
-		return response
+		return response, true, false
 	}
 
-	latest := h.latestKimiSnapshot()
+	latest, readOK, hasData := h.latestKimiSnapshotOK()
+	if !readOK && !hasData {
+		return response, false, false
+	}
 	if latest == nil {
 		if creds := api.DetectKimiCredentials(h.logger); creds != nil {
 			response["login_method"] = "oauth"
 			response["configured"] = true
 		}
-		return response
+		return response, true, false
 	}
+
+	// capturedAt drives the menubar age label; it must be the stored snapshot
+	// time so the age grows when this provider's polls stop.
+	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
 
 	quotas := make([]map[string]interface{}, 0, len(latest.Quotas))
 	for _, q := range latest.Quotas {
@@ -116,7 +152,7 @@ func (h *Handler) buildKimiCurrent() map[string]interface{} {
 			response["summary"] = sm
 		}
 	}
-	return response
+	return response, readOK, hasData
 }
 
 func (h *Handler) historyKimi(w http.ResponseWriter, r *http.Request) {

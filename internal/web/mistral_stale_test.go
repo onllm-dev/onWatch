@@ -12,7 +12,9 @@ func TestMistralReconnectCard(t *testing.T) {
 		want   string
 	}{
 		{"reconnect", true, "warning"},
-		{"stale", false, "warning"},
+		// Staleness is carried by the age label only; the connection_status
+		// still records "stale" but usage severity alone decides the dot.
+		{"stale", false, "healthy"},
 		{"partial", true, "warning"},
 		{"ok", false, "healthy"},
 	} {

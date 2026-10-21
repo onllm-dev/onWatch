@@ -14,11 +14,21 @@ import (
 var mistralDisplayNames = map[string]string{"api_included": "Included API usage", "vibe_included": "Included Vibe Code usage"}
 
 func (h *Handler) buildMistralCurrent() map[string]interface{} {
+	result, _, _ := h.buildMistralCurrentOK()
+	return result
+}
+
+// buildMistralCurrentOK is buildMistralCurrent with an explicit storage
+// outcome. readOK is false when the read timed out or failed, which leaves only
+// a connection-only placeholder; the menubar serves the last good card in that
+// case instead of replacing real quota data with it. hasData reports whether a
+// stored snapshot backed the payload.
+func (h *Handler) buildMistralCurrentOK() (result map[string]interface{}, readOK bool, hasData bool) {
 	showBilling := h.showMistralBilling()
-	result := map[string]interface{}{"quotas": []interface{}{}, "status": "waiting", "showBilling": showBilling, "billing": map[string]interface{}{"amount": nil, "status": "unavailable"}}
+	result = map[string]interface{}{"quotas": []interface{}{}, "status": "waiting", "showBilling": showBilling, "billing": map[string]interface{}{"amount": nil, "status": "unavailable"}}
 	result["connection"] = h.mistralConnection()
 	if h.store == nil {
-		return result
+		return result, true, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -26,8 +36,11 @@ func (h *Handler) buildMistralCurrent() map[string]interface{} {
 		result["status"] = status
 	}
 	snap, e := h.store.LatestMistral(ctx)
-	if e != nil || snap == nil {
-		return result
+	if e != nil {
+		return result, false, false
+	}
+	if snap == nil {
+		return result, true, false
 	}
 	if result["status"] == "waiting" {
 		result["status"] = snap.Status
@@ -68,7 +81,7 @@ func (h *Handler) buildMistralCurrent() map[string]interface{} {
 		result["status"] = "ok"
 	}
 	applyDisplayModeToResponse(result, h.getDisplayMode("mistral"))
-	return result
+	return result, true, true
 }
 
 // This is a display preference, read live so changing it needs no restart.

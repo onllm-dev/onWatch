@@ -267,22 +267,50 @@ func runMenubarCommand() error {
 
 func httpSnapshotProvider(port int) menubar.SnapshotProvider {
 	url := fmt.Sprintf("http://localhost:%d/api/menubar/summary", port)
-	client := &http.Client{Timeout: 5 * time.Second}
-	return func() (*menubar.Snapshot, error) {
-		resp, err := client.Get(url)
-		if err != nil {
-			return nil, fmt.Errorf("menubar snapshot fetch failed: %w", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("menubar snapshot request returned %s", resp.Status)
-		}
-		var snapshot menubar.Snapshot
-		if err := json.NewDecoder(resp.Body).Decode(&snapshot); err != nil {
-			return nil, fmt.Errorf("menubar snapshot decode failed: %w", err)
-		}
-		return &snapshot, nil
+	// The companion tick is 60 s. The old 5 s cap tripped whenever a provider
+	// poll held the single SQLite connection while the snapshot was built; 15 s
+	// leaves headroom and still fails well inside the tick.
+	const attemptTimeout = 15 * time.Second
+	client := &http.Client{Timeout: attemptTimeout}
+	attempt := func() (*menubar.Snapshot, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), attemptTimeout)
+		defer cancel()
+		return fetchMenubarSnapshot(ctx, client, url)
 	}
+	return func() (*menubar.Snapshot, error) {
+		snapshot, err := attempt()
+		if err == nil {
+			return snapshot, nil
+		}
+		// One retry: a timeout is often a transient write burst that clears
+		// within a moment, and a single miss must not be treated as failure.
+		snapshot, retryErr := attempt()
+		if retryErr != nil {
+			return nil, fmt.Errorf("%w (retry: %v)", err, retryErr)
+		}
+		return snapshot, nil
+	}
+}
+
+func fetchMenubarSnapshot(ctx context.Context, client *http.Client, url string) (*menubar.Snapshot, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("menubar snapshot request failed: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("menubar snapshot fetch failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("menubar snapshot request returned %s", resp.Status)
+	}
+	var snapshot menubar.Snapshot
+	if err := json.NewDecoder(resp.Body).Decode(&snapshot); err != nil {
+		return nil, fmt.Errorf("menubar snapshot decode failed: %w", err)
+	}
+	return &snapshot, nil
 }
 
 func httpMistralRetry(port int, basePath string) func() error {

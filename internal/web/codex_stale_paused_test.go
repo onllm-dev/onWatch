@@ -151,8 +151,9 @@ func TestBuildMenubarSnapshot_PausedCodexLowUsageIsWarning(t *testing.T) {
 }
 
 // A polling-disabled (not paused) account serves a very old snapshot: the
-// menubar card must flag it stale so the dot tooltip says "Updates unavailable"
-// instead of showing a live-looking card (#147 review, item 3).
+// menubar card must flag it stale in connection_status, but staleness is shown
+// only through the age label. Severity must come from usage alone, so a
+// low-usage card stays healthy rather than turning amber just because of age.
 func TestBuildMenubarSnapshot_CodexStaleAccountFlagged(t *testing.T) {
 	t.Parallel()
 	s, err := store.New(":memory:")
@@ -183,8 +184,10 @@ func TestBuildMenubarSnapshot_CodexStaleAccountFlagged(t *testing.T) {
 	if card.ConnectionStatus != "stale" {
 		t.Errorf("stale codex card connection_status = %q, want stale", card.ConnectionStatus)
 	}
-	if card.Status != "warning" {
-		t.Errorf("stale codex card status = %q, want warning", card.Status)
+	// Severity comes from usage alone: 5% stays healthy even when the snapshot
+	// is a month old. Staleness is carried by the age label.
+	if card.Status != "healthy" {
+		t.Errorf("stale codex card status = %q, want healthy (age alone must not raise severity)", card.Status)
 	}
 }
 

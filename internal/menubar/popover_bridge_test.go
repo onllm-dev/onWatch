@@ -48,6 +48,28 @@ func TestParseHostMessageActions(t *testing.T) {
 	}
 }
 
+// The page reports its effective theme so a native host can match its own
+// background layers to the page, even when onWatch's theme differs from the OS.
+func TestParseHostMessageTheme(t *testing.T) {
+	cases := []struct {
+		raw   string
+		kind  hostMessageKind
+		theme string
+	}{
+		{`{"channel":"onwatchAction","body":{"action":"theme","theme":"dark"}}`, hostMessageTheme, "dark"},
+		{`{"channel":"onwatchAction","body":{"action":"theme","theme":"light"}}`, hostMessageTheme, "light"},
+		{`{"channel":"onwatchAction","body":{"action":"theme","theme":"neon"}}`, hostMessageUnknown, ""},
+		{`{"channel":"onwatchAction","body":{"action":"theme"}}`, hostMessageUnknown, ""},
+		{`{"channel":"onwatchAction","body":{"action":"close"}}`, hostMessageClose, ""},
+	}
+	for _, tc := range cases {
+		msg := parseHostMessage(tc.raw)
+		if msg.Kind != tc.kind || msg.Theme != tc.theme {
+			t.Fatalf("%q: got %+v, want kind %v theme %q", tc.raw, msg, tc.kind, tc.theme)
+		}
+	}
+}
+
 func TestDashboardURLForKeepsRuntimeOrigin(t *testing.T) {
 	cases := map[string]string{
 		"http://localhost:9211/menubar":          "http://localhost:9211",

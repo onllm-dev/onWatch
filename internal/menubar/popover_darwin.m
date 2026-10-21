@@ -28,6 +28,34 @@ static void onwatch_run_on_main_sync(dispatch_block_t block) {
   dispatch_sync(dispatch_get_main_queue(), block);
 }
 
+// Unique context so observeValueForKeyPath: knows the effectiveAppearance
+// notification is ours; anything else must go to super. Without this, NSObject's
+// default implementation throws NSInternalInconsistencyException.
+static void *onwatchPopoverAppearanceContext = &onwatchPopoverAppearanceContext;
+
+// onwatch_popover_background_color returns the layer color for the page's
+// --bg-body. Dark: #0d0d0d, light: #f3f5f8. The page reports its effective
+// theme (which can differ from the OS, or change at runtime), so prefer that;
+// otherwise fall back to the OS appearance using the dark/light names only, so
+// high-contrast variants (which are also dark) resolve correctly.
+static NSColor *onwatch_popover_background_color(NSString *theme) {
+  BOOL dark;
+  if ([theme isEqualToString:@"dark"]) {
+    dark = YES;
+  } else if ([theme isEqualToString:@"light"]) {
+    dark = NO;
+  } else {
+    NSAppearanceName match = [NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:@[
+      NSAppearanceNameAqua, NSAppearanceNameDarkAqua
+    ]];
+    dark = [match isEqualToString:NSAppearanceNameDarkAqua];
+  }
+  if (dark) {
+    return [NSColor colorWithSRGBRed:0x0d / 255.0 green:0x0d / 255.0 blue:0x0d / 255.0 alpha:1.0];
+  }
+  return [NSColor colorWithSRGBRed:0xf3 / 255.0 green:0xf5 / 255.0 blue:0xf8 / 255.0 alpha:1.0];
+}
+
 extern void onwatchGoGrantBrowserAccess(uint64_t token);
 // Implemented in Go (resize_darwin.go); applies the tested floor/ceiling.
 extern int onwatchGoClampPopoverHeight(int requested, int maxAllowed);
@@ -65,10 +93,17 @@ const char *onwatch_grant_reply(bool allowed, bool mainFrame, bool grant, bool p
 @property(nonatomic, strong) id localMouseMonitor;
 @property(nonatomic, strong) id appDeactivationObserver;
 @property(nonatomic, copy) NSString *loadedURLString;
+// pageTheme is the theme the page last reported ("dark"/"light"), or nil before
+// the first report. It overrides the OS appearance for the host background.
+@property(nonatomic, copy) NSString *pageTheme;
+// appearanceObserving guards the one-shot observer removal in -teardown.
+@property(nonatomic, assign) BOOL appearanceObserving;
 @property(nonatomic, assign) CGFloat width;
 @property(nonatomic, assign) CGFloat height;
 - (instancetype)initWithWidth:(CGFloat)width height:(CGFloat)height;
 - (void)applyHeight:(CGFloat)height;
+- (void)applyPageTheme:(NSString *)theme;
+- (void)teardown;
 - (void)loadURLString:(NSString *)urlString;
 - (void)softRefreshIfLoaded;
 - (BOOL)show;
@@ -106,12 +141,15 @@ const char *onwatch_grant_reply(bool allowed, bool mainFrame, bool grant, bool p
   self.containerView.layer.masksToBounds = YES;
   self.containerView.layer.cornerRadius = 14.0;
   self.containerView.layer.cornerCurve = @"continuous";
-  self.containerView.layer.backgroundColor = [[NSColor colorWithRed:0.04 green:0.04 blue:0.04 alpha:1.0] CGColor];
+  NSColor *background = onwatch_popover_background_color(nil);
+  self.containerView.layer.backgroundColor = background.CGColor;
 
   self.webView.frame = self.containerView.bounds;
+  // drawsBackground stays off (the page paints its own --bg-body), but the
+  // layer behind it must match that color, not near-black, or a repaint flashes.
   [self.webView setValue:@NO forKey:@"drawsBackground"];
   self.webView.wantsLayer = YES;
-  self.webView.layer.backgroundColor = [[NSColor colorWithRed:0.04 green:0.04 blue:0.04 alpha:1.0] CGColor];
+  self.webView.layer.backgroundColor = background.CGColor;
   [self.containerView addSubview:self.webView];
 
   NSWindowStyleMask styleMask = NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel;
@@ -130,10 +168,55 @@ const char *onwatch_grant_reply(bool allowed, bool mainFrame, bool grant, bool p
   self.panel.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenAuxiliary;
   self.panel.contentView = self.containerView;
 
+  // Follow OS appearance changes until the page reports its own theme. The
+  // observer is removed in -teardown; dealloc never runs because
+  // WKUserContentController retains this controller strongly.
+  self.appearanceObserving = YES;
+  [NSApp addObserver:self
+          forKeyPath:@"effectiveAppearance"
+             options:NSKeyValueObservingOptionNew
+             context:onwatchPopoverAppearanceContext];
+
   return self;
 }
 
+// applyPageTheme matches the host background layers to the page's --bg-body so
+// a transient repaint (the WebView does not draw its own background) never
+// exposes a mismatched layer.
+- (void)applyPageTheme:(NSString *)theme {
+  self.pageTheme = theme;
+  NSColor *background = onwatch_popover_background_color(theme);
+  self.containerView.layer.backgroundColor = background.CGColor;
+  self.webView.layer.backgroundColor = background.CGColor;
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary<NSKeyValueChangeKey, id> *)change
+                       context:(void *)context {
+  if (context != onwatchPopoverAppearanceContext) {
+    [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+    return;
+  }
+  // Our own observation: apply the OS theme only until the page reports its
+  // own. Always return; never fall through to super for our context.
+  if (!self.pageTheme) {
+    [self applyPageTheme:nil];
+  }
+}
+
+// teardown removes the appearance observer exactly once. It is called from the
+// destroy path instead of dealloc: WKUserContentController retains the
+// controller strongly, so dealloc does not run while the popover is alive.
+- (void)teardown {
+  if (self.appearanceObserving) {
+    self.appearanceObserving = NO;
+    [NSApp removeObserver:self forKeyPath:@"effectiveAppearance" context:onwatchPopoverAppearanceContext];
+  }
+}
+
 - (void)dealloc {
+  [self teardown];
   [self stopTransientCloseMonitoring];
   [self.webView.configuration.userContentController removeScriptMessageHandlerForName:@"onwatchResize"];
   [self.webView.configuration.userContentController removeScriptMessageHandlerForName:@"onwatchAction"];
@@ -470,6 +553,7 @@ const char *onwatch_grant_reply(bool allowed, bool mainFrame, bool grant, bool p
   }
 
   NSString *action = nil;
+  NSString *theme = nil;
   id body = message.body;
   if ([body isKindOfClass:[NSString class]]) {
     action = (NSString *)body;
@@ -478,9 +562,20 @@ const char *onwatch_grant_reply(bool allowed, bool mainFrame, bool grant, bool p
     if ([value isKindOfClass:[NSString class]]) {
       action = (NSString *)value;
     }
+    id themeValue = [(NSDictionary *)body objectForKey:@"theme"];
+    if ([themeValue isKindOfClass:[NSString class]]) {
+      theme = (NSString *)themeValue;
+    }
   }
 
   if (![action isKindOfClass:[NSString class]]) {
+    return;
+  }
+
+  if ([action isEqualToString:@"theme"]) {
+    if ([theme isEqualToString:@"dark"] || [theme isEqualToString:@"light"]) {
+      [self applyPageTheme:theme];
+    }
     return;
   }
 
@@ -557,6 +652,7 @@ void onwatch_popover_destroy(void *handle) {
   onwatch_run_on_main_sync(^{
     OnWatchPopoverController *controller = (__bridge_transfer OnWatchPopoverController *)handle;
     [onwatchGrantHosts removeObjectForKey:@(controller.grantToken)];
+    [controller teardown];
     [controller close];
   });
 }

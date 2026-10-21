@@ -19,7 +19,7 @@
   width: 14px;
   height: 14px;
   margin-right: 1px;
-  /* regular — ColorizeEffect handles tint; symbolic FileIcon path was unreliable */
+  /* regular - ColorizeEffect handles tint; symbolic FileIcon path was unreliable */
   -st-icon-style: regular;
 }
 
@@ -39,4 +39,9 @@
 .onwatch-menubar-offline {
   opacity: 0.55;
   font-weight: 500;
+}
+
+/* Retained data after a failed refresh: numbers stay, dimmed like offline. */
+.onwatch-menubar-stale {
+  opacity: 0.55;
 }
