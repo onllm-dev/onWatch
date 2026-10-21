@@ -40,3 +40,15 @@ func TestTerminateProcessExitsWithZero(t *testing.T) {
 		t.Fatalf("wait: %v", err)
 	}
 }
+
+// Windows reuses pids quickly, so the pid file's parent at daemon start can
+// belong to an unrelated, dead launcher by shutdown time. Only the self check
+// is safe there.
+func TestProtectedSignalPIDWindowsIgnoresParent(t *testing.T) {
+	if !protectedSignalPID(os.Getpid()) {
+		t.Error("this process must never be signalled")
+	}
+	if protectedSignalPID(os.Getppid()) {
+		t.Error("a reused parent pid must not protect the companion on Windows")
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -32,15 +33,20 @@ func TestWriteRuntimePIDValueRecordsChildPID(t *testing.T) {
 	}
 }
 
-// Review item 1: stopMenubarProcess must refuse its own pid and its parent.
-// A companion pid file briefly holding the daemon's pid would otherwise make
-// an orderly shutdown signal the daemon itself and skip the DB close.
+// Review item 1: stopMenubarProcess must refuse its own pid, and on unix its
+// parent. A companion pid file briefly holding the daemon's pid would otherwise
+// make an orderly shutdown signal the daemon itself and skip the DB close.
+// Windows skips the parent check because pids are reused quickly there.
 func TestStopMenubarProcessNeverSignalsSelfOrParent(t *testing.T) {
 	prevPIDDir := pidDir
 	pidDir = t.TempDir()
 	defer func() { pidDir = prevPIDDir }()
 
-	for _, pid := range []int{os.Getpid(), os.Getppid()} {
+	pids := []int{os.Getpid()}
+	if runtime.GOOS != "windows" {
+		pids = append(pids, os.Getppid())
+	}
+	for _, pid := range pids {
 		path := menubarPIDPath(false)
 		if err := os.WriteFile(path, []byte(fmt.Sprintf("%d", pid)), 0o644); err != nil {
 			t.Fatalf("write pid %d: %v", pid, err)

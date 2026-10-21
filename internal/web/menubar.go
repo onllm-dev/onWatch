@@ -724,7 +724,12 @@ func (h *Handler) applyMenubarOldestCapturedAt(card *menubar.ProviderCard, id st
 		return current
 	}
 	present := quotaCapturedTimes(payload)
-	oldest := h.mergeQuotaTimes(id, present)
+	// Cursor's builder reads only the newest snapshot, so a quota missing from
+	// the payload is gone, not windowed out. Remembering it would pin the card
+	// stale for up to menubarQuotaMemoryBound after the quota disappeared.
+	// Anthropic and Mistral read a window (per-quota merge and per-quota latest
+	// snapshots), where a missing quota may simply have aged out.
+	oldest := h.mergeQuotaTimes(id, present, base != "cursor")
 	if oldest.IsZero() {
 		return current
 	}
@@ -805,10 +810,14 @@ const menubarQuotaMemoryBound = 24 * time.Hour
 // been missing longer than menubarQuotaMemoryBound, at which point the entry
 // is dropped. Without that bound a permanently removed quota would pin the
 // card's age (and its stale flag) until the daemon restarted.
-func (h *Handler) mergeQuotaTimes(id string, present map[string]time.Time) time.Time {
+//
+// rememberMissing must be false for providers whose builder reads only the
+// latest snapshot (Cursor): a quota absent there is gone, so it stops counting
+// immediately instead of pinning the card until the bound expires.
+func (h *Handler) mergeQuotaTimes(id string, present map[string]time.Time, rememberMissing bool) time.Time {
 	h.menubarLastGoodMu.Lock()
 	defer h.menubarLastGoodMu.Unlock()
-	if len(present) == 0 {
+	if len(present) == 0 && rememberMissing {
 		// Nothing in the payload to age; leave the remembered set untouched
 		// for a later pass that can tell which quotas are missing.
 		return time.Time{}
@@ -840,9 +849,15 @@ func (h *Handler) mergeQuotaTimes(id string, present map[string]time.Time) time.
 	// bound, measured from the first pass that did not carry them. A quota
 	// that is merely absent from one payload (aged out of the builder's
 	// window) stays remembered; one that is gone for good stops pinning the
-	// card's age.
+	// card's age. Latest-snapshot builders have no window: a missing quota is
+	// dropped at once.
 	for name := range lastSeen {
 		if _, ok := present[name]; ok {
+			continue
+		}
+		if !rememberMissing {
+			delete(lastSeen, name)
+			delete(missing, name)
 			continue
 		}
 		since, seen := missing[name]

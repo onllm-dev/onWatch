@@ -62,6 +62,20 @@ func TestMenubarLockHoldsPid(t *testing.T) {
 	}
 }
 
+// The locked region must never cover the pid text at offset 0: Windows locks
+// are mandatory, so the file would be unreadable while held.
+func TestMenubarLockRegionLeavesPidReadable(t *testing.T) {
+	if menubarLockOffset == 0 {
+		t.Fatal("the locked range must start past the pid text")
+	}
+	if menubarLockOffset <= 4096 {
+		t.Fatalf("lock offset %d is too close to the pid text", menubarLockOffset)
+	}
+	if menubarLockLength <= 0 {
+		t.Fatal("the lock must cover at least one byte")
+	}
+}
+
 // The companion opens its own log; the daemon must not also write it. The
 // relay is disabled when the companion owns the file, which is what stops a
 // hung daemon's 16KB pipe from blocking the companion's refresh worker.

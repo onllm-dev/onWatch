@@ -58,6 +58,14 @@ func terminateProcess(proc *os.Process) error {
 	return syscall.TerminateProcess(handle, 0)
 }
 
+// protectedSignalPID reports whether pid must never be signalled from the
+// menubar pid file. Only this process qualifies: unlike unix, a parent pid is
+// not stable evidence, because Windows reuses pids quickly and the parent at
+// daemon start can belong to a dead launcher by the time shutdown runs.
+func protectedSignalPID(pid int) bool {
+	return pid == os.Getpid()
+}
+
 // processAlive reports whether pid names a running process. Opening a handle
 // is not enough on Windows: a process that has exited still has an openable
 // handle while anything holds one, so ask whether the process object has been

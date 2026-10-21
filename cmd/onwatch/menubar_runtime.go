@@ -140,11 +140,14 @@ func stopMenubarProcess(testMode bool) error {
 		_ = os.Remove(path)
 		return nil
 	}
-	// Never signal this process or its parent. The pid file must name the
-	// companion, but a daemon-side write that raced the companion (or a stale
-	// file) can name the daemon, and signalling it here aborts the shutdown
-	// before the database is closed.
-	if pid == os.Getpid() || pid == os.Getppid() {
+	// Never signal this process, and on unix its parent: the pid file must name
+	// the companion, but a daemon-side write that raced the companion (or a
+	// stale file) can name the daemon, and signalling it here aborts the
+	// shutdown before the database is closed. Windows skips the parent check:
+	// pids are reused quickly, and the parent at daemon start can belong to a
+	// dead launcher by shutdown time, which would wrongly spare a real
+	// companion.
+	if protectedSignalPID(pid) {
 		slog.Warn("Refusing to signal this process from the menubar pid file", "pid", pid, "pid_file", path)
 		_ = os.Remove(path)
 		return nil

@@ -25,6 +25,15 @@ import (
 // menubarLockName is the lock file, kept beside the pid file.
 const menubarLockName = "menubar.lock"
 
+// menubarLockOffset is where the locked byte range starts. The pid is written
+// at offset 0 so the file stays readable for diagnostics; Windows byte-range
+// locks are mandatory, so locking that region would make it unreadable. Unix
+// flock locks the whole file regardless and ignores the offset.
+const menubarLockOffset = 1 << 30
+
+// menubarLockLength is the size of the locked region.
+const menubarLockLength = 1
+
 // errMenubarCompanionRunning is returned when another companion holds the lock.
 var errMenubarCompanionRunning = errors.New("another menubar companion is already running")
 

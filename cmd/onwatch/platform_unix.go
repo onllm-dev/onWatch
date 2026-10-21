@@ -30,6 +30,12 @@ func terminateProcess(proc *os.Process) error {
 	return proc.Signal(syscall.SIGTERM)
 }
 
+// protectedSignalPID reports whether pid must never be signalled from the
+// menubar pid file: this process, or on unix the process that spawned it.
+func protectedSignalPID(pid int) bool {
+	return pid == os.Getpid() || pid == os.Getppid()
+}
+
 // processAlive reports whether pid is a live, non-zombie process.
 func processAlive(pid int) bool {
 	if pid <= 0 {

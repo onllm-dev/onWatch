@@ -240,6 +240,53 @@ func TestMenubarSummarySerializesStaleCheckedAt(t *testing.T) {
 	}
 }
 
+// A provider whose builder reads only the newest snapshot cannot have a quota
+// that merely aged out of a query window: a quota missing from that snapshot
+// is gone. Remembering it would pin the card stale for up to
+// menubarQuotaMemoryBound, which is exactly the bug.
+func TestMenubarLatestSnapshotProviderDropsMissingQuotaImmediately(t *testing.T) {
+	h := &Handler{}
+	newest := time.Now().UTC().Truncate(time.Second)
+	oldest := newest.Add(-6 * time.Hour)
+	withOld := map[string]interface{}{
+		"capturedAt": newest.Format(time.RFC3339),
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "total_usage", "lastUpdatedAt": oldest.Format(time.RFC3339)},
+			map[string]interface{}{"name": "api_usage", "lastUpdatedAt": newest.Format(time.RFC3339)},
+		},
+	}
+	card := &menubar.ProviderCard{}
+	if got := h.applyMenubarOldestCapturedAt(card, "cursor", withOld); !got.Equal(oldest) {
+		t.Fatalf("first pass = %v, want %v", got, oldest)
+	}
+
+	// total_usage is absent from the newest snapshot. Cursor's builder reads
+	// only that snapshot, so the quota is gone and must no longer contribute
+	// its old time.
+	dropped := map[string]interface{}{
+		"capturedAt": newest.Format(time.RFC3339),
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "api_usage", "lastUpdatedAt": newest.Format(time.RFC3339)},
+		},
+	}
+	if got := h.applyMenubarOldestCapturedAt(card, "cursor", dropped); !got.Equal(newest) {
+		t.Fatalf("after the quota left the newest snapshot = %v, want %v (the missing quota must not be remembered)", got, newest)
+	}
+	if got := h.menubarQuotas["cursor"]; len(got) != 1 {
+		t.Fatalf("remembered quotas = %v, want only api_usage", got)
+	}
+
+	// An empty cursor payload is equally authoritative: nothing present means
+	// nothing may stay remembered.
+	card = &menubar.ProviderCard{}
+	if got := h.applyMenubarOldestCapturedAt(card, "cursor", map[string]interface{}{"quotas": []interface{}{}}); !got.IsZero() {
+		t.Fatalf("empty payload = %v, want zero", got)
+	}
+	if got := h.menubarQuotas["cursor"]; len(got) != 0 {
+		t.Fatalf("remembered quotas after empty payload = %v, want none", got)
+	}
+}
+
 // Review item 3: a quota missing from the payload is remembered so the card
 // cannot look fresher than its data, but a quota that is gone for good must
 // stop pinning the card's age after a bound.

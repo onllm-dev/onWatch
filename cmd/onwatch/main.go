@@ -265,6 +265,26 @@ func findOnwatchOnPort(port int) []int {
 	return pids
 }
 
+// executableBaseName returns this binary's normalized base name. It is a
+// variable so tests can simulate a renamed build.
+var executableBaseName = func() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return normalizeExecutableName(filepath.Base(exe))
+}
+
+// normalizeExecutableName lowercases a binary base name and drops the .exe
+// suffix on Windows, so comparisons are case-insensitive and extension-free.
+func normalizeExecutableName(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if runtime.GOOS == "windows" {
+		name = strings.TrimSuffix(name, ".exe")
+	}
+	return name
+}
+
 // isOnwatchProcess checks if a PID belongs to an onwatch (or legacy syntrack)
 // binary. processCommandName is per-platform: ps on Unix, the process image
 // path on Windows, which has no ps.
@@ -272,8 +292,16 @@ func isOnwatchProcess(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	cmd := strings.ToLower(processCommandName(pid))
-	return strings.Contains(cmd, "onwatch") || strings.Contains(cmd, "syntrack")
+	name := normalizeExecutableName(processCommandName(pid))
+	if name == "" {
+		return false
+	}
+	// A renamed build (for example a user-built binary) must still be
+	// recognised, or stop and the menubar sweep never touch it.
+	if own := executableBaseName(); own != "" && name == own {
+		return true
+	}
+	return strings.Contains(name, "onwatch") || strings.Contains(name, "syntrack")
 }
 
 func ensurePIDDir() error {
