@@ -104,27 +104,40 @@ type cursorBadFields struct {
 }
 
 func (b *cursorBadFields) intField(raw json.RawMessage, dst *cursorFlexInt) {
+	b.intFieldDefining(raw, dst)
+}
+
+// intFieldDefining reports whether a present value failed to parse, so the
+// caller can drop the quota that field defines. Absent, null and "" are not
+// failures: #151 treats them as a legitimate zero.
+func (b *cursorBadFields) intFieldDefining(raw json.RawMessage, dst *cursorFlexInt) bool {
 	if len(raw) == 0 {
-		return
+		return false
 	}
 	n, err := parseCursorFlexInt(raw)
 	if err != nil {
 		b.count++
-		return
+		return true
 	}
 	*dst = cursorFlexInt(n)
+	return false
 }
 
 func (b *cursorBadFields) floatField(raw json.RawMessage, dst *cursorFlexFloat) {
+	b.floatFieldDefining(raw, dst)
+}
+
+func (b *cursorBadFields) floatFieldDefining(raw json.RawMessage, dst *cursorFlexFloat) bool {
 	if len(raw) == 0 {
-		return
+		return false
 	}
 	f, err := parseCursorFlexFloat(raw)
 	if err != nil {
 		b.count++
-		return
+		return true
 	}
 	*dst = cursorFlexFloat(f)
+	return false
 }
 
 // intStringField decodes a cent amount that is normally a quoted string but
@@ -260,6 +273,14 @@ type CursorPlanUsage struct {
 	TotalPercentUsed cursorFlexFloat `json:"totalPercentUsed"`
 
 	badNumericFields int
+
+	// Quota-defining fields that failed to parse. Their quota is dropped so a
+	// drifted value is never stored as a fresh 0% reading; the last good card
+	// stays. Distinct from absent/null/"", which legitimately decode to zero.
+	badLimit        bool
+	badTotalPercent bool
+	badAutoPercent  bool
+	badApiPercent   bool
 }
 
 func (p *CursorPlanUsage) UnmarshalJSON(data []byte) error {
@@ -273,10 +294,10 @@ func (p *CursorPlanUsage) UnmarshalJSON(data []byte) error {
 	bad.intField(raw["includedSpend"], &p.IncludedSpend)
 	bad.intField(raw["bonusSpend"], &p.BonusSpend)
 	bad.intField(raw["remaining"], &p.Remaining)
-	bad.intField(raw["limit"], &p.Limit)
-	bad.floatField(raw["autoPercentUsed"], &p.AutoPercentUsed)
-	bad.floatField(raw["apiPercentUsed"], &p.ApiPercentUsed)
-	bad.floatField(raw["totalPercentUsed"], &p.TotalPercentUsed)
+	p.badLimit = bad.intFieldDefining(raw["limit"], &p.Limit)
+	p.badAutoPercent = bad.floatFieldDefining(raw["autoPercentUsed"], &p.AutoPercentUsed)
+	p.badApiPercent = bad.floatFieldDefining(raw["apiPercentUsed"], &p.ApiPercentUsed)
+	p.badTotalPercent = bad.floatFieldDefining(raw["totalPercentUsed"], &p.TotalPercentUsed)
 	if v, ok := raw["remainingBonus"]; ok {
 		_ = json.Unmarshal(v, &p.RemainingBonus)
 	}
@@ -296,6 +317,10 @@ type CursorSpendLimitUsage struct {
 	LimitType           string        `json:"limitType"`
 
 	badNumericFields int
+	// badLimits marks a limit that failed to parse: on_demand is dropped rather
+	// than stored with a fabricated zero limit.
+	badIndividualLimit bool
+	badPooledLimit     bool
 }
 
 func (s *CursorSpendLimitUsage) UnmarshalJSON(data []byte) error {
@@ -306,10 +331,10 @@ func (s *CursorSpendLimitUsage) UnmarshalJSON(data []byte) error {
 
 	var bad cursorBadFields
 	bad.intField(raw["totalSpend"], &s.TotalSpend)
-	bad.intField(raw["pooledLimit"], &s.PooledLimit)
+	s.badPooledLimit = bad.intFieldDefining(raw["pooledLimit"], &s.PooledLimit)
 	bad.intField(raw["pooledUsed"], &s.PooledUsed)
 	bad.intField(raw["pooledRemaining"], &s.PooledRemaining)
-	bad.intField(raw["individualLimit"], &s.IndividualLimit)
+	s.badIndividualLimit = bad.intFieldDefining(raw["individualLimit"], &s.IndividualLimit)
 	bad.intField(raw["individualUsed"], &s.IndividualUsed)
 	bad.intField(raw["individualRemaining"], &s.IndividualRemaining)
 	decodeCursorString(raw["limitType"], &s.LimitType)
@@ -412,6 +437,9 @@ type CursorModelUsage struct {
 	MaxRequestUsage cursorFlexInt `json:"maxRequestUsage"`
 
 	badNumericFields int
+	// badMaxRequests marks a request limit that failed to parse: that model's
+	// quota is dropped rather than stored as a fabricated no-limit reading.
+	badMaxRequests bool
 }
 
 func (m *CursorModelUsage) UnmarshalJSON(data []byte) error {
@@ -422,7 +450,7 @@ func (m *CursorModelUsage) UnmarshalJSON(data []byte) error {
 
 	var bad cursorBadFields
 	bad.intField(raw["numRequests"], &m.NumRequests)
-	bad.intField(raw["maxRequestUsage"], &m.MaxRequestUsage)
+	m.badMaxRequests = bad.intFieldDefining(raw["maxRequestUsage"], &m.MaxRequestUsage)
 
 	m.badNumericFields = bad.count
 	return nil
@@ -683,77 +711,87 @@ func buildStandardQuotas(
 
 	switch accountType {
 	case CursorAccountIndividual:
-		totalPercent := float64(pu.TotalPercentUsed)
-		if totalPercent != 0 || pu.Limit > 0 {
-			percentUsed := totalPercent
-			if percentUsed == 0 && pu.Limit > 0 {
-				planUsed := pu.TotalSpend
-				if planUsed == 0 {
-					planUsed = pu.Limit - pu.Remaining
+		if !pu.badTotalPercent {
+			totalPercent := float64(pu.TotalPercentUsed)
+			if totalPercent != 0 || pu.Limit > 0 {
+				percentUsed := totalPercent
+				if percentUsed == 0 && pu.Limit > 0 {
+					planUsed := pu.TotalSpend
+					if planUsed == 0 {
+						planUsed = pu.Limit - pu.Remaining
+					}
+					percentUsed = float64(planUsed) / float64(pu.Limit) * 100
 				}
-				percentUsed = float64(planUsed) / float64(pu.Limit) * 100
+				quotas = append(quotas, CursorQuota{
+					Name:        "total_usage",
+					Used:        float64(pu.TotalSpend) / 100,
+					Limit:       float64(pu.Limit) / 100,
+					Utilization: percentUsed,
+					Format:      CursorFormatPercent,
+					ResetsAt:    billingCycleEnd,
+				})
 			}
-			quotas = append(quotas, CursorQuota{
-				Name:        "total_usage",
-				Used:        float64(pu.TotalSpend) / 100,
-				Limit:       float64(pu.Limit) / 100,
-				Utilization: percentUsed,
-				Format:      CursorFormatPercent,
-				ResetsAt:    billingCycleEnd,
-			})
 		}
 	case CursorAccountTeam:
-		planUsed := pu.TotalSpend
-		if planUsed == 0 && pu.Limit > 0 {
-			planUsed = pu.Limit - pu.Remaining
-		}
-		utilization := 0.0
-		if pu.Limit > 0 {
-			utilization = float64(planUsed) / float64(pu.Limit) * 100
-		}
-		quotas = append(quotas, CursorQuota{
-			Name:        "total_usage",
-			Used:        float64(planUsed) / 100,
-			Limit:       float64(pu.Limit) / 100,
-			Utilization: utilization,
-			Format:      CursorFormatDollars,
-			ResetsAt:    billingCycleEnd,
-		})
-	default:
-		totalPercent := float64(pu.TotalPercentUsed)
-		if totalPercent != 0 || pu.Limit > 0 {
-			percentUsed := totalPercent
-			if percentUsed == 0 && pu.Limit > 0 {
-				planUsed := pu.TotalSpend
-				if planUsed == 0 {
-					planUsed = pu.Limit - pu.Remaining
-				}
-				percentUsed = float64(planUsed) / float64(pu.Limit) * 100
+		if !pu.badTotalPercent && !pu.badLimit {
+			planUsed := pu.TotalSpend
+			if planUsed == 0 && pu.Limit > 0 {
+				planUsed = pu.Limit - pu.Remaining
+			}
+			utilization := 0.0
+			if pu.Limit > 0 {
+				utilization = float64(planUsed) / float64(pu.Limit) * 100
 			}
 			quotas = append(quotas, CursorQuota{
 				Name:        "total_usage",
-				Used:        float64(pu.TotalSpend) / 100,
+				Used:        float64(planUsed) / 100,
 				Limit:       float64(pu.Limit) / 100,
-				Utilization: percentUsed,
-				Format:      CursorFormatPercent,
+				Utilization: utilization,
+				Format:      CursorFormatDollars,
 				ResetsAt:    billingCycleEnd,
 			})
+		}
+	default:
+		if !pu.badTotalPercent {
+			totalPercent := float64(pu.TotalPercentUsed)
+			if totalPercent != 0 || pu.Limit > 0 {
+				percentUsed := totalPercent
+				if percentUsed == 0 && pu.Limit > 0 {
+					planUsed := pu.TotalSpend
+					if planUsed == 0 {
+						planUsed = pu.Limit - pu.Remaining
+					}
+					percentUsed = float64(planUsed) / float64(pu.Limit) * 100
+				}
+				quotas = append(quotas, CursorQuota{
+					Name:        "total_usage",
+					Used:        float64(pu.TotalSpend) / 100,
+					Limit:       float64(pu.Limit) / 100,
+					Utilization: percentUsed,
+					Format:      CursorFormatPercent,
+					ResetsAt:    billingCycleEnd,
+				})
+			}
 		}
 	}
 
-	quotas = append(quotas, CursorQuota{
-		Name:        "auto_usage",
-		Utilization: float64(pu.AutoPercentUsed),
-		Format:      CursorFormatPercent,
-		ResetsAt:    billingCycleEnd,
-	})
+	if !pu.badAutoPercent {
+		quotas = append(quotas, CursorQuota{
+			Name:        "auto_usage",
+			Utilization: float64(pu.AutoPercentUsed),
+			Format:      CursorFormatPercent,
+			ResetsAt:    billingCycleEnd,
+		})
+	}
 
-	quotas = append(quotas, CursorQuota{
-		Name:        "api_usage",
-		Utilization: float64(pu.ApiPercentUsed),
-		Format:      CursorFormatPercent,
-		ResetsAt:    billingCycleEnd,
-	})
+	if !pu.badApiPercent {
+		quotas = append(quotas, CursorQuota{
+			Name:        "api_usage",
+			Utilization: float64(pu.ApiPercentUsed),
+			Format:      CursorFormatPercent,
+			ResetsAt:    billingCycleEnd,
+		})
+	}
 
 	if creditGrants != nil && stripeResp != nil {
 		grantTotalCents := 0
@@ -788,11 +826,13 @@ func buildStandardQuotas(
 		su := usage.SpendLimitUsage
 		limit := su.IndividualLimit
 		remaining := su.IndividualRemaining
+		bad := su.badIndividualLimit
 		if limit == 0 && su.PooledLimit > 0 {
 			limit = su.PooledLimit
 			remaining = su.PooledRemaining
+			bad = su.badPooledLimit
 		}
-		if limit > 0 {
+		if limit > 0 && !bad {
 			used := limit - remaining
 			quotas = append(quotas, CursorQuota{
 				Name:        "on_demand",
@@ -831,6 +871,11 @@ func buildEnterpriseQuotas(usage *CursorUsageResponse, requestUsage *CursorReque
 	var quotas []CursorQuota
 
 	for model, mu := range requestUsage.Models {
+		if mu.badMaxRequests {
+			// A drifted request limit must not be stored as a fabricated
+			// no-limit reading; keep the last good card for this model.
+			continue
+		}
 		used := mu.NumRequests
 		limit := mu.MaxRequestUsage
 		utilization := float64(0)
