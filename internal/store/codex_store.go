@@ -1062,9 +1062,10 @@ func (s *Store) MergeCodexAccountData(targetID, sourceID int64) error {
 	// Move tracked reset credits. UPDATE OR REPLACE resolves a credit ID that
 	// exists on both rows by deleting the target row and inserting the source
 	// one. The target's notification marker and earliest first_seen must survive
-	// that, and the merged row must stay live if either side was live - a stale
-	// gone_at on the source must not hide a live target credit. Copy those
-	// values onto the source rows first, with parameterized SQL.
+	// that, the merged row must stay live if either side was live - a stale
+	// gone_at on the source must not hide a live target credit - and status and
+	// last_seen must come from the newer row. Copy those values onto the source
+	// rows first, with parameterized SQL.
 	if _, err := tx.Exec(
 		`UPDATE codex_reset_credits AS src SET
 			notified_at = COALESCE(src.notified_at, (
@@ -1075,6 +1076,16 @@ func (s *Store) MergeCodexAccountData(targetID, sourceID int64) error {
 				SELECT tgt.first_seen FROM codex_reset_credits AS tgt
 				WHERE tgt.account_id = ? AND tgt.credit_id = src.credit_id
 			), src.first_seen)),
+			status = COALESCE((
+				SELECT tgt.status FROM codex_reset_credits AS tgt
+				WHERE tgt.account_id = ? AND tgt.credit_id = src.credit_id
+					AND julianday(tgt.last_seen) > julianday(src.last_seen)
+			), src.status),
+			last_seen = COALESCE((
+				SELECT tgt.last_seen FROM codex_reset_credits AS tgt
+				WHERE tgt.account_id = ? AND tgt.credit_id = src.credit_id
+					AND julianday(tgt.last_seen) > julianday(src.last_seen)
+			), src.last_seen),
 			gone_at = CASE
 				WHEN src.gone_at IS NULL OR EXISTS (
 					SELECT 1 FROM codex_reset_credits AS tgt
@@ -1083,7 +1094,7 @@ func (s *Store) MergeCodexAccountData(targetID, sourceID int64) error {
 				ELSE src.gone_at
 			END
 		WHERE src.account_id = ?`,
-		targetID, targetID, targetID, sourceID,
+		targetID, targetID, targetID, targetID, targetID, sourceID,
 	); err != nil {
 		return fmt.Errorf("failed to merge reset-credit metadata: %w", err)
 	}

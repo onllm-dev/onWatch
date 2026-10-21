@@ -867,3 +867,98 @@ func TestSyncCodexResetCredits_NeverExpiringClearsStoredExpiry(t *testing.T) {
 		t.Fatalf("row = %#v, want a cleared, known never-expiring expiry", rows)
 	}
 }
+
+// On a merge, UPDATE OR REPLACE keeps the source row's status and last_seen.
+// When the target's row is newer, the merged row must keep the target's
+// last_seen and that row's status instead.
+func TestMergeCodexAccountData_NewerRowWinsStatusAndLastSeen(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	expiry := now.Add(4 * time.Hour)
+	targetSeen := now
+	sourceSeen := now.Add(-2 * time.Hour)
+
+	if err := s.SyncCodexResetCredits(1, []CodexResetCreditRecord{{
+		CreditID:  "shared",
+		Status:    "redeemed",
+		ExpiresAt: &expiry,
+	}}, targetSeen); err != nil {
+		t.Fatalf("Sync target: %v", err)
+	}
+	if err := s.SyncCodexResetCredits(2, []CodexResetCreditRecord{{
+		CreditID:  "shared",
+		Status:    "available",
+		ExpiresAt: &expiry,
+	}}, sourceSeen); err != nil {
+		t.Fatalf("Sync source: %v", err)
+	}
+
+	if err := s.MergeCodexAccountData(1, 2); err != nil {
+		t.Fatalf("MergeCodexAccountData: %v", err)
+	}
+
+	rows, err := s.QueryCodexResetCredits(1)
+	if err != nil {
+		t.Fatalf("Query target: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	row := rows[0]
+	if !row.LastSeen.Equal(targetSeen) {
+		t.Fatalf("LastSeen = %v, want the newer target %v", row.LastSeen, targetSeen)
+	}
+	if row.Status != "redeemed" {
+		t.Fatalf("Status = %q, want the status of the newer row (%q)", row.Status, "redeemed")
+	}
+}
+
+// The rule is symmetric: when the source row is newer, its status and
+// last_seen win.
+func TestMergeCodexAccountData_NewerSourceRowWins(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	expiry := now.Add(4 * time.Hour)
+	targetSeen := now.Add(-2 * time.Hour)
+	sourceSeen := now
+
+	if err := s.SyncCodexResetCredits(1, []CodexResetCreditRecord{{
+		CreditID:  "shared",
+		Status:    "available",
+		ExpiresAt: &expiry,
+	}}, targetSeen); err != nil {
+		t.Fatalf("Sync target: %v", err)
+	}
+	if err := s.SyncCodexResetCredits(2, []CodexResetCreditRecord{{
+		CreditID:  "shared",
+		Status:    "redeemed",
+		ExpiresAt: &expiry,
+	}}, sourceSeen); err != nil {
+		t.Fatalf("Sync source: %v", err)
+	}
+
+	if err := s.MergeCodexAccountData(1, 2); err != nil {
+		t.Fatalf("MergeCodexAccountData: %v", err)
+	}
+
+	rows, err := s.QueryCodexResetCredits(1)
+	if err != nil {
+		t.Fatalf("Query target: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if !rows[0].LastSeen.Equal(sourceSeen) || rows[0].Status != "redeemed" {
+		t.Fatalf("row = %#v, want the newer source's redeemed/%v", rows[0], sourceSeen)
+	}
+}
