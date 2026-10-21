@@ -2004,7 +2004,7 @@
 
             async function loadPreferences() {
                 try {
-                    const response = await fetch(API_BASE + "/api/menubar/preferences", {
+                    const response = await menubarFetch(API_BASE + "/api/menubar/preferences", {
                         credentials: "same-origin",
                         cache: "no-store",
                         headers: { "Accept": "application/json" }
@@ -2086,6 +2086,36 @@
                 return true;
             }
 
+            // Every request gets a deadline. The daemon can accept the socket
+            // and never reply; without one the in-flight flag never clears,
+            // later show/focus refreshes are swallowed and the 60s tick piles
+            // up hung connections until the host's per-origin limit blocks
+            // preference saves. A timeout rejects like any other failure, so
+            // the last data stays on screen.
+            const MENUBAR_FETCH_TIMEOUT_MS = 20000;
+            function menubarFetch(url, options, timeoutMs) {
+                const opts = Object.assign({}, options || {});
+                const controller = new AbortController();
+                const external = opts.signal;
+                if (external) {
+                    if (external.aborted) {
+                        controller.abort();
+                    } else {
+                        external.addEventListener("abort", () => controller.abort(), { once: true });
+                    }
+                }
+                // jsdom/node keep the process alive for a pending timer, so a
+                // hung request must always be released (real browsers abort the
+                // fetch itself at this deadline).
+                const timer = setTimeout(() => {
+                    const timeout = new Error("request timed out");
+                    timeout.name = "TimeoutError";
+                    controller.abort(timeout);
+                }, timeoutMs > 0 ? timeoutMs : MENUBAR_FETCH_TIMEOUT_MS);
+                opts.signal = controller.signal;
+                return fetch(url, opts).finally(() => clearTimeout(timer));
+            }
+
             async function loadSnapshot(signal) {
                 const generation = ++snapshotGeneration;
                 if (generation > appliedSnapshotGeneration) {
@@ -2093,7 +2123,7 @@
                 }
                 render();
                 try {
-                    const response = await fetch(API_BASE + "/api/menubar/summary", {
+                    const response = await menubarFetch(API_BASE + "/api/menubar/summary", {
                         signal,
                         credentials: "same-origin",
                         cache: "no-store",

@@ -351,3 +351,101 @@ func TestMenubarInitRunsAfterTopLevelBindings(t *testing.T) {
 		}
 	}
 }
+
+// A daemon that accepts the connection and never replies must not wedge the
+// popover. Both the summary and the preferences fetch go through menubarFetch,
+// which aborts after MENUBAR_FETCH_TIMEOUT_MS; loadSnapshot's finally then
+// clears the in-flight flag so the next show/focus refresh is not swallowed.
+func TestMenubarFetchesTimeOut(t *testing.T) {
+	html := readMenubarHTML(t)
+
+	if strings.Count(html, "menubarFetch(API_BASE") != 2 {
+		t.Fatalf("both the preferences and the summary fetch must go through menubarFetch")
+	}
+	if !strings.Contains(html, "const MENUBAR_FETCH_TIMEOUT_MS = 20000;") {
+		t.Fatal("menubar.html must bound every fetch with a 20s deadline")
+	}
+
+	fetchSlice := menubarSlice(t, html, "const MENUBAR_FETCH_TIMEOUT_MS", "async function loadSnapshot(signal)")
+	loadSlice := menubarSlice(t, html, "let pendingFreshSnapshot = false;", "function nativeHandler(")
+
+	script := `
+const assert = require('node:assert/strict');
+` + fetchSlice + `
+// A fetch that never replies. Only an abort signal can settle it, which is
+// exactly the deadline case: with no deadline there is no way out.
+global.fetch = (url, opts) => new Promise((resolve, reject) => {
+    if (!opts || !opts.signal) return;
+    opts.signal.addEventListener('abort', () => {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        reject(error);
+    });
+});
+
+(async () => {
+    // The deadline aborts a hung request instead of waiting forever. The wait
+    // below also keeps node's event loop alive, so a missing deadline shows up
+    // as "not settled" rather than a silently abandoned promise.
+    let settled = false;
+    menubarFetch('/api/menubar/summary', {}, 40).then(
+        () => { settled = true; },
+        () => { settled = true; },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.ok(settled, "a hung fetch must abort at its deadline instead of waiting forever");
+
+    // An external signal (the mistral recovery path) still aborts promptly and
+    // wins over the longer deadline.
+    const external = new AbortController();
+    let externalSettled = false;
+    menubarFetch('/api/menubar/summary', { signal: external.signal }, 5000).then(
+        () => { externalSettled = true; },
+        () => { externalSettled = true; },
+    );
+    setTimeout(() => external.abort(), 20);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.ok(externalSettled, 'the external abort must win over the deadline');
+
+    // A normal response resolves and leaves no timer behind.
+    global.fetch = async (url, opts) => ({ ok: true, json: async () => ({ providers: [] }) });
+    const response = await menubarFetch('/api/menubar/summary', {}, 40);
+    assert.equal(response.ok, true);
+})().catch((error) => { console.error(error); process.exit(1); });
+`
+	runMenubarNode(t, script)
+
+	// loadSnapshot/requestFreshSnapshot clear the in-flight flag when the fetch
+	// fails, so a later show/focus refresh is not swallowed.
+	script = `
+const assert = require('node:assert/strict');
+const API_BASE = "";
+const state = { snapshot: null, loading: true, error: "" };
+let renders = 0;
+function render() { renders += 1; }
+function applySnapshot() { return false; }
+function writeCachedSnapshot() {}
+` + loadSlice + `
+let calls = 0;
+// Mirrors the real loadSnapshot without an external signal: a failed fetch is
+// recorded and the promise resolves, which is what lets the finally clear the
+// in-flight flag.
+async function loadSnapshot() {
+    calls += 1;
+    state.error = "request timed out";
+}
+
+(async () => {
+    requestFreshSnapshot();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(calls, 1, "the first show must fetch");
+    // A second show after the failed fetch must start a new fetch instead of
+    // being swallowed by a stuck in-flight flag.
+    requestFreshSnapshot();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(calls, 2, "a timed-out fetch must clear the in-flight flag");
+    assert.ok(state.snapshot === null, "a timed-out fetch must never blank or fabricate a snapshot");
+})().catch((error) => { console.error(error); process.exit(1); });
+`
+	runMenubarNode(t, script)
+}
