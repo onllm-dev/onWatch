@@ -4282,32 +4282,69 @@ body.accounts-overview-mode #sessions-section {
 }
 
 /* ═══════════════════════════════════════════
-   19. ANTHROPIC PROMO TAG (inline in quota cards)
+   PEAK/OFF-PEAK CHIP (Command Code, OpenCode, DeepSeek)
    ═══════════════════════════════════════════ */
 
-.promo-tag-inline {
+.peak-chip-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 4px;
+  border-radius: var(--radius-full, 999px);
+  cursor: default;
+}
+
+.peak-chip-wrap:focus-visible {
+  outline: 2px solid var(--accent-teal);
+  outline-offset: 2px;
+}
+
+.peak-chip {
   display: inline-block;
+  max-width: 100%;
   padding: 2px 8px;
   border-radius: var(--radius-full, 999px);
   font-size: 10px;
   font-weight: 600;
-  cursor: pointer;
-  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: var(--transition-base);
 }
 
-.promo-tag-inline:hover {
-  filter: brightness(0.9);
-}
-
-.promo-tag-inline.promo-offpeak {
+.peak-chip.promo-offpeak {
   background: var(--accent-teal-muted);
   color: var(--accent-teal-text);
 }
 
-.promo-tag-inline.promo-peak {
+.peak-chip.promo-peak {
   background: var(--accent-peach-muted);
   color: var(--accent-peach-text);
+}
+
+/* The dashboard card clips overflow, so the child tip stays hidden and the
+   shared floating tip is used instead. */
+.peak-chip-tip {
+  display: none;
+}
+
+/* Floating tooltip shared by every chip. Fixed positioning keeps it clear of
+   the card's overflow clipping. */
+.peak-chip-floating-tip {
+  position: fixed;
+  z-index: 1200;
+  max-width: 260px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  box-shadow: var(--shadow-card-hover);
+  pointer-events: none;
 }
 
 /* ═══════════════════════════════════════════

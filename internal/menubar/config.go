@@ -123,7 +123,7 @@ type ProviderCard struct {
 	UpdatedAt        string                  `json:"updated_at,omitempty"`
 	Quotas           []QuotaMeter            `json:"quotas"`
 	Trends           []TrendSeries           `json:"trends,omitempty"`
-	Promo            *ProviderPromo          `json:"promo,omitempty"`
+	Peak             *ProviderPeak           `json:"peak,omitempty"`
 	// UpdatedAtTime is the provider's last successful data time as RFC3339.
 	// Clients compute the age label from it against their own wall clock, so
 	// the label keeps counting up even when the daemon cannot be reached.
@@ -142,17 +142,6 @@ type ProviderCard struct {
 	// quota age, but their staleness follows the primary windows only, so an
 	// API-only quota refreshed every tenth poll cannot mark the card stale.
 	StaleCheckedAt string `json:"stale_checked_at,omitempty"`
-}
-
-// ProviderPromo carries promo metadata for a provider card.
-type ProviderPromo struct {
-	ID               string `json:"id"`
-	Title            string `json:"title"`
-	CompactText      string `json:"compact_text"`
-	PeakStartHourET  int    `json:"peak_start_hour_et"`
-	PeakEndHourET    int    `json:"peak_end_hour_et"`
-	PeakWeekdaysOnly bool   `json:"peak_weekdays_only"`
-	EndsAt           string `json:"ends_at,omitempty"`
 }
 
 // QuotaMeter represents one circular quota meter inside a provider card.

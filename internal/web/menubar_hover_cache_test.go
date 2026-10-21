@@ -341,7 +341,6 @@ func TestMenubarInitRunsAfterTopLevelBindings(t *testing.T) {
 		"let appliedSnapshotGeneration = 0;",
 		"let appliedSnapshotTime = null;",
 		"let resizeReportDelivered = false;",
-		"let _menubarPromos = [];",
 	} {
 		declarationIndex := strings.Index(html, declaration)
 		if declarationIndex < 0 {

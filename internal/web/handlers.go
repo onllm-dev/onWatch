@@ -810,21 +810,21 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 	}
 
 	// Parse dashboard template (layout + dashboard)
-	dashboardTmpl, err := template.New("").Funcs(recoveryTemplateFuncs).ParseFS(templatesFS, "templates/layout.html", "templates/dashboard.html")
+	dashboardTmpl, err := template.New("").Funcs(recoveryTemplateFuncs).Funcs(peakHoursTemplateFuncs).ParseFS(templatesFS, "templates/layout.html", "templates/dashboard.html")
 	if err != nil {
 		logger.Error("failed to parse dashboard template", "error", err)
 		dashboardTmpl = template.New("empty")
 	}
 
 	// Parse login template (layout + login)
-	loginTmpl, err := template.New("").Funcs(recoveryTemplateFuncs).ParseFS(templatesFS, "templates/layout.html", "templates/login.html")
+	loginTmpl, err := template.New("").Funcs(recoveryTemplateFuncs).Funcs(peakHoursTemplateFuncs).ParseFS(templatesFS, "templates/layout.html", "templates/login.html")
 	if err != nil {
 		logger.Error("failed to parse login template", "error", err)
 		loginTmpl = template.New("empty")
 	}
 
 	// Parse settings template (layout + settings)
-	settingsTmpl, err := template.New("").Funcs(recoveryTemplateFuncs).ParseFS(templatesFS, "templates/layout.html", "templates/settings.html")
+	settingsTmpl, err := template.New("").Funcs(recoveryTemplateFuncs).Funcs(peakHoursTemplateFuncs).ParseFS(templatesFS, "templates/layout.html", "templates/settings.html")
 	if err != nil {
 		logger.Error("failed to parse settings template", "error", err)
 		settingsTmpl = template.New("empty")
@@ -6515,78 +6515,6 @@ func (h *Handler) buildZaiInsights(hidden map[string]bool) insightsResponse {
 	return resp
 }
 
-// ── Anthropic Promo Definitions ──
-
-type anthropicPromo struct {
-	ID               string `json:"id"`
-	Title            string `json:"title"`
-	Description      string `json:"description"`
-	StartsAt         string `json:"startsAt"`
-	EndsAt           string `json:"endsAt"`
-	PeakStartHourET  int    `json:"peakStartHourET"`
-	PeakEndHourET    int    `json:"peakEndHourET"`
-	PeakWeekdaysOnly bool   `json:"peakWeekdaysOnly"`
-}
-
-var anthropicPromos = []anthropicPromo{
-	{
-		ID:               "peak-hours-2026",
-		Title:            "Peak Hours",
-		Description:      "During peak hours (weekdays 5am-11am PT / 8am-2pm ET) you move through 5-hour session limits faster. Weekly limits are unchanged.",
-		StartsAt:         "2026-03-28T00:00:00-07:00",
-		EndsAt:           "",
-		PeakStartHourET:  8,
-		PeakEndHourET:    14,
-		PeakWeekdaysOnly: true,
-	},
-}
-
-// activeAnthropicPromo returns the promo entry currently in effect, or nil.
-// An empty EndsAt means the entry is ongoing (no end date).
-func activeAnthropicPromo(now time.Time) *anthropicPromo {
-	for i := range anthropicPromos {
-		start, err := time.Parse(time.RFC3339, anthropicPromos[i].StartsAt)
-		if err != nil {
-			continue
-		}
-		if now.Before(start) {
-			continue
-		}
-		if anthropicPromos[i].EndsAt != "" {
-			end, err := time.Parse(time.RFC3339, anthropicPromos[i].EndsAt)
-			if err != nil {
-				continue
-			}
-			if !now.Before(end) {
-				continue
-			}
-		}
-		return &anthropicPromos[i]
-	}
-	return nil
-}
-
-// isAnthropicPeakHours reports whether the given time falls inside the promo's
-// peak-hours window. Timezone for PeakStartHourET/PeakEndHourET is America/New_York.
-func isAnthropicPeakHours(p *anthropicPromo, now time.Time) bool {
-	if p == nil {
-		return false
-	}
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		return false
-	}
-	et := now.In(loc)
-	if p.PeakWeekdaysOnly {
-		wd := et.Weekday()
-		if wd == time.Saturday || wd == time.Sunday {
-			return false
-		}
-	}
-	hour := et.Hour()
-	return hour >= p.PeakStartHourET && hour < p.PeakEndHourET
-}
-
 // ── Anthropic Provider Handlers ──
 
 // currentAnthropic returns Anthropic quota status.
@@ -6610,9 +6538,6 @@ func (h *Handler) buildAnthropicCurrentOK() (response map[string]interface{}, re
 	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
 		"quotas":     []interface{}{},
-	}
-	if promo := activeAnthropicPromo(now); promo != nil {
-		response["promo"] = promo
 	}
 
 	if h.store == nil {

@@ -468,29 +468,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	if h.config != nil && h.config.HasProvider("anthropic") && h.providerDashboardVisible("anthropic", visibility) {
 		attempted["anthropic"] = struct{}{}
 		payload, readOK, hasData := h.buildAnthropicCurrentOK()
-		add(h.menubarResolveCard("anthropic", resolveProviderTabLabel("anthropic", labels), "", payload, readOK, hasData, normalized.WarningPercent, normalized.CriticalPercent, func(card *menubar.ProviderCard) {
-			promoData, ok := payload["promo"]
-			if !ok || promoData == nil {
-				return
-			}
-			p, ok := promoData.(*anthropicPromo)
-			if !ok {
-				return
-			}
-			compactText := "Off-peak hours"
-			if isAnthropicPeakHours(p, time.Now()) {
-				compactText = "Peak hours"
-			}
-			card.Promo = &menubar.ProviderPromo{
-				ID:               p.ID,
-				Title:            p.Title,
-				CompactText:      compactText,
-				PeakStartHourET:  p.PeakStartHourET,
-				PeakEndHourET:    p.PeakEndHourET,
-				PeakWeekdaysOnly: p.PeakWeekdaysOnly,
-				EndsAt:           p.EndsAt,
-			}
-		}))
+		add(h.menubarResolveCard("anthropic", resolveProviderTabLabel("anthropic", labels), "", payload, readOK, hasData, normalized.WarningPercent, normalized.CriticalPercent, nil))
 	}
 	if h.config != nil && h.config.HasProvider("copilot") && h.providerDashboardVisible("copilot", visibility) {
 		attempted["copilot"] = struct{}{}
@@ -587,7 +565,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	if h.config != nil && h.config.HasProvider("opencode") && h.providerDashboardVisible("opencode", visibility) {
 		attempted["opencode"] = struct{}{}
 		payload, readOK, hasData := h.buildOpenCodeCurrentOK()
-		add(h.menubarResolveCard("opencode", resolveProviderTabLabel("opencode", labels), "", payload, readOK, hasData, normalized.WarningPercent, normalized.CriticalPercent, nil))
+		add(h.menubarResolveCard("opencode", resolveProviderTabLabel("opencode", labels), "", payload, readOK, hasData, normalized.WarningPercent, normalized.CriticalPercent, openCodePeakDecorator))
 	}
 	if h.config != nil && h.config.HasProvider("ollama") && h.providerDashboardVisible("ollama", visibility) {
 		attempted["ollama"] = struct{}{}
@@ -602,7 +580,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	if h.config != nil && h.config.HasProvider("commandcode") && h.providerDashboardVisible("commandcode", visibility) {
 		attempted["commandcode"] = struct{}{}
 		payload, readOK, hasData := h.buildCommandCodeCurrentOK()
-		add(h.menubarResolveCard("commandcode", resolveProviderTabLabel("commandcode", labels), "", payload, readOK, hasData, normalized.WarningPercent, normalized.CriticalPercent, nil))
+		add(h.menubarResolveCard("commandcode", resolveProviderTabLabel("commandcode", labels), "", payload, readOK, hasData, normalized.WarningPercent, normalized.CriticalPercent, commandCodePeakDecorator))
 	}
 	if h.config != nil && h.config.HasProvider("cursor") && h.providerDashboardVisible("cursor", visibility) {
 		attempted["cursor"] = struct{}{}
@@ -1157,6 +1135,7 @@ func (h *Handler) renderMenubarHTML(view menubar.ViewType, settings *menubar.Set
 	}
 	content := strings.Replace(string(page), "__ONWATCH_MENUBAR_BOOTSTRAP__", string(bootstrap), 1)
 	content = strings.ReplaceAll(content, "__ONWATCH_MISTRAL_ASSET_VERSION__", mistralRecoveryAssetVersion)
+	content = strings.ReplaceAll(content, "__ONWATCH_PEAK_ASSET_VERSION__", peakHoursAssetVersion)
 	basePath := h.getBasePath()
 	baseJSON, _ := json.Marshal(basePath)
 	content = strings.ReplaceAll(content, "__ONWATCH_BASE_PATH_JSON__", string(baseJSON))
@@ -1529,6 +1508,19 @@ func buildAggregate(providers []menubar.ProviderCard) menubar.Aggregate {
 		aggregate.Label = "All Good"
 	}
 	return aggregate
+}
+
+// commandCodePeakDecorator attaches the DeepSeek peak schedule to the Command
+// Code card. Command Code serves the DeepSeek models, so the provider-level
+// card shows the schedule, model note, and peak pricing together.
+func commandCodePeakDecorator(card *menubar.ProviderCard) {
+	card.Peak = menubar.NewDeepSeekPeak("commandcode", "Command Code DeepSeek models", menubar.DeepSeekPeakPricing)
+}
+
+// openCodePeakDecorator attaches the DeepSeek peak schedule to the OpenCode Go
+// card. The schedule applies to the DeepSeek models the Go plan exposes.
+func openCodePeakDecorator(card *menubar.ProviderCard) {
+	card.Peak = menubar.NewDeepSeekPeak("opencode", menubar.DeepSeekPeakModelNote, "")
 }
 
 func sortProviderCards(cards []menubar.ProviderCard, preferred []string) {

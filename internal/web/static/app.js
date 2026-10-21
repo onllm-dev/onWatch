@@ -148,6 +148,7 @@ const State = {
   modalChart: null,
   countdownInterval: null,
   refreshInterval: null,
+  peakTickInterval: null,
   currentQuotas: {},
   // Table data caches
   allCyclesData: [],
@@ -1339,113 +1340,24 @@ function getQuotaDisplayName(quotaKey, provider) {
 
 // ── Anthropic Dynamic Card Rendering ──
 
-// ── Anthropic Promo ──
+// ── Peak/off-peak chips ──
+// The schedule itself lives in peak-hours.js, shared with the menubar. These
+// three providers serve the DeepSeek models the schedule applies to.
 
-function isAnthropicPeakHours(promo) {
-  const now = new Date();
-  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
-  const et = new Date(etStr);
-  const hour = et.getHours();
-  const day = et.getDay();
-  const isWeekday = day >= 1 && day <= 5;
-  return promo.peakWeekdaysOnly ? (isWeekday && hour >= promo.peakStartHourET && hour < promo.peakEndHourET) : false;
+const peakProviderMeta = {
+  commandcode: { provider: 'commandcode', model_note: 'Command Code DeepSeek models', pricing: 'peak $0.30 / $1.20' },
+  opencode: { provider: 'opencode', model_note: 'DeepSeek V4.1 Flash / V4 Pro' },
+  deepseek: { provider: 'deepseek' }
+};
+
+function peakMetaForProvider(provider) {
+  return peakProviderMeta[provider] || null;
 }
 
-// Compute minutes until the next peak/off-peak transition in ET
-function promoMinutesUntilTransition(promo) {
-  const now = new Date();
-  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
-  const et = new Date(etStr);
-  const hour = et.getHours();
-  const min = et.getMinutes();
-  const day = et.getDay(); // 0=Sun, 6=Sat
-  const isWeekday = day >= 1 && day <= 5;
-  const isPeak = promo.peakWeekdaysOnly ? (isWeekday && hour >= promo.peakStartHourET && hour < promo.peakEndHourET) : false;
-
-  let totalMin;
-  if (isPeak) {
-    // Currently peak - countdown to peak end (peakEndHourET today)
-    totalMin = (promo.peakEndHourET - hour - 1) * 60 + (60 - min);
-  } else if (isWeekday && hour < promo.peakStartHourET) {
-    // Before peak today - countdown to peak start
-    totalMin = (promo.peakStartHourET - hour - 1) * 60 + (60 - min);
-  } else {
-    // After peak on weekday, or weekend - countdown to next weekday peak start
-    let daysToAdd;
-    if (day === 5) daysToAdd = 3;      // Fri after peak -> Mon
-    else if (day === 6) daysToAdd = 2;  // Sat -> Mon
-    else if (day === 0) daysToAdd = 1;  // Sun -> Mon
-    else daysToAdd = 1;                 // Weekday after peak -> next day
-    totalMin = (daysToAdd - 1) * 1440 + (24 - hour - 1) * 60 + (60 - min) + promo.peakStartHourET * 60;
-  }
-
-  // Cap at promo end date if provided (empty string = ongoing, no cap).
-  if (promo.endsAt) {
-    const promoEnd = new Date(promo.endsAt);
-    if (!isNaN(promoEnd.getTime())) {
-      const promoEndMin = Math.floor((promoEnd - now) / 60000);
-      if (promoEndMin > 0 && promoEndMin < totalMin) totalMin = promoEndMin;
-    }
-  }
-
-  return Math.max(0, totalMin);
-}
-
-// Format minutes into a compact countdown string
-function formatPromoCountdown(minutes) {
-  if (minutes <= 0) return '';
-  if (minutes >= 1440) {
-    const d = Math.floor(minutes / 1440);
-    const h = Math.floor((minutes % 1440) / 60);
-    return h > 0 ? d + 'd ' + h + 'h' : d + 'd';
-  }
-  if (minutes >= 60) {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return m > 0 ? h + 'h ' + m + 'm' : h + 'h';
-  }
-  return minutes + 'm';
-}
-
-// Build the full promo label text with countdown.
-// Renders "Peak hours till <countdown to peak end>" or "Off-peak hours till
-// <countdown to next peak start>" so users always know how long the current
-// state lasts.
-function promoLabelWithCountdown(promo) {
-  const label = isAnthropicPeakHours(promo) ? 'Peak hours' : 'Off-peak hours';
-  const mins = promoMinutesUntilTransition(promo);
-  const countdown = formatPromoCountdown(mins);
-  return countdown ? label + ' till ' + countdown : label;
-}
-
-// Store current promo for card rendering
-let _anthropicPromo = null;
-
-function updateAnthropicPromoState(promo) {
-  _anthropicPromo = promo || null;
-  refreshPromoTags();
-  // Re-evaluate every 30s for countdown updates (no API call)
-  if (window._promoInterval) clearInterval(window._promoInterval);
-  if (_anthropicPromo) {
-    window._promoInterval = setInterval(refreshPromoTags, 30000);
-  }
-}
-
-function refreshPromoTags() {
-  document.querySelectorAll('.promo-tag-inline').forEach(el => {
-    if (!_anthropicPromo) { el.remove(); return; }
-    const isPeak = isAnthropicPeakHours(_anthropicPromo);
-    el.className = 'promo-tag-inline ' + (isPeak ? 'promo-peak' : 'promo-offpeak');
-    el.textContent = promoLabelWithCountdown(_anthropicPromo);
-  });
-}
-
-function promoTagHTML() {
-  if (!_anthropicPromo) return '';
-  const isPeak = isAnthropicPeakHours(_anthropicPromo);
-  const cls = isPeak ? 'promo-peak' : 'promo-offpeak';
-  const text = promoLabelWithCountdown(_anthropicPromo);
-  return `<a class="promo-tag-inline ${cls}" href="https://www.reddit.com/r/ClaudeAI/comments/1s4idaq/update_on_session_limits/" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escapeHTML(_anthropicPromo.description)}">${text}</a>`;
+function peakChipHTML(provider) {
+  const meta = peakMetaForProvider(provider);
+  if (!meta || !window.OnWatchPeak) return '';
+  return window.OnWatchPeak.peakChipMarkup(meta);
 }
 
 function renderAnthropicQuotaCards(quotas, containerId) {
@@ -1490,7 +1402,6 @@ function renderAnthropicQuotaCards(quotas, containerId) {
           <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
           ${statusCfg.label}
         </span>
-        ${promoTagHTML()}
         <span class="reset-time" id="${resetId}"${q.resetsAt ? ` data-reset-at="${q.resetsAt}"` : ''}>${q.resetsAt ? formatResetTime(q.resetsAt) : ''}</span>
       </footer>
     </article>`;
@@ -2582,10 +2493,13 @@ function renderBalanceCards(provider, balance, containerId) {
     const icon = '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>';
     container.innerHTML = fields.map((field, i) => `<article class="quota-card balance-card" data-quota="${field.historyKey}" data-provider="${provider}" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
-        <h2 class="quota-title">
-          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
-          ${field.label}
-        </h2>
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+            ${field.label}
+          </h2>
+          ${field.primary ? peakChipHTML(provider) : ''}
+        </div>
       </header>
       <div class="progress-stats">
         <span class="usage-percent" data-balance-amount></span>
@@ -4167,10 +4081,13 @@ function renderOpenCodeQuotaCards(quotas, containerId) {
 
     return `<article class="quota-card opencode-card" data-quota="${q.name}" data-provider="opencode" role="button" tabindex="0" aria-label="View ${displayName} details" style="animation-delay: ${i * 60}ms">
       <header class="card-header">
-        <h2 class="quota-title">
-          <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
-          ${displayName}
-        </h2>
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
+            ${displayName}
+          </h2>
+          ${i === 0 ? peakChipHTML('opencode') : ''}
+        </div>
         <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>
       <div class="progress-stats">
@@ -4696,6 +4613,7 @@ function renderCommandCodeQuotaCards(quotas, containerId) {
             <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             ${label}
           </h2>
+          ${idx === 0 ? peakChipHTML('commandcode') : ''}
         </div>
         <span class="countdown" id="countdown-commandcode-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ' style="display:none"'}>${cdText}</span>
       </header>
@@ -4847,9 +4765,7 @@ async function fetchCurrent() {
           data.quotas.forEach(q => updateCopilotCard(q));
         }
       } else if (provider === 'anthropic') {
-        // Anthropic response: { capturedAt: ..., quotas: [...], promo?: {...} }
-        // Set promo state before rendering cards so promoTagHTML() works
-        updateAnthropicPromoState(data.promo || null);
+        // Anthropic response: { capturedAt: ..., quotas: [...] }
         if (data.quotas) {
           const container = document.getElementById('quota-grid-anthropic');
           if (container && container.children.length === 0) {
@@ -6967,11 +6883,6 @@ function buildAllProviderEntries() {
       order.push(provider);
     });
 
-  // Set Anthropic promo state so promoTagHTML() works in both view
-  if (current.anthropic && current.anthropic.promo) {
-    updateAnthropicPromoState(current.anthropic.promo);
-  }
-
   const entries = [];
 
   const addProviderEntry = (provider) => {
@@ -7125,7 +7036,7 @@ function buildAllProviderEntries() {
           : (provider === 'mistral' || provider === 'cursor' || provider === 'opencode'
             ? (payload.planName || toTitleCase(payload.accountType || ''))
             : toTitleCase(payload.planType || ''))),
-      promoHtml: provider === 'anthropic' && payload.promo ? promoTagHTML() : '',
+      peakMeta: peakMetaForProvider(provider),
       planType: payload.planType || '',
       quotas: normalizeBothQuotas(provider, payload),
       billing: provider === "mistral" ? payload.billing : null,
@@ -7143,7 +7054,7 @@ function renderProviderKPIHTML(quotas, provider) {
   if (!Array.isArray(quotas) || quotas.length === 0) {
     return '<p class="insight-text">No KPI data available yet.</p>';
   }
-  return quotas.map((quota) => {
+  return quotas.map((quota, index) => {
     const percent = Number(quota.cardPercent ?? 0);
     const status = quota.status || 'healthy';
     const statusCfg = statusConfig[status] || statusConfig.healthy;
@@ -7168,6 +7079,7 @@ function renderProviderKPIHTML(quotas, provider) {
             ${escapeHTML(displayName)}
             ${provider === 'codex' ? codexAutoStartBadge(quota.name) : ''}
           </h2>
+          ${index === 0 ? peakChipHTML(provider) : ''}
           ${subtitle ? `<div class="quota-subtitle">${escapeHTML(subtitle)}</div>` : ''}
         </div>
         <span class="countdown">${escapeHTML(countdown)}</span>
@@ -7743,7 +7655,7 @@ function renderAllProvidersView() {
   container.innerHTML = entries.map((entry) => {
     const collapsed = Boolean(collapsedState[entry.cardKey]);
     const badge = entry.badge ? `<span class="provider-card-badge">${escapeHTML(entry.badge)}</span>` : '';
-    const promo = entry.promoHtml || '';
+    const peak = entry.peakMeta && window.OnWatchPeak ? window.OnWatchPeak.peakChipMarkup(entry.peakMeta) : '';
     const hasChartData = Array.isArray(entry.historyRows) && entry.historyRows.length > 0;
     const chartSection = hasChartData
       ? `<div class="provider-chart">
@@ -7758,7 +7670,7 @@ function renderAllProvidersView() {
     const cardHeader = `<header class="provider-card-header">
         <div class="provider-card-title">
           <span>${escapeHTML(entry.title)}</span>
-          ${badge}${promo}
+          ${badge}${peak}
         </div>
         <button class="provider-card-collapse-btn" type="button" data-card-key="${entry.cardKey}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${escapeHTML(entry.title)}">
           <svg class="provider-card-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -10096,6 +10008,16 @@ function startAutoRefresh() {
     if (shouldShowOverviewTable() && _lazyLoaded.has('.cycle-overview-section')) fetchCycleOverview();
     if (shouldShowSessionsTable() && _lazyLoaded.has('.sessions-section')) fetchSessions();
   }, REFRESH_INTERVAL);
+  // Peak chips count down from the page clock, so their 30s ticker makes no
+  // API calls and keeps the state in step between refreshes.
+  if (State.peakTickInterval) clearInterval(State.peakTickInterval);
+  State.peakTickInterval = setInterval(() => {
+    if (window.OnWatchPeak) window.OnWatchPeak.refreshPeakChips();
+  }, 30000);
+  if (window.OnWatchPeak) {
+    window.OnWatchPeak.initPeakChipTooltips();
+    window.OnWatchPeak.refreshPeakChips();
+  }
 }
 
 // ── Pagination Helper ──
