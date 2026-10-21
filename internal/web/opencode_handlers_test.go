@@ -212,15 +212,17 @@ func TestCycleOverviewOpenCode_DefaultsToFiveHour(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 
-	var overview []map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &overview); err != nil {
+	var response struct {
+		Cycles []map[string]interface{} `json:"cycles"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(overview) != 1 {
-		t.Fatalf("overview = %d, want 1", len(overview))
+	if len(response.Cycles) != 1 {
+		t.Fatalf("overview = %d, want 1", len(response.Cycles))
 	}
-	if got := overview[0]["QuotaType"]; got != "five_hour" {
-		t.Fatalf("QuotaType = %v, want five_hour", got)
+	if got := response.Cycles[0]["quotaType"]; got != "five_hour" {
+		t.Fatalf("quotaType = %v, want five_hour", got)
 	}
 }
 

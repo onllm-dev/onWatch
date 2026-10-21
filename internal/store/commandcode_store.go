@@ -497,6 +497,7 @@ func (s *Store) QueryCommandCodeCycleOverview(groupBy string, limit int) ([]Cycl
 	var overviewRows []CycleOverviewRow
 	for _, c := range cycles {
 		row := CycleOverviewRow{
+			ResetsAt:   c.ResetsAt,
 			CycleID:    c.ID,
 			QuotaType:  c.QuotaName,
 			CycleStart: c.CycleStart,
@@ -543,7 +544,7 @@ func (s *Store) QueryCommandCodeCycleOverview(groupBy string, limit int) ([]Cycl
 		}
 		for qRows.Next() {
 			var entry CrossQuotaEntry
-			if err := qRows.Scan(&entry.Name, &entry.Percent, &entry.Value, new(float64)); err != nil {
+			if err := qRows.Scan(&entry.Name, &entry.Percent, &entry.Value, &entry.Limit); err != nil {
 				qRows.Close()
 				return nil, fmt.Errorf("store.QueryCommandCodeCycleOverview: scan quota: %w", err)
 			}

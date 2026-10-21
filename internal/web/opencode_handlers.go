@@ -435,23 +435,35 @@ func (h *Handler) cyclesOpenCode(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) cycleOverviewOpenCode(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if h.store == nil {
-		respondJSON(w, http.StatusOK, []interface{}{})
+		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}, "quotaNames": []string{}})
 		return
 	}
 
-	groupBy := r.URL.Query().Get("group_by")
+	groupBy := r.URL.Query().Get("groupBy")
+	if groupBy == "" {
+		groupBy = r.URL.Query().Get("group_by")
+	}
 	if groupBy == "" {
 		groupBy = "five_hour"
 	}
 
-	overview, err := h.store.QueryOpenCodeCycleOverview(groupBy, 50)
+	overview, err := h.store.QueryOpenCodeCycleOverview(groupBy, parseCycleOverviewLimit(r))
 	if err != nil {
 		h.logger.Error("failed to query OpenCode cycle overview", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycle overview")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, overview)
+	quotaNames, err := h.store.QueryAllOpenCodeQuotaNames()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to query quota names")
+		return
+	}
+	sort.SliceStable(quotaNames, func(i, j int) bool { return opencodeQuotaOrder(quotaNames[i]) < opencodeQuotaOrder(quotaNames[j]) })
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"provider": "opencode", "groupBy": groupBy, "quotaNames": quotaNames,
+		"cycles": cycleOverviewRowsToJSON(overview),
+	})
 }
 
 func (h *Handler) summaryOpenCode(w http.ResponseWriter, r *http.Request) {

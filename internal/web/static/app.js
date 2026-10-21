@@ -9679,9 +9679,8 @@ function renderOverviewTable() {
   const overviewProv = getOverviewProvider();
   const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok' || overviewProv === 'kimi' || overviewProv === 'mistral' || overviewProv === 'opencode' || overviewProv === 'ollama' || overviewProv === 'muse' || overviewProv === 'commandcode';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
-  // MiniMax reports a percentage-based quota; the Duration and Total Delta
-  // columns add no signal there, so omit them for this provider.
-  const showDurationDelta = overviewProv !== 'minimax';
+  const windowProvider = overviewProv === 'opencode' || overviewProv === 'commandcode';
+  const showDurationDelta = overviewProv !== 'minimax' && !windowProvider;
   const showAccount = isAccountsOverviewMode(getCurrentProvider());
   const accountTh = showAccount ? '<th data-sort-key="account" role="button" tabindex="0">Account <span class="sort-arrow"></span></th>' : '';
 
@@ -9692,6 +9691,9 @@ function renderOverviewTable() {
       <th data-sort-key="id" role="button" tabindex="0">Cycle <span class="sort-arrow"></span></th>
       <th data-sort-key="start" role="button" tabindex="0">Start <span class="sort-arrow"></span></th>
       <th data-sort-key="end" role="button" tabindex="0">End <span class="sort-arrow"></span></th>`;
+  if (windowProvider) {
+    headerHtml += '<th data-sort-key="reset" role="button" tabindex="0">Reset <span class="sort-arrow"></span></th>';
+  }
   if (showDurationDelta) {
     headerHtml += `
       <th data-sort-key="duration" role="button" tabindex="0">Duration <span class="sort-arrow"></span></th>
@@ -9702,7 +9704,7 @@ function renderOverviewTable() {
     const isPrimary = qn === State.overviewGroupBy;
     const displayName = getQuotaDisplayName(qn, overviewProv);
     const suffix = usePercent ? ' %' : '';
-    const maxIndicator = isPrimary ? ' Max' : '';
+    const maxIndicator = isPrimary ? (windowProvider ? ' Peak' : ' Max') : (windowProvider ? ' at peak' : '');
     headerHtml += `<th data-sort-key="cq_${qn}" role="button" tabindex="0" ${isPrimary ? 'class="overview-primary-col"' : ''}>${displayName}${maxIndicator}${suffix} <span class="sort-arrow"></span></th>`;
   });
   headerHtml += '</tr>';
@@ -9728,6 +9730,7 @@ function renderOverviewTable() {
       if (key === 'id') { va = a.cycleId; vb = b.cycleId; }
       else if (key === 'start') { va = a.cycleStart; vb = b.cycleStart; }
       else if (key === 'end') { va = a.cycleEnd || ''; vb = b.cycleEnd || ''; }
+      else if (key === 'reset') { va = a.resetsAt || ''; vb = b.resetsAt || ''; }
       else if (key === 'duration') {
         va = a.cycleEnd ? new Date(a.cycleEnd) - new Date(a.cycleStart) : 0;
         vb = b.cycleEnd ? new Date(b.cycleEnd) - new Date(b.cycleStart) : 0;
@@ -9736,8 +9739,8 @@ function renderOverviewTable() {
       else if (key === 'account') { va = a._account || ''; vb = b._account || ''; }
       else if (key.startsWith('cq_')) {
         const qn = key.slice(3);
-        va = getCrossQuotaPercent(a, qn);
-        vb = getCrossQuotaPercent(b, qn);
+        va = windowProvider && qn === State.overviewGroupBy ? a.peakValue : getCrossQuotaPercent(a, qn);
+        vb = windowProvider && qn === State.overviewGroupBy ? b.peakValue : getCrossQuotaPercent(b, qn);
       }
       else { va = 0; vb = 0; }
       if (va < vb) return dir === 'asc' ? -1 : 1;
@@ -9767,7 +9770,7 @@ function renderOverviewTable() {
   };
 
   if (pageData.length === 0) {
-    const colCount = (showAccount ? 1 : 0) + (showDurationDelta ? 5 : 3) + quotaNames.length;
+    const colCount = (showAccount ? 1 : 0) + (showDurationDelta ? 5 : 3) + (windowProvider ? 1 : 0) + quotaNames.length;
     const emptyMsg = overviewProv === 'cursor'
       ? 'No completed monthly billing cycles found for this quota yet.'
       : 'No completed cycles found for this period.';
@@ -9793,6 +9796,9 @@ function renderOverviewTable() {
         <td>${cycleLabel}</td>
         <td>${start ? formatDateTime(start) : '--'}</td>
         <td>${end ? formatDateTime(end) : '<span class="badge">Active</span>'}</td>`;
+      if (windowProvider) {
+        html += `<td>${row.resetsAt ? formatDateTime(row.resetsAt) : '--'}</td>`;
+      }
       if (showDurationDelta) {
         html += `
         <td>${duration}</td>
@@ -9800,13 +9806,16 @@ function renderOverviewTable() {
       }
 
       quotaNames.forEach(qn => {
-        const pct = getCrossQuotaPercent(row, qn);
-        const delta = getCrossQuotaDelta(row, qn);
         const isPrimary = qn === State.overviewGroupBy;
+        const pct = windowProvider && isPrimary && Number.isFinite(row.peakValue)
+          ? row.peakValue : getCrossQuotaPercent(row, qn);
+        const delta = getCrossQuotaDelta(row, qn);
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
-          if (overviewProv === 'minimax' || overviewProv === 'gemini') {
+          if (windowProvider) {
+            cellVal = `${pct.toFixed(1)}%`;
+          } else if (overviewProv === 'minimax' || overviewProv === 'gemini') {
             const cq = getCrossQuotaValue(row, qn);
             const used = Number(cq?.value || 0);
             const limit = Number(cq?.limit || 0);

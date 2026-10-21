@@ -50,6 +50,7 @@ type ResetCycle struct {
 
 // CycleOverviewRow represents a single cycle with cross-quota data at peak time.
 type CycleOverviewRow struct {
+	ResetsAt    *time.Time
 	CycleID     int64
 	QuotaType   string
 	CycleStart  time.Time

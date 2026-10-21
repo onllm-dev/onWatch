@@ -8947,6 +8947,9 @@ func cycleOverviewRowsToJSON(rows []store.CycleOverviewRow) []map[string]interfa
 			"totalDelta": row.TotalDelta,
 			"peakTime":   row.PeakTime.Format(time.RFC3339),
 		}
+		if row.ResetsAt != nil {
+			entry["resetsAt"] = row.ResetsAt.Format(time.RFC3339)
+		}
 		if row.CycleEnd != nil {
 			entry["cycleEnd"] = row.CycleEnd.Format(time.RFC3339)
 		} else {
