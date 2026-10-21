@@ -147,3 +147,73 @@ func TestCodexDisplayName(t *testing.T) {
 		t.Fatalf("CodexDisplayName(unknown) = %q", got)
 	}
 }
+
+// The reset-credit count sits on the main usage payload, so one oddly typed
+// value must not fail the whole decode and stale Codex usage for every
+// account. Numbers, quoted numbers and integral floats are accepted; anything
+// else degrades that count to unknown while usage still parses.
+func TestParseCodexUsageResponse_ResetCreditsCountOddTypes(t *testing.T) {
+	const usagePrefix = `{
+	  "plan_type": "pro",
+	  "rate_limit": {
+	    "primary_window": {"used_percent": 25, "reset_at": 1766000000, "limit_window_seconds": 18000}
+	  },
+	  "rate_limit_reset_credits": {"available_count": `
+
+	cases := []struct {
+		name      string
+		raw       string
+		wantValid bool
+		wantValue int64
+	}{
+		{name: "quoted number", raw: `"2"}}`, wantValid: true, wantValue: 2},
+		{name: "integral float", raw: `2.0}}`, wantValid: true, wantValue: 2},
+		{name: "quoted integral float", raw: `"2.0"}}`, wantValid: true, wantValue: 2},
+		{name: "integer", raw: `2}}`, wantValid: true, wantValue: 2},
+		{name: "empty string", raw: `""}}`, wantValid: false},
+		{name: "object", raw: `{}}}`, wantValid: false},
+		{name: "non-numeric string", raw: `"two"}}`, wantValid: false},
+		{name: "fractional value", raw: `2.5}}`, wantValid: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := []byte(usagePrefix + tc.raw)
+			resp, err := ParseCodexUsageResponse(payload)
+			if err != nil {
+				t.Fatalf("usage decode failed on an odd count %s: %v", tc.raw, err)
+			}
+			snap := resp.ToSnapshot(time.Unix(1765900000, 0).UTC())
+			if len(snap.Quotas) == 0 {
+				t.Fatal("usage quotas were dropped; the poll would go stale")
+			}
+			if snap.Quotas[0].Utilization != 25 {
+				t.Fatalf("five_hour utilization = %v, want 25", snap.Quotas[0].Utilization)
+			}
+			got := snap.ResetCreditsAvailableCount
+			if got.Valid != tc.wantValid {
+				t.Fatalf("count valid = %v, want %v (value=%d)", got.Valid, tc.wantValid, got.Value)
+			}
+			if tc.wantValid && got.Value != tc.wantValue {
+				t.Fatalf("count = %d, want %d", got.Value, tc.wantValue)
+			}
+		})
+	}
+}
+
+// applicable_available_count shares the lenient decoding.
+func TestParseCodexUsageResponse_ApplicableCountOddType(t *testing.T) {
+	payload := []byte(`{
+	  "plan_type": "pro",
+	  "rate_limit": {"primary_window": {"used_percent": 10, "reset_at": 1766000000, "limit_window_seconds": 18000}},
+	  "rate_limit_reset_credits": {"available_count": 3, "applicable_available_count": "1"}
+	}`)
+	resp, err := ParseCodexUsageResponse(payload)
+	if err != nil {
+		t.Fatalf("ParseCodexUsageResponse: %v", err)
+	}
+	snap := resp.ToSnapshot(time.Unix(1765900000, 0).UTC())
+	if !snap.ResetCreditsApplicableCount.Valid || snap.ResetCreditsApplicableCount.Value != 1 {
+		t.Fatalf("applicable count = %#v, want known 1", snap.ResetCreditsApplicableCount)
+	}
+}

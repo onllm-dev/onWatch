@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,17 +33,40 @@ type CodexOptionalInt64 struct {
 	Valid bool
 }
 
+// UnmarshalJSON is deliberately lenient: this type sits on the main usage
+// response, so rejecting one drifted count would fail the whole decode and
+// leave Codex usage stale for every account. Numbers, quoted numbers and
+// integral floats decode; anything else becomes unknown (Valid=false).
 func (o *CodexOptionalInt64) UnmarshalJSON(data []byte) error {
 	s := strings.TrimSpace(string(data))
 	if s == "null" || s == "" {
 		o.Value, o.Valid = 0, false
 		return nil
 	}
-	var n int64
-	if err := json.Unmarshal(data, &n); err != nil {
-		return err
+	if strings.HasPrefix(s, `"`) {
+		var str string
+		if err := json.Unmarshal(data, &str); err != nil {
+			o.Value, o.Valid = 0, false
+			return nil
+		}
+		s = strings.TrimSpace(str)
+		if s == "" {
+			o.Value, o.Valid = 0, false
+			return nil
+		}
 	}
-	o.Value, o.Valid = n, true
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		o.Value, o.Valid = n, true
+		return nil
+	}
+	// A float representation of a whole number ("2.0") still names a count.
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) ||
+		f >= float64(math.MaxInt64) || f < float64(math.MinInt64) {
+		o.Value, o.Valid = 0, false
+		return nil
+	}
+	o.Value, o.Valid = int64(f), true
 	return nil
 }
 
