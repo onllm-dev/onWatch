@@ -7820,7 +7820,12 @@ function renderAllProvidersView() {
   container.innerHTML = entries.map((entry) => {
     const collapsed = Boolean(collapsedState[entry.cardKey]);
     const badge = entry.badge ? `<span class="provider-card-badge">${escapeHTML(entry.badge)}</span>` : '';
-    const peak = entry.peakMeta && window.OnWatchPeak ? window.OnWatchPeak.peakChipMarkup(entry.peakMeta) : '';
+    // The first KPI card carries the chip. Only a provider without KPI cards
+    // (balance providers such as DeepSeek) needs it in the header instead.
+    const hasKpiChip = Array.isArray(entry.quotas) && entry.quotas.length > 0;
+    const peak = entry.peakMeta && !hasKpiChip && window.OnWatchPeak
+      ? window.OnWatchPeak.peakChipMarkup(entry.peakMeta)
+      : '';
     const hasChartData = Array.isArray(entry.historyRows) && entry.historyRows.length > 0;
     const chartSection = hasChartData
       ? `<div class="provider-chart">
