@@ -141,23 +141,12 @@ func (t *OpenCodeTracker) processQuota(quota api.OpenCodeQuota, capturedAt time.
 			cycleEndTime = *cycle.ResetsAt
 		}
 
-		if t.hasLast {
-			if lastUtil, ok := t.lastValues[quotaName]; ok {
-				delta := currentUtil - lastUtil
-				if delta > 0 {
-					cycle.TotalDelta += delta
-				}
-				if currentUtil > cycle.PeakUtilization {
-					cycle.PeakUtilization = currentUtil
-				}
-			}
-		}
-
+		// The sample that revealed the reset belongs to the new cycle.
 		if err := t.store.CloseOpenCodeCycle(quotaName, cycleEndTime, cycle.PeakUtilization, cycle.TotalDelta); err != nil {
 			return fmt.Errorf("failed to close cycle: %w", err)
 		}
 
-		if _, err := t.store.CreateOpenCodeCycle(quotaName, capturedAt, quota.ResetsAt); err != nil {
+		if _, err := t.store.CreateOpenCodeCycle(quotaName, capturedAt, nextWindowReset(quota.ResetsAt, capturedAt)); err != nil {
 			return fmt.Errorf("failed to create new cycle: %w", err)
 		}
 		if err := t.store.UpdateOpenCodeCycle(quotaName, currentUtil, 0); err != nil {
@@ -293,4 +282,14 @@ func (t *OpenCodeTracker) UsageSummary(quotaName string) (*OpenCodeSummary, erro
 	}
 
 	return summary, nil
+}
+
+// nextWindowReset drops a reset timestamp the API has not advanced past the
+// sample that revealed the reset. Storing it would give the new cycle a reset
+// in the past and can produce an inverted cycle window.
+func nextWindowReset(resetsAt *time.Time, capturedAt time.Time) *time.Time {
+	if resetsAt == nil || !resetsAt.After(capturedAt) {
+		return nil
+	}
+	return resetsAt
 }

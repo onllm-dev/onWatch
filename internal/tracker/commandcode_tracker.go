@@ -128,21 +128,11 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 			cycleEndTime = *cycle.ResetsAt
 		}
 
-		if t.hasLast {
-			if lastUtil, ok := t.lastValues[quotaName]; ok {
-				if delta := currentUtil - lastUtil; delta > 0 {
-					cycle.TotalDelta += delta
-				}
-				if currentUtil > cycle.PeakUtilization {
-					cycle.PeakUtilization = currentUtil
-				}
-			}
-		}
-
+		// The sample that revealed the reset belongs to the new cycle.
 		if err := t.store.CloseCommandCodeCycle(quotaName, cycleEndTime, cycle.PeakUtilization, cycle.TotalDelta); err != nil {
 			return fmt.Errorf("failed to close cycle: %w", err)
 		}
-		if _, err := t.store.CreateCommandCodeCycle(quotaName, capturedAt, quota.ResetsAt); err != nil {
+		if _, err := t.store.CreateCommandCodeCycle(quotaName, capturedAt, nextWindowReset(quota.ResetsAt, capturedAt)); err != nil {
 			return fmt.Errorf("failed to create new cycle: %w", err)
 		}
 		if err := t.store.UpdateCommandCodeCycle(quotaName, currentUtil, 0); err != nil {
