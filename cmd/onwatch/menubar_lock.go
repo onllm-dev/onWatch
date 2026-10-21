@@ -151,10 +151,3 @@ func menubarLockOwnerProbe(testMode bool) (owner int, blocked bool) {
 	}
 	return owner, true
 }
-
-// menubarLockHeld reports whether some process currently holds the menubar
-// single-instance lock.
-func menubarLockHeld(testMode bool) bool {
-	_, blocked := menubarLockOwnerProbe(testMode)
-	return blocked
-}
