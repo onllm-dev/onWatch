@@ -5228,6 +5228,7 @@ async function renderMultiAccountChart(provider, range, requestSeq) {
   const failed = histories.find(h => h.error);
   if (failed) {
     warnHistoryFailure(provider, range, failed.error, failed.status);
+    markHistoryFailureStale(provider, range);
     return;
   }
 
@@ -5304,6 +5305,7 @@ async function renderMultiAccountChart(provider, range, requestSeq) {
       },
     },
   });
+  recordChartRendered(provider, range);
 }
 
 
@@ -6135,6 +6137,106 @@ function warnHistoryFailure(provider, range, reason, status) {
   console.warn('[onWatch] history fetch failed', { provider, range, status, reason });
 }
 
+// ── Chart staleness ──
+// A failed history fetch keeps the lines already drawn. That is only honest
+// while the drawn lines belong to the provider, account and range now selected.
+// Anything else gets an amber hollow dot so the old data is visibly stale.
+
+function chartAccountKey(provider) {
+  if (provider === 'codex') return State.codexAccount == null ? null : State.codexAccount;
+  if (provider === 'minimax') return State.minimaxAccount == null ? null : State.minimaxAccount;
+  return null;
+}
+
+function chartAccountLabel(provider) {
+  const id = chartAccountKey(provider);
+  if (id == null || id === 'all') return id === 'all' ? 'All accounts' : '';
+  const list = provider === 'codex'
+    ? (State.codexProfiles || [])
+    : (provider === 'minimax' ? (State.minimaxAccounts || []) : []);
+  const match = list.find(item => String(item.id) === String(id));
+  if (match) return match.name || match.accountName || `Account ${id}`;
+  return `Account ${id}`;
+}
+
+function chartProviderLabel(provider) {
+  return bothProviderNames[provider] || toTitleCase(provider);
+}
+
+function chartStaleMark() {
+  const existing = document.getElementById('chart-stale-dot');
+  if (existing) return existing;
+  const host = document.querySelector('.chart-section .chart-controls')
+    || document.querySelector('.chart-section .section-header')
+    || document.querySelector('.chart-container');
+  if (!host || typeof document.createElement !== 'function') return null;
+  const mark = document.createElement('span');
+  mark.id = 'chart-stale-dot';
+  mark.className = 'chart-stale-dot';
+  mark.setAttribute('role', 'img');
+  host.appendChild(mark);
+  return mark;
+}
+
+function clearChartStale() {
+  const mark = document.getElementById('chart-stale-dot');
+  if (!mark) return;
+  mark.classList.remove('stale');
+  mark.removeAttribute('title');
+  mark.removeAttribute('aria-label');
+}
+
+function markChartStale(reason) {
+  if (!reason) return;
+  const mark = chartStaleMark();
+  if (!mark) return;
+  mark.classList.add('stale');
+  mark.setAttribute('title', reason);
+  mark.setAttribute('aria-label', reason);
+}
+// The rendered key lives on the chart itself, so destroying the chart also
+// drops the claim that its lines match the current selection.
+function recordChartRendered(provider, range) {
+  if (!State.chart) return;
+  State.chart.renderKey = {
+    provider,
+    account: chartAccountKey(provider),
+    accountLabel: chartAccountLabel(provider),
+    range,
+  };
+  clearChartStale();
+}
+
+function historyRequestIsCurrent(provider, account, range, seq) {
+  if (State.historyRequestSeq !== seq) return false;
+  if (getCurrentProvider() !== provider) return false;
+  if (provider === 'codex' && State.codexAccount !== account) return false;
+  if (State.currentRange !== range) return false;
+  return true;
+}
+
+
+// markHistoryFailureStale keeps the drawn lines but marks them when they no
+// longer match the provider, account or range the user just selected.
+function markHistoryFailureStale(provider, range) {
+  const rendered = State.chart && State.chart.renderKey;
+  if (!rendered) return;
+  const account = chartAccountKey(provider);
+  let reason = '';
+  if (rendered.provider !== provider) {
+    reason = `Showing ${chartProviderLabel(rendered.provider)} data - ${chartProviderLabel(provider)} failed to load`;
+  } else if (String(rendered.account == null ? '' : rendered.account) !== String(account == null ? '' : account)) {
+    reason = `Showing ${rendered.accountLabel || 'previous account'} data - account switch failed to load`;
+  } else if (rendered.range !== range) {
+    reason = `Showing ${rendered.range} data - ${range} failed to load`;
+  }
+  if (!reason) {
+    clearChartStale();
+    return;
+  }
+  markChartStale(reason);
+}
+
 async function fetchHistory(range) {
   if (range === undefined) {
     const activeBtn = document.querySelector('.range-btn[data-range].active');
@@ -6157,33 +6259,39 @@ async function fetchHistory(range) {
       const res = await authFetch(`${API_BASE}/api/api-integrations/history?range=${range}`);
       if (!res.ok) {
         warnHistoryFailure(requestProvider, range, `HTTP ${res.status}`, res.status);
+        markHistoryFailureStale(requestProvider, range);
         return;
       }
       const data = await res.json();
       if (!data || typeof data !== 'object' || data.error) {
         warnHistoryFailure(requestProvider, range, (data && data.error) || 'invalid body', res.status);
+        markHistoryFailureStale(requestProvider, range);
         return;
       }
 
       if (State.historyRequestSeq !== requestSeq) return;
       if (getCurrentProvider() !== requestProvider) return;
       if (State.currentRange !== requestRange) return;
-
+      if (!State.chart) initChart();
+      if (!State.chart) return;
       State.apiIntegrationsHistory = data;
       renderAPIIntegrationsChart(range);
       renderAPIIntegrationsInsights();
+      recordChartRendered(requestProvider, range);
       return;
     }
 
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&${providerParam()}`);
     if (!res.ok) {
       warnHistoryFailure(requestProvider, range, `HTTP ${res.status}`, res.status);
+      markHistoryFailureStale(requestProvider, range);
       return;
     }
     const data = await res.json();
     const bodyError = historyBodyError(requestProvider, data);
     if (bodyError) {
       warnHistoryFailure(requestProvider, range, bodyError, res.status);
+      markHistoryFailureStale(requestProvider, range);
       return;
     }
 
@@ -6199,10 +6307,7 @@ async function fetchHistory(range) {
       }
     }
 
-    if (State.historyRequestSeq !== requestSeq) return;
-    if (getCurrentProvider() !== requestProvider) return;
-    if (requestProvider === 'codex' && State.codexAccount !== requestAccount) return;
-    if (State.currentRange !== requestRange) return;
+    if (!historyRequestIsCurrent(requestProvider, requestAccount, requestRange, requestSeq)) return;
 
     const provider = requestProvider;
 
@@ -6249,6 +6354,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6287,6 +6393,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6326,6 +6433,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6364,6 +6472,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6400,6 +6509,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6436,6 +6546,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6481,6 +6592,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6510,6 +6622,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6543,11 +6656,14 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
     if (provider === 'mistral') {
       State.chart.data.datasets = buildDynamicDatasetsForRows(historyRows.map(row => {const flat={capturedAt:row.capturedAt}; (row.quotas||[]).forEach(q=>{flat[q.name]=q.utilization;});return flat;}), range, mistralDisplayNames, mistralChartColors, opencodeChartColorFallback, 'mistral');
-      updateTimeScale(State.chart, range); State.chart.update(); return;
+      updateTimeScale(State.chart, range); State.chart.update();
+      recordChartRendered(provider, range);
+      return;
     }
     if (provider === 'opencode') {
       const flattenedRows = historyRows.map(row => {
@@ -6574,6 +6690,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6610,6 +6727,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6636,6 +6754,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6647,6 +6766,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart, { cap: false });
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6680,6 +6800,7 @@ async function fetchHistory(range) {
       State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
       State.chart.options.scales.y.max = State.chartYMax;
       State.chart.update();
+      recordChartRendered(provider, range);
       return;
     }
 
@@ -6718,8 +6839,10 @@ async function fetchHistory(range) {
     State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
     State.chart.options.scales.y.max = State.chartYMax;
     State.chart.update();
+    recordChartRendered(provider, range);
   } catch (err) {
     warnHistoryFailure(requestProvider, range, err && err.message ? err.message : String(err), 0);
+    markHistoryFailureStale(requestProvider, range);
   }
 }
 

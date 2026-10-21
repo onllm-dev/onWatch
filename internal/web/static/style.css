@@ -495,6 +495,22 @@ button, input, select { font-family: inherit; }
   box-shadow: 0 0 0 3px var(--status-warning-bg);
 }
 
+/* Chart stale marker: amber hollow dot with a hover tooltip. Shown only when
+   a failed history load left older lines on screen. */
+.chart-stale-dot {
+  display: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--status-warning);
+  background: transparent;
+  flex: 0 0 auto;
+  cursor: help;
+}
+.chart-stale-dot.stale {
+  display: inline-block;
+}
+
 .theme-toggle {
   display: flex;
   align-items: center;
