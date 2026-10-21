@@ -76,6 +76,11 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 	quotaName := quota.Name
 	currentUtil := quota.Utilization
 
+	// A reset that is not after the sample was already passed when the sample
+	// was taken. Storing it would give the new cycle a reset in the past, and
+	// the next poll would mistake that stale value for a fresh window.
+	quota.ResetsAt = futureResetsAt(quota.ResetsAt, capturedAt)
+
 	cycle, err := t.store.QueryActiveCommandCodeCycle(quotaName)
 	if err != nil {
 		return fmt.Errorf("failed to query active cycle: %w", err)
@@ -95,6 +100,9 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 			"initialUtil", currentUtil,
 		)
 		return nil
+	}
+	if cycle.ResetsAt != nil && !cycle.ResetsAt.After(cycle.CycleStart) {
+		cycle.ResetsAt = nil
 	}
 
 	resetDetected := false
@@ -117,8 +125,18 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 				resetReason = "api-based (ResetsAt changed)"
 			}
 		} else if quota.ResetsAt != nil && cycle.ResetsAt == nil {
-			resetDetected = true
-			resetReason = "api-based (new ResetsAt appeared)"
+			lastUtil, hasLast := t.lastValues[quotaName]
+			// Without a drop the reset belongs to the window already open; a
+			// newly published reset is not by itself a new window.
+			if t.hasLast && hasLast && currentUtil+2 < lastUtil {
+				resetDetected = true
+				resetReason = "api-based (new ResetsAt appeared with a usage drop)"
+			} else {
+				if err := t.store.UpdateCommandCodeCycleResetsAt(quotaName, quota.ResetsAt); err != nil {
+					return fmt.Errorf("failed to attach reset to cycle: %w", err)
+				}
+				cycle.ResetsAt = quota.ResetsAt
+			}
 		}
 	}
 
@@ -126,6 +144,9 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 		cycleEndTime := capturedAt
 		if cycle.ResetsAt != nil && capturedAt.After(*cycle.ResetsAt) {
 			cycleEndTime = *cycle.ResetsAt
+		}
+		if cycleEndTime.Before(cycle.CycleStart) {
+			cycleEndTime = cycle.CycleStart
 		}
 
 		// The sample that revealed the reset belongs to the new cycle.

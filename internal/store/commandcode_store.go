@@ -306,6 +306,23 @@ func (s *Store) UpdateCommandCodeCycle(quotaName string, peak, delta float64) er
 	return nil
 }
 
+// UpdateCommandCodeCycleResetsAt attaches a reset time to the active cycle.
+func (s *Store) UpdateCommandCodeCycleResetsAt(quotaName string, resetsAt *time.Time) error {
+	var resetsAtVal interface{}
+	if resetsAt != nil {
+		resetsAtVal = resetsAt.Format(time.RFC3339Nano)
+	}
+	_, err := s.db.Exec(
+		`UPDATE commandcode_reset_cycles SET resets_at = ?
+		WHERE quota_name = ? AND cycle_end IS NULL`,
+		resetsAtVal, quotaName,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update commandcode cycle reset: %w", err)
+	}
+	return nil
+}
+
 func scanCommandCodeCycle(rows *sql.Rows) (*CommandCodeResetCycle, error) {
 	var cycle CommandCodeResetCycle
 	var cycleStart string

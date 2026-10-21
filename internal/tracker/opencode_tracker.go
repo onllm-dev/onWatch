@@ -75,6 +75,11 @@ func (t *OpenCodeTracker) processQuota(quota api.OpenCodeQuota, capturedAt time.
 	quotaName := quota.Name
 	currentUtil := quota.Utilization
 
+	// A reset that is not after the sample was already passed when the sample
+	// was taken. Storing it would give the new cycle a reset in the past, and
+	// the next poll would mistake that stale value for a fresh window.
+	quota.ResetsAt = futureResetsAt(quota.ResetsAt, capturedAt)
+
 	cycle, err := t.store.QueryActiveOpenCodeCycle(quotaName)
 	if err != nil {
 		return fmt.Errorf("failed to query active cycle: %w", err)
@@ -99,6 +104,9 @@ func (t *OpenCodeTracker) processQuota(quota api.OpenCodeQuota, capturedAt time.
 		)
 		return nil
 	}
+	if cycle.ResetsAt != nil && !cycle.ResetsAt.After(cycle.CycleStart) {
+		cycle.ResetsAt = nil
+	}
 
 	resetDetected := false
 	resetReason := ""
@@ -120,7 +128,11 @@ func (t *OpenCodeTracker) processQuota(quota api.OpenCodeQuota, capturedAt time.
 				resetReason = "api-based (ResetsAt changed)"
 			}
 		} else if quota.ResetsAt != nil && cycle.ResetsAt == nil {
-			if cycle.PeakUtilization == 0 && cycle.TotalDelta == 0 {
+			lastUtil, hasLast := t.lastValues[quotaName]
+			if t.hasLast && hasLast && currentUtil+2 < lastUtil {
+				resetDetected = true
+				resetReason = "api-based (new ResetsAt appeared with a usage drop)"
+			} else if cycle.PeakUtilization == 0 && cycle.TotalDelta == 0 {
 				// An idle cycle (e.g. no open 5-hour session) just learned its
 				// reset time: restart it now instead of closing an empty cycle.
 				if err := t.store.RestartOpenCodeCycle(quotaName, capturedAt, *quota.ResetsAt); err != nil {
@@ -129,8 +141,13 @@ func (t *OpenCodeTracker) processQuota(quota api.OpenCodeQuota, capturedAt time.
 				cycle.CycleStart, cycle.ResetsAt = capturedAt, quota.ResetsAt
 				t.lastResets[quotaName] = quota.ResetsAt.Format(time.RFC3339Nano)
 			} else {
-				resetDetected = true
-				resetReason = "api-based (new ResetsAt appeared)"
+				// A reset published mid-window belongs to the window already
+				// open; only a usage drop proves a new window started.
+				if err := t.store.UpdateOpenCodeCycleResetsAt(quotaName, quota.ResetsAt); err != nil {
+					return fmt.Errorf("failed to attach reset to cycle: %w", err)
+				}
+				cycle.ResetsAt = quota.ResetsAt
+				t.lastResets[quotaName] = quota.ResetsAt.Format(time.RFC3339Nano)
 			}
 		}
 	}
@@ -139,6 +156,9 @@ func (t *OpenCodeTracker) processQuota(quota api.OpenCodeQuota, capturedAt time.
 		cycleEndTime := capturedAt
 		if cycle.ResetsAt != nil && capturedAt.After(*cycle.ResetsAt) {
 			cycleEndTime = *cycle.ResetsAt
+		}
+		if cycleEndTime.Before(cycle.CycleStart) {
+			cycleEndTime = cycle.CycleStart
 		}
 
 		// The sample that revealed the reset belongs to the new cycle.
@@ -284,12 +304,19 @@ func (t *OpenCodeTracker) UsageSummary(quotaName string) (*OpenCodeSummary, erro
 	return summary, nil
 }
 
-// nextWindowReset drops a reset timestamp the API has not advanced past the
-// sample that revealed the reset. Storing it would give the new cycle a reset
-// in the past and can produce an inverted cycle window.
-func nextWindowReset(resetsAt *time.Time, capturedAt time.Time) *time.Time {
+// futureResetsAt drops a reset timestamp that is not after the sample it came
+// with. Such a value was already passed when the sample was captured, so it
+// describes the window that just ended, not the open one.
+func futureResetsAt(resetsAt *time.Time, capturedAt time.Time) *time.Time {
 	if resetsAt == nil || !resetsAt.After(capturedAt) {
 		return nil
 	}
 	return resetsAt
+}
+
+// nextWindowReset drops a reset timestamp the API has not advanced past the
+// sample that revealed the reset. Storing it would give the new cycle a reset
+// in the past and can produce an inverted cycle window.
+func nextWindowReset(resetsAt *time.Time, capturedAt time.Time) *time.Time {
+	return futureResetsAt(resetsAt, capturedAt)
 }

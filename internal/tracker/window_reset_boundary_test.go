@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
 
 func commandCodeSnapshotAt(now time.Time, util float64, reset *time.Time) *api.CommandCodeSnapshot {
@@ -92,6 +93,292 @@ func TestWindowResetSampleBelongsToNewCycle(t *testing.T) {
 			tc.run(t, now, &oldReset, &newReset)
 		})
 	}
+}
+
+// TestWindowStaleStaleStaleFreshFresh exercises the churn reproduced by both
+// reviewers: a cycle created while the API still reported the old reset stored
+// no reset, so every later sample carrying that stale reset was read as a fresh
+// window. The sequence must close exactly one cycle and fire one notification.
+func TestWindowStaleStaleStaleFreshFresh(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	stale := now.Add(time.Hour)
+	fresh := now.Add(3 * time.Hour)
+	steps := []struct {
+		at time.Time
+		u  float64
+		r  *time.Time
+	}{
+		{now, 10, &stale},
+		{now.Add(2 * time.Hour), 1, &stale},
+		{now.Add(2*time.Hour + time.Minute), 2, &stale},
+		{now.Add(2*time.Hour + 2*time.Minute), 3, &fresh},
+		{now.Add(2*time.Hour + 3*time.Minute), 4, &fresh},
+	}
+
+	t.Run("commandcode", func(t *testing.T) {
+		s := newCommandCodeTrackerStore(t)
+		tr := NewCommandCodeTracker(s, nil)
+		resets := 0
+		tr.SetOnReset(func(string) { resets++ })
+		for _, st := range steps {
+			if err := tr.Process(commandCodeSnapshotAt(st.at, st.u, st.r)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		history, err := s.QueryCommandCodeCycleHistory(api.CommandCodeQuotaFiveHour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertOneClosedCycle(t, "commandcode", len(history), resets, history)
+		active, err := s.QueryActiveCommandCodeCycle(api.CommandCodeQuotaFiveHour)
+		if err != nil || active == nil {
+			t.Fatalf("active = %+v, err %v", active, err)
+		}
+		if active.ResetsAt == nil || !active.ResetsAt.Equal(fresh) {
+			t.Fatalf("active resets_at = %v, want the fresh reset %v attached", active.ResetsAt, fresh)
+		}
+	})
+
+	t.Run("opencode", func(t *testing.T) {
+		s := newTestOpenCodeStore(t)
+		tr := NewOpenCodeTracker(s, nil)
+		resets := 0
+		tr.SetOnReset(func(string) { resets++ })
+		for _, st := range steps {
+			if err := tr.Process(openCodeSnapshotAt(st.at, st.u, st.r)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		history, err := s.QueryOpenCodeCycleHistory("weekly")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertOneClosedCycleGeneric(t, "opencode", len(history), resets, openCodeCycleBounds(history))
+		active, err := s.QueryActiveOpenCodeCycle("weekly")
+		if err != nil || active == nil {
+			t.Fatalf("active = %+v, err %v", active, err)
+		}
+		if active.ResetsAt == nil || !active.ResetsAt.Equal(fresh) {
+			t.Fatalf("active resets_at = %v, want the fresh reset %v attached", active.ResetsAt, fresh)
+		}
+	})
+}
+
+type cycleBound struct {
+	start time.Time
+	end   *time.Time
+}
+
+func openCodeCycleBounds(cycles []*store.OpenCodeResetCycle) []cycleBound {
+	bounds := make([]cycleBound, 0, len(cycles))
+	for _, c := range cycles {
+		bounds = append(bounds, cycleBound{start: c.CycleStart, end: c.CycleEnd})
+	}
+	return bounds
+}
+
+func assertOneClosedCycle(t *testing.T, provider string, closed, resets int, history []*store.CommandCodeResetCycle) {
+	t.Helper()
+	if closed != 1 || resets != 1 {
+		t.Fatalf("%s closed cycles=%d onReset=%d, want 1 and 1", provider, closed, resets)
+	}
+	for _, c := range history {
+		if c.CycleEnd != nil && c.CycleEnd.Before(c.CycleStart) {
+			t.Fatalf("%s cycle %d ends %v before it starts %v", provider, c.ID, c.CycleEnd, c.CycleStart)
+		}
+	}
+}
+
+func assertOneClosedCycleGeneric(t *testing.T, provider string, closed, resets int, bounds []cycleBound) {
+	t.Helper()
+	if closed != 1 || resets != 1 {
+		t.Fatalf("%s closed cycles=%d onReset=%d, want 1 and 1", provider, closed, resets)
+	}
+	for _, c := range bounds {
+		if c.end != nil && c.end.Before(c.start) {
+			t.Fatalf("%s cycle ends %v before it starts %v", provider, c.end, c.start)
+		}
+	}
+}
+
+// TestWindowMissedPollsSpanningReset covers a daemon that was offline across a
+// reset: the first sample after the gap is the only one that can reveal it.
+func TestWindowMissedPollsSpanningReset(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	oldReset := now.Add(time.Hour)
+	fresh := now.Add(6 * time.Hour)
+	later := now.Add(4 * time.Hour)
+
+	t.Run("commandcode", func(t *testing.T) {
+		s := newCommandCodeTrackerStore(t)
+		tr := NewCommandCodeTracker(s, nil)
+		resets := 0
+		tr.SetOnReset(func(string) { resets++ })
+		if err := tr.Process(commandCodeSnapshotAt(now, 10, &oldReset)); err != nil {
+			t.Fatal(err)
+		}
+		if err := tr.Process(commandCodeSnapshotAt(later, 0.5, &fresh)); err != nil {
+			t.Fatal(err)
+		}
+		history, err := s.QueryCommandCodeCycleHistory(api.CommandCodeQuotaFiveHour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 1 || resets != 1 {
+			t.Fatalf("closed cycles=%d onReset=%d, want 1 and 1", len(history), resets)
+		}
+		if history[0].CycleEnd == nil || !history[0].CycleEnd.Equal(oldReset) {
+			t.Fatalf("cycle end = %v, want the missed reset %v", history[0].CycleEnd, oldReset)
+		}
+		if history[0].CycleEnd.Before(history[0].CycleStart) {
+			t.Fatalf("cycle end %v before start %v", history[0].CycleEnd, history[0].CycleStart)
+		}
+		active, err := s.QueryActiveCommandCodeCycle(api.CommandCodeQuotaFiveHour)
+		if err != nil || active == nil || active.ResetsAt == nil || !active.ResetsAt.Equal(fresh) {
+			t.Fatalf("active = %+v, err %v", active, err)
+		}
+	})
+
+	t.Run("opencode", func(t *testing.T) {
+		s := newTestOpenCodeStore(t)
+		tr := NewOpenCodeTracker(s, nil)
+		resets := 0
+		tr.SetOnReset(func(string) { resets++ })
+		if err := tr.Process(openCodeSnapshotAt(now, 10, &oldReset)); err != nil {
+			t.Fatal(err)
+		}
+		if err := tr.Process(openCodeSnapshotAt(later, 0.5, &fresh)); err != nil {
+			t.Fatal(err)
+		}
+		history, err := s.QueryOpenCodeCycleHistory("weekly")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 1 || resets != 1 {
+			t.Fatalf("closed cycles=%d onReset=%d, want 1 and 1", len(history), resets)
+		}
+		if history[0].CycleEnd == nil || !history[0].CycleEnd.Equal(oldReset) {
+			t.Fatalf("cycle end = %v, want the missed reset %v", history[0].CycleEnd, oldReset)
+		}
+		if history[0].CycleEnd.Before(history[0].CycleStart) {
+			t.Fatalf("cycle end %v before start %v", history[0].CycleEnd, history[0].CycleStart)
+		}
+		active, err := s.QueryActiveOpenCodeCycle("weekly")
+		if err != nil || active == nil || active.ResetsAt == nil || !active.ResetsAt.Equal(fresh) {
+			t.Fatalf("active = %+v, err %v", active, err)
+		}
+	})
+}
+
+// TestWindowRestartMidWindowAttachesReset covers a tracker restart in the
+// middle of an open window: the reset the API only starts reporting later is
+// the same window, not a new one.
+func TestWindowRestartMidWindowAttachesReset(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	reset := now.Add(3 * time.Hour)
+
+	t.Run("commandcode", func(t *testing.T) {
+		s := newCommandCodeTrackerStore(t)
+		tr := NewCommandCodeTracker(s, nil)
+		resets := 0
+		tr.SetOnReset(func(string) { resets++ })
+		// No reset reported yet, usage already climbing.
+		if err := tr.Process(commandCodeSnapshotAt(now, 10, nil)); err != nil {
+			t.Fatal(err)
+		}
+		// Restart mid-window: the same window now reports its reset.
+		if err := tr.Process(commandCodeSnapshotAt(now.Add(10*time.Minute), 15, &reset)); err != nil {
+			t.Fatal(err)
+		}
+		history, err := s.QueryCommandCodeCycleHistory(api.CommandCodeQuotaFiveHour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 0 || resets != 0 {
+			t.Fatalf("closed cycles=%d onReset=%d, want 0 and 0", len(history), resets)
+		}
+		active, err := s.QueryActiveCommandCodeCycle(api.CommandCodeQuotaFiveHour)
+		if err != nil || active == nil || active.ResetsAt == nil || !active.ResetsAt.Equal(reset) {
+			t.Fatalf("active = %+v, err %v; want the reset attached", active, err)
+		}
+		if !active.CycleStart.Equal(now) {
+			t.Fatalf("cycle start moved to %v, want the original %v", active.CycleStart, now)
+		}
+	})
+
+	t.Run("opencode", func(t *testing.T) {
+		s := newTestOpenCodeStore(t)
+		tr := NewOpenCodeTracker(s, nil)
+		resets := 0
+		tr.SetOnReset(func(string) { resets++ })
+		if err := tr.Process(openCodeSnapshotAt(now, 10, nil)); err != nil {
+			t.Fatal(err)
+		}
+		if err := tr.Process(openCodeSnapshotAt(now.Add(10*time.Minute), 15, &reset)); err != nil {
+			t.Fatal(err)
+		}
+		history, err := s.QueryOpenCodeCycleHistory("weekly")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 0 || resets != 0 {
+			t.Fatalf("closed cycles=%d onReset=%d, want 0 and 0", len(history), resets)
+		}
+		active, err := s.QueryActiveOpenCodeCycle("weekly")
+		if err != nil || active == nil || active.ResetsAt == nil || !active.ResetsAt.Equal(reset) {
+			t.Fatalf("active = %+v, err %v; want the reset attached", active, err)
+		}
+		if !active.CycleStart.Equal(now) {
+			t.Fatalf("cycle start moved to %v, want the original %v", active.CycleStart, now)
+		}
+	})
+}
+
+// TestWindowResetDropClosesCycle keeps the genuine reset signal: a new reset
+// alongside falling utilization really is a new window.
+func TestWindowResetDropClosesCycle(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	reset := now.Add(4 * time.Hour)
+
+	t.Run("commandcode", func(t *testing.T) {
+		s := newCommandCodeTrackerStore(t)
+		tr := NewCommandCodeTracker(s, nil)
+		resets := 0
+		tr.SetOnReset(func(string) { resets++ })
+		if err := tr.Process(commandCodeSnapshotAt(now, 60, nil)); err != nil {
+			t.Fatal(err)
+		}
+		if err := tr.Process(commandCodeSnapshotAt(now.Add(time.Minute), 2, &reset)); err != nil {
+			t.Fatal(err)
+		}
+		history, err := s.QueryCommandCodeCycleHistory(api.CommandCodeQuotaFiveHour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 1 || resets != 1 {
+			t.Fatalf("closed cycles=%d onReset=%d, want 1 and 1", len(history), resets)
+		}
+	})
+
+	t.Run("opencode", func(t *testing.T) {
+		s := newTestOpenCodeStore(t)
+		tr := NewOpenCodeTracker(s, nil)
+		resets := 0
+		tr.SetOnReset(func(string) { resets++ })
+		if err := tr.Process(openCodeSnapshotAt(now, 60, nil)); err != nil {
+			t.Fatal(err)
+		}
+		if err := tr.Process(openCodeSnapshotAt(now.Add(time.Minute), 2, &reset)); err != nil {
+			t.Fatal(err)
+		}
+		history, err := s.QueryOpenCodeCycleHistory("weekly")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 1 || resets != 1 {
+			t.Fatalf("closed cycles=%d onReset=%d, want 1 and 1", len(history), resets)
+		}
+	})
 }
 
 // TestWindowStaleResetIsNotStored covers the inverted live OpenCode cycle
