@@ -62,8 +62,12 @@ If the refresh token is invalid (e.g., revoked), onWatch pauses polling and logs
 
 onWatch automatically detects your account type:
 - **Individual**: `planName` is "pro", "ultra", or "free", or `spendLimitUsage.limitType` is "user"
-- **Team**: `planName` is "team"/"business", or `limitType` is "team", or `pooledLimit` is present
+- **Team**: `planName` is "team"/"business", or `limitType` is "team"
 - **Enterprise**: `planName` is "enterprise" (uses request-based `/api/usage` instead of Connect RPC)
+
+`spendLimitUsage.pooledLimit` is no longer used to infer a Team account. Free plans also send this field, so only the plan name or `limitType` decides Team status.
+
+Numeric usage fields are decoded tolerantly: Cursor may send an amount as a JSON number (`50000`) or a quoted string (`"50000"`). Fields that still cannot be parsed are treated as zero and logged once, instead of failing the whole poll.
 
 ## API Endpoints Used
 
