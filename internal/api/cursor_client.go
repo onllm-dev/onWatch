@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -38,6 +39,14 @@ type CursorClient struct {
 	tokenMu    sync.RWMutex
 	baseURL    string
 	logger     *slog.Logger
+
+	// planMu guards the last plan name a successful plan-info fetch reported.
+	// Plan info is non-fatal, and the plan name is the only Team signal for a
+	// member whose limitType is "user"; losing it for one poll would flip the
+	// stored total_usage from dollars to percent.
+	planMu       sync.RWMutex
+	lastPlanName string
+	planNameSeen bool
 }
 
 type CursorOption func(*CursorClient)
@@ -108,9 +117,11 @@ func (c *CursorClient) FetchQuotas(ctx context.Context) (*CursorSnapshot, error)
 		c.logger.Warn("cursor: failed to fetch plan info, continuing without", "error", err)
 	}
 
-	planName := ""
-	if planInfo != nil {
-		planName = planInfo.PlanInfo.PlanName
+	planName, planFromMemory := c.resolvePlanName(planInfo, err != nil)
+	if planFromMemory {
+		// Keep the snapshot's PlanName honest: it reports the plan the account
+		// is known to be on, not the empty value a failed fetch returned.
+		planInfo = &CursorPlanInfoResponse{PlanInfo: CursorPlanInfo{PlanName: planName}}
 	}
 	normalizedPlan := NormalizeCursorPlanName(planName)
 
@@ -154,6 +165,32 @@ func (c *CursorClient) FetchQuotas(ctx context.Context) (*CursorSnapshot, error)
 	)
 
 	return snapshot, nil
+}
+
+// resolvePlanName chooses the plan name for this poll and remembers the last
+// non-empty one. When the plan-info fetch fails it returns the remembered
+// name: plan info is non-fatal, and for a Team or Business member whose usage
+// limitType is "user" the plan name is the only Team signal, so dropping it
+// for one poll would flip that account to Individual and store total_usage as
+// a percent instead of dollars. It never infers Team from pooledLimit.
+func (c *CursorClient) resolvePlanName(planInfo *CursorPlanInfoResponse, fetchFailed bool) (name string, fromMemory bool) {
+	if planInfo != nil {
+		if trimmed := strings.TrimSpace(planInfo.PlanInfo.PlanName); trimmed != "" {
+			c.planMu.Lock()
+			c.lastPlanName = trimmed
+			c.planNameSeen = true
+			c.planMu.Unlock()
+			return trimmed, false
+		}
+	}
+	if fetchFailed {
+		c.planMu.RLock()
+		defer c.planMu.RUnlock()
+		if c.planNameSeen {
+			return c.lastPlanName, true
+		}
+	}
+	return "", false
 }
 
 func shouldFetchCursorRequestBasedUsage(usage *CursorUsageResponse, normalizedPlan string) bool {

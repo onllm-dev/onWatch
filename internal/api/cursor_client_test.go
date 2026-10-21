@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 )
@@ -347,5 +349,80 @@ func TestShouldUseCursorRequestBasedUsage(t *testing.T) {
 	}
 	if shouldUseCursorRequestBasedUsage(&CursorUsageResponse{Enabled: true, PlanUsage: &CursorPlanUsage{Limit: 100}}, requestUsage) {
 		t.Fatal("did not expect request-based usage when a standard plan limit is available")
+	}
+}
+
+// A Team/Business member's usage payload carries limitType "user", so the
+// plan name is the only Team signal. Plan info is fetched non-fatally; when it
+// fails the client must keep the last known plan name instead of
+// reclassifying the account as Individual and flipping total_usage from
+// dollars to percent for that poll.
+func TestCursorClient_FetchQuotas_PlanInfoFailureKeepsLastPlanName(t *testing.T) {
+	var planInfoCalls int
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/aiserver.v1.DashboardService/GetCurrentPeriodUsage":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{
+				"billingCycleStart": "1768399334000",
+				"billingCycleEnd": "1771077734000",
+				"planUsage": {
+					"totalSpend": 5000,
+					"remaining": 35000,
+					"limit": 40000
+				},
+				"spendLimitUsage": {"individualLimit": 40000, "individualRemaining": 35000, "limitType": "user"},
+				"enabled": true
+			}`)
+		case "/aiserver.v1.DashboardService/GetPlanInfo":
+			mu.Lock()
+			planInfoCalls++
+			call := planInfoCalls
+			mu.Unlock()
+			if call == 1 {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"planInfo": {"planName": "Team"}}`)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewCursorClient("test_token", discardLoggerClient(), WithCursorBaseURL(server.URL))
+	ctx := context.Background()
+
+	first, err := client.FetchQuotas(ctx)
+	if err != nil {
+		t.Fatalf("first FetchQuotas: %v", err)
+	}
+	if first.AccountType != CursorAccountTeam || first.PlanName != "Team" {
+		t.Fatalf("first poll = %q/%q, want Team/Team", first.AccountType, first.PlanName)
+	}
+
+	second, err := client.FetchQuotas(ctx)
+	if err != nil {
+		t.Fatalf("second FetchQuotas: %v", err)
+	}
+	if second.AccountType != CursorAccountTeam {
+		t.Fatalf("second poll AccountType = %q, want Team when plan info fails", second.AccountType)
+	}
+	if second.PlanName != "Team" {
+		t.Fatalf("second poll PlanName = %q, want the remembered Team", second.PlanName)
+	}
+	var total *CursorQuota
+	for i := range second.Quotas {
+		if second.Quotas[i].Name == "total_usage" {
+			total = &second.Quotas[i]
+		}
+	}
+	if total == nil {
+		t.Fatal("second poll has no total_usage quota")
+	}
+	if total.Format != CursorFormatDollars {
+		t.Fatalf("total_usage Format = %q after a plan-info failure, want %q", total.Format, CursorFormatDollars)
 	}
 }
