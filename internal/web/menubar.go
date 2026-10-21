@@ -783,13 +783,28 @@ func anthropicPrimaryCapturedAt(times map[string]time.Time) (time.Time, bool) {
 	return newest, found
 }
 
+// menubarQuotaMemoryBound is how long a quota remembered from an earlier
+// payload keeps pinning a card's age after it disappears from the payload.
+//
+// The bound is 24h, not 2x the stale threshold. A quota that vanishes because
+// the provider stopped reporting it (extra usage switched off, a renamed
+// window) can never come back through the builder's query window (Cursor reads
+// only the newest snapshot, Anthropic the last 50), so remembering it forever
+// pins the age until restart. The card still shows its real (old) data until
+// the next successful build of the remaining quotas, and the age it reports is
+// the real capture time of the last data that still exists. A 24h horizon
+// covers a quota that merely aged out of the window while the provider was
+// idle (the builders query at most a few hours of history), while anything
+// older than that is not data the card is still displaying.
+const menubarQuotaMemoryBound = 24 * time.Hour
+
 // mergeQuotaTimes folds the payload's per-quota times into the remembered set
 // and returns the oldest time the card should show. A present quota always
 // updates its entry to the current time, so a refreshed quota moves forward;
-// only a quota absent from this payload keeps contributing its last-seen time
-// (it aged out of the builder's query window). That is the "remember while
-// missing" rule: the card cannot stay pinned to its first old reading once the
-// quota returns.
+// a quota absent from the payload contributes its last-seen time until it has
+// been missing longer than menubarQuotaMemoryBound, at which point the entry
+// is dropped. Without that bound a permanently removed quota would pin the
+// card's age (and its stale flag) until the daemon restarted.
 func (h *Handler) mergeQuotaTimes(id string, present map[string]time.Time) time.Time {
 	h.menubarLastGoodMu.Lock()
 	defer h.menubarLastGoodMu.Unlock()
@@ -806,16 +821,47 @@ func (h *Handler) mergeQuotaTimes(id string, present map[string]time.Time) time.
 		lastSeen = make(map[string]time.Time, len(present))
 		h.menubarQuotas[id] = lastSeen
 	}
+	if h.menubarQuotaMissing == nil {
+		h.menubarQuotaMissing = make(map[string]map[string]time.Time, 8)
+	}
+	missing := h.menubarQuotaMissing[id]
+	if missing == nil {
+		missing = make(map[string]time.Time, 2)
+		h.menubarQuotaMissing[id] = missing
+	}
+	now := h.menubarNowTime().UTC()
 	for name, at := range present {
 		if !at.IsZero() {
 			lastSeen[name] = at
+			delete(missing, name)
 		}
+	}
+	// Drop quotas that have been missing from the payload for longer than the
+	// bound, measured from the first pass that did not carry them. A quota
+	// that is merely absent from one payload (aged out of the builder's
+	// window) stays remembered; one that is gone for good stops pinning the
+	// card's age.
+	for name := range lastSeen {
+		if _, ok := present[name]; ok {
+			continue
+		}
+		since, seen := missing[name]
+		if !seen {
+			missing[name] = now
+			continue
+		}
+		if now.Sub(since) > menubarQuotaMemoryBound {
+			delete(lastSeen, name)
+			delete(missing, name)
+		}
+	}
+	if len(lastSeen) == 0 {
+		delete(h.menubarQuotas, id)
+		delete(h.menubarQuotaMissing, id)
+		return time.Time{}
 	}
 	var oldest time.Time
 	for _, at := range lastSeen {
-		if at.IsZero() {
-			continue
-		}
 		if oldest.IsZero() || at.Before(oldest) {
 			oldest = at
 		}
@@ -896,6 +942,7 @@ func (h *Handler) forgetMenubarCard(id string) {
 	defer h.menubarLastGoodMu.Unlock()
 	delete(h.menubarLastGood, id)
 	delete(h.menubarQuotas, id)
+	delete(h.menubarQuotaMissing, id)
 }
 
 func (h *Handler) storeMenubarCard(id string, card *menubar.ProviderCard) {
@@ -917,6 +964,7 @@ func (h *Handler) pruneMenubarLastGood(attempted map[string]struct{}) {
 		if _, ok := attempted[id]; !ok {
 			delete(h.menubarLastGood, id)
 			delete(h.menubarQuotas, id)
+			delete(h.menubarQuotaMissing, id)
 		}
 	}
 }

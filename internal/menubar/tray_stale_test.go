@@ -151,3 +151,27 @@ func TestPlanTrayRefreshDimsArtifacts(t *testing.T) {
 func alphaAt(img *image.RGBA, x, y int) uint8 {
 	return img.RGBAAt(x, y).A
 }
+
+// Review item 2: Anthropic hybrid cards keep the honest oldest quota for the
+// age label but judge staleness from the primary windows. The tray ticks
+// between server responses, so it must use the same timestamp the server used.
+func TestCardStaleAtPrefersStaleCheckedAt(t *testing.T) {
+	now := time.Now().UTC()
+	card := staleTestCard("anthropic", "Anthropic", now.Add(-3*time.Hour), 900)
+	card.StaleCheckedAt = now.Add(-time.Minute).Format(time.RFC3339)
+	if cardStaleAt(card, now) {
+		t.Fatal("fresh primary windows must keep the card fresh even when the oldest quota is hours old")
+	}
+
+	card = staleTestCard("anthropic", "Anthropic", now.Add(-time.Minute), 900)
+	card.StaleCheckedAt = now.Add(-3 * time.Hour).Format(time.RFC3339)
+	if !cardStaleAt(card, now) {
+		t.Fatal("stale primary windows must mark the card stale even when the age label looks fresh")
+	}
+
+	// Without the field the age timestamp is the only source.
+	fallback := staleTestCard("anthropic", "Anthropic", now.Add(-time.Hour), 900)
+	if !cardStaleAt(fallback, now) {
+		t.Fatal("without stale_checked_at the card must fall back to updated_at_time")
+	}
+}

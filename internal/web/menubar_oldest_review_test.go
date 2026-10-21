@@ -1,6 +1,9 @@
 package web
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -182,5 +185,104 @@ func TestMenubarAnthropicHybridPrimaryQuotasOnly(t *testing.T) {
 	}
 	if card.Stale {
 		t.Fatalf("fresh primary quotas must keep the card fresh even when an API-only quota is hours old: %+v", card)
+	}
+}
+
+// Review item 2: the summary must serialize stale_checked_at so the popover
+// and the tray can re-evaluate an Anthropic hybrid card on the primary
+// windows between server responses.
+func TestMenubarSummarySerializesStaleCheckedAt(t *testing.T) {
+	cfg := &config.Config{AnthropicToken: "token", AnthropicSource: "auto", PollInterval: 120 * time.Second}
+	h, s, _, done := staleTestHandler(t, cfg)
+	defer done()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, snap := range []*api.AnthropicSnapshot{
+		{CapturedAt: now.Add(-time.Minute), Quotas: []api.AnthropicQuota{
+			{Name: "five_hour", Utilization: 20},
+			{Name: "seven_day", Utilization: 40},
+		}},
+		{CapturedAt: now.Add(-3 * time.Hour), Quotas: []api.AnthropicQuota{
+			{Name: "seven_day_sonnet", Utilization: 10},
+		}},
+	} {
+		if _, err := s.InsertAnthropicSnapshot(snap); err != nil {
+			t.Fatalf("InsertAnthropicSnapshot: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	rr := httptest.NewRecorder()
+	h.MenubarSummary(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Providers []menubar.ProviderCard `json:"providers"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	var anthropic *menubar.ProviderCard
+	for i := range body.Providers {
+		if body.Providers[i].ID == "anthropic" {
+			anthropic = &body.Providers[i]
+		}
+	}
+	if anthropic == nil {
+		t.Fatalf("anthropic card missing: %+v", body.Providers)
+	}
+	if anthropic.StaleCheckedAt == "" {
+		t.Fatal("a hybrid Anthropic card must serialize stale_checked_at for the clients")
+	}
+	if anthropic.Stale {
+		t.Fatalf("fresh primaries must keep the card fresh: %+v", anthropic)
+	}
+}
+
+// Review item 3: a quota missing from the payload is remembered so the card
+// cannot look fresher than its data, but a quota that is gone for good must
+// stop pinning the card's age after a bound.
+func TestMenubarRemovedQuotaUnpinsAfterBound(t *testing.T) {
+	h := &Handler{}
+	base := time.Now().UTC().Truncate(time.Second)
+	now := base
+	h.menubarNow = func() time.Time { return now }
+
+	present := time.Now().UTC().Truncate(time.Second)
+	oldest := present.Add(-60 * time.Hour)
+	withOld := map[string]interface{}{
+		"capturedAt": present.Format(time.RFC3339),
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": present.Format(time.RFC3339)},
+			map[string]interface{}{"name": "extra_usage", "lastUpdatedAt": oldest.Format(time.RFC3339)},
+		},
+	}
+	card := &menubar.ProviderCard{}
+	if got := h.applyMenubarOldestCapturedAt(card, "anthropic", withOld); !got.Equal(oldest) {
+		t.Fatalf("first pass = %v, want %v", got, oldest)
+	}
+
+	// The quota disappears from the payload. Inside the bound it still pins
+	// the age, so old data is not silently relabelled as fresh.
+	without := map[string]interface{}{
+		"capturedAt": present.Format(time.RFC3339),
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": present.Format(time.RFC3339)},
+		},
+	}
+	now = base.Add(time.Hour)
+	if got := h.applyMenubarOldestCapturedAt(card, "anthropic", without); !got.Equal(oldest) {
+		t.Fatalf("inside the bound = %v, want the remembered %v", got, oldest)
+	}
+
+	// Past the bound the memory is dropped: the card follows the data that is
+	// actually still there instead of staying pinned until restart.
+	now = base.Add(time.Hour + menubarQuotaMemoryBound + time.Minute)
+	if got := h.applyMenubarOldestCapturedAt(card, "anthropic", without); !got.Equal(present) {
+		t.Fatalf("past the bound = %v, want the present quota time %v", got, present)
+	}
+	if got := h.menubarQuotas["anthropic"]; len(got) != 1 {
+		t.Fatalf("remembered quotas = %v, want only the present one", got)
 	}
 }

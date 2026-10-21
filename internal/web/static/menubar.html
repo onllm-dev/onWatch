@@ -2776,7 +2776,12 @@
                 if (!(after > 0)) {
                     return false;
                 }
-                const then = Date.parse(provider.updated_at_time || provider.updatedAtTime || "");
+                // stale_checked_at wins when present: Anthropic hybrid cards
+                // show the honest oldest quota age but judge freshness on the
+                // statusline-fed primary windows.
+                const checkedAt = String(provider.stale_checked_at || provider.staleCheckedAt || "");
+                const source = checkedAt || String(provider.updated_at_time || provider.updatedAtTime || "");
+                const then = Date.parse(source);
                 if (!Number.isFinite(then) || then <= 0) {
                     return false;
                 }
@@ -2858,7 +2863,7 @@
                 // stale while the daemon is unreachable without a re-render.
                 const severityTitle = `${standardStatusLabel(provider)} - peak ${Math.round(clampPercent(provider.highest_percent))}%`;
                 return `
-                    <span class="provider-status" tabindex="0" role="img" aria-label="${escapeHTML(dotTitle)}" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-stale-after="${escapeHTML(String(provider.stale_after_seconds || 0))}" data-attention-title="${escapeHTML(attention || '')}" data-severity-title="${escapeHTML(severityTitle)}">
+                    <span class="provider-status" tabindex="0" role="img" aria-label="${escapeHTML(dotTitle)}" data-updated-at="${escapeHTML(provider.updated_at_time || '')}" data-stale-checked-at="${escapeHTML(provider.stale_checked_at || '')}" data-stale-after="${escapeHTML(String(provider.stale_after_seconds || 0))}" data-attention-title="${escapeHTML(attention || '')}" data-severity-title="${escapeHTML(severityTitle)}">
                         <span class="provider-status-dot status-${escapeHTML(status)}${attentionClass}${staleClass}"></span>
                         <span class="provider-status-tip" role="tooltip" aria-hidden="true">${escapeHTML(dotTitle)}</span>
                     </span>
@@ -3992,7 +3997,7 @@
                         return;
                     }
                     const was = el.querySelector(".provider-status-dot.is-stale") !== null;
-                    const stale = providerStaleFromAttributes(raw, el.getAttribute("data-stale-after"));
+                    const stale = providerStaleFromAttributes(raw, el.getAttribute("data-stale-after"), el.getAttribute("data-stale-checked-at"));
                     if (was !== stale) {
                         staleChanged = true;
                     }
@@ -4045,12 +4050,15 @@
 
             // providerStaleFromAttributes is the DOM-only staleness check used
             // by the ticker (matches providerStaleNow without a card object).
-            function providerStaleFromAttributes(raw, staleAfter) {
+            // checkedAt, when non-empty, is stale_checked_at and wins; raw is
+            // updated_at_time, the fallback.
+            function providerStaleFromAttributes(raw, staleAfter, checkedAt) {
                 const after = Number(staleAfter || 0);
-                if (!(after > 0) || !raw) {
+                const source = checkedAt || raw;
+                if (!(after > 0) || !source) {
                     return false;
                 }
-                const then = Date.parse(raw);
+                const then = Date.parse(source);
                 if (!Number.isFinite(then) || then <= 0) {
                     return false;
                 }

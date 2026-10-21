@@ -149,9 +149,15 @@ type Handler struct {
 	// has appeared on a card. A quota's time is used from the current payload
 	// while it is present; the remembered value is used only when that quota
 	// has disappeared from the payload (aged out of the builder's query
-	// window). The entry is dropped once every quota is back. Bounded by the
-	// number of cards and quotas and pruned with the last-good cache.
+	// window). The entry is dropped once every quota is back, and after
+	// menubarQuotaMemoryBound of continuous absence so a removed quota cannot
+	// pin the card's age until restart. Bounded by the number of cards and
+	// quotas and pruned with the last-good cache.
 	menubarQuotas map[string]map[string]time.Time
+	// menubarQuotaMissing records when a quota was first absent from a
+	// payload, so a permanently removed quota stops pinning the card's age
+	// after menubarQuotaMemoryBound. Pruned with the quota map.
+	menubarQuotaMissing map[string]map[string]time.Time
 	// menubarSnapshotData caches the last successfully built data so the
 	// summary, tray-title and preferences endpoints can answer without
 	// rebuilding roughly 60-90 SQL statements on every request. Only one build

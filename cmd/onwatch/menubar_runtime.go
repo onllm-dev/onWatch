@@ -85,10 +85,18 @@ func readRuntimePID(path string) int {
 }
 
 func writeRuntimePID(path string) error {
+	return writeRuntimePIDValue(path, os.Getpid())
+}
+
+// writeRuntimePIDValue records pid in the runtime pid file. The daemon writes
+// the spawned child's pid, never its own: while the companion waits up to 10s
+// for the single-instance lock, a shutdown that read the daemon's own pid back
+// would signal itself and skip the database close.
+func writeRuntimePIDValue(path string, pid int) error {
 	if err := ensurePIDDir(); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(fmt.Sprintf("%d", os.Getpid())), 0644)
+	return os.WriteFile(path, []byte(fmt.Sprintf("%d", pid)), 0644)
 }
 
 func processRunning(pid int) bool {
@@ -128,21 +136,47 @@ func stopMenubarProcess(testMode bool) error {
 		return nil
 	}
 	proc, err := os.FindProcess(pid)
-	if err == nil {
-		_ = terminateProcess(proc)
-		// Wait for it to exit so the replacement can take the single-instance
-		// lock. Without this the lock is still held and the new companion
-		// exits with no tray.
-		deadline := time.Now().Add(menubarStopWaitTimeout)
-		for processAlive(pid) && time.Now().Before(deadline) {
-			time.Sleep(menubarStopPollInterval)
-		}
-		if processAlive(pid) {
+	if err != nil {
+		_ = os.Remove(path)
+		return nil
+	}
+	// Never signal this process or its parent. The pid file must name the
+	// companion, but a daemon-side write that raced the companion (or a stale
+	// file) can name the daemon, and signalling it here aborts the shutdown
+	// before the database is closed.
+	if pid == os.Getpid() || pid == os.Getppid() {
+		slog.Warn("Refusing to signal this process from the menubar pid file", "pid", pid, "pid_file", path)
+		_ = os.Remove(path)
+		return nil
+	}
+	// Best-effort identity check: a recycled pid or a corrupt file must not
+	// let shutdown signal an unrelated process. An unknown command name
+	// (permission restrictions) is not evidence against the companion, so it
+	// proceeds.
+	if name := processCommandName(pid); name != "" && !isOnwatchProcess(pid) {
+		slog.Warn("Refusing to signal a process that is not onWatch", "pid", pid, "command", name, "pid_file", path)
+		_ = os.Remove(path)
+		return nil
+	}
+	_ = terminateProcess(proc)
+	// Wait for it to exit so the replacement can take the single-instance
+	// lock. Without this the lock is still held and the new companion
+	// exits with no tray.
+	deadline := time.Now().Add(menubarStopWaitTimeout)
+	for processAlive(pid) && time.Now().Before(deadline) {
+		time.Sleep(menubarStopPollInterval)
+	}
+	if processAlive(pid) {
+		// Re-check before the hard kill: escalation must never hit a pid that
+		// now belongs to something else.
+		if name := processCommandName(pid); name != "" && !isOnwatchProcess(pid) {
+			slog.Warn("Refusing to kill a process that is not onWatch", "pid", pid, "command", name, "pid_file", path)
+		} else {
 			_ = proc.Kill()
-			killDeadline := time.Now().Add(time.Second)
-			for processAlive(pid) && time.Now().Before(killDeadline) {
-				time.Sleep(menubarStopPollInterval)
-			}
+		}
+		killDeadline := time.Now().Add(time.Second)
+		for processAlive(pid) && time.Now().Before(killDeadline) {
+			time.Sleep(menubarStopPollInterval)
 		}
 	}
 	_ = os.Remove(path)
@@ -230,7 +264,7 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 		closeLog(logFile)
 		return err
 	}
-	if err := writeRuntimePID(path); err != nil {
+	if err := writeRuntimePIDValue(path, cmd.Process.Pid); err != nil {
 		_ = cmd.Process.Kill()
 		closeLog(logFile)
 		return fmt.Errorf("failed to write menubar pid file: %w", err)

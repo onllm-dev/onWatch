@@ -17,10 +17,21 @@ func cardStaleAt(card ProviderCard, now time.Time) bool {
 	if card.Stale {
 		return true
 	}
-	if card.StaleAfterSeconds <= 0 || card.UpdatedAtTime == "" {
+	if card.StaleAfterSeconds <= 0 {
 		return false
 	}
-	captured, err := time.Parse(time.RFC3339, card.UpdatedAtTime)
+	// StaleCheckedAt is the timestamp staleness is judged from when it differs
+	// from the age label (Anthropic hybrid: the primary windows, not the
+	// every-tenth-poll API supplements). Without it the tray re-flags a card
+	// the server considers fresh as soon as the honest age passes the window.
+	source := card.StaleCheckedAt
+	if source == "" {
+		source = card.UpdatedAtTime
+	}
+	if source == "" {
+		return false
+	}
+	captured, err := time.Parse(time.RFC3339, source)
 	if err != nil || captured.IsZero() {
 		return false
 	}

@@ -148,3 +148,57 @@ assert.equal(rendered, 1, "crossing the threshold must re-render once");
 `
 	runMenubarNode(t, script)
 }
+
+// Review item 2: an Anthropic hybrid card carries the honest oldest quota in
+// updated_at_time but judges staleness from stale_checked_at (the primary
+// windows). Both the render path and the DOM ticker must prefer it, or a card
+// with fresh primaries turns stale locally while the server says fresh.
+func TestMenubarStaleUsesStaleCheckedAt(t *testing.T) {
+	html := readMenubarHTML(t)
+	slice := menubarSlice(t, html, "function providerStaleNow(", "function renderStateCard(")
+	ticker := menubarSlice(t, html, "function providerStaleFromAttributes(", "function staleTooltipText(")
+
+	script := `
+const assert = require('node:assert/strict');
+` + slice + ticker + `
+function escapeHTML(value) { return String(value == null ? "" : value); }
+function providerIconClass() { return "provider-icon-codex"; }
+function standardStatusLabel() { return "Healthy"; }
+function providerAgeLabel() { return "3h"; }
+function clampPercent(value) { return Math.max(0, Math.min(100, Number(value || 0))); }
+function providerQuotas(provider) { return Array.isArray(provider && provider.quotas) ? provider.quotas : []; }
+function usageSummary() { return ""; }
+function quotaStatusNote() { return ""; }
+function fullQuotaLabel(quota) { return String(quota.label || ""); }
+function compactResetLabel() { return "1h"; }
+function ringColumns() { return 2; }
+const mistralRecovery = { markup: () => "" };
+
+const min = 60 * 1000;
+const old = new Date(Date.now() - 3 * 60 * min).toISOString();
+const fresh = new Date(Date.now() - min).toISOString();
+
+// Oldest quota 3h old, primary windows 1m old: fresh.
+const hybrid = {
+  label: "Anthropic", id: "anthropic", base_provider: "anthropic",
+  status: "healthy", highest_percent: 40,
+  updated_at_time: old, stale_checked_at: fresh,
+  stale_after_seconds: 900, quotas: []
+};
+assert.equal(providerStaleNow(hybrid), false, "stale_checked_at must win over the oldest quota");
+assert.ok(!standardHeaderMarkup(hybrid).includes("is-stale"), "render must use stale_checked_at");
+assert.equal(providerStaleNow(Object.assign({}, hybrid, { updated_at_time: fresh, stale_checked_at: old })), true,
+  "stale primary windows must mark the card stale even when the age label looks fresh");
+
+// The ticker reads the same value from the data attribute.
+assert.equal(providerStaleFromAttributes(fresh, "900", old), true, "ticker: a stale checked-at wins over a fresh updated_at");
+assert.equal(providerStaleFromAttributes(fresh, "900", ""), false, "ticker: falls back to updated_at");
+assert.equal(providerStaleFromAttributes(old, "900", ""), true, "ticker: falls back to updated_at when checked-at is absent");
+assert.equal(providerStaleFromAttributes(old, "900", fresh), false, "ticker: fresh checked-at keeps the card fresh");
+
+// The attribute is emitted for the ticker.
+const markup = standardHeaderMarkup(hybrid);
+assert.ok(markup.includes('data-stale-checked-at="' + fresh + '"'), "the dot must carry data-stale-checked-at: " + markup);
+`
+	runMenubarNode(t, script)
+}
