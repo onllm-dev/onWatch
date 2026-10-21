@@ -32,6 +32,18 @@ func newCacheTestHandler(t *testing.T, cfg *config.Config) (*Handler, *store.Sto
 	return h, s, dsn
 }
 
+// newGate returns a gate channel and a release function that closes it at most
+// once. Release is also registered as cleanup, so a failing assertion cannot
+// leave the gated build goroutine blocked past the end of the test.
+func newGate(t *testing.T) (chan struct{}, func()) {
+	t.Helper()
+	gate := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(gate) }) }
+	t.Cleanup(release)
+	return gate, release
+}
+
 func waitNotNil(t *testing.T, ch <-chan struct{}) {
 	t.Helper()
 	select {
@@ -78,19 +90,19 @@ func TestMenubarCacheConcurrentRequestsTriggerExactlyOneBuild(t *testing.T) {
 	h.menubarFreshFor = -time.Second
 	h.menubarWaitFor = 30 * time.Second
 
-	gate := make(chan struct{})
+	const requests = 8
+	gate, releaseGate := newGate(t)
 	buildStarted := make(chan struct{}, 1)
+	joined := make(chan struct{}, requests)
 	var builds int32
-	var joined int32
 	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
 		atomic.AddInt32(&builds, 1)
 		buildStarted <- struct{}{}
 		<-gate
 		return h.buildMenubarSnapshotWithAllProviders()
 	}
-	h.menubarJoinHook = func() { atomic.AddInt32(&joined, 1) }
+	h.menubarJoinHook = func() { joined <- struct{}{} }
 
-	const requests = 8
 	var wg sync.WaitGroup
 	codes := make(chan int, requests)
 	for i := 0; i < requests; i++ {
@@ -104,16 +116,14 @@ func TestMenubarCacheConcurrentRequestsTriggerExactlyOneBuild(t *testing.T) {
 	}
 
 	// Let the first request start the build, then wait until every other
-	// request has joined it before releasing.
+	// request has joined it before releasing. The join hook signals each join
+	// exactly, so this does not depend on how quickly the scheduler starts the
+	// request goroutines.
 	waitNotNil(t, buildStarted)
-	deadline := time.Now().Add(5 * time.Second)
-	for atomic.LoadInt32(&joined) < requests-1 {
-		if time.Now().After(deadline) {
-			t.Fatalf("only %d requests joined the in-flight build, want %d", atomic.LoadInt32(&joined), requests-1)
-		}
-		time.Sleep(time.Millisecond)
+	for i := 0; i < requests-1; i++ {
+		waitNotNil(t, joined)
 	}
-	close(gate)
+	releaseGate()
 	wg.Wait()
 	close(codes)
 
@@ -138,7 +148,7 @@ func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 
 	cached := decodeSummary(t, getSummary(h))
 
-	gate := make(chan struct{})
+	gate, releaseGate := newGate(t)
 	buildStarted := make(chan struct{}, 1)
 	backgroundDone := make(chan struct{}, 1)
 	var builds int32
@@ -173,12 +183,19 @@ func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 
 	// Release the background build and wait for it to update the cache.
 	waitNotNil(t, buildStarted)
-	close(gate)
+	releaseGate()
 	waitClosed(t, backgroundDone)
 
+	// Serve the just-stored result instead of starting a third build: the test
+	// asserts the cache updated, not another rebuild. A non-positive window
+	// here would make the final request rebuild as well.
+	h.menubarFreshFor = time.Minute
 	fresh := decodeSummary(t, getSummary(h))
 	if !fresh.GeneratedAt.After(cached.GeneratedAt) {
 		t.Fatalf("post-build snapshot generated_at = %s, want newer than %s", fresh.GeneratedAt, cached.GeneratedAt)
+	}
+	if got := atomic.LoadInt32(&builds); got != 1 {
+		t.Fatalf("builds after the cache update = %d, want 1 (the updated cache must be served)", got)
 	}
 }
 
@@ -242,7 +259,7 @@ func TestMenubarCacheFirstRequestWaits(t *testing.T) {
 		{Name: "total_usage", Used: 40, Limit: 100, Utilization: 40, Format: api.CursorFormatPercent},
 	})
 
-	gate := make(chan struct{})
+	gate, releaseGate := newGate(t)
 	started := make(chan struct{}, 1)
 	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
 		started <- struct{}{}
@@ -264,7 +281,7 @@ func TestMenubarCacheFirstRequestWaits(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	close(gate)
+	releaseGate()
 	select {
 	case rr := <-done:
 		snap := decodeSummary(t, rr)
@@ -318,17 +335,17 @@ func TestMenubarPreferencesJoinsSnapshotBuild(t *testing.T) {
 		{Name: "total_usage", Used: 40, Limit: 100, Utilization: 40, Format: api.CursorFormatPercent},
 	})
 
-	gate := make(chan struct{})
+	gate, releaseGate := newGate(t)
 	started := make(chan struct{}, 1)
 	var providerBuilds int32
-	var joined int32
+	joined := make(chan struct{}, 1)
 	h.menubarProvidersBuildHook = func() { atomic.AddInt32(&providerBuilds, 1) }
 	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
 		started <- struct{}{}
 		<-gate
 		return h.buildMenubarSnapshotWithAllProviders()
 	}
-	h.menubarJoinHook = func() { atomic.AddInt32(&joined, 1) }
+	h.menubarJoinHook = func() { joined <- struct{}{} }
 
 	doneSummary := make(chan int, 1)
 	go func() {
@@ -345,19 +362,13 @@ func TestMenubarPreferencesJoinsSnapshotBuild(t *testing.T) {
 	}()
 
 	// The preferences request must join the in-flight build rather than
-	// starting its own.
-	deadline := time.Now().Add(5 * time.Second)
-	for atomic.LoadInt32(&joined) < 1 {
-		if time.Now().After(deadline) {
-			t.Fatalf("preferences did not join the summary build; provider builds=%d", atomic.LoadInt32(&providerBuilds))
-		}
-		time.Sleep(time.Millisecond)
-	}
+	// starting its own. The join hook fires exactly when it joins.
+	waitNotNil(t, joined)
 	if got := atomic.LoadInt32(&providerBuilds); got != 0 {
 		t.Fatalf("provider builds while the summary build is blocked = %d, want 0 (preferences must not build)", got)
 	}
 
-	close(gate)
+	releaseGate()
 	select {
 	case code := <-doneSummary:
 		if code != http.StatusOK {
@@ -423,17 +434,30 @@ func TestMenubarPreferencesUsesCachedOptionsWithoutBuilding(t *testing.T) {
 // cache contents reveal which build won.
 func TestMenubarCacheSupersededBuildNeverReachesCache(t *testing.T) {
 	h, s, _ := newCacheTestHandler(t, nil)
-	h.menubarFreshFor = -time.Second
+	// The freshness window must stay positive. Once the current generation's
+	// build stores its result, a waiter that re-loops after a superseded build
+	// completes must be served that result. With a non-positive window every
+	// such waiter started yet another build, so the run count depended on how
+	// many waiters happened to wake before the store (CI saw 3).
+	h.menubarFreshFor = time.Minute
 	h.menubarWaitFor = 5 * time.Second
 	insertTestCursorSnapshot(t, s, time.Now().UTC().Add(-5*time.Minute), api.CursorAccountIndividual, "Pro", []api.CursorQuota{
 		{Name: "total_usage", Used: 40, Limit: 100, Utilization: 40, Format: api.CursorFormatPercent},
 	})
 
-	gateA := make(chan struct{})
-	gateC := make(chan struct{})
+	gateA, releaseGateA := newGate(t)
+	gateC, releaseGateC := newGate(t)
 	started := make(chan struct{}, 4)
 	completed := make(chan struct{}, 4)
 	h.menubarAfterBuildHook = func(*menubar.Snapshot, error) { completed <- struct{}{} }
+	// Count builds that reached the serialised build queue with a stale
+	// generation. Those must skip their queries rather than run the hook.
+	var skipped int32
+	h.menubarBuildAcquiredHook = func(generation uint64, ran bool) {
+		if !ran {
+			atomic.AddInt32(&skipped, 1)
+		}
+	}
 	var runs int32
 	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
 		n := atomic.AddInt32(&runs, 1)
@@ -462,11 +486,14 @@ func TestMenubarCacheSupersededBuildNeverReachesCache(t *testing.T) {
 	waitNotNil(t, started)
 
 	// Generation one: a queued build that must be superseded before it runs.
+	// Build A holds menubarBuildMu until gateA is closed, so this build (and
+	// the final one) are queued behind it with no queries started.
+	registered := h.registeredBuilds()
 	h.invalidateMenubarSnapshot()
 	generationOne := h.menubarCurrentGeneration()
 	doneB := make(chan *httptest.ResponseRecorder, 1)
 	go func() { doneB <- getSummary(h) }()
-	h.waitForRegisteredBuild(t, generationOne)
+	h.waitForRegisteredBuild(t, generationOne, registered)
 
 	// Generation two (final): the current build. Generation one's build is
 	// already queued on the mutex and must skip its queries when it gets there.
@@ -474,17 +501,18 @@ func TestMenubarCacheSupersededBuildNeverReachesCache(t *testing.T) {
 	finalGeneration := h.menubarCurrentGeneration()
 	doneC := make(chan *httptest.ResponseRecorder, 1)
 	go func() { doneC <- getSummary(h) }()
-	h.waitForRegisteredBuild(t, finalGeneration)
+	h.waitForRegisteredBuild(t, finalGeneration, registered)
 
 	// Release the first build. Its queries have already run by the time it is
 	// superseded: its result must not be stored as fresh.
-	close(gateA)
+	releaseGateA()
 
-	// A completes, then the generation-one build (run 2, skipped) completes,
-	// then generation three enters the hook and blocks on gateC.
+	// Build A completes without storing (its generation is stale). The queued
+	// superseded build skips and the final generation enters the hook on gateC;
+	// either may reach the build mutex first, and neither stores anything, so
+	// the cache below is exactly what the two superseded builds left behind.
 	waitClosed(t, completed)
-	waitClosed(t, completed)
-	waitNotNil(t, started) // run 3 (the current generation) is now inside
+	waitNotNil(t, started)
 
 	cached, cachedAt, _, _ := h.menubarCachedData()
 	if cached.Snapshot != nil || !cachedAt.IsZero() {
@@ -492,7 +520,7 @@ func TestMenubarCacheSupersededBuildNeverReachesCache(t *testing.T) {
 			cachedAt, cached.Snapshot != nil)
 	}
 
-	close(gateC)
+	releaseGateC()
 	for _, done := range []chan *httptest.ResponseRecorder{doneA, doneB, doneC} {
 		select {
 		case rr := <-done:
@@ -504,10 +532,18 @@ func TestMenubarCacheSupersededBuildNeverReachesCache(t *testing.T) {
 		}
 	}
 
+	// Every build has now finished; the two remaining after-build signals are
+	// the queued superseded build and the current generation.
+	waitClosed(t, completed)
+	waitClosed(t, completed)
+
 	// Only the blocked build plus the current generation ran queries; the
 	// superseded queued build skipped them.
 	if got := atomic.LoadInt32(&runs); got != 2 {
 		t.Fatalf("build hook runs = %d, want 2 (the queued superseded build must skip)", got)
+	}
+	if got := atomic.LoadInt32(&skipped); got != 1 {
+		t.Fatalf("superseded builds that reached the queue = %d, want 1", got)
 	}
 	if got := h.mustCachedMarker(t); uint64(got) != finalGeneration {
 		t.Fatalf("cached marker = %d, want generation %d (the superseded build reached the cache)", got, finalGeneration)
@@ -530,19 +566,30 @@ func (h *Handler) mustCachedMarker(t *testing.T) int {
 
 // waitForRegisteredBuild blocks until a build for the given generation is the
 // registered in-flight build, so a test can invalidate it while it is queued.
-func (h *Handler) waitForRegisteredBuild(t *testing.T, generation uint64) {
+// It observes the build registration hook rather than polling the cache: a
+// superseded build can come and go between two poll iterations.
+func (h *Handler) waitForRegisteredBuild(t *testing.T, generation uint64, registered <-chan uint64) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	timeout := time.After(5 * time.Second)
 	for {
-		_, _, _, inflight := h.menubarCachedData()
-		if inflight != nil && inflight.generation == generation {
-			return
-		}
-		if time.Now().After(deadline) {
+		select {
+		case got := <-registered:
+			if got == generation {
+				return
+			}
+		case <-timeout:
 			t.Fatalf("no build registered for generation %d", generation)
 		}
-		time.Sleep(time.Millisecond)
 	}
+}
+
+// registeredBuilds installs a build registration hook and returns the channel
+// it reports through. The hook runs under the snapshot mutex, so the send must
+// be non-blocking: the buffer covers every build a cache test registers.
+func (h *Handler) registeredBuilds() chan uint64 {
+	ch := make(chan uint64, 64)
+	h.menubarBuildRegisteredHook = func(generation uint64) { ch <- generation }
+	return ch
 }
 
 // Finding 5b: a burst of invalidations during a slow build causes at most one
@@ -562,7 +609,7 @@ func TestMenubarCacheInvalidationBurstCausesOneExtraBuild(t *testing.T) {
 		{Name: "total_usage", Used: 40, Limit: 100, Utilization: 40, Format: api.CursorFormatPercent},
 	})
 
-	gate := make(chan struct{})
+	gate, releaseGate := newGate(t)
 	started := make(chan struct{}, 8)
 	var builds int32
 	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
@@ -575,33 +622,29 @@ func TestMenubarCacheInvalidationBurstCausesOneExtraBuild(t *testing.T) {
 	}
 
 	done := make(chan *httptest.ResponseRecorder, 1)
-	go func() { done <- getSummary(h) }()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	registered := h.registeredBuilds()
+	go func() { defer wg.Done(); done <- getSummary(h) }()
 	waitNotNil(t, started)
 
 	// Several invalidations while the first build is stuck. Each one starts a
 	// request and is followed until that request's build is registered, so
-	// every superseded generation really queues behind the stuck build.
+	// every superseded generation really queues behind the stuck build. The
+	// registration hook is the ordering point: polling the in-flight pointer
+	// can miss a build that is registered and superseded again between polls.
 	for i := 0; i < 5; i++ {
 		h.invalidateMenubarSnapshot()
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			_ = getSummary(h)
 		}()
 		generation := h.menubarCurrentGeneration()
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			_, _, _, inflight := h.menubarCachedData()
-			if inflight != nil && inflight.generation == generation {
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("no build registered for generation %d", generation)
-			}
-			time.Sleep(time.Millisecond)
-		}
+		h.waitForRegisteredBuild(t, generation, registered)
 	}
 
-	time.Sleep(20 * time.Millisecond)
-	close(gate)
+	releaseGate()
 
 	select {
 	case <-done:
@@ -609,7 +652,11 @@ func TestMenubarCacheInvalidationBurstCausesOneExtraBuild(t *testing.T) {
 		t.Fatal("first waiter never completed")
 	}
 
-	// Give any stray goroutine a moment to reach the hook, then bound it.
+	// Every waiter returns once the registered builds drain.
+	waitGroup(t, &wg, "waiter never completed after the builds drained")
+
+	// Wait until the build queue is idle and the last result is cached, then
+	// assert no waiter started a build past the current generation's one.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		if cached, _, _, inflight := h.menubarCachedData(); cached.Snapshot != nil && inflight == nil {
@@ -619,6 +666,22 @@ func TestMenubarCacheInvalidationBurstCausesOneExtraBuild(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&builds); got > 2 {
 		t.Fatalf("builds = %d, want at most 2 for a burst of invalidations", got)
+	}
+}
+
+// waitGroup waits for wg, failing the test after a generous bound so a lost
+// wake-up is reported instead of hanging the package.
+func waitGroup(t *testing.T, wg *sync.WaitGroup, message string) {
+	t.Helper()
+	closed := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal(message)
 	}
 }
 
@@ -706,7 +769,7 @@ func TestMenubarCacheNoCacheWaitIsBounded(t *testing.T) {
 		{Name: "total_usage", Used: 40, Limit: 100, Utilization: 40, Format: api.CursorFormatPercent},
 	})
 
-	gate := make(chan struct{})
+	gate, releaseGate := newGate(t)
 	started := make(chan struct{}, 1)
 	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
 		started <- struct{}{}
@@ -726,7 +789,7 @@ func TestMenubarCacheNoCacheWaitIsBounded(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no-cache request waited past its budget")
 	}
-	close(gate)
+	releaseGate()
 }
 
 // Finding 2: a manual refresh marks the cache stale but keeps it as the
@@ -745,7 +808,7 @@ func TestMenubarRefreshFallsBackToCachedSnapshot(t *testing.T) {
 		t.Fatalf("seed summary status = %d", rr.Code)
 	}
 
-	gate := make(chan struct{})
+	gate, releaseGate := newGate(t)
 	started := make(chan struct{}, 1)
 	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
 		started <- struct{}{}
@@ -770,7 +833,7 @@ func TestMenubarRefreshFallsBackToCachedSnapshot(t *testing.T) {
 		t.Fatal("refresh waited past its budget instead of using the cached snapshot")
 	}
 
-	close(gate)
+	releaseGate()
 }
 
 // Finding 3: the provider-settings save must invalidate only after the live
@@ -847,7 +910,7 @@ func TestMenubarPreferencesPutReturnsSavedSettingsDuringSlowRebuild(t *testing.T
 	}
 
 	// Post-save builds stall past the budget.
-	gate := make(chan struct{})
+	gate, releaseGate := newGate(t)
 	started := make(chan struct{}, 4)
 	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
 		started <- struct{}{}
@@ -874,7 +937,7 @@ func TestMenubarPreferencesPutReturnsSavedSettingsDuringSlowRebuild(t *testing.T
 	if response.DefaultView != "detailed" {
 		t.Fatalf("PUT response default_view = %q, want the saved %q", response.DefaultView, "detailed")
 	}
-	close(gate)
+	releaseGate()
 }
 
 // Finding 3: a cold start whose first build exceeds the no-cache budget must
@@ -887,7 +950,7 @@ func TestMenubarPreferencesColdStartTimeoutIs503(t *testing.T) {
 		{Name: "total_usage", Used: 40, Limit: 100, Utilization: 40, Format: api.CursorFormatPercent},
 	})
 
-	gate := make(chan struct{})
+	gate, releaseGate := newGate(t)
 	started := make(chan struct{}, 1)
 	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
 		started <- struct{}{}
@@ -911,7 +974,7 @@ func TestMenubarPreferencesColdStartTimeoutIs503(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("preferences request waited past its budget")
 	}
-	close(gate)
+	releaseGate()
 }
 
 // Gap B: a stored row that normalizes to no card must not drop the last good

@@ -178,6 +178,19 @@ type Handler struct {
 	menubarBuildHook      func(context.Context) (menubarBuiltData, error)
 	menubarJoinHook       func()
 	menubarAfterBuildHook func(*menubar.Snapshot, error)
+	// menubarBuildAcquiredHook runs once a build goroutine has acquired
+	// menubarBuildMu, with the generation the build was created for and whether
+	// it is still current (runs queries) or already superseded (skips them). It
+	// is called with menubarBuildMu held, so the hook must not block. Tests use
+	// it to synchronise with the serialised build queue instead of relying on
+	// mutex handoff order.
+	menubarBuildAcquiredHook func(generation uint64, ran bool)
+	// menubarBuildRegisteredHook runs when a build becomes the registered
+	// in-flight build, before its goroutine has necessarily acquired the build
+	// mutex. It is called with menubarSnapshotMu held, so the hook must not
+	// block (a buffered channel send is fine). Tests use it to wait for an
+	// exact generation to be registered.
+	menubarBuildRegisteredHook func(generation uint64)
 	// menubarProvidersBuildHook counts entries into the provider build, so a
 	// test can prove the preferences endpoint never starts its own.
 	menubarProvidersBuildHook func()

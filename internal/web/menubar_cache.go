@@ -263,6 +263,9 @@ func (h *Handler) menubarGenerationChanged(generation uint64) bool {
 func (h *Handler) startMenubarSnapshotBuildLocked(generation uint64) *menubarSnapshotBuild {
 	build := &menubarSnapshotBuild{done: make(chan struct{}), generation: generation}
 	h.menubarSnapshotBuild = build
+	if h.menubarBuildRegisteredHook != nil {
+		h.menubarBuildRegisteredHook(generation)
+	}
 
 	go func() {
 		var (
@@ -270,7 +273,12 @@ func (h *Handler) startMenubarSnapshotBuildLocked(generation uint64) *menubarSna
 			err   error
 		)
 		h.menubarBuildMu.Lock()
-		if h.menubarCurrentGeneration() == build.generation {
+		currentGeneration := h.menubarCurrentGeneration()
+		ran := currentGeneration == build.generation
+		if h.menubarBuildAcquiredHook != nil {
+			h.menubarBuildAcquiredHook(build.generation, ran)
+		}
+		if ran {
 			if h.menubarBuildHook != nil {
 				built, err = h.menubarBuildHook(context.Background())
 			} else {
