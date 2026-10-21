@@ -1455,6 +1455,12 @@ func (s *Store) migrateSchema() error {
 		}
 	}
 
+	// One-off repair of derived Command Code / OpenCode reset cycles written
+	// before the reset-boundary fix. Raw snapshots are never touched.
+	if err := s.RepairWindowResetCyclesIfNeeded(nil); err != nil {
+		return fmt.Errorf("window cycle repair: %w", err)
+	}
+
 	// Drop raw_line column from api_integration_usage_events - no longer stored.
 	// Ignore "no such column" (new DB or already migrated) and "no such table"
 	// (migrateSchema called directly on a partial DB in tests, or pre-api-integrations DB).
