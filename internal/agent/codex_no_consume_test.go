@@ -22,6 +22,12 @@ func assertNoConsumeReferences(t *testing.T) {
 		"ConsumeCodexResetCredit",
 		"consume_codex",
 	}
+	// Only this guard and the reset-credit tests' own fake servers may name the
+	// forbidden strings. Match exact paths, so a new file elsewhere is checked.
+	skip := map[string]bool{
+		filepath.Join(root, "internal", "agent", "codex_reset_credits_test.go"): true,
+		filepath.Join(root, "internal", "agent", "codex_no_consume_test.go"):    true,
+	}
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -37,9 +43,7 @@ func assertNoConsumeReferences(t *testing.T) {
 		if !strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, ".js") {
 			return nil
 		}
-		// These tests' own sources necessarily contain the forbidden strings.
-		switch filepath.Base(path) {
-		case "codex_reset_credits_test.go", "codex_no_consume_test.go":
+		if skip[filepath.Clean(path)] {
 			return nil
 		}
 		data, readErr := os.ReadFile(path)

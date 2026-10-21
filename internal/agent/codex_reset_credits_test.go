@@ -40,6 +40,12 @@ func newCodexResetCreditsServer(t *testing.T) *codexResetCreditsServer {
 	cs.detailStatus.Store(http.StatusOK)
 	cs.detailPayload.Store(`{"credits":[],"available_count":0,"total_earned_count":0}`)
 	cs.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read-only guard: the agent may only GET the two reset-credit paths.
+		// Any other method or path fails the test, so URL building cannot route
+		// around it.
+		if r.Method != http.MethodGet {
+			t.Errorf("codex agent used a non-GET method: %s %s", r.Method, r.URL.Path)
+		}
 		switch r.URL.Path {
 		case "/backend-api/wham/usage":
 			cs.usageCalls.Add(1)
@@ -59,6 +65,7 @@ func newCodexResetCreditsServer(t *testing.T) *codexResetCreditsServer {
 			w.WriteHeader(int(cs.detailStatus.Load()))
 			fmt.Fprint(w, cs.detailPayload.Load().(string))
 		default:
+			t.Errorf("codex agent requested an unexpected path: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
