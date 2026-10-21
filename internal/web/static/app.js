@@ -8284,6 +8284,18 @@ function aggregateCyclesByBucket(rows, bucketMinutes) {
   return [...grouped.values()].sort((a, b) => new Date(b.cycleStart).getTime() - new Date(a.cycleStart).getTime());
 }
 
+function windowQuotaSampleHTML(quota) {
+  if (!quota) return '--';
+  const percent = Number.isFinite(quota.percent) ? `${quota.percent.toFixed(1)}%` : '';
+  if (quota.format === 'percent') return percent || '--';
+  const amount = value => quota.format === 'currency'
+    ? `$${Number(value).toFixed(2)}`
+    : Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 });
+  if (!Number.isFinite(quota.value)) return percent || '--';
+  if (!(quota.limit > 0)) return amount(quota.value);
+  return `${amount(quota.value)} / ${amount(quota.limit)} <span class="delta">(${percent})</span>`;
+}
+
 function renderCyclesTable() {
   const thead = document.getElementById('cycles-thead');
   const tbody = document.getElementById('cycles-tbody');
@@ -8292,6 +8304,7 @@ function renderCyclesTable() {
   if (!thead || !tbody) return;
 
   const provider = getCurrentProvider();
+  const windowProvider = provider === 'opencode' || provider === 'commandcode';
   const quotaNames = State.cyclesQuotaNames;
   const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'grok' || provider === 'kimi' || provider === 'mistral' || provider === 'opencode' || provider === 'ollama';
   const deltaUsesPercent = usePercent && provider !== 'minimax';
@@ -8322,7 +8335,7 @@ function renderCyclesTable() {
 
   quotaNames.forEach(qn => {
     const displayName = getQuotaDisplayName(qn, provider);
-    const suffix = usePercent ? ' %' : '';
+    const suffix = usePercent && !windowProvider ? ' %' : '';
     headerHtml += `<th data-sort-key="cq_${qn}" role="button" tabindex="0">${displayName}${suffix} <span class="sort-arrow"></span></th>`;
   });
   headerHtml += '</tr>';
@@ -8486,7 +8499,11 @@ function renderCyclesTable() {
         const cls = getThresholdClass(pct);
         let cellVal = '--';
         if (pct >= 0) {
-          if (provider === 'minimax') {
+          if (windowProvider) {
+            const quota = getCrossQuotaValue(row, qn);
+            const reset = quota?.resetsAt ? ` title="Resets ${escapeHTML(formatDateTime(quota.resetsAt))}"` : '';
+            cellVal = `<span${reset}>${windowQuotaSampleHTML(quota)}</span>`;
+          } else if (provider === 'minimax') {
             const cq = getCrossQuotaValue(row, qn);
             const used = Number(cq?.value || 0);
             const limit = Number(cq?.limit || 0);

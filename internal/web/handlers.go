@@ -12451,6 +12451,8 @@ func (h *Handler) cycleOverviewAntigravity(w http.ResponseWriter, r *http.Reques
 }
 
 type loggingHistoryCrossQuota struct {
+	Format   string
+	ResetsAt *time.Time
 	Name     string
 	Value    float64
 	Limit    float64
@@ -12562,6 +12564,12 @@ func loggingHistoryRowsFromSnapshots(
 				"name":    cq.Name,
 				"percent": cq.Percent,
 				"delta":   delta,
+			}
+			if cq.Format != "" {
+				entry["format"] = cq.Format
+			}
+			if cq.ResetsAt != nil {
+				entry["resetsAt"] = cq.ResetsAt.Format(time.RFC3339)
 			}
 			if cq.HasValue {
 				entry["value"] = cq.Value

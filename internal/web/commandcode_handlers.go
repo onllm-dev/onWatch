@@ -663,11 +663,12 @@ func (h *Handler) loggingHistoryCommandCode(w http.ResponseWriter, r *http.Reque
 		row := make(map[string]loggingHistoryCrossQuota, len(snap.Quotas))
 		for _, q := range snap.Quotas {
 			row[q.Name] = loggingHistoryCrossQuota{
+				Format: string(q.Format), ResetsAt: q.ResetsAt,
 				Name:     q.Name,
 				Value:    q.Used,
 				Limit:    q.Limit,
 				Percent:  q.Utilization,
-				HasValue: q.Used > 0 || q.Limit > 0,
+				HasValue: true,
 				HasLimit: q.Limit > 0,
 			}
 		}
