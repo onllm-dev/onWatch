@@ -430,6 +430,18 @@ func (h *Handler) cyclesOpenCode(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, cycles)
 }
 
+// cycleOverviewProviderLimit caps the per-provider cycle overview at the
+// project's 200-cycle query budget. Each cycle costs an extra quota-values
+// query, so the generic 500-row page limit does not apply here.
+func cycleOverviewProviderLimit(r *http.Request) int {
+	const maxCycles = 200
+	limit := parseCycleOverviewLimit(r)
+	if limit > maxCycles {
+		return maxCycles
+	}
+	return limit
+}
+
 func (h *Handler) cycleOverviewOpenCode(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if h.store == nil {
@@ -445,7 +457,7 @@ func (h *Handler) cycleOverviewOpenCode(w http.ResponseWriter, r *http.Request) 
 		groupBy = "five_hour"
 	}
 
-	overview, err := h.store.QueryOpenCodeCycleOverview(groupBy, parseCycleOverviewLimit(r))
+	overview, err := h.store.QueryOpenCodeCycleOverview(groupBy, cycleOverviewProviderLimit(r))
 	if err != nil {
 		h.logger.Error("failed to query OpenCode cycle overview", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycle overview")

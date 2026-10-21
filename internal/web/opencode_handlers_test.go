@@ -226,6 +226,85 @@ func TestCycleOverviewOpenCode_DefaultsToFiveHour(t *testing.T) {
 	}
 }
 
+// TestCycleOverviewProvidersCapAt200 guards the project's bounded-query rule:
+// each overview cycle runs an extra per-cycle query, so a caller asking for the
+// generic 500-row maximum must still get at most 200 cycles.
+func TestCycleOverviewProvidersCapAt200(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+
+	t.Run("opencode", func(t *testing.T) {
+		s, err := store.New(":memory:")
+		if err != nil {
+			t.Fatalf("store.New: %v", err)
+		}
+		defer s.Close()
+		for i := 0; i < 250; i++ {
+			start := now.Add(-time.Duration(i+1) * 6 * time.Hour)
+			end := start.Add(5 * time.Hour)
+			if _, err := s.CreateOpenCodeCycle("five_hour", start, nil); err != nil {
+				t.Fatalf("CreateOpenCodeCycle: %v", err)
+			}
+			if err := s.CloseOpenCodeCycle("five_hour", end, 10, 5); err != nil {
+				t.Fatalf("CloseOpenCodeCycle: %v", err)
+			}
+		}
+
+		h := NewHandler(s, nil, nil, nil, createTestConfigWithOpenCode())
+		req := httptest.NewRequest(http.MethodGet, "/api/opencode/cycle-overview?groupBy=five_hour&limit=500", nil)
+		rec := httptest.NewRecorder()
+		h.cycleOverviewOpenCode(rec, req)
+
+		var response struct {
+			Cycles []map[string]interface{} `json:"cycles"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(response.Cycles) > 200 {
+			t.Fatalf("cycles = %d, want at most 200", len(response.Cycles))
+		}
+		if len(response.Cycles) != 200 {
+			t.Fatalf("cycles = %d, want the 200 newest", len(response.Cycles))
+		}
+	})
+
+	t.Run("commandcode", func(t *testing.T) {
+		s, err := store.New(":memory:")
+		if err != nil {
+			t.Fatalf("store.New: %v", err)
+		}
+		defer s.Close()
+		for i := 0; i < 250; i++ {
+			start := now.Add(-time.Duration(i+1) * 6 * time.Hour)
+			end := start.Add(5 * time.Hour)
+			if _, err := s.CreateCommandCodeCycle(api.CommandCodeQuotaFiveHour, start, nil); err != nil {
+				t.Fatalf("CreateCommandCodeCycle: %v", err)
+			}
+			if err := s.CloseCommandCodeCycle(api.CommandCodeQuotaFiveHour, end, 10, 5); err != nil {
+				t.Fatalf("CloseCommandCodeCycle: %v", err)
+			}
+		}
+
+		h := NewHandler(s, nil, nil, nil, createTestConfigWithCommandCode())
+		req := httptest.NewRequest(http.MethodGet, "/api/commandcode/cycle-overview?groupBy=five_hour&limit=500", nil)
+		rec := httptest.NewRecorder()
+		h.cycleOverviewCommandCode(rec, req)
+
+		var response struct {
+			Cycles []map[string]interface{} `json:"cycles"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(response.Cycles) > 200 {
+			t.Fatalf("cycles = %d, want at most 200", len(response.Cycles))
+		}
+		if len(response.Cycles) != 200 {
+			t.Fatalf("cycles = %d, want the 200 newest", len(response.Cycles))
+		}
+	})
+}
+
 func TestBuildOpenCodeSummary_WithTracker(t *testing.T) {
 	s, err := store.New(":memory:")
 	if err != nil {

@@ -445,7 +445,7 @@ func (h *Handler) cycleOverviewCommandCode(w http.ResponseWriter, r *http.Reques
 		groupBy = api.CommandCodeQuotaFiveHour
 	}
 
-	overview, err := h.store.QueryCommandCodeCycleOverview(groupBy, parseCycleOverviewLimit(r))
+	overview, err := h.store.QueryCommandCodeCycleOverview(groupBy, cycleOverviewProviderLimit(r))
 	if err != nil {
 		h.logger.Error("failed to query Command Code cycle overview", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycle overview")
