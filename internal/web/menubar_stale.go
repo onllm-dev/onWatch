@@ -14,6 +14,11 @@ import (
 // interval from flickering a card stale between two normal polls.
 const staleFloor = 5 * time.Minute
 
+// anthropicStatuslineWindow is the staleness window for Anthropic's primary
+// windows in hybrid/statusline mode: the statusline file itself is accepted up
+// to 5m old, and Claude Code rewrites it only while it is in use.
+const anthropicStatuslineWindow = 15 * time.Minute
+
 // staleContext is everything the threshold table needs about one card.
 type staleContext struct {
 	// Provider is the card ID (base or account-scoped, e.g. "codex:2").
@@ -29,6 +34,11 @@ type staleContext struct {
 	Status string
 	// Outcome is the last published poll outcome for this card, if any.
 	Outcome agent.PollOutcome
+	// AnthropicSource is config AnthropicSource ("auto", "statusline", "api").
+	// Hybrid ("auto") and statusline modes judge the card on its primary
+	// windows, which the statusline rewrites every few minutes; API-only
+	// quotas there run every tenth poll and must not drive staleness.
+	AnthropicSource string
 }
 
 // staleOverride is one row of the per-provider cadence table. A zero value
@@ -49,9 +59,10 @@ type staleOverride struct {
 // differs from "3 x pollInterval, at least 5m":
 //
 //   - anthropic: the statusline bridge only rewrites its file while Claude
-//     Code is making calls, and the agent accepts a file up to 5m old; the
-//     hybrid API poll runs every 10 intervals. 3 x 5m covers both without
-//     marking a quiet-but-healthy session stale.
+//     Code is making calls, and the agent accepts a file up to 5m old. 15m
+//     covers a quiet-but-healthy session. In hybrid mode the card is judged
+//     on its primary windows only (both statusline-fed), so the 20m API-only
+//     cadence (10 x interval) cannot flap it; see anthropicStaleWindow.
 //   - antigravity: quota comes from the IDE language server, polled on the
 //     global interval but refreshed only while the IDE/agy process runs.
 //   - mistral: backs off to 6h on errors and sits in reconnect while the
@@ -62,7 +73,7 @@ type staleOverride struct {
 //   - opencode: key mode reuses a 60s client cache, so the honest capture time
 //     can trail the poll by a minute; 3 intervals plus the floor covers it.
 var staleOverrides = map[string]staleOverride{
-	"anthropic":   {factor: 3, floor: 15 * time.Minute},
+	"anthropic":   {factor: 3, floor: anthropicStatuslineWindow},
 	"antigravity": {factor: 3, floor: 15 * time.Minute},
 	"opencode":    {factor: 3, floor: 5 * time.Minute},
 	"mistral": {
@@ -91,6 +102,11 @@ func staleAfterFor(ctx staleContext) time.Duration {
 	factor := time.Duration(3)
 	floor := staleFloor
 	override := staleOverrides[ctx.Base]
+	if ctx.Base == "anthropic" && ctx.AnthropicSource == "api" {
+		// API-only mode has no statusline: every quota refreshes on the
+		// global poll interval, so the generic 3-interval rule applies.
+		override = staleOverride{}
+	}
 	if override.factor > 0 {
 		factor = override.factor
 	}
@@ -100,6 +116,12 @@ func staleAfterFor(ctx staleContext) time.Duration {
 	window := factor * interval
 	if window < floor {
 		window = floor
+	}
+	if ctx.Base == "anthropic" && ctx.AnthropicSource != "api" {
+		// Hybrid/statusline modes are judged on the primary windows only
+		// (StaleCheckedAt), whose cadence is the statusline refresh. API-only
+		// supplements are intentionally not considered.
+		window = anthropicStatuslineWindow
 	}
 	if override.statuses != nil && ctx.Status != "" {
 		if widened, ok := override.statuses[ctx.Status]; ok && widened > window {

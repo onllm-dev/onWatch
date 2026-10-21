@@ -240,19 +240,20 @@ func TestMenubarRemembersOldestQuotaTime(t *testing.T) {
 	split := map[string]interface{}{
 		"capturedAt": newest.Format(time.RFC3339),
 		"quotas": []interface{}{
-			map[string]interface{}{"lastUpdatedAt": newest.Format(time.RFC3339)},
-			map[string]interface{}{"lastUpdatedAt": oldest.Format(time.RFC3339)},
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": newest.Format(time.RFC3339)},
+			map[string]interface{}{"name": "seven_day", "lastUpdatedAt": oldest.Format(time.RFC3339)},
 		},
 	}
 	card := &menubar.ProviderCard{}
-	h.storeMenubarCard("anthropic", &menubar.ProviderCard{UpdatedAtTime: oldest.Format(time.RFC3339)})
 	if got := h.applyMenubarOldestCapturedAt(card, "anthropic", split); !got.Equal(oldest) {
 		t.Fatalf("first pass = %v, want %v", got, oldest)
 	}
+	// seven_day aged out of the window while five_hour stayed: the missing
+	// quota's last-seen time is remembered.
 	shrunk := map[string]interface{}{
 		"capturedAt": newest.Format(time.RFC3339),
 		"quotas": []interface{}{
-			map[string]interface{}{"lastUpdatedAt": newest.Format(time.RFC3339)},
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": newest.Format(time.RFC3339)},
 		},
 	}
 	if got := h.applyMenubarOldestCapturedAt(card, "anthropic", shrunk); !got.Equal(oldest) {

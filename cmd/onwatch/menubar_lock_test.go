@@ -2,11 +2,12 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/config"
 )
@@ -77,37 +78,93 @@ func TestCompanionLogWriterOwnership(t *testing.T) {
 	}
 }
 
-// companionLogFile opens the same path the daemon passes, in append mode, and
-// writes there instead of stdout.
-func TestCompanionLogFileWritesToDaemonPath(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "menubar.log")
-	writer, err := openCompanionLog(path)
+// Review item 4: when the companion cannot open menubar.log it must fall back
+// to STDERR (the daemon captures stderr for crash diagnostics), not stdout,
+// which the daemon now discards.
+func TestCompanionLogSinkFallbackGoesToStderr(t *testing.T) {
+	// A directory path cannot be opened as a file, forcing the failure path on
+	// every platform.
+	badPath := t.TempDir()
+	sink, err := companionLogSink(badPath, false)
+	if err == nil {
+		t.Fatal("expected an error opening a directory as the log file")
+	}
+	if sink != os.Stderr {
+		t.Fatal("the fallback sink must be stderr so crash traces reach the daemon log")
+	}
+}
+
+// --- review item 3: restart ordering -------------------------------------
+
+// stopMenubarProcess must wait for the companion to exit so a replacement can
+// take the single-instance lock. A slow-exiting old companion used to make the
+// new one fail the lock and exit, leaving no tray at all.
+func TestStopMenubarProcessWaitsForExit(t *testing.T) {
+	prevPIDDir := pidDir
+	pidDir = t.TempDir()
+	defer func() { pidDir = prevPIDDir }()
+
+	cmd := startSleepSubprocess(t)
+	pid := cmd.Process.Pid
+	// The helper ignores SIGTERM's default? It does not install a handler, so
+	// SIGTERM ends it; the wait path is what is under test here.
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
+	if err := os.WriteFile(menubarPIDPath(false), []byte(fmt.Sprintf("%d", pid)), 0o644); err != nil {
+		t.Fatalf("write pid: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- stopMenubarProcess(false) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("stopMenubarProcess: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("stopMenubarProcess did not return")
+	}
+	if processAlive(pid) {
+		t.Fatalf("process %d still alive after stopMenubarProcess returned", pid)
+	}
+	if readRuntimePID(menubarPIDPath(false)) != 0 {
+		t.Fatal("pid file must be removed")
+	}
+	_, _ = cmd.Process.Wait()
+}
+
+// The companion's lock acquisition retries the non-blocking lock for a bounded
+// window, so a replacement started while the old one is still exiting does not
+// immediately give up and leave no tray.
+func TestAcquireMenubarLockRetries(t *testing.T) {
+	prevPIDDir := pidDir
+	pidDir = t.TempDir()
+	defer func() { pidDir = prevPIDDir }()
+
+	holder, err := acquireMenubarLock(false)
 	if err != nil {
-		t.Fatalf("openCompanionLog: %v", err)
+		t.Fatalf("first acquire: %v", err)
 	}
-	if _, err := writer.Write([]byte("line one\n")); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-	if err := os.WriteFile(path, []byte("line zero\n"), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	// Reopening appends rather than truncating.
-	writer, err = openCompanionLog(path)
+	released := make(chan struct{})
+	go func() {
+		time.Sleep(750 * time.Millisecond)
+		_ = holder.Close()
+		close(released)
+	}()
+	lock, err := acquireMenubarLockWait(false, 5*time.Second, 250*time.Millisecond)
 	if err != nil {
-		t.Fatalf("reopen: %v", err)
+		t.Fatalf("waiting acquire: %v", err)
 	}
-	_, _ = writer.Write([]byte("line two\n"))
-	_ = writer.Close()
-	data, err := os.ReadFile(path)
+	<-released
+	_ = lock.Close()
+
+	// The bounded window still ends when nobody releases.
+	holder, err = acquireMenubarLock(false)
 	if err != nil {
-		t.Fatalf("read: %v", err)
+		t.Fatalf("re-acquire: %v", err)
 	}
-	if string(data) != "line zero\nline two\n" {
-		t.Fatalf("log content = %q, want seeded line preserved and appended", data)
+	defer holder.Close()
+	if _, err := acquireMenubarLockWait(false, 300*time.Millisecond, 100*time.Millisecond); !errors.Is(err, errMenubarCompanionRunning) {
+		t.Fatalf("bounded acquire err = %v, want errMenubarCompanionRunning", err)
 	}
 }
 

@@ -50,10 +50,19 @@ func companionRelayWriter(logFile io.Writer, cfg *config.Config) io.Writer {
 	return logFile
 }
 
-// openCompanionLog opens the companion log in append mode at the same path the
-// daemon passes in its startup log line ("log_path").
-func openCompanionLog(path string) (io.WriteCloser, error) {
-	return config.OpenRotatingLogFile(path)
+// companionLogSink opens the companion's log at the same path the daemon logs
+// as "log_path". Debug mode logs to stdout and stderr, as before. A failure to
+// open the file falls back to stderr (the daemon records crash stderr in its
+// own log) rather than stdout, which the daemon now drains without recording.
+func companionLogSink(path string, debugMode bool) (io.Writer, error) {
+	if debugMode {
+		return io.MultiWriter(os.Stdout, os.Stderr), nil
+	}
+	logFile, err := config.OpenRotatingLogFile(path)
+	if err != nil {
+		return os.Stderr, err
+	}
+	return logFile, nil
 }
 
 func menubarPIDPath(testMode bool) string {
@@ -103,6 +112,15 @@ func menubarLogPath(cfg *config.Config) string {
 	return filepath.Join(filepath.Dir(cfg.DBPath), name)
 }
 
+// menubarStopWaitTimeout bounds how long the daemon waits for an old companion
+// to exit before escalating to a hard kill. A companion can be inside two
+// 15s snapshot attempts, so the wait is generous enough to let it finish
+// normally.
+const menubarStopWaitTimeout = 10 * time.Second
+
+// menubarStopPollInterval is how often the wait re-checks the process.
+const menubarStopPollInterval = 100 * time.Millisecond
+
 func stopMenubarProcess(testMode bool) error {
 	path := menubarPIDPath(testMode)
 	pid := readRuntimePID(path)
@@ -112,6 +130,20 @@ func stopMenubarProcess(testMode bool) error {
 	proc, err := os.FindProcess(pid)
 	if err == nil {
 		_ = terminateProcess(proc)
+		// Wait for it to exit so the replacement can take the single-instance
+		// lock. Without this the lock is still held and the new companion
+		// exits with no tray.
+		deadline := time.Now().Add(menubarStopWaitTimeout)
+		for processAlive(pid) && time.Now().Before(deadline) {
+			time.Sleep(menubarStopPollInterval)
+		}
+		if processAlive(pid) {
+			_ = proc.Kill()
+			killDeadline := time.Now().Add(time.Second)
+			for processAlive(pid) && time.Now().Before(killDeadline) {
+				time.Sleep(menubarStopPollInterval)
+			}
+		}
 	}
 	_ = os.Remove(path)
 	return nil
@@ -268,10 +300,11 @@ func runMenubarCommand() error {
 		return fmt.Errorf("menubar companion is not available in this build")
 	}
 
-	// A second companion must exit before it creates a tray icon. A daemon
-	// restart can launch a new companion while the old one is still inside its
-	// watcher grace period; the old one releases the lock when it exits.
-	lock, err := acquireMenubarLock(cfg.TestMode)
+	// A second companion must exit before it creates a tray icon, but a
+	// restart launches the replacement while the old one may still be inside a
+	// refresh (up to 2 x 15s). Wait for the lock for a bounded window instead
+	// of exiting immediately and leaving no tray at all.
+	lock, err := acquireMenubarLockWait(cfg.TestMode, menubarLockWaitTimeout, menubarLockRetryInterval)
 	if err != nil {
 		if errors.Is(err, errMenubarCompanionRunning) {
 			return nil
@@ -283,16 +316,18 @@ func runMenubarCommand() error {
 	// Write the log here instead of relying on the daemon to read stdout over a
 	// pipe. A daemon hung for a long time stops draining that 16KB pipe, and
 	// the companion's log writes then block its refresh worker.
-	logSink := io.Writer(os.Stdout)
-	if cfg.DebugMode {
-		logSink = io.MultiWriter(os.Stdout, os.Stderr)
-	} else {
-		logFile, err := config.OpenRotatingLogFile(menubarLogPath(cfg))
-		if err == nil {
-			defer logFile.Close()
-			logSink = logFile
-		}
-		// Fall back to stdout; the daemon's relay then still records the lines.
+	//
+	// Panic traces still go to process stderr. The daemon keeps capturing
+	// stderr after a crash and logs it as "Menubar companion crashed ...
+	// stderr=..." in the daemon log, so a crash is never lost just because the
+	// companion could not open its own log.
+	logSink, logErr := companionLogSink(menubarLogPath(cfg), cfg.DebugMode)
+	if logErr != nil {
+		// stderr, not stdout: the daemon drains stdout without recording it.
+		slog.Default().Warn("menubar log unavailable, logging to stderr", "error", logErr)
+	}
+	if closer, ok := logSink.(io.Closer); ok {
+		defer closer.Close()
 	}
 
 	logger := slog.New(slog.NewTextHandler(logSink, &slog.HandlerOptions{Level: slog.LevelInfo}))

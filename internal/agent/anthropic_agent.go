@@ -89,6 +89,11 @@ type AnthropicAgent struct {
 	// output file, avoiding the rate-limited usage API entirely.
 	statuslinePath      string        // path to statusline JSON file
 	statuslineStaleness time.Duration // max age before falling back to API
+	// lastStatuslineMtime is the mtime of the last statusline snapshot this
+	// agent stored. The bridge rewrites the file only when Claude Code has new
+	// data, so an unchanged mtime must not insert another identical row on
+	// every poll.
+	lastStatuslineMtime time.Time
 
 	// Hybrid polling: in auto mode, do a full API poll every N cycles to get
 	// supplementary quotas (seven_day_sonnet, per-model weekly, extra_usage)
@@ -295,6 +300,46 @@ func (a *AnthropicAgent) Run(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+// insertStatuslineSnapshot stores a statusline snapshot unless this agent has
+// already stored one from the same file mtime. It reports whether a row was
+// inserted.
+//
+// The statusline bridge rewrites its file only when Claude Code has new rate
+// limit data; polling reads the same file every interval. Re-inserting it each
+// time adds rows with an identical captured_at and inflates the history
+// without new information.
+func (a *AnthropicAgent) insertStatuslineSnapshot(snapshot *api.AnthropicSnapshot) (bool, error) {
+	if snapshot == nil {
+		return false, nil
+	}
+	captured := snapshot.CapturedAt
+	if !a.lastStatuslineMtime.IsZero() && captured.Equal(a.lastStatuslineMtime) {
+		return false, nil
+	}
+	if _, err := a.store.InsertAnthropicSnapshot(snapshot); err != nil {
+		return false, err
+	}
+	a.lastStatuslineMtime = captured
+	return true, nil
+}
+
+// pollStatuslineOnly is the statusline-only path used by tests and by the
+// agent itself: read, validate, and insert unless the file is unchanged. It
+// reports whether a row was inserted.
+func (a *AnthropicAgent) pollStatuslineOnly() bool {
+	if a.statuslinePath == "" {
+		return false
+	}
+	rl, err := readStatuslineData(a.statuslinePath)
+	if err != nil || !isValidStatuslineData(rl) {
+		return false
+	}
+	now := time.Now().UTC()
+	snapshot := statuslineToSnapshot(rl, readStatuslineCapturedAt(a.statuslinePath, now))
+	inserted, err := a.insertStatuslineSnapshot(snapshot)
+	return err == nil && inserted
 }
 
 // isAuthError returns true if the error is an authentication/authorization error.
@@ -611,9 +656,16 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 			// Stamp the snapshot with the file's mtime, not the poll time: the
 			// payload has no timestamp and may be up to the staleness window old.
 			snapshot := statuslineToSnapshot(rl, readStatuslineCapturedAt(a.statuslinePath, now))
-			if _, err := a.store.InsertAnthropicSnapshot(snapshot); err != nil {
+			inserted, err := a.insertStatuslineSnapshot(snapshot)
+			if err != nil {
 				a.logger.Error("Failed to insert statusline snapshot", "error", err)
 				return // don't fall through to API polling on DB error
+			}
+			if !inserted {
+				// Same file, same mtime: the data is already stored. Still a
+				// successful refresh for freshness purposes.
+				a.logger.Debug("Statusline unchanged, skipping duplicate snapshot",
+					"captured_at", snapshot.CapturedAt.Format(time.RFC3339))
 			}
 			// The statusline path is a successful refresh even when the OAuth
 			// API later fails this cycle: freshness is what the record means.

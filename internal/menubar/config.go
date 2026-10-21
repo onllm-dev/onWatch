@@ -137,6 +137,11 @@ type ProviderCard struct {
 	// StaleAfterSeconds lets the client re-evaluate staleness locally on its
 	// age ticker, so a card turns stale even when the daemon is unreachable.
 	StaleAfterSeconds int64 `json:"stale_after_seconds,omitempty"`
+	// StaleCheckedAt is the timestamp staleness is judged from when it differs
+	// from the age label source. Anthropic hybrid cards show the honest oldest
+	// quota age, but their staleness follows the primary windows only, so an
+	// API-only quota refreshed every tenth poll cannot mark the card stale.
+	StaleCheckedAt string `json:"stale_checked_at,omitempty"`
 }
 
 // ProviderPromo carries promo metadata for a provider card.

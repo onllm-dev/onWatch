@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // menubarLockName is the lock file, kept beside the pid file.
@@ -26,6 +27,14 @@ const menubarLockName = "menubar.lock"
 
 // errMenubarCompanionRunning is returned when another companion holds the lock.
 var errMenubarCompanionRunning = errors.New("another menubar companion is already running")
+
+// menubarLockWaitTimeout is how long a replacement companion waits for the
+// previous one to release the lock. A companion can be inside a slow refresh
+// (two 15s snapshot attempts) when its daemon asks it to quit.
+const menubarLockWaitTimeout = 10 * time.Second
+
+// menubarLockRetryInterval is the retry cadence inside that window.
+const menubarLockRetryInterval = 250 * time.Millisecond
 
 // menubarLock is a held single-instance lock. Close releases it.
 type menubarLock struct {
@@ -40,30 +49,47 @@ func menubarLockPath(testMode bool) string {
 	return filepath.Join(pidDir, name)
 }
 
-// acquireMenubarLock takes the process-wide lock. It returns
+// acquireMenubarLock takes the process-wide lock once. It returns
 // errMenubarCompanionRunning when another companion already holds it.
 func acquireMenubarLock(testMode bool) (*menubarLock, error) {
+	return acquireMenubarLockWait(testMode, 0, 0)
+}
+
+// acquireMenubarLockWait retries the non-blocking lock every retryInterval
+// until it succeeds or the timeout expires. A slow-exiting predecessor is the
+// normal case after a daemon restart, which is why the companion waits instead
+// of exiting immediately.
+func acquireMenubarLockWait(testMode bool, timeout, retryInterval time.Duration) (*menubarLock, error) {
 	path := menubarLockPath(testMode)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create menubar lock dir: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("open menubar lock: %w", err)
+	if retryInterval <= 0 {
+		retryInterval = menubarLockRetryInterval
 	}
-	ok, err := lockFileExclusive(file)
-	if err != nil {
+	deadline := time.Now().Add(timeout)
+	for {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("open menubar lock: %w", err)
+		}
+		ok, err := lockFileExclusive(file)
+		if err != nil {
+			_ = file.Close()
+			return nil, err
+		}
+		if ok {
+			_ = file.Truncate(0)
+			_, _ = file.Seek(0, 0)
+			_, _ = fmt.Fprintf(file, "%d\n", os.Getpid())
+			return &menubarLock{file: file}, nil
+		}
 		_ = file.Close()
-		return nil, err
+		if timeout <= 0 || !time.Now().Before(deadline) {
+			return nil, errMenubarCompanionRunning
+		}
+		time.Sleep(retryInterval)
 	}
-	if !ok {
-		_ = file.Close()
-		return nil, errMenubarCompanionRunning
-	}
-	_ = file.Truncate(0)
-	_, _ = file.Seek(0, 0)
-	_, _ = fmt.Fprintf(file, "%d\n", os.Getpid())
-	return &menubarLock{file: file}, nil
 }
 
 // Close releases the lock. Safe to call more than once.

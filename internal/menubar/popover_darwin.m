@@ -727,6 +727,15 @@ bool onwatch_popover_is_shown(void *handle) {
   return shown;
 }
 
+// onwatch_title_image_position mirrors fyne/systray's updateTitleButtonStyle:
+// the title only gets room when the button is told to show image and text.
+int onwatch_title_image_position(bool hasImage, bool hasTitle) {
+  if (!hasImage) {
+    return NSNoImage;
+  }
+  return hasTitle ? NSImageLeft : NSImageOnly;
+}
+
 // onwatch_status_item_title sets the system status item's title with an
 // optional attribute dictionary, on the main thread, mirroring the popover's
 // own main-thread dispatch. It returns false when no status item is reachable
@@ -765,6 +774,11 @@ int onwatch_status_item_title(const char *title, int dim) {
     // the color changes.
     NSDictionary *attributes = @{NSForegroundColorAttributeName : color};
     button.attributedTitle = [[NSAttributedString alloc] initWithString:text attributes:attributes];
+    // fyne sets imagePosition when it applies its plain title; setting
+    // attributedTitle bypasses that, so mirror it here. Without this the
+    // button stays in the image-only mode chosen when the icon was installed
+    // with an empty title, and the title is never drawn.
+    button.imagePosition = (NSCellImagePosition)onwatch_title_image_position(button.image != nil, button.attributedTitle.length > 0);
     applied = 1;
   });
   return applied;

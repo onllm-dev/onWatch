@@ -22,14 +22,18 @@ import (
 
 // setTrayTitle writes the title with the secondary-label color when dim is
 // set. fyne/systray only exposes plain SetTitle, so the attributed variant is
-// applied through the small cgo bridge; the plain call remains the fallback.
+// applied through the small cgo bridge.
+//
+// The plain SetTitle call comes FIRST: it runs fyne's updateTitleButtonStyle,
+// which switches the button out of NSImageOnly (the mode setupTrayIcon leaves
+// it in when the icon was installed with an empty title). Setting
+// attributedTitle directly would leave the title invisible.
 func setTrayTitle(title string, dim bool) {
+	systray.SetTitle(title)
 	cTitle := C.CString(title)
 	defer C.free(unsafe.Pointer(cTitle))
-	if C.onwatch_status_item_title(cTitle, C.int(boolToInt(dim))) != 0 {
-		return
-	}
-	systray.SetTitle(title)
+	// Failure is fine: the plain title above is already the correct fallback.
+	_ = C.onwatch_status_item_title(cTitle, C.int(boolToInt(dim)))
 }
 
 func boolToInt(v bool) int {

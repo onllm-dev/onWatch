@@ -145,12 +145,13 @@ type Handler struct {
 	// Bounded by the number of provider cards.
 	menubarLastGoodMu sync.Mutex
 	menubarLastGood   map[string]menubar.ProviderCard
-	// menubarOldest remembers the oldest per-quota capture time seen for a
-	// card while that quota was still inside its builder's query window. Quotas
-	// that age out disappear from the payload, so the current payload alone
-	// cannot tell how old the card is; this keeps the age honest. Bounded by
-	// the number of cards and pruned with the last-good cache.
-	menubarOldest map[string]time.Time
+	// menubarQuotas remembers the last-seen capture time of every quota that
+	// has appeared on a card. A quota's time is used from the current payload
+	// while it is present; the remembered value is used only when that quota
+	// has disappeared from the payload (aged out of the builder's query
+	// window). The entry is dropped once every quota is back. Bounded by the
+	// number of cards and quotas and pruned with the last-good cache.
+	menubarQuotas map[string]map[string]time.Time
 	// menubarSnapshotData caches the last successfully built data so the
 	// summary, tray-title and preferences endpoints can answer without
 	// rebuilding roughly 60-90 SQL statements on every request. Only one build

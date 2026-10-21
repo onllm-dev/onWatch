@@ -383,12 +383,13 @@ func (h *Handler) applyMenubarStaleness(providers []menubar.ProviderCard, visibi
 			}
 		}
 		window := staleAfterFor(staleContext{
-			Provider:     card.ID,
-			Base:         base,
-			Polling:      polling,
-			PollInterval: interval,
-			Status:       card.ConnectionStatus,
-			Outcome:      outcome,
+			Provider:        card.ID,
+			Base:            base,
+			Polling:         polling,
+			PollInterval:    interval,
+			Status:          card.ConnectionStatus,
+			Outcome:         outcome,
+			AnthropicSource: h.anthropicSource(),
 		})
 		if window <= 0 {
 			// Manual (polling:false) providers never age out for network
@@ -398,7 +399,14 @@ func (h *Handler) applyMenubarStaleness(providers []menubar.ProviderCard, visibi
 			continue
 		}
 		card.StaleAfterSeconds = int64(window.Seconds())
-		captured, err := time.Parse(time.RFC3339, card.UpdatedAtTime)
+		source := card.UpdatedAtTime
+		if card.StaleCheckedAt != "" {
+			// Staleness is judged from a different timestamp than the age label
+			// (Anthropic hybrid: primary windows only, see
+			// applyMenubarOldestCapturedAt).
+			source = card.StaleCheckedAt
+		}
+		captured, err := time.Parse(time.RFC3339, source)
 		if err != nil || captured.IsZero() {
 			continue
 		}
@@ -698,6 +706,12 @@ func (h *Handler) menubarResolveCard(id, label, subtitle string, payload map[str
 // a days-old one and the card reads as fresh. This is menubar-only: dashboard
 // responses keep reporting the newest time (the API contract there).
 //
+// Age and staleness share one rule: a quota's time comes from the CURRENT
+// payload while that quota is present. Only a quota missing from the payload
+// (aged out of the builder's query window) contributes its last-seen time,
+// and that memory is dropped once every quota is back - otherwise the card
+// would stay pinned to its first old reading forever.
+//
 // Providers without per-quota timestamps keep the payload capturedAt. The
 // returned time feeds LatestAt, so it is the same honest capture time the age
 // label shows.
@@ -709,18 +723,10 @@ func (h *Handler) applyMenubarOldestCapturedAt(card *menubar.ProviderCard, id st
 	default:
 		return current
 	}
-	// Quotas whose data comes from different snapshots (Anthropic's per-quota
-	// merge, Mistral's per-quota latest rows) disappear from the payload once
-	// they age out of the query window, so the payload alone cannot tell how
-	// old the card really is. Remember the oldest quota time seen while it was
-	// present. A fresh build never lowers it; a read failure serves the cached
-	// card, which already carries it.
-	oldest, ok := oldestQuotaCapturedAt(payload)
-	if !ok || oldest.IsZero() {
+	present := quotaCapturedTimes(payload)
+	oldest := h.mergeQuotaTimes(id, present)
+	if oldest.IsZero() {
 		return current
-	}
-	if remembered, ok := h.menubarOldestCapturedAt(id); ok && remembered.Before(oldest) {
-		oldest = remembered
 	}
 	if !current.IsZero() && current.Before(oldest) {
 		// The builder's own time is older still (for example a statusline
@@ -729,20 +735,96 @@ func (h *Handler) applyMenubarOldestCapturedAt(card *menubar.ProviderCard, id st
 	}
 	card.UpdatedAtTime = oldest.UTC().Format(time.RFC3339)
 	card.UpdatedAt = timeAgo(oldest)
+	if base == "anthropic" && h.anthropicSource() != "api" {
+		// Anthropic's statusline supplies the primary windows every few
+		// minutes while API-only quotas (Sonnet, extra usage) refresh only
+		// every tenth poll in hybrid mode. Judging staleness from the oldest
+		// quota would flap the card for a quota that is expected to be 20m
+		// old. Staleness follows the newest PRIMARY window; the age label
+		// still shows the honest oldest time.
+		if primary, ok := anthropicPrimaryCapturedAt(present); ok && !primary.IsZero() {
+			card.StaleCheckedAt = primary.UTC().Format(time.RFC3339)
+		}
+	}
 	return oldest
 }
 
-// menubarOldestCapturedAt returns the last remembered oldest quota time.
-func (h *Handler) menubarOldestCapturedAt(id string) (time.Time, bool) {
-	h.menubarLastGoodMu.Lock()
-	defer h.menubarLastGoodMu.Unlock()
-	oldest, ok := h.menubarOldest[id]
-	return oldest, ok
+// anthropicSource returns the configured Anthropic data source. Empty means
+// the default ("auto", hybrid statusline + API).
+func (h *Handler) anthropicSource() string {
+	if h.config == nil {
+		return "auto"
+	}
+	source := strings.ToLower(strings.TrimSpace(h.config.AnthropicSource))
+	if source == "" {
+		return "auto"
+	}
+	return source
 }
 
-// oldestQuotaCapturedAt scans the payload quotas for the earliest
-// lastUpdatedAt. It reports false when no quota carries a timestamp.
-func oldestQuotaCapturedAt(payload map[string]interface{}) (time.Time, bool) {
+// anthropicPrimaryCapturedAt returns the newest capture time among the two
+// primary windows the statusline feeds. They are what the card and tray show,
+// so their freshness is what the card's staleness means. A payload without
+// them (API-only mode before the first poll) reports false and the age source
+// is used.
+func anthropicPrimaryCapturedAt(times map[string]time.Time) (time.Time, bool) {
+	var newest time.Time
+	found := false
+	for _, name := range []string{"five_hour", "seven_day"} {
+		at, ok := times[name]
+		if !ok || at.IsZero() {
+			continue
+		}
+		if !found || at.After(newest) {
+			newest = at
+			found = true
+		}
+	}
+	return newest, found
+}
+
+// mergeQuotaTimes folds the payload's per-quota times into the remembered set
+// and returns the oldest time the card should show. A present quota always
+// updates its entry to the current time, so a refreshed quota moves forward;
+// only a quota absent from this payload keeps contributing its last-seen time
+// (it aged out of the builder's query window). That is the "remember while
+// missing" rule: the card cannot stay pinned to its first old reading once the
+// quota returns.
+func (h *Handler) mergeQuotaTimes(id string, present map[string]time.Time) time.Time {
+	h.menubarLastGoodMu.Lock()
+	defer h.menubarLastGoodMu.Unlock()
+	if len(present) == 0 {
+		// Nothing in the payload to age; leave the remembered set untouched
+		// for a later pass that can tell which quotas are missing.
+		return time.Time{}
+	}
+	if h.menubarQuotas == nil {
+		h.menubarQuotas = make(map[string]map[string]time.Time, 8)
+	}
+	lastSeen := h.menubarQuotas[id]
+	if lastSeen == nil {
+		lastSeen = make(map[string]time.Time, len(present))
+		h.menubarQuotas[id] = lastSeen
+	}
+	for name, at := range present {
+		if !at.IsZero() {
+			lastSeen[name] = at
+		}
+	}
+	var oldest time.Time
+	for _, at := range lastSeen {
+		if at.IsZero() {
+			continue
+		}
+		if oldest.IsZero() || at.Before(oldest) {
+			oldest = at
+		}
+	}
+	return oldest
+}
+
+// quotaCapturedTimes maps quota name to its lastUpdatedAt from a payload.
+func quotaCapturedTimes(payload map[string]interface{}) map[string]time.Time {
 	var rawQuotas []interface{}
 	switch typed := payload["quotas"].(type) {
 	case []interface{}:
@@ -753,29 +835,45 @@ func oldestQuotaCapturedAt(payload map[string]interface{}) (time.Time, bool) {
 			rawQuotas = append(rawQuotas, item)
 		}
 	default:
-		return time.Time{}, false
+		return nil
 	}
-	var oldest time.Time
-	found := false
+	out := make(map[string]time.Time, len(rawQuotas))
 	for _, raw := range rawQuotas {
 		item, ok := raw.(map[string]interface{})
 		if !ok {
 			continue
 		}
+		name := stringValue(item, "name")
+		if name == "" {
+			name = stringValue(item, "label")
+		}
 		value := stringValue(item, "lastUpdatedAt")
-		if value == "" {
+		if name == "" || value == "" {
 			continue
 		}
 		parsed, err := time.Parse(time.RFC3339, value)
 		if err != nil || parsed.IsZero() {
 			continue
 		}
-		if !found || parsed.Before(oldest) {
-			oldest = parsed
-			found = true
+		out[name] = parsed
+	}
+	return out
+}
+
+// oldestQuotaCapturedAt scans the payload quotas for the earliest
+// lastUpdatedAt. It reports false when no quota carries a timestamp.
+func oldestQuotaCapturedAt(payload map[string]interface{}) (time.Time, bool) {
+	times := quotaCapturedTimes(payload)
+	var oldest time.Time
+	for _, at := range times {
+		if oldest.IsZero() || at.Before(oldest) {
+			oldest = at
 		}
 	}
-	return oldest, found
+	if oldest.IsZero() {
+		return time.Time{}, false
+	}
+	return oldest, true
 }
 
 // menubarCachedCard serves the last good card for a provider whose storage read
@@ -797,7 +895,7 @@ func (h *Handler) forgetMenubarCard(id string) {
 	h.menubarLastGoodMu.Lock()
 	defer h.menubarLastGoodMu.Unlock()
 	delete(h.menubarLastGood, id)
-	delete(h.menubarOldest, id)
+	delete(h.menubarQuotas, id)
 }
 
 func (h *Handler) storeMenubarCard(id string, card *menubar.ProviderCard) {
@@ -807,14 +905,6 @@ func (h *Handler) storeMenubarCard(id string, card *menubar.ProviderCard) {
 		h.menubarLastGood = make(map[string]menubar.ProviderCard, 8)
 	}
 	h.menubarLastGood[id] = *card
-	if h.menubarOldest == nil {
-		h.menubarOldest = make(map[string]time.Time, 8)
-	}
-	if parsed, err := time.Parse(time.RFC3339, card.UpdatedAtTime); err == nil {
-		h.menubarOldest[id] = parsed
-	} else {
-		delete(h.menubarOldest, id)
-	}
 }
 
 // pruneMenubarLastGood drops cached cards for providers this build did not
@@ -826,7 +916,7 @@ func (h *Handler) pruneMenubarLastGood(attempted map[string]struct{}) {
 	for id := range h.menubarLastGood {
 		if _, ok := attempted[id]; !ok {
 			delete(h.menubarLastGood, id)
-			delete(h.menubarOldest, id)
+			delete(h.menubarQuotas, id)
 		}
 	}
 }
