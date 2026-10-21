@@ -92,6 +92,44 @@ func writeRuntimePID(path string) error {
 	return writeRuntimePIDValue(path, os.Getpid())
 }
 
+// menubarLockStartupProbe is the lock probe startMenubarCompanion consults.
+// Tests swap it to simulate contention without spawning a real companion.
+var menubarLockStartupProbe = menubarLockOwnerProbe
+
+// menubarPIDIdentity is the process-identity check behind the pid file. It is
+// a variable so tests can present a live pid as unrelated without depending on
+// the platform's process inspection (a test binary whose name contains
+// "onwatch" would otherwise always look like a companion).
+var menubarPIDIdentity = isOnwatchProcess
+
+// menubarCompanionStartupBlocked reports whether a companion is already in
+// charge, and cleans up a pid file that is not evidence of one.
+//
+// A live pid alone is not proof: a crashed companion leaves its pid file and
+// the pid may since belong to any long-lived process, which used to suppress
+// startup and leave no tray at all. A live pid only counts when it names an
+// OnWatch process. When any process holds the single-instance lock, that
+// process already owns the tray (the real owner publishes its pid only after
+// acquiring the lock, so the file may still be missing or stale), so startup
+// is suppressed and a losing replacement is never launched just to exit.
+func menubarCompanionStartupBlocked(path string, testMode bool, logger *slog.Logger) bool {
+	pid := readRuntimePID(path)
+	alive := pid > 0 && processRunning(pid)
+	owner, held := menubarLockStartupProbe(testMode)
+
+	if alive && runtimePIDIsMenubarCompanionPID(pid, owner, held) {
+		return true
+	}
+	if held {
+		logger.Info("Menubar companion lock is held; not starting another", "pid_file_pid", pid, "lock_owner", owner)
+		return true
+	}
+	if pid > 0 {
+		_ = os.Remove(path)
+	}
+	return false
+}
+
 // publishIncumbentMenubarPID rewrites the pid file with the lock holder's pid
 // when a companion loses the lock race. probe is the lock probe to use.
 func publishIncumbentMenubarPID(testMode bool, probe func(bool) (int, bool)) {
@@ -127,6 +165,23 @@ func removeRuntimePIDIfOwner(path string, pid int) {
 		return
 	}
 	_ = os.Remove(path)
+}
+
+// runtimePIDIsMenubarCompanionPID is the identity rule: the pid must be live
+// and name an OnWatch binary (isOnwatchProcess), and the lock, when held, must
+// be owned by that same pid. An unknown lock owner is tolerated only when the
+// name matched; a held lock naming a different process always wins against it.
+func runtimePIDIsMenubarCompanionPID(pid, lockOwner int, lockHeld bool) bool {
+	if pid <= 0 || !processRunning(pid) {
+		return false
+	}
+	if !menubarPIDIdentity(pid) {
+		return false
+	}
+	if lockHeld && lockOwner > 0 && lockOwner != pid {
+		return false
+	}
+	return true
 }
 
 func processRunning(pid int) bool {
@@ -255,11 +310,8 @@ func startMenubarCompanion(cfg *config.Config, logger *slog.Logger) error {
 		}
 	}
 	path := menubarPIDPath(cfg.TestMode)
-	if pid := readRuntimePID(path); pid > 0 {
-		if processRunning(pid) {
-			return nil
-		}
-		_ = os.Remove(path)
+	if menubarCompanionStartupBlocked(path, cfg.TestMode, logger) {
+		return nil
 	}
 
 	exe, err := os.Executable()
