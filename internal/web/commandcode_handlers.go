@@ -617,7 +617,9 @@ func (h *Handler) buildCommandCodeInsights(hidden map[string]bool, _ time.Durati
 			if resetIn <= 0 {
 				continue
 			}
-			projected := quota.Used + rate.Rate*resetIn.Hours()
+			// rate.Rate is utilization percent per hour while Used is credits;
+			// convert through the cap before comparing against Limit.
+			projected := quota.Used + rate.Rate/100*quota.Limit*resetIn.Hours()
 			desc := fmt.Sprintf("%s resets in %s with %.2f credits left. No measurable burn right now, so the window should finish with credits to spare.", commandCodeDisplayName(quota.Name), formatDuration(resetIn), creditsLeft)
 			switch {
 			case rate.HasRate && projected >= quota.Limit:

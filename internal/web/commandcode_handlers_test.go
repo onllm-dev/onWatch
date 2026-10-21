@@ -543,6 +543,59 @@ func TestBuildCommandCodeInsightsEmptyStore(t *testing.T) {
 	}
 }
 
+// TestCommandCodeResetPacingProjectsCredits guards the card that mixed units:
+// the measured rate is utilization percent per hour, but Used and Limit are
+// credits. A 14-credit window at 2.8 used and 10%/hr with 4h to reset must
+// project 8.4 credits, not 42.8.
+func TestCommandCodeResetPacingProjectsCredits(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Now().UTC()
+	reset := now.Add(4 * time.Hour)
+	insert := func(at time.Time, used float64) {
+		t.Helper()
+		snap := &api.CommandCodeSnapshot{
+			CapturedAt: at,
+			Quotas: []api.CommandCodeQuota{{
+				Name: api.CommandCodeQuotaFiveHour, Used: used, Limit: 14,
+				Utilization: used / 14 * 100, Format: api.CommandCodeQuotaFormatCredits,
+				ResetsAt: &reset,
+			}},
+		}
+		if _, err := s.InsertCommandCodeSnapshot(snap); err != nil {
+			t.Fatalf("insert snapshot: %v", err)
+		}
+	}
+	insert(now.Add(-25*time.Minute), 2.2167) // 15.83%, a 10 percentage point per hour rate
+	insert(now, 2.8)                         // 20%
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithCommandCode())
+	resp := h.buildCommandCodeInsights(map[string]bool{}, time.Hour)
+
+	var card *insightItem
+	for i := range resp.Insights {
+		if resp.Insights[i].Key == "reset_"+api.CommandCodeQuotaFiveHour {
+			card = &resp.Insights[i]
+		}
+	}
+	if card == nil {
+		t.Fatalf("no reset card in %+v", resp.Insights)
+	}
+	if card.Severity == "negative" {
+		t.Fatalf("card claims the credits run out first: %q", card.Desc)
+	}
+	if !strings.Contains(card.Desc, "8.40 of 14.00 credits used") {
+		t.Fatalf("desc = %q, want a projection of 8.40 of 14.00 credits", card.Desc)
+	}
+	if !strings.Contains(card.Desc, "leaving about 5.60") {
+		t.Fatalf("desc = %q, want about 5.60 credits left", card.Desc)
+	}
+}
+
 func TestLoggingHistoryCommandCodeHandler(t *testing.T) {
 	s, err := store.New(":memory:")
 	if err != nil {
