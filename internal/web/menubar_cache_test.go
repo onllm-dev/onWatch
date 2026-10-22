@@ -183,11 +183,18 @@ func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 	if !stale.LatestAt.Equal(cached.LatestAt) {
 		t.Fatalf("cached response latest_at = %s, want the original %s", stale.LatestAt, cached.LatestAt)
 	}
-	// Release the background build and wait for it to update the cache.
+	// Release the background build and wait for it to update the cache. Store
+	// different data while the build is gated, so the new snapshot is provably
+	// the rebuild's output and not the cached one. Comparing generated_at is
+	// not enough: Windows' clock resolution can stamp both builds with the same
+	// instant, which made this test fail only there.
 	waitNotNil(t, buildStarted)
 	if got := atomic.LoadInt32(&builds); got != 1 {
 		t.Fatalf("builds = %d, want 1", got)
 	}
+	insertTestCursorSnapshot(t, s, time.Now().UTC(), api.CursorAccountIndividual, "Pro", []api.CursorQuota{
+		{Name: "total_usage", Used: 75, Limit: 100, Utilization: 75, Format: api.CursorFormatPercent},
+	})
 	releaseGate()
 	waitClosed(t, backgroundDone)
 
@@ -196,8 +203,14 @@ func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 	// here would make the final request rebuild as well.
 	h.menubarFreshFor = time.Minute
 	fresh := decodeSummary(t, getSummary(h))
-	if !fresh.GeneratedAt.After(cached.GeneratedAt) {
-		t.Fatalf("post-build snapshot generated_at = %s, want newer than %s", fresh.GeneratedAt, cached.GeneratedAt)
+	if fresh.GeneratedAt.Before(cached.GeneratedAt) {
+		t.Fatalf("post-build snapshot generated_at went backwards: %s, cached %s", fresh.GeneratedAt, cached.GeneratedAt)
+	}
+	if len(fresh.Providers) != 1 {
+		t.Fatalf("post-build providers = %d, want 1", len(fresh.Providers))
+	}
+	if got := fresh.Providers[0].Quotas; len(got) != 1 || got[0].Percent != 75 {
+		t.Fatalf("post-build quotas = %+v, want the rebuilt total_usage at 75%% (the cache still holds the old build)", got)
 	}
 	if got := atomic.LoadInt32(&builds); got != 1 {
 		t.Fatalf("builds after the cache update = %d, want 1 (the updated cache must be served)", got)

@@ -1,11 +1,7 @@
 package web
 
 import (
-	"context"
-	"os/exec"
-	"strings"
 	"testing"
-	"time"
 )
 
 // TestMultiAccountChartNeverBlanks covers the multi-account (All accounts)
@@ -13,10 +9,6 @@ import (
 // already on screen must be kept and the failure warned, not redrawn without
 // that account's lines.
 func TestMultiAccountChartNeverBlanks(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node required")
-	}
 	source, err := staticFS.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
@@ -73,14 +65,7 @@ Chart.register=()=>{};
  fetch=async()=>({ok:true,status:200,json:async()=>okRows});
  await fetchHistory('7d');
  assert.equal(destroyed,true,'successful fetch must replace the chart');
- process.exit(0);
 })().catch(err=>{console.error(err);process.exitCode=1});
 `
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, node)
-	cmd.Stdin = strings.NewReader(script)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%v\n%s", err, output)
-	}
+	runNodeScript(t, script)
 }

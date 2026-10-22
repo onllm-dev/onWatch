@@ -1,11 +1,7 @@
 package web
 
 import (
-	"context"
-	"os/exec"
-	"strings"
 	"testing"
-	"time"
 )
 
 // TestHistoryFailureMarksMismatchedChartStale covers the shared history path:
@@ -13,10 +9,6 @@ import (
 // the provider, account and range now selected. A mismatch keeps the lines and
 // marks the chart stale; the next success clears the mark.
 func TestHistoryFailureMarksMismatchedChartStale(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node required")
-	}
 	source, err := staticFS.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
@@ -55,14 +47,7 @@ console.warn=()=>{};
  fetch=async()=>({ok:true,status:200,json:async()=>[row]});
  await fetchHistory('7d');
  assert.equal(staleMark.classList.contains('stale'),false,'successful load must clear the stale mark');
- process.exit(0);
 })().catch(err=>{console.error(err);process.exitCode=1});
 `
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, node)
-	cmd.Stdin = strings.NewReader(script)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%v\n%s", err, output)
-	}
+	runNodeScript(t, script)
 }

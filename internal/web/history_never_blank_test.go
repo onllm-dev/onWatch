@@ -1,21 +1,13 @@
 package web
 
 import (
-	"context"
-	"os/exec"
-	"strings"
 	"testing"
-	"time"
 )
 
 // TestHistoryFetchNeverBlanksChart covers the shared history path used by every
 // provider: HTTP errors, error bodies and network failures must leave the last
 // chart in place, while a successful empty array still clears it.
 func TestHistoryFetchNeverBlanksChart(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node required")
-	}
 	source, err := staticFS.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
@@ -66,11 +58,5 @@ const warnings=[]; const realWarn=console.warn; console.warn=(...args)=>warnings
  console.warn=realWarn;
 })().catch(err=>{console.error(err);process.exitCode=1});
 `
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, node)
-	cmd.Stdin = strings.NewReader(script)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%v\n%s", err, output)
-	}
+	runNodeScript(t, script)
 }
