@@ -5228,7 +5228,7 @@ async function renderMultiAccountChart(provider, range, requestSeq) {
   const failed = histories.find(h => h.error);
   if (failed) {
     warnHistoryFailure(provider, range, failed.error, failed.status);
-    markHistoryFailureStale(provider, range);
+    markHistoryFailureStale(provider, range, requestSeq);
     return;
   }
 
@@ -6203,6 +6203,7 @@ function recordChartRendered(provider, range) {
     account: chartAccountKey(provider),
     accountLabel: chartAccountLabel(provider),
     range,
+    lastSuccessAt: Date.now(),
   };
   clearChartStale();
 }
@@ -6216,11 +6217,24 @@ function historyRequestIsCurrent(provider, account, range, seq) {
 }
 
 
-// markHistoryFailureStale keeps the drawn lines but marks them when they no
-// longer match the provider, account or range the user just selected.
-function markHistoryFailureStale(provider, range) {
+// historyAgeLabel renders the age of retained chart data at minute granularity,
+// so it grows smoothly instead of jumping in whole-day steps.
+function historyAgeLabel(epochMs) {
+  const seconds = Math.max(0, (Date.now() - epochMs) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+// markHistoryFailureStale keeps the drawn lines but marks them stale whenever
+// the request that failed is still the current one. A mismatch between the
+// drawn lines and the selection is extra context; the age of the retained data
+// is the primary reason. Failures from obsolete requests never touch the mark.
+function markHistoryFailureStale(provider, range, seq) {
   const rendered = State.chart && State.chart.renderKey;
   if (!rendered) return;
+  if (seq != null && !historyRequestIsCurrent(provider, rendered.account, range, seq)) return;
   const account = chartAccountKey(provider);
   let reason = '';
   if (rendered.provider !== provider) {
@@ -6230,11 +6244,59 @@ function markHistoryFailureStale(provider, range) {
   } else if (rendered.range !== range) {
     reason = `Showing ${rendered.range} data - ${range} failed to load`;
   }
+  const age = rendered.lastSuccessAt ? historyAgeLabel(rendered.lastSuccessAt) : '';
   if (!reason) {
-    clearChartStale();
+    markChartStale(age ? `Last updated ${age} - refresh failed` : 'Refresh failed');
     return;
   }
-  markChartStale(reason);
+  markChartStale(age ? `${reason} (last updated ${age})` : reason);
+}
+
+// mergeAllProvidersHistory keeps the last rows of providers whose read failed.
+// The backend lists those failures in `errors`; a provider missing from the
+// response without an entry there was configured away and may be dropped.
+function mergeAllProvidersHistory(previous, data) {
+  const prior = previous && typeof previous === 'object' ? previous : {};
+  const merged = Object.assign({}, data);
+  const errors = data && typeof data.errors === 'object' && data.errors ? data.errors : {};
+  merged.errors = errors;
+  const errorKeys = Object.keys(errors);
+
+  errorKeys.forEach((key) => {
+    const parts = String(key).split(':');
+    const provider = parts[0];
+    if (parts[1]) {
+      const arrayKey = provider === 'codex'
+        ? 'codexAccounts'
+        : (provider === 'minimax' ? 'minimaxAccounts' : null);
+      const id = parts[1];
+      if (arrayKey !== null) {
+        const current = Array.isArray(merged[arrayKey]) ? merged[arrayKey].slice() : [];
+        const match = (Array.isArray(prior[arrayKey]) ? prior[arrayKey] : [])
+          .find(acc => String(acc && acc.accountId) === String(id));
+        if (match && !current.some(acc => String(acc && acc.accountId) === String(id))) {
+          current.push(match);
+        }
+        if (current.length) merged[arrayKey] = current;
+      }
+      // Single-account cards read the flat key when the account list is absent.
+      if (merged[provider] == null && prior[provider] != null) {
+        merged[provider] = prior[provider];
+      }
+      return;
+    }
+    if (merged[provider] == null && prior[provider] != null) {
+      merged[provider] = prior[provider];
+    }
+    if (provider === 'codex' && merged.codexAccounts == null && prior.codexAccounts != null) {
+      merged.codexAccounts = prior.codexAccounts;
+    }
+    if (provider === 'minimax' && merged.minimaxAccounts == null && prior.minimaxAccounts != null) {
+      merged.minimaxAccounts = prior.minimaxAccounts;
+    }
+  });
+
+  return merged;
 }
 
 async function fetchHistory(range) {
@@ -6259,13 +6321,13 @@ async function fetchHistory(range) {
       const res = await authFetch(`${API_BASE}/api/api-integrations/history?range=${range}`);
       if (!res.ok) {
         warnHistoryFailure(requestProvider, range, `HTTP ${res.status}`, res.status);
-        markHistoryFailureStale(requestProvider, range);
+        markHistoryFailureStale(requestProvider, range, requestSeq);
         return;
       }
       const data = await res.json();
       if (!data || typeof data !== 'object' || data.error) {
         warnHistoryFailure(requestProvider, range, (data && data.error) || 'invalid body', res.status);
-        markHistoryFailureStale(requestProvider, range);
+        markHistoryFailureStale(requestProvider, range, requestSeq);
         return;
       }
 
@@ -6284,14 +6346,14 @@ async function fetchHistory(range) {
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&${providerParam()}`);
     if (!res.ok) {
       warnHistoryFailure(requestProvider, range, `HTTP ${res.status}`, res.status);
-      markHistoryFailureStale(requestProvider, range);
+      markHistoryFailureStale(requestProvider, range, requestSeq);
       return;
     }
     const data = await res.json();
     const bodyError = historyBodyError(requestProvider, data);
     if (bodyError) {
       warnHistoryFailure(requestProvider, range, bodyError, res.status);
-      markHistoryFailureStale(requestProvider, range);
+      markHistoryFailureStale(requestProvider, range, requestSeq);
       return;
     }
 
@@ -6316,7 +6378,7 @@ async function fetchHistory(range) {
         data.apiIntegrations = apiIntegrationsHistoryData;
         State.apiIntegrationsHistory = apiIntegrationsHistoryData;
       }
-      State.allProvidersHistory = data;
+      State.allProvidersHistory = mergeAllProvidersHistory(State.allProvidersHistory, data);
       renderAllProvidersView();
       return;
     }
@@ -6842,7 +6904,7 @@ async function fetchHistory(range) {
     recordChartRendered(provider, range);
   } catch (err) {
     warnHistoryFailure(requestProvider, range, err && err.message ? err.message : String(err), 0);
-    markHistoryFailureStale(requestProvider, range);
+    markHistoryFailureStale(requestProvider, range, requestSeq);
   }
 }
 
@@ -7118,6 +7180,7 @@ function buildAllProviderEntries() {
           historyRows: Array.isArray(historyPayload?.history)
             ? historyPayload.history
             : (Array.isArray(history.codex) ? history.codex : []),
+          historyErrorKey: `codex:${accountID}`,
         });
       });
       return;
@@ -7144,6 +7207,7 @@ function buildAllProviderEntries() {
           quotas: normalizeBothQuotas('minimax', payload),
           insights: insights.minimax || { stats: [], insights: [] },
           historyRows: Array.isArray(history.minimax) ? history.minimax : [],
+          historyErrorKey: 'minimax',
         });
         return;
       }
@@ -7182,6 +7246,7 @@ function buildAllProviderEntries() {
           historyRows: Array.isArray(historyPayload?.history)
             ? historyPayload.history
             : (Array.isArray(history.minimax) ? history.minimax : []),
+          historyErrorKey: `minimax:${accountID}`,
         });
       });
       return;
@@ -7208,6 +7273,7 @@ function buildAllProviderEntries() {
       showBilling: payload.showBilling !== false,
       insights: insights[provider] || { stats: [], insights: [] },
       historyRows: Array.isArray(history[provider]) ? history[provider] : [],
+      historyErrorKey: provider,
     });
   };
 
@@ -7804,6 +7870,30 @@ function destroyProviderCardCharts() {
   State.providerCharts = {};
 }
 
+// providerHistoryError returns the backend read error recorded for one card,
+// exact account first, then the provider as a whole.
+function providerHistoryError(entry) {
+  const errors = State.allProvidersHistory && State.allProvidersHistory.errors;
+  if (!errors || typeof errors !== 'object') return '';
+  if (entry.historyErrorKey && errors[entry.historyErrorKey]) return String(errors[entry.historyErrorKey]);
+  if (entry.provider && errors[entry.provider]) return String(errors[entry.provider]);
+  return '';
+}
+
+// providerHistoryStaleMark is the amber hollow dot for a mini-chart whose
+// latest read failed: the lines stay, with their age in the tooltip.
+function providerHistoryStaleMark(entry) {
+  if (!providerHistoryError(entry)) return '';
+  const rows = Array.isArray(entry.historyRows) ? entry.historyRows : [];
+  if (rows.length === 0) return '';
+  const lastCaptured = rows[rows.length - 1] && rows[rows.length - 1].capturedAt;
+  const lastMs = lastCaptured ? Date.parse(lastCaptured) : NaN;
+  const age = Number.isFinite(lastMs) ? historyAgeLabel(lastMs) : '';
+  const reason = age ? `Last updated ${age} - refresh failed` : 'Refresh failed - showing previous data';
+  const label = escapeHTML(reason);
+  return `<span class="provider-chart-stale-dot chart-stale-dot stale" role="img" title="${label}" aria-label="${label}"></span>`;
+}
+
 function renderAllProvidersView() {
   const container = document.getElementById('all-providers-container');
   if (!container) return;
@@ -7837,10 +7927,11 @@ function renderAllProvidersView() {
     if (entry.summaryOnly) {
       return renderAPIIntegrationsSummaryCard(entry, collapsed);
     }
+    const staleMark = providerHistoryStaleMark(entry);
     const cardHeader = `<header class="provider-card-header">
         <div class="provider-card-title">
           <span>${escapeHTML(entry.title)}</span>
-          ${badge}${peak}
+          ${badge}${peak}${staleMark}
         </div>
         <button class="provider-card-collapse-btn" type="button" data-card-key="${entry.cardKey}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${escapeHTML(entry.title)}">
           <svg class="provider-card-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

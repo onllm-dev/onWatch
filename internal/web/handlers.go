@@ -3579,6 +3579,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 // historyBoth returns both providers' history.
 func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{}
+	historyErrors := map[string]string{}
 	visibility := h.providerVisibilitySettings()
 
 	rangeStr := r.URL.Query().Get("range")
@@ -3593,7 +3594,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("synthetic") && providerTelemetryEnabled(visibility, "synthetic") && h.store != nil {
 		snapshots, err := h.store.QueryRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["synthetic"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			synData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -3630,7 +3633,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("zai") && providerTelemetryEnabled(visibility, "zai") && h.store != nil {
 		snapshots, err := h.store.QueryZaiRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["zai"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			zaiData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -3655,7 +3660,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("anthropic") && providerTelemetryEnabled(visibility, "anthropic") && h.store != nil {
 		snapshots, err := h.store.QueryAnthropicRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["anthropic"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			anthData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -3677,7 +3684,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("copilot") && providerTelemetryEnabled(visibility, "copilot") && h.store != nil {
 		snapshots, err := h.store.QueryCopilotRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["copilot"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			copData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -3700,7 +3709,14 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("codex") && providerTelemetryEnabled(visibility, "codex") && h.store != nil {
-		codexAccounts := h.codexUsageAccounts()
+		codexAccountUsages, enumerated := h.codexUsageAccountsOK()
+		if !enumerated {
+			historyErrors["codex"] = "failed to list accounts"
+		}
+		codexAccounts := make([]map[string]interface{}, 0, len(codexAccountUsages))
+		for _, usage := range codexAccountUsages {
+			codexAccounts = append(codexAccounts, usage.Usage)
+		}
 		codexHistories := make([]map[string]interface{}, 0, len(codexAccounts))
 		for _, acc := range codexAccounts {
 			accountID := codexUsageAccountID(acc)
@@ -3709,6 +3725,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 			}
 			snapshots, err := h.store.QueryCodexRange(accountID, start, now)
 			if err != nil {
+				historyErrors[fmt.Sprintf("codex:%d", accountID)] = "history read failed"
 				continue
 			}
 			step := downsampleStep(len(snapshots), maxChartPoints)
@@ -3746,7 +3763,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("antigravity") && providerTelemetryEnabled(visibility, "antigravity") && h.store != nil {
 		snapshots, err := h.store.QueryAntigravityRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["antigravity"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			antData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -3767,7 +3786,14 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") && h.store != nil {
-		minimaxAccounts := h.minimaxUsageAccounts()
+		minimaxAccountUsages, enumerated := h.minimaxUsageAccountsOK()
+		if !enumerated {
+			historyErrors["minimax"] = "failed to list accounts"
+		}
+		minimaxAccounts := make([]map[string]interface{}, 0, len(minimaxAccountUsages))
+		for _, usage := range minimaxAccountUsages {
+			minimaxAccounts = append(minimaxAccounts, usage.Usage)
+		}
 		minimaxHistories := make([]map[string]interface{}, 0, len(minimaxAccounts))
 		for _, acc := range minimaxAccounts {
 			accountID := minimaxUsageAccountID(acc)
@@ -3776,6 +3802,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 			}
 			snapshots, err := h.store.QueryMiniMaxRange(start, now, accountID)
 			if err != nil {
+				historyErrors[fmt.Sprintf("minimax:%d", accountID)] = "history read failed"
 				continue
 			}
 			step := downsampleStep(len(snapshots), maxChartPoints)
@@ -3812,7 +3839,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("openrouter") && providerTelemetryEnabled(visibility, "openrouter") && h.store != nil {
 		snapshots, err := h.store.QueryOpenRouterRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["openrouter"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			orData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -3840,7 +3869,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("moonshot") && providerTelemetryEnabled(visibility, "moonshot") && h.store != nil {
 		snapshots, err := h.store.QueryMoonshotRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["moonshot"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			msData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -3862,7 +3893,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("deepseek") && providerTelemetryEnabled(visibility, "deepseek") && h.store != nil {
 		snapshots, err := h.store.QueryDeepSeekRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["deepseek"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			dsData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -3886,7 +3919,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") && h.store != nil {
 		snapshots, err := h.store.QueryGeminiRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["gemini"] = "history read failed"
+		} else {
 			// Filter empty snapshots and aggregate by family
 			var valid []*api.GeminiSnapshot
 			for _, s := range snapshots {
@@ -3914,7 +3949,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("cursor") && providerTelemetryEnabled(visibility, "cursor") && h.store != nil {
 		snapshots, err := h.store.QueryCursorRange(start, now, 200)
-		if err == nil {
+		if err != nil {
+			historyErrors["cursor"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			cursorData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -3936,7 +3973,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") && h.store != nil {
 		snaps, err := h.store.QueryGrokRange(store.DefaultGrokAccountID, start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["grok"] = "history read failed"
+		} else {
 			withQuotas := make([]*api.GrokSnapshot, 0, len(snaps))
 			for _, s := range snaps {
 				if len(s.Quotas) > 0 {
@@ -3962,7 +4001,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") && h.store != nil {
 		snaps, err := h.store.QueryKimiRange(store.DefaultKimiAccountID, start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["kimi"] = "history read failed"
+		} else {
 			withQuotas := make([]*api.KimiSnapshot, 0, len(snaps))
 			for _, s := range snaps {
 				if len(s.Quotas) > 0 {
@@ -3988,13 +4029,17 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("mistral") && providerTelemetryEnabled(visibility, "mistral") && h.store != nil {
 		rows, err := h.store.MistralHistory(r.Context(), start, now, 200)
-		if err == nil {
+		if err != nil {
+			historyErrors["mistral"] = "history read failed"
+		} else {
 			response["mistral"] = rows
 		}
 	}
 	if h.config.HasProvider("opencode") && providerTelemetryEnabled(visibility, "opencode") && h.store != nil {
 		snapshots, err := h.store.QueryOpenCodeChartRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["opencode"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			opencodeData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -4016,7 +4061,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("ollama") && providerTelemetryEnabled(visibility, "ollama") && h.store != nil {
 		snapshots, err := h.store.QueryOllamaRange(start, now, 200)
-		if err == nil {
+		if err != nil {
+			historyErrors["ollama"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			ollamaData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -4038,7 +4085,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("muse") && providerTelemetryEnabled(visibility, "muse") && h.store != nil {
 		snapshots, err := h.store.QueryMuseRange(start, now, 200)
-		if err == nil {
+		if err != nil {
+			historyErrors["muse"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			museData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -4060,7 +4109,9 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if h.config.HasProvider("commandcode") && providerTelemetryEnabled(visibility, "commandcode") && h.store != nil {
 		snapshots, err := h.store.QueryCommandCodeChartRange(start, now)
-		if err == nil {
+		if err != nil {
+			historyErrors["commandcode"] = "history read failed"
+		} else {
 			step := downsampleStep(len(snapshots), maxChartPoints)
 			last := len(snapshots) - 1
 			ccData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
@@ -4078,6 +4129,10 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 			}
 			response["commandcode"] = ccData
 		}
+	}
+
+	if len(historyErrors) > 0 {
+		response["errors"] = historyErrors
 	}
 
 	respondJSON(w, http.StatusOK, response)

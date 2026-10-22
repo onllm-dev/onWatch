@@ -47,7 +47,9 @@ console.warn=()=>{};
  await fetchHistory('7d');
  assert.equal(State.chart.data.datasets[0].data[0].y,12,'failed switch must keep the chart lines');
  assert.equal(staleMark.classList.contains('stale'),true,'mismatched failure must mark the chart stale');
- assert.equal(staleMark.getAttribute('title'),'Showing 24h data - 7d failed to load');
+ const staleTitle=staleMark.getAttribute('title');
+ assert(staleTitle.startsWith('Showing 24h data - 7d failed to load'),'mismatch context missing: '+staleTitle);
+ assert(/last updated (just now|\d+[mhd] ago)/.test(staleTitle),'stale tooltip must give the data age: '+staleTitle);
 
  // Next success clears the mark.
  fetch=async()=>({ok:true,status:200,json:async()=>[row]});
