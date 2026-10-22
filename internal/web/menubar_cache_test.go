@@ -164,6 +164,7 @@ func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 	// Force every cached snapshot to be stale deterministically: a 2ms sleep
 	// against a 1ms window still leaves the freshness decision to scheduling.
 	h.menubarFreshFor = -time.Nanosecond
+	h.menubarRebuildGapFor = -1 // the gap is covered by its own test
 
 	start := time.Now()
 	rec := getSummary(h)

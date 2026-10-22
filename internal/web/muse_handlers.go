@@ -25,7 +25,12 @@ func (h *Handler) currentMuse(w http.ResponseWriter, _ *http.Request) {
 type museInsightsResponse struct {
 	Stats    []museInsightStat `json:"stats"`
 	Insights []insightItem     `json:"insights"`
+	// partial marks an answer built after a swallowed read error; it is
+	// served but never cached.
+	partial bool
 }
+
+func (r museInsightsResponse) isPartial() bool { return r.partial }
 
 // museInsightStat is a stats-row shape that carries linked forecast metadata for the Muse dashboard.
 type museInsightStat struct {
@@ -489,7 +494,7 @@ func (h *Handler) summaryMuse(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) insightsMuse(w http.ResponseWriter, _ *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildMuseInsights(hidden, rangeDur))
+	respondInsights(w, h.buildMuseInsights(hidden, rangeDur))
 }
 func (h *Handler) buildMuseSummaryMap() map[string]interface{} {
 	if h.store == nil || h.museTracker == nil {
@@ -532,6 +537,7 @@ func (h *Handler) buildMuseInsights(hidden map[string]bool, _ time.Duration) mus
 	}
 
 	latest, err := h.store.QueryLatestMuse()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil || len(latest.Quotas) == 0 {
 		return resp
 	}

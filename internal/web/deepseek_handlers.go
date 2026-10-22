@@ -256,7 +256,7 @@ func (h *Handler) buildDeepSeekSummaryMap(currency string) map[string]interface{
 func (h *Handler) insightsDeepSeek(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
 	currency := h.deepseekCurrency(r.URL.Query().Get("currency"))
-	respondJSON(w, http.StatusOK, h.buildDeepSeekInsights(currency, hidden))
+	respondInsights(w, h.buildDeepSeekInsights(currency, hidden))
 }
 
 // buildDeepSeekInsights builds the DeepSeek insights response.
@@ -268,6 +268,7 @@ func (h *Handler) buildDeepSeekInsights(currency string, hidden map[string]bool)
 	}
 
 	latest, err := h.store.QueryLatestDeepSeek()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil {
 		resp.Insights = append(resp.Insights, insightItem{
 			Type: "info", Severity: "info",

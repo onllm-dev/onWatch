@@ -264,7 +264,7 @@ func (h *Handler) summaryGemini(w http.ResponseWriter, r *http.Request) {
 // insightsGemini returns Gemini usage insights matching insightsResponse contract.
 func (h *Handler) insightsGemini(w http.ResponseWriter, _ *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildGeminiInsights(hidden, rangeDur))
+	respondInsights(w, h.buildGeminiInsights(hidden, rangeDur))
 }
 
 // buildGeminiInsights builds Gemini insights matching the Anthropic insights pattern:
@@ -278,6 +278,7 @@ func (h *Handler) buildGeminiInsights(hidden map[string]bool, _ time.Duration) i
 
 	now := time.Now().UTC()
 	latest, err := h.store.QueryLatestGemini()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil {
 		return resp
 	}
@@ -321,6 +322,7 @@ func (h *Handler) buildGeminiInsights(hidden map[string]bool, _ time.Duration) i
 		seen := map[int64]bool{}
 		for _, mid := range memberIDs {
 			cycles, err := h.store.QueryGeminiCycleHistory(mid, 50)
+			markPartial(&resp.partial, err)
 			if err != nil {
 				continue
 			}

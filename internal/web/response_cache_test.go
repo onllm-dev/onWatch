@@ -3,9 +3,12 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/store"
 )
 
 func countingHandler(calls *int32, partial bool) http.HandlerFunc {
@@ -169,5 +172,29 @@ func TestResponseCacheReinvalidatesAfterSettleDelay(t *testing.T) {
 	cachedCall(h, next, "/api/insights?provider=codex")
 	if calls != 2 {
 		t.Fatalf("calls = %d after the settle delay, want 2", calls)
+	}
+}
+
+// Hiding an insight is a settings write; the cached insights answer, filtered
+// server-side, must not survive it.
+func TestResponseCacheClearedByHiddenInsightsWrite(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithSynthetic())
+	var calls int32
+	next := countingHandler(&calls, false)
+
+	cachedCall(h, next, "/api/insights?provider=synthetic&range=7d")
+	rec := httptest.NewRecorder()
+	h.UpdateSettings(rec, httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"hidden_insights":["coverage"]}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("settings write status = %d", rec.Code)
+	}
+	cachedCall(h, next, "/api/insights?provider=synthetic&range=7d")
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2: a hidden-insights write must drop cached insights", calls)
 	}
 }

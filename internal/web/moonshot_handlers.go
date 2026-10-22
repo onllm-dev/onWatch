@@ -228,7 +228,7 @@ func (h *Handler) buildMoonshotSummaryMap() map[string]interface{} {
 // insightsMoonshot returns Moonshot insights
 func (h *Handler) insightsMoonshot(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildMoonshotInsights(hidden))
+	respondInsights(w, h.buildMoonshotInsights(hidden))
 }
 
 // buildMoonshotInsights builds the Moonshot insights response.
@@ -240,6 +240,7 @@ func (h *Handler) buildMoonshotInsights(hidden map[string]bool) insightsResponse
 	}
 
 	latest, err := h.store.QueryLatestMoonshot()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil {
 		resp.Insights = append(resp.Insights, insightItem{
 			Type: "info", Severity: "info",

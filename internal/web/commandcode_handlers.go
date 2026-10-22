@@ -25,7 +25,12 @@ func (h *Handler) currentCommandCode(w http.ResponseWriter, _ *http.Request) {
 type commandCodeInsightsResponse struct {
 	Stats    []commandCodeInsightStat `json:"stats"`
 	Insights []insightItem            `json:"insights"`
+	// partial marks an answer built after a swallowed read error; it is
+	// served but never cached.
+	partial bool
 }
+
+func (r commandCodeInsightsResponse) isPartial() bool { return r.partial }
 
 // commandCodeInsightStat carries linked forecast metadata for the dashboard.
 type commandCodeInsightStat struct {
@@ -472,7 +477,7 @@ func (h *Handler) summaryCommandCode(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) insightsCommandCode(w http.ResponseWriter, _ *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildCommandCodeInsights(hidden, rangeDur))
+	respondInsights(w, h.buildCommandCodeInsights(hidden, rangeDur))
 }
 
 func (h *Handler) buildCommandCodeSummaryMap() map[string]interface{} {
@@ -516,6 +521,7 @@ func (h *Handler) buildCommandCodeInsights(hidden map[string]bool, _ time.Durati
 	}
 
 	latest, err := h.store.QueryLatestCommandCode()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil || len(latest.Quotas) == 0 {
 		return resp
 	}

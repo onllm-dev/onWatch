@@ -334,7 +334,7 @@ func (h *Handler) cycleOverviewKimi(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) insightsKimi(w http.ResponseWriter, _ *http.Request, _ time.Duration) {
-	respondJSON(w, http.StatusOK, h.buildKimiInsights(h.getHiddenInsightKeys()))
+	respondInsights(w, h.buildKimiInsights(h.getHiddenInsightKeys()))
 }
 
 func (h *Handler) buildKimiInsights(hidden map[string]bool) insightsResponse {

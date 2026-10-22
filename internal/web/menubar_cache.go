@@ -173,8 +173,8 @@ func (h *Handler) menubarDataForRequest(ctx context.Context) (menubarBuiltData, 
 		// popover never waits on SQL; the response carries the refreshing hint
 		// so the client can pick up the rebuilt snapshot a moment later. Builds
 		// normally run ahead of requests anyway (see scheduleMenubarPrebuild).
-		if cached.Snapshot != nil && !cachedAt.IsZero() && !h.menubarAlwaysWait {
-			if build == nil || build.generation != generation {
+		if cached.Snapshot != nil && !cachedAt.IsZero() {
+			if (build == nil || build.generation != generation) && h.menubarRebuildGapElapsed() {
 				h.menubarSnapshotMu.Lock()
 				if h.menubarSnapshotBuild == nil || h.menubarSnapshotBuild.generation != h.menubarSnapshotGen {
 					h.startMenubarSnapshotBuildLocked(h.menubarSnapshotGen)
@@ -330,6 +330,7 @@ func (h *Handler) startMenubarSnapshotBuildLocked(generation uint64) *menubarSna
 		}
 		h.menubarSnapshotMu.Unlock()
 
+		h.menubarLastBuildEnd.Store(h.menubarNowTime().UnixNano())
 		build.data = built
 		build.err = err
 		if h.menubarAfterBuildHook != nil {
@@ -406,14 +407,44 @@ func (h *Handler) scheduleMenubarPrebuild() {
 	if !h.menubarPrebuildPending.CompareAndSwap(false, true) {
 		return
 	}
-	time.AfterFunc(menubarPrebuildDebounce, func() {
-		h.menubarPrebuildPending.Store(false)
-		h.menubarSnapshotMu.Lock()
-		if h.menubarSnapshotBuild == nil || h.menubarSnapshotBuild.generation != h.menubarSnapshotGen {
-			h.startMenubarSnapshotBuildLocked(h.menubarSnapshotGen)
-		}
-		h.menubarSnapshotMu.Unlock()
-	})
+	time.AfterFunc(menubarPrebuildDebounce, h.runMenubarPrebuild)
+}
+
+// runMenubarPrebuild starts the debounced build, or defers it until the
+// minimum gap since the last build has passed, so polls staggered across many
+// providers cannot keep the database busy with back-to-back builds.
+func (h *Handler) runMenubarPrebuild() {
+	if wait := h.menubarRebuildGapRemaining(); wait > 0 {
+		time.AfterFunc(wait, h.runMenubarPrebuild)
+		return
+	}
+	h.menubarPrebuildPending.Store(false)
+	h.menubarSnapshotMu.Lock()
+	if h.menubarSnapshotBuild == nil || h.menubarSnapshotBuild.generation != h.menubarSnapshotGen {
+		h.startMenubarSnapshotBuildLocked(h.menubarSnapshotGen)
+	}
+	h.menubarSnapshotMu.Unlock()
+}
+
+// menubarMinRebuildGap is the least time between background builds (prebuilds
+// and stale-while-revalidate rebuilds). It also stops a failing build from
+// being retried on every request.
+const menubarMinRebuildGap = 5 * time.Second
+
+func (h *Handler) menubarRebuildGapRemaining() time.Duration {
+	gap := menubarMinRebuildGap
+	if h.menubarRebuildGapFor != 0 {
+		gap = h.menubarRebuildGapFor // tests; negative disables the gap
+	}
+	last := h.menubarLastBuildEnd.Load()
+	if last == 0 || gap < 0 {
+		return 0
+	}
+	return gap - h.menubarNowTime().Sub(time.Unix(0, last))
+}
+
+func (h *Handler) menubarRebuildGapElapsed() bool {
+	return h.menubarRebuildGapRemaining() <= 0
 }
 
 // menubarRefreshing reports whether a build is in flight, so a response

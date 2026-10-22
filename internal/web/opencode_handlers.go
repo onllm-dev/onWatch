@@ -36,7 +36,12 @@ func (h *Handler) currentOpenCode(w http.ResponseWriter, _ *http.Request) {
 type opencodeInsightsResponse struct {
 	Stats    []opencodeInsightStat `json:"stats"`
 	Insights []insightItem         `json:"insights"`
+	// partial marks an answer built after a swallowed read error; it is
+	// served but never cached.
+	partial bool
 }
+
+func (r opencodeInsightsResponse) isPartial() bool { return r.partial }
 
 // opencodeInsightStat is a stats-row shape that carries linked forecast metadata for the OpenCode dashboard.
 type opencodeInsightStat struct {
@@ -483,7 +488,7 @@ func (h *Handler) summaryOpenCode(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) insightsOpenCode(w http.ResponseWriter, _ *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildOpenCodeInsights(hidden, rangeDur))
+	respondInsights(w, h.buildOpenCodeInsights(hidden, rangeDur))
 }
 
 func (h *Handler) opencodeQuotaNames() []string {
@@ -538,6 +543,7 @@ func (h *Handler) buildOpenCodeInsights(hidden map[string]bool, _ time.Duration)
 	}
 
 	latest, err := h.store.QueryLatestOpenCode()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil || len(latest.Quotas) == 0 {
 		return resp
 	}

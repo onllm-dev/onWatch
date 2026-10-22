@@ -2764,15 +2764,33 @@ function codexResetCreditsCount(rc) {
   return Math.max(0, Math.floor(rc.available_count));
 }
 
-function codexResetCreditsTooltip(rc, count) {
+function codexResetCreditsTipText(count, nextExpiresAt, expiryUnknown) {
   let tip = count === 1 ? '1 banked reset' : `${count} banked resets`;
-  const ms = rc.next_expires_at ? new Date(rc.next_expires_at).getTime() - Date.now() : NaN;
+  const ms = nextExpiresAt ? new Date(nextExpiresAt).getTime() - Date.now() : NaN;
   if (isFinite(ms)) {
     tip += ms <= 0 ? ' - next expires now' : ` - next expires in ${formatDuration(Math.floor(ms / 1000))}`;
-  } else if (Array.isArray(rc.credits) && rc.credits.some(c => c.expiry_unknown)) {
+  } else if (expiryUnknown) {
     tip += ' - expiry unknown';
   }
   return tip;
+}
+
+function codexResetCreditsTooltip(rc, count) {
+  const unknown = Array.isArray(rc.credits) && rc.credits.some(c => c.expiry_unknown);
+  return codexResetCreditsTipText(count, rc.next_expires_at, unknown);
+}
+
+// The chip re-renders only when its count changes, so the 30s ticker keeps
+// the expiry countdown in its tooltip current.
+function refreshResetChipTips(root) {
+  (root || document).querySelectorAll('.reset-chip-wrap[data-reset-count]').forEach(el => {
+    const count = parseInt(el.dataset.resetCount, 10) || 0;
+    if (count <= 0) return;
+    const tip = codexResetCreditsTipText(count, el.dataset.resetExpires || '', el.dataset.resetUnknown === '1');
+    el.setAttribute('data-peak-tip', tip);
+    const label = count === 1 ? '1 reset' : `${count} resets`;
+    el.setAttribute('aria-label', `${label}. ${tip}`);
+  });
 }
 
 function codexResetCreditsHTML(rc) {
@@ -2780,7 +2798,8 @@ function codexResetCreditsHTML(rc) {
   if (count <= 0) return '';
   const label = count === 1 ? '1 reset' : `${count} resets`;
   const tip = codexResetCreditsTooltip(rc, count);
-  return `<span class="peak-chip-wrap reset-chip-wrap" data-peak-tip="${escapeHTML(tip)}" data-reset-count="${count}" tabindex="0" role="img" aria-label="${escapeHTML(label + '. ' + tip)}">`
+  const unknown = Array.isArray(rc.credits) && rc.credits.some(c => c.expiry_unknown);
+  return `<span class="peak-chip-wrap reset-chip-wrap" data-peak-tip="${escapeHTML(tip)}" data-reset-count="${count}" data-reset-expires="${escapeHTML(rc.next_expires_at || '')}" data-reset-unknown="${unknown ? '1' : ''}" tabindex="0" role="img" aria-label="${escapeHTML(label + '. ' + tip)}">`
     + `<span class="peak-chip reset-chip">${escapeHTML(label)}</span>`
     + '</span>';
 }
@@ -10307,6 +10326,7 @@ function startAutoRefresh() {
   if (State.peakTickInterval) clearInterval(State.peakTickInterval);
   State.peakTickInterval = setInterval(() => {
     if (window.OnWatchPeak) window.OnWatchPeak.refreshPeakChips();
+    refreshResetChipTips();
   }, 30000);
   if (window.OnWatchPeak) {
     window.OnWatchPeak.initPeakChipTooltips();

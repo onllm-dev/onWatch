@@ -86,6 +86,7 @@ func (a *MoonshotAgent) poll(ctx context.Context) {
 			return
 		}
 		a.logger.Error("Failed to fetch Moonshot balance", "error", err)
+		pollFailed("moonshot", "", err)
 		return
 	}
 
@@ -102,6 +103,9 @@ func (a *MoonshotAgent) poll(ctx context.Context) {
 			a.logger.Error("Moonshot tracker processing failed", "error", err)
 		}
 	}
+	// Published after the write, so listeners (the dashboard response cache,
+	// the menubar prebuild) see the new snapshot.
+	pollSucceeded("moonshot", "")
 
 	// Report to session manager for usage-based session detection
 	// Inverting for balance: smaller balance means usage

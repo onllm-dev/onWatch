@@ -198,10 +198,12 @@ type Handler struct {
 	menubarFreshFor           time.Duration
 	menubarWaitFor            time.Duration
 	menubarNoCacheFor         time.Duration
-	// menubarAlwaysWait restores the wait-for-rebuild behaviour for aged
-	// snapshots (tests of the wait budget). Production serves stale-while-
-	// revalidate.
-	menubarAlwaysWait bool
+	// menubarLastBuildEnd is the unix-nano time the last build finished
+	// (success or failure); background builds keep menubarMinRebuildGap apart.
+	menubarLastBuildEnd atomic.Int64
+	// menubarRebuildGapFor overrides menubarMinRebuildGap in tests; negative
+	// disables it.
+	menubarRebuildGapFor time.Duration
 	// responses caches dashboard aggregate responses until the provider they
 	// cover polls again (see response_cache.go).
 	responses *responseCache
@@ -2994,7 +2996,7 @@ func (h *Handler) cycleOverviewGrok(w http.ResponseWriter, r *http.Request) {
 
 // insightsGrok serves /api/insights?provider=grok .
 func (h *Handler) insightsGrok(w http.ResponseWriter, _ *http.Request, _ time.Duration) {
-	respondJSON(w, http.StatusOK, h.buildGrokInsights(h.getHiddenInsightKeys()))
+	respondInsights(w, h.buildGrokInsights(h.getHiddenInsightKeys()))
 }
 
 // buildGrokInsights builds stats + forecast insights for the single Grok credits quota.
@@ -4519,7 +4521,7 @@ func (h *Handler) buildOpenRouterSummaryMap() map[string]interface{} {
 // insightsOpenRouter returns OpenRouter insights
 func (h *Handler) insightsOpenRouter(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildOpenRouterInsights(hidden))
+	respondInsights(w, h.buildOpenRouterInsights(hidden))
 }
 
 // buildOpenRouterInsights builds the OpenRouter insights response.
@@ -4531,6 +4533,7 @@ func (h *Handler) buildOpenRouterInsights(hidden map[string]bool) insightsRespon
 	}
 
 	latest, err := h.store.QueryLatestOpenRouter()
+	markPartial(&resp.partial, err)
 	if err != nil {
 		h.logger.Error("failed to query OpenRouter data for insights", "error", err)
 		return resp
@@ -5905,7 +5908,12 @@ func (h *Handler) getHiddenInsightKeys() map[string]bool {
 type insightsResponse struct {
 	Stats    []insightStat `json:"stats"`
 	Insights []insightItem `json:"insights"`
+	// partial marks an answer built after a swallowed read error; it is
+	// served but never cached.
+	partial bool
 }
+
+func (r insightsResponse) isPartial() bool { return r.partial }
 
 // Insights returns computed deep analytics (API endpoint)
 func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
@@ -5968,6 +5976,7 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
 	response := map[string]interface{}{}
+	partial := false
 	visibility := h.providerVisibilitySettings()
 
 	if h.config.HasProvider("synthetic") && providerTelemetryEnabled(visibility, "synthetic") {
@@ -5991,6 +6000,7 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 				continue
 			}
 			ins := h.buildCodexInsights(accountID, hidden, rangeDur)
+			partial = partial || ins.partial
 			codexInsights = append(codexInsights, map[string]interface{}{
 				"accountId":   accountID,
 				"accountName": codexUsageAccountName(acc),
@@ -6017,6 +6027,7 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 				continue
 			}
 			ins := h.buildMiniMaxInsights(accountID, hidden, rangeDur)
+			partial = partial || ins.partial
 			minimaxInsights = append(minimaxInsights, map[string]interface{}{
 				"accountId":   accountID,
 				"accountName": minimaxUsageAccountName(acc),
@@ -6068,13 +6079,21 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 		response["commandcode"] = h.buildCommandCodeInsights(hidden, rangeDur)
 	}
 
+	for _, v := range response {
+		if pm, ok := v.(partialMarker); ok && pm.isPartial() {
+			partial = true
+		}
+	}
+	if partial {
+		w.Header().Set(partialResponseHeader, "1")
+	}
 	respondJSON(w, http.StatusOK, response)
 }
 
 // insightsSynthetic returns Synthetic deep analytics
 func (h *Handler) insightsSynthetic(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildSyntheticInsights(hidden, rangeDur))
+	respondInsights(w, h.buildSyntheticInsights(hidden, rangeDur))
 }
 
 // buildSyntheticInsights builds the Synthetic insights response.
@@ -6282,7 +6301,7 @@ func (h *Handler) buildSyntheticInsights(hidden map[string]bool, rangeDur time.D
 // insightsZai returns Z.ai deep analytics with historical data
 func (h *Handler) insightsZai(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildZaiInsights(hidden))
+	respondInsights(w, h.buildZaiInsights(hidden))
 }
 
 // buildZaiInsights builds the Z.ai insights response.
@@ -6294,6 +6313,7 @@ func (h *Handler) buildZaiInsights(hidden map[string]bool) insightsResponse {
 	}
 
 	latest, err := h.store.QueryLatestZai()
+	markPartial(&resp.partial, err)
 	if err != nil {
 		h.logger.Error("failed to query Z.ai data for insights", "error", err)
 		return resp
@@ -6980,7 +7000,7 @@ func buildAnthropicSummaryResponse(summary *tracker.AnthropicSummary) map[string
 // insightsAnthropic returns Anthropic deep analytics.
 func (h *Handler) insightsAnthropic(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildAnthropicInsights(hidden, rangeDur))
+	respondInsights(w, h.buildAnthropicInsights(hidden, rangeDur))
 }
 
 // buildAnthropicInsights builds the Anthropic insights response with per-quota analytics.
@@ -6990,6 +7010,7 @@ func (h *Handler) buildAnthropicInsights(hidden map[string]bool, rangeDur time.D
 		return resp
 	}
 	latest, err := h.store.QueryLatestAnthropic()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil {
 		resp.Insights = append(resp.Insights, insightItem{
 			Type: "info", Severity: "info",
@@ -7625,6 +7646,10 @@ var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-
 
 // UpdateSettings updates settings from JSON body (partial updates supported).
 func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	// Every settings write can reshape cached dashboard answers (hidden
+	// insights are filtered server-side, timezone and toggles format them),
+	// so drop them however this request ends.
+	defer h.responses.invalidateAll()
 	if r.Method != http.MethodPut {
 		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -9309,7 +9334,7 @@ func buildCopilotSummaryResponse(summary *tracker.CopilotSummary) map[string]int
 // insightsCopilot returns Copilot deep analytics.
 func (h *Handler) insightsCopilot(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildCopilotInsights(hidden, rangeDur))
+	respondInsights(w, h.buildCopilotInsights(hidden, rangeDur))
 }
 
 // buildCopilotInsights builds the Copilot insights response.
@@ -9319,6 +9344,7 @@ func (h *Handler) buildCopilotInsights(hidden map[string]bool, rangeDur time.Dur
 		return resp
 	}
 	latest, err := h.store.QueryLatestCopilot()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil {
 		resp.Insights = append(resp.Insights, insightItem{
 			Type: "info", Severity: "info",
@@ -10084,7 +10110,7 @@ func antigravityUsageStatus(usagePercent float64) string {
 // insightsAntigravity returns Antigravity-specific deep analytics.
 func (h *Handler) insightsAntigravity(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildAntigravityInsights(hidden, rangeDur))
+	respondInsights(w, h.buildAntigravityInsights(hidden, rangeDur))
 }
 
 // buildAntigravityInsights builds Antigravity insights focused on burn rates and exhaustion forecast.
@@ -10098,12 +10124,14 @@ func (h *Handler) buildAntigravityInsights(hidden map[string]bool, rangeDur time
 	now := time.Now().UTC()
 	rangeStart := now.Add(-rangeDur)
 	latest, err := h.store.QueryLatestAntigravity()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil {
 		return resp
 	}
 
 	groups := api.GroupAntigravityModelsByLogicalQuota(latest.Models)
 	pollCount, firstPoll, lastPoll, err := h.store.QueryAntigravityRangeStats(rangeStart, now)
+	markPartial(&resp.partial, err)
 	if err != nil {
 		pollCount = 0
 	}
@@ -11687,7 +11715,7 @@ func buildMiniMaxSummaryResponse(summary *tracker.MiniMaxSummary) map[string]int
 // insightsMiniMax returns MiniMax insights.
 func (h *Handler) insightsMiniMax(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildMiniMaxInsights(h.parseMiniMaxAccountID(r), hidden, rangeDur))
+	respondInsights(w, h.buildMiniMaxInsights(h.parseMiniMaxAccountID(r), hidden, rangeDur))
 }
 
 func (h *Handler) buildMiniMaxInsights(accountID int64, hidden map[string]bool, rangeDur time.Duration) insightsResponse {
@@ -11700,6 +11728,7 @@ func (h *Handler) buildMiniMaxInsights(accountID int64, hidden map[string]bool, 
 		minimaxAccID = h.defaultMiniMaxAccountID()
 	}
 	latest, err := h.store.QueryLatestMiniMax(minimaxAccID)
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil || len(latest.Models) == 0 {
 		resp.Insights = append(resp.Insights, insightItem{
 			Type: "info", Severity: "info", Title: "Getting Started",
@@ -11719,6 +11748,7 @@ func (h *Handler) buildMiniMaxInsights(accountID int64, hidden map[string]bool, 
 		}
 		now := time.Now().UTC()
 		snapshots, err := h.store.QueryMiniMaxRange(now.Add(-rangeWindow), now, minimaxAccID, minimaxInsightSampleLimit)
+		markPartial(&resp.partial, err)
 		if err != nil {
 			h.logger.Error("failed to query MiniMax snapshots for insights", "error", err)
 		}
@@ -12046,7 +12076,7 @@ func buildCodexSummaryResponse(summary *tracker.CodexSummary) map[string]interfa
 func (h *Handler) insightsCodex(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
 	accountID := parseCodexAccountID(r)
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildCodexInsights(accountID, hidden, rangeDur))
+	respondInsights(w, h.buildCodexInsights(accountID, hidden, rangeDur))
 }
 
 func (h *Handler) buildCodexInsights(accountID int64, hidden map[string]bool, rangeDur time.Duration) insightsResponse {
@@ -12056,6 +12086,7 @@ func (h *Handler) buildCodexInsights(accountID int64, hidden map[string]bool, ra
 		return resp
 	}
 	latest, err := h.store.QueryLatestCodex(accountID)
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil {
 		resp.Insights = append(resp.Insights, insightItem{Type: "info", Severity: "info", Title: "Getting Started", Desc: "Keep onWatch running to collect Codex usage data. Insights will appear after a few snapshots."})
 		return resp
@@ -12094,6 +12125,7 @@ func (h *Handler) buildCodexInsights(accountID int64, hidden map[string]bool, ra
 	}
 
 	primaryCycles, err := h.store.QueryCodexCyclesSince(accountID, primaryQuotaName, windowStart)
+	markPartial(&resp.partial, err)
 	if codexIsFreePlan(latest.PlanType) && (err != nil || len(primaryCycles) == 0) {
 		if legacyCycles, legacyErr := h.store.QueryCodexCyclesSince(accountID, "five_hour", windowStart); legacyErr == nil {
 			primaryCycles = legacyCycles

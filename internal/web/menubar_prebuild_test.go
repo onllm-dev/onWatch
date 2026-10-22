@@ -18,6 +18,7 @@ func TestMenubarPrebuildRunsAfterPollWhenActive(t *testing.T) {
 	registry := agent.NewPollStatusRegistry()
 	h.SetPollStatusRegistry(registry)
 
+	h.menubarRebuildGapFor = -1
 	_ = getSummary(h) // marks the menubar as in use and fills the cache
 
 	var builds int32
@@ -61,5 +62,46 @@ func TestMenubarPrebuildSkippedWhenInactive(t *testing.T) {
 	time.Sleep(menubarPrebuildDebounce + 500*time.Millisecond)
 	if got := atomic.LoadInt32(&builds); got != 0 {
 		t.Fatalf("builds = %d, want 0 without a menubar client", got)
+	}
+}
+
+// Background rebuilds keep a minimum gap: a stale request inside it serves the
+// cache without starting a build (so a failing build is not retried on every
+// request), and a prebuild inside it is deferred, not dropped.
+func TestMenubarRebuildGap(t *testing.T) {
+	h, _, _ := newCacheTestHandler(t, nil)
+	registry := agent.NewPollStatusRegistry()
+	h.SetPollStatusRegistry(registry)
+	h.menubarRebuildGapFor = 3 * time.Second
+	h.menubarFreshFor = -time.Nanosecond
+
+	_ = getSummary(h) // first build; the gap starts now
+
+	var builds int32
+	done := make(chan struct{}, 4)
+	h.menubarBuildHook = func(ctx context.Context) (menubarBuiltData, error) {
+		atomic.AddInt32(&builds, 1)
+		return h.buildMenubarSnapshotWithAllProviders()
+	}
+	h.menubarAfterBuildHook = func(*menubar.Snapshot, error) { done <- struct{}{} }
+
+	for i := 0; i < 3; i++ {
+		rec := getSummary(h)
+		if rec.Header().Get("X-Onwatch-Refreshing") != "" {
+			t.Fatal("no rebuild may run inside the gap")
+		}
+	}
+	if got := atomic.LoadInt32(&builds); got != 0 {
+		t.Fatalf("builds = %d inside the gap, want 0", got)
+	}
+
+	registry.Clear("codex", "1")
+	select {
+	case <-done:
+	case <-time.After(6 * time.Second):
+		t.Fatal("deferred prebuild never ran")
+	}
+	if got := atomic.LoadInt32(&builds); got != 1 {
+		t.Fatalf("builds = %d, want the one deferred prebuild", got)
 	}
 }

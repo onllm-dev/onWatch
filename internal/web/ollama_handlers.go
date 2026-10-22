@@ -23,7 +23,12 @@ func (h *Handler) currentOllama(w http.ResponseWriter, _ *http.Request) {
 type ollamaInsightsResponse struct {
 	Stats    []ollamaInsightStat `json:"stats"`
 	Insights []insightItem       `json:"insights"`
+	// partial marks an answer built after a swallowed read error; it is
+	// served but never cached.
+	partial bool
 }
+
+func (r ollamaInsightsResponse) isPartial() bool { return r.partial }
 
 // ollamaInsightStat is a stats-row shape that carries linked forecast metadata for the Ollama dashboard.
 type ollamaInsightStat struct {
@@ -445,7 +450,7 @@ func (h *Handler) summaryOllama(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) insightsOllama(w http.ResponseWriter, _ *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildOllamaInsights(hidden, rangeDur))
+	respondInsights(w, h.buildOllamaInsights(hidden, rangeDur))
 }
 
 func (h *Handler) ollamaQuotaNames() []string {
@@ -500,6 +505,7 @@ func (h *Handler) buildOllamaInsights(hidden map[string]bool, _ time.Duration) o
 	}
 
 	latest, err := h.store.QueryLatestOllama()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil || len(latest.Quotas) == 0 {
 		return resp
 	}

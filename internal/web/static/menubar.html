@@ -2166,13 +2166,17 @@
             // The daemon answered from its cache while a rebuild runs: fetch
             // once more shortly after to pick up the rebuilt snapshot. One
             // pending follow-up at a time.
+            // A follow-up's own answer never schedules another one, so a
+            // daemon whose builds keep failing cannot drive a fetch loop.
             let refreshFollowUpTimer = null;
+            let refreshFollowUpAt = 0;
             function scheduleRefreshFollowUp() {
-                if (refreshFollowUpTimer) {
+                if (refreshFollowUpTimer || Date.now() - refreshFollowUpAt < 10000) {
                     return;
                 }
                 refreshFollowUpTimer = window.setTimeout(() => {
                     refreshFollowUpTimer = null;
+                    refreshFollowUpAt = Date.now();
                     requestFreshSnapshot();
                 }, 1500);
             }

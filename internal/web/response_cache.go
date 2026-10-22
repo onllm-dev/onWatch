@@ -241,3 +241,25 @@ func writeCachedResponse(w http.ResponseWriter, entry *cachedResponse) {
 	w.WriteHeader(entry.status)
 	_, _ = w.Write(entry.body)
 }
+
+// partialMarker is implemented by response bodies that can report a degraded
+// build (a swallowed read error).
+type partialMarker interface {
+	isPartial() bool
+}
+
+// markPartial flags a response whose builder swallowed a read error.
+func markPartial(flag *bool, err error) {
+	if err != nil {
+		*flag = true
+	}
+}
+
+// respondInsights writes an insights body, marking it uncacheable when the
+// builder swallowed a read error.
+func respondInsights(w http.ResponseWriter, body interface{}) {
+	if pm, ok := body.(partialMarker); ok && pm.isPartial() {
+		w.Header().Set(partialResponseHeader, "1")
+	}
+	respondJSON(w, http.StatusOK, body)
+}

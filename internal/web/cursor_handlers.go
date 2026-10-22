@@ -14,7 +14,12 @@ import (
 type cursorInsightsResponse struct {
 	Stats    []cursorInsightStat `json:"stats"`
 	Insights []insightItem       `json:"insights"`
+	// partial marks an answer built after a swallowed read error; it is
+	// served but never cached.
+	partial bool
 }
+
+func (r cursorInsightsResponse) isPartial() bool { return r.partial }
 
 // cursorInsightStat is a stats-row shape that carries linked forecast metadata for the Cursor dashboard.
 type cursorInsightStat struct {
@@ -456,7 +461,7 @@ func (h *Handler) summaryCursor(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) insightsCursor(w http.ResponseWriter, _ *http.Request, rangeDur time.Duration) {
 	hidden := h.getHiddenInsightKeys()
-	respondJSON(w, http.StatusOK, h.buildCursorInsights(hidden, rangeDur))
+	respondInsights(w, h.buildCursorInsights(hidden, rangeDur))
 }
 
 func (h *Handler) cursorQuotaNames() []string {
@@ -511,6 +516,7 @@ func (h *Handler) buildCursorInsights(hidden map[string]bool, _ time.Duration) c
 	}
 
 	latest, err := h.store.QueryLatestCursor()
+	markPartial(&resp.partial, err)
 	if err != nil || latest == nil || len(latest.Quotas) == 0 {
 		return resp
 	}
