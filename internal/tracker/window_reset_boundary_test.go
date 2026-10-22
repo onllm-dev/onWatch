@@ -341,6 +341,44 @@ func (h *windowHarness) historyLen(t *testing.T) int {
 	return len(hist)
 }
 
+// TestWindowIdleRestartKeepsPublishedReset covers an idle window that already
+// learned its real reset during the grace period: the boundary it opened at is
+// genuine, so the first post-grace poll must not move the start forward.
+func TestWindowIdleRestartKeepsPublishedReset(t *testing.T) {
+	h := newWindowHarness(t, "commandcode")
+	now := time.Now().UTC().Truncate(time.Second)
+	r := now.Add(time.Hour)
+	r2 := r.Add(7 * 24 * time.Hour)
+	h.run(t,
+		resetStep{now, 10, &r},
+		resetStep{r.Add(3 * time.Minute), 10, &r},
+		resetStep{r.Add(5 * time.Minute), 0, nil},
+		resetStep{r.Add(6 * time.Minute), 0, &r2},
+		resetStep{r.Add(20 * time.Minute), 0, &r2},
+		resetStep{r.Add(21 * time.Minute), 3, &r2},
+	)
+	start, reset, peak, delta := h.state(t)
+	if !start.Equal(r) || reset == nil || !reset.Equal(r2) || peak != 3 || delta != 3 {
+		t.Fatalf("start=%v reset=%v peak=%v delta=%v, want start %v, reset %v, peak 3, delta 3", start, reset, peak, delta, r, r2)
+	}
+}
+
+// TestWindowIdleRestartSeedsFirstSample keeps the utilization the restarted
+// Command Code window opened with, without counting it twice on the next poll.
+func TestWindowIdleRestartSeedsFirstSample(t *testing.T) {
+	h := newWindowHarness(t, "commandcode")
+	now := time.Now().UTC().Truncate(time.Second)
+	r := now.Add(time.Hour)
+	h.run(t, resetStep{now, 10, &r}, resetStep{r.Add(5 * time.Minute), 0, nil})
+	later := r.Add(48 * time.Hour)
+	r2 := later.Add(5 * time.Hour)
+	h.run(t, resetStep{later, 2, &r2}, resetStep{later.Add(2 * time.Minute), 5, &r2})
+	start, _, peak, delta := h.state(t)
+	if !start.Equal(later) || peak != 5 || delta != 5 {
+		t.Fatalf("start=%v peak=%v delta=%v, want start %v, peak 5, delta 5", start, peak, delta, later)
+	}
+}
+
 type resetStep struct {
 	at time.Time
 	u  float64

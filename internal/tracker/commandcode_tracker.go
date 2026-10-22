@@ -132,14 +132,15 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 			t.lastValues[quotaName] = currentUtil
 			return nil
 		}
-		if quota.ResetsAt != nil {
+		if cycle.ResetsAt == nil && quota.ResetsAt != nil {
 			// The predecessor guarantees an empty cycle; an idle window waited
 			// past the grace period and the session that started now owns a
-			// fresh 5h cycle.
+			// fresh 5h cycle. A reset already attached means the boundary this
+			// cycle opened at is real, so its start must stay put.
 			if err := t.store.RestartCommandCodeCycle(quotaName, capturedAt, *quota.ResetsAt); err != nil {
 				return fmt.Errorf("failed to restart idle cycle: %w", err)
 			}
-			if err := t.store.UpdateCommandCodeCycle(quotaName, currentUtil, 0); err != nil {
+			if err := t.store.UpdateCommandCodeCycle(quotaName, currentUtil, currentUtil); err != nil {
 				return fmt.Errorf("failed to seed restarted cycle: %w", err)
 			}
 			t.lastValues[quotaName] = currentUtil
