@@ -6453,7 +6453,7 @@ async function fetchHistory(range) {
       // Dynamic datasets based on available quota keys
       const quotaKeys = new Set();
       historyRows.forEach(d => {
-        Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
+        Object.keys(d).forEach(k => { if (isChartSeriesKey(k)) quotaKeys.add(k); });
       });
       const sortedKeys = sortQuotaKeysForProvider(quotaKeys, 'anthropic');
       let fallbackIdx = 0;
@@ -6463,7 +6463,7 @@ async function fetchHistory(range) {
         const rawData = historyRows.map(d => ({ x: new Date(d.capturedAt), y: d[key] != null ? d[key] : null }));
         const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
         const mainDataset = {
-          label: anthropicDisplayNames[key] || key,
+          label: anthropicQuotaLabel(key),
           data: data,
           borderColor: color.border,
           backgroundColor: color.bg,
@@ -6567,7 +6567,7 @@ async function fetchHistory(range) {
     if (provider === 'minimax') {
       const quotaKeys = new Set();
       historyRows.forEach(d => {
-        Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
+        Object.keys(d).forEach(k => { if (isChartSeriesKey(k)) quotaKeys.add(k); });
       });
       const sortedKeys = [...quotaKeys].sort();
       let fallbackIdx = 0;
@@ -6604,7 +6604,7 @@ async function fetchHistory(range) {
     if (provider === 'gemini') {
       const quotaKeys = new Set();
       historyRows.forEach(d => {
-        Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
+        Object.keys(d).forEach(k => { if (isChartSeriesKey(k)) quotaKeys.add(k); });
       });
       const sortedKeys = [...quotaKeys].sort();
       let fallbackIdx = 0;
@@ -6641,7 +6641,7 @@ async function fetchHistory(range) {
     if (provider === 'openrouter') {
       const quotaKeys = new Set();
       historyRows.forEach(d => {
-        Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
+        Object.keys(d).forEach(k => { if (isChartSeriesKey(k)) quotaKeys.add(k); });
       });
       const sortedKeys = [...quotaKeys].sort();
       const openrouterDisplayNames = { usage: 'Total Usage', usageDaily: 'Daily Usage', percent: 'Usage %' };
@@ -6689,7 +6689,7 @@ async function fetchHistory(range) {
       const grokColors = { credits: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' } };
       const grokDisplay = { credits: 'Credits' };
       const quotaKeys = new Set();
-      historyRows.forEach(d => { Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); }); });
+      historyRows.forEach(d => { Object.keys(d).forEach(k => { if (isChartSeriesKey(k)) quotaKeys.add(k); }); });
       const datasets = [];
       [...quotaKeys].sort().forEach((key) => {
         const color = grokColors[key] || { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' };
@@ -6723,7 +6723,7 @@ async function fetchHistory(range) {
       };
       const kimiDisplay = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
       const quotaKeys = new Set();
-      historyRows.forEach(d => { Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); }); });
+      historyRows.forEach(d => { Object.keys(d).forEach(k => { if (isChartSeriesKey(k)) quotaKeys.add(k); }); });
       const datasets = [];
       [...quotaKeys].sort().forEach((key) => {
         const color = kimiColors[key] || { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.06)' };
@@ -6862,7 +6862,7 @@ async function fetchHistory(range) {
       // Codex history: array of { capturedAt, five_hour, seven_day, ... }
       const quotaKeys = new Set();
       historyRows.forEach(d => {
-        Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); });
+        Object.keys(d).forEach(k => { if (isChartSeriesKey(k)) quotaKeys.add(k); });
       });
       const sortedKeys = sortQuotaKeysForProvider(quotaKeys, 'codex');
       let fallbackIdx = 0;
@@ -7769,7 +7769,7 @@ function buildDynamicDatasetsForRows(rows, range, labelMap, colorMap, colorFallb
   const keys = new Set();
   rows.forEach((row) => {
     Object.keys(row).forEach((key) => {
-      if (key !== 'capturedAt') keys.add(key);
+      if (isChartSeriesKey(key)) keys.add(key);
     });
   });
 
@@ -7780,7 +7780,7 @@ function buildDynamicDatasetsForRows(rows, range, labelMap, colorMap, colorFallb
     const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
     const processed = processDataWithGaps(rawData, range);
     datasets.push({
-      label: (labelMap[key] || getQuotaDisplayName(key, providerKey) || key),
+      label: (labelMap[key] || (providerKey === 'anthropic' ? anthropicQuotaLabel(key) : getQuotaDisplayName(key, providerKey)) || key),
       data: processed.data,
       borderColor: color.border,
       backgroundColor: color.bg,
@@ -8160,7 +8160,7 @@ function updateBothCharts(data, range = '6h') {
   const createDynamicDatasets = (rows, labelMap, colorMap, colorFallback, providerKey) => {
     const keys = new Set();
     rows.forEach(d => {
-      Object.keys(d).forEach(k => { if (k !== 'capturedAt') keys.add(k); });
+      Object.keys(d).forEach(k => { if (isChartSeriesKey(k)) keys.add(k); });
     });
     const sorted = sortQuotaKeysForProvider(keys, providerKey);
     const datasets = [];
@@ -8170,7 +8170,7 @@ function updateBothCharts(data, range = '6h') {
       const rawData = rows.map(d => ({ x: new Date(d.capturedAt), y: d[key] || 0 }));
       const processed = processDataWithGaps(rawData, range);
       datasets.push({
-        label: (labelMap[key] || getQuotaDisplayName(key, providerKey) || key),
+        label: (labelMap[key] || (providerKey === 'anthropic' ? anthropicQuotaLabel(key) : getQuotaDisplayName(key, providerKey)) || key),
         data: processed.data,
         borderColor: color.border,
         backgroundColor: color.bg,
@@ -8307,6 +8307,13 @@ function getPollIntervalMs() {
 
 // Analyze data and return gap indices + point visibility
 // Solid lines for continuous data, dotted/faded for gaps
+// Chart series keys: every row field except the timestamp and metadata
+// fields, which the API prefixes with an underscore (e.g. Anthropic's
+// "_source": "statusline" | "api").
+function isChartSeriesKey(key) {
+  return key !== 'capturedAt' && !String(key).startsWith('_');
+}
+
 function processDataWithGaps(dataPoints, range = '6h') {
   // Dynamic gap threshold: multiplier × poll interval
   // 1h: 3 polls, 6h: 5 polls, 24h: 10 polls, 7d: 30 polls, 30d: 60 polls
@@ -8318,7 +8325,7 @@ function processDataWithGaps(dataPoints, range = '6h') {
     '7d': 30,
     '30d': 60
   };
-  const gapThresholdMs = pollMs * (multipliers[range] || 5);
+  let gapThresholdMs = pollMs * (multipliers[range] || 5);
 
   if (!dataPoints || dataPoints.length === 0) return { data: [], gapSegments: new Set(), pointRadii: [] };
   if (dataPoints.length === 1) return { data: dataPoints, gapSegments: new Set(), pointRadii: [2] };
@@ -8326,6 +8333,21 @@ function processDataWithGaps(dataPoints, range = '6h') {
   const gapSegments = new Set();
   const pointRadii = [];
   const getTime = pt => pt.x instanceof Date ? pt.x.getTime() : new Date(pt.x).getTime();
+
+  // Long ranges arrive sampled (about 200 points evenly spread), so normal
+  // spacing can exceed the poll-based threshold: 7d samples sit ~50 minutes
+  // apart against a 30-minute threshold, which drew every segment as a gap.
+  // A real gap is one much longer than the series' typical spacing.
+  const spacings = [];
+  for (let i = 1; i < dataPoints.length; i++) {
+    const d = getTime(dataPoints[i]) - getTime(dataPoints[i - 1]);
+    if (d > 0) spacings.push(d);
+  }
+  if (spacings.length > 0) {
+    spacings.sort((a, b) => a - b);
+    const median = spacings[Math.floor(spacings.length / 2)];
+    gapThresholdMs = Math.max(gapThresholdMs, median * 3);
+  }
 
   for (let i = 0; i < dataPoints.length; i++) {
     const prevGap = i === 0 ? Infinity : getTime(dataPoints[i]) - getTime(dataPoints[i - 1]);
