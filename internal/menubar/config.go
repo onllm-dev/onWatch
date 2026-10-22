@@ -124,6 +124,9 @@ type ProviderCard struct {
 	Quotas           []QuotaMeter            `json:"quotas"`
 	Trends           []TrendSeries           `json:"trends,omitempty"`
 	Peak             *ProviderPeak           `json:"peak,omitempty"`
+	// ResetCredits is the Codex banked reset count shown as a header chip.
+	// Nil when the account has none or the count is unknown.
+	ResetCredits *ProviderResetCredits `json:"reset_credits,omitempty"`
 	// UpdatedAtTime is the provider's last successful data time as RFC3339.
 	// Clients compute the age label from it against their own wall clock, so
 	// the label keeps counting up even when the daemon cannot be reached.
@@ -142,6 +145,12 @@ type ProviderCard struct {
 	// quota age, but their staleness follows the primary windows only, so an
 	// API-only quota refreshed every tenth poll cannot mark the card stale.
 	StaleCheckedAt string `json:"stale_checked_at,omitempty"`
+}
+
+// ProviderResetCredits is the banked reset summary for one Codex account.
+type ProviderResetCredits struct {
+	Count         int64  `json:"count"`
+	NextExpiresAt string `json:"next_expires_at,omitempty"`
 }
 
 // QuotaMeter represents one circular quota meter inside a provider card.

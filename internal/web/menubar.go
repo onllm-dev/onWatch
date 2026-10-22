@@ -497,7 +497,7 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 				}
 				subtitle := "ChatGPT account"
 				label := menubarAccountLabel("codex", labels, name, multiCodex)
-				add(h.menubarResolveCard(providerKey, label, subtitle, usage, account.ReadOK, account.HasData, normalized.WarningPercent, normalized.CriticalPercent, nil))
+				add(h.menubarResolveCard(providerKey, label, subtitle, usage, account.ReadOK, account.HasData, normalized.WarningPercent, normalized.CriticalPercent, codexResetCreditsDecorator(usage)))
 			}
 		} else {
 			// The account list could not be read. Keep every known account card
@@ -1530,6 +1530,25 @@ func commandCodePeakDecorator(card *menubar.ProviderCard) {
 // card. The schedule applies to the DeepSeek models the Go plan exposes.
 func openCodePeakDecorator(card *menubar.ProviderCard) {
 	card.Peak = menubar.NewDeepSeekPeak("opencode", menubar.DeepSeekPeakModelNote, "")
+}
+
+// codexResetCreditsDecorator attaches the banked reset count to a Codex card.
+// The count is available_count, the number the Codex CLI shows; the payload's
+// applicable count is narrower (usable right now) and would read as 0 while a
+// reset is banked. Zero or unknown counts add nothing, so the header stays clean.
+func codexResetCreditsDecorator(usage map[string]interface{}) func(*menubar.ProviderCard) {
+	rc, _ := usage["resetCredits"].(map[string]interface{})
+	if rc == nil {
+		return nil
+	}
+	count, ok := rc["available_count"].(int64)
+	if !ok || count <= 0 {
+		return nil
+	}
+	next, _ := rc["next_expires_at"].(string)
+	return func(card *menubar.ProviderCard) {
+		card.ResetCredits = &menubar.ProviderResetCredits{Count: count, NextExpiresAt: next}
+	}
 }
 
 func sortProviderCards(cards []menubar.ProviderCard, preferred []string) {

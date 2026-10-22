@@ -2737,75 +2737,47 @@ function syncCodexAutoStartBadges() {
   });
 }
 
-// Banked reset credits (issue #152): a compact chip with the plan-usable count
-// and a tooltip for the nearest expiry. The detail endpoint can be unavailable
-// (API-key auth, older backend): the chip still shows the usage count and a
-// muted dot carries the "Resets unavailable" note. A count is never invented -
-// unknown stays hidden.
-function codexResetCreditsUsableCount(rc) {
-  if (!rc) return null;
-  if (typeof rc.applicable_count === 'number') return rc.applicable_count;
-  if (typeof rc.available_count === 'number') return rc.available_count;
-  return null;
+// Banked reset credits (issue #152): a compact "1 reset" chip in the first
+// card header, styled like the peak chip and sharing its floating tooltip.
+// The count is available_count, the number the Codex CLI shows. The payload's
+// applicable count is narrower (usable right now) and reads 0 while a reset is
+// banked, so it is not used for the label. Zero or unknown shows nothing.
+function codexResetCreditsCount(rc) {
+  if (!rc || typeof rc.available_count !== 'number' || !isFinite(rc.available_count)) return 0;
+  return Math.max(0, Math.floor(rc.available_count));
 }
 
-function codexResetCreditsTooltip(rc) {
-  const credits = (Array.isArray(rc.credits) ? rc.credits : [])
-    .filter(c => !c.unsupported_by_plan);
-  const expiries = credits.map(c => c.expires_at).filter(Boolean);
-  let tip;
-  if (expiries.length === 0) {
-    if (rc.status !== 'ok' || credits.some(c => c.expiry_unknown)) {
-      tip = 'expiry unknown';
-    } else if (codexResetCreditsUsableCount(rc) === 0) {
-      tip = 'no banked resets';
-    } else {
-      tip = 'does not expire';
-    }
-  } else {
-    const soonest = expiries.reduce((a, b) => (new Date(a) <= new Date(b) ? a : b));
-    const ms = new Date(soonest).getTime() - Date.now();
-    tip = (!isFinite(ms) || ms <= 0) ? 'expires now' : `next expires in ${formatDuration(Math.floor(ms / 1000))}`;
-  }
-  if (typeof rc.applicable_count === 'number' && typeof rc.available_count === 'number' &&
-      rc.applicable_count < rc.available_count) {
-    const diff = rc.available_count - rc.applicable_count;
-    tip += `; ${diff} not usable on current plan`;
+function codexResetCreditsTooltip(rc, count) {
+  let tip = count === 1 ? '1 banked reset' : `${count} banked resets`;
+  const ms = rc.next_expires_at ? new Date(rc.next_expires_at).getTime() - Date.now() : NaN;
+  if (isFinite(ms)) {
+    tip += ms <= 0 ? ' - next expires now' : ` - next expires in ${formatDuration(Math.floor(ms / 1000))}`;
+  } else if (Array.isArray(rc.credits) && rc.credits.some(c => c.expiry_unknown)) {
+    tip += ' - expiry unknown';
   }
   return tip;
 }
 
 function codexResetCreditsHTML(rc) {
-  if (!rc || !rc.status) return '';
-  const unavailable = rc.status === 'unavailable'
-    ? '<span class="codex-resets-dot" role="img" aria-label="Resets unavailable" title="Resets unavailable"></span>'
-    : '';
-  const count = codexResetCreditsUsableCount(rc);
-  if (count == null || !isFinite(count) || count < 0) return unavailable;
-  const label = `${count} ${count === 1 ? 'reset' : 'resets'}`;
-  const chip = `<span class="codex-reset-credits-chip" role="img" aria-label="Banked reset credits: ${escapeHTML(label)}" title="${escapeHTML(codexResetCreditsTooltip(rc))}">${label}</span>`;
-  return unavailable + chip;
+  const count = codexResetCreditsCount(rc);
+  if (count <= 0) return '';
+  const label = count === 1 ? '1 reset' : `${count} resets`;
+  const tip = codexResetCreditsTooltip(rc, count);
+  return `<span class="peak-chip-wrap reset-chip-wrap" data-peak-tip="${escapeHTML(tip)}" data-reset-count="${count}" tabindex="0" role="img" aria-label="${escapeHTML(label + '. ' + tip)}">`
+    + `<span class="peak-chip reset-chip">${escapeHTML(label)}</span>`
+    + '</span>';
 }
 
-// codexResetCreditsKeyFromData renders the chip identity used to decide whether
-// a re-render is needed. Only count and status are compared: the tooltip is a
-// live relative time and must not force a re-render on every poll.
+// The chip identity used to decide whether a re-render is needed: only the
+// count, so the live expiry tooltip never forces a re-render on every poll.
 function codexResetCreditsKeyFromData(rc) {
-  if (!rc || !rc.status) return '';
-  const count = codexResetCreditsUsableCount(rc);
-  const countKey = count == null ? '' : String(count);
-  return `${rc.status === 'unavailable' ? 'unavailable' : 'ok'}|${countKey}`;
+  return String(codexResetCreditsCount(rc));
 }
 
-// codexResetCreditsKey reads the chip identity that is actually rendered in the
-// given container, matching codexResetCreditsKeyFromData. The dot and the chip
-// can coexist, so both are looked up independently.
 function codexResetCreditsKey(container) {
-  if (!container) return '';
-  const status = container.querySelector('.codex-resets-dot') ? 'unavailable' : 'ok';
-  const chip = container.querySelector('.codex-reset-credits-chip');
-  const count = chip ? parseInt((chip.textContent || '').trim(), 10) : NaN;
-  return `${status}|${isFinite(count) ? count : ''}`;
+  if (!container) return '0';
+  const chip = container.querySelector('.reset-chip-wrap');
+  return chip ? String(parseInt(chip.dataset.resetCount, 10) || 0) : '0';
 }
 
 function renderCodexQuotaCards(quotas, containerId, planType, usageSourceNote, pause) {
@@ -2813,7 +2785,7 @@ function renderCodexQuotaCards(quotas, containerId, planType, usageSourceNote, p
   if (!container) return;
   const visibleQuotas = filterCodexQuotasForPlan(quotas, planType);
   const resetsHTML = codexResetCreditsHTML(pause && pause.resetCredits);
-  const sourceNoteHTML = codexPauseNoticeHTML(pause) + resetsHTML + codexUsageSourceNoteHTML(usageSourceNote);
+  const sourceNoteHTML = codexPauseNoticeHTML(pause) + codexUsageSourceNoteHTML(usageSourceNote);
   if (visibleQuotas.length === 0) {
     container.innerHTML = `${sourceNoteHTML}<p class="empty-state">No Codex quota data available yet.</p>`;
     return;
@@ -2839,6 +2811,7 @@ function renderCodexQuotaCards(quotas, containerId, planType, usageSourceNote, p
           <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>
           ${displayName}
           ${codexAutoStartBadge(q.name)}
+          ${i === 0 ? resetsHTML : ''}
         </h2>
         <span class="countdown" id="${countdownId}">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
       </header>

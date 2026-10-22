@@ -493,6 +493,16 @@
             padding: 0 4px;
         }
 
+        .peak-chip.reset-chip {
+            background: rgba(16, 163, 127, 0.14);
+            color: #10A37F;
+        }
+
+        :root[data-theme="light"] .peak-chip.reset-chip {
+            background: rgba(13, 128, 100, 0.12);
+            color: #0D8064;
+        }
+
         .peak-chip.promo-peak {
             background: rgba(239, 68, 68, 0.15);
             color: #EF4444;
@@ -2992,6 +3002,32 @@
                 return window.OnWatchPeak.peakChipMarkup(provider.peak);
             }
 
+            // Codex banked resets: a compact "1 reset" chip in the header,
+            // next to where the peak chip sits on other providers. The daemon
+            // only sends reset_credits when the count is positive.
+            function resetChipHTML(provider) {
+                const rc = provider && provider.reset_credits;
+                const count = rc && Number(rc.count);
+                if (!count || !Number.isFinite(count) || count <= 0) {
+                    return "";
+                }
+                const label = count === 1 ? "1 reset" : `${count} resets`;
+                let tip = count === 1 ? "1 banked reset" : `${count} banked resets`;
+                const expires = rc.next_expires_at ? Date.parse(rc.next_expires_at) : NaN;
+                if (Number.isFinite(expires)) {
+                    const seconds = Math.max(0, (expires - Date.now()) / 1000);
+                    const days = Math.floor(seconds / 86400);
+                    const hours = Math.floor((seconds % 86400) / 3600);
+                    const minutes = Math.floor((seconds % 3600) / 60);
+                    const left = days > 0 ? `${days}d ${hours}h` : (hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`);
+                    tip += ` - next expires in ${left}`;
+                }
+                return `<span class="peak-chip-wrap" tabindex="0" role="img" aria-label="${escapeHTML(label + ". " + tip)}">`
+                    + `<span class="peak-chip reset-chip">${escapeHTML(label)}</span>`
+                    + `<span class="peak-chip-tip" role="tooltip" aria-hidden="true">${escapeHTML(tip)}</span>`
+                    + "</span>";
+            }
+
             // standardHeaderMarkup keeps the icon next to a normally colored
             // name, then a compact right cluster with the freshness label and a
             // status dot whose tooltip carries the status.
@@ -3002,6 +3038,7 @@
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
                             ${peakChipHTML(provider)}
+                            ${resetChipHTML(provider)}
                         </div>
                         <span class="provider-meta">
                             ${providerAgeMarkup(provider)}
@@ -3106,6 +3143,7 @@
                             <span class="provider-icon ${escapeHTML(providerIconClass(provider))}" aria-hidden="true"></span>
                             <span class="provider-name">${escapeHTML(provider.label)}</span>
                             ${peakChipHTML(provider)}
+                            ${resetChipHTML(provider)}
                         </div>
                         <span class="provider-meta">
                             ${providerAgeMarkup(provider)}
