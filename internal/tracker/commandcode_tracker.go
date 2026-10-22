@@ -105,23 +105,27 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 		cycle.ResetsAt = nil
 	}
 
-	// Time-only rollover opens at the old boundary with no reset or statistics.
-	// The matching predecessor makes this state restart-safe without a column.
-	if cycle.ResetsAt == nil && cycle.PeakUtilization == 0 && cycle.TotalDelta == 0 {
-		history, err := t.store.QueryCommandCodeCycleHistory(quotaName, 1)
-		if err != nil {
-			return fmt.Errorf("failed to query rollover predecessor: %w", err)
-		}
-		if len(history) == 1 && history[0].CycleEnd != nil && history[0].ResetsAt != nil &&
-			history[0].CycleEnd.Equal(cycle.CycleStart) && history[0].ResetsAt.Equal(cycle.CycleStart) {
-			if quota.ResetsAt == nil {
-				return nil // The API has not acknowledged the boundary yet.
+	// A time-only rollover opens at the old boundary with no reset or
+	// statistics. The matching predecessor makes this state restart-safe
+	// without a column, and values pending acknowledgment are held for at most
+	// windowRolloverGrace.
+	if predecessor := t.awaitingRolloverPredecessor(quotaName, cycle); predecessor != nil {
+		if capturedAt.Sub(cycle.CycleStart) < windowRolloverGrace {
+			dropped := currentUtil+2 < predecessor.PeakUtilization
+			if quota.ResetsAt != nil {
+				if err := t.store.UpdateCommandCodeCycleResetsAt(quotaName, quota.ResetsAt); err != nil {
+					return fmt.Errorf("failed to attach acknowledged reset: %w", err)
+				}
 			}
-			if err := t.store.UpdateCommandCodeCycle(quotaName, currentUtil, 0); err != nil {
+			if !dropped {
+				t.lastValues[quotaName] = currentUtil
+				return nil
+			}
+			// The first sample below the old window's peak starts the new
+			// window; earlier samples after the boundary cannot prove which
+			// side of the reset they belong to.
+			if err := t.store.UpdateCommandCodeCycle(quotaName, currentUtil, currentUtil); err != nil {
 				return fmt.Errorf("failed to seed acknowledged rollover: %w", err)
-			}
-			if err := t.store.UpdateCommandCodeCycleResetsAt(quotaName, quota.ResetsAt); err != nil {
-				return fmt.Errorf("failed to attach acknowledged reset: %w", err)
 			}
 			t.lastValues[quotaName] = currentUtil
 			return nil
@@ -229,6 +233,27 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 
 	t.lastValues[quotaName] = currentUtil
 	return nil
+}
+
+// awaitingRolloverPredecessor returns the closed cycle whose boundary opened
+// an empty active cycle. Matching boundaries identify the state across
+// restarts without persisting a separate flag. It ends once the first
+// post-boundary sample has seeded the cycle, not when a reset is attached:
+// the API can publish the new reset several polls before utilization drops.
+func (t *CommandCodeTracker) awaitingRolloverPredecessor(quotaName string, cycle *store.CommandCodeResetCycle) *store.CommandCodeResetCycle {
+	if cycle.PeakUtilization != 0 || cycle.TotalDelta != 0 {
+		return nil
+	}
+	history, err := t.store.QueryCommandCodeCycleHistory(quotaName, 1)
+	if err != nil || len(history) != 1 {
+		return nil
+	}
+	prev := history[0]
+	if prev.CycleEnd == nil || prev.ResetsAt == nil ||
+		!prev.CycleEnd.Equal(cycle.CycleStart) || !prev.ResetsAt.Equal(cycle.CycleStart) {
+		return nil
+	}
+	return prev
 }
 
 // UsageSummary computes statistics for a Command Code window.

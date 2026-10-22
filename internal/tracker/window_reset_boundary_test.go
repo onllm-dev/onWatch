@@ -266,6 +266,224 @@ func TestWindowDelayedRollover(t *testing.T) {
 	}
 }
 
+type windowHarness struct {
+	provider string
+	path     string
+	s        *store.Store
+	resets   int
+	process  func(time.Time, float64, *time.Time) error
+}
+
+func newWindowHarness(t *testing.T, provider string) *windowHarness {
+	t.Helper()
+	h := &windowHarness{provider: provider, path: filepath.Join(t.TempDir(), "cycles.db")}
+	h.open(t)
+	t.Cleanup(func() { h.s.Close() })
+	return h
+}
+
+func (h *windowHarness) open(t *testing.T) {
+	t.Helper()
+	if h.s != nil {
+		if err := h.s.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := store.New(h.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.s = s
+	if h.provider == "commandcode" {
+		tr := NewCommandCodeTracker(s, nil)
+		tr.SetOnReset(func(string) { h.resets++ })
+		h.process = func(at time.Time, u float64, r *time.Time) error {
+			return tr.Process(commandCodeSnapshotAt(at, u, r))
+		}
+		return
+	}
+	tr := NewOpenCodeTracker(s, nil)
+	tr.SetOnReset(func(string) { h.resets++ })
+	h.process = func(at time.Time, u float64, r *time.Time) error {
+		return tr.Process(openCodeSnapshotAt(at, u, r))
+	}
+}
+
+func (h *windowHarness) state(t *testing.T) (time.Time, *time.Time, float64, float64) {
+	t.Helper()
+	if h.provider == "commandcode" {
+		c, err := h.s.QueryActiveCommandCodeCycle(api.CommandCodeQuotaFiveHour)
+		if err != nil || c == nil {
+			t.Fatalf("active commandcode cycle: %+v, err %v", c, err)
+		}
+		return c.CycleStart, c.ResetsAt, c.PeakUtilization, c.TotalDelta
+	}
+	c, err := h.s.QueryActiveOpenCodeCycle("weekly")
+	if err != nil || c == nil {
+		t.Fatalf("active opencode cycle: %+v, err %v", c, err)
+	}
+	return c.CycleStart, c.ResetsAt, c.PeakUtilization, c.TotalDelta
+}
+
+func (h *windowHarness) historyLen(t *testing.T) int {
+	t.Helper()
+	if h.provider == "commandcode" {
+		hist, err := h.s.QueryCommandCodeCycleHistory(api.CommandCodeQuotaFiveHour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(hist)
+	}
+	hist, err := h.s.QueryOpenCodeCycleHistory("weekly")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(hist)
+}
+
+type resetStep struct {
+	at time.Time
+	u  float64
+	r  *time.Time
+}
+
+func (h *windowHarness) run(t *testing.T, steps ...resetStep) {
+	t.Helper()
+	for _, st := range steps {
+		if err := h.process(st.at, st.u, st.r); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestWindowAwaitingRolloverExpires covers a reset the API never acknowledges
+// (for Command Code, a subscription lookup that keeps failing): the awaiting
+// state must stop discarding samples after its grace period.
+func TestWindowAwaitingRolloverExpires(t *testing.T) {
+	for _, provider := range []string{"commandcode", "opencode"} {
+		t.Run(provider, func(t *testing.T) {
+			h := newWindowHarness(t, provider)
+			now := time.Now().UTC().Truncate(time.Second)
+			r := now.Add(time.Hour)
+			h.run(t, resetStep{now, 100, &r}, resetStep{r.Add(3 * time.Minute), 100, &r}, resetStep{r.Add(5 * time.Minute), 0, nil})
+			start, reset, peak, delta := h.state(t)
+			if !start.Equal(r) || reset != nil || peak != 0 || delta != 0 {
+				t.Fatalf("during grace: start=%v reset=%v peak=%v delta=%v", start, reset, peak, delta)
+			}
+			h.run(t, resetStep{r.Add(20 * time.Minute), 5, nil}, resetStep{r.Add(21 * time.Minute), 12, nil})
+			_, reset, peak, delta = h.state(t)
+			if reset != nil || peak != 12 || delta != 12 {
+				t.Fatalf("after grace: reset=%v peak=%v delta=%v, want accumulation", reset, peak, delta)
+			}
+			if h.resets != 1 || h.historyLen(t) != 1 {
+				t.Fatalf("resets=%d history=%d, want one rollover only", h.resets, h.historyLen(t))
+			}
+		})
+	}
+}
+
+func TestWindowAwaitingRolloverRestart(t *testing.T) {
+	for _, provider := range []string{"commandcode", "opencode"} {
+		t.Run(provider+"/during-grace", func(t *testing.T) {
+			h := newWindowHarness(t, provider)
+			now := time.Now().UTC().Truncate(time.Second)
+			r := now.Add(time.Hour)
+			h.run(t, resetStep{now, 100, &r}, resetStep{r.Add(3 * time.Minute), 100, &r})
+			h.open(t)
+			h.run(t, resetStep{r.Add(5 * time.Minute), 100, nil}, resetStep{r.Add(6 * time.Minute), 0, nil}, resetStep{r.Add(7 * time.Minute), 9, nil})
+			start, _, peak, delta := h.state(t)
+			if !start.Equal(r) || peak != 9 || delta != 9 {
+				t.Fatalf("restart lost the awaiting state: start=%v peak=%v delta=%v", start, peak, delta)
+			}
+			if h.resets != 1 {
+				t.Fatalf("resets = %d, want 1", h.resets)
+			}
+		})
+		t.Run(provider+"/after-grace", func(t *testing.T) {
+			h := newWindowHarness(t, provider)
+			now := time.Now().UTC().Truncate(time.Second)
+			r := now.Add(time.Hour)
+			h.run(t, resetStep{now, 100, &r}, resetStep{r.Add(3 * time.Minute), 100, &r}, resetStep{r.Add(20 * time.Minute), 5, nil})
+			h.open(t)
+			h.run(t, resetStep{r.Add(21 * time.Minute), 12, nil})
+			_, _, peak, _ := h.state(t)
+			if peak != 12 {
+				t.Fatalf("peak after restart = %v, want 12", peak)
+			}
+			if h.resets != 1 {
+				t.Fatalf("resets = %d, want 1", h.resets)
+			}
+		})
+	}
+}
+
+// TestWindowOpenCodeIdleExpiryDoesNotSpanDays covers an idle 5-hour window
+// that would otherwise stretch to the next session two days later.
+func TestWindowOpenCodeIdleExpiryDoesNotSpanDays(t *testing.T) {
+	h := newWindowHarness(t, "opencode")
+	now := time.Now().UTC().Truncate(time.Second)
+	sessionEnd := now.Add(5 * time.Minute)
+	h.run(t, resetStep{now, 10, &sessionEnd}, resetStep{sessionEnd.Add(10 * time.Minute), 0, nil})
+	later := sessionEnd.Add(48 * time.Hour)
+	r2 := later.Add(5 * time.Hour)
+	h.run(t, resetStep{later, 1, &r2})
+	start, reset, peak, _ := h.state(t)
+	if !start.Equal(later) || reset == nil || !reset.Equal(r2) || peak != 1 {
+		t.Fatalf("new session start=%v reset=%v peak=%v, want start %v, reset %v, peak 1", start, reset, peak, later, r2)
+	}
+	if h.resets != 1 {
+		t.Fatalf("resets = %d, want 1", h.resets)
+	}
+}
+
+// TestWindowAwaitingRolloverPostResetDelta keeps usage recorded between the
+// boundary and the API acknowledging it, without trusting a stale pre-reset
+// sample when the reset advances first.
+func TestWindowAwaitingRolloverPostResetDelta(t *testing.T) {
+	for _, provider := range []string{"commandcode", "opencode"} {
+		t.Run(provider, func(t *testing.T) {
+			h := newWindowHarness(t, provider)
+			now := time.Now().UTC().Truncate(time.Second)
+			r := now.Add(time.Hour)
+			r2 := r.Add(5 * time.Hour)
+			h.run(t,
+				resetStep{now, 100, &r},
+				resetStep{r.Add(3 * time.Minute), 100, &r},
+				resetStep{r.Add(4 * time.Minute), 0, nil},
+				resetStep{r.Add(5 * time.Minute), 5, nil},
+				resetStep{r.Add(6 * time.Minute), 12, nil},
+				resetStep{r.Add(7 * time.Minute), 12, &r2},
+				resetStep{r.Add(8 * time.Minute), 15, &r2},
+			)
+			_, _, peak, delta := h.state(t)
+			if peak != 15 || delta != 15 {
+				t.Fatalf("peak=%v delta=%v, want 15/15 including post-reset usage", peak, delta)
+			}
+			if h.resets != 1 {
+				t.Fatalf("resets = %d, want 1", h.resets)
+			}
+		})
+		t.Run(provider+"/reset-before-utilization", func(t *testing.T) {
+			h := newWindowHarness(t, provider)
+			now := time.Now().UTC().Truncate(time.Second)
+			r := now.Add(time.Hour)
+			r2 := r.Add(5 * time.Hour)
+			h.run(t,
+				resetStep{now, 100, &r},
+				resetStep{r.Add(3 * time.Minute), 100, &r},
+				resetStep{r.Add(4 * time.Minute), 100, &r2},
+				resetStep{r.Add(5 * time.Minute), 100, &r2},
+				resetStep{r.Add(6 * time.Minute), 0, &r2},
+				resetStep{r.Add(7 * time.Minute), 5, &r2},
+			)
+			_, _, peak, delta := h.state(t)
+			if peak != 5 || delta != 5 {
+				t.Fatalf("peak=%v delta=%v, want 5/5 without the stale 100", peak, delta)
+			}
+		})
+	}
+}
+
 type cycleBound struct {
 	start time.Time
 	end   *time.Time
