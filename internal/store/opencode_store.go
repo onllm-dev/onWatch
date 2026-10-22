@@ -607,9 +607,15 @@ func windowChartQueryWhere(table, columns, extraWhere string) string {
 	if extraWhere != "" {
 		where += " AND " + extraWhere
 	}
-	return `SELECT ` + columns + ` FROM (
-  SELECT ` + columns + `, ROW_NUMBER() OVER (ORDER BY captured_at, id) AS rn,
-   COUNT(*) OVER () AS total FROM ` + table + ` WHERE ` + where + `
- ) WHERE rn = total OR (rn - 1) % MAX(1, (total - 2) / 199 + 1) = 0
+	// Pick the sampled ids from (captured_at, id) alone, which the captured_at
+	// index covers, then read only those rows. Numbering full rows instead
+	// materialized every row in the range, raw_json included: 30 days of
+	// Command Code took about 0.7s for 199 rows, this form about 10ms.
+	return `SELECT ` + columns + ` FROM ` + table + ` WHERE id IN (
+  SELECT id FROM (
+   SELECT id, ROW_NUMBER() OVER (ORDER BY captured_at, id) AS rn,
+    COUNT(*) OVER () AS total FROM ` + table + ` WHERE ` + where + `
+  ) WHERE rn = total OR (rn - 1) % MAX(1, (total - 2) / 199 + 1) = 0
+ )
  ORDER BY captured_at, id`
 }
