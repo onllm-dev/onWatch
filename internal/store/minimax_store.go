@@ -167,8 +167,38 @@ func (s *Store) QueryMiniMaxRange(start, end time.Time, accountID int64, limit .
 	if err != nil {
 		return nil, fmt.Errorf("failed to query minimax range: %w", err)
 	}
-	defer rows.Close()
+	snapshots, err := scanMiniMaxSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachMiniMaxModels(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
 
+// QueryMiniMaxRangeSampled returns at most about 200 snapshots for an account,
+// spread evenly across the range (first and last always kept), with models.
+func (s *Store) QueryMiniMaxRangeSampled(start, end time.Time, accountID int64) ([]*api.MiniMaxSnapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQueryWhere("minimax_snapshots", "id, captured_at, raw_json, model_count", "account_id = ?"),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano), accountID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled minimax range: %w", err)
+	}
+	snapshots, err := scanMiniMaxSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachMiniMaxModels(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
+
+func scanMiniMaxSnapshotRows(rows *sql.Rows) ([]*api.MiniMaxSnapshot, error) {
+	defer rows.Close()
 	var snapshots []*api.MiniMaxSnapshot
 	for rows.Next() {
 		var snap api.MiniMaxSnapshot
@@ -183,19 +213,82 @@ func (s *Store) QueryMiniMaxRange(start, end time.Time, accountID int64, limit .
 		}
 		snapshots = append(snapshots, &snap)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	return snapshots, rows.Err()
+}
 
+// attachMiniMaxModels loads model values for the snapshots in batches of
+// IN-list queries instead of one query per snapshot.
+func (s *Store) attachMiniMaxModels(snapshots []*api.MiniMaxSnapshot) error {
+	if len(snapshots) == 0 {
+		return nil
+	}
+	ids := make([]int64, len(snapshots))
+	for i, snap := range snapshots {
+		ids[i] = snap.ID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids, "minimax_model_values",
+		`model_name, total, remain, used, used_percent, reset_at, window_start, window_end,
+		 weekly_total, weekly_remain, weekly_used, weekly_used_percent, weekly_reset_at, weekly_window_start, weekly_window_end`,
+		"model_name",
+		func(rows *sql.Rows) (int64, api.MiniMaxModelQuota, error) {
+			var snapshotID int64
+			var m api.MiniMaxModelQuota
+			var resetAt, windowStart, windowEnd sql.NullString
+			var weeklyResetAt, weeklyWindowStart, weeklyWindowEnd sql.NullString
+			if err := rows.Scan(&snapshotID, &m.ModelName, &m.Total, &m.Remain, &m.Used, &m.UsedPercent, &resetAt, &windowStart, &windowEnd,
+				&m.WeeklyTotal, &m.WeeklyRemain, &m.WeeklyUsed, &m.WeeklyUsedPercent, &weeklyResetAt, &weeklyWindowStart, &weeklyWindowEnd); err != nil {
+				return 0, m, err
+			}
+			if resetAt.Valid {
+				t, _ := time.Parse(time.RFC3339Nano, resetAt.String)
+				m.ResetAt = &t
+				m.TimeUntilReset = time.Until(t)
+				if m.TimeUntilReset < 0 {
+					m.TimeUntilReset = 0
+				}
+			}
+			if windowStart.Valid {
+				t, _ := time.Parse(time.RFC3339Nano, windowStart.String)
+				m.WindowStart = &t
+			}
+			if windowEnd.Valid {
+				t, _ := time.Parse(time.RFC3339Nano, windowEnd.String)
+				m.WindowEnd = &t
+			}
+			// Weekly quota fields.
+			if m.WeeklyTotal > 0 || m.WeeklyUsed > 0 {
+				m.HasWeeklyQuota = true
+			}
+			if weeklyResetAt.Valid {
+				t, _ := time.Parse(time.RFC3339Nano, weeklyResetAt.String)
+				m.WeeklyResetAt = &t
+				m.WeeklyTimeUntilReset = time.Until(t)
+				if m.WeeklyTimeUntilReset < 0 {
+					m.WeeklyTimeUntilReset = 0
+				}
+			}
+			if weeklyWindowStart.Valid {
+				t, _ := time.Parse(time.RFC3339Nano, weeklyWindowStart.String)
+				m.WeeklyWindowStart = &t
+			}
+			if weeklyWindowEnd.Valid {
+				t, _ := time.Parse(time.RFC3339Nano, weeklyWindowEnd.String)
+				m.WeeklyWindowEnd = &t
+			}
+			return snapshotID, m, nil
+		})
+	if err != nil {
+		return fmt.Errorf("failed to query minimax model values: %w", err)
+	}
 	for _, snap := range snapshots {
-		models, err := s.queryMiniMaxModelValues(snap.ID)
-		if err != nil {
-			return nil, err
+		models := bySnapshot[snap.ID]
+		if models == nil {
+			// Preserve the single-snapshot helper's non-nil empty slice.
+			models = make([]api.MiniMaxModelQuota, 0)
 		}
 		snap.Models = models
 	}
-
-	return snapshots, nil
+	return nil
 }
 
 func (s *Store) queryMiniMaxModelValues(snapshotID int64) ([]api.MiniMaxModelQuota, error) {
@@ -494,6 +587,21 @@ func (s *Store) QueryAllMiniMaxModelNames(accountID int64) ([]string, error) {
 }
 
 func (s *Store) queryMiniMaxSnapshotAtOrBefore(t time.Time, accountID int64) (*api.MiniMaxSnapshot, error) {
+	snap, err := s.queryMiniMaxSnapshotAtOrBeforeNoModels(t, accountID)
+	if err != nil || snap == nil {
+		return snap, err
+	}
+	models, err := s.queryMiniMaxModelValues(snap.ID)
+	if err != nil {
+		return nil, err
+	}
+	snap.Models = models
+	return snap, nil
+}
+
+// queryMiniMaxSnapshotAtOrBeforeNoModels returns the snapshot row only, so a
+// caller loading many snapshots can attach models in one batch.
+func (s *Store) queryMiniMaxSnapshotAtOrBeforeNoModels(t time.Time, accountID int64) (*api.MiniMaxSnapshot, error) {
 	var snap api.MiniMaxSnapshot
 	var capturedAt string
 	var rawJSON sql.NullString
@@ -517,11 +625,6 @@ func (s *Store) queryMiniMaxSnapshotAtOrBefore(t time.Time, accountID int64) (*a
 	if rawJSON.Valid {
 		snap.RawJSON = rawJSON.String
 	}
-	models, err := s.queryMiniMaxModelValues(snap.ID)
-	if err != nil {
-		return nil, err
-	}
-	snap.Models = models
 	return &snap, nil
 }
 
@@ -566,14 +669,46 @@ func (s *Store) QueryMiniMaxCycleOverview(groupBy string, limit int, accountID i
 	if err != nil {
 		return nil, err
 	}
-	for _, cycle := range history {
+	// Resolve each cycle's reference snapshot, then load all their model
+	// values in batches instead of one query per cycle.
+	refSnapshots := make([]*api.MiniMaxSnapshot, len(history))
+	for i, cycle := range history {
 		refTime := cycle.CycleStart
 		if cycle.CycleEnd != nil {
 			refTime = *cycle.CycleEnd
 		}
-		cross, crossErr := s.minimaxCrossQuotasAt(refTime, accountID)
-		if crossErr != nil {
-			return nil, crossErr
+		snap, snapErr := s.queryMiniMaxSnapshotAtOrBeforeNoModels(refTime, accountID)
+		if snapErr != nil {
+			return nil, snapErr
+		}
+		refSnapshots[i] = snap
+	}
+	var withSnapshot []*api.MiniMaxSnapshot
+	for _, snap := range refSnapshots {
+		if snap != nil {
+			withSnapshot = append(withSnapshot, snap)
+		}
+	}
+	if err := s.attachMiniMaxModels(withSnapshot); err != nil {
+		return nil, err
+	}
+	var fallback *api.MiniMaxSnapshot
+	fallbackLoaded := false
+	for i, cycle := range history {
+		refTime := cycle.CycleStart
+		if cycle.CycleEnd != nil {
+			refTime = *cycle.CycleEnd
+		}
+		cross := minimaxCrossQuotaEntries(refSnapshots[i])
+		if refSnapshots[i] == nil {
+			if !fallbackLoaded {
+				fallback, err = s.QueryLatestMiniMax(accountID)
+				if err != nil {
+					return nil, err
+				}
+				fallbackLoaded = true
+			}
+			cross = minimaxCrossQuotaEntries(fallback)
 		}
 		rows = append(rows, CycleOverviewRow{
 			CycleID:     cycle.ID,

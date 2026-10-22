@@ -151,8 +151,38 @@ func (s *Store) QueryCopilotRange(start, end time.Time, limit ...int) ([]*api.Co
 	if err != nil {
 		return nil, fmt.Errorf("failed to query copilot range: %w", err)
 	}
-	defer rows.Close()
+	snapshots, err := scanCopilotSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachCopilotQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
 
+// QueryCopilotRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept), with their quota values.
+func (s *Store) QueryCopilotRangeSampled(start, end time.Time) ([]*api.CopilotSnapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQuery("copilot_snapshots", "id, captured_at, copilot_plan, reset_date, quota_count"),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled copilot range: %w", err)
+	}
+	snapshots, err := scanCopilotSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachCopilotQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
+
+func scanCopilotSnapshotRows(rows *sql.Rows) ([]*api.CopilotSnapshot, error) {
+	defer rows.Close()
 	var snapshots []*api.CopilotSnapshot
 	for rows.Next() {
 		var snap api.CopilotSnapshot
@@ -171,35 +201,38 @@ func (s *Store) QueryCopilotRange(start, end time.Time, limit ...int) ([]*api.Co
 		}
 		snapshots = append(snapshots, &snap)
 	}
+	return snapshots, rows.Err()
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+// attachCopilotQuotas loads quota values for the snapshots in batches of
+// IN-list queries instead of one query per snapshot.
+func (s *Store) attachCopilotQuotas(snapshots []*api.CopilotSnapshot) error {
+	if len(snapshots) == 0 {
+		return nil
 	}
-
-	// Load quota values for each snapshot
-	for _, snap := range snapshots {
-		qRows, err := s.db.Query(
-			`SELECT quota_name, entitlement, remaining, percent_remaining, unlimited, overage_count
-			FROM copilot_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snap.ID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query copilot quota values for snapshot %d: %w", snap.ID, err)
-		}
-		for qRows.Next() {
+	ids := make([]int64, len(snapshots))
+	for i, snap := range snapshots {
+		ids[i] = snap.ID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"copilot_quota_values", "quota_name, entitlement, remaining, percent_remaining, unlimited, overage_count", "quota_name",
+		func(rows *sql.Rows) (int64, api.CopilotQuota, error) {
+			var snapshotID int64
 			var q api.CopilotQuota
 			var unlimited int
-			if err := qRows.Scan(&q.Name, &q.Entitlement, &q.Remaining, &q.PercentRemaining, &unlimited, &q.OverageCount); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("failed to scan copilot quota value: %w", err)
+			if err := rows.Scan(&snapshotID, &q.Name, &q.Entitlement, &q.Remaining, &q.PercentRemaining, &unlimited, &q.OverageCount); err != nil {
+				return 0, q, err
 			}
 			q.Unlimited = unlimited == 1
-			snap.Quotas = append(snap.Quotas, q)
-		}
-		qRows.Close()
+			return snapshotID, q, nil
+		})
+	if err != nil {
+		return fmt.Errorf("failed to query copilot quota values: %w", err)
 	}
-
-	return snapshots, nil
+	for _, snap := range snapshots {
+		snap.Quotas = bySnapshot[snap.ID]
+	}
+	return nil
 }
 
 // CreateCopilotCycle creates a new Copilot reset cycle.
@@ -418,6 +451,11 @@ func (s *Store) QueryCopilotCycleOverview(groupBy string, limit int) ([]CycleOve
 	cycles = append(cycles, completedCycles...)
 
 	var overviewRows []CycleOverviewRow
+	type peakRef struct {
+		rowIndex   int
+		snapshotID int64
+	}
+	var peaks []peakRef
 	for _, c := range cycles {
 		row := CycleOverviewRow{
 			CycleID:    c.ID,
@@ -457,33 +495,43 @@ func (s *Store) QueryCopilotCycleOverview(groupBy string, limit int) ([]CycleOve
 		}
 
 		row.PeakTime, _ = time.Parse(time.RFC3339Nano, capturedAt)
-
-		// Load all quota values from peak snapshot
-		qRows, err := s.db.Query(
-			`SELECT quota_name, entitlement, remaining, unlimited FROM copilot_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snapshotID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("store.QueryCopilotCycleOverview: quota values: %w", err)
-		}
-		for qRows.Next() {
-			var entry CrossQuotaEntry
-			var entitlement, remaining, unlimited int
-			if err := qRows.Scan(&entry.Name, &entitlement, &remaining, &unlimited); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("store.QueryCopilotCycleOverview: scan quota: %w", err)
-			}
-			used := entitlement - remaining
-			entry.Value = float64(used)
-			entry.Limit = float64(entitlement)
-			if entitlement > 0 {
-				entry.Percent = float64(used) / float64(entitlement) * 100
-			}
-			row.CrossQuotas = append(row.CrossQuotas, entry)
-		}
-		qRows.Close()
-
 		overviewRows = append(overviewRows, row)
+		peaks = append(peaks, peakRef{rowIndex: len(overviewRows) - 1, snapshotID: snapshotID})
+	}
+
+	// Load all quota values from the peak snapshots in batches.
+	ids := make([]int64, len(peaks))
+	for i, p := range peaks {
+		ids[i] = p.snapshotID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"copilot_quota_values", "quota_name, entitlement, remaining, unlimited", "quota_name",
+		func(rows *sql.Rows) (int64, api.CopilotQuota, error) {
+			var snapshotID int64
+			var q api.CopilotQuota
+			var unlimited int
+			if err := rows.Scan(&snapshotID, &q.Name, &q.Entitlement, &q.Remaining, &unlimited); err != nil {
+				return 0, q, err
+			}
+			q.Unlimited = unlimited == 1
+			return snapshotID, q, nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("store.QueryCopilotCycleOverview: quota values: %w", err)
+	}
+	for _, p := range peaks {
+		for _, q := range bySnapshot[p.snapshotID] {
+			used := q.Entitlement - q.Remaining
+			entry := CrossQuotaEntry{
+				Name:  q.Name,
+				Value: float64(used),
+				Limit: float64(q.Entitlement),
+			}
+			if q.Entitlement > 0 {
+				entry.Percent = float64(used) / float64(q.Entitlement) * 100
+			}
+			overviewRows[p.rowIndex].CrossQuotas = append(overviewRows[p.rowIndex].CrossQuotas, entry)
+		}
 	}
 
 	return overviewRows, nil

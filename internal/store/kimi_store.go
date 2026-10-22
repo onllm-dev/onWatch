@@ -173,6 +173,30 @@ func (s *Store) QueryKimiRange(accountID int64, start, end time.Time, limit ...i
 	if err != nil {
 		return nil, fmt.Errorf("failed to query kimi range: %w", err)
 	}
+	return scanKimiSnapshotRows(rows)
+}
+
+// QueryKimiRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept), with their quota values.
+func (s *Store) QueryKimiRangeSampled(accountID int64, start, end time.Time) ([]*api.KimiSnapshot, error) {
+	if accountID == 0 {
+		accountID = DefaultKimiAccountID
+	}
+	query := `SELECT s.id, s.captured_at, s.user_id, s.region, s.membership, s.raw_json, s.account_id,
+			v.quota_name, v.utilization, v.resets_at, v.status
+		FROM (` + windowChartQueryWhere("kimi_snapshots",
+		"id, captured_at, user_id, region, membership, raw_json, account_id", "account_id = ?") + `) s
+		LEFT JOIN kimi_quota_values v ON v.snapshot_id = s.id
+		ORDER BY s.captured_at ASC, v.quota_name`
+	rows, err := s.db.Query(query,
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano), accountID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled kimi range: %w", err)
+	}
+	return scanKimiSnapshotRows(rows)
+}
+
+func scanKimiSnapshotRows(rows *sql.Rows) ([]*api.KimiSnapshot, error) {
 	defer rows.Close()
 
 	var out []*api.KimiSnapshot

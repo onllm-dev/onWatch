@@ -99,6 +99,23 @@ func (s *Store) QueryDeepSeekRange(start, end time.Time, limit ...int) ([]*api.D
 	if err != nil {
 		return nil, fmt.Errorf("failed to query deepseek range: %w", err)
 	}
+	return scanDeepSeekSnapshotRows(rows)
+}
+
+// QueryDeepSeekRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept).
+func (s *Store) QueryDeepSeekRangeSampled(start, end time.Time) ([]*api.DeepSeekSnapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQuery("deepseek_snapshots", "id, captured_at, is_available, currency, total_balance, granted_balance, topped_up_balance"),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled deepseek range: %w", err)
+	}
+	return scanDeepSeekSnapshotRows(rows)
+}
+
+func scanDeepSeekSnapshotRows(rows *sql.Rows) ([]*api.DeepSeekSnapshot, error) {
 	defer rows.Close()
 
 	var snapshots []*api.DeepSeekSnapshot

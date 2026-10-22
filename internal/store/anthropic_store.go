@@ -135,8 +135,40 @@ func (s *Store) QueryAnthropicRange(start, end time.Time, limit ...int) ([]*api.
 	if err != nil {
 		return nil, fmt.Errorf("failed to query anthropic range: %w", err)
 	}
-	defer rows.Close()
+	snapshots, err := scanAnthropicSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachAnthropicQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
 
+// QueryAnthropicRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept), with their quota values.
+// Chart callers downsample anyway; sampling in SQL avoids loading every poll
+// of a 30-day range into memory.
+func (s *Store) QueryAnthropicRangeSampled(start, end time.Time) ([]*api.AnthropicSnapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQuery("anthropic_snapshots", "id, captured_at, quota_count"),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled anthropic range: %w", err)
+	}
+	snapshots, err := scanAnthropicSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachAnthropicQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
+
+func scanAnthropicSnapshotRows(rows *sql.Rows) ([]*api.AnthropicSnapshot, error) {
+	defer rows.Close()
 	var snapshots []*api.AnthropicSnapshot
 	for rows.Next() {
 		var snap api.AnthropicSnapshot
@@ -147,41 +179,66 @@ func (s *Store) QueryAnthropicRange(start, end time.Time, limit ...int) ([]*api.
 		snap.CapturedAt, _ = time.Parse(time.RFC3339Nano, capturedAt)
 		snapshots = append(snapshots, &snap)
 	}
+	return snapshots, rows.Err()
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+// attachAnthropicQuotas loads quota values for the snapshots in batches of
+// IN-list queries instead of one query per snapshot.
+func (s *Store) attachAnthropicQuotas(snapshots []*api.AnthropicSnapshot) error {
+	if len(snapshots) == 0 {
+		return nil
 	}
-
-	// Load quota values for each snapshot
-	for _, snap := range snapshots {
-		qRows, err := s.db.Query(
-			`SELECT quota_name, utilization, resets_at FROM anthropic_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snap.ID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query quota values for snapshot %d: %w", snap.ID, err)
-		}
-		for qRows.Next() {
+	ids := make([]int64, len(snapshots))
+	for i, snap := range snapshots {
+		ids[i] = snap.ID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"anthropic_quota_values", "quota_name, utilization, resets_at", "quota_name",
+		func(rows *sql.Rows) (int64, api.AnthropicQuota, error) {
+			var snapshotID int64
 			var q api.AnthropicQuota
 			var resetsAt sql.NullString
-			if err := qRows.Scan(&q.Name, &q.Utilization, &resetsAt); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("failed to scan quota value: %w", err)
-			}
-			// Hide historical rows for experimental/unknown quota keys.
-			if !api.IsKnownAnthropicQuota(q.Name) {
-				continue
+			if err := rows.Scan(&snapshotID, &q.Name, &q.Utilization, &resetsAt); err != nil {
+				return 0, q, err
 			}
 			if resetsAt.Valid && resetsAt.String != "" {
 				t, _ := time.Parse(time.RFC3339Nano, resetsAt.String)
 				q.ResetsAt = &t
 			}
-			snap.Quotas = append(snap.Quotas, q)
-		}
-		qRows.Close()
+			return snapshotID, q, nil
+		})
+	if err != nil {
+		return fmt.Errorf("failed to query anthropic quota values: %w", err)
 	}
+	for _, snap := range snapshots {
+		// Hide historical rows for experimental/unknown quota keys.
+		for _, q := range bySnapshot[snap.ID] {
+			if api.IsKnownAnthropicQuota(q.Name) {
+				snap.Quotas = append(snap.Quotas, q)
+			}
+		}
+	}
+	return nil
+}
 
-	return snapshots, nil
+// QueryAnthropicRangeStats returns the poll count and the first and last
+// capture times in a range without loading any snapshot rows.
+func (s *Store) QueryAnthropicRangeStats(start, end time.Time) (count int, first, last time.Time, err error) {
+	var firstRaw, lastRaw sql.NullString
+	err = s.db.QueryRow(
+		`SELECT COUNT(*), MIN(captured_at), MAX(captured_at) FROM anthropic_snapshots WHERE captured_at BETWEEN ? AND ?`,
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	).Scan(&count, &firstRaw, &lastRaw)
+	if err != nil {
+		return 0, time.Time{}, time.Time{}, fmt.Errorf("failed to query anthropic range stats: %w", err)
+	}
+	if firstRaw.Valid {
+		first, _ = time.Parse(time.RFC3339Nano, firstRaw.String)
+	}
+	if lastRaw.Valid {
+		last, _ = time.Parse(time.RFC3339Nano, lastRaw.String)
+	}
+	return count, first, last, nil
 }
 
 // CreateAnthropicCycle creates a new Anthropic reset cycle.
@@ -409,6 +466,12 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 	cycles = append(cycles, completedCycles...)
 
 	var overviewRows []CycleOverviewRow
+	// Peak and first snapshot ids are collected first so their quota values
+	// load in batches rather than two queries per cycle.
+	peakIDs := make([]int64, 0, len(cycles))
+	firstIDs := make([]int64, 0, len(cycles))
+	peakIDByRow := make(map[int]int64, len(cycles))
+	firstIDByRow := make(map[int]int64, len(cycles))
 	for _, c := range cycles {
 		row := CycleOverviewRow{
 			CycleID:    c.ID,
@@ -418,6 +481,7 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 			PeakValue:  c.PeakUtilization,
 			TotalDelta: c.TotalDelta,
 		}
+		rowIndex := len(overviewRows)
 
 		// Determine the end boundary for the snapshot query
 		// For active cycles (no cycle_end), use current time
@@ -451,9 +515,11 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 		}
 
 		row.PeakTime, _ = time.Parse(time.RFC3339Nano, capturedAt)
+		overviewRows = append(overviewRows, row)
+		peakIDs = append(peakIDs, snapshotID)
+		peakIDByRow[rowIndex] = snapshotID
 
 		// Get start values from first snapshot of cycle (for delta calculation)
-		startValues := make(map[string]float64)
 		var firstSnapshotID int64
 		err = s.db.QueryRow(
 			`SELECT id FROM anthropic_snapshots
@@ -463,48 +529,35 @@ func (s *Store) QueryAnthropicCycleOverview(groupBy string, limit int) ([]CycleO
 			endBoundary.Format(time.RFC3339Nano),
 		).Scan(&firstSnapshotID)
 		if err == nil {
-			startRows, err := s.db.Query(
-				`SELECT quota_name, utilization FROM anthropic_quota_values WHERE snapshot_id = ?`,
-				firstSnapshotID,
-			)
-			if err == nil {
-				for startRows.Next() {
-					var name string
-					var util float64
-					if startRows.Scan(&name, &util) == nil {
-						startValues[name] = util
-					}
-				}
-				startRows.Close()
-			}
+			firstIDs = append(firstIDs, firstSnapshotID)
+			firstIDByRow[rowIndex] = firstSnapshotID
 		}
+	}
 
-		// Load all quota values from peak snapshot
-		qRows, err := s.db.Query(
-			`SELECT quota_name, utilization FROM anthropic_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snapshotID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("store.QueryAnthropicCycleOverview: quota values: %w", err)
-		}
-		for qRows.Next() {
-			var entry CrossQuotaEntry
-			if err := qRows.Scan(&entry.Name, &entry.Percent); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("store.QueryAnthropicCycleOverview: scan quota: %w", err)
-			}
+	peakValues, err := loadQuotaUtilization(s, peakIDs, "anthropic_quota_values")
+	if err != nil {
+		return nil, fmt.Errorf("store.QueryAnthropicCycleOverview: quota values: %w", err)
+	}
+	startValuesBySnapshot, err := loadQuotaUtilization(s, firstIDs, "anthropic_quota_values")
+	if err != nil {
+		return nil, fmt.Errorf("store.QueryAnthropicCycleOverview: start values: %w", err)
+	}
+
+	for rowIndex, snapshotID := range peakIDByRow {
+		startValues := startValuesBySnapshot[firstIDByRow[rowIndex]]
+		values := peakValues[snapshotID]
+		for _, name := range sortedUtilizationNames(values) {
 			// Hide experimental/unknown quota keys from cross-quota history.
-			if !api.IsKnownAnthropicQuota(entry.Name) {
+			if !api.IsKnownAnthropicQuota(name) {
 				continue
 			}
+			percent := values[name]
+			entry := CrossQuotaEntry{Name: name, Percent: percent}
 			entry.Value = entry.Percent // utilization is already a percentage
-			entry.StartPercent = startValues[entry.Name]
+			entry.StartPercent = startValues[name]
 			entry.Delta = entry.Percent - entry.StartPercent
-			row.CrossQuotas = append(row.CrossQuotas, entry)
+			overviewRows[rowIndex].CrossQuotas = append(overviewRows[rowIndex].CrossQuotas, entry)
 		}
-		qRows.Close()
-
-		overviewRows = append(overviewRows, row)
 	}
 
 	return overviewRows, nil

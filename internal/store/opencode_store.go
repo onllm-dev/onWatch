@@ -155,8 +155,18 @@ func (s *Store) queryOpenCodeSnapshots(query string, args []interface{}) ([]*api
 	if err != nil {
 		return nil, fmt.Errorf("failed to query opencode range: %w", err)
 	}
-	defer rows.Close()
+	snapshots, err := scanOpenCodeSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachOpenCodeQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
 
+func scanOpenCodeSnapshotRows(rows *sql.Rows) ([]*api.OpenCodeSnapshot, error) {
+	defer rows.Close()
 	var snapshots []*api.OpenCodeSnapshot
 	for rows.Next() {
 		var snap api.OpenCodeSnapshot
@@ -169,38 +179,43 @@ func (s *Store) queryOpenCodeSnapshots(query string, args []interface{}) ([]*api
 		snap.PlanName = planName
 		snapshots = append(snapshots, &snap)
 	}
+	return snapshots, rows.Err()
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+// attachOpenCodeQuotas loads quota values for the snapshots in batches of
+// IN-list queries instead of one query per snapshot.
+func (s *Store) attachOpenCodeQuotas(snapshots []*api.OpenCodeSnapshot) error {
+	if len(snapshots) == 0 {
+		return nil
 	}
-
-	for _, snap := range snapshots {
-		qRows, err := s.db.Query(
-			`SELECT quota_name, used, limit_value, utilization, format, status, resets_at FROM opencode_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snap.ID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query quota values for snapshot %d: %w", snap.ID, err)
-		}
-		for qRows.Next() {
+	ids := make([]int64, len(snapshots))
+	for i, snap := range snapshots {
+		ids[i] = snap.ID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"opencode_quota_values", "quota_name, used, limit_value, utilization, format, status, resets_at", "quota_name",
+		func(rows *sql.Rows) (int64, api.OpenCodeQuota, error) {
+			var snapshotID int64
 			var q api.OpenCodeQuota
 			var format string
 			var resetsAt sql.NullString
-			if err := qRows.Scan(&q.Name, &q.Used, &q.Limit, &q.Utilization, &format, &q.Status, &resetsAt); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("failed to scan quota value: %w", err)
+			if err := rows.Scan(&snapshotID, &q.Name, &q.Used, &q.Limit, &q.Utilization, &format, &q.Status, &resetsAt); err != nil {
+				return 0, q, err
 			}
 			q.Format = api.OpenCodeQuotaFormat(format)
 			if resetsAt.Valid && resetsAt.String != "" {
 				t, _ := time.Parse(time.RFC3339Nano, resetsAt.String)
 				q.ResetsAt = &t
 			}
-			snap.Quotas = append(snap.Quotas, q)
-		}
-		qRows.Close()
+			return snapshotID, q, nil
+		})
+	if err != nil {
+		return fmt.Errorf("failed to query opencode quota values: %w", err)
 	}
-
-	return snapshots, nil
+	for _, snap := range snapshots {
+		snap.Quotas = bySnapshot[snap.ID]
+	}
+	return nil
 }
 
 func (s *Store) CreateOpenCodeCycle(quotaName string, cycleStart time.Time, resetsAt *time.Time) (int64, error) {
@@ -506,6 +521,11 @@ func (s *Store) QueryOpenCodeCycleOverview(groupBy string, limit int) ([]CycleOv
 	}
 
 	var overviewRows []CycleOverviewRow
+	type peakRef struct {
+		rowIndex   int
+		snapshotID int64
+	}
+	var peaks []peakRef
 	for _, c := range cycles {
 		row := CycleOverviewRow{
 			ResetsAt:   c.ResetsAt,
@@ -545,25 +565,29 @@ func (s *Store) QueryOpenCodeCycleOverview(groupBy string, limit int) ([]CycleOv
 		}
 
 		row.PeakTime, _ = time.Parse(time.RFC3339Nano, capturedAt)
-
-		qRows, err := s.db.Query(
-			`SELECT quota_name, utilization, used, limit_value FROM opencode_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snapshotID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("store.QueryOpenCodeCycleOverview: quota values: %w", err)
-		}
-		for qRows.Next() {
-			var entry CrossQuotaEntry
-			if err := qRows.Scan(&entry.Name, &entry.Percent, &entry.Value, &entry.Limit); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("store.QueryOpenCodeCycleOverview: scan quota: %w", err)
-			}
-			row.CrossQuotas = append(row.CrossQuotas, entry)
-		}
-		qRows.Close()
-
 		overviewRows = append(overviewRows, row)
+		peaks = append(peaks, peakRef{rowIndex: len(overviewRows) - 1, snapshotID: snapshotID})
+	}
+
+	ids := make([]int64, len(peaks))
+	for i, p := range peaks {
+		ids[i] = p.snapshotID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"opencode_quota_values", "quota_name, utilization, used, limit_value", "quota_name",
+		func(rows *sql.Rows) (int64, CrossQuotaEntry, error) {
+			var snapshotID int64
+			var entry CrossQuotaEntry
+			if err := rows.Scan(&snapshotID, &entry.Name, &entry.Percent, &entry.Value, &entry.Limit); err != nil {
+				return 0, entry, err
+			}
+			return snapshotID, entry, nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("store.QueryOpenCodeCycleOverview: quota values: %w", err)
+	}
+	for _, p := range peaks {
+		overviewRows[p.rowIndex].CrossQuotas = bySnapshot[p.snapshotID]
 	}
 
 	return overviewRows, nil
@@ -571,9 +595,21 @@ func (s *Store) QueryOpenCodeCycleOverview(groupBy string, limit int) ([]CycleOv
 
 // Table and columns are internal constants, never request input.
 func windowChartQuery(table, columns string) string {
+	return windowChartQueryWhere(table, columns, "")
+}
+
+// windowChartQueryWhere is windowChartQuery with an extra predicate appended
+// to the captured_at range. extraWhere may contain placeholders; its
+// arguments follow start and end. It is an internal constant, never request
+// input.
+func windowChartQueryWhere(table, columns, extraWhere string) string {
+	where := "captured_at BETWEEN ? AND ?"
+	if extraWhere != "" {
+		where += " AND " + extraWhere
+	}
 	return `SELECT ` + columns + ` FROM (
   SELECT ` + columns + `, ROW_NUMBER() OVER (ORDER BY captured_at, id) AS rn,
-   COUNT(*) OVER () AS total FROM ` + table + ` WHERE captured_at BETWEEN ? AND ?
+   COUNT(*) OVER () AS total FROM ` + table + ` WHERE ` + where + `
  ) WHERE rn = total OR (rn - 1) % MAX(1, (total - 2) / 199 + 1) = 0
  ORDER BY captured_at, id`
 }

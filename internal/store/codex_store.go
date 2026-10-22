@@ -199,8 +199,41 @@ func (s *Store) QueryCodexRange(accountID int64, start, end time.Time, limit ...
 	if err != nil {
 		return nil, fmt.Errorf("failed to query codex range: %w", err)
 	}
-	defer rows.Close()
+	snapshots, err := scanCodexSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachCodexQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
 
+// QueryCodexRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept), with their quota values.
+func (s *Store) QueryCodexRangeSampled(accountID int64, start, end time.Time) ([]*api.CodexSnapshot, error) {
+	if accountID == 0 {
+		accountID = DefaultCodexAccountID
+	}
+	// Filter and sample the account's rows in one query.
+	query := windowChartQueryWhere("codex_snapshots", "id, captured_at, plan_type, credits_balance, reset_credits_count, applicable_credits_count, quota_count, account_id", "account_id = ?")
+	rows, err := s.db.Query(query,
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano), accountID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled codex range: %w", err)
+	}
+	snapshots, err := scanCodexSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachCodexQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
+
+func scanCodexSnapshotRows(rows *sql.Rows) ([]*api.CodexSnapshot, error) {
+	defer rows.Close()
 	var snapshots []*api.CodexSnapshot
 	for rows.Next() {
 		var snap api.CodexSnapshot
@@ -230,44 +263,48 @@ func (s *Store) QueryCodexRange(accountID int64, start, end time.Time, limit ...
 		}
 		snapshots = append(snapshots, &snap)
 	}
+	return snapshots, rows.Err()
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+// attachCodexQuotas loads quota values for the snapshots in batches of
+// IN-list queries instead of one query per snapshot.
+func (s *Store) attachCodexQuotas(snapshots []*api.CodexSnapshot) error {
+	if len(snapshots) == 0 {
+		return nil
 	}
-
-	for _, snap := range snapshots {
-		qRows, err := s.db.Query(
-			`SELECT quota_name, utilization, resets_at, status FROM codex_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snap.ID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query codex quota values for snapshot %d: %w", snap.ID, err)
-		}
-		for qRows.Next() {
+	ids := make([]int64, len(snapshots))
+	for i, snap := range snapshots {
+		ids[i] = snap.ID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"codex_quota_values", "quota_name, utilization, resets_at, status", "quota_name",
+		func(rows *sql.Rows) (int64, api.CodexQuota, error) {
+			var snapshotID int64
 			var q api.CodexQuota
 			var resetsAt sql.NullString
 			var status sql.NullString
-			if err := qRows.Scan(&q.Name, &q.Utilization, &resetsAt, &status); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("failed to scan codex quota value: %w", err)
+			if err := rows.Scan(&snapshotID, &q.Name, &q.Utilization, &resetsAt, &status); err != nil {
+				return 0, q, err
 			}
 			if resetsAt.Valid && resetsAt.String != "" {
 				parsedResetsAt, err := parseCodexTime(resetsAt.String, "codex quota resets_at")
 				if err != nil {
-					qRows.Close()
-					return nil, err
+					return 0, q, err
 				}
 				q.ResetsAt = &parsedResetsAt
 			}
 			if status.Valid {
 				q.Status = status.String
 			}
-			snap.Quotas = append(snap.Quotas, q)
-		}
-		qRows.Close()
+			return snapshotID, q, nil
+		})
+	if err != nil {
+		return fmt.Errorf("failed to query codex quota values: %w", err)
 	}
-
-	return snapshots, nil
+	for _, snap := range snapshots {
+		snap.Quotas = bySnapshot[snap.ID]
+	}
+	return nil
 }
 
 // CreateCodexCycle creates a new Codex reset cycle.
@@ -604,7 +641,13 @@ func (s *Store) QueryCodexCycleOverview(accountID int64, groupBy string, limit i
 	}
 	cycles = append(cycles, completedCycles...)
 
+	// Collect peak and first snapshot ids first, then load their quota values
+	// in batches instead of two queries per cycle.
 	var overviewRows []CycleOverviewRow
+	peakIDs := make([]int64, 0, len(cycles))
+	firstIDs := make([]int64, 0, len(cycles))
+	peakIDByRow := make(map[int]int64, len(cycles))
+	firstIDByRow := make(map[int]int64, len(cycles))
 	for _, c := range cycles {
 		row := CycleOverviewRow{
 			CycleID:    c.ID,
@@ -614,6 +657,7 @@ func (s *Store) QueryCodexCycleOverview(accountID int64, groupBy string, limit i
 			PeakValue:  c.PeakUtilization,
 			TotalDelta: c.TotalDelta,
 		}
+		rowIndex := len(overviewRows)
 
 		var endBoundary time.Time
 		if c.CycleEnd != nil {
@@ -648,8 +692,10 @@ func (s *Store) QueryCodexCycleOverview(accountID int64, groupBy string, limit i
 			return nil, fmt.Errorf("store.QueryCodexCycleOverview: peak time: %w", err)
 		}
 		row.PeakTime = parsedPeakTime
+		overviewRows = append(overviewRows, row)
+		peakIDs = append(peakIDs, snapshotID)
+		peakIDByRow[rowIndex] = snapshotID
 
-		startValues := make(map[string]float64)
 		var firstSnapshotID int64
 		err = s.db.QueryRow(
 			`SELECT id FROM codex_snapshots
@@ -660,43 +706,31 @@ func (s *Store) QueryCodexCycleOverview(accountID int64, groupBy string, limit i
 			endBoundary.Format(time.RFC3339Nano),
 		).Scan(&firstSnapshotID)
 		if err == nil {
-			startRows, err := s.db.Query(
-				`SELECT quota_name, utilization FROM codex_quota_values WHERE snapshot_id = ?`,
-				firstSnapshotID,
-			)
-			if err == nil {
-				for startRows.Next() {
-					var name string
-					var util float64
-					if startRows.Scan(&name, &util) == nil {
-						startValues[name] = util
-					}
-				}
-				startRows.Close()
-			}
+			firstIDs = append(firstIDs, firstSnapshotID)
+			firstIDByRow[rowIndex] = firstSnapshotID
 		}
+	}
 
-		qRows, err := s.db.Query(
-			`SELECT quota_name, utilization FROM codex_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snapshotID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("store.QueryCodexCycleOverview: quota values: %w", err)
-		}
-		for qRows.Next() {
-			var entry CrossQuotaEntry
-			if err := qRows.Scan(&entry.Name, &entry.Percent); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("store.QueryCodexCycleOverview: scan quota: %w", err)
-			}
+	peakValues, err := loadQuotaUtilization(s, peakIDs, "codex_quota_values")
+	if err != nil {
+		return nil, fmt.Errorf("store.QueryCodexCycleOverview: quota values: %w", err)
+	}
+	startValuesBySnapshot, err := loadQuotaUtilization(s, firstIDs, "codex_quota_values")
+	if err != nil {
+		return nil, fmt.Errorf("store.QueryCodexCycleOverview: start values: %w", err)
+	}
+
+	for rowIndex, snapshotID := range peakIDByRow {
+		startValues := startValuesBySnapshot[firstIDByRow[rowIndex]]
+		values := peakValues[snapshotID]
+		for _, name := range sortedUtilizationNames(values) {
+			percent := values[name]
+			entry := CrossQuotaEntry{Name: name, Percent: percent}
 			entry.Value = entry.Percent
 			entry.StartPercent = startValues[entry.Name]
 			entry.Delta = entry.Percent - entry.StartPercent
-			row.CrossQuotas = append(row.CrossQuotas, entry)
+			overviewRows[rowIndex].CrossQuotas = append(overviewRows[rowIndex].CrossQuotas, entry)
 		}
-		qRows.Close()
-
-		overviewRows = append(overviewRows, row)
 	}
 
 	return overviewRows, nil

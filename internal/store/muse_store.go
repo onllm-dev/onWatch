@@ -189,8 +189,18 @@ func (s *Store) QueryMuseRange(start, end time.Time, limit ...int) ([]*api.MuseS
 	if err != nil {
 		return nil, fmt.Errorf("failed to query muse range: %w", err)
 	}
-	defer rows.Close()
+	snapshots, err := scanMuseSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachMuseQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
 
+func scanMuseSnapshotRows(rows *sql.Rows) ([]*api.MuseSnapshot, error) {
+	defer rows.Close()
 	var snapshots []*api.MuseSnapshot
 	for rows.Next() {
 		var snap api.MuseSnapshot
@@ -202,20 +212,43 @@ func (s *Store) QueryMuseRange(start, end time.Time, limit ...int) ([]*api.MuseS
 		scanMuseSnapshotRow(&snap, capturedAt, windowResetsAt.String, weeklyResetsAt.String, !windowResetsAt.Valid, !weeklyResetsAt.Valid)
 		snapshots = append(snapshots, &snap)
 	}
+	return snapshots, rows.Err()
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+// attachMuseQuotas loads quota values for the snapshots in batches of
+// IN-list queries instead of one query per snapshot.
+func (s *Store) attachMuseQuotas(snapshots []*api.MuseSnapshot) error {
+	if len(snapshots) == 0 {
+		return nil
 	}
-
+	ids := make([]int64, len(snapshots))
+	for i, snap := range snapshots {
+		ids[i] = snap.ID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"muse_quota_values", "quota_name, used, limit_value, utilization, format, resets_at", "quota_name",
+		func(rows *sql.Rows) (int64, api.MuseQuota, error) {
+			var snapshotID int64
+			var q api.MuseQuota
+			var format string
+			var resetsAt sql.NullString
+			if err := rows.Scan(&snapshotID, &q.Name, &q.Used, &q.Limit, &q.Utilization, &format, &resetsAt); err != nil {
+				return 0, q, err
+			}
+			q.Format = api.MuseQuotaFormat(format)
+			if resetsAt.Valid && resetsAt.String != "" {
+				t, _ := time.Parse(time.RFC3339Nano, resetsAt.String)
+				q.ResetsAt = &t
+			}
+			return snapshotID, q, nil
+		})
+	if err != nil {
+		return fmt.Errorf("failed to query muse quota values: %w", err)
+	}
 	for _, snap := range snapshots {
-		quotas, err := s.queryMuseQuotaValues(snap.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query quota values for snapshot %d: %w", snap.ID, err)
-		}
-		snap.Quotas = quotas
+		snap.Quotas = bySnapshot[snap.ID]
 	}
-
-	return snapshots, nil
+	return nil
 }
 
 // CreateMuseCycle opens a new reset cycle for a quota window.
@@ -459,6 +492,11 @@ func (s *Store) QueryMuseCycleOverview(groupBy string, limit int) ([]CycleOvervi
 	}
 
 	var overviewRows []CycleOverviewRow
+	type peakRef struct {
+		rowIndex   int
+		snapshotID int64
+	}
+	var peaks []peakRef
 	for _, c := range cycles {
 		row := CycleOverviewRow{
 			CycleID:    c.ID,
@@ -497,25 +535,30 @@ func (s *Store) QueryMuseCycleOverview(groupBy string, limit int) ([]CycleOvervi
 		}
 
 		row.PeakTime, _ = time.Parse(time.RFC3339Nano, capturedAt)
-
-		qRows, err := s.db.Query(
-			`SELECT quota_name, utilization, used, limit_value FROM muse_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snapshotID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("store.QueryMuseCycleOverview: quota values: %w", err)
-		}
-		for qRows.Next() {
-			var entry CrossQuotaEntry
-			if err := qRows.Scan(&entry.Name, &entry.Percent, &entry.Value, new(float64)); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("store.QueryMuseCycleOverview: scan quota: %w", err)
-			}
-			row.CrossQuotas = append(row.CrossQuotas, entry)
-		}
-		qRows.Close()
-
 		overviewRows = append(overviewRows, row)
+		peaks = append(peaks, peakRef{rowIndex: len(overviewRows) - 1, snapshotID: snapshotID})
+	}
+
+	ids := make([]int64, len(peaks))
+	for i, p := range peaks {
+		ids[i] = p.snapshotID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"muse_quota_values", "quota_name, utilization, used, limit_value", "quota_name",
+		func(rows *sql.Rows) (int64, CrossQuotaEntry, error) {
+			var snapshotID int64
+			var entry CrossQuotaEntry
+			var limit float64
+			if err := rows.Scan(&snapshotID, &entry.Name, &entry.Percent, &entry.Value, &limit); err != nil {
+				return 0, entry, err
+			}
+			return snapshotID, entry, nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("store.QueryMuseCycleOverview: quota values: %w", err)
+	}
+	for _, p := range peaks {
+		overviewRows[p.rowIndex].CrossQuotas = bySnapshot[p.snapshotID]
 	}
 
 	return overviewRows, nil

@@ -223,8 +223,18 @@ func (s *Store) queryCommandCodeSnapshots(query string, args []interface{}) ([]*
 	if err != nil {
 		return nil, fmt.Errorf("failed to query commandcode range: %w", err)
 	}
-	defer rows.Close()
+	snapshots, err := scanCommandCodeSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachCommandCodeQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
 
+func scanCommandCodeSnapshotRows(rows *sql.Rows) ([]*api.CommandCodeSnapshot, error) {
+	defer rows.Close()
 	var snapshots []*api.CommandCodeSnapshot
 	for rows.Next() {
 		var snap api.CommandCodeSnapshot
@@ -242,20 +252,44 @@ func (s *Store) queryCommandCodeSnapshots(query string, args []interface{}) ([]*
 		snap.CapturedAt, snap.PeriodStart, snap.PeriodEnd = scanCommandCodePeriod(capturedAt, periodStart, periodEnd)
 		snapshots = append(snapshots, &snap)
 	}
+	return snapshots, rows.Err()
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+// attachCommandCodeQuotas loads quota values for the snapshots in batches of
+// IN-list queries instead of one query per snapshot.
+func (s *Store) attachCommandCodeQuotas(snapshots []*api.CommandCodeSnapshot) error {
+	if len(snapshots) == 0 {
+		return nil
 	}
-
+	ids := make([]int64, len(snapshots))
+	for i, snap := range snapshots {
+		ids[i] = snap.ID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"commandcode_quota_values", "quota_name, used, limit_value, utilization, format, resets_at, remaining", "quota_name",
+		func(rows *sql.Rows) (int64, api.CommandCodeQuota, error) {
+			var snapshotID int64
+			var q api.CommandCodeQuota
+			var format string
+			var resetsAt sql.NullString
+			if err := rows.Scan(&snapshotID, &q.Name, &q.Used, &q.Limit, &q.Utilization, &format, &resetsAt, &q.Remaining); err != nil {
+				return 0, q, err
+			}
+			q.Format = api.CommandCodeQuotaFormat(format)
+			if resetsAt.Valid && resetsAt.String != "" {
+				if t, err := time.Parse(time.RFC3339Nano, resetsAt.String); err == nil {
+					q.ResetsAt = &t
+				}
+			}
+			return snapshotID, q, nil
+		})
+	if err != nil {
+		return fmt.Errorf("failed to query commandcode quota values: %w", err)
+	}
 	for _, snap := range snapshots {
-		quotas, err := s.queryCommandCodeQuotaValues(snap.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query quota values for snapshot %d: %w", snap.ID, err)
-		}
-		snap.Quotas = quotas
+		snap.Quotas = bySnapshot[snap.ID]
 	}
-
-	return snapshots, nil
+	return nil
 }
 
 // CreateCommandCodeCycle opens a new reset cycle for a quota window.
@@ -526,6 +560,11 @@ func (s *Store) QueryCommandCodeCycleOverview(groupBy string, limit int) ([]Cycl
 	}
 
 	var overviewRows []CycleOverviewRow
+	type peakRef struct {
+		rowIndex   int
+		snapshotID int64
+	}
+	var peaks []peakRef
 	for _, c := range cycles {
 		row := CycleOverviewRow{
 			ResetsAt:   c.ResetsAt,
@@ -565,25 +604,29 @@ func (s *Store) QueryCommandCodeCycleOverview(groupBy string, limit int) ([]Cycl
 		}
 
 		row.PeakTime, _ = time.Parse(time.RFC3339Nano, capturedAt)
-
-		qRows, err := s.db.Query(
-			`SELECT quota_name, utilization, used, limit_value FROM commandcode_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snapshotID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("store.QueryCommandCodeCycleOverview: quota values: %w", err)
-		}
-		for qRows.Next() {
-			var entry CrossQuotaEntry
-			if err := qRows.Scan(&entry.Name, &entry.Percent, &entry.Value, &entry.Limit); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("store.QueryCommandCodeCycleOverview: scan quota: %w", err)
-			}
-			row.CrossQuotas = append(row.CrossQuotas, entry)
-		}
-		qRows.Close()
-
 		overviewRows = append(overviewRows, row)
+		peaks = append(peaks, peakRef{rowIndex: len(overviewRows) - 1, snapshotID: snapshotID})
+	}
+
+	ids := make([]int64, len(peaks))
+	for i, p := range peaks {
+		ids[i] = p.snapshotID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"commandcode_quota_values", "quota_name, utilization, used, limit_value", "quota_name",
+		func(rows *sql.Rows) (int64, CrossQuotaEntry, error) {
+			var snapshotID int64
+			var entry CrossQuotaEntry
+			if err := rows.Scan(&snapshotID, &entry.Name, &entry.Percent, &entry.Value, &entry.Limit); err != nil {
+				return 0, entry, err
+			}
+			return snapshotID, entry, nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("store.QueryCommandCodeCycleOverview: quota values: %w", err)
+	}
+	for _, p := range peaks {
+		overviewRows[p.rowIndex].CrossQuotas = bySnapshot[p.snapshotID]
 	}
 
 	return overviewRows, nil

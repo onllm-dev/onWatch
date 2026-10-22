@@ -163,8 +163,38 @@ func (s *Store) QueryGeminiRange(start, end time.Time, limit ...int) ([]*api.Gem
 	if err != nil {
 		return nil, fmt.Errorf("failed to query gemini range: %w", err)
 	}
-	defer rows.Close()
+	snapshots, err := scanGeminiSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachGeminiQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
 
+// QueryGeminiRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept), with their quota values.
+func (s *Store) QueryGeminiRangeSampled(start, end time.Time) ([]*api.GeminiSnapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQuery("gemini_snapshots", "id, captured_at, tier, project_id, quota_count"),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled gemini range: %w", err)
+	}
+	snapshots, err := scanGeminiSnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachGeminiQuotas(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
+
+func scanGeminiSnapshotRows(rows *sql.Rows) ([]*api.GeminiSnapshot, error) {
+	defer rows.Close()
 	var snapshots []*api.GeminiSnapshot
 	for rows.Next() {
 		var snap api.GeminiSnapshot
@@ -186,42 +216,44 @@ func (s *Store) QueryGeminiRange(start, end time.Time, limit ...int) ([]*api.Gem
 		}
 		snapshots = append(snapshots, &snap)
 	}
+	return snapshots, rows.Err()
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+// attachGeminiQuotas loads quota values for the snapshots in batches of
+// IN-list queries instead of one query per snapshot.
+func (s *Store) attachGeminiQuotas(snapshots []*api.GeminiSnapshot) error {
+	if len(snapshots) == 0 {
+		return nil
 	}
-
-	// Load quota values for each snapshot
-	for _, snap := range snapshots {
-		qRows, err := s.db.Query(
-			`SELECT model_id, remaining_fraction, usage_percent, reset_time
-			FROM gemini_quota_values WHERE snapshot_id = ? ORDER BY model_id`,
-			snap.ID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query gemini quota values for snapshot %d: %w", snap.ID, err)
-		}
-		for qRows.Next() {
+	ids := make([]int64, len(snapshots))
+	for i, snap := range snapshots {
+		ids[i] = snap.ID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"gemini_quota_values", "model_id, remaining_fraction, usage_percent, reset_time", "model_id",
+		func(rows *sql.Rows) (int64, api.GeminiQuota, error) {
+			var snapshotID int64
 			var q api.GeminiQuota
 			var resetTime sql.NullString
-			if err := qRows.Scan(&q.ModelID, &q.RemainingFraction, &q.UsagePercent, &resetTime); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("failed to scan gemini quota value: %w", err)
+			if err := rows.Scan(&snapshotID, &q.ModelID, &q.RemainingFraction, &q.UsagePercent, &resetTime); err != nil {
+				return 0, q, err
 			}
 			if resetTime.Valid && resetTime.String != "" {
 				parsedResetTime, err := parseGeminiTime(resetTime.String, "gemini quota reset_time")
 				if err != nil {
-					qRows.Close()
-					return nil, err
+					return 0, q, err
 				}
 				q.ResetTime = &parsedResetTime
 			}
-			snap.Quotas = append(snap.Quotas, q)
-		}
-		qRows.Close()
+			return snapshotID, q, nil
+		})
+	if err != nil {
+		return fmt.Errorf("failed to query gemini quota values: %w", err)
 	}
-
-	return snapshots, nil
+	for _, snap := range snapshots {
+		snap.Quotas = bySnapshot[snap.ID]
+	}
+	return nil
 }
 
 // CreateGeminiCycle creates a new Gemini reset cycle.
@@ -464,6 +496,11 @@ func (s *Store) QueryGeminiCycleOverview(modelID string, limit int) ([]CycleOver
 	cycles = append(cycles, completedCycles...)
 
 	var overviewRows []CycleOverviewRow
+	type peakRef struct {
+		rowIndex   int
+		snapshotID int64
+	}
+	var peaks []peakRef
 	for _, c := range cycles {
 		row := CycleOverviewRow{
 			CycleID:    c.ID,
@@ -507,27 +544,31 @@ func (s *Store) QueryGeminiCycleOverview(modelID string, limit int) ([]CycleOver
 			return nil, fmt.Errorf("store.QueryGeminiCycleOverview: peak time: %w", err)
 		}
 		row.PeakTime = parsedPeakTime
+		overviewRows = append(overviewRows, row)
+		peaks = append(peaks, peakRef{rowIndex: len(overviewRows) - 1, snapshotID: snapshotID})
+	}
 
-		// Cross-model values at peak
-		qRows, err := s.db.Query(
-			`SELECT model_id, usage_percent FROM gemini_quota_values WHERE snapshot_id = ? ORDER BY model_id`,
-			snapshotID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("store.QueryGeminiCycleOverview: quota values: %w", err)
-		}
-		for qRows.Next() {
+	// Cross-model values at peak, loaded in batches.
+	ids := make([]int64, len(peaks))
+	for i, p := range peaks {
+		ids[i] = p.snapshotID
+	}
+	bySnapshot, err := loadSnapshotValuesBatched(s, ids,
+		"gemini_quota_values", "model_id, usage_percent", "model_id",
+		func(rows *sql.Rows) (int64, CrossQuotaEntry, error) {
+			var snapshotID int64
 			var entry CrossQuotaEntry
-			if err := qRows.Scan(&entry.Name, &entry.Percent); err != nil {
-				qRows.Close()
-				return nil, fmt.Errorf("store.QueryGeminiCycleOverview: scan quota: %w", err)
+			if err := rows.Scan(&snapshotID, &entry.Name, &entry.Percent); err != nil {
+				return 0, entry, err
 			}
 			entry.Value = entry.Percent
-			row.CrossQuotas = append(row.CrossQuotas, entry)
-		}
-		qRows.Close()
-
-		overviewRows = append(overviewRows, row)
+			return snapshotID, entry, nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("store.QueryGeminiCycleOverview: quota values: %w", err)
+	}
+	for _, p := range peaks {
+		overviewRows[p.rowIndex].CrossQuotas = bySnapshot[p.snapshotID]
 	}
 
 	return overviewRows, nil

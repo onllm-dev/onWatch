@@ -145,6 +145,28 @@ func (s *Store) QueryZaiRange(start, end time.Time, limit ...int) ([]*api.ZaiSna
 	if err != nil {
 		return nil, fmt.Errorf("failed to query zai range: %w", err)
 	}
+	return scanZaiSnapshotRows(rows)
+}
+
+// QueryZaiRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept).
+func (s *Store) QueryZaiRangeSampled(start, end time.Time) ([]*api.ZaiSnapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQuery("zai_snapshots", zaiSnapshotColumns),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled zai range: %w", err)
+	}
+	return scanZaiSnapshotRows(rows)
+}
+
+const zaiSnapshotColumns = `id, captured_at, time_limit, time_unit, time_number, time_usage,
+	 time_current_value, time_remaining, time_percentage, time_usage_details, time_limit_type, time_next_reset,
+	 tokens_limit, tokens_unit, tokens_number, tokens_usage,
+	 tokens_current_value, tokens_remaining, tokens_percentage, tokens_next_reset, tokens_limit_type`
+
+func scanZaiSnapshotRows(rows *sql.Rows) ([]*api.ZaiSnapshot, error) {
 	defer rows.Close()
 
 	var snapshots []*api.ZaiSnapshot

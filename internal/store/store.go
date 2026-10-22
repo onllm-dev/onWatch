@@ -1651,6 +1651,26 @@ func (s *Store) QueryRange(start, end time.Time, limit ...int) ([]*api.Snapshot,
 	if err != nil {
 		return nil, fmt.Errorf("failed to query range: %w", err)
 	}
+	return scanSyntheticSnapshotRows(rows)
+}
+
+// QueryRangeSampled returns at most about 200 snapshots spread evenly across
+// the range (first and last always kept). Chart callers downsample anyway;
+// sampling in SQL avoids loading every poll of a 30-day range.
+func (s *Store) QueryRangeSampled(start, end time.Time) ([]*api.Snapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQuery("quota_snapshots", `id, captured_at, sub_limit, sub_requests, sub_renews_at,
+		 search_limit, search_requests, search_renews_at,
+		 tool_limit, tool_requests, tool_renews_at`),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled range: %w", err)
+	}
+	return scanSyntheticSnapshotRows(rows)
+}
+
+func scanSyntheticSnapshotRows(rows *sql.Rows) ([]*api.Snapshot, error) {
 	defer rows.Close()
 
 	var snapshots []*api.Snapshot
@@ -2366,27 +2386,22 @@ func (s *Store) migrateAnthropicSessions(idleTimeout time.Duration) error {
 		return err
 	}
 
-	for _, snap := range snapshots {
-		// Load quota values for this snapshot
-		qRows, err := s.db.Query(
-			`SELECT quota_name, utilization FROM anthropic_quota_values WHERE snapshot_id = ? ORDER BY quota_name`,
-			snap.id,
-		)
-		if err != nil {
-			return err
-		}
+	// Load every snapshot's quota values in batches instead of one query per
+	// snapshot; this migration walks the whole table.
+	ids := make([]int64, len(snapshots))
+	for i, snap := range snapshots {
+		ids[i] = snap.id
+	}
+	valuesBySnapshot, err := loadQuotaUtilization(s, ids, "anthropic_quota_values")
+	if err != nil {
+		return fmt.Errorf("migrateAnthropicSessions: %w", err)
+	}
 
-		currentValues := make(map[string]float64)
-		for qRows.Next() {
-			var name string
-			var util float64
-			if err := qRows.Scan(&name, &util); err != nil {
-				qRows.Close()
-				return err
-			}
-			currentValues[name] = util
+	for _, snap := range snapshots {
+		currentValues := valuesBySnapshot[snap.id]
+		if currentValues == nil {
+			currentValues = make(map[string]float64)
 		}
-		qRows.Close()
 
 		// Determine if values changed
 		changed := false

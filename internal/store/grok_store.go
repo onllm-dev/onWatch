@@ -179,6 +179,32 @@ func (s *Store) QueryGrokRange(accountID int64, start, end time.Time, limit ...i
 	if err != nil {
 		return nil, fmt.Errorf("failed to query grok range: %w", err)
 	}
+	return scanGrokSnapshotRows(rows)
+}
+
+// QueryGrokRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept), with their quota values.
+// Snapshot ids are sampled first, then joined to their values, so the sample
+// is not skewed by how many quotas each snapshot carries.
+func (s *Store) QueryGrokRangeSampled(accountID int64, start, end time.Time) ([]*api.GrokSnapshot, error) {
+	if accountID == 0 {
+		accountID = DefaultGrokAccountID
+	}
+	query := `SELECT s.id, s.captured_at, s.email, s.team_id, s.login_method, s.raw_json, s.account_id,
+			v.quota_name, v.utilization, v.resets_at, v.status
+		FROM (` + windowChartQueryWhere("grok_snapshots",
+		"id, captured_at, email, team_id, login_method, raw_json, account_id", "account_id = ?") + `) s
+		LEFT JOIN grok_quota_values v ON v.snapshot_id = s.id
+		ORDER BY s.captured_at ASC, v.quota_name`
+	rows, err := s.db.Query(query,
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano), accountID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled grok range: %w", err)
+	}
+	return scanGrokSnapshotRows(rows)
+}
+
+func scanGrokSnapshotRows(rows *sql.Rows) ([]*api.GrokSnapshot, error) {
 	defer rows.Close()
 
 	var out []*api.GrokSnapshot

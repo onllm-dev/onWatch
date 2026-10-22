@@ -88,6 +88,23 @@ func (s *Store) QueryMoonshotRange(start, end time.Time, limit ...int) ([]*api.M
 	if err != nil {
 		return nil, fmt.Errorf("failed to query moonshot range: %w", err)
 	}
+	return scanMoonshotSnapshotRows(rows)
+}
+
+// QueryMoonshotRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept).
+func (s *Store) QueryMoonshotRangeSampled(start, end time.Time) ([]*api.MoonshotSnapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQuery("moonshot_snapshots", "id, captured_at, available_balance, voucher_balance, cash_balance"),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled moonshot range: %w", err)
+	}
+	return scanMoonshotSnapshotRows(rows)
+}
+
+func scanMoonshotSnapshotRows(rows *sql.Rows) ([]*api.MoonshotSnapshot, error) {
 	defer rows.Close()
 
 	var snapshots []*api.MoonshotSnapshot

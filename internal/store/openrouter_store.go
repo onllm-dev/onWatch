@@ -126,6 +126,24 @@ func (s *Store) QueryOpenRouterRange(start, end time.Time, limit ...int) ([]*api
 	if err != nil {
 		return nil, fmt.Errorf("failed to query openrouter range: %w", err)
 	}
+	return scanOpenRouterSnapshotRows(rows)
+}
+
+// QueryOpenRouterRangeSampled returns at most about 200 snapshots spread
+// evenly across the range (first and last always kept).
+func (s *Store) QueryOpenRouterRangeSampled(start, end time.Time) ([]*api.OpenRouterSnapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQuery("openrouter_snapshots", `id, captured_at, label, usage, usage_daily, usage_weekly, usage_monthly,
+		 credit_limit, limit_remaining, is_free_tier, rate_limit_requests, rate_limit_interval`),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled openrouter range: %w", err)
+	}
+	return scanOpenRouterSnapshotRows(rows)
+}
+
+func scanOpenRouterSnapshotRows(rows *sql.Rows) ([]*api.OpenRouterSnapshot, error) {
 	defer rows.Close()
 
 	var snapshots []*api.OpenRouterSnapshot
