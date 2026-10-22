@@ -202,6 +202,9 @@ type Handler struct {
 	// snapshots (tests of the wait budget). Production serves stale-while-
 	// revalidate.
 	menubarAlwaysWait bool
+	// responses caches dashboard aggregate responses until the provider they
+	// cover polls again (see response_cache.go).
+	responses *responseCache
 	// menubarLastRequest is the unix-nano time of the last menubar snapshot
 	// request; background prebuilds run only while a client is active.
 	menubarLastRequest atomic.Int64
@@ -841,6 +844,7 @@ func NewHandler(store *store.Store, tracker *tracker.Tracker, logger *slog.Logge
 	}
 
 	h := &Handler{
+		responses:     newResponseCache(),
 		store:         store,
 		tracker:       tracker,
 		logger:        logger,
@@ -4143,6 +4147,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 
 	if len(historyErrors) > 0 {
 		response["errors"] = historyErrors
+		w.Header().Set(partialResponseHeader, "1")
 	}
 
 	respondJSON(w, http.StatusOK, response)

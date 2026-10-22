@@ -39,7 +39,10 @@ func (h *Handler) SetPollStatusRegistry(r *agent.PollStatusRegistry) {
 	h.pollStatus = r
 	// Every poll outcome may change a card (new numbers, or a staleness
 	// reason), so it schedules a background snapshot rebuild.
-	r.SetOnPoll(h.scheduleMenubarPrebuild)
+	r.SetOnPoll(func(provider string) {
+		h.responses.notePoll(provider)
+		h.scheduleMenubarPrebuild()
+	})
 }
 
 // Capabilities returns runtime capabilities for the current build.

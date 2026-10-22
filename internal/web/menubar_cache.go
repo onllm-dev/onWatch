@@ -122,6 +122,9 @@ func (h *Handler) menubarNowTime() time.Time {
 // goroutine; that goroutine skips its queries or discards its result because
 // its generation no longer matches.
 func (h *Handler) invalidateMenubarSnapshot() {
+	// Every settings or provider-configuration write lands here, and the same
+	// writes reshape dashboard aggregates, so they drop those cached responses.
+	h.responses.invalidateAll()
 	h.menubarSnapshotMu.Lock()
 	h.menubarSnapshotGen++
 	h.menubarSnapshotAt = time.Time{}

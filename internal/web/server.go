@@ -61,7 +61,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/providers/toggle"), handler.ToggleProvider)
 	mux.HandleFunc(p("/api/providers/reload"), handler.ReloadProviders)
 	mux.HandleFunc(p("/api/current"), handler.Current)
-	mux.HandleFunc(p("/api/history"), handler.History)
+	mux.HandleFunc(p("/api/history"), handler.cachedGET(handler.History))
 	mux.HandleFunc(p("/api/cycles"), handler.Cycles)
 	mux.HandleFunc(p("/api/summary"), handler.Summary)
 	mux.HandleFunc(p("/api/capabilities"), handler.Capabilities)
@@ -73,7 +73,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/mistral/retry"), handler.RetryMistral)
 	mux.HandleFunc(p("/api/menubar/test"), handler.MenubarTest)
 	mux.HandleFunc(p("/api/sessions"), handler.Sessions)
-	mux.HandleFunc(p("/api/insights"), handler.Insights)
+	mux.HandleFunc(p("/api/insights"), handler.cachedGET(handler.Insights))
 	mux.HandleFunc(p("/api/settings"), func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			handler.UpdateSettings(w, r)
@@ -84,8 +84,8 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/settings/smtp/test"), handler.SMTPTest)
 	mux.HandleFunc(p("/api/settings/webhook/test"), handler.WebhookTest)
 	mux.HandleFunc(p("/api/password"), handler.ChangePassword)
-	mux.HandleFunc(p("/api/cycle-overview"), handler.CycleOverview)
-	mux.HandleFunc(p("/api/logging-history"), handler.LoggingHistory)
+	mux.HandleFunc(p("/api/cycle-overview"), handler.cachedGET(handler.CycleOverview))
+	mux.HandleFunc(p("/api/logging-history"), handler.cachedGET(handler.LoggingHistory))
 	mux.HandleFunc(p("/api/update/check"), handler.CheckUpdate)
 	mux.HandleFunc(p("/api/update/apply"), handler.ApplyUpdate)
 	mux.HandleFunc(p("/api/push/vapid"), handler.PushVAPIDKey)
