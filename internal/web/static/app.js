@@ -5228,7 +5228,7 @@ async function renderMultiAccountChart(provider, range, requestSeq) {
   const failed = histories.find(h => h.error);
   if (failed) {
     warnHistoryFailure(provider, range, failed.error, failed.status);
-    markHistoryFailureStale(provider, range, requestSeq);
+    markHistoryFailureStale(provider, range, requestSeq, null);
     return;
   }
 
@@ -6159,6 +6159,18 @@ function chartAccountLabel(provider) {
   return `Account ${id}`;
 }
 
+// chartAccountLabelFor names an explicit account id, for failures that belong
+// to a different account than the one the chart still shows.
+function chartAccountLabelFor(provider, account) {
+  if (account == null || account === 'all') return account === 'all' ? 'All accounts' : '';
+  const list = provider === 'codex'
+    ? (State.codexProfiles || [])
+    : (provider === 'minimax' ? (State.minimaxAccounts || []) : []);
+  const match = list.find(item => String(item.id) === String(account));
+  if (match) return match.name || match.accountName || `Account ${account}`;
+  return `Account ${account}`;
+}
+
 function chartProviderLabel(provider) {
   return bothProviderNames[provider] || toTitleCase(provider);
 }
@@ -6228,19 +6240,24 @@ function historyAgeLabel(epochMs) {
 }
 
 // markHistoryFailureStale keeps the drawn lines but marks them stale whenever
-// the request that failed is still the current one. A mismatch between the
-// drawn lines and the selection is extra context; the age of the retained data
-// is the primary reason. Failures from obsolete requests never touch the mark.
-function markHistoryFailureStale(provider, range, seq) {
+// the request that failed is still the current one. Currentness is judged
+// against the account the request was made for, not the account the chart
+// still shows: after an account switch the request is current and the retained
+// lines are not. A mismatch between the drawn lines and the selection is extra
+// context; the age of the retained data is the primary reason. Failures from
+// obsolete requests never touch the mark.
+function markHistoryFailureStale(provider, range, seq, requestAccount) {
   const rendered = State.chart && State.chart.renderKey;
   if (!rendered) return;
-  if (seq != null && !historyRequestIsCurrent(provider, rendered.account, range, seq)) return;
-  const account = chartAccountKey(provider);
+  const failedAccount = requestAccount != null ? requestAccount : chartAccountKey(provider);
+  if (seq != null && !historyRequestIsCurrent(provider, failedAccount, range, seq)) return;
   let reason = '';
   if (rendered.provider !== provider) {
     reason = `Showing ${chartProviderLabel(rendered.provider)} data - ${chartProviderLabel(provider)} failed to load`;
-  } else if (String(rendered.account == null ? '' : rendered.account) !== String(account == null ? '' : account)) {
-    reason = `Showing ${rendered.accountLabel || 'previous account'} data - account switch failed to load`;
+  } else if (String(rendered.account == null ? '' : rendered.account) !== String(failedAccount == null ? '' : failedAccount)) {
+    const shownLabel = rendered.accountLabel || 'previous account';
+    const failedLabel = chartAccountLabelFor(provider, failedAccount) || 'selected account';
+    reason = `Showing ${shownLabel} data - ${failedLabel} failed to load`;
   } else if (rendered.range !== range) {
     reason = `Showing ${rendered.range} data - ${range} failed to load`;
   }
@@ -6321,13 +6338,13 @@ async function fetchHistory(range) {
       const res = await authFetch(`${API_BASE}/api/api-integrations/history?range=${range}`);
       if (!res.ok) {
         warnHistoryFailure(requestProvider, range, `HTTP ${res.status}`, res.status);
-        markHistoryFailureStale(requestProvider, range, requestSeq);
+        markHistoryFailureStale(requestProvider, range, requestSeq, requestAccount);
         return;
       }
       const data = await res.json();
       if (!data || typeof data !== 'object' || data.error) {
         warnHistoryFailure(requestProvider, range, (data && data.error) || 'invalid body', res.status);
-        markHistoryFailureStale(requestProvider, range, requestSeq);
+        markHistoryFailureStale(requestProvider, range, requestSeq, requestAccount);
         return;
       }
 
@@ -6346,14 +6363,14 @@ async function fetchHistory(range) {
     const res = await authFetch(`${API_BASE}/api/history?range=${range}&${providerParam()}`);
     if (!res.ok) {
       warnHistoryFailure(requestProvider, range, `HTTP ${res.status}`, res.status);
-      markHistoryFailureStale(requestProvider, range, requestSeq);
+      markHistoryFailureStale(requestProvider, range, requestSeq, requestAccount);
       return;
     }
     const data = await res.json();
     const bodyError = historyBodyError(requestProvider, data);
     if (bodyError) {
       warnHistoryFailure(requestProvider, range, bodyError, res.status);
-      markHistoryFailureStale(requestProvider, range, requestSeq);
+      markHistoryFailureStale(requestProvider, range, requestSeq, requestAccount);
       return;
     }
 
@@ -6904,7 +6921,7 @@ async function fetchHistory(range) {
     recordChartRendered(provider, range);
   } catch (err) {
     warnHistoryFailure(requestProvider, range, err && err.message ? err.message : String(err), 0);
-    markHistoryFailureStale(requestProvider, range, requestSeq);
+    markHistoryFailureStale(requestProvider, range, requestSeq, requestAccount);
   }
 }
 
