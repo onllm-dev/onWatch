@@ -23,6 +23,11 @@ const shortWindowCycleCutoff = 5 * time.Minute
 // are adjacent, so any boundary this close belongs to the same window.
 const invertedMergeCutoff = 15 * time.Minute
 
+// shortWindowFoldCutoff bounds how far a folded churn row may drag its
+// successor's start. Churn cycles are adjacent by nature, so a larger gap
+// describes a different window and the successor keeps its own boundary.
+const shortWindowFoldCutoff = 5 * time.Minute
+
 type windowCycleRepairCounts struct {
 	InvertedMerged     int
 	InvertedClamped    int
@@ -335,6 +340,8 @@ func lastWindowSample(tx *sql.Tx, t windowCycleTables, c *windowCycleCandidate, 
 // churn row's statistics are discarded rather than folded forward: they were
 // seeded from the window that had already reset, so adding them would carry a
 // spurious peak into the real next window and double-count the predecessor.
+// A distant successor keeps its own start: its reset implies a real boundary
+// that the churn row does not describe.
 func foldShortWindowCycles(tx *sql.Tx, t windowCycleTables, candidates []*windowCycleCandidate, deleted map[int64]bool, counts *windowCycleRepairCounts) error {
 	for i, c := range candidates {
 		if deleted[c.id] || c.end == nil || c.resetsAt != nil {
@@ -347,16 +354,18 @@ func foldShortWindowCycles(tx *sql.Tx, t windowCycleTables, candidates []*window
 		if next == nil {
 			continue
 		}
-		if _, err := tx.Exec(
-			fmt.Sprintf(`UPDATE %s SET cycle_start = ? WHERE id = ?`, t.cycles),
-			c.start.Format(time.RFC3339Nano), next.id,
-		); err != nil {
-			return fmt.Errorf("fold short cycle into successor: %w", err)
+		if next.start.Sub(c.start) <= shortWindowFoldCutoff {
+			if _, err := tx.Exec(
+				fmt.Sprintf(`UPDATE %s SET cycle_start = ? WHERE id = ?`, t.cycles),
+				c.start.Format(time.RFC3339Nano), next.id,
+			); err != nil {
+				return fmt.Errorf("fold short cycle into successor: %w", err)
+			}
+			next.start = c.start
 		}
 		if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, t.cycles), c.id); err != nil {
 			return fmt.Errorf("delete short cycle: %w", err)
 		}
-		next.start = c.start
 		deleted[c.id] = true
 		counts.ShortFolded++
 	}

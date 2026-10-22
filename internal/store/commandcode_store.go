@@ -323,6 +323,20 @@ func (s *Store) UpdateCommandCodeCycleResetsAt(quotaName string, resetsAt *time.
 	return nil
 }
 
+// RestartCommandCodeCycle moves an open cycle to a new start and reset, used
+// when an idle window ended and the next session opens a separate window.
+func (s *Store) RestartCommandCodeCycle(quotaName string, cycleStart, resetsAt time.Time) error {
+	_, err := s.db.Exec(
+		`UPDATE commandcode_reset_cycles SET cycle_start = ?, peak_utilization = 0, total_delta = 0, resets_at = ?
+		WHERE quota_name = ? AND cycle_end IS NULL`,
+		cycleStart.Format(time.RFC3339Nano), resetsAt.Format(time.RFC3339Nano), quotaName,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to restart commandcode cycle: %w", err)
+	}
+	return nil
+}
+
 func scanCommandCodeCycle(rows *sql.Rows) (*CommandCodeResetCycle, error) {
 	var cycle CommandCodeResetCycle
 	var cycleStart string

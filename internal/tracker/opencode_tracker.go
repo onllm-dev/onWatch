@@ -120,7 +120,9 @@ func (t *OpenCodeTracker) processQuota(quota api.OpenCodeQuota, capturedAt time.
 	// windowRolloverGrace.
 	if predecessor := t.awaitingRolloverPredecessor(quotaName, cycle); predecessor != nil {
 		if capturedAt.Sub(cycle.CycleStart) < windowRolloverGrace {
-			dropped := currentUtil+2 < predecessor.PeakUtilization
+			// A low previous peak cannot prove a drop: seed the first sample
+			// anyway so usage in this window is not lost.
+			dropped := currentUtil+2 < predecessor.PeakUtilization || predecessor.PeakUtilization <= 2
 			if quota.ResetsAt != nil {
 				if err := t.store.UpdateOpenCodeCycleResetsAt(quotaName, quota.ResetsAt); err != nil {
 					return fmt.Errorf("failed to attach acknowledged reset: %w", err)

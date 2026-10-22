@@ -224,6 +224,44 @@ func TestRepairWindowResetCycles_PreservesStats(t *testing.T) {
 	}
 }
 
+// TestRepairWindowResetCycles_DoesNotMoveDistantWindowStart keeps churn folding
+// from dragging a real window's start back by tens of minutes. The churn row is
+// still removed; only the successor's start is left at its implied boundary.
+func TestRepairWindowResetCycles_DoesNotMoveDistantWindowStart(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	base := time.Now().UTC().Truncate(time.Second).Add(-6 * time.Hour)
+	start := base.Add(30*time.Minute + 9*time.Second)
+	reset := start.Add(5 * time.Hour)
+	mustCreateClosedCommandCodeCycle(t, s, api.CommandCodeQuotaFiveHour, start, start, nil, 0, 0)
+	if _, err := s.CreateCommandCodeCycle(api.CommandCodeQuotaFiveHour, start.Add(31*time.Minute), &reset); err != nil {
+		t.Fatalf("create successor: %v", err)
+	}
+
+	results, err := s.repairWindowResetCycles(windowCycleTableSet("commandcode"))
+	if err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	if results.ShortFolded != 1 {
+		t.Fatalf("shortFolded = %d, want the churn row removed", results.ShortFolded)
+	}
+	var got string
+	if err := s.db.QueryRow(
+		`SELECT cycle_start FROM commandcode_reset_cycles WHERE quota_name = ? AND cycle_end IS NULL`,
+		api.CommandCodeQuotaFiveHour,
+	).Scan(&got); err != nil {
+		t.Fatalf("read successor: %v", err)
+	}
+	gotAt, _ := time.Parse(time.RFC3339Nano, got)
+	if !gotAt.Equal(start.Add(31 * time.Minute)) {
+		t.Fatalf("successor start = %v, want the real window start %v", gotAt, start.Add(31*time.Minute))
+	}
+}
+
 // TestRepairWindowResetCycles_FoldsShortNullResetCycle covers the 1-minute
 // churn cycles with no reset, which cannot describe a window.
 func TestRepairWindowResetCycles_FoldsShortNullResetCycle(t *testing.T) {

@@ -420,19 +420,46 @@ func TestWindowAwaitingRolloverRestart(t *testing.T) {
 // TestWindowOpenCodeIdleExpiryDoesNotSpanDays covers an idle 5-hour window
 // that would otherwise stretch to the next session two days later.
 func TestWindowOpenCodeIdleExpiryDoesNotSpanDays(t *testing.T) {
-	h := newWindowHarness(t, "opencode")
-	now := time.Now().UTC().Truncate(time.Second)
-	sessionEnd := now.Add(5 * time.Minute)
-	h.run(t, resetStep{now, 10, &sessionEnd}, resetStep{sessionEnd.Add(10 * time.Minute), 0, nil})
-	later := sessionEnd.Add(48 * time.Hour)
-	r2 := later.Add(5 * time.Hour)
-	h.run(t, resetStep{later, 1, &r2})
-	start, reset, peak, _ := h.state(t)
-	if !start.Equal(later) || reset == nil || !reset.Equal(r2) || peak != 1 {
-		t.Fatalf("new session start=%v reset=%v peak=%v, want start %v, reset %v, peak 1", start, reset, peak, later, r2)
+	for _, provider := range []string{"commandcode", "opencode"} {
+		t.Run(provider, func(t *testing.T) {
+			h := newWindowHarness(t, provider)
+			now := time.Now().UTC().Truncate(time.Second)
+			sessionEnd := now.Add(5 * time.Minute)
+			// Idle after the reset: used 0 with no reset published at all.
+			h.run(t, resetStep{now, 10, &sessionEnd}, resetStep{sessionEnd.Add(10 * time.Minute), 0, nil})
+			later := sessionEnd.Add(48 * time.Hour)
+			r2 := later.Add(5 * time.Hour)
+			h.run(t, resetStep{later, 1, &r2})
+			start, reset, peak, _ := h.state(t)
+			if !start.Equal(later) || reset == nil || !reset.Equal(r2) || peak != 1 {
+				t.Fatalf("new session start=%v reset=%v peak=%v, want start %v, reset %v, peak 1", start, reset, peak, later, r2)
+			}
+			if h.resets != 1 {
+				t.Fatalf("resets = %d, want 1", h.resets)
+			}
+		})
 	}
-	if h.resets != 1 {
-		t.Fatalf("resets = %d, want 1", h.resets)
+}
+
+// TestWindowLowPeakRolloverDelta keeps usage spent shortly after a boundary
+// when the previous window barely registered any usage.
+func TestWindowLowPeakRolloverDelta(t *testing.T) {
+	for _, provider := range []string{"commandcode", "opencode"} {
+		t.Run(provider, func(t *testing.T) {
+			h := newWindowHarness(t, provider)
+			now := time.Now().UTC().Truncate(time.Second)
+			r := now.Add(time.Hour)
+			h.run(t,
+				resetStep{now, 1.5, &r},
+				resetStep{r.Add(3 * time.Minute), 1.5, &r},
+				resetStep{r.Add(4 * time.Minute), 0, nil},
+				resetStep{r.Add(5 * time.Minute), 30, nil},
+			)
+			_, _, peak, delta := h.state(t)
+			if peak != 30 || delta != 30 {
+				t.Fatalf("peak=%v delta=%v, want 30/30 after a low-peak predecessor", peak, delta)
+			}
+		})
 	}
 }
 

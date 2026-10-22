@@ -111,7 +111,9 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 	// windowRolloverGrace.
 	if predecessor := t.awaitingRolloverPredecessor(quotaName, cycle); predecessor != nil {
 		if capturedAt.Sub(cycle.CycleStart) < windowRolloverGrace {
-			dropped := currentUtil+2 < predecessor.PeakUtilization
+			// A low previous peak cannot prove a drop: seed the first sample
+			// anyway so usage in this window is not lost.
+			dropped := currentUtil+2 < predecessor.PeakUtilization || predecessor.PeakUtilization <= 2
 			if quota.ResetsAt != nil {
 				if err := t.store.UpdateCommandCodeCycleResetsAt(quotaName, quota.ResetsAt); err != nil {
 					return fmt.Errorf("failed to attach acknowledged reset: %w", err)
@@ -126,6 +128,19 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 			// side of the reset they belong to.
 			if err := t.store.UpdateCommandCodeCycle(quotaName, currentUtil, currentUtil); err != nil {
 				return fmt.Errorf("failed to seed acknowledged rollover: %w", err)
+			}
+			t.lastValues[quotaName] = currentUtil
+			return nil
+		}
+		if quota.ResetsAt != nil {
+			// The predecessor guarantees an empty cycle; an idle window waited
+			// past the grace period and the session that started now owns a
+			// fresh 5h cycle.
+			if err := t.store.RestartCommandCodeCycle(quotaName, capturedAt, *quota.ResetsAt); err != nil {
+				return fmt.Errorf("failed to restart idle cycle: %w", err)
+			}
+			if err := t.store.UpdateCommandCodeCycle(quotaName, currentUtil, 0); err != nil {
+				return fmt.Errorf("failed to seed restarted cycle: %w", err)
 			}
 			t.lastValues[quotaName] = currentUtil
 			return nil
