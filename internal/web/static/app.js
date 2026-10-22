@@ -660,11 +660,27 @@ function getCorrelatedKeys(key) {
   return related;
 }
 
+// One GET /api/settings per page load: init reads it for hidden insights, the
+// timezone and provider settings, which used to be three sequential round
+// trips before anything else could start. Any settings write clears it.
+let _settingsDataPromise = null;
+function getSettingsData() {
+  if (!_settingsDataPromise) {
+    _settingsDataPromise = authFetch(`${API_BASE}/api/settings`)
+      .then(res => (res.ok ? res.json() : null))
+      .catch(() => null);
+    _settingsDataPromise.then(data => { if (data === null) _settingsDataPromise = null; });
+  }
+  return _settingsDataPromise;
+}
+function invalidateSettingsData() {
+  _settingsDataPromise = null;
+}
+
 async function loadHiddenInsights() {
   try {
-    const res = await authFetch(`${API_BASE}/api/settings`);
-    if (res.ok) {
-      const data = await res.json();
+    const data = await getSettingsData();
+    if (data) {
       if (data.hidden_insights && Array.isArray(data.hidden_insights)) {
         State.hiddenInsights = new Set(data.hidden_insights);
       }
@@ -690,6 +706,7 @@ async function loadHiddenInsights() {
 
 async function saveHiddenInsights() {
   try {
+    invalidateSettingsData();
     await authFetch(`${API_BASE}/api/settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -3455,9 +3472,8 @@ async function initTimezoneBadge() {
 
 async function loadTimezoneFromAPI() {
   try {
-    const res = await authFetch(`${API_BASE}/api/settings`);
-    if (!res.ok) return;
-    const data = await res.json();
+    const data = await getSettingsData();
+    if (!data) return;
     activeTimezone = normalizeTz(data.timezone || '');
   } catch (e) {}
 }
@@ -3570,6 +3586,7 @@ async function selectTz(tz, picker, badge) {
   updateBadgeText(badge);
   if (picker) picker.remove();
   try {
+    invalidateSettingsData();
     await authFetch(`${API_BASE}/api/settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -11681,6 +11698,7 @@ function createAPIIntegrationsToggleRow(visibility, health) {
     const feedback = document.getElementById('settings-feedback');
     input.disabled = true;
     try {
+      invalidateSettingsData();
       const res = await authFetch(`${API_BASE}/api/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -12223,6 +12241,7 @@ async function saveProviderSettings() {
 
   try {
     const payload = { provider_settings: { [providerKey]: provData } };
+    invalidateSettingsData();
     const res = await authFetch(`${API_BASE}/api/settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -12527,6 +12546,7 @@ function setupSettingsSave() {
     }
 
     try {
+      invalidateSettingsData();
       const resp = await authFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -13386,9 +13406,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // dashboard view so live UI indicators (e.g. Auto-start badge) can read them
   // without depending on a prior visit to /settings.
   try {
-    const r = await authFetch(`${API_BASE}/api/settings`);
-    if (r.ok) {
-      const d = await r.json();
+    const d = await getSettingsData();
+    if (d) {
       State.providerSettings = d.provider_settings || {};
     }
   } catch (_) { /* non-critical: badges simply won't render until settings load */ }
