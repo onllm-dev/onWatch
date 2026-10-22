@@ -33,6 +33,16 @@ const (
 	responseCacheMaxAge     = 60 * time.Second
 	responseCacheMaxEntries = 128
 	responseCacheMaxBytes   = 8 << 20
+	// responseCacheMaxEntryBytes keeps one large answer (a 30-day logging
+	// history can exceed 10MB) from taking the whole budget; such responses
+	// are served uncached.
+	responseCacheMaxEntryBytes = 1 << 20
+
+	// responseCacheSettleDelay re-invalidates a provider after its poll.
+	// Agents publish the outcome just before writing the snapshot and
+	// updating cycles, so a request in that gap computes pre-poll data under
+	// the new generation; the second bump discards it once the write landed.
+	responseCacheSettleDelay = 3 * time.Second
 )
 
 type cachedResponse struct {
@@ -76,11 +86,17 @@ func combinedProvider(provider string) bool {
 	return provider == "" || provider == "both" || provider == "all"
 }
 
-// notePoll invalidates responses for one provider and the combined views.
+// notePoll invalidates responses for one provider and the combined views,
+// now and again after responseCacheSettleDelay.
 func (c *responseCache) notePoll(provider string) {
 	if c == nil {
 		return
 	}
+	c.bump(provider)
+	time.AfterFunc(responseCacheSettleDelay, func() { c.bump(provider) })
+}
+
+func (c *responseCache) bump(provider string) {
 	c.mu.Lock()
 	c.providerGen[provider]++
 	c.allGen++
@@ -126,6 +142,9 @@ func (c *responseCache) get(key, provider string) *cachedResponse {
 // put stores a response computed under the generations captured before the
 // handler ran, so a poll that lands mid-computation leaves it already stale.
 func (c *responseCache) put(key string, entry *cachedResponse) {
+	if len(entry.body) > responseCacheMaxEntryBytes {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if entry.globalGen != c.globalGen {
@@ -194,7 +213,7 @@ func (h *Handler) cachedGET(next http.HandlerFunc) http.HandlerFunc {
 		entry := &cachedResponse{
 			status:      status,
 			contentType: buf.header.Get("Content-Type"),
-			body:        buf.body.Bytes(),
+			body:        bytes.Clone(buf.body.Bytes()),
 			provider:    provider,
 			providerGen: providerGen,
 			allGen:      allGen,

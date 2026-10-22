@@ -11564,9 +11564,10 @@ func TestHandler_HistoryAntigravity_StoreError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/history?provider=antigravity&range=6h", nil)
 	rr := httptest.NewRecorder()
 	h.historyAntigravity(rr, req)
-	// historyAntigravity returns 200 with empty data on error (graceful degradation)
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rr.Code)
+	// A failed read is an error status like the other history endpoints: the
+	// dashboard keeps its last chart, and the response cache never stores it.
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rr.Code)
 	}
 }
 

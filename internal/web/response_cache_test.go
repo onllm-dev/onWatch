@@ -133,3 +133,41 @@ func TestResponseCacheNilIsPassThrough(t *testing.T) {
 	}
 	h.invalidateMenubarSnapshot()
 }
+
+func TestResponseCacheSkipsOversizedEntries(t *testing.T) {
+	h := &Handler{responses: newResponseCache()}
+	var calls int32
+	big := func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(make([]byte, responseCacheMaxEntryBytes+1))
+	}
+	cachedCall(h, big, "/api/logging-history?provider=codex&range=30")
+	cachedCall(h, big, "/api/logging-history?provider=codex&range=30")
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2: oversized responses must not be cached", calls)
+	}
+	if h.responses.bytes != 0 {
+		t.Fatalf("cache holds %d bytes, want 0", h.responses.bytes)
+	}
+}
+
+// A request computed between the poll outcome and the snapshot write is
+// discarded by the settle re-invalidation.
+func TestResponseCacheReinvalidatesAfterSettleDelay(t *testing.T) {
+	h := &Handler{responses: newResponseCache()}
+	var calls int32
+	next := countingHandler(&calls, false)
+
+	h.responses.notePoll("codex")
+	cachedCall(h, next, "/api/insights?provider=codex") // computed in the gap
+	cachedCall(h, next, "/api/insights?provider=codex")
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1 before the settle delay", calls)
+	}
+	time.Sleep(responseCacheSettleDelay + 300*time.Millisecond)
+	cachedCall(h, next, "/api/insights?provider=codex")
+	if calls != 2 {
+		t.Fatalf("calls = %d after the settle delay, want 2", calls)
+	}
+}

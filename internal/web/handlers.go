@@ -2846,7 +2846,9 @@ func (h *Handler) historyGrok(w http.ResponseWriter, r *http.Request) {
 	snaps, err := h.store.QueryGrokRangeSampled(store.DefaultGrokAccountID, now.Add(-duration), now)
 	if err != nil {
 		h.logger.Error("failed to query grok range for history", "error", err)
-		respondJSON(w, http.StatusOK, []interface{}{})
+		// An error status, not an empty 200: the dashboard keeps its last
+		// chart on a failed fetch, and the response cache never stores it.
+		respondError(w, http.StatusInternalServerError, "failed to load history")
 		return
 	}
 	// Drop snapshots without quota values - some grok polls store an empty
@@ -10296,10 +10298,7 @@ func (h *Handler) historyAntigravity(w http.ResponseWriter, r *http.Request) {
 	snapshots, err := h.store.QueryAntigravityRangeSampled(start, end)
 	if err != nil {
 		h.logger.Error("failed to query antigravity history", "error", err)
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"labels":   []string{},
-			"datasets": []interface{}{},
-		})
+		respondError(w, http.StatusInternalServerError, "failed to load history")
 		return
 	}
 

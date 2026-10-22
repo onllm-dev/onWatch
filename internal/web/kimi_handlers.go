@@ -169,7 +169,7 @@ func (h *Handler) historyKimi(w http.ResponseWriter, r *http.Request) {
 	snaps, err := h.store.QueryKimiRangeSampled(store.DefaultKimiAccountID, now.Add(-duration), now)
 	if err != nil {
 		h.logger.Error("failed to query kimi range for history", "error", err)
-		respondJSON(w, http.StatusOK, []interface{}{})
+		respondError(w, http.StatusInternalServerError, "failed to load history")
 		return
 	}
 	withQuotas := make([]*api.KimiSnapshot, 0, len(snaps))
