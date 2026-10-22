@@ -271,12 +271,13 @@ func repairInvertedWindowCycles(tx *sql.Tx, t windowCycleTables, candidates []*w
 
 // mergeIntoNextWindowCycle folds an adjacent inverted cycle into its successor
 // and moves the successor's start back to the earliest boundary, so the churn
-// samples end up inside a single window. Retained samples cannot reconstruct
-// lifetime statistics; merges preserve the stored maximum peak and summed delta.
+// samples end up inside a single window. The churn row's statistics are not
+// trustworthy: the delayed-rollover bug seeded them from the window that had
+// already reset, so the successor keeps its own peak and delta.
 func mergeIntoNextWindowCycle(tx *sql.Tx, t windowCycleTables, c, next *windowCycleCandidate, deleted map[int64]bool, counts *windowCycleRepairCounts) error {
 	if _, err := tx.Exec(
-		fmt.Sprintf(`UPDATE %s SET cycle_start = ?, peak_utilization = ?, total_delta = ? WHERE id = ?`, t.cycles),
-		c.start.Format(time.RFC3339Nano), max(c.peak, next.peak), c.delta+next.delta, next.id,
+		fmt.Sprintf(`UPDATE %s SET cycle_start = ? WHERE id = ?`, t.cycles),
+		c.start.Format(time.RFC3339Nano), next.id,
 	); err != nil {
 		return fmt.Errorf("merge inverted cycle: %w", err)
 	}
@@ -284,7 +285,6 @@ func mergeIntoNextWindowCycle(tx *sql.Tx, t windowCycleTables, c, next *windowCy
 		return fmt.Errorf("delete inverted cycle: %w", err)
 	}
 	next.start = c.start
-	next.peak, next.delta = max(c.peak, next.peak), c.delta+next.delta
 	deleted[c.id] = true
 	counts.InvertedMerged++
 	return nil
@@ -331,7 +331,10 @@ func lastWindowSample(tx *sql.Tx, t windowCycleTables, c *windowCycleCandidate, 
 }
 
 // foldShortWindowCycles deletes churn-length cycles that carry no reset and
-// hands their start to the successor, so the samples stay inside a window.
+// hands their start to the successor, so the samples stay inside a window. The
+// churn row's statistics are discarded rather than folded forward: they were
+// seeded from the window that had already reset, so adding them would carry a
+// spurious peak into the real next window and double-count the predecessor.
 func foldShortWindowCycles(tx *sql.Tx, t windowCycleTables, candidates []*windowCycleCandidate, deleted map[int64]bool, counts *windowCycleRepairCounts) error {
 	for i, c := range candidates {
 		if deleted[c.id] || c.end == nil || c.resetsAt != nil {
@@ -345,8 +348,8 @@ func foldShortWindowCycles(tx *sql.Tx, t windowCycleTables, candidates []*window
 			continue
 		}
 		if _, err := tx.Exec(
-			fmt.Sprintf(`UPDATE %s SET cycle_start = ?, peak_utilization = ?, total_delta = ? WHERE id = ?`, t.cycles),
-			c.start.Format(time.RFC3339Nano), max(c.peak, next.peak), c.delta+next.delta, next.id,
+			fmt.Sprintf(`UPDATE %s SET cycle_start = ? WHERE id = ?`, t.cycles),
+			c.start.Format(time.RFC3339Nano), next.id,
 		); err != nil {
 			return fmt.Errorf("fold short cycle into successor: %w", err)
 		}
@@ -354,7 +357,6 @@ func foldShortWindowCycles(tx *sql.Tx, t windowCycleTables, candidates []*window
 			return fmt.Errorf("delete short cycle: %w", err)
 		}
 		next.start = c.start
-		next.peak, next.delta = max(c.peak, next.peak), c.delta+next.delta
 		deleted[c.id] = true
 		counts.ShortFolded++
 	}

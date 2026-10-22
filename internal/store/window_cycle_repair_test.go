@@ -376,9 +376,9 @@ func TestRepairWindowResetCycles_StoredStatisticsAndCollapsedReset(t *testing.T)
 					t.Fatal(err)
 				}
 			}
-			insert("merge", base, base.Add(-time.Minute), &stale, 10, 3)
+			insert("merge", base, base.Add(-time.Minute), &stale, 100, 50)
 			insert("merge", base.Add(2*time.Minute), base.Add(time.Hour), &future, 30, 7)
-			insert("fold", base, base.Add(time.Minute), nil, 20, 8)
+			insert("fold", base, base.Add(time.Minute), nil, 100, 40)
 			insert("fold", base.Add(2*time.Minute), base.Add(time.Hour), &future, 15, 4)
 			insert("preserve", base, base.Add(time.Hour), &future, 100, 100)
 			insert("retained", base, base.Add(time.Hour), &future, 100, 100)
@@ -406,7 +406,7 @@ func TestRepairWindowResetCycles_StoredStatisticsAndCollapsedReset(t *testing.T)
 				quota       string
 				peak, delta float64
 			}{
-				{"merge", 30, 10}, {"fold", 20, 12}, {"preserve", 100, 100}, {"retained", 100, 100}, {"collapsed", 12, 9}, {"clamped", 13, 6},
+				{"merge", 30, 7}, {"fold", 15, 4}, {"preserve", 100, 100}, {"retained", 100, 100}, {"collapsed", 12, 9}, {"clamped", 13, 6},
 			} {
 				var peak, delta float64
 				var reset sql.NullString
