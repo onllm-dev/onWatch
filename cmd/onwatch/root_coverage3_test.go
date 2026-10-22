@@ -1492,6 +1492,10 @@ func runDaemonSubprocess(t *testing.T, env []string, waitMs int) {
 		cmd.Process.Kill()
 		<-done
 	}
+	// The child is gone, but on Windows a terminated process can still have a
+	// write in flight into its sandbox home. Empty that home here with retries
+	// so t.TempDir's cleanup does not fail with "directory is not empty".
+	cleanupDaemonSandbox(t, env)
 }
 
 // TestDaemonChildRun_DebugModeAntigravity starts a real daemon in debug mode
@@ -2138,6 +2142,7 @@ func TestDaemonize_ViaSubprocess(t *testing.T) {
 			}
 		}
 	}
+	cleanupDaemonSandbox(t, cmd.Env)
 }
 
 // TestDaemonChildRun_MigrateDBPath exercises the migrateDBLocation path (no explicit DB).
