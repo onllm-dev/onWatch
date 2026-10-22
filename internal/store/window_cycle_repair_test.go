@@ -2,14 +2,14 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
 )
 
-// insertRepairSnapshot stores one sample for a provider so the repair can
-// recompute peaks and deltas from real snapshot rows.
+// Repair samples deliberately disagree with stored lifetime statistics.
 func insertCommandCodeRepairSample(t *testing.T, s *Store, at time.Time, quota string, util float64, reset *time.Time) {
 	t.Helper()
 	snap := &api.CommandCodeSnapshot{
@@ -175,9 +175,8 @@ func TestRepairWindowResetCycles_MergesAdjacentChurn(t *testing.T) {
 	}
 }
 
-// TestRepairWindowResetCycles_RecomputesStats checks peak and positive-delta
-// recomputation over the samples actually inside the cycle.
-func TestRepairWindowResetCycles_RecomputesStats(t *testing.T) {
+// Retained samples are not evidence that stored lifetime statistics are wrong.
+func TestRepairWindowResetCycles_PreservesStats(t *testing.T) {
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -200,8 +199,8 @@ func TestRepairWindowResetCycles_RecomputesStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repair: %v", err)
 	}
-	if results.Recalculated != 1 {
-		t.Fatalf("recalculated = %d, want 1", results.Recalculated)
+	if results.total() != 0 {
+		t.Fatalf("non-structural repair changed rows: %+v", results)
 	}
 
 	var peak, delta float64
@@ -211,11 +210,8 @@ func TestRepairWindowResetCycles_RecomputesStats(t *testing.T) {
 	).Scan(&peak, &delta); err != nil {
 		t.Fatalf("read stats: %v", err)
 	}
-	if peak != 40 {
-		t.Fatalf("peak = %v, want 40 from inside the window", peak)
-	}
-	if delta != 35 { // 10->25 (+15), 25->20 (0), 20->40 (+20)
-		t.Fatalf("delta = %v, want 35", delta)
+	if peak != 90 || delta != 90 {
+		t.Fatalf("stored stats = %v/%v, want 90/90 despite disagreeing samples", peak, delta)
 	}
 
 	// A second pass changes nothing.
@@ -223,8 +219,8 @@ func TestRepairWindowResetCycles_RecomputesStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second repair: %v", err)
 	}
-	if again.Recalculated != 0 {
-		t.Fatalf("second pass recalculated %d cycles, want 0", again.Recalculated)
+	if again.total() != 0 {
+		t.Fatalf("second pass changed rows: %+v", again)
 	}
 }
 
@@ -354,6 +350,81 @@ func TestRepairWindowResetCycles_OnceFlagAndIdempotency(t *testing.T) {
 	ccAfter, ocAfter := snapshotCount()
 	if ccAfter != ccBefore || ocAfter != ocBefore {
 		t.Fatalf("snapshots changed: commandcode %d->%d, opencode %d->%d", ccBefore, ccAfter, ocBefore, ocAfter)
+	}
+}
+
+func TestRepairWindowResetCycles_StoredStatisticsAndCollapsedReset(t *testing.T) {
+	for _, provider := range []string{"commandcode", "opencode"} {
+		t.Run(provider, func(t *testing.T) {
+			s, err := New(":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			tables := windowCycleTableSet(provider)
+			base := time.Now().UTC().Truncate(time.Second).Add(-10 * time.Hour)
+			future := base.Add(5 * time.Hour)
+			stale := base.Add(-time.Hour)
+			insert := func(quota string, start, end time.Time, reset *time.Time, peak, delta float64) {
+				t.Helper()
+				var r interface{}
+				if reset != nil {
+					r = reset.Format(time.RFC3339Nano)
+				}
+				_, err := s.db.Exec(fmt.Sprintf(`INSERT INTO %s (quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta) VALUES (?, ?, ?, ?, ?, ?)`, tables.cycles), quota, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano), r, peak, delta)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			insert("merge", base, base.Add(-time.Minute), &stale, 10, 3)
+			insert("merge", base.Add(2*time.Minute), base.Add(time.Hour), &future, 30, 7)
+			insert("fold", base, base.Add(time.Minute), nil, 20, 8)
+			insert("fold", base.Add(2*time.Minute), base.Add(time.Hour), &future, 15, 4)
+			insert("preserve", base, base.Add(time.Hour), &future, 100, 100)
+			insert("retained", base, base.Add(time.Hour), &future, 100, 100)
+			insert("collapsed", base, base, &stale, 12, 9)
+			insert("clamped", base, base.Add(-time.Minute), &stale, 13, 6)
+			for _, quota := range []string{"merge", "fold", "preserve", "retained"} {
+				if provider == "commandcode" {
+					if quota != "retained" {
+						insertCommandCodeRepairSample(t, s, base.Add(time.Minute), quota, 99, &future)
+					}
+					insertCommandCodeRepairSample(t, s, base.Add(45*time.Minute), quota, 0, &future)
+					insertCommandCodeRepairSample(t, s, base.Add(time.Hour), quota, 99, &future)
+				} else {
+					if quota != "retained" {
+						insertOpenCodeRepairSample(t, s, base.Add(time.Minute), quota, 99, &future)
+					}
+					insertOpenCodeRepairSample(t, s, base.Add(45*time.Minute), quota, 0, &future)
+					insertOpenCodeRepairSample(t, s, base.Add(time.Hour), quota, 99, &future)
+				}
+			}
+			if _, err := s.repairWindowResetCycles(tables); err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []struct {
+				quota       string
+				peak, delta float64
+			}{
+				{"merge", 30, 10}, {"fold", 20, 12}, {"preserve", 100, 100}, {"retained", 100, 100}, {"collapsed", 12, 9}, {"clamped", 13, 6},
+			} {
+				var peak, delta float64
+				var reset sql.NullString
+				if err := s.db.QueryRow(fmt.Sprintf(`SELECT peak_utilization, total_delta, resets_at FROM %s WHERE quota_name = ?`, tables.cycles), want.quota).Scan(&peak, &delta, &reset); err != nil {
+					t.Fatal(err)
+				}
+				if peak != want.peak || delta != want.delta {
+					t.Fatalf("%s stats=%v/%v want %v/%v", want.quota, peak, delta, want.peak, want.delta)
+				}
+				if (want.quota == "collapsed" || want.quota == "clamped") && reset.Valid {
+					t.Fatalf("%s stale reset was not cleared", want.quota)
+				}
+			}
+			again, err := s.repairWindowResetCycles(tables)
+			if err != nil || again.total() != 0 {
+				t.Fatalf("second pass=%+v err=%v", again, err)
+			}
+		})
 	}
 }
 

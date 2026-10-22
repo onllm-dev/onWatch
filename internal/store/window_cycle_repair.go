@@ -27,12 +27,12 @@ type windowCycleRepairCounts struct {
 	InvertedMerged     int
 	InvertedClamped    int
 	ShortFolded        int
-	Recalculated       int
+	ClosedResetCleared int
 	ActiveResetCleared int
 }
 
 func (c windowCycleRepairCounts) total() int {
-	return c.InvertedMerged + c.InvertedClamped + c.ShortFolded + c.Recalculated + c.ActiveResetCleared
+	return c.InvertedMerged + c.InvertedClamped + c.ShortFolded + c.ActiveResetCleared + c.ClosedResetCleared
 }
 
 // windowCycleTables describes the two provider tables sharing this shape.
@@ -92,8 +92,8 @@ func (s *Store) RepairWindowResetCyclesIfNeeded(logger *slog.Logger) error {
 			"invertedMerged", counts.InvertedMerged,
 			"invertedClamped", counts.InvertedClamped,
 			"shortFolded", counts.ShortFolded,
-			"recalculated", counts.Recalculated,
 			"activeResetCleared", counts.ActiveResetCleared,
+			"closedResetCleared", counts.ClosedResetCleared,
 		)
 	}
 
@@ -141,10 +141,19 @@ func (s *Store) repairWindowResetCycles(t windowCycleTables) (windowCycleRepairC
 	if err := repairInvertedWindowCycles(tx, t, candidates, deleted, &counts); err != nil {
 		return counts, err
 	}
-	if err := foldShortWindowCycles(tx, t, candidates, deleted, &counts); err != nil {
-		return counts, err
+	// A collapsed row has no useful reset boundary. Clear it before the normal
+	// NULL-reset churn folding, retaining the row if no successor exists.
+	for _, c := range candidates {
+		if deleted[c.id] || c.end == nil || !c.end.Equal(c.start) || c.resetsAt == nil || c.resetsAt.After(c.start) {
+			continue
+		}
+		if _, err := tx.Exec(fmt.Sprintf(`UPDATE %s SET resets_at = NULL WHERE id = ?`, t.cycles), c.id); err != nil {
+			return counts, fmt.Errorf("clear collapsed cycle reset: %w", err)
+		}
+		c.resetsAt = nil
+		counts.ClosedResetCleared++
 	}
-	if err := recalculateWindowCycleStats(tx, t, candidates, deleted, &counts); err != nil {
+	if err := foldShortWindowCycles(tx, t, candidates, deleted, &counts); err != nil {
 		return counts, err
 	}
 	if err := clearStaleActiveWindowResets(tx, t, &counts); err != nil {
@@ -262,11 +271,12 @@ func repairInvertedWindowCycles(tx *sql.Tx, t windowCycleTables, candidates []*w
 
 // mergeIntoNextWindowCycle folds an adjacent inverted cycle into its successor
 // and moves the successor's start back to the earliest boundary, so the churn
-// samples end up inside a single window.
+// samples end up inside a single window. Retained samples cannot reconstruct
+// lifetime statistics; merges preserve the stored maximum peak and summed delta.
 func mergeIntoNextWindowCycle(tx *sql.Tx, t windowCycleTables, c, next *windowCycleCandidate, deleted map[int64]bool, counts *windowCycleRepairCounts) error {
 	if _, err := tx.Exec(
-		fmt.Sprintf(`UPDATE %s SET cycle_start = ? WHERE id = ? AND julianday(cycle_start) > julianday(?)`, t.cycles),
-		c.start.Format(time.RFC3339Nano), next.id, c.start.Format(time.RFC3339Nano),
+		fmt.Sprintf(`UPDATE %s SET cycle_start = ?, peak_utilization = ?, total_delta = ? WHERE id = ?`, t.cycles),
+		c.start.Format(time.RFC3339Nano), max(c.peak, next.peak), c.delta+next.delta, next.id,
 	); err != nil {
 		return fmt.Errorf("merge inverted cycle: %w", err)
 	}
@@ -274,6 +284,7 @@ func mergeIntoNextWindowCycle(tx *sql.Tx, t windowCycleTables, c, next *windowCy
 		return fmt.Errorf("delete inverted cycle: %w", err)
 	}
 	next.start = c.start
+	next.peak, next.delta = max(c.peak, next.peak), c.delta+next.delta
 	deleted[c.id] = true
 	counts.InvertedMerged++
 	return nil
@@ -334,8 +345,8 @@ func foldShortWindowCycles(tx *sql.Tx, t windowCycleTables, candidates []*window
 			continue
 		}
 		if _, err := tx.Exec(
-			fmt.Sprintf(`UPDATE %s SET cycle_start = ? WHERE id = ?`, t.cycles),
-			c.start.Format(time.RFC3339Nano), next.id,
+			fmt.Sprintf(`UPDATE %s SET cycle_start = ?, peak_utilization = ?, total_delta = ? WHERE id = ?`, t.cycles),
+			c.start.Format(time.RFC3339Nano), max(c.peak, next.peak), c.delta+next.delta, next.id,
 		); err != nil {
 			return fmt.Errorf("fold short cycle into successor: %w", err)
 		}
@@ -343,94 +354,11 @@ func foldShortWindowCycles(tx *sql.Tx, t windowCycleTables, candidates []*window
 			return fmt.Errorf("delete short cycle: %w", err)
 		}
 		next.start = c.start
+		next.peak, next.delta = max(c.peak, next.peak), c.delta+next.delta
 		deleted[c.id] = true
 		counts.ShortFolded++
 	}
 	return nil
-}
-
-// recalculateWindowCycleStats recomputes peak and delta from the samples that
-// fall inside each closed cycle. Cycles with no retained samples are left
-// alone; derived values are only written when they actually differ. The active
-// cycle is skipped: the tracker owns its running totals.
-func recalculateWindowCycleStats(tx *sql.Tx, t windowCycleTables, candidates []*windowCycleCandidate, deleted map[int64]bool, counts *windowCycleRepairCounts) error {
-	for _, c := range candidates {
-		if deleted[c.id] || c.end == nil {
-			continue
-		}
-
-		var samples int
-		var peak float64
-		err := tx.QueryRow(fmt.Sprintf(`
-			SELECT COUNT(*), COALESCE(MAX(qv.utilization), 0)
-			FROM %s qv
-			JOIN %s s ON s.id = qv.snapshot_id
-			WHERE qv.quota_name = ? AND julianday(s.captured_at) >= julianday(?)%s`,
-			t.quotaValues, t.snapshots, windowCycleEndClause(c)),
-			append([]interface{}{c.quota, c.start.Format(time.RFC3339Nano)}, windowCycleEndArgs(c)...)...,
-		).Scan(&samples, &peak)
-		if err != nil {
-			return fmt.Errorf("aggregate cycle stats: %w", err)
-		}
-		if samples == 0 {
-			// Retention may have removed every sample behind this cycle.
-			continue
-		}
-
-		delta, err := windowCycleDelta(tx, t, c)
-		if err != nil {
-			return err
-		}
-		if peak == c.peak && delta == c.delta {
-			continue
-		}
-		if _, err := tx.Exec(
-			fmt.Sprintf(`UPDATE %s SET peak_utilization = ?, total_delta = ? WHERE id = ?`, t.cycles),
-			peak, delta, c.id,
-		); err != nil {
-			return fmt.Errorf("update cycle stats: %w", err)
-		}
-		c.peak, c.delta = peak, delta
-		counts.Recalculated++
-	}
-	return nil
-}
-
-// windowCycleEndClause and windowCycleEndArgs keep the open-ended active cycle
-// in the same query shape as closed ones.
-func windowCycleEndClause(c *windowCycleCandidate) string {
-	if c.end == nil {
-		return ""
-	}
-	return " AND julianday(s.captured_at) < julianday(?)"
-}
-
-func windowCycleEndArgs(c *windowCycleCandidate) []interface{} {
-	if c.end == nil {
-		return nil
-	}
-	return []interface{}{c.end.Format(time.RFC3339Nano)}
-}
-
-// windowCycleDelta sums positive consecutive increases over the cycle's
-// samples. LAG keeps the walk inside SQLite instead of materialising rows.
-func windowCycleDelta(tx *sql.Tx, t windowCycleTables, c *windowCycleCandidate) (float64, error) {
-	query := fmt.Sprintf(`
-		SELECT COALESCE(SUM(CASE WHEN u > prev THEN u - prev ELSE 0 END), 0)
-		FROM (
-			SELECT qv.utilization AS u,
-			       LAG(qv.utilization) OVER (ORDER BY s.captured_at ASC, s.id ASC) AS prev
-			FROM %s qv
-			JOIN %s s ON s.id = qv.snapshot_id
-			WHERE qv.quota_name = ? AND julianday(s.captured_at) >= julianday(?)%s
-		)`, t.quotaValues, t.snapshots, windowCycleEndClause(c))
-
-	args := append([]interface{}{c.quota, c.start.Format(time.RFC3339Nano)}, windowCycleEndArgs(c)...)
-	var delta float64
-	if err := tx.QueryRow(query, args...).Scan(&delta); err != nil {
-		return 0, fmt.Errorf("compute cycle delta: %w", err)
-	}
-	return delta, nil
 }
 
 func clearStaleActiveWindowResets(tx *sql.Tx, t windowCycleTables, counts *windowCycleRepairCounts) error {
