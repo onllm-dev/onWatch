@@ -1,7 +1,9 @@
 package tracker
 
 import (
+	"fmt"
 	"math"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -162,6 +164,106 @@ func TestWindowStaleStaleStaleFreshFresh(t *testing.T) {
 			t.Fatalf("active resets_at = %v, want the fresh reset %v attached", active.ResetsAt, fresh)
 		}
 	})
+}
+
+func TestWindowDelayedRollover(t *testing.T) {
+	for _, restart := range []bool{false, true} {
+		t.Run(fmt.Sprintf("restart=%t", restart), func(t *testing.T) {
+			for _, provider := range []string{"commandcode", "opencode"} {
+				t.Run(provider, func(t *testing.T) {
+					path := filepath.Join(t.TempDir(), "cycles.db")
+					s, err := store.New(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { s.Close() })
+					resets := 0
+					var process func(time.Time, float64, *time.Time) error
+					newTracker := func() {
+						if provider == "commandcode" {
+							tr := NewCommandCodeTracker(s, nil)
+							tr.SetOnReset(func(string) { resets++ })
+							process = func(at time.Time, u float64, r *time.Time) error { return tr.Process(commandCodeSnapshotAt(at, u, r)) }
+						} else {
+							tr := NewOpenCodeTracker(s, nil)
+							tr.SetOnReset(func(string) { resets++ })
+							process = func(at time.Time, u float64, r *time.Time) error { return tr.Process(openCodeSnapshotAt(at, u, r)) }
+						}
+					}
+					newTracker()
+					now := time.Now().UTC().Truncate(time.Second)
+					r := now.Add(time.Hour)
+					future := r.Add(5 * time.Hour)
+					for _, at := range []time.Time{now, r.Add(3 * time.Minute)} {
+						if err := process(at, 100, &r); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if provider == "commandcode" {
+						a, err := s.QueryActiveCommandCodeCycle(api.CommandCodeQuotaFiveHour)
+						if err != nil || a == nil || a.PeakUtilization != 0 || a.ResetsAt != nil || !a.CycleStart.Equal(r) {
+							t.Fatalf("awaiting cycle=%+v err=%v", a, err)
+						}
+					} else {
+						a, err := s.QueryActiveOpenCodeCycle("weekly")
+						if err != nil || a == nil || a.PeakUtilization != 0 || a.ResetsAt != nil || !a.CycleStart.Equal(r) {
+							t.Fatalf("awaiting cycle=%+v err=%v", a, err)
+						}
+					}
+					reopen := func() {
+						if err := s.Close(); err != nil {
+							t.Fatal(err)
+						}
+						s, err = store.New(path)
+						if err != nil {
+							t.Fatal(err)
+						}
+						newTracker()
+					}
+					if restart {
+						reopen()
+					}
+					if err := process(r.Add(4*time.Minute), 100, &r); err != nil {
+						t.Fatal(err)
+					}
+					if restart {
+						reopen()
+					}
+					if err := process(r.Add(5*time.Minute), 0, &future); err != nil {
+						t.Fatal(err)
+					}
+					if err := process(r.Add(6*time.Minute), 4, &future); err != nil {
+						t.Fatal(err)
+					}
+					if provider == "commandcode" {
+						h, err := s.QueryCommandCodeCycleHistory(api.CommandCodeQuotaFiveHour)
+						if err != nil {
+							t.Fatal(err)
+						}
+						a, err := s.QueryActiveCommandCodeCycle(api.CommandCodeQuotaFiveHour)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if len(h) != 1 || resets != 1 || h[0].PeakUtilization != 100 || a == nil || a.PeakUtilization != 4 || a.TotalDelta != 4 || a.ResetsAt == nil || !a.ResetsAt.Equal(future) {
+							t.Fatalf("closed=%+v resets=%d active=%+v", h, resets, a)
+						}
+					} else {
+						h, err := s.QueryOpenCodeCycleHistory("weekly")
+						if err != nil {
+							t.Fatal(err)
+						}
+						a, err := s.QueryActiveOpenCodeCycle("weekly")
+						if err != nil {
+							t.Fatal(err)
+						}
+						if len(h) != 1 || resets != 1 || h[0].PeakUtilization != 100 || a == nil || a.PeakUtilization != 4 || a.TotalDelta != 4 || a.ResetsAt == nil || !a.ResetsAt.Equal(future) {
+							t.Fatalf("closed=%+v resets=%d active=%+v", h, resets, a)
+						}
+					}
+				})
+			}
+		})
+	}
 }
 
 type cycleBound struct {

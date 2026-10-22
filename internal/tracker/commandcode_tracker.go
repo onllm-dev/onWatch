@@ -105,6 +105,29 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 		cycle.ResetsAt = nil
 	}
 
+	// Time-only rollover opens at the old boundary with no reset or statistics.
+	// The matching predecessor makes this state restart-safe without a column.
+	if cycle.ResetsAt == nil && cycle.PeakUtilization == 0 && cycle.TotalDelta == 0 {
+		history, err := t.store.QueryCommandCodeCycleHistory(quotaName, 1)
+		if err != nil {
+			return fmt.Errorf("failed to query rollover predecessor: %w", err)
+		}
+		if len(history) == 1 && history[0].CycleEnd != nil && history[0].ResetsAt != nil &&
+			history[0].CycleEnd.Equal(cycle.CycleStart) && history[0].ResetsAt.Equal(cycle.CycleStart) {
+			if quota.ResetsAt == nil {
+				return nil // The API has not acknowledged the boundary yet.
+			}
+			if err := t.store.UpdateCommandCodeCycle(quotaName, currentUtil, 0); err != nil {
+				return fmt.Errorf("failed to seed acknowledged rollover: %w", err)
+			}
+			if err := t.store.UpdateCommandCodeCycleResetsAt(quotaName, quota.ResetsAt); err != nil {
+				return fmt.Errorf("failed to attach acknowledged reset: %w", err)
+			}
+			t.lastValues[quotaName] = currentUtil
+			return nil
+		}
+	}
+
 	resetDetected := false
 	resetReason := ""
 	storedResetPassed := cycle.ResetsAt != nil && capturedAt.After(cycle.ResetsAt.Add(2*time.Minute))
@@ -153,10 +176,15 @@ func (t *CommandCodeTracker) processQuota(quota api.CommandCodeQuota, capturedAt
 		if err := t.store.CloseCommandCodeCycle(quotaName, cycleEndTime, cycle.PeakUtilization, cycle.TotalDelta); err != nil {
 			return fmt.Errorf("failed to close cycle: %w", err)
 		}
-		if _, err := t.store.CreateCommandCodeCycle(quotaName, capturedAt, nextWindowReset(quota.ResetsAt, capturedAt)); err != nil {
+		newStart, initialUtil := capturedAt, currentUtil
+		if storedResetPassed && !currentResetIsFuture {
+			// Do not assign a possibly pre-reset sample to the new window.
+			newStart, initialUtil = cycleEndTime, 0
+		}
+		if _, err := t.store.CreateCommandCodeCycle(quotaName, newStart, nextWindowReset(quota.ResetsAt, capturedAt)); err != nil {
 			return fmt.Errorf("failed to create new cycle: %w", err)
 		}
-		if err := t.store.UpdateCommandCodeCycle(quotaName, currentUtil, 0); err != nil {
+		if err := t.store.UpdateCommandCodeCycle(quotaName, initialUtil, 0); err != nil {
 			return fmt.Errorf("failed to set initial peak: %w", err)
 		}
 
