@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
@@ -181,8 +182,60 @@ func (s *Store) QueryAntigravityRange(start, end time.Time, limit ...int) ([]*ap
 	if err != nil {
 		return nil, fmt.Errorf("failed to query antigravity range: %w", err)
 	}
-	defer rows.Close()
+	snapshots, err := scanAntigravitySnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachAntigravityModels(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
 
+// QueryAntigravityRangeSampled returns at most about 200 snapshots spread evenly
+// across the range (first and last always kept), with their model values. Chart
+// callers downsample anyway; sampling in SQL avoids loading every poll of a
+// 30-day range and its per-model rows into memory.
+func (s *Store) QueryAntigravityRangeSampled(start, end time.Time) ([]*api.AntigravitySnapshot, error) {
+	rows, err := s.db.Query(
+		windowChartQuery("antigravity_snapshots", "id, captured_at, email, plan_name, prompt_credits, monthly_credits, model_count"),
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sampled antigravity range: %w", err)
+	}
+	snapshots, err := scanAntigravitySnapshotRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachAntigravityModels(snapshots); err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
+
+// QueryAntigravityRangeStats returns the poll count and the first and last
+// capture times in a range without loading any snapshot rows.
+func (s *Store) QueryAntigravityRangeStats(start, end time.Time) (count int, first, last time.Time, err error) {
+	var firstRaw, lastRaw sql.NullString
+	err = s.db.QueryRow(
+		`SELECT COUNT(*), MIN(captured_at), MAX(captured_at) FROM antigravity_snapshots WHERE captured_at BETWEEN ? AND ?`,
+		start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano),
+	).Scan(&count, &firstRaw, &lastRaw)
+	if err != nil {
+		return 0, time.Time{}, time.Time{}, fmt.Errorf("failed to query antigravity range stats: %w", err)
+	}
+	if firstRaw.Valid {
+		first, _ = time.Parse(time.RFC3339Nano, firstRaw.String)
+	}
+	if lastRaw.Valid {
+		last, _ = time.Parse(time.RFC3339Nano, lastRaw.String)
+	}
+	return count, first, last, nil
+}
+
+func scanAntigravitySnapshotRows(rows *sql.Rows) ([]*api.AntigravitySnapshot, error) {
+	defer rows.Close()
 	var snapshots []*api.AntigravitySnapshot
 	for rows.Next() {
 		var snap api.AntigravitySnapshot
@@ -209,40 +262,60 @@ func (s *Store) QueryAntigravityRange(start, end time.Time, limit ...int) ([]*ap
 		}
 		snapshots = append(snapshots, &snap)
 	}
+	return snapshots, rows.Err()
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+// antigravityModelBatch bounds the IN list per query, well under SQLite's
+// variable limit.
+const antigravityModelBatch = 400
 
-	// Load model values for each snapshot
+// attachAntigravityModels loads model values for the snapshots in batches of
+// IN-list queries instead of one query per snapshot.
+func (s *Store) attachAntigravityModels(snapshots []*api.AntigravitySnapshot) error {
+	byID := make(map[int64]*api.AntigravitySnapshot, len(snapshots))
 	for _, snap := range snapshots {
+		byID[snap.ID] = snap
+	}
+	for offset := 0; offset < len(snapshots); offset += antigravityModelBatch {
+		batch := snapshots[offset:min(offset+antigravityModelBatch, len(snapshots))]
+		args := make([]interface{}, len(batch))
+		for i, snap := range batch {
+			args[i] = snap.ID
+		}
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
 		mRows, err := s.db.Query(
-			`SELECT model_id, label, remaining_fraction, remaining_percent, is_exhausted, reset_time
-			FROM antigravity_model_values WHERE snapshot_id = ? ORDER BY model_id`,
-			snap.ID,
+			`SELECT snapshot_id, model_id, label, remaining_fraction, remaining_percent, is_exhausted, reset_time
+			FROM antigravity_model_values WHERE snapshot_id IN (`+placeholders+`) ORDER BY snapshot_id, model_id`,
+			args...,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to query antigravity model values for snapshot %d: %w", snap.ID, err)
+			return fmt.Errorf("failed to query antigravity model values: %w", err)
 		}
 		for mRows.Next() {
+			var snapshotID int64
 			var m api.AntigravityModelQuota
 			var exhausted int
 			var resetTime sql.NullString
-			if err := mRows.Scan(&m.ModelID, &m.Label, &m.RemainingFraction, &m.RemainingPercent, &exhausted, &resetTime); err != nil {
+			if err := mRows.Scan(&snapshotID, &m.ModelID, &m.Label, &m.RemainingFraction, &m.RemainingPercent, &exhausted, &resetTime); err != nil {
 				mRows.Close()
-				return nil, fmt.Errorf("failed to scan antigravity model value: %w", err)
+				return fmt.Errorf("failed to scan antigravity model value: %w", err)
 			}
 			m.IsExhausted = exhausted == 1
 			if resetTime.Valid && resetTime.String != "" {
 				t, _ := time.Parse(time.RFC3339Nano, resetTime.String)
 				m.ResetTime = &t
 			}
-			snap.Models = append(snap.Models, m)
+			if snap := byID[snapshotID]; snap != nil {
+				snap.Models = append(snap.Models, m)
+			}
 		}
+		err = mRows.Err()
 		mRows.Close()
+		if err != nil {
+			return fmt.Errorf("failed reading antigravity model values: %w", err)
+		}
 	}
-
-	return snapshots, nil
+	return nil
 }
 
 // CreateAntigravityCycle creates a new Antigravity reset cycle.
@@ -406,7 +479,7 @@ func (s *Store) QueryAntigravityHistory(start, end time.Time) ([]*api.Antigravit
 // QueryAllAntigravityModelIDs returns all distinct model IDs from Antigravity model values.
 func (s *Store) QueryAllAntigravityModelIDs() ([]string, error) {
 	rows, err := s.db.Query(
-		`SELECT DISTINCT model_id FROM antigravity_model_values ORDER BY model_id`,
+		skipScanDistinctSQL("antigravity_model_values", "model_id"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query antigravity model IDs: %w", err)
@@ -556,11 +629,17 @@ func (s *Store) QueryAntigravityCycleOverview(groupBy string, limit int) ([]Cycl
 
 func (s *Store) QueryAntigravityModelIDsForGroup(groupKey string) ([]string, error) {
 	groupKey = api.NormalizeAntigravityQuotaGroup(groupKey)
+	// Skip-scan the model IDs and take each model's latest label (both through
+	// the model_id indexes) instead of a DISTINCT over every value row.
 	rows, err := s.db.Query(
-		`SELECT DISTINCT mv.model_id, mv.label
-		 FROM antigravity_model_values mv
-		 WHERE mv.model_id != ''
-		 ORDER BY mv.model_id`,
+		`WITH RECURSIVE d(v) AS (
+			SELECT MIN(model_id) FROM antigravity_model_values WHERE model_id > ''
+			UNION ALL
+			SELECT (SELECT MIN(model_id) FROM antigravity_model_values WHERE model_id > d.v) FROM d WHERE d.v IS NOT NULL
+		)
+		SELECT d.v, COALESCE((SELECT label FROM antigravity_model_values
+			WHERE model_id = d.v ORDER BY snapshot_id DESC LIMIT 1), '')
+		FROM d WHERE d.v IS NOT NULL`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query antigravity model IDs by group: %w", err)

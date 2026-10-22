@@ -705,7 +705,7 @@ func (s *Store) QueryCodexCycleOverview(accountID int64, groupBy string, limit i
 // QueryAllCodexQuotaNames returns all distinct quota names from Codex quota values.
 func (s *Store) QueryAllCodexQuotaNames() ([]string, error) {
 	rows, err := s.db.Query(
-		`SELECT DISTINCT quota_name FROM codex_quota_values ORDER BY quota_name`,
+		skipScanDistinctSQL("codex_quota_values", "quota_name"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query codex quota names: %w", err)
@@ -727,7 +727,7 @@ func (s *Store) QueryAllCodexQuotaNames() ([]string, error) {
 // QueryCodexAccounts returns all distinct account IDs from Codex snapshots.
 func (s *Store) QueryCodexAccounts() ([]int64, error) {
 	rows, err := s.db.Query(
-		`SELECT DISTINCT account_id FROM codex_snapshots ORDER BY account_id`,
+		skipScanDistinctSQL("codex_snapshots", "account_id"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query codex accounts: %w", err)

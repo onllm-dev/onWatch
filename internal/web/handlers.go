@@ -3762,7 +3762,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("antigravity") && providerTelemetryEnabled(visibility, "antigravity") && h.store != nil {
-		snapshots, err := h.store.QueryAntigravityRange(start, now)
+		snapshots, err := h.store.QueryAntigravityRangeSampled(start, now)
 		if err != nil {
 			historyErrors["antigravity"] = "history read failed"
 		} else {
@@ -10086,9 +10086,9 @@ func (h *Handler) buildAntigravityInsights(hidden map[string]bool, rangeDur time
 	}
 
 	groups := api.GroupAntigravityModelsByLogicalQuota(latest.Models)
-	snapshots, err := h.store.QueryAntigravityHistory(rangeStart, now)
+	pollCount, firstPoll, lastPoll, err := h.store.QueryAntigravityRangeStats(rangeStart, now)
 	if err != nil {
-		snapshots = nil
+		pollCount = 0
 	}
 
 	type burnRateStats struct {
@@ -10237,15 +10237,13 @@ func (h *Handler) buildAntigravityInsights(hidden map[string]bool, rangeDur time
 		})
 	}
 
-	if len(snapshots) >= 2 && !hidden["coverage"] {
-		first := snapshots[0]
-		last := snapshots[len(snapshots)-1]
-		dur := last.CapturedAt.Sub(first.CapturedAt)
+	if pollCount >= 2 && !hidden["coverage"] {
+		dur := lastPoll.Sub(firstPoll)
 		resp.Insights = append(resp.Insights, insightItem{
 			Key:      "coverage",
 			Title:    "Coverage",
 			Metric:   formatDuration(dur),
-			Sublabel: fmt.Sprintf("%d polls", len(snapshots)),
+			Sublabel: fmt.Sprintf("%d polls", pollCount),
 			Severity: "info",
 		})
 	}
@@ -10280,7 +10278,7 @@ func (h *Handler) historyAntigravity(w http.ResponseWriter, r *http.Request) {
 	end := time.Now().UTC()
 	start := end.Add(-duration)
 
-	snapshots, err := h.store.QueryAntigravityRange(start, end)
+	snapshots, err := h.store.QueryAntigravityRangeSampled(start, end)
 	if err != nil {
 		h.logger.Error("failed to query antigravity history", "error", err)
 		respondJSON(w, http.StatusOK, map[string]interface{}{

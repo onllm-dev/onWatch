@@ -547,6 +547,7 @@ func (s *Store) createTables() error {
 		-- Codex indexes
 		CREATE INDEX IF NOT EXISTS idx_codex_snapshots_captured ON codex_snapshots(captured_at);
 		CREATE INDEX IF NOT EXISTS idx_codex_quota_values_snapshot ON codex_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_codex_quota_values_name ON codex_quota_values(quota_name);
 		CREATE INDEX IF NOT EXISTS idx_codex_cycles_name_start ON codex_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_codex_cycles_name_active ON codex_reset_cycles(quota_name) WHERE cycle_end IS NULL;
 		-- Note: idx_codex_snapshots_account and idx_codex_cycles_account are created in migrateSchema()
@@ -1325,6 +1326,9 @@ func (s *Store) migrateSchema() error {
 	for _, stmt := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_codex_snapshots_account ON codex_snapshots(account_id, captured_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_codex_cycles_account ON codex_reset_cycles(account_id, quota_name)`,
+		// Lets QueryAllCodexQuotaNames seek between names instead of scanning
+		// every quota value row.
+		`CREATE INDEX IF NOT EXISTS idx_codex_quota_values_name ON codex_quota_values(quota_name)`,
 		`CREATE INDEX IF NOT EXISTS idx_provider_accounts_provider ON provider_accounts(provider)`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {

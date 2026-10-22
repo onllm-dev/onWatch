@@ -562,7 +562,7 @@ func (s *Store) LoadGeminiTokens() (accessToken, refreshToken string, expiresAt 
 // QueryAllGeminiModelIDs returns all distinct model IDs from Gemini quota values.
 func (s *Store) QueryAllGeminiModelIDs() ([]string, error) {
 	rows, err := s.db.Query(
-		`SELECT DISTINCT model_id FROM gemini_quota_values ORDER BY model_id`,
+		skipScanDistinctSQL("gemini_quota_values", "model_id"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query gemini model IDs: %w", err)
