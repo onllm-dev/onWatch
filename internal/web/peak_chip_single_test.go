@@ -53,7 +53,7 @@ const window={addEventListener:()=>{},location:{},matchMedia:()=>({matches:false
 const localStorage={getItem:()=>null,setItem:()=>{}}; const sessionStorage=localStorage; const navigator={};
 const getComputedStyle=()=>({getPropertyValue:()=>''});
 console.warn=()=>{};
-const peakHelper=require(` + "`" + peakHelperPath + "`" + `);
+const peakHelper=require(` + jsStringLiteral(t, peakHelperPath) + `);
 window.OnWatchPeak=peakHelper;
 ` + string(source) + `
 const chipCount = (html) => (String(html).match(/peak-chip-wrap/g) || []).length;

@@ -27,7 +27,7 @@ func peakNodeScript(t *testing.T, assertions string) {
 
 	script := `
 const assert = require('node:assert/strict');
-const peak = require(` + "`" + scriptPath + "`" + `);
+const peak = require(` + jsStringLiteral(t, scriptPath) + `);
 ` + assertions
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -242,7 +242,7 @@ func TestDashboardPeakChipRendering(t *testing.T) {
 
 	script := `
 const assert = require('node:assert/strict');
-const peak = require(` + "`" + helperPath + "`" + `);
+const peak = require(` + jsStringLiteral(t, helperPath) + `);
 global.window = { OnWatchPeak: peak };
 function escapeHTML(value) { return String(value == null ? "" : value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch])); }
 function formatNumber(value) { return String(value); }
@@ -340,7 +340,7 @@ func TestMenubarPeakChipRendering(t *testing.T) {
 
 	script := `
 const assert = require('node:assert/strict');
-const peak = require(` + "`" + helperPath + "`" + `);
+const peak = require(` + jsStringLiteral(t, helperPath) + `);
 global.window = { OnWatchPeak: peak };
 function escapeHTML(value) { return String(value == null ? "" : value); }
 function providerIconClass() { return "provider-icon-commandcode"; }
