@@ -280,6 +280,9 @@ func (c *trayController) updateMenu(lines []MenuLine) {
 }
 
 func (c *trayController) toggleMenubar() {
+	// The popover fetches its own snapshot on show; refresh the tray from the
+	// same daemon cache at the same moment so the title and the cards agree.
+	c.refresh.Request()
 	url := c.menubarURL()
 	if c.popover != nil {
 		if err := c.popover.ToggleURL(url); err == nil {
@@ -292,6 +295,7 @@ func (c *trayController) toggleMenubar() {
 }
 
 func (c *trayController) showMenubar() {
+	c.refresh.Request()
 	url := c.menubarURL()
 	if c.popover != nil {
 		if err := c.popover.ShowURL(url); err == nil {

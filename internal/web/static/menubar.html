@@ -2128,10 +2128,12 @@
 
             async function loadSnapshot(signal) {
                 const generation = ++snapshotGeneration;
-                if (generation > appliedSnapshotGeneration) {
-                    state.loading = state.snapshot == null;
+                if (generation > appliedSnapshotGeneration && state.snapshot == null && !state.loading) {
+                    // Only the very first load shows a placeholder; with data on
+                    // screen a refresh repaints once, when the answer arrives.
+                    state.loading = true;
+                    render();
                 }
-                render();
                 try {
                     const response = await menubarFetch(API_BASE + "/api/menubar/summary", {
                         signal,
@@ -2141,6 +2143,9 @@
                     });
                     if (!response.ok) {
                         throw new Error(`summary ${response.status}`);
+                    }
+                    if (response.headers && response.headers.get("X-Onwatch-Refreshing") === "1") {
+                        scheduleRefreshFollowUp();
                     }
                     applySnapshot(generation, await response.json());
                 } catch (error) {
@@ -2156,6 +2161,20 @@
                     }
                     render();
                 }
+            }
+
+            // The daemon answered from its cache while a rebuild runs: fetch
+            // once more shortly after to pick up the rebuilt snapshot. One
+            // pending follow-up at a time.
+            let refreshFollowUpTimer = null;
+            function scheduleRefreshFollowUp() {
+                if (refreshFollowUpTimer) {
+                    return;
+                }
+                refreshFollowUpTimer = window.setTimeout(() => {
+                    refreshFollowUpTimer = null;
+                    requestFreshSnapshot();
+                }, 1500);
             }
 
             async function refreshData() {
@@ -2575,38 +2594,50 @@
                 );
             }
 
+            // setHTML writes markup only when it differs from what this
+            // element last received. A refresh that brings the same numbers
+            // (most of them) then costs no DOM work: no SVG rebuild, no layout,
+            // no repaint flicker. Ages updated in place between renders stay.
+            function setHTML(el, html) {
+                if (el.__onwatchHTML === html) {
+                    return;
+                }
+                el.innerHTML = html;
+                el.__onwatchHTML = html;
+            }
+
             function renderBody() {
                 if (state.loading && !state.snapshot) {
-                    body.innerHTML = renderStateCard("Loading", "Fetching quota snapshot");
+                    setHTML(body, renderStateCard("Loading", "Fetching quota snapshot"));
                     return;
                 }
                 if (state.error && !state.snapshot) {
-                    body.innerHTML = renderStateCard("Unavailable", state.error);
+                    setHTML(body, renderStateCard("Unavailable", state.error));
                     return;
                 }
                 if (!state.snapshot || !Array.isArray(state.snapshot.providers) || state.snapshot.providers.length === 0) {
-                    body.innerHTML = renderStateCard("No Data", "Enable a provider to fill the tray.");
+                    setHTML(body, renderStateCard("No Data", "Enable a provider to fill the tray."));
                     return;
                 }
                 const providers = visibleProviders();
                 if (providers.length === 0) {
-                    body.innerHTML = renderStateCard("No Data", "Choose at least one provider.");
+                    setHTML(body, renderStateCard("No Data", "Choose at least one provider."));
                     return;
                 }
                 if (state.view === "minimal") {
-                    body.innerHTML = renderMinimalView(providers);
+                    setHTML(body, renderMinimalView(providers));
                     return;
                 }
                 if (state.view === "detailed") {
-                    body.innerHTML = renderDetailedView(providers);
+                    setHTML(body, renderDetailedView(providers));
                     return;
                 }
-                body.innerHTML = renderStandardView(providers);
+                setHTML(body, renderStandardView(providers));
             }
 
             function renderSettings() {
                 if (!state.settingsOpen || !state.draft) {
-                    settingsBody.innerHTML = "";
+                    setHTML(settingsBody, "");
                     document.getElementById("settings-save").disabled = false;
                     return;
                 }
@@ -2617,6 +2648,7 @@
                 const statusOptions = selectableStatusQuotaOptions();
                 const selectedKeys = new Set(draft.status_display.selected_quotas.map((selection) => statusSelectionKey(selection)));
                 const selectedCount = draft.status_display.selected_quotas.length;
+                settingsBody.__onwatchHTML = null;
                 settingsBody.innerHTML = `
                     <section class="settings-section">
                         <h2>Appearance</h2>

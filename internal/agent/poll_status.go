@@ -66,6 +66,28 @@ type PollStatusRegistry struct {
 	mu      sync.RWMutex
 	entries map[string]pollStatusEntry
 	now     func() int64
+	// onPoll runs after every published outcome, success or failure. The
+	// menubar uses it to rebuild its cached snapshot ahead of requests.
+	onPoll atomic.Pointer[func()]
+}
+
+// SetOnPoll installs a callback run after every Report and Clear. It must not
+// block; the menubar's debounced scheduler only arms a timer.
+func (r *PollStatusRegistry) SetOnPoll(fn func()) {
+	if r == nil {
+		return
+	}
+	if fn == nil {
+		r.onPoll.Store(nil)
+		return
+	}
+	r.onPoll.Store(&fn)
+}
+
+func (r *PollStatusRegistry) notifyPoll() {
+	if fn := r.onPoll.Load(); fn != nil {
+		(*fn)()
+	}
 }
 
 // NewPollStatusRegistry returns an empty registry.
@@ -82,7 +104,6 @@ func (r *PollStatusRegistry) Report(provider, account string, outcome PollOutcom
 	}
 	key := pollStatusKey(provider, account)
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.entries == nil {
 		r.entries = make(map[string]pollStatusEntry, 8)
 	}
@@ -90,6 +111,8 @@ func (r *PollStatusRegistry) Report(provider, account string, outcome PollOutcom
 		r.evictOldestLocked()
 	}
 	r.entries[key] = pollStatusEntry{outcome: outcome, at: r.nowNano()}
+	r.mu.Unlock()
+	r.notifyPoll()
 }
 
 // Clear removes the entry, called after a successful poll. Providers that only
@@ -99,8 +122,9 @@ func (r *PollStatusRegistry) Clear(provider, account string) {
 		return
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	delete(r.entries, pollStatusKey(provider, account))
+	r.mu.Unlock()
+	r.notifyPoll()
 }
 
 // Get returns the last outcome class for a provider or account.

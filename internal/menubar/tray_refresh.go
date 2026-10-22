@@ -171,6 +171,9 @@ func newRefreshWorker(fetch SnapshotProvider, apply applyFunc) *refreshWorker {
 // (or already queued), the request is covered by the follow-up run and the
 // send is a no-op.
 func (w *refreshWorker) Request() {
+	if w == nil {
+		return
+	}
 	select {
 	case w.requests <- struct{}{}:
 	default:

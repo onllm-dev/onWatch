@@ -481,7 +481,22 @@ const char *onwatch_grant_reply(bool allowed, bool mainFrame, bool grant, bool p
     if (self.loadedURLString.length && self.webView.URL != nil) {
       [self softRefreshIfLoaded];
     }
+    // WebKit drops a hidden window's rendered layers, so the first frames
+    // after ordering in would show the bare host background (the black
+    // flash). Order in transparent, give WebKit two frames to repaint, then
+    // fade in. A close in between leaves the panel hidden.
+    self.panel.alphaValue = 0.0;
     [self.panel makeKeyAndOrderFront:nil];
+    NSPanel *panel = self.panel;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(35 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
+      if (!panel.visible) {
+        return;
+      }
+      [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration = 0.08;
+        panel.animator.alphaValue = 1.0;
+      } completionHandler:nil];
+    });
   }
   [self startTransientCloseMonitoring];
   return YES;

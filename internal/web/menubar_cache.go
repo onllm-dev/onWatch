@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/menubar"
@@ -152,6 +153,7 @@ func (h *Handler) menubarCachedData() (menubarBuiltData, time.Time, uint64, *men
 // otherwise serves the cached data while the rebuild continues in the
 // background.
 func (h *Handler) menubarDataForRequest(ctx context.Context) (menubarBuiltData, error) {
+	h.menubarLastRequest.Store(time.Now().UnixNano())
 	deadline := time.Now().Add(h.menubarWaitBudget())
 	noCacheDeadline := time.Now().Add(h.menubarNoCacheBudget())
 
@@ -159,6 +161,23 @@ func (h *Handler) menubarDataForRequest(ctx context.Context) (menubarBuiltData, 
 		cached, cachedAt, generation, build := h.menubarCachedData()
 
 		if cached.Snapshot != nil && h.menubarNowTime().Sub(cachedAt) < h.menubarFreshWindow() {
+			return cached, nil
+		}
+
+		// Stale-while-revalidate: data that has only aged (not been invalidated
+		// by a settings write or a manual refresh, which zero cachedAt) is
+		// answered immediately and rebuilt in the background. Opening the
+		// popover never waits on SQL; the response carries the refreshing hint
+		// so the client can pick up the rebuilt snapshot a moment later. Builds
+		// normally run ahead of requests anyway (see scheduleMenubarPrebuild).
+		if cached.Snapshot != nil && !cachedAt.IsZero() && !h.menubarAlwaysWait {
+			if build == nil || build.generation != generation {
+				h.menubarSnapshotMu.Lock()
+				if h.menubarSnapshotBuild == nil || h.menubarSnapshotBuild.generation != h.menubarSnapshotGen {
+					h.startMenubarSnapshotBuildLocked(h.menubarSnapshotGen)
+				}
+				h.menubarSnapshotMu.Unlock()
+			}
 			return cached, nil
 		}
 
@@ -357,4 +376,56 @@ func (h *Handler) menubarServeSettings(data menubarBuiltData) *menubar.Settings 
 		return last
 	}
 	return menubar.DefaultSettings()
+}
+
+const (
+	// menubarPrebuildDebounce coalesces the poll completions of several
+	// providers into one build. Agents publish success just before inserting
+	// the snapshot, so the delay also lets that write land first.
+	menubarPrebuildDebounce = 2 * time.Second
+
+	// menubarPrebuildActiveWindow limits background builds to daemons whose
+	// menubar is actually in use: a menubar client (tray, popover, GNOME,
+	// VS Code) has asked for a snapshot within this window. Headless and
+	// dashboard-only installs never pay for menubar builds.
+	menubarPrebuildActiveWindow = 10 * time.Minute
+)
+
+// scheduleMenubarPrebuild rebuilds the snapshot shortly after new provider
+// data arrives, so menubar requests are answered from memory with current
+// numbers instead of computing on demand. Calls within the debounce window
+// share one build.
+func (h *Handler) scheduleMenubarPrebuild() {
+	last := h.menubarLastRequest.Load()
+	if last == 0 || time.Since(time.Unix(0, last)) > menubarPrebuildActiveWindow {
+		return
+	}
+	if !h.menubarPrebuildPending.CompareAndSwap(false, true) {
+		return
+	}
+	time.AfterFunc(menubarPrebuildDebounce, func() {
+		h.menubarPrebuildPending.Store(false)
+		h.menubarSnapshotMu.Lock()
+		if h.menubarSnapshotBuild == nil || h.menubarSnapshotBuild.generation != h.menubarSnapshotGen {
+			h.startMenubarSnapshotBuildLocked(h.menubarSnapshotGen)
+		}
+		h.menubarSnapshotMu.Unlock()
+	})
+}
+
+// menubarRefreshing reports whether a build is in flight, so a response
+// served from the cache can tell the client a newer snapshot is coming.
+func (h *Handler) menubarRefreshing() bool {
+	h.menubarSnapshotMu.Lock()
+	defer h.menubarSnapshotMu.Unlock()
+	return h.menubarSnapshotBuild != nil
+}
+
+// setMenubarRefreshingHeader marks a cached response whose rebuild is still
+// running. Clients that understand it re-fetch once shortly after; others
+// ignore it.
+func (h *Handler) setMenubarRefreshingHeader(w http.ResponseWriter) {
+	if h.menubarRefreshing() {
+		w.Header().Set("X-Onwatch-Refreshing", "1")
+	}
 }

@@ -137,9 +137,10 @@ func TestMenubarCacheConcurrentRequestsTriggerExactlyOneBuild(t *testing.T) {
 	}
 }
 
-// A build slower than the wait budget must return the cached snapshot within
-// the budget, with its original generated_at. When the build finishes the
-// cache updates and the next request sees the new generated_at.
+// An aged snapshot is served immediately (stale-while-revalidate) with its
+// original generated_at and the refreshing hint, while one build runs in the
+// background. When the build finishes the cache updates and the next request
+// sees the new generated_at.
 func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 	h, s, _ := newCacheTestHandler(t, nil)
 	insertTestCursorSnapshot(t, s, time.Now().UTC().Add(-5*time.Minute), api.CursorAccountIndividual, "Pro", []api.CursorQuota{
@@ -165,11 +166,15 @@ func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 	h.menubarFreshFor = -time.Nanosecond
 
 	start := time.Now()
-	stale := decodeSummary(t, getSummary(h))
+	rec := getSummary(h)
 	elapsed := time.Since(start)
+	stale := decodeSummary(t, rec)
 
-	if elapsed > 2*time.Second {
-		t.Fatalf("stale request took %s, want about the wait budget", elapsed)
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("stale request took %s, want an immediate cached answer", elapsed)
+	}
+	if rec.Header().Get("X-Onwatch-Refreshing") != "1" {
+		t.Fatalf("X-Onwatch-Refreshing = %q, want 1 while the rebuild runs", rec.Header().Get("X-Onwatch-Refreshing"))
 	}
 	if !stale.GeneratedAt.Equal(cached.GeneratedAt) {
 		t.Fatalf("cached response generated_at = %s, want the original %s", stale.GeneratedAt, cached.GeneratedAt)
@@ -177,12 +182,11 @@ func TestMenubarCacheSlowBuildServesCachedThenUpdates(t *testing.T) {
 	if !stale.LatestAt.Equal(cached.LatestAt) {
 		t.Fatalf("cached response latest_at = %s, want the original %s", stale.LatestAt, cached.LatestAt)
 	}
+	// Release the background build and wait for it to update the cache.
+	waitNotNil(t, buildStarted)
 	if got := atomic.LoadInt32(&builds); got != 1 {
 		t.Fatalf("builds = %d, want 1", got)
 	}
-
-	// Release the background build and wait for it to update the cache.
-	waitNotNil(t, buildStarted)
 	releaseGate()
 	waitClosed(t, backgroundDone)
 

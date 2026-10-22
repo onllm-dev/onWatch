@@ -37,6 +37,9 @@ type menubarProviderOption struct {
 // carries raw error text.
 func (h *Handler) SetPollStatusRegistry(r *agent.PollStatusRegistry) {
 	h.pollStatus = r
+	// Every poll outcome may change a card (new numbers, or a staleness
+	// reason), so it schedules a background snapshot rebuild.
+	r.SetOnPoll(h.scheduleMenubarPrebuild)
 }
 
 // Capabilities returns runtime capabilities for the current build.
@@ -63,6 +66,7 @@ func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
 		respondMenubarSnapshotError(w, err, "failed to build menubar snapshot")
 		return
 	}
+	h.setMenubarRefreshingHeader(w)
 	respondJSON(w, http.StatusOK, snapshot)
 }
 
@@ -122,6 +126,7 @@ func (h *Handler) MenubarTrayTitle(w http.ResponseWriter, r *http.Request) {
 	if snapshot != nil && !snapshot.LatestAt.IsZero() {
 		response["latest_at"] = snapshot.LatestAt.UTC().Format(time.RFC3339)
 	}
+	h.setMenubarRefreshingHeader(w)
 	respondJSON(w, http.StatusOK, response)
 }
 

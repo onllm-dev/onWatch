@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/agent"
@@ -197,13 +198,22 @@ type Handler struct {
 	menubarFreshFor           time.Duration
 	menubarWaitFor            time.Duration
 	menubarNoCacheFor         time.Duration
-	smtpTestMu                sync.Mutex
-	smtpTestLastSent          time.Time
-	webhookTestMu             sync.Mutex
-	webhookTestLastSent       time.Time
-	pushTestMu                sync.Mutex
-	pushTestLastSent          time.Time
-	rateLimiter               *LoginRateLimiter // Per-IP rate limiting for login attempts
+	// menubarAlwaysWait restores the wait-for-rebuild behaviour for aged
+	// snapshots (tests of the wait budget). Production serves stale-while-
+	// revalidate.
+	menubarAlwaysWait bool
+	// menubarLastRequest is the unix-nano time of the last menubar snapshot
+	// request; background prebuilds run only while a client is active.
+	menubarLastRequest atomic.Int64
+	// menubarPrebuildPending coalesces poll-driven prebuilds.
+	menubarPrebuildPending atomic.Bool
+	smtpTestMu             sync.Mutex
+	smtpTestLastSent       time.Time
+	webhookTestMu          sync.Mutex
+	webhookTestLastSent    time.Time
+	pushTestMu             sync.Mutex
+	pushTestLastSent       time.Time
+	rateLimiter            *LoginRateLimiter // Per-IP rate limiting for login attempts
 }
 
 // DefaultCodexAccountID is the default account ID for single-account setups.
