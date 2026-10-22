@@ -92,7 +92,7 @@ func (h *Handler) historyMoonshot(w http.ResponseWriter, r *http.Request) {
 	start := now.Add(-duration)
 	end := now
 
-	snapshots, err := h.store.QueryMoonshotRange(start, end)
+	snapshots, err := h.store.QueryMoonshotRangeSampled(start, end)
 	if err != nil {
 		h.logger.Error("failed to query Moonshot history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")

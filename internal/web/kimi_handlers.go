@@ -166,7 +166,7 @@ func (h *Handler) historyKimi(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	snaps, err := h.store.QueryKimiRange(store.DefaultKimiAccountID, now.Add(-duration), now)
+	snaps, err := h.store.QueryKimiRangeSampled(store.DefaultKimiAccountID, now.Add(-duration), now)
 	if err != nil {
 		h.logger.Error("failed to query kimi range for history", "error", err)
 		respondJSON(w, http.StatusOK, []interface{}{})

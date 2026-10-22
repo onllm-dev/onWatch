@@ -2843,7 +2843,7 @@ func (h *Handler) historyGrok(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	snaps, err := h.store.QueryGrokRange(store.DefaultGrokAccountID, now.Add(-duration), now)
+	snaps, err := h.store.QueryGrokRangeSampled(store.DefaultGrokAccountID, now.Add(-duration), now)
 	if err != nil {
 		h.logger.Error("failed to query grok range for history", "error", err)
 		respondJSON(w, http.StatusOK, []interface{}{})
@@ -3607,7 +3607,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	start := now.Add(-duration)
 
 	if h.config.HasProvider("synthetic") && providerTelemetryEnabled(visibility, "synthetic") && h.store != nil {
-		snapshots, err := h.store.QueryRange(start, now)
+		snapshots, err := h.store.QueryRangeSampled(start, now)
 		if err != nil {
 			historyErrors["synthetic"] = "history read failed"
 		} else {
@@ -3646,7 +3646,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("zai") && providerTelemetryEnabled(visibility, "zai") && h.store != nil {
-		snapshots, err := h.store.QueryZaiRange(start, now)
+		snapshots, err := h.store.QueryZaiRangeSampled(start, now)
 		if err != nil {
 			historyErrors["zai"] = "history read failed"
 		} else {
@@ -3673,7 +3673,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("anthropic") && providerTelemetryEnabled(visibility, "anthropic") && h.store != nil {
-		snapshots, err := h.store.QueryAnthropicRange(start, now)
+		snapshots, err := h.store.QueryAnthropicRangeSampled(start, now)
 		if err != nil {
 			historyErrors["anthropic"] = "history read failed"
 		} else {
@@ -3697,7 +3697,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("copilot") && providerTelemetryEnabled(visibility, "copilot") && h.store != nil {
-		snapshots, err := h.store.QueryCopilotRange(start, now)
+		snapshots, err := h.store.QueryCopilotRangeSampled(start, now)
 		if err != nil {
 			historyErrors["copilot"] = "history read failed"
 		} else {
@@ -3737,7 +3737,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 			if !codexAccountTelemetryEnabled(visibility, accountID) {
 				continue
 			}
-			snapshots, err := h.store.QueryCodexRange(accountID, start, now)
+			snapshots, err := h.store.QueryCodexRangeSampled(accountID, start, now)
 			if err != nil {
 				historyErrors[fmt.Sprintf("codex:%d", accountID)] = "history read failed"
 				continue
@@ -3814,7 +3814,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 			if !minimaxAccountTelemetryEnabled(visibility, accountID) {
 				continue
 			}
-			snapshots, err := h.store.QueryMiniMaxRange(start, now, accountID)
+			snapshots, err := h.store.QueryMiniMaxRangeSampled(start, now, accountID)
 			if err != nil {
 				historyErrors[fmt.Sprintf("minimax:%d", accountID)] = "history read failed"
 				continue
@@ -3852,7 +3852,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("openrouter") && providerTelemetryEnabled(visibility, "openrouter") && h.store != nil {
-		snapshots, err := h.store.QueryOpenRouterRange(start, now)
+		snapshots, err := h.store.QueryOpenRouterRangeSampled(start, now)
 		if err != nil {
 			historyErrors["openrouter"] = "history read failed"
 		} else {
@@ -3882,7 +3882,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("moonshot") && providerTelemetryEnabled(visibility, "moonshot") && h.store != nil {
-		snapshots, err := h.store.QueryMoonshotRange(start, now)
+		snapshots, err := h.store.QueryMoonshotRangeSampled(start, now)
 		if err != nil {
 			historyErrors["moonshot"] = "history read failed"
 		} else {
@@ -3906,7 +3906,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("deepseek") && providerTelemetryEnabled(visibility, "deepseek") && h.store != nil {
-		snapshots, err := h.store.QueryDeepSeekRange(start, now)
+		snapshots, err := h.store.QueryDeepSeekRangeSampled(start, now)
 		if err != nil {
 			historyErrors["deepseek"] = "history read failed"
 		} else {
@@ -3932,7 +3932,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") && h.store != nil {
-		snapshots, err := h.store.QueryGeminiRange(start, now)
+		snapshots, err := h.store.QueryGeminiRangeSampled(start, now)
 		if err != nil {
 			historyErrors["gemini"] = "history read failed"
 		} else {
@@ -3986,7 +3986,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("grok") && providerTelemetryEnabled(visibility, "grok") && h.store != nil {
-		snaps, err := h.store.QueryGrokRange(store.DefaultGrokAccountID, start, now)
+		snaps, err := h.store.QueryGrokRangeSampled(store.DefaultGrokAccountID, start, now)
 		if err != nil {
 			historyErrors["grok"] = "history read failed"
 		} else {
@@ -4014,7 +4014,7 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") && h.store != nil {
-		snaps, err := h.store.QueryKimiRange(store.DefaultKimiAccountID, start, now)
+		snaps, err := h.store.QueryKimiRangeSampled(store.DefaultKimiAccountID, start, now)
 		if err != nil {
 			historyErrors["kimi"] = "history read failed"
 		} else {
@@ -4171,7 +4171,7 @@ func (h *Handler) historySynthetic(w http.ResponseWriter, r *http.Request) {
 	start := now.Add(-duration)
 	end := now
 
-	snapshots, err := h.store.QueryRange(start, end)
+	snapshots, err := h.store.QueryRangeSampled(start, end)
 	if err != nil {
 		h.logger.Error("failed to query history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
@@ -4236,7 +4236,7 @@ func (h *Handler) historyZai(w http.ResponseWriter, r *http.Request) {
 	start := now.Add(-duration)
 	end := now
 
-	snapshots, err := h.store.QueryZaiRange(start, end)
+	snapshots, err := h.store.QueryZaiRangeSampled(start, end)
 	if err != nil {
 		h.logger.Error("failed to query Z.ai history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
@@ -4368,7 +4368,7 @@ func (h *Handler) historyOpenRouter(w http.ResponseWriter, r *http.Request) {
 	start := now.Add(-duration)
 	end := now
 
-	snapshots, err := h.store.QueryOpenRouterRange(start, end)
+	snapshots, err := h.store.QueryOpenRouterRangeSampled(start, end)
 	if err != nil {
 		h.logger.Error("failed to query OpenRouter history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
@@ -6807,7 +6807,7 @@ func (h *Handler) historyAnthropic(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	start := now.Add(-duration)
-	snapshots, err := h.store.QueryAnthropicRange(start, now)
+	snapshots, err := h.store.QueryAnthropicRangeSampled(start, now)
 	if err != nil {
 		h.logger.Error("failed to query Anthropic history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
@@ -9151,7 +9151,7 @@ func (h *Handler) historyCopilot(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	start := now.Add(-duration)
-	snapshots, err := h.store.QueryCopilotRange(start, now)
+	snapshots, err := h.store.QueryCopilotRangeSampled(start, now)
 	if err != nil {
 		h.logger.Error("failed to query Copilot history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
@@ -10377,7 +10377,7 @@ func (h *Handler) historyCodex(w http.ResponseWriter, r *http.Request) {
 	}
 	end := time.Now().UTC()
 	start := end.Add(-duration)
-	snapshots, err := h.store.QueryCodexRange(accountID, start, end)
+	snapshots, err := h.store.QueryCodexRangeSampled(accountID, start, end)
 	if err != nil {
 		h.logger.Error("failed to query Codex history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
@@ -11465,7 +11465,7 @@ func (h *Handler) historyMiniMax(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	start := now.Add(-duration)
 	minimaxAccID := h.parseMiniMaxAccountID(r)
-	snapshots, err := h.store.QueryMiniMaxRange(start, now, minimaxAccID)
+	snapshots, err := h.store.QueryMiniMaxRangeSampled(start, now, minimaxAccID)
 	if err != nil {
 		h.logger.Error("failed to query MiniMax history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")

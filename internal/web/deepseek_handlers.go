@@ -97,7 +97,7 @@ func (h *Handler) historyDeepSeek(w http.ResponseWriter, r *http.Request) {
 	start := now.Add(-duration)
 	end := now
 
-	snapshots, err := h.store.QueryDeepSeekRange(start, end)
+	snapshots, err := h.store.QueryDeepSeekRangeSampled(start, end)
 	if err != nil {
 		h.logger.Error("failed to query DeepSeek history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
