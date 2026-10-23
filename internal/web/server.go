@@ -91,6 +91,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/push/vapid"), handler.PushVAPIDKey)
 	mux.HandleFunc(p("/api/push/subscribe"), handler.PushSubscribe)
 	mux.HandleFunc(p("/api/push/test"), handler.PushTest)
+	mux.HandleFunc(p("/api/anthropic/accounts"), handler.AnthropicAccounts)
 	mux.HandleFunc(p("/api/codex/profiles"), handler.CodexProfiles)
 	mux.HandleFunc(p("/api/codex/usage"), handler.CodexUsage)
 	mux.HandleFunc(p("/api/codex/accounts/usage"), handler.CodexAccountsUsage)

@@ -264,6 +264,8 @@ Set `ZAI_API_KEY` in your `.env`. onWatch polls the Z.ai `/monitor/usage/quota/l
 
 onWatch auto-detects your Claude Code credentials from the system keychain (macOS) or keyring/file (Linux). Just install and run -- if Claude Code is installed, Anthropic tracking is offered automatically. You can also set `ANTHROPIC_TOKEN` manually in your `.env`. Anthropic quotas are dynamic (5-Hour, 7-Day, Monthly, etc.) and displayed as utilization percentages. OAuth tokens are automatically refreshed before expiry, and onWatch gracefully handles auth failures with automatic retry when new credentials are detected.
 
+To track more than one Claude account, add `ANTHROPIC_TOKEN_<NAME>` (plus optional `ANTHROPIC_REFRESH_TOKEN_<NAME>`) or drop a Claude Code `.credentials.json` into `<data dir>/anthropic-profiles/<name>.json`. Each account is polled by its own agent and shown separately in the dashboard and Settings. See [docs/ANTHROPIC_ACCOUNTS.md](docs/ANTHROPIC_ACCOUNTS.md).
+
 ### How do I track my Codex usage?
 
 Set `CODEX_TOKEN` in your `.env` (recommended for Codex-only installs). You can retrieve it from `~/.codex/auth.json` (`tokens.access_token`) or from `$CODEX_HOME/auth.json` if you use a custom Codex home. onWatch re-reads Codex credentials while running, so token rotation is picked up automatically. Full walkthrough: [Codex Setup Guide](docs/CODEX_SETUP.md).
@@ -346,6 +348,8 @@ Additional environment variables:
 | Variable                 | Description                                            |
 | ------------------------ | ------------------------------------------------------ |
 | `ANTHROPIC_TOKEN`        | Anthropic OAuth token (auto-detected from Claude Code) |
+| `ANTHROPIC_TOKEN_<NAME>` | Extra Anthropic account `<name>` (multi-account, see [ANTHROPIC_ACCOUNTS.md](docs/ANTHROPIC_ACCOUNTS.md)) |
+| `ANTHROPIC_REFRESH_TOKEN_<NAME>` | Optional OAuth refresh token for extra account `<name>` |
 | `CODEX_TOKEN`            | Codex OAuth access token (recommended for Codex-only)  |
 | `COPILOT_TOKEN`          | GitHub Copilot PAT with `copilot` scope (Beta)         |
 | `MINIMAX_API_KEY`        | MiniMax Coding Plan API key                            |
@@ -607,6 +611,8 @@ Copy `.env.docker.example` to `.env` and set provider keys as needed. onWatch ca
 | `ZAI_API_KEY`           | Z.ai API key                               | --         |
 | `ZAI_REGION`            | Z.ai region: `global` (default) or `cn`    | `global`   |
 | `ANTHROPIC_TOKEN`       | Anthropic token (auto-detected if not set) | --         |
+| `ANTHROPIC_TOKEN_<NAME>` | Extra Anthropic account (multi-account)   | --         |
+| `ANTHROPIC_REFRESH_TOKEN_<NAME>` | Refresh token for extra account `<name>` (optional) | -- |
 | `CODEX_TOKEN`           | Codex OAuth access token (recommended; required for Codex-only) | -- |
 | `MINIMAX_API_KEY`       | MiniMax Coding Plan API key                | --         |
 | `MINIMAX_REGION`        | MiniMax region: `global` (default) or `cn` | `global`   |

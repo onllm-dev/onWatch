@@ -115,7 +115,7 @@ func (s *Store) countBadAnthropicCycles() (int, error) {
 	// seven_day cycles > 8 days are suspicious
 	query := `
 		SELECT COUNT(*) FROM anthropic_reset_cycles
-		WHERE cycle_end IS NOT NULL AND (
+		WHERE account_id = 0 AND cycle_end IS NOT NULL AND (
 			(quota_name = 'five_hour' AND
 			 (julianday(cycle_end) - julianday(cycle_start)) * 24 > 6) OR
 			(quota_name LIKE 'seven_day%' AND
@@ -232,7 +232,7 @@ func (s *Store) fixBadAnthropicCycles(logger *slog.Logger) ([]MigrationResult, e
 func (s *Store) getAnthropicQuotasWithBadCycles() ([]string, error) {
 	query := `
 		SELECT DISTINCT quota_name FROM anthropic_reset_cycles
-		WHERE cycle_end IS NOT NULL AND (
+		WHERE account_id = 0 AND cycle_end IS NOT NULL AND (
 			(quota_name = 'five_hour' AND
 			 (julianday(cycle_end) - julianday(cycle_start)) * 24 > 6) OR
 			(quota_name LIKE 'seven_day%' AND
@@ -307,7 +307,7 @@ func (s *Store) getBadAnthropicCycles(quotaName string) ([]*AnthropicResetCycle,
 	query := `
 		SELECT id, quota_name, cycle_start, cycle_end, resets_at, peak_utilization, total_delta
 		FROM anthropic_reset_cycles
-		WHERE quota_name = ? AND cycle_end IS NOT NULL AND
+		WHERE account_id = 0 AND quota_name = ? AND cycle_end IS NOT NULL AND
 		(julianday(cycle_end) - julianday(cycle_start)) * 24 > ?
 		ORDER BY cycle_start ASC
 	`
@@ -484,7 +484,7 @@ func (s *Store) getAnthropicSnapshotsInRange(quotaName string, start, end time.T
 		SELECT s.captured_at, qv.utilization, qv.resets_at
 		FROM anthropic_quota_values qv
 		JOIN anthropic_snapshots s ON s.id = qv.snapshot_id
-		WHERE qv.quota_name = ? AND s.captured_at >= ? AND s.captured_at <= ?
+		WHERE s.account_id = 0 AND qv.quota_name = ? AND s.captured_at >= ? AND s.captured_at <= ?
 		ORDER BY s.captured_at ASC
 	`
 	rows, err := s.db.Query(query, quotaName, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))

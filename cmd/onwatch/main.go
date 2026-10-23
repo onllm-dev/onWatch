@@ -813,6 +813,16 @@ func run() error {
 		}
 	}
 
+	// Extra Anthropic accounts: seed <data dir>/anthropic-profiles from
+	// ANTHROPIC_TOKEN_<NAME> env vars, then load every profile file. The
+	// primary account (ANTHROPIC_TOKEN / auto-detect) is unaffected.
+	anthropicProfilesDir := agent.AnthropicProfilesDir(filepath.Dir(cfg.DBPath))
+	agent.SeedAnthropicProfilesFromEnv(anthropicProfilesDir, os.Environ(), preflightLogger)
+	anthropicProfiles := agent.LoadAnthropicProfiles(anthropicProfilesDir, preflightLogger)
+	if len(anthropicProfiles) > 0 {
+		cfg.AnthropicHasAccounts = true
+	}
+
 	isDaemonChild := os.Getenv("_ONWATCH_DAEMON") == "1"
 	// launchd (or the Windows auto-start supervisor) owns the process: forking
 	// into the background would make it think the job died and relaunch it in
@@ -1118,7 +1128,7 @@ func run() error {
 	}
 
 	var anthropicClient *api.AnthropicClient
-	if cfg.HasProvider("anthropic") {
+	if cfg.AnthropicToken != "" {
 		anthropicClient = api.NewAnthropicClient(cfg.AnthropicToken, logger)
 		logger.Info("Anthropic API client configured")
 	}
@@ -1383,6 +1393,55 @@ func run() error {
 		}
 	}
 
+	// One agent per extra Anthropic account. Each account has its own client,
+	// tracker, provider_accounts row and credentials file: rotated OAuth tokens
+	// are persisted only to that account's file. Statusline data and Claude
+	// Code detection belong to the local (primary) account, so they are off.
+	var anthropicExtraAgs []*agent.AnthropicAgent
+	var anthropicExtraTrs []*tracker.AnthropicTracker
+	activeAnthropicAccounts := make(map[string]bool, len(anthropicProfiles))
+	for _, prof := range anthropicProfiles {
+		creds := agent.ReadAnthropicProfileCredentials(prof.Path)
+		if creds == nil {
+			continue
+		}
+		acc, accErr := db.CreateOrRestoreProviderAccount("anthropic", prof.Name)
+		if accErr != nil {
+			logger.Error("Failed to register Anthropic account", "account", prof.Name, "error", accErr)
+			continue
+		}
+		activeAnthropicAccounts[prof.Name] = true
+		accLogger := logger.With("anthropic_account", prof.Name)
+		accTr := tracker.NewAnthropicTrackerForAccount(db, accLogger, acc.ID)
+		accAg := agent.NewAnthropicAgent(api.NewAnthropicClient(creds.AccessToken, accLogger), db, accTr, cfg.PollInterval, accLogger, nil)
+		accAg.SetAccount(acc.ID, prof.Name)
+		profilePath := prof.Path
+		accAg.SetTokenRefresh(func() string {
+			if c := agent.ReadAnthropicProfileCredentials(profilePath); c != nil {
+				return c.AccessToken
+			}
+			return ""
+		})
+		accAg.SetCredentialsRefresh(func() *api.AnthropicCredentials {
+			return agent.ReadAnthropicProfileCredentials(profilePath)
+		})
+		accAg.SetCredentialsWriter(func(accessToken, refreshToken string, expiresIn int) error {
+			return agent.WriteAnthropicProfileCredentials(profilePath, accessToken, refreshToken, expiresIn)
+		})
+		accAg.SetCCDetectionEnabled(false)
+		anthropicExtraAgs = append(anthropicExtraAgs, accAg)
+		anthropicExtraTrs = append(anthropicExtraTrs, accTr)
+		logger.Info("Anthropic extra account configured", "account", prof.Name, "account_id", acc.ID, "oauth_refresh", creds.RefreshToken != "")
+	}
+	// Accounts whose profile was removed are soft-deleted (history is kept).
+	if existing, qErr := db.QueryActiveProviderAccounts("anthropic"); qErr == nil {
+		for _, acc := range existing {
+			if !activeAnthropicAccounts[acc.Name] {
+				_ = db.MarkProviderAccountDeleted("anthropic", acc.Name)
+			}
+		}
+	}
+
 	// Create Copilot tracker
 	var copilotTr *tracker.CopilotTracker
 	if cfg.HasProvider("copilot") {
@@ -1607,6 +1666,9 @@ func run() error {
 	if anthropicAg != nil {
 		anthropicAg.SetNotifier(notifier)
 	}
+	for _, accAg := range anthropicExtraAgs {
+		accAg.SetNotifier(notifier)
+	}
 	if copilotAg != nil {
 		copilotAg.SetNotifier(notifier)
 	}
@@ -1673,8 +1735,34 @@ func run() error {
 	if zaiAg != nil {
 		zaiAg.SetPollingCheck(func() bool { return isPollingEnabled("zai") })
 	}
+	// Per-account Anthropic telemetry uses flat keys like "anthropic:0"
+	// (primary) and "anthropic:<provider_accounts.id>" (extra accounts).
+	anthropicAccountPolling := func(accountID int64) bool {
+		v, err := db.GetSetting("provider_visibility")
+		if err != nil || v == "" {
+			return true
+		}
+		var vis map[string]map[string]interface{}
+		if json.Unmarshal([]byte(v), &vis) != nil {
+			return true
+		}
+		if accountVis, ok := vis[fmt.Sprintf("anthropic:%d", accountID)]; ok {
+			if p, ok := accountVis["polling"].(bool); ok {
+				return p
+			}
+		}
+		return true
+	}
 	if anthropicAg != nil {
-		anthropicAg.SetPollingCheck(func() bool { return isPollingEnabled("anthropic") })
+		anthropicAg.SetPollingCheck(func() bool {
+			return isPollingEnabled("anthropic") && anthropicAccountPolling(store.AnthropicDefaultAccountID)
+		})
+	}
+	for _, accAg := range anthropicExtraAgs {
+		accountID := accAg.AccountID()
+		accAg.SetPollingCheck(func() bool {
+			return isPollingEnabled("anthropic") && anthropicAccountPolling(accountID)
+		})
 	}
 	if copilotAg != nil {
 		copilotAg.SetPollingCheck(func() bool { return isPollingEnabled("copilot") })
@@ -1828,6 +1916,12 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "zai", QuotaKey: quotaName, ResetOccurred: true})
 		})
 	}
+	for _, accTr := range anthropicExtraTrs {
+		accountKey := fmt.Sprintf("%d", accTr.AccountID())
+		accTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "anthropic", QuotaKey: quotaName, AccountID: accountKey, ResetOccurred: true})
+		})
+	}
 	if anthropicTr != nil {
 		anthropicTr.SetOnReset(func(quotaName string) {
 			notifier.Check(notify.QuotaStatus{Provider: "anthropic", QuotaKey: quotaName, ResetOccurred: true})
@@ -1974,8 +2068,12 @@ func run() error {
 	if zaiAg != nil {
 		agentMgr.RegisterFactory("zai", func() (agent.AgentRunner, error) { return zaiAg, nil })
 	}
-	if anthropicAg != nil {
-		agentMgr.RegisterFactory("anthropic", func() (agent.AgentRunner, error) { return anthropicAg, nil })
+	if anthropicAg != nil || len(anthropicExtraAgs) > 0 {
+		var anthropicRunner agent.AgentRunner = anthropicAg
+		if len(anthropicExtraAgs) > 0 {
+			anthropicRunner = &agent.AnthropicAccountsRunner{Primary: anthropicAg, Extras: anthropicExtraAgs}
+		}
+		agentMgr.RegisterFactory("anthropic", func() (agent.AgentRunner, error) { return anthropicRunner, nil })
 	}
 	if copilotAg != nil {
 		agentMgr.RegisterFactory("copilot", func() (agent.AgentRunner, error) { return copilotAg, nil })
@@ -2724,6 +2822,7 @@ func printHelp() {
 	fmt.Println("  ZAI_BASE_URL           Z.ai base URL (default: https://api.z.ai/api)")
 	fmt.Println("  ZAI_REGION             Z.ai region: global or cn (default: global)")
 	fmt.Println("  ANTHROPIC_TOKEN         Anthropic token (auto-detected if not set)")
+	fmt.Println("  ANTHROPIC_TOKEN_<NAME>  Extra Anthropic account (optional ANTHROPIC_REFRESH_TOKEN_<NAME>)")
 	fmt.Println("  COPILOT_TOKEN           GitHub Copilot token (PAT with copilot scope)")
 	fmt.Println("  CODEX_TOKEN             Codex OAuth token (recommended; required for Codex-only)")
 	fmt.Println("  MINIMAX_API_KEY         MiniMax API key")

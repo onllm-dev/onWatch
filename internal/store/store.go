@@ -1322,6 +1322,27 @@ func (s *Store) migrateSchema() error {
 		// Ignore errors - may already be INTEGER
 	}
 
+	// Anthropic multi-account support: account_id 0 is the primary account
+	// (all pre-existing rows), extra accounts use provider_accounts.id (> 0).
+	for _, table := range []string{"anthropic_snapshots", "anthropic_reset_cycles"} {
+		if _, err := s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") &&
+				!strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("failed to add account_id to %s: %w", table, err)
+			}
+		}
+	}
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_anthropic_snapshots_account ON anthropic_snapshots(account_id, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_anthropic_cycles_account ON anthropic_reset_cycles(account_id, quota_name, cycle_end)`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "no such table") {
+				return fmt.Errorf("failed anthropic account index migration: %w", err)
+			}
+		}
+	}
+
 	// Add Codex multi-account indexes
 	for _, stmt := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_codex_snapshots_account ON codex_snapshots(account_id, captured_at)`,
@@ -2330,7 +2351,7 @@ func (s *Store) migrateAnthropicSessions(idleTimeout time.Duration) error {
 	// Anthropic has normalized data - we need to pivot per-snapshot quota values into a flat slice.
 	// Walk snapshot by snapshot.
 	snapRows, err := s.db.Query(
-		`SELECT id, captured_at FROM anthropic_snapshots ORDER BY captured_at ASC`,
+		`SELECT id, captured_at FROM anthropic_snapshots WHERE account_id = 0 ORDER BY captured_at ASC`,
 	)
 	if err != nil {
 		return err

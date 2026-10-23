@@ -55,6 +55,9 @@ type Config struct {
 	AnthropicToken     string // ANTHROPIC_TOKEN or auto-detected
 	AnthropicAutoToken bool   // true if token was auto-detected
 	AnthropicSource    string // ANTHROPIC_SOURCE: "auto" (default), "statusline", "api"
+	// AnthropicHasAccounts is true when extra Anthropic accounts exist
+	// (ANTHROPIC_TOKEN_<NAME> env vars or <data dir>/anthropic-profiles/*.json).
+	AnthropicHasAccounts bool
 
 	// Copilot provider configuration
 	CopilotToken string // COPILOT_TOKEN (GitHub PAT with copilot scope)
@@ -859,7 +862,7 @@ func (c *Config) AvailableProviders() []string {
 
 func (c *Config) availableProvidersLocked() []string {
 	var providers []string
-	if c.AnthropicToken != "" {
+	if c.AnthropicToken != "" || c.AnthropicHasAccounts {
 		providers = append(providers, "anthropic")
 	}
 	if c.SyntheticAPIKey != "" {
@@ -943,7 +946,7 @@ func (c *Config) hasProviderLocked(name string) bool {
 	case "zai":
 		return c.ZaiAPIKey != ""
 	case "anthropic":
-		return c.AnthropicToken != ""
+		return c.AnthropicToken != "" || c.AnthropicHasAccounts
 	case "copilot":
 		return c.CopilotToken != ""
 	case "codex":
@@ -1002,7 +1005,7 @@ func (c *Config) hasMultipleProvidersLocked() bool {
 	if c.ZaiAPIKey != "" {
 		count++
 	}
-	if c.AnthropicToken != "" {
+	if c.AnthropicToken != "" || c.AnthropicHasAccounts {
 		count++
 	}
 	if c.CopilotToken != "" {

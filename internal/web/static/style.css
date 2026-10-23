@@ -4504,3 +4504,11 @@ body.accounts-overview-mode #sessions-section {
 .provider-intro-settings {
   margin-bottom: 20px;
 }
+
+/* Extra Anthropic accounts (multi-account) */
+.anthropic-accounts-extra {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}

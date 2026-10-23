@@ -112,6 +112,48 @@ type AnthropicAgent struct {
 	// statusline file is stale or missing. Default false preserves API polling
 	// for "auto" and "api" modes.
 	apiPollingDisabled bool
+
+	// Multi-account support. accountID is store.AnthropicDefaultAccountID (0)
+	// for the primary account; extra accounts use their provider_accounts.id.
+	accountID   int64
+	accountName string
+
+	// credsWriter persists rotated OAuth tokens. nil means the primary
+	// account's Claude Code credentials (api.WriteAnthropicCredentials).
+	// Extra accounts write to their own profile file only, so one-time-use
+	// refresh tokens are never shared across accounts.
+	credsWriter func(accessToken, refreshToken string, expiresIn int) error
+}
+
+// SetAccount scopes the agent to an extra Anthropic account. Snapshots and
+// cycles are stored under accountID and notifications carry the account.
+func (a *AnthropicAgent) SetAccount(accountID int64, name string) {
+	a.accountID = accountID
+	a.accountName = name
+}
+
+// AccountID returns the account this agent polls (0 = primary account).
+func (a *AnthropicAgent) AccountID() int64 {
+	return a.accountID
+}
+
+// AccountName returns the extra account name, or "" for the primary account.
+func (a *AnthropicAgent) AccountName() string {
+	return a.accountName
+}
+
+// SetCredentialsWriter overrides where rotated OAuth tokens are persisted.
+func (a *AnthropicAgent) SetCredentialsWriter(fn func(accessToken, refreshToken string, expiresIn int) error) {
+	a.credsWriter = fn
+}
+
+// notifyAccountID is the notify.QuotaStatus AccountID for this agent: empty
+// for the primary account so existing notification keys stay unchanged.
+func (a *AnthropicAgent) notifyAccountID() string {
+	if a.accountID == store.AnthropicDefaultAccountID {
+		return ""
+	}
+	return fmt.Sprintf("%d", a.accountID)
 }
 
 // SetPollingCheck sets a function that is called before each poll.
@@ -130,8 +172,12 @@ func (a *AnthropicAgent) sendAuthErrorNotification(title, message string, isReco
 	if a.notifier == nil {
 		return
 	}
+	if a.accountName != "" {
+		title = fmt.Sprintf("%s (%s)", title, a.accountName)
+	}
 	a.notifier.SendAuthErrorNotification(notify.AuthErrorAlert{
 		Provider:    "anthropic",
+		AccountID:   a.notifyAccountID(),
 		Title:       title,
 		Message:     message,
 		IsRecovable: isRecoverable,
@@ -226,7 +272,7 @@ func (a *AnthropicAgent) seedLastAPIPoll() {
 	if a.store == nil {
 		return
 	}
-	at, ok, err := a.store.LastAnthropicAPISnapshot()
+	at, ok, err := a.store.LastAnthropicAPISnapshotForAccount(a.accountID)
 	if err != nil {
 		a.logger.Warn("Could not read last Anthropic API snapshot time", "error", err)
 		return
@@ -324,7 +370,7 @@ func (a *AnthropicAgent) insertStatuslineSnapshot(snapshot *api.AnthropicSnapsho
 	if !a.lastStatuslineMtime.IsZero() && rawMtime.Equal(a.lastStatuslineMtime) {
 		return false, nil
 	}
-	if _, err := a.store.InsertAnthropicSnapshot(snapshot); err != nil {
+	if _, err := a.store.InsertAnthropicSnapshotForAccount(a.accountID, snapshot); err != nil {
 		return false, err
 	}
 	a.lastStatuslineMtime = rawMtime
@@ -433,7 +479,11 @@ func authRetryBackoff(attempt int) time.Duration {
 // back to it - that downgrade would leave the agent polling with a dead token
 // and a dead refresh token, an unrecoverable state (issue #111).
 func (a *AnthropicAgent) applyRefreshedTokens(newTokens *api.OAuthTokenResponse, supersededToken string) {
-	if err := api.WriteAnthropicCredentials(newTokens.AccessToken, newTokens.RefreshToken, newTokens.ExpiresIn); err != nil {
+	write := a.credsWriter
+	if write == nil {
+		write = api.WriteAnthropicCredentials
+	}
+	if err := write(newTokens.AccessToken, newTokens.RefreshToken, newTokens.ExpiresIn); err != nil {
 		a.logger.Error("Failed to save refreshed credentials", "error", err)
 		a.supersededToken = supersededToken
 	} else {
@@ -1021,7 +1071,7 @@ processResponse:
 	now := time.Now().UTC()
 	snapshot := resp.ToSnapshot(now)
 
-	if _, err := a.store.InsertAnthropicSnapshot(snapshot); err != nil {
+	if _, err := a.store.InsertAnthropicSnapshotForAccount(a.accountID, snapshot); err != nil {
 		a.logger.Error("Failed to insert Anthropic snapshot", "error", err)
 		return
 	}
@@ -1039,6 +1089,7 @@ processResponse:
 			a.notifier.Check(notify.QuotaStatus{
 				Provider:    "anthropic",
 				QuotaKey:    q.Name,
+				AccountID:   a.notifyAccountID(),
 				Utilization: q.Utilization,
 				ResetAt:     derefTime(q.ResetsAt),
 			})

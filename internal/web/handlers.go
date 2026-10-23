@@ -1646,6 +1646,9 @@ func providerKeyBase(provider string) string {
 	if strings.HasPrefix(provider, "minimax:") {
 		return "minimax"
 	}
+	if strings.HasPrefix(provider, "anthropic:") {
+		return "anthropic"
+	}
 	return provider
 }
 
@@ -2159,7 +2162,10 @@ func (h *Handler) ToggleProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.agentManager != nil && req.Polling != nil {
+	// Per-account Anthropic toggles ("anthropic:<id>") are read by each
+	// account's polling check; the shared runner keeps running.
+	perAccountAnthropic := strings.HasPrefix(req.Provider, "anthropic:")
+	if h.agentManager != nil && req.Polling != nil && !perAccountAnthropic {
 		if *req.Polling {
 			if err := h.agentManager.Start(baseProvider); err != nil {
 				h.logger.Warn("failed to start provider agent", "provider", baseProvider, "error", err)
@@ -3092,7 +3098,12 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 		response["zai"] = h.buildZaiCurrent()
 	}
 	if h.config.HasProvider("anthropic") && providerTelemetryEnabled(visibility, "anthropic") {
-		response["anthropic"] = h.buildAnthropicCurrent()
+		if h.config.AnthropicToken != "" && anthropicAccountShown(visibility, store.AnthropicDefaultAccountID) {
+			response["anthropic"] = h.buildAnthropicCurrent()
+		}
+		if extras := h.anthropicExtraAccountUsages(visibility); len(extras) > 0 {
+			response["anthropicAccounts"] = extras
+		}
 	}
 	if h.config.HasProvider("copilot") && providerTelemetryEnabled(visibility, "copilot") {
 		response["copilot"] = h.buildCopilotCurrent()
@@ -6609,12 +6620,22 @@ func (h *Handler) buildZaiInsights(hidden map[string]bool) insightsResponse {
 
 // ── Anthropic Provider Handlers ──
 
-// currentAnthropic returns Anthropic quota status.
+// currentAnthropic returns Anthropic quota status. With ?account=<id> it
+// returns that account only; otherwise the primary account, plus an
+// "accounts" list when extra Anthropic accounts are configured.
 func (h *Handler) currentAnthropic(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, h.buildAnthropicCurrent())
+	if accountID, ok := parseAnthropicAccountID(r); ok {
+		respondJSON(w, http.StatusOK, h.buildAnthropicCurrentForAccount(accountID))
+		return
+	}
+	response := h.buildAnthropicCurrent()
+	if extras := h.anthropicExtraAccountUsages(h.providerVisibilitySettings()); len(extras) > 0 {
+		response["accounts"] = extras
+	}
+	respondJSON(w, http.StatusOK, response)
 }
 
-// buildAnthropicCurrent builds the Anthropic current quota response map.
+// buildAnthropicCurrent builds the current quota response for the primary account.
 // Merges data from the latest snapshot (statusline or API) with per-quota
 // freshness information so the UI can show all quotas with age indicators.
 func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
@@ -6626,6 +6647,19 @@ func (h *Handler) buildAnthropicCurrent() map[string]interface{} {
 // outcome. The builder prefers the per-quota merge and falls back to the single
 // latest snapshot, so only a failure of both reads is a storage failure.
 func (h *Handler) buildAnthropicCurrentOK() (response map[string]interface{}, readOK bool, hasData bool) {
+	return h.buildAnthropicCurrentForAccountOK(store.AnthropicDefaultAccountID)
+}
+
+// buildAnthropicCurrentForAccount builds the current quota response for one
+// Anthropic account (0 = primary).
+func (h *Handler) buildAnthropicCurrentForAccount(accountID int64) map[string]interface{} {
+	response, _, _ := h.buildAnthropicCurrentForAccountOK(accountID)
+	return response
+}
+
+// buildAnthropicCurrentForAccountOK is buildAnthropicCurrentForAccount with an
+// explicit storage outcome (see buildAnthropicCurrentOK).
+func (h *Handler) buildAnthropicCurrentForAccountOK(accountID int64) (response map[string]interface{}, readOK bool, hasData bool) {
 	now := time.Now().UTC()
 	response = map[string]interface{}{
 		"capturedAt": now.Format(time.RFC3339),
@@ -6639,21 +6673,22 @@ func (h *Handler) buildAnthropicCurrentOK() (response map[string]interface{}, re
 	// Get per-quota latest values (merges statusline + API snapshots).
 	// This ensures we show Sonnet/extra_usage from older API polls alongside
 	// fresh five_hour/seven_day from statusline.
-	latestPerQuota, err := h.store.QueryAnthropicLatestPerQuota()
+	latestPerQuota, err := h.store.QueryAnthropicLatestPerQuotaForAccount(accountID)
 	if err != nil {
 		h.logger.Error("failed to query latest per-quota Anthropic data", "error", err)
 		// Fall back to single-snapshot approach
-		response, snapOK, snapData := h.buildAnthropicCurrentFallbackOK(response)
+		response, snapOK, snapData := h.buildAnthropicCurrentFallbackForAccountOK(response, accountID)
 		if !snapOK {
 			return response, false, false
 		}
 		return response, true, snapData
 	}
+	anthTracker := h.anthropicTrackerFor(accountID)
 
 	if len(latestPerQuota) == 0 {
 		// The per-quota table is empty; the single-snapshot read can still hold
 		// an older API poll, and its outcome decides success.
-		response, snapOK, snapData := h.buildAnthropicCurrentFallbackOK(response)
+		response, snapOK, snapData := h.buildAnthropicCurrentFallbackForAccountOK(response, accountID)
 		if !snapOK {
 			return response, false, false
 		}
@@ -6701,8 +6736,8 @@ func (h *Handler) buildAnthropicCurrentOK() (response map[string]interface{}, re
 			qMap["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
 		// Enrich with tracker data
-		if h.anthropicTracker != nil {
-			if summary, err := h.anthropicTracker.UsageSummary(q.Name); err == nil && summary != nil {
+		if anthTracker != nil {
+			if summary, err := anthTracker.UsageSummary(q.Name); err == nil && summary != nil {
 				qMap["currentRate"] = summary.CurrentRate
 				qMap["projectedUtil"] = summary.ProjectedUtil
 			}
@@ -6724,13 +6759,20 @@ func (h *Handler) buildAnthropicCurrentFallback(response map[string]interface{})
 // buildAnthropicCurrentFallbackOK is buildAnthropicCurrentFallback with an
 // explicit storage outcome.
 func (h *Handler) buildAnthropicCurrentFallbackOK(response map[string]interface{}) (result map[string]interface{}, readOK bool, hasData bool) {
-	latest, err := h.store.QueryLatestAnthropic()
+	return h.buildAnthropicCurrentFallbackForAccountOK(response, store.AnthropicDefaultAccountID)
+}
+
+// buildAnthropicCurrentFallbackForAccountOK is buildAnthropicCurrentFallbackOK
+// scoped to one Anthropic account (0 = primary).
+func (h *Handler) buildAnthropicCurrentFallbackForAccountOK(response map[string]interface{}, accountID int64) (result map[string]interface{}, readOK bool, hasData bool) {
+	latest, err := h.store.QueryLatestAnthropicForAccount(accountID)
 	if err != nil {
 		return response, false, false
 	}
 	if latest == nil {
 		return response, true, false
 	}
+	anthTracker := h.anthropicTrackerFor(accountID)
 
 	now := time.Now().UTC()
 	response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
@@ -6765,8 +6807,8 @@ func (h *Handler) buildAnthropicCurrentFallbackOK(response map[string]interface{
 			qMap["timeUntilReset"] = formatDuration(timeUntilReset)
 			qMap["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
-		if h.anthropicTracker != nil {
-			if summary, err := h.anthropicTracker.UsageSummary(q.Name); err == nil && summary != nil {
+		if anthTracker != nil {
+			if summary, err := anthTracker.UsageSummary(q.Name); err == nil && summary != nil {
 				qMap["currentRate"] = summary.CurrentRate
 				qMap["projectedUtil"] = summary.ProjectedUtil
 			}
@@ -6776,6 +6818,107 @@ func (h *Handler) buildAnthropicCurrentFallbackOK(response map[string]interface{
 	response["quotas"] = quotas
 	applyDisplayModeToResponse(response, h.getDisplayMode("anthropic"))
 	return response, true, true
+}
+
+// parseAnthropicAccountID returns the ?account= query value when present and
+// valid (0 = primary account, > 0 = provider_accounts.id of an extra account).
+func parseAnthropicAccountID(r *http.Request) (int64, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("account"))
+	if raw == "" {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id < 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+// anthropicTrackerFor returns the tracker used for summaries of one account.
+// The primary account reuses the live tracker; extra accounts get a
+// lightweight store-backed tracker (summaries only read stored cycles).
+func (h *Handler) anthropicTrackerFor(accountID int64) *tracker.AnthropicTracker {
+	if accountID == store.AnthropicDefaultAccountID {
+		return h.anthropicTracker
+	}
+	if h.store == nil {
+		return nil
+	}
+	return tracker.NewAnthropicTrackerForAccount(h.store, h.logger, accountID)
+}
+
+// anthropicExtraAccounts returns the active extra Anthropic accounts.
+func (h *Handler) anthropicExtraAccounts() []store.ProviderAccount {
+	if h.store == nil {
+		return nil
+	}
+	accounts, err := h.store.QueryActiveProviderAccounts("anthropic")
+	if err != nil {
+		h.logger.Error("failed to query Anthropic accounts", "error", err)
+		return nil
+	}
+	return accounts
+}
+
+// anthropicAccountShown reports whether an Anthropic account (0 = primary)
+// should appear on the dashboard: both its telemetry and dashboard toggles
+// ("anthropic:<id>") must be on. Missing keys default to on.
+func anthropicAccountShown(visibility map[string]interface{}, accountID int64) bool {
+	entry, ok := visibility[fmt.Sprintf("anthropic:%d", accountID)]
+	if !ok {
+		return true
+	}
+	if polling, exists := providerPollingValue(entry); exists && !polling {
+		return false
+	}
+	switch v := entry.(type) {
+	case map[string]interface{}:
+		if d, ok := v["dashboard"].(bool); ok && !d {
+			return false
+		}
+	case map[string]bool:
+		if d, ok := v["dashboard"]; ok && !d {
+			return false
+		}
+	}
+	return true
+}
+
+// anthropicExtraAccountUsages builds the current usage of every visible extra
+// Anthropic account, tagged with accountId/accountName.
+func (h *Handler) anthropicExtraAccountUsages(visibility map[string]interface{}) []map[string]interface{} {
+	accounts := h.anthropicExtraAccounts()
+	usages := make([]map[string]interface{}, 0, len(accounts))
+	for _, acc := range accounts {
+		if !anthropicAccountShown(visibility, acc.ID) {
+			continue
+		}
+		usage := h.buildAnthropicCurrentForAccount(acc.ID)
+		usage["accountId"] = acc.ID
+		usage["accountName"] = acc.Name
+		usages = append(usages, usage)
+	}
+	return usages
+}
+
+// AnthropicAccounts lists the Anthropic accounts (primary + extra) for Settings.
+func (h *Handler) AnthropicAccounts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	accounts := []map[string]interface{}{}
+	if h.config != nil && h.config.AnthropicToken != "" {
+		accounts = append(accounts, map[string]interface{}{
+			"id": store.AnthropicDefaultAccountID, "name": "default", "isDefault": true,
+		})
+	}
+	for _, acc := range h.anthropicExtraAccounts() {
+		accounts = append(accounts, map[string]interface{}{
+			"id": acc.ID, "name": acc.Name, "isDefault": false,
+		})
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{"accounts": accounts})
 }
 
 // anthropicUtilStatus returns a status string based on utilization percentage.
@@ -6829,7 +6972,8 @@ func (h *Handler) historyAnthropic(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	start := now.Add(-duration)
-	snapshots, err := h.store.QueryAnthropicRangeSampled(start, now)
+	accountID, _ := parseAnthropicAccountID(r)
+	snapshots, err := h.store.QueryAnthropicRangeSampledForAccount(accountID, start, now)
 	if err != nil {
 		h.logger.Error("failed to query Anthropic history", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query history")
@@ -6896,7 +7040,8 @@ func (h *Handler) cyclesAnthropic(w http.ResponseWriter, r *http.Request) {
 	rangeDur := parseInsightsRange(r.URL.Query().Get("range"))
 	since := time.Now().UTC().Add(-rangeDur)
 
-	points, err := h.store.QueryAnthropicUtilizationSeries(quotaName, since)
+	accountID, _ := parseAnthropicAccountID(r)
+	points, err := h.store.QueryAnthropicUtilizationSeriesForAccount(accountID, quotaName, since)
 	if err != nil {
 		h.logger.Error("failed to query Anthropic utilization series", "error", err)
 		respondError(w, http.StatusInternalServerError, "failed to query cycles")

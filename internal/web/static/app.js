@@ -1438,6 +1438,99 @@ function renderAnthropicQuotaCards(quotas, containerId) {
   });
 }
 
+// renderAnthropicExtraAccounts shows extra Anthropic accounts (ANTHROPIC_TOKEN_<NAME>
+// or anthropic-profiles/*.json) below the primary account's cards. Cards are
+// read-only summaries; the primary account keeps the detail modal and charts.
+function renderAnthropicExtraAccounts(accounts) {
+  const grid = document.getElementById('quota-grid-anthropic');
+  if (!grid) return;
+  let container = document.getElementById('anthropic-accounts-extra');
+  if (!accounts || accounts.length === 0) {
+    if (container) container.remove();
+    return;
+  }
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'anthropic-accounts-extra';
+    container.className = 'anthropic-accounts-extra';
+    grid.insertAdjacentElement('afterend', container);
+  }
+  container.innerHTML = accounts.map((acc) => {
+    const quotas = Array.isArray(acc.quotas) ? acc.quotas : [];
+    const cards = quotas.length === 0
+      ? '<p class="insight-text">No data yet for this account.</p>'
+      : quotas.map((q) => {
+        const pct = Number(q.cardPercent != null ? q.cardPercent : (q.utilization || 0));
+        const status = q.status || 'healthy';
+        const statusCfg = statusConfig[status] || statusConfig.healthy;
+        const displayName = q.displayName || anthropicQuotaLabel(q.name);
+        return `<article class="quota-card anthropic-card${q.isStale ? ' stale-card' : ''}" data-quota="${escapeHTML(q.name)}" data-provider="anthropic" data-account="${escapeHTML(String(acc.accountId))}">
+          <header class="card-header">
+            <h2 class="quota-title">${escapeHTML(displayName)}</h2>
+            <span class="countdown">${q.timeUntilResetSeconds > 0 ? formatDuration(q.timeUntilResetSeconds) : '--:--'}</span>
+          </header>
+          <div class="progress-stats">
+            <span class="usage-percent">${pct.toFixed(1)}%</span>
+            <span class="usage-fraction">${escapeHTML(q.cardLabel || 'Utilization')}</span>
+          </div>
+          <div class="progress-wrapper">
+            <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress-fill" style="width: ${pct.toFixed(1)}%" data-status="${status}"></div>
+            </div>
+          </div>
+          ${q.ageSeconds != null ? `<div class="card-freshness${q.isStale ? ' stale' : ''}">${freshnessLabel(q)}</div>` : ''}
+          <footer class="card-footer">
+            <span class="status-badge" data-status="${status}">
+              <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+              ${statusCfg.label}
+            </span>
+            <span class="reset-time">${q.resetsAt ? formatResetTime(q.resetsAt) : ''}</span>
+          </footer>
+        </article>`;
+      }).join('');
+    return `<section class="codex-account-section anthropic-account-section" data-account="${escapeHTML(String(acc.accountId))}">
+      <div class="codex-account-header"><span class="codex-account-name">${escapeHTML(acc.accountName || ('Account ' + acc.accountId))}</span></div>
+      <div class="quota-grid">${cards}</div>
+    </section>`;
+  }).join('');
+}
+
+// appendAnthropicAccountRows adds per-account telemetry/dashboard toggles
+// ("anthropic:<id>") under the Anthropic provider row when extra accounts exist.
+async function appendAnthropicAccountRows(anthropicRow, baseVisibility) {
+  if (!anthropicRow) return;
+  let accounts = [];
+  try {
+    const res = await authFetch(`${API_BASE}/api/anthropic/accounts`);
+    if (!res.ok) return;
+    const data = await res.json();
+    accounts = Array.isArray(data.accounts) ? data.accounts : [];
+  } catch (e) {
+    return;
+  }
+  if (!accounts.some(a => !a.isDefault)) return;
+  const sub = document.createElement('div');
+  sub.className = 'codex-subprofiles anthropic-subprofiles';
+  const headerVis = baseVisibility.anthropic || { polling: true, dashboard: true };
+  accounts.forEach((acc) => {
+    const key = `anthropic:${acc.id}`;
+    const row = createProviderToggleRow({
+      key,
+      name: escapeHtml(acc.isDefault ? 'default' : acc.name),
+      desc: acc.isDefault
+        ? 'Primary account (ANTHROPIC_TOKEN or Claude Code credentials)'
+        : `Extra Claude account: ${escapeHtml(acc.name)}`,
+      vis: baseVisibility[key] || headerVis,
+      configured: true,
+      autoDetectable: true,
+      isPolling: false,
+    });
+    row.classList.add('codex-subprofile-row');
+    sub.appendChild(row);
+  });
+  anthropicRow.insertAdjacentElement('afterend', sub);
+}
+
 function updateAnthropicCard(quota) {
   const key = `anth-${quota.name}`;
   const prev = State.currentQuotas[key];
@@ -4787,6 +4880,7 @@ async function fetchCurrent() {
             updateAnthropicSessionHeaders();
           }
         }
+        renderAnthropicExtraAccounts(Array.isArray(data.accounts) ? data.accounts : []);
       } else if (provider === 'codex') {
         fetchCodexUsage({ mode: 'codex', data });
       } else if (provider === 'antigravity') {
@@ -7112,6 +7206,10 @@ function buildAllProviderEntries() {
       providerSet.add('minimax');
       return;
     }
+    if (key === 'anthropicAccounts') {
+      providerSet.add('anthropic');
+      return;
+    }
     if (bothProviderNames[key]) {
       providerSet.add(key);
     }
@@ -7303,7 +7401,28 @@ function buildAllProviderEntries() {
     });
   };
 
-  order.forEach(addProviderEntry);
+  // Extra Anthropic accounts render as their own cards after the primary one.
+  const addAnthropicAccountEntries = () => {
+    const accounts = Array.isArray(current.anthropicAccounts) ? current.anthropicAccounts : [];
+    if (accounts.length === 0 || !isProviderTelemetryEnabled('anthropic')) return;
+    accounts.forEach((account) => {
+      const accountID = account.accountId;
+      entries.push({
+        provider: 'anthropic',
+        cardKey: sanitizeProviderCardKey(`anthropic-${accountID}`),
+        title: `Anthropic - ${account.accountName || ('Account ' + accountID)}`,
+        badge: '',
+        quotas: normalizeBothQuotas('anthropic', account),
+        insights: { stats: [], insights: [] },
+        historyRows: [],
+      });
+    });
+  };
+
+  order.forEach((provider) => {
+    addProviderEntry(provider);
+    if (provider === 'anthropic') addAnthropicAccountEntries();
+  });
   return entries;
 }
 
@@ -10972,6 +11091,9 @@ async function populateProviderToggles(visibility) {
       // so treat anything currently polling as live.
       if (configured || p.isPolling) {
         container.appendChild(row);
+        if (p.key === 'anthropic') {
+          appendAnthropicAccountRows(row, baseVisibility);
+        }
       } else {
         unconfiguredGroup.appendChild(row);
         unconfiguredCount += 1;
