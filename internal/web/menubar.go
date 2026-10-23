@@ -724,7 +724,13 @@ func (h *Handler) applyMenubarOldestCapturedAt(card *menubar.ProviderCard, id st
 	// stale for up to menubarQuotaMemoryBound after the quota disappeared.
 	// Anthropic and Mistral read a window (per-quota merge and per-quota latest
 	// snapshots), where a missing quota may simply have aged out.
-	oldest := h.mergeQuotaTimes(id, present, base != "cursor")
+	var reportedAt time.Time
+	if base == "anthropic" && h.anthropicSource() != "statusline" {
+		// In statusline mode an old API poll says nothing about the current
+		// plan, and the lookup would scan every statusline row since it.
+		reportedAt = h.anthropicLastAPIReport()
+	}
+	oldest := h.mergeQuotaTimes(id, present, base != "cursor", reportedAt)
 	if oldest.IsZero() {
 		return current
 	}
@@ -760,6 +766,23 @@ func (h *Handler) anthropicSource() string {
 		return "auto"
 	}
 	return source
+}
+
+// anthropicLastAPIReport returns when the newest Anthropic usage API poll was
+// stored, or zero when unknown. API polls carry every quota the plan has, so a
+// quota last seen before this time is no longer reported.
+func (h *Handler) anthropicLastAPIReport() time.Time {
+	if h.store == nil {
+		return time.Time{}
+	}
+	at, ok, err := h.store.LastAnthropicAPISnapshot()
+	if err != nil || !ok {
+		return time.Time{}
+	}
+	// Payload quota times are whole seconds; the stored poll time keeps
+	// nanoseconds. Without truncation a quota from this very poll would read
+	// as older than it and be dropped.
+	return at.Truncate(time.Second)
 }
 
 // anthropicPrimaryCapturedAt returns the newest capture time among the two
@@ -809,7 +832,12 @@ const menubarQuotaMemoryBound = 24 * time.Hour
 // rememberMissing must be false for providers whose builder reads only the
 // latest snapshot (Cursor): a quota absent there is gone, so it stops counting
 // immediately instead of pinning the card until the bound expires.
-func (h *Handler) mergeQuotaTimes(id string, present map[string]time.Time, rememberMissing bool) time.Time {
+//
+// reportedAt is when the provider last sent a complete report (for Anthropic,
+// the newest API poll). A missing quota last seen before it was left out of
+// that report, so it no longer exists (a plan downgrade drops per-model weekly
+// buckets) and is dropped at once. Zero disables the check.
+func (h *Handler) mergeQuotaTimes(id string, present map[string]time.Time, rememberMissing bool, reportedAt time.Time) time.Time {
 	h.menubarLastGoodMu.Lock()
 	defer h.menubarLastGoodMu.Unlock()
 	if len(present) == 0 && rememberMissing {
@@ -850,7 +878,7 @@ func (h *Handler) mergeQuotaTimes(id string, present map[string]time.Time, remem
 		if _, ok := present[name]; ok {
 			continue
 		}
-		if !rememberMissing {
+		if !rememberMissing || lastSeen[name].Before(reportedAt) {
 			delete(lastSeen, name)
 			delete(missing, name)
 			continue

@@ -333,3 +333,136 @@ func TestMenubarRemovedQuotaUnpinsAfterBound(t *testing.T) {
 		t.Fatalf("remembered quotas = %v, want only the present one", got)
 	}
 }
+
+// A plan change (Max -> Pro) removes API-only quotas such as a per-model weekly
+// bucket. Once a newer API poll has come back without the quota, it is gone:
+// it must stop pinning the card's age immediately rather than for
+// menubarQuotaMemoryBound. Before the fix the card read "20h" while every quota
+// it showed was seconds old.
+func TestMenubarQuotaOmittedByNewerAPIPollUnpinsAtOnce(t *testing.T) {
+	h, s, _, done := staleTestHandler(t, anthropicStaleConfig())
+	defer done()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	removedAt := now.Add(-20 * time.Hour)
+	apiAt := now.Add(-time.Minute)
+	if _, err := s.InsertAnthropicSnapshot(&api.AnthropicSnapshot{
+		CapturedAt: apiAt,
+		Quotas: []api.AnthropicQuota{
+			{Name: "five_hour", Utilization: 1},
+			{Name: "seven_day", Utilization: 11},
+		},
+	}); err != nil {
+		t.Fatalf("insert API snapshot: %v", err)
+	}
+
+	withRemoved := map[string]interface{}{
+		"capturedAt": apiAt.Format(time.RFC3339),
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": apiAt.Format(time.RFC3339)},
+			map[string]interface{}{"name": "seven_day", "lastUpdatedAt": apiAt.Format(time.RFC3339)},
+			map[string]interface{}{"name": "seven_day_sonnet", "lastUpdatedAt": removedAt.Format(time.RFC3339)},
+		},
+	}
+	card := &menubar.ProviderCard{}
+	if got := h.applyMenubarOldestCapturedAt(card, "anthropic", withRemoved); !got.Equal(removedAt) {
+		t.Fatalf("while the quota is still shown = %v, want its own time %v", got, removedAt)
+	}
+
+	without := map[string]interface{}{
+		"capturedAt": apiAt.Format(time.RFC3339),
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": apiAt.Format(time.RFC3339)},
+			map[string]interface{}{"name": "seven_day", "lastUpdatedAt": apiAt.Format(time.RFC3339)},
+		},
+	}
+	card = &menubar.ProviderCard{}
+	if got := h.applyMenubarOldestCapturedAt(card, "anthropic", without); !got.Equal(apiAt) {
+		t.Fatalf("after a newer API poll omitted it = %v, want the shown quotas' time %v", got, apiAt)
+	}
+	if _, ok := h.menubarQuotas["anthropic"]["seven_day_sonnet"]; ok {
+		t.Fatal("the removed quota is still remembered")
+	}
+}
+
+// The counterpart: when no API poll has succeeded since the quota was last
+// seen (polls failing), its absence proves nothing, so it keeps pinning the
+// age and the card cannot look fresher than its data.
+func TestMenubarQuotaMissingWithoutNewerAPIPollStaysRemembered(t *testing.T) {
+	h, s, _, done := staleTestHandler(t, anthropicStaleConfig())
+	defer done()
+
+	// The stored poll time keeps nanoseconds while payload times are whole
+	// seconds; the quota from that very poll must not read as older than it.
+	now := time.Now().UTC()
+	if now.Nanosecond() == 0 {
+		now = now.Add(time.Millisecond)
+	}
+	lastAPI := now.Add(-3 * time.Hour)
+	lastAPISeconds := lastAPI.Truncate(time.Second)
+	statuslineAt := now.Add(-time.Minute)
+	if _, err := s.InsertAnthropicSnapshot(&api.AnthropicSnapshot{
+		CapturedAt: lastAPI,
+		Quotas: []api.AnthropicQuota{
+			{Name: "five_hour", Utilization: 1},
+			{Name: "seven_day", Utilization: 11},
+			{Name: "seven_day_sonnet", Utilization: 5},
+		},
+	}); err != nil {
+		t.Fatalf("insert API snapshot: %v", err)
+	}
+
+	withSonnet := map[string]interface{}{
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": statuslineAt.Format(time.RFC3339)},
+			map[string]interface{}{"name": "seven_day_sonnet", "lastUpdatedAt": lastAPI.Format(time.RFC3339)},
+		},
+	}
+	card := &menubar.ProviderCard{}
+	h.applyMenubarOldestCapturedAt(card, "anthropic", withSonnet)
+
+	aged := map[string]interface{}{
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": statuslineAt.Format(time.RFC3339)},
+		},
+	}
+	card = &menubar.ProviderCard{}
+	if got := h.applyMenubarOldestCapturedAt(card, "anthropic", aged); !got.Equal(lastAPISeconds) {
+		t.Fatalf("missing quota with no newer API poll = %v, want the remembered %v", got, lastAPISeconds)
+	}
+}
+
+// Statusline-only mode never polls the API, so an old API snapshot from before
+// the switch says nothing about the current plan: a missing quota keeps the
+// bounded memory instead of being dropped against that stale poll.
+func TestMenubarStatuslineModeIgnoresOldAPIPoll(t *testing.T) {
+	cfg := &config.Config{AnthropicToken: "token", AnthropicSource: "statusline", PollInterval: 120 * time.Second}
+	h, s, _, done := staleTestHandler(t, cfg)
+	defer done()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	lastSeen := now.Add(-5 * time.Hour)
+	if _, err := s.InsertAnthropicSnapshot(&api.AnthropicSnapshot{
+		CapturedAt: now.Add(-time.Hour),
+		Quotas:     []api.AnthropicQuota{{Name: "five_hour", Utilization: 1}},
+	}); err != nil {
+		t.Fatalf("insert API snapshot: %v", err)
+	}
+
+	card := &menubar.ProviderCard{}
+	h.applyMenubarOldestCapturedAt(card, "anthropic", map[string]interface{}{
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": now.Format(time.RFC3339)},
+			map[string]interface{}{"name": "seven_day_sonnet", "lastUpdatedAt": lastSeen.Format(time.RFC3339)},
+		},
+	})
+	card = &menubar.ProviderCard{}
+	got := h.applyMenubarOldestCapturedAt(card, "anthropic", map[string]interface{}{
+		"quotas": []interface{}{
+			map[string]interface{}{"name": "five_hour", "lastUpdatedAt": now.Format(time.RFC3339)},
+		},
+	})
+	if !got.Equal(lastSeen) {
+		t.Fatalf("statusline mode = %v, want the remembered %v", got, lastSeen)
+	}
+}
