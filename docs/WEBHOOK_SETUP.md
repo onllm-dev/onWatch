@@ -38,7 +38,12 @@ The test button uses the *saved* configuration, so save before testing.
 | `auth_error` | A provider token refresh or authentication fails |
 | `starter_success` | The Codex auto quota-starter successfully started a limit window |
 | `starter_failure` | The Codex auto quota-starter ping failed |
+| `reset_credit_expiry` | A banked Codex reset expires within 24 hours |
 | `test` | You press **Send Test Webhook** |
+
+A newly added event is off for webhooks that already exist: its stored value is
+absent, and only `warning` and `critical` default on. Tick it once under
+**Webhook Configuration** and save.
 
 ## Payload
 
@@ -62,7 +67,9 @@ The test button uses the *saved* configuration, so save before testing.
 
 Optional fields are omitted rather than sent as zero. `reset_at` appears only
 when the provider reports a reset time. `quota_key`, `utilization`, `limit`, and
-`threshold` are absent on auth-error and starter events.
+`threshold` are absent on auth-error and starter events. On
+`reset_credit_expiry`, `quota_key` is the reset credit ID and `reset_at` is the
+expiry time.
 
 **The payload never contains credentials** - no OAuth tokens, API keys, or the
 webhook bearer token itself.

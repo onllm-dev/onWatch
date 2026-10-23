@@ -227,7 +227,7 @@ The tray is currently in beta. Feedback is highly appreciated at [github.com/onl
 
 **Push notifications (Beta)** -- Receive browser push notifications when quotas cross thresholds. onWatch is a PWA (Progressive Web App) - install it from your browser for a native app experience. Uses Web Push protocol (VAPID) with zero external dependencies. Configure delivery channels (email, push, webhook, or any combination) per your preference.
 
-**Webhook notifications (Beta)** -- POST a JSON payload to any HTTP endpoint on warning, critical, reset, auth error, and Codex quota-starter events. Works with ntfy, Gotify, and custom services, with optional bearer-token auth and custom headers. Payloads never contain credentials. See [docs/WEBHOOK_SETUP.md](docs/WEBHOOK_SETUP.md).
+**Webhook notifications (Beta)** -- POST a JSON payload to any HTTP endpoint on warning, critical, reset, auth error, Codex quota-starter, and banked Codex reset expiry events. Works with ntfy, Gotify, and custom services, with optional bearer-token auth and custom headers. Payloads never contain credentials. See [docs/WEBHOOK_SETUP.md](docs/WEBHOOK_SETUP.md).
 
 **Dark/Light mode** -- Toggle via sun/moon icon in the header. Auto-detects system preference on first visit and persists your choice across sessions.
 
