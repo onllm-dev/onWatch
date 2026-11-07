@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/onllm-dev/onwatch/v2/internal/api"
@@ -583,6 +584,11 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 		attempted["ollama"] = struct{}{}
 		payload, readOK, hasData := h.buildOllamaCurrentOK()
 		add(h.menubarResolveCard("ollama", resolveProviderTabLabel("ollama", labels), "", payload, readOK, hasData, normalized.WarningPercent, normalized.CriticalPercent, nil))
+	}
+	if h.config != nil && h.config.HasProvider("zenmux") && h.providerDashboardVisible("zenmux", visibility) {
+		attempted["zenmux"] = struct{}{}
+		payload, readOK, hasData := h.buildZenmuxCurrentOK(context.Background())
+		add(h.menubarResolveCard("zenmux", resolveProviderTabLabel("zenmux", labels), "", payload, readOK, hasData, normalized.WarningPercent, normalized.CriticalPercent, nil))
 	}
 	if h.config != nil && h.config.HasProvider("muse") && h.providerDashboardVisible("muse", visibility) {
 		attempted["muse"] = struct{}{}
@@ -1819,6 +1825,15 @@ func stringValue(item map[string]interface{}, key string) string {
 	switch value := item[key].(type) {
 	case string:
 		return value
+	case time.Time:
+		return value.UTC().Format(time.RFC3339)
+	case *time.Time:
+		// A typed nil pointer still satisfies fmt.Stringer; calling String on
+		// it panics (Zenmux quotas carry resetsAt as *time.Time).
+		if value == nil {
+			return ""
+		}
+		return value.UTC().Format(time.RFC3339)
 	case fmt.Stringer:
 		return value.String()
 	case int:

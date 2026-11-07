@@ -135,6 +135,9 @@ type Config struct {
 	CommandCodeDisabled  bool   // true if COMMANDCODE_ENABLED=false explicitly opted out
 	CommandCodeBaseURL   string // COMMANDCODE_BASE_URL override for proxy setups
 
+	ZenmuxManagementAPIKey string // ZENMUX_MANAGEMENT_API_KEY
+	ZenmuxDisabled         bool   // explicit ZENMUX_ENABLED=false
+
 	// Custom API Integrations telemetry ingestion
 	APIIntegrationsEnabled   bool          // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
 	APIIntegrationsDir       string        // ONWATCH_API_INTEGRATIONS_DIR (default: ~/.onwatch/api-integrations or /data/api-integrations)
@@ -338,6 +341,8 @@ var onwatchEnvKeys = []string{
 	"COMMANDCODE_ENABLED",
 	"COMMANDCODE_BASE_URL",
 	"COMMANDCODE_AUTH_PATH",
+	"ZENMUX_MANAGEMENT_API_KEY",
+	"ZENMUX_ENABLED",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
@@ -590,6 +595,9 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	}
 	// File-based auto-detection (DetectCommandCodeCredentials) happens later in
 	// main.go preflight.
+
+	cfg.ZenmuxManagementAPIKey = strings.TrimSpace(os.Getenv("ZENMUX_MANAGEMENT_API_KEY"))
+	cfg.ZenmuxDisabled = strings.EqualFold(strings.TrimSpace(os.Getenv("ZENMUX_ENABLED")), "false")
 
 	// Custom API Integrations telemetry ingestion
 	cfg.APIIntegrationsDir = strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_DIR"))
@@ -913,6 +921,9 @@ func (c *Config) availableProvidersLocked() []string {
 	if c.CommandCodeAPIKey != "" || c.CommandCodeEnabled {
 		providers = append(providers, "commandcode")
 	}
+	if c.hasProviderLocked("zenmux") {
+		providers = append(providers, "zenmux")
+	}
 	if c.hasProviderLocked("mistral") {
 		providers = append(providers, "mistral")
 	}
@@ -982,6 +993,8 @@ func (c *Config) hasProviderLocked(name string) bool {
 		// Every Command Code poll is a read-only billing GET, so a detected key
 		// is enough; only an explicit opt-out disables it.
 		return !c.CommandCodeDisabled && (c.CommandCodeAPIKey != "" || c.CommandCodeEnabled)
+	case "zenmux":
+		return !c.ZenmuxDisabled && strings.TrimSpace(c.ZenmuxManagementAPIKey) != ""
 	}
 	return false
 }
@@ -1048,6 +1061,9 @@ func (c *Config) hasMultipleProvidersLocked() bool {
 		count++
 	}
 	if c.CommandCodeAPIKey != "" || c.CommandCodeEnabled {
+		count++
+	}
+	if c.hasProviderLocked("zenmux") {
 		count++
 	}
 	if c.hasProviderLocked("mistral") {
@@ -1146,6 +1162,11 @@ func (c *Config) String() string {
 	}
 	if c.MuseEnabled {
 		fmt.Fprintf(&sb, "  MuseEnabled: true,\n")
+	}
+	if c.ZenmuxManagementAPIKey != "" {
+		fmt.Fprintln(&sb, "  ZenmuxManagementAPIKey: (set),")
+	} else {
+		fmt.Fprintln(&sb, "  ZenmuxManagementAPIKey: (not set),")
 	}
 	fmt.Fprintf(&sb, "  CommandCodeAPIKey: %s,\n", redactAPIKey(c.CommandCodeAPIKey, ""))
 	if c.CommandCodeAutoToken {

@@ -206,6 +206,72 @@ func TestMenubarSummaryIncludesCursorWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestMenubarSummaryIncludesZenmuxWhenConfigured(t *testing.T) {
+	t.Setenv("ONWATCH_TEST_MODE", "1")
+
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Now().UTC()
+	reset := now.Add(2 * time.Hour)
+	half, limit, used := 0.5, 213.0, 106.5
+	if _, err := s.InsertZenmuxSnapshot(&api.ZenmuxSnapshot{
+		CapturedAt:   now,
+		Quota5Hour:   &api.ZenmuxWindow{UsagePercentage: &half, MaxFlows: &limit, UsedFlows: &used, ResetsAt: &reset},
+		Quota7Day:    &api.ZenmuxWindow{UsagePercentage: &half, MaxFlows: &limit, UsedFlows: &used, ResetsAt: &reset},
+		QuotaMonthly: &api.ZenmuxMonthly{MaxFlows: &limit},
+	}); err != nil {
+		t.Fatalf("InsertZenmuxSnapshot: %v", err)
+	}
+
+	h := NewHandler(s, nil, nil, nil, &config.Config{
+		ZenmuxManagementAPIKey: "test",
+		PollInterval:           60 * time.Second,
+		Port:                   9211,
+		AdminUser:              "admin",
+		AdminPass:              "test",
+		DBPath:                 "./test.db",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	h.MenubarSummary(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var snapshot menubar.Snapshot
+	if err := json.Unmarshal(rr.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	for _, p := range snapshot.Providers {
+		if p.ID == "zenmux" {
+			if len(p.Quotas) == 0 {
+				t.Fatal("zenmux card has no quotas")
+			}
+			return
+		}
+	}
+	t.Fatalf("expected zenmux provider card, got: %#v", snapshot.Providers)
+}
+
+func TestStringValueHandlesTimePointers(t *testing.T) {
+	t.Parallel()
+
+	var nilReset *time.Time
+	if got := stringValue(map[string]interface{}{"resetsAt": nilReset}, "resetsAt"); got != "" {
+		t.Fatalf("nil *time.Time = %q, want empty", got)
+	}
+	reset := time.Date(2026, 11, 13, 12, 25, 58, 0, time.UTC)
+	if got := stringValue(map[string]interface{}{"resetsAt": &reset}, "resetsAt"); got != "2026-11-13T12:25:58Z" {
+		t.Fatalf("*time.Time = %q, want RFC3339", got)
+	}
+}
+
 // mistral_enabled must reflect config, not poll state: a provider card only
 // appears in Providers once it has quota data, which would hide anything
 // gated on it (e.g. the menubar's browser-access grant prompt) until after
