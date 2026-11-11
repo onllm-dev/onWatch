@@ -80,8 +80,31 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup Node
+        if: runner.os == 'Linux'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Zenmux browser test dependencies
+        if: runner.os == 'Linux'
+        id: zenmux_browser
+        shell: bash
+        run: |
+          module="$RUNNER_TEMP/zenmux-playwright/node_modules/playwright"
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/zenmux-playwright-browsers"
+          npm install --prefix "$RUNNER_TEMP/zenmux-playwright" --no-save --no-package-lock playwright@1.62.1
+          "$RUNNER_TEMP/zenmux-playwright/node_modules/.bin/playwright" install --with-deps --only-shell chromium
+          browser=$(find "$PLAYWRIGHT_BROWSERS_PATH" -type f -name chrome-headless-shell -print -quit)
+          test -n "$browser" && test -x "$browser"
+          echo "module=$module" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+
       - name: Test
         shell: bash
+        env:
+          ZENMUX_BROWSER_BIN: ${{ steps.zenmux_browser.outputs.browser }}
+          ZENMUX_PLAYWRIGHT_MODULE: ${{ steps.zenmux_browser.outputs.module }}
         run: go test ${{ matrix.race }} -timeout 15m -coverprofile=coverage.out -covermode=atomic -count=1 ./...
 
       # The tray companion is compiled only with -tags menubar.

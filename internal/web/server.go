@@ -61,6 +61,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/providers/toggle"), handler.ToggleProvider)
 	mux.HandleFunc(p("/api/providers/reload"), handler.ReloadProviders)
 	mux.HandleFunc(p("/api/current"), handler.Current)
+	mux.HandleFunc(p("/api/zenmux/usage"), handler.ZenmuxUsage)
 	mux.HandleFunc(p("/api/history"), handler.cachedGET(handler.History))
 	mux.HandleFunc(p("/api/cycles"), handler.Cycles)
 	mux.HandleFunc(p("/api/summary"), handler.Summary)

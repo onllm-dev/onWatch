@@ -103,6 +103,10 @@ type CodexPauseReporter interface {
 // Handler handles HTTP requests for the web dashboard
 type Handler struct {
 	store              *store.Store
+	zenmuxUsageMu      sync.Mutex
+	zenmuxUsageLast    time.Time
+	zenmuxUsageBusy    bool
+	zenmuxUsageFetch   func(context.Context, string, api.ZenmuxUsageQuery) (*api.ZenmuxUsage, error)
 	tracker            *tracker.Tracker
 	zaiTracker         *tracker.ZaiTracker
 	anthropicTracker   *tracker.AnthropicTracker
@@ -1304,6 +1308,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "ollama", Name: "Ollama Cloud", Description: "Ollama Cloud included usage tracking", AutoDetectable: false},
 		{Key: "muse", Name: "Muse", Description: "Meta Muse coding-plan quota tracking", AutoDetectable: true},
 		{Key: "commandcode", Name: "Command Code", Description: "Command Code credit and rate-limit tracking", AutoDetectable: true},
+		{Key: "zenmux", Name: "Zenmux", Description: "Zenmux subscription quota tracking"},
 	}
 }
 
@@ -1385,6 +1390,8 @@ func (h *Handler) providerConfiguredFromConfig(provider string) (configured, nee
 			return false, false
 		}
 		return h.config.MuseEnabled || strings.TrimSpace(h.config.MuseAPIKey) != "", true
+	case "zenmux":
+		return !h.config.ZenmuxDisabled && strings.TrimSpace(h.config.ZenmuxManagementAPIKey) != "", false
 	case "commandcode":
 		// COMMANDCODE_ENABLED=false is an explicit opt-out and wins over
 		// everything, including a key that is present in the environment.
@@ -1686,6 +1693,8 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.CommandCodeEnabled = src.CommandCodeEnabled
 	dst.CommandCodeDisabled = src.CommandCodeDisabled
 	dst.CommandCodeBaseURL = src.CommandCodeBaseURL
+	dst.ZenmuxManagementAPIKey = src.ZenmuxManagementAPIKey
+	dst.ZenmuxDisabled = src.ZenmuxDisabled
 	dst.AntigravityBaseURL = src.AntigravityBaseURL
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
@@ -2018,6 +2027,9 @@ func applyProviderSettingsLocked(st *store.Store, cfg *config.Config, logger *sl
 		// cached miss expires.
 		api.InvalidateMuseCredentialsCache()
 	}
+	if s := provSettings["zenmux"]; s != nil {
+		applySecret(&cfg.ZenmuxManagementAPIKey, s, "api_key")
+	}
 	// Command Code: API key plus optional base URL override.
 	if s := provSettings["commandcode"]; s != nil {
 		if key, _ := s["api_key"].(string); strings.TrimSpace(key) != "" {
@@ -2296,6 +2308,7 @@ var providerRestartFields = map[string]bool{
 var providerRuntimeRestartable = map[string]bool{
 	"opencode": true,
 	"mistral":  true,
+	"zenmux":   true,
 }
 
 // providerSettingsNeedRestart reports which providers in a saved
@@ -2665,6 +2678,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentMuse(w, r)
 	case "commandcode":
 		h.currentCommandCode(w, r)
+	case "zenmux":
+		respondJSON(w, http.StatusOK, h.buildZenmuxCurrent(r.Context()))
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3174,6 +3189,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("commandcode") && providerTelemetryEnabled(visibility, "commandcode") {
 		response["commandcode"] = h.buildCommandCodeCurrent()
 	}
+	if h.config.HasProvider("zenmux") && providerTelemetryEnabled(visibility, "zenmux") {
+		response["zenmux"] = h.buildZenmuxCurrent(r.Context())
+	}
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -3589,6 +3607,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyMuse(w, r)
 	case "commandcode":
 		h.historyCommandCode(w, r)
+	case "zenmux":
+		h.historyZenmux(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4149,6 +4169,14 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.config.HasProvider("zenmux") && providerTelemetryEnabled(visibility, "zenmux") && h.store != nil {
+		rows, err := h.zenmuxHistoryRange(start, now)
+		if err != nil {
+			historyErrors["zenmux"] = "history read failed"
+		} else {
+			response["zenmux"] = rows
+		}
+	}
 	if len(historyErrors) > 0 {
 		response["errors"] = historyErrors
 		w.Header().Set(partialResponseHeader, "1")

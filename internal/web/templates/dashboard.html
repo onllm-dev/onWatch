@@ -151,6 +151,23 @@
         {{else if eq .CurrentProvider "muse"}}
         <!-- Muse quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-muse" data-provider="muse"></div>
+        {{else if eq .CurrentProvider "zenmux"}}
+        <p class="insight-text" id="zenmux-plan-info"></p>
+        <div class="quota-grid" id="quota-grid-zenmux" data-provider="zenmux"></div>
+        <section class="insights-panel" id="zenmux-usage-section" aria-labelledby="zenmux-usage-title">
+            <header class="section-header"><h3 class="section-title" id="zenmux-usage-title">Model usage (aggregated)</h3></header>
+            <form id="zenmux-usage-form" class="zenmux-usage-filters">
+                <label>Period <select class="page-size-select" id="zenmux-usage-dimension"><option value="BIZ_MTH">Month - daily buckets</option><option value="BIZ_DT">Day - hourly buckets</option><option value="BIZ_HOUR">Hour UTC - minute buckets</option></select></label>
+                <label id="zenmux-usage-month-label">Month <input class="page-size-select" id="zenmux-usage-month" type="month"></label>
+                <label id="zenmux-usage-day-label" hidden>Day <input class="page-size-select" id="zenmux-usage-day" type="date"></label>
+                <label id="zenmux-usage-hour-label" hidden>Hour (UTC) <input class="page-size-select" id="zenmux-usage-hour" type="datetime-local" step="3600"></label>
+                <label>Billing <select class="page-size-select" id="zenmux-usage-billing"><option value="subscription">Subscription</option><option value="">All billing types</option><option value="metered">PAYG</option><option value="fallbackMetered">Subscription fallback to PAYG</option></select></label>
+                <button type="submit" class="page-size-select">Show usage</button>
+            </form>
+            <p class="insight-text" id="zenmux-usage-status" role="status" aria-live="polite">Loading account usage...</p>
+            <div id="zenmux-usage-results"></div>
+            <div id="zenmux-endpoint-results"></div>
+        </section>
         {{else if eq .CurrentProvider "commandcode"}}
         <!-- Command Code quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-commandcode" data-provider="commandcode"></div>
@@ -382,7 +399,7 @@
                 </div>
             </section>
         </div>
-        {{else if ne .CurrentProvider "both"}}
+        {{else if and (ne .CurrentProvider "both") (ne .CurrentProvider "zenmux")}}
         <section class="insights-panel">
             <header class="section-header">
                 <h3 class="section-title">
@@ -508,7 +525,7 @@
         </section>
         {{end}}
 
-        {{if and (ne .CurrentProvider "both") (ne .CurrentProvider "api-integrations") (ne .CurrentProvider "cursor") (ne .CurrentProvider "opencode") (ne .CurrentProvider "mistral") (ne .CurrentProvider "ollama") (ne .CurrentProvider "muse") (ne .CurrentProvider "commandcode")}}
+        {{if and (ne .CurrentProvider "both") (ne .CurrentProvider "zenmux") (ne .CurrentProvider "api-integrations") (ne .CurrentProvider "cursor") (ne .CurrentProvider "opencode") (ne .CurrentProvider "mistral") (ne .CurrentProvider "ollama") (ne .CurrentProvider "muse") (ne .CurrentProvider "commandcode")}}
         <section class="sessions-section" id="sessions-section">
             <header class="section-header">
                 <h3 class="section-title">
@@ -615,7 +632,7 @@
         </section>
         {{end}}
 
-        {{if and (ne .CurrentProvider "both") (ne .CurrentProvider "api-integrations")}}
+        {{if and (ne .CurrentProvider "both") (ne .CurrentProvider "zenmux") (ne .CurrentProvider "api-integrations")}}
         <section class="cycles-section" id="cycles-section">
             <header class="section-header">
                 <h3 class="section-title">

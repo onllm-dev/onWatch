@@ -2062,6 +2062,16 @@ func run() error {
 		agentMgr.RegisterFactory("commandcode", func() (agent.AgentRunner, error) { return commandCodeAg, nil })
 	}
 
+	agentMgr.RegisterFactory("zenmux", func() (agent.AgentRunner, error) {
+		snapshot := cfg.Snapshot()
+		if !snapshot.HasProvider("zenmux") {
+			return nil, fmt.Errorf("zenmux: set a Management API Key in Settings -> Providers")
+		}
+		ag := agent.NewZenmuxAgent(api.NewZenmuxClient(snapshot.ZenmuxManagementAPIKey), db, snapshot.PollInterval, logger, notifier)
+		ag.SetPollingCheck(func() bool { return isPollingEnabled("zenmux") })
+		return ag, nil
+	})
+
 	if apiIntegrationsAg != nil {
 		agentMgr.RegisterFactory("api_integrations", func() (agent.AgentRunner, error) { return apiIntegrationsAg, nil })
 	}
@@ -2109,7 +2119,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode", "mistral", "ollama", "muse", "commandcode"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "openrouter", "gemini", "cursor", "grok", "kimi", "moonshot", "deepseek", "opencode", "mistral", "ollama", "muse", "commandcode", "zenmux"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
@@ -2745,6 +2755,8 @@ func printHelp() {
 	fmt.Println("  COMMANDCODE_ENABLED     Set false to disable the Command Code provider")
 	fmt.Println("  COMMANDCODE_BASE_URL    Command Code API base URL (default: https://api.commandcode.ai)")
 	fmt.Println("  COMMANDCODE_AUTH_PATH   Override the commandcode auth.json path")
+	fmt.Println("  ZENMUX_MANAGEMENT_API_KEY  Zenmux Management API Key for subscription quota")
+	fmt.Println("  ZENMUX_ENABLED          Set false to disable Zenmux polling")
 	fmt.Println("  CODEX_HOME              Optional Codex auth directory (uses CODEX_HOME/auth.json)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
 	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")

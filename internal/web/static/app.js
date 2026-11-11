@@ -79,6 +79,7 @@ function getCurrentProvider() {
   if (ollamaGrid) return 'ollama';
   const museGrid = document.getElementById('quota-grid-muse');
   if (museGrid) return 'muse';
+  if (document.getElementById('quota-grid-zenmux')) return 'zenmux';
   const commandCodeGrid = document.getElementById('quota-grid-commandcode');
   if (commandCodeGrid) return 'commandcode';
   const moonshotGrid = document.getElementById('quota-grid-moonshot');
@@ -110,16 +111,16 @@ function isAccountsOverviewMode(provider = getCurrentProvider()) {
 }
 
 function shouldShowSessionsTable(provider = getCurrentProvider()) {
-  return provider !== 'both' && provider !== 'cursor' && provider !== 'api-integrations' && !isAccountsOverviewMode(provider);
+  return provider !== 'both' && provider !== 'cursor' && provider !== 'zenmux' && provider !== 'api-integrations' && !isAccountsOverviewMode(provider);
   // grok (like synthetic/codex/etc) shows sessions
 }
 
 function shouldShowCyclesTable(provider = getCurrentProvider()) {
-  return provider !== 'both' && provider !== 'api-integrations';
+  return provider !== 'both' && provider !== 'zenmux' && provider !== 'api-integrations';
 }
 
 function shouldShowOverviewTable(provider = getCurrentProvider()) {
-  return provider !== 'both' && provider !== 'gemini' && provider !== 'api-integrations';
+  return provider !== 'both' && provider !== 'gemini' && provider !== 'zenmux' && provider !== 'api-integrations';
 }
 
 function shouldShowHistoryTables(provider = getCurrentProvider()) {
@@ -3820,6 +3821,17 @@ function startCountdowns() {
         }
       }
     });
+    document.querySelectorAll('.zenmux-countdown[data-reset-at]').forEach(el => {
+      const seconds = Math.floor((new Date(el.dataset.resetAt).getTime() - Date.now()) / 1000);
+      if (seconds > 0) {
+        el.textContent = formatDuration(seconds);
+        el.classList.toggle('imminent', seconds < 1800);
+      } else {
+        el.hidden = true;
+        const reset = el.closest('.quota-card')?.querySelector('.reset-time');
+        if (reset) reset.hidden = true;
+      }
+    });
   }, 1000);
 }
 
@@ -4553,6 +4565,253 @@ const commandCodeChartColorFallback = [
   { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.08)' }
 ];
 
+// Zenmux publishes rolling utilization and monthly caps, but no monthly usage.
+function zenmuxCardsHTML(quotas) {
+  if (!Array.isArray(quotas) || quotas.length === 0) return '<p class="insight-text">No Zenmux data available yet.</p>';
+  return quotas.map(q => {
+    const hasPercent = typeof q.utilization === 'number' && Number.isFinite(q.utilization);
+    const shown = hasPercent && typeof q.cardPercent === 'number' ? q.cardPercent : q.utilization;
+    const pct = hasPercent ? shown.toFixed(1) + '% ' + (q.cardLabel || 'Used') : 'Usage unavailable';
+    const value = v => typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString('en-US', { maximumFractionDigits: 4 }) : 'Unknown';
+    const usd = v => typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : 'Unknown';
+    const fraction = q.name === 'monthly' ? 'Limit: ' + value(q.limit) + ' flows' : value(q.used) + ' / ' + value(q.limit) + ' flows';
+    const barPercent = Math.max(0, Math.min(shown, 100));
+    const bar = hasPercent ? `<div class="progress-wrapper"><div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${barPercent}"><div class="progress-fill" data-status="${getQuotaStatus(q.utilization)}" style="width:${barPercent}%"></div></div></div>` : '';
+    const seconds = q.resetsAt ? Math.floor((new Date(q.resetsAt).getTime() - Date.now()) / 1000) : 0;
+    const reset = seconds > 0 ? `<span class="reset-time" data-reset-at="${escapeHTML(q.resetsAt)}">${escapeHTML(formatResetTime(q.resetsAt))}</span>` : '';
+    const countdown = seconds > 0 ? `<span class="countdown zenmux-countdown" data-reset-at="${escapeHTML(q.resetsAt)}">${escapeHTML(formatDuration(seconds))}</span>` : '';
+    const details = [];
+    if (q.remaining != null) details.push(value(q.remaining) + ' flows remaining');
+    if (q.usedValueUsd != null) details.push('Used value: $' + usd(q.usedValueUsd));
+    if (q.name === 'five_hour' && q.remainingResets != null) details.push('Early resets remaining: ' + value(q.remainingResets));
+    if (q.maxValueUsd != null) details.push('Limit value: $' + usd(q.maxValueUsd));
+    if (typeof q.ratePerHour === 'number' && Number.isFinite(q.ratePerHour)) {
+      details.push('~' + Number(q.ratePerHour.toPrecision(2)) + '%/h' + (q.exhaustHours > 0 ? ' | ~' + Number(q.exhaustHours.toPrecision(2)) + 'h to 100%' : ''));
+    }
+    return `<article class="quota-card" data-quota="${escapeHTML(q.name)}"><header class="card-header"><h2 class="quota-title">${escapeHTML(q.displayName || q.name)}</h2>${countdown}</header><div class="progress-stats"><span class="usage-percent">${escapeHTML(pct)}</span><span class="usage-fraction">${escapeHTML(fraction)}</span></div>${bar}<footer class="card-footer"><span>${escapeHTML(details.join(' | '))}</span>${reset}</footer></article>`;
+  }).join('');
+}
+
+function renderZenmuxCards(data, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = zenmuxCardsHTML(data.quotas);
+  const info = document.getElementById('zenmux-plan-info');
+  if (info) {
+    const parts = [];
+    if (data.plan && data.plan.tier) parts.push('Plan: ' + data.plan.tier);
+    if (data.plan && data.plan.expires_at) parts.push('Subscription expires: ' + formatDateTime(data.plan.expires_at));
+    if (data.accountStatus) parts.push('Account: ' + data.accountStatus);
+    info.textContent = parts.join(' | ');
+  }
+}
+
+// Account analytics rows are model/time aggregates, never individual requests.
+function zenmuxUsageNumber(value) {
+  if (value == null) return 'Unknown';
+  const parts = String(value).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return parts.join('.');
+}
+function zenmuxUsageBucketLabel(value) {
+  const s = String(value || '');
+  if (s.length < 8) return s;
+  return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}${s.length >= 10 ? ' ' + s.slice(8,10) + ':' + (s.length >= 12 ? s.slice(10,12) : '00') : ''}`;
+}
+// Decimal metrics can exceed Number's exact integer range.
+function zenmuxDecimalParts(value) {
+  const parts = value.split('.');
+  return { digits: BigInt(parts.join('')), scale: (parts[1] || '').length };
+}
+function zenmuxDecimalString(digits, scale) {
+  const text = digits.toString().padStart(scale + 1, '0');
+  if (!scale) return text;
+  const fraction = text.slice(-scale).replace(/0+$/, '');
+  return text.slice(0, -scale) + (fraction ? '.' + fraction : '');
+}
+function zenmuxDecimalAdd(a, b) {
+  if (a == null || b == null) return null;
+  const left = zenmuxDecimalParts(a), right = zenmuxDecimalParts(b);
+  const scale = Math.max(left.scale, right.scale);
+  return zenmuxDecimalString(left.digits * 10n ** BigInt(scale - left.scale) + right.digits * 10n ** BigInt(scale - right.scale), scale);
+}
+function zenmuxDecimalCompare(a, b) {
+  if (a == null || b == null) return a == null ? (b == null ? 0 : -1) : 1;
+  const left = zenmuxDecimalParts(a), right = zenmuxDecimalParts(b);
+  const scale = Math.max(left.scale, right.scale);
+  const x = left.digits * 10n ** BigInt(scale - left.scale);
+  const y = right.digits * 10n ** BigInt(scale - right.scale);
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+function zenmuxGroupUsage(rows) {
+  const models = new Map();
+  rows.forEach(row => {
+    if (!models.has(row.modelSlug)) {
+      models.set(row.modelSlug, {modelSlug: row.modelSlug, requestCounts: row.requestCounts, tokens: row.tokens});
+    } else {
+      const model = models.get(row.modelSlug);
+      model.requestCounts = zenmuxDecimalAdd(model.requestCounts, row.requestCounts);
+      model.tokens = zenmuxDecimalAdd(model.tokens, row.tokens);
+    }
+  });
+  return [...models.values()].sort((a,b) => zenmuxDecimalCompare(b.requestCounts, a.requestCounts) || zenmuxDecimalCompare(b.tokens, a.tokens) || a.modelSlug.localeCompare(b.modelSlug));
+}
+function zenmuxUsageRowsHTML(rows, view = 'interval') {
+  if (!rows.length) return '<p class="insight-text">No model usage was returned for this period and billing filter.</p>';
+  const interval = view === 'interval';
+  const body = rows.map(row => `<tr>${interval ? `<td>${escapeHTML(zenmuxUsageBucketLabel(row.bizTime))}</td>` : ''}<td>${escapeHTML(row.modelSlug)}</td><td>${escapeHTML(zenmuxUsageNumber(row.requestCounts))}</td><td>${escapeHTML(zenmuxUsageNumber(row.tokens))}</td></tr>`).join('');
+  return `<div class="table-wrapper"><table class="data-table"><thead><tr>${interval ? '<th>Time bucket</th>' : ''}<th>Model</th><th>Requests</th><th>Tokens</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function zenmuxFractionPercent(value) {
+  if (value == null || zenmuxDecimalCompare(value, '1') > 0) return 'Unknown';
+  const decimal = zenmuxDecimalParts(value);
+  return zenmuxDecimalString(decimal.digits * 100n, decimal.scale) + '%';
+}
+function zenmuxEndpointRowsHTML(rows, data = {}) {
+  if (!rows.length) return '<p class="insight-text">No endpoint details were returned.</p>';
+  const success = data.uptime == null ? '' : `<span>Success rate: ${escapeHTML(zenmuxFractionPercent(data.uptime))}</span>`;
+  const body = rows.map(row => {
+    const labels = (row.endpointSlug === data.mainEndpointSlug ? ' <span>Main</span>' : '') + (row.endpointSlug === data.fastestEndpointSlug ? ' <span>Fastest</span>' : '');
+    return `<tr><td>${escapeHTML(row.endpointSlug)}${labels}</td><td>${escapeHTML(zenmuxUsageNumber(row.requestCounts))}</td><td>${escapeHTML(zenmuxFractionPercent(row.requestRatio))}</td><td>${escapeHTML(zenmuxUsageNumber(row.tokens))}</td><td>${escapeHTML(zenmuxUsageNumber(row.medianLatency))}</td><td>${escapeHTML(zenmuxUsageNumber(row.medianThroughput))}</td></tr>`;
+  }).join('');
+  return `${success}<div class="table-wrapper"><table class="data-table"><thead><tr><th>Endpoint</th><th>Requests</th><th>Request share</th><th>Tokens</th><th>Median latency (ms)</th><th>Median throughput (tokens/s)</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function setupZenmuxUsage() {
+  const form = document.getElementById('zenmux-usage-form');
+  if (!form) return;
+  const dimension = document.getElementById('zenmux-usage-dimension');
+  const month = document.getElementById('zenmux-usage-month');
+  const day = document.getElementById('zenmux-usage-day');
+  const hour = document.getElementById('zenmux-usage-hour');
+  const billing = document.getElementById('zenmux-usage-billing');
+  const status = document.getElementById('zenmux-usage-status');
+  const results = document.getElementById('zenmux-usage-results');
+  const endpoints = document.getElementById('zenmux-endpoint-results');
+  const now = new Date();
+  const localDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  month.value = localDay.slice(0,7); day.value = localDay; hour.value = now.toISOString().slice(0,13) + ':00';
+  dimension.addEventListener('change', () => {
+    document.getElementById('zenmux-usage-month-label').hidden = dimension.value !== 'BIZ_MTH';
+    document.getElementById('zenmux-usage-day-label').hidden = dimension.value !== 'BIZ_DT';
+    document.getElementById('zenmux-usage-hour-label').hidden = dimension.value !== 'BIZ_HOUR';
+  });
+  let activeQuery = null;
+  let page = 0;
+  let rows = [];
+  let modelRows = [];
+  let intervalRows = [];
+  let view = 'model';
+  let selectedModel = '';
+  const pageSize = 50;
+  let requestSeq = 0;
+  let inFlight = false;
+  // Do not leave results under filter controls that no longer describe them.
+  [dimension, month, day, hour, billing].forEach(control => control.addEventListener('change', () => {
+    requestSeq++;
+    activeQuery = null;
+    results.innerHTML = '';
+    endpoints.innerHTML = '';
+    status.textContent = 'Filters changed. Select Show usage.';
+  }));
+  function renderPage() {
+    const ordered = view === 'model' ? modelRows : intervalRows;
+    const totalPages = Math.max(1, Math.ceil(ordered.length / pageSize));
+    page = Math.max(0, Math.min(page, totalPages - 1));
+    const models = modelRows.map(row => row.modelSlug);
+    if (!models.includes(selectedModel)) selectedModel = models[0] || '';
+    const options = models.map(model => `<option value="${escapeHTML(model)}"${model === selectedModel ? ' selected' : ''}>${escapeHTML(model)}</option>`).join('');
+    const paging = totalPages > 1 ? `<div class="zenmux-usage-actions"><button type="button" class="page-size-select" data-page="prev" ${page === 0 ? 'disabled' : ''}>Previous</button><span>Page ${page + 1} of ${totalPages}</span><button type="button" class="page-size-select" data-page="next" ${page + 1 >= totalPages ? 'disabled' : ''}>Next</button></div>` : '';
+    const choice = rows.length ? `<div class="zenmux-usage-actions"><label>View <select class="page-size-select" id="zenmux-usage-view"><option value="model"${view === 'model' ? ' selected' : ''}>By model</option><option value="interval"${view === 'interval' ? ' selected' : ''}>By interval</option></select></label></div>` : '';
+    const selection = models.length ? `<div class="zenmux-usage-actions"><label for="zenmux-model-select">Provider endpoints for model</label><select class="page-size-select" id="zenmux-model-select">${options}</select><button type="button" class="page-size-select" data-endpoints>Show endpoints</button></div>` : '';
+    results.innerHTML = `${choice}${zenmuxUsageRowsHTML(ordered.slice(page * pageSize, (page + 1) * pageSize), view)}${paging}${selection}`;
+  }
+  async function query(params) {
+    inFlight = true;
+    form.setAttribute('aria-busy', 'true');
+    const sequence = ++requestSeq;
+    status.textContent = 'Loading account usage...';
+    try {
+      const response = await authFetch(`${API_BASE}/api/zenmux/usage?${params}`);
+      const payload = await response.json();
+      if (sequence !== requestSeq) return null;
+      if (!response.ok) {
+        status.textContent = payload.error || 'Account usage is unavailable.';
+        return null;
+      }
+      status.textContent = '';
+      return payload;
+    } catch (_) {
+      if (sequence === requestSeq) status.textContent = 'Account usage is unavailable. Try again later.';
+      return null;
+    } finally {
+      inFlight = false;
+      form.setAttribute('aria-busy', 'false');
+    }
+  }
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (inFlight) { status.textContent = 'Request in progress. Please wait.'; return; }
+    const value = dimension.value === 'BIZ_MTH' ? month.value : dimension.value === 'BIZ_DT' ? day.value : hour.value;
+    if (!value) { status.textContent = 'Select a valid period.'; return; }
+    const time = value.replace(/[-:T]/g, '').slice(0, dimension.value === 'BIZ_MTH' ? 6 : dimension.value === 'BIZ_DT' ? 8 : 10);
+    const params = new URLSearchParams({dimension: dimension.value, time});
+    if (billing.value) params.set('bill_type', billing.value);
+    activeQuery = null; results.innerHTML = ''; endpoints.innerHTML = '';
+    const payload = await query(params);
+    if (!payload) return;
+    activeQuery = params; rows = payload.data.tokensByModel || []; page = 0; selectedModel = '';
+    modelRows = zenmuxGroupUsage(rows);
+    intervalRows = [...rows].sort((a,b) => b.bizTime.localeCompare(a.bizTime) || a.modelSlug.localeCompare(b.modelSlug));
+    renderPage();
+  });
+  results.addEventListener('change', event => {
+    if (event.target.id === 'zenmux-usage-view') {
+      requestSeq++;
+      view = event.target.value;
+      page = 0;
+      endpoints.innerHTML = '';
+      status.textContent = '';
+      renderPage();
+    } else if (event.target.id === 'zenmux-model-select') {
+      requestSeq++;
+      selectedModel = event.target.value;
+      endpoints.innerHTML = '';
+      status.textContent = 'Model changed. Select Show endpoints.';
+    }
+  });
+  results.addEventListener('click', async event => {
+    const button = event.target.closest('button');
+    if (!button || !activeQuery) return;
+    if (button.dataset.page) { requestSeq++; endpoints.innerHTML = ''; page += button.dataset.page === 'next' ? 1 : -1; renderPage(); return; }
+    if (button.hasAttribute('data-endpoints')) {
+      if (inFlight) return;
+      const model = document.getElementById('zenmux-model-select').value;
+      const params = new URLSearchParams(activeQuery); params.set('model', model);
+      endpoints.innerHTML = '';
+      const payload = await query(params);
+      if (!payload) return;
+      endpoints.innerHTML = `<h4>Endpoint totals for ${escapeHTML(model)}</h4>${zenmuxEndpointRowsHTML(payload.data.endpointUsages || [], payload.data)}`;
+    }
+  });
+  form.requestSubmit();
+}
+
+function zenmuxHistoryDatasets(rows, range) {
+  const configs = [
+    {name: 'five_hour', label: '5-Hour Flows', color: '#0D9488'},
+    {name: 'weekly', label: '7-Day Flows', color: '#F59E0B'},
+  ];
+  return configs.filter(c => rows.some(row => (row.quotas || []).some(q => q.name === c.name && typeof q.utilization === 'number'))).map(c => {
+    const points = rows.map(row => {
+      const q = (row.quotas || []).find(v => v.name === c.name);
+      return {x: new Date(row.capturedAt), y: q && typeof q.utilization === 'number' ? q.utilization : null};
+    });
+    const processed = processDataWithGaps(points, range);
+    return {label: c.label, data: processed.data, borderColor: c.color, fill: false, tension: 0, borderWidth: 2, pointRadius: processed.pointRadii, spanGaps: false, hidden: State.hiddenQuotas.has(c.name)};
+  });
+}
+
 // commandCodePercent resolves the figure the card shows, honouring the
 // Remaining display mode that buildCommandCodeCurrent emits.
 function commandCodePercent(quota) {
@@ -4902,6 +5161,8 @@ async function fetchCurrent() {
           }
         }
 
+      } else if (provider === 'zenmux') {
+        renderZenmuxCards(data, 'quota-grid-zenmux');
       } else if (provider === 'commandcode') {
         if (data.quotas) {
           const container = document.getElementById('quota-grid-commandcode');
@@ -5951,7 +6212,7 @@ function initChart() {
     defaultDatasets = []; // OpenCode datasets are dynamic
   } else if (provider === 'ollama') {
     defaultDatasets = []; // Ollama datasets are dynamic
-  } else if (provider === 'commandcode') {
+  } else if (provider === 'zenmux' || provider === 'commandcode') {
     defaultDatasets = []; // Command Code datasets are dynamic (five_hour/weekly/monthly)
   } else if (isBalanceProvider(provider)) {
     defaultDatasets = []; // Balance datasets are built when history data arrives
@@ -6782,6 +7043,15 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'zenmux') {
+      State.chart.data.datasets = zenmuxHistoryDatasets(historyRows, range);
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      recordChartRendered(provider, range);
+      return;
+    }
     if (provider === 'commandcode') {
       // Command Code history: array of { capturedAt, quotas: [{ name, utilization }] }.
       // Plot the three credit windows the cards show - five_hour, weekly and
@@ -6953,6 +7223,7 @@ const bothProviderNames = {
   ollama: 'Ollama',
   muse: 'Muse',
   commandcode: 'Command Code',
+  zenmux: 'Zenmux',
   'api-integrations': 'API Integrations',
 };
 
@@ -7069,6 +7340,7 @@ function normalizeBothQuotas(provider, payload) {
   }
 
   if (!Array.isArray(payload.quotas)) return [];
+  if (provider === 'zenmux') return payload.quotas;
   const rawQuotas = provider === 'codex'
     ? filterCodexQuotasForPlan(payload.quotas, payload.planType || State.codexPlanType)
     : sortQuotaEntriesForProvider(payload.quotas, provider);
@@ -7308,6 +7580,7 @@ function buildAllProviderEntries() {
 }
 
 function renderProviderKPIHTML(quotas, provider) {
+  if (provider === 'zenmux') return zenmuxCardsHTML(quotas);
   if (!Array.isArray(quotas) || quotas.length === 0) {
     return '<p class="insight-text">No KPI data available yet.</p>';
   }
@@ -7797,6 +8070,7 @@ function buildDynamicDatasetsForRows(rows, range, labelMap, colorMap, colorFallb
 }
 
 function buildProviderCardDatasets(provider, rows, range) {
+  if (provider === 'zenmux') return zenmuxHistoryDatasets(rows, range);
   const style = getComputedStyle(document.documentElement);
   if (provider === 'synthetic') {
     return buildFixedDatasetsForRows(rows, range, [
@@ -11158,6 +11432,7 @@ const DEFAULT_PROVIDER_TAB_LABELS = {
   ollama: 'Ollama',
   muse: 'Muse',
   commandcode: 'Command Code',
+  zenmux: 'Zenmux',
   'api-integrations': 'API Integrations',
   both: 'All',
 };
@@ -11905,6 +12180,13 @@ const providerSettingsConfig = {
     fields: [
       { id: 'api_key', label: 'API Key', type: 'password', placeholder: 'Auto-detected', hint: 'Meta API key. Leave empty to use your `muse login` session. Overrides META_API_KEY from .env.', sensitive: true },
       { id: 'model', label: 'Probe Model', type: 'text', placeholder: 'muse-spark-1.3', hint: 'Model used for the usage probe (for example muse-spark-1.3-contributor). Leave empty to use your Muse settings model. Overrides META_MUSE_MODEL.' },
+    ],
+  },
+  zenmux: {
+    title: 'Zenmux',
+    desc: 'Track subscription limits and personal account model usage with a Zenmux Management API Key. Standard API keys cannot read these endpoints.',
+    fields: [
+      { id: 'api_key', label: 'Management API Key', type: 'password', placeholder: 'Not configured', hint: 'Overrides ZENMUX_MANAGEMENT_API_KEY. Changes apply immediately.', sensitive: true },
     ],
   },
   commandcode: {
@@ -13492,6 +13774,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initLayoutToggle();
   await initTimezoneBadge();
   setupProviderSelector();
+  setupZenmuxUsage();
   setupRangeSelector();
   setupAPIIntegrationsMetricSelector();
   setupCycleFilters();

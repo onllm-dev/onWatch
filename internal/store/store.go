@@ -981,6 +981,14 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_muse_cycles_name_start ON muse_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_muse_cycles_name_active ON muse_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
 
+		-- Zenmux snapshots
+		CREATE TABLE IF NOT EXISTS zenmux_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			payload TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_zenmux_snapshots_captured ON zenmux_snapshots(captured_at);
+
 		-- Command Code tables
 		CREATE TABLE IF NOT EXISTS commandcode_snapshots (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

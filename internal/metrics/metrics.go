@@ -255,6 +255,7 @@ func (m *Metrics) Scrape(s *store.Store, pollInterval time.Duration) {
 	m.apiIntegrationSpendUSD.Reset()
 	m.accountInfo.Reset()
 
+	m.scrapeZenmux(s, staleThreshold)
 	m.scrapeMistral(s, staleThreshold)
 	m.scrapeAnthropic(s, staleThreshold)
 	m.scrapeCodex(s, staleThreshold)
