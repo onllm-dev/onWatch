@@ -27,6 +27,7 @@ var (
 
 const (
 	CursorBaseURL       = "https://api2.cursor.sh"
+	CursorWebBaseURL    = "https://cursor.com"
 	CursorClientID      = "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB"
 	CursorRefreshBuffer = 5 * time.Minute
 )
@@ -38,6 +39,7 @@ type CursorClient struct {
 	token      string
 	tokenMu    sync.RWMutex
 	baseURL    string
+	webBaseURL string
 	logger     *slog.Logger
 
 	// planMu guards the last plan name a successful plan-info fetch reported.
@@ -54,6 +56,12 @@ type CursorOption func(*CursorClient)
 func WithCursorBaseURL(url string) CursorOption {
 	return func(c *CursorClient) {
 		c.baseURL = url
+	}
+}
+
+func WithCursorWebBaseURL(url string) CursorOption {
+	return func(c *CursorClient) {
+		c.webBaseURL = url
 	}
 }
 
@@ -76,9 +84,10 @@ func NewCursorClient(token string, logger *slog.Logger, opts ...CursorOption) *C
 				ForceAttemptHTTP2:     true,
 			},
 		},
-		token:   token,
-		baseURL: CursorBaseURL,
-		logger:  logger,
+		token:      token,
+		baseURL:    CursorBaseURL,
+		webBaseURL: CursorWebBaseURL,
+		logger:     logger,
 	}
 
 	for _, opt := range opts {
@@ -155,12 +164,30 @@ func (c *CursorClient) FetchQuotas(ctx context.Context) (*CursorSnapshot, error)
 		}
 	}
 
-	accountType := DetermineCursorAccountType(planName, usage, useRequestBased)
 	snapshot := ToCursorSnapshot(usage, planInfo, creditGrants, stripeResp, requestUsage, useRequestBased)
 
+	if shouldTryCursorUsageSummaryFallback(snapshot) {
+		summary, err := c.fetchUsageSummary(ctx, token)
+		if err != nil {
+			c.logger.Warn("cursor: failed to fetch usage summary fallback", "error", err)
+		} else if summary != nil {
+			summaryQuotas := buildUsageSummaryQuotas(summary)
+			if len(summaryQuotas) > 0 {
+				snapshot.Quotas = summaryQuotas
+				snapshot.AccountType = accountTypeFromUsageSummary(summary)
+				if snapshot.PlanName == "" && summary.MembershipType != "" {
+					snapshot.PlanName = summary.MembershipType
+				}
+				if raw, err := json.Marshal(summary); err == nil {
+					snapshot.RawJSON = string(raw)
+				}
+			}
+		}
+	}
+
 	c.logger.Debug("cursor: quotas fetched",
-		"account_type", accountType,
-		"plan_name", planName,
+		"account_type", snapshot.AccountType,
+		"plan_name", snapshot.PlanName,
 		"quota_count", len(snapshot.Quotas),
 	)
 
@@ -251,7 +278,7 @@ func (c *CursorClient) fetchStripeBalance(ctx context.Context, token string) (*C
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "https://cursor.com/api/auth/stripe", nil)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, c.webBaseURL+"/api/auth/stripe", nil)
 	if err != nil {
 		return nil, fmt.Errorf("cursor: create Stripe request: %w", err)
 	}
@@ -279,6 +306,51 @@ func (c *CursorClient) fetchStripeBalance(ctx context.Context, token string) (*C
 	return ParseCursorStripeResponse(body)
 }
 
+func (c *CursorClient) fetchUsageSummary(ctx context.Context, token string) (*CursorUsageSummaryResponse, error) {
+	userID := ExtractJWTSubject(token)
+	if userID == "" {
+		return nil, fmt.Errorf("cursor: cannot extract user ID from token for usage summary")
+	}
+
+	sessionToken := url.QueryEscape(userID) + "%3A%3A" + url.QueryEscape(token)
+
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, c.webBaseURL+"/api/usage-summary", nil)
+	if err != nil {
+		return nil, fmt.Errorf("cursor: create usage summary request: %w", err)
+	}
+	req.Header.Set("Cookie", "WorkosCursorSessionToken="+sessionToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("%w: %v", ErrCursorNetworkError, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading usage summary body: %v", ErrCursorInvalidResponse, err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return ParseCursorUsageSummaryResponse(body)
+	case http.StatusUnauthorized:
+		return nil, ErrCursorUnauthorized
+	case http.StatusForbidden:
+		return nil, ErrCursorForbidden
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable:
+		return nil, ErrCursorServerError
+	default:
+		return nil, fmt.Errorf("cursor: unexpected status %d for usage summary", resp.StatusCode)
+	}
+}
+
 func (c *CursorClient) fetchRequestBasedUsage(ctx context.Context, token string) (*CursorRequestUsageResponse, error) {
 	userID := ExtractJWTSubject(token)
 	if userID == "" {
@@ -290,7 +362,7 @@ func (c *CursorClient) fetchRequestBasedUsage(ctx context.Context, token string)
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	reqURL := fmt.Sprintf("https://cursor.com/api/usage?user=%s", url.QueryEscape(userID))
+	reqURL := fmt.Sprintf("%s/api/usage?user=%s", c.webBaseURL, url.QueryEscape(userID))
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("cursor: create request-based usage request: %w", err)
