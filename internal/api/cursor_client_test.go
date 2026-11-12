@@ -426,3 +426,60 @@ func TestCursorClient_FetchQuotas_PlanInfoFailureKeepsLastPlanName(t *testing.T)
 		t.Fatalf("total_usage Format = %q after a plan-info failure, want %q", total.Format, CursorFormatDollars)
 	}
 }
+
+func TestCursorClient_FetchQuotas_EnterpriseUsageSummaryFallback(t *testing.T) {
+	token := createTestJWT("auth0|user_test", 1735689600)
+	summaryCalled := false
+	usageCalled := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/aiserver.v1.DashboardService/GetCurrentPeriodUsage":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"enabled": true, "billingCycleStart": "1", "billingCycleEnd": "2", "displayThreshold": 100}`))
+		case "/aiserver.v1.DashboardService/GetPlanInfo":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"planInfo": {"planName": "Enterprise"}}`))
+		case "/api/usage":
+			usageCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"gpt-4": {"numRequests": 0, "maxRequestUsage": null}, "startOfMonth": "2026-11-01T00:00:00.000Z"}`))
+		case "/api/usage-summary":
+			summaryCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{
+				"billingCycleEnd": "2026-12-01T00:00:00.000Z",
+				"membershipType": "enterprise",
+				"limitType": "team",
+				"individualUsage": {
+					"overall": {"enabled": true, "used": 37500, "limit": 50000, "remaining": 12500}
+				}
+			}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	logger := slog.Default()
+	client := NewCursorClient(token, logger,
+		WithCursorBaseURL(server.URL),
+		WithCursorWebBaseURL(server.URL),
+	)
+	snapshot, err := client.FetchQuotas(context.Background())
+	if err != nil {
+		t.Fatalf("FetchQuotas: %v", err)
+	}
+	if !usageCalled {
+		t.Error("expected legacy /api/usage call")
+	}
+	if !summaryCalled {
+		t.Error("expected /api/usage-summary fallback call")
+	}
+	if len(snapshot.Quotas) != 1 || snapshot.Quotas[0].Name != "total_usage" {
+		t.Fatalf("quotas = %+v, want total_usage card", snapshot.Quotas)
+	}
+	if snapshot.Quotas[0].Used != 375 || snapshot.Quotas[0].Limit != 500 {
+		t.Fatalf("used/limit = %v/%v", snapshot.Quotas[0].Used, snapshot.Quotas[0].Limit)
+	}
+}
