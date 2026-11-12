@@ -51,8 +51,14 @@ func detectCursorAuthPlatform(logger *slog.Logger) *cursorAuthState {
 
 	hasDifferentSubjects := sqliteSubject != "" && keychainSubject != "" && sqliteSubject != keychainSubject
 	sqliteLooksFree := sqliteMembership == "free"
+	sqliteUsable := CursorAccessTokenUsableForAPI(sqliteAccessToken)
+	keychainUsable := CursorAccessTokenUsableForAPI(keychainAccessToken)
 
 	if sqliteAccessToken != "" || sqliteRefreshToken != "" {
+		if (keychainAccessToken != "" || keychainRefreshToken != "") && !sqliteUsable && keychainUsable {
+			logger.Info("cursor: SQLite token is opaque; preferring keychain JWT")
+			return buildCursorAuthState(keychainAccessToken, keychainRefreshToken, "keychain", logger, true)
+		}
 		if (keychainAccessToken != "" || keychainRefreshToken != "") && sqliteLooksFree && hasDifferentSubjects {
 			logger.Info("cursor: SQLite auth looks free and differs from keychain; preferring keychain token")
 			return buildCursorAuthState(keychainAccessToken, keychainRefreshToken, "keychain", logger, true)

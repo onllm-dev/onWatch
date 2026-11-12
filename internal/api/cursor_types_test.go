@@ -1313,6 +1313,51 @@ func TestCursorFlexFloat_Unmarshal(t *testing.T) {
 	}
 }
 
+func TestCursorAccessTokenUsableForAPI(t *testing.T) {
+	jwt := createTestJWT("user_abc", 1735689600)
+	if !CursorAccessTokenUsableForAPI(jwt) {
+		t.Fatal("expected JWT access token to be usable")
+	}
+	if CursorAccessTokenUsableForAPI("cursor-safe-storage:v1:opaque") {
+		t.Fatal("opaque sqlite token should not be usable")
+	}
+	if CursorAccessTokenUsableForAPI("not-a-jwt") {
+		t.Fatal("non-JWT should not be usable")
+	}
+}
+
+func TestBuildUsageSummaryQuotas(t *testing.T) {
+	raw := `{
+		"billingCycleEnd": "2026-12-01T00:00:00.000Z",
+		"membershipType": "enterprise",
+		"limitType": "team",
+		"individualUsage": {
+			"overall": {"enabled": true, "used": 37428, "limit": 50000, "remaining": 12572}
+		}
+	}`
+	summary, err := ParseCursorUsageSummaryResponse([]byte(raw))
+	if err != nil {
+		t.Fatalf("ParseCursorUsageSummaryResponse: %v", err)
+	}
+	quotas := buildUsageSummaryQuotas(summary)
+	if len(quotas) != 1 {
+		t.Fatalf("quota count = %d, want 1", len(quotas))
+	}
+	q := quotas[0]
+	if q.Name != "total_usage" {
+		t.Fatalf("name = %q", q.Name)
+	}
+	if q.Used != 374.28 || q.Limit != 500 {
+		t.Fatalf("used/limit = %v/%v, want 374.28/500", q.Used, q.Limit)
+	}
+	if q.Utilization < 74.85 || q.Utilization > 74.87 {
+		t.Fatalf("utilization = %v", q.Utilization)
+	}
+	if q.Format != CursorFormatDollars {
+		t.Fatalf("format = %q", q.Format)
+	}
+}
+
 func createTestJWT(sub string, exp int64) string {
 	header := `{"alg":"RS256","typ":"JWT"}`
 	payload := `{"sub":"` + sub + `","exp":` + fmt.Sprintf("%d", exp) + `}`

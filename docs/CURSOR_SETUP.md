@@ -11,6 +11,8 @@ onWatch detects your Cursor authentication from two sources:
 
 If both sources exist and the SQLite account is a free-tier plan while the keychain has a different account, onWatch prefers the keychain token (matching openusage behavior).
 
+If SQLite stores opaque `cursor-safe-storage:` tokens while Keychain still has JWTs, onWatch prefers Keychain so cookie and Connect RPC calls can authenticate.
+
 ## Auto-Detection
 
 No manual configuration needed. If Cursor Desktop is installed and you're logged in, onWatch will auto-detect your credentials on startup.
@@ -56,7 +58,8 @@ If the refresh token is invalid (e.g., revoked), onWatch pauses polling and logs
 - **On-Demand** - individual or pooled spend limit (dollars)
 
 ### Enterprise Accounts
-- **Requests** - per-model request counts and limits
+- **Requests** - per-model request counts and limits (when `/api/usage` exposes finite limits)
+- **Total Usage** - included pool usage in dollars (from `/api/usage-summary` when legacy usage has null limits)
 
 ## Account Type Detection
 
@@ -78,6 +81,7 @@ Numeric usage fields are decoded tolerantly: Cursor may send an amount as a JSON
 | `POST /aiserver.v1.DashboardService/GetCreditGrantsBalance` | Credit grants balance (Connect RPC) |
 | `GET https://cursor.com/api/auth/stripe` | Stripe prepaid balance (cookie auth) |
 | `GET https://cursor.com/api/usage` | Request-based usage for enterprise (cookie auth) |
+| `GET https://cursor.com/api/usage-summary` | Billing pool usage for enterprise/team when `/api/usage` has no limits |
 | `POST https://api2.cursor.sh/oauth/token` | OAuth token refresh |
 
 ## Troubleshooting
