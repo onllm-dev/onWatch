@@ -549,6 +549,33 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 			}
 		}
 	}
+	if h.config != nil && h.config.HasProvider("alibaba") && h.providerDashboardVisible("alibaba", visibility) {
+		alibabaAccounts, enumerated := h.alibabaUsageAccountsOK()
+		if enumerated {
+			multiAlibaba := len(alibabaAccounts) > 1
+			for _, account := range alibabaAccounts {
+				usage := account.Usage
+				accountID := alibabaUsageAccountID(usage)
+				providerKey := fmt.Sprintf("alibaba:%d", accountID)
+				if !providerDashboardVisibleForKey(visibility, providerKey, "alibaba") {
+					continue
+				}
+				attempted[providerKey] = struct{}{}
+				name := stringValue(usage, "accountName")
+				if name == "" {
+					name = "default"
+				}
+				label := menubarAccountLabel("alibaba", labels, name, multiAlibaba)
+				add(h.menubarResolveCard(providerKey, label, "Alibaba Token Plan", usage, account.ReadOK, account.HasData, normalized.WarningPercent, normalized.CriticalPercent, nil))
+			}
+		} else {
+			// The account list could not be read: keep the known account cards
+			// and do not prune them.
+			for _, entry := range h.menubarCachedAccountCards("alibaba", attempted, visibility) {
+				add(entry.card, entry.captured)
+			}
+		}
+	}
 	if h.config != nil && h.config.HasProvider("openrouter") && h.providerDashboardVisible("openrouter", visibility) {
 		attempted["openrouter"] = struct{}{}
 		payload, readOK, hasData := h.buildOpenRouterCurrentOK()

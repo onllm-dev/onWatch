@@ -230,7 +230,9 @@ build_darwin() {
 do_test() {
     info "Running tests with race detection and coverage..."
     cd "$SCRIPT_DIR"
-    go test -race -cover -count=1 ./...
+    # Default Go timeout (10m) is too short for ./internal/web under -race.
+    # CI uses 15m; local/full-module runs need a little more headroom.
+    go test -race -cover -count=1 -timeout 20m ./...
     success "All tests passed."
 }
 
@@ -253,7 +255,7 @@ do_smoke() {
 do_release() {
     info "Running tests before release..."
     cd "$SCRIPT_DIR"
-    go test -race -cover -count=1 ./...
+    go test -race -cover -count=1 -timeout 20m ./...
     success "Tests passed."
 
     info "Building release artifacts for onWatch v${VERSION}..."

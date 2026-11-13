@@ -135,6 +135,13 @@ type Config struct {
 	CommandCodeDisabled  bool   // true if COMMANDCODE_ENABLED=false explicitly opted out
 	CommandCodeBaseURL   string // COMMANDCODE_BASE_URL override for proxy setups
 
+	// Alibaba Cloud Model Studio Token Plan provider (browser session cookies)
+	AlibabaCookies     string // ALIBABA_COOKIES (Cookie header or Netscape cookies.txt text)
+	AlibabaCookiesFile string // ALIBABA_COOKIES_FILE (path to a cookie export, loaded in main)
+	AlibabaRegion      string // ALIBABA_REGION (default: ap-southeast-1)
+	AlibabaEnabled     bool   // true if cookies are present or ALIBABA_ENABLED=true
+	AlibabaDisabled    bool   // true if ALIBABA_ENABLED=false explicitly opted out
+
 	// Custom API Integrations telemetry ingestion
 	APIIntegrationsEnabled   bool          // ONWATCH_API_INTEGRATIONS_ENABLED (default: true)
 	APIIntegrationsDir       string        // ONWATCH_API_INTEGRATIONS_DIR (default: ~/.onwatch/api-integrations or /data/api-integrations)
@@ -338,6 +345,10 @@ var onwatchEnvKeys = []string{
 	"COMMANDCODE_ENABLED",
 	"COMMANDCODE_BASE_URL",
 	"COMMANDCODE_AUTH_PATH",
+	"ALIBABA_COOKIES",
+	"ALIBABA_COOKIES_FILE",
+	"ALIBABA_REGION",
+	"ALIBABA_ENABLED",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
@@ -590,6 +601,23 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	}
 	// File-based auto-detection (DetectCommandCodeCredentials) happens later in
 	// main.go preflight.
+
+	// Alibaba Token Plan provider (browser session cookies). The cookies file is
+	// read in main when the default account is seeded, so a missing file does
+	// not fail config loading.
+	cfg.AlibabaCookies = strings.TrimSpace(os.Getenv("ALIBABA_COOKIES"))
+	cfg.AlibabaCookiesFile = strings.TrimSpace(os.Getenv("ALIBABA_COOKIES_FILE"))
+	cfg.AlibabaRegion = strings.TrimSpace(os.Getenv("ALIBABA_REGION"))
+	if cfg.AlibabaRegion == "" {
+		cfg.AlibabaRegion = "ap-southeast-1"
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("ALIBABA_ENABLED")), "false") {
+		cfg.AlibabaEnabled = false
+		cfg.AlibabaDisabled = true
+	} else if strings.EqualFold(strings.TrimSpace(os.Getenv("ALIBABA_ENABLED")), "true") ||
+		cfg.AlibabaCookies != "" || cfg.AlibabaCookiesFile != "" {
+		cfg.AlibabaEnabled = true
+	}
 
 	// Custom API Integrations telemetry ingestion
 	cfg.APIIntegrationsDir = strings.TrimSpace(os.Getenv("ONWATCH_API_INTEGRATIONS_DIR"))
@@ -916,6 +944,9 @@ func (c *Config) availableProvidersLocked() []string {
 	if c.hasProviderLocked("mistral") {
 		providers = append(providers, "mistral")
 	}
+	if c.hasProviderLocked("alibaba") {
+		providers = append(providers, "alibaba")
+	}
 	return providers
 }
 
@@ -982,6 +1013,10 @@ func (c *Config) hasProviderLocked(name string) bool {
 		// Every Command Code poll is a read-only billing GET, so a detected key
 		// is enough; only an explicit opt-out disables it.
 		return !c.CommandCodeDisabled && (c.CommandCodeAPIKey != "" || c.CommandCodeEnabled)
+	case "alibaba":
+		// Cookies (inline or file) or an explicit ALIBABA_ENABLED=true start the
+		// provider; only an explicit opt-out disables it.
+		return !c.AlibabaDisabled && (c.AlibabaEnabled || c.AlibabaCookies != "" || c.AlibabaCookiesFile != "")
 	}
 	return false
 }
@@ -1051,6 +1086,9 @@ func (c *Config) hasMultipleProvidersLocked() bool {
 		count++
 	}
 	if c.hasProviderLocked("mistral") {
+		count++
+	}
+	if c.hasProviderLocked("alibaba") {
 		count++
 	}
 	return count > 1
@@ -1153,6 +1191,21 @@ func (c *Config) String() string {
 	}
 	if c.CommandCodeEnabled {
 		fmt.Fprintf(&sb, "  CommandCodeEnabled: true,\n")
+	}
+	if c.AlibabaCookies != "" {
+		// Session cookies are fully redacted; a prefix/suffix would leak token bytes.
+		fmt.Fprintf(&sb, "  AlibabaCookies: ***...***,\n")
+	} else {
+		fmt.Fprintf(&sb, "  AlibabaCookies: (not set),\n")
+	}
+	if c.AlibabaCookiesFile != "" {
+		fmt.Fprintf(&sb, "  AlibabaCookiesFile: %s,\n", c.AlibabaCookiesFile)
+	}
+	if c.AlibabaRegion != "" {
+		fmt.Fprintf(&sb, "  AlibabaRegion: %s,\n", c.AlibabaRegion)
+	}
+	if c.AlibabaEnabled {
+		fmt.Fprintf(&sb, "  AlibabaEnabled: true,\n")
 	}
 	if c.KimiAutoToken {
 		fmt.Fprintf(&sb, "  KimiAutoToken: true,\n")
