@@ -1031,6 +1031,49 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_commandcode_cycles_name_start ON commandcode_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_commandcode_cycles_name_active ON commandcode_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
 
+		-- Alibaba Token Plan tables (multi-account; account_id references provider_accounts.id)
+		CREATE TABLE IF NOT EXISTS alibaba_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			raw_json TEXT NOT NULL DEFAULT '',
+			account_id INTEGER NOT NULL DEFAULT 1,
+			spec_code TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			remaining_days INTEGER NOT NULL DEFAULT 0,
+			auto_renew INTEGER NOT NULL DEFAULT 0,
+			start_time TEXT,
+			end_time TEXT,
+			instance_id TEXT NOT NULL DEFAULT '',
+			quota_count INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS alibaba_quota_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			quota_name TEXT NOT NULL,
+			utilization REAL NOT NULL DEFAULT 0,
+			resets_at TEXT,
+			FOREIGN KEY (snapshot_id) REFERENCES alibaba_snapshots(id) ON DELETE CASCADE
+		);
+
+		CREATE TABLE IF NOT EXISTS alibaba_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_name TEXT NOT NULL,
+			account_id INTEGER NOT NULL DEFAULT 1,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			resets_at TEXT,
+			peak_utilization REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_alibaba_snapshots_captured ON alibaba_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_alibaba_snapshots_account ON alibaba_snapshots(account_id, captured_at);
+		CREATE INDEX IF NOT EXISTS idx_alibaba_quota_values_snapshot ON alibaba_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_alibaba_quota_values_name ON alibaba_quota_values(quota_name);
+		CREATE INDEX IF NOT EXISTS idx_alibaba_cycles_account ON alibaba_reset_cycles(account_id, quota_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_alibaba_cycles_active ON alibaba_reset_cycles(account_id, quota_name) WHERE cycle_end IS NULL;
+
 		-- Mistral tables. Quota amounts are NULL when Mistral only reports a
 		-- percentage, so an unknown amount is never recorded as zero. Billing
 		-- rows exist only when pay-as-you-go spend is actually known.
@@ -1414,6 +1457,16 @@ func (s *Store) migrateSchema() error {
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("failed to commit minimax backfill transaction: %w", err)
 		}
+	}
+
+	// Ensure a default Alibaba provider account exists, like MiniMax. The
+	// Alibaba tables are created with account_id from the start, so no
+	// column migration or backfill is needed.
+	if _, err := s.db.Exec(`
+		INSERT OR IGNORE INTO provider_accounts (provider, name, created_at)
+		VALUES ('alibaba', 'default', datetime('now'))
+	`); err != nil {
+		return fmt.Errorf("failed to insert default alibaba account: %w", err)
 	}
 
 	// Add MiniMax multi-account indexes.

@@ -81,6 +81,8 @@ function getCurrentProvider() {
   if (museGrid) return 'muse';
   const commandCodeGrid = document.getElementById('quota-grid-commandcode');
   if (commandCodeGrid) return 'commandcode';
+  const alibabaGrid = document.getElementById('quota-grid-alibaba');
+  if (alibabaGrid) return 'alibaba';
   const moonshotGrid = document.getElementById('quota-grid-moonshot');
   if (moonshotGrid) return 'moonshot';
   const deepseekGrid = document.getElementById('quota-grid-deepseek');
@@ -97,6 +99,8 @@ function providerParam() {
     param += codexAccountParam();
   } else if (provider === 'minimax') {
     param += minimaxAccountParam();
+  } else if (provider === 'alibaba') {
+    param += alibabaAccountParam();
   }
   return param;
 }
@@ -106,7 +110,8 @@ function providerParam() {
 // (sessions/cycles/overview/insights) do not apply in this mode.
 function isAccountsOverviewMode(provider = getCurrentProvider()) {
   return (provider === 'codex' && State.codexAccount === 'all') ||
-         (provider === 'minimax' && State.minimaxAccount === 'all');
+         (provider === 'minimax' && State.minimaxAccount === 'all') ||
+         (provider === 'alibaba' && State.alibabaAccount === 'all');
 }
 
 function shouldShowSessionsTable(provider = getCurrentProvider()) {
@@ -628,6 +633,190 @@ function minimaxAccountParam() {
   return `&account=${encodeURIComponent(State.minimaxAccount)}`;
 }
 
+// ── Alibaba Account Persistence (multi-account) ──
+
+function loadAlibabaAccount() {
+  try {
+    const stored = localStorage.getItem('onwatch-alibaba-account');
+    if (stored === 'all') {
+      State.alibabaAccount = 'all';
+    } else if (stored) {
+      const parsed = parseInt(stored, 10);
+      State.alibabaAccount = isNaN(parsed) ? null : parsed;
+    }
+  } catch (e) {
+    State.alibabaAccount = null;
+  }
+}
+
+function saveAlibabaAccount(account) {
+  State.alibabaAccount = account;
+  try {
+    localStorage.setItem('onwatch-alibaba-account', account);
+  } catch (e) {
+    // silent
+  }
+}
+
+async function loadAlibabaAccounts() {
+  try {
+    const res = await authFetch(`${API_BASE}/api/alibaba/accounts`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.accounts && data.accounts.length > 0) {
+      let activeAccounts = data.accounts.filter(a => !a.deletedAt);
+      // The seeded empty "default" account is only a placeholder; hide it as
+      // soon as another account has cookies.
+      const withCookies = activeAccounts.filter(a => a.hasCookies);
+      if (withCookies.length > 0) activeAccounts = withCookies;
+      State.alibabaAccounts = activeAccounts;
+      applyDefaultAlibabaSelection();
+      populateAlibabaAccountTabs();
+      updateAlibabaAccountTabsVisibility();
+    }
+  } catch (e) {
+    // silent
+  }
+}
+
+// Mirror of applyDefaultCodexSelection for Alibaba accounts.
+function applyDefaultAlibabaSelection() {
+  let stored = null;
+  try { stored = localStorage.getItem('onwatch-alibaba-account'); } catch (e) { stored = null; }
+  if (stored === 'all') { State.alibabaAccount = 'all'; return; }
+  const storedId = stored != null ? parseInt(stored, 10) : NaN;
+  if (!isNaN(storedId) && State.alibabaAccounts.find(a => a.id === storedId)) {
+    State.alibabaAccount = storedId;
+    return;
+  }
+  if (State.alibabaAccounts.length > 1) {
+    State.alibabaAccount = 'all';
+  } else if (State.alibabaAccounts.length === 1) {
+    State.alibabaAccount = State.alibabaAccounts[0].id;
+  }
+}
+
+function populateAlibabaAccountTabs() {
+  const dropdown = document.getElementById('alibaba-profile-dropdown');
+  const menu = document.getElementById('alibaba-profile-menu');
+  if (!dropdown || !menu) return;
+
+  if (!State.alibabaAccounts || State.alibabaAccounts.length <= 1) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  menu.innerHTML = '';
+
+  const allItem = document.createElement('li');
+  allItem.className = 'codex-profile-item' + (State.alibabaAccount === 'all' ? ' active' : '');
+  allItem.dataset.accountId = 'all';
+  allItem.textContent = 'All accounts';
+  allItem.setAttribute('role', 'option');
+  allItem.setAttribute('aria-selected', State.alibabaAccount === 'all' ? 'true' : 'false');
+  allItem.addEventListener('click', () => {
+    switchAlibabaAccount('all');
+    closeAlibabaAccountDropdown();
+  });
+  menu.appendChild(allItem);
+
+  for (const account of State.alibabaAccounts) {
+    const li = document.createElement('li');
+    li.className = 'codex-profile-item' + (account.id === State.alibabaAccount ? ' active' : '');
+    li.dataset.accountId = account.id;
+    li.textContent = account.name;
+    li.setAttribute('role', 'option');
+    li.setAttribute('aria-selected', account.id === State.alibabaAccount ? 'true' : 'false');
+    li.addEventListener('click', () => {
+      switchAlibabaAccount(account.id);
+      closeAlibabaAccountDropdown();
+    });
+    menu.appendChild(li);
+  }
+
+  if (State.alibabaAccount !== 'all' && !State.alibabaAccounts.find(a => a.id === State.alibabaAccount)) {
+    State.alibabaAccount = State.alibabaAccounts[0].id;
+    saveAlibabaAccount(State.alibabaAccount);
+    updateAlibabaAccountTabsActive();
+  }
+
+  updateAlibabaAccountTabsActive();
+}
+
+function switchAlibabaAccount(accountId) {
+  if (State.alibabaAccount === accountId) return;
+  State.alibabaAccount = accountId;
+  saveAlibabaAccount(accountId);
+  updateAlibabaAccountTabsActive();
+  refreshAll();
+}
+
+function updateAlibabaAccountTabsActive() {
+  const label = document.getElementById('alibaba-profile-label');
+  const menu = document.getElementById('alibaba-profile-menu');
+  if (!menu) return;
+
+  if (label) {
+    if (State.alibabaAccount === 'all') {
+      label.textContent = 'All accounts';
+    } else {
+      const active = State.alibabaAccounts && State.alibabaAccounts.find(a => a.id === State.alibabaAccount);
+      if (active) label.textContent = active.name;
+    }
+  }
+
+  menu.querySelectorAll('.codex-profile-item').forEach(item => {
+    const isActive = item.dataset.accountId === 'all'
+      ? State.alibabaAccount === 'all'
+      : parseInt(item.dataset.accountId, 10) === State.alibabaAccount;
+    item.classList.toggle('active', isActive);
+    item.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+}
+
+function closeAlibabaAccountDropdown() {
+  const trigger = document.getElementById('alibaba-profile-trigger');
+  const menu = document.getElementById('alibaba-profile-menu');
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  if (menu) menu.classList.remove('open');
+}
+
+function updateAlibabaAccountTabsVisibility() {
+  const dropdown = document.getElementById('alibaba-profile-dropdown');
+  if (!dropdown) return;
+
+  const provider = getCurrentProvider();
+  const show = provider === 'alibaba' && State.alibabaAccounts && State.alibabaAccounts.length > 1;
+  dropdown.style.display = show ? '' : 'none';
+}
+
+function initAlibabaAccountTabs() {
+  const trigger = document.getElementById('alibaba-profile-trigger');
+  const menu = document.getElementById('alibaba-profile-menu');
+  if (!trigger || !menu) return;
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = menu.classList.toggle('open');
+    trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#alibaba-profile-dropdown')) {
+      closeAlibabaAccountDropdown();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAlibabaAccountDropdown();
+  });
+}
+
+function alibabaAccountParam() {
+  if (!State.alibabaAccount || State.alibabaAccount === 'all') return '';
+  return `&account=${encodeURIComponent(State.alibabaAccount)}`;
+}
+
 // ── Insight Visibility (DB-persisted) ──
 
 // Cross-provider insight correlation map (mirrors backend)
@@ -1027,6 +1216,7 @@ function quotaOrderForProvider(provider) {
   if (provider === 'ollama') return ollamaQuotaOrder;
   if (provider === 'muse') return museQuotaOrder;
   if (provider === 'commandcode') return commandCodeQuotaOrder;
+  if (provider === 'alibaba') return alibabaQuotaOrder;
   return [];
 }
 
@@ -1276,6 +1466,11 @@ const renewalCategories = {
     { label: '5-Hour', groupBy: 'five_hour' },
     { label: 'Weekly', groupBy: 'weekly' },
     { label: 'Monthly', groupBy: 'monthly' }
+  ],
+  alibaba: [
+    { label: '5-Hour', groupBy: 'five_hour' },
+    { label: 'Weekly', groupBy: 'weekly' },
+    { label: 'Monthly', groupBy: 'monthly' }
   ]
 };
 
@@ -1330,6 +1525,11 @@ const providerQuotaDisplayOverrides = {
     five_hour: '5-Hour Credits',
     weekly: 'Weekly Credits',
     monthly: 'Monthly Credits'
+  },
+  alibaba: {
+    five_hour: '5-Hour',
+    weekly: 'Weekly',
+    monthly: 'Monthly'
   },
   moonshot: {
     available_balance: 'Available',
@@ -4694,6 +4894,144 @@ function updateCommandCodeCard(quota) {
   }
 }
 
+// ── Alibaba Token Plan Card Rendering ──
+// Percent-window provider: 5-Hour, Weekly and Monthly utilization, scoped per account.
+const alibabaQuotaOrder = ['five_hour', 'weekly', 'monthly'];
+const alibabaDisplayNames = {
+  five_hour: '5-Hour',
+  weekly: 'Weekly',
+  monthly: 'Monthly'
+};
+const alibabaChartColorMap = {
+  five_hour: { border: '#FF6A00', bg: 'rgba(255, 106, 0, 0.08)' },
+  weekly: { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.08)' },
+  monthly: { border: '#10b981', bg: 'rgba(16, 185, 129, 0.08)' }
+};
+const alibabaChartColorFallback = [
+  { border: '#a855f7', bg: 'rgba(168, 85, 247, 0.08)' },
+  { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.08)' }
+];
+
+// alibabaPercent resolves the figure the card shows, honouring the Remaining
+// display mode that buildAlibabaCurrent emits.
+function alibabaPercent(quota) {
+  return quota.cardPercent != null ? quota.cardPercent : (quota.utilization || 0);
+}
+
+function alibabaCardLabel(quota) {
+  if (quota.cardLabel) return quota.cardLabel;
+  const used = Number(quota.utilization) || 0;
+  return used.toFixed(1) + '% of window used';
+}
+
+// alibabaEffectiveQuotas resolves what gets rendered, including the
+// placeholder shown before the first successful poll. The match check below
+// compares against this same list so the placeholder is not rebuilt each poll.
+function alibabaEffectiveQuotas(quotas) {
+  return (quotas && quotas.length) ? quotas : [{ name: 'five_hour', utilization: 0, status: 'healthy' }];
+}
+
+function renderAlibabaQuotaCards(quotas, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  const list = alibabaEffectiveQuotas(quotas);
+  list.forEach((q, idx) => {
+    const pct = alibabaPercent(q);
+    const pctStr = pct.toFixed(1);
+    const status = q.status || getQuotaStatus(q.utilization || 0);
+    const name = (q.name || 'five_hour');
+    const label = q.displayName || alibabaDisplayNames[name] || name;
+    const resetsAt = q.resets_at || q.resetsAt || '';
+    const cdSecs = resetsAt ? Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)) : 0;
+    const cdText = cdSecs > 0 ? formatDuration(cdSecs) : '--:--';
+    if (resetsAt) State.currentQuotas['alibaba-' + name] = { timeUntilResetSeconds: cdSecs };
+    const statusCfg = statusConfig[status] || statusConfig.healthy;
+    const card = document.createElement('article');
+    card.className = 'quota-card alibaba-card';
+    card.dataset.quota = name;
+    card.dataset.provider = 'alibaba';
+    card.style.animationDelay = (idx * 60) + 'ms';
+    card.innerHTML = `
+      <header class="card-header">
+        <div class="quota-title-block">
+          <h2 class="quota-title">
+            <svg class="quota-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+            ${escapeHTML(label)}
+          </h2>
+        </div>
+        <span class="countdown" id="countdown-alibaba-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ' style="display:none"'}>${cdText}</span>
+      </header>
+      <div class="progress-stats">
+        <span class="usage-percent" id="percent-alibaba-${name}">${pctStr}%</span>
+        <span class="usage-fraction" id="fraction-alibaba-${name}">${escapeHTML(alibabaCardLabel(q))}</span>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-fill" id="progress-alibaba-${name}" style="width:${pctStr}%" data-status="${status}"></div>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <span class="status-badge" id="status-alibaba-${name}" data-status="${status}">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${statusCfg.icon}"/></svg>
+          ${statusCfg.label}
+        </span>
+        <span class="reset-time" id="reset-alibaba-${name}"${resetsAt ? ` data-reset-at="${resetsAt}"` : ''}>${resetsAt ? formatResetTime(resetsAt) : ''}</span>
+      </footer>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function alibabaQuotaSetsMatch(container, quotas) {
+  if (!container) return false;
+  // Overview cards (all-accounts mode) share the grid; never treat them as quota cards.
+  if (container.querySelector('.account-overview-card')) return false;
+  const expected = alibabaEffectiveQuotas(quotas);
+  const renderedCards = Array.from(container.querySelectorAll('.alibaba-card[data-quota]'));
+  if (renderedCards.length !== expected.length) return false;
+  const rendered = new Set(renderedCards.map(c => c.dataset.quota));
+  return expected.every(q => rendered.has(q.name));
+}
+
+function updateAlibabaCard(quota) {
+  const name = quota.name || 'five_hour';
+  const pct = alibabaPercent(quota);
+  const pctStr = pct.toFixed(1);
+  const status = quota.status || getQuotaStatus(quota.utilization || 0);
+  const progressEl = document.getElementById(`progress-alibaba-${name}`);
+  const percentEl = document.getElementById(`percent-alibaba-${name}`);
+  const fractionEl = document.getElementById(`fraction-alibaba-${name}`);
+  const statusEl = document.getElementById(`status-alibaba-${name}`);
+  const resetEl = document.getElementById(`reset-alibaba-${name}`);
+  const countdownEl = document.getElementById(`countdown-alibaba-${name}`);
+  if (percentEl) percentEl.textContent = pctStr + '%';
+  if (fractionEl) fractionEl.textContent = alibabaCardLabel(quota);
+  if (progressEl) {
+    progressEl.style.width = pctStr + '%';
+    progressEl.dataset.status = status;
+    const bar = progressEl.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', Math.round(pct));
+  }
+  const resetsAt = quota.resets_at || quota.resetsAt || '';
+  if (resetEl) {
+    resetEl.textContent = resetsAt ? formatResetTime(resetsAt) : '';
+    if (resetsAt) resetEl.dataset.resetAt = resetsAt;
+  }
+  if (statusEl) {
+    const cfg = statusConfig[status] || statusConfig.healthy;
+    statusEl.dataset.status = status;
+    statusEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${cfg.icon}"/></svg> ${cfg.label}`;
+  }
+  if (countdownEl && resetsAt) {
+    const secs = Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000));
+    State.currentQuotas['alibaba-' + name] = { timeUntilResetSeconds: secs };
+    countdownEl.dataset.resetAt = resetsAt;
+    countdownEl.style.display = '';
+    countdownEl.textContent = secs > 0 ? formatDuration(secs) : '--:--';
+  }
+}
+
 async function fetchCurrent() {
   const requestProvider = getCurrentProvider();
   const requestAccount = requestProvider === 'codex' ? State.codexAccount : null;
@@ -4912,6 +5250,16 @@ async function fetchCurrent() {
             data.quotas.forEach(q => updateCommandCodeCard(q));
           }
         }
+      } else if (provider === 'alibaba') {
+        if (data.quotas) {
+          const container = document.getElementById('quota-grid-alibaba');
+          if (container && !alibabaQuotaSetsMatch(container, data.quotas)) {
+            renderAlibabaQuotaCards(data.quotas, 'quota-grid-alibaba');
+          }
+          if (Array.isArray(data.quotas) && data.quotas.length > 0) {
+            data.quotas.forEach(q => updateAlibabaCard(q));
+          }
+        }
 
       } else if (isBalanceProvider(provider)) {
         renderBalanceCards(provider, data.balance, `quota-grid-${provider}`);
@@ -5043,6 +5391,15 @@ function accountOverviewQuotas(provider, account) {
       resetAt: q.resetAt || null,
     }));
   }
+  if (provider === 'alibaba') {
+    return (account.quotas || []).map(q => ({
+      label: q.displayName || alibabaDisplayNames[q.name] || q.name,
+      quotaName: q.name || null,
+      percent: typeof q.cardPercent === 'number' ? q.cardPercent : (q.utilization || 0),
+      status: q.status || 'healthy',
+      resetAt: q.resetsAt || null,
+    }));
+  }
   const visible = filterCodexQuotasForPlan(account.quotas || [], account.planType);
   return visible.map(q => ({
     label: q.displayName || codexDisplayNames[q.name] || q.name,
@@ -5105,6 +5462,7 @@ function renderAccountsOverview(provider, accounts) {
 
   const drill = (accountId) => {
     if (provider === 'minimax') switchMiniMaxAccount(accountId);
+    else if (provider === 'alibaba') switchAlibabaAccount(accountId);
     else switchCodexProfile(accountId);
   };
   container.querySelectorAll('.account-overview-card').forEach(card => {
@@ -5120,7 +5478,9 @@ function renderAccountsOverview(provider, accounts) {
 async function fetchAccountsOverview(provider, requestSeq) {
   const endpoint = provider === 'minimax'
     ? `${API_BASE}/api/minimax/accounts/usage`
-    : `${API_BASE}/api/codex/accounts/usage`;
+    : (provider === 'alibaba'
+      ? `${API_BASE}/api/alibaba/accounts/usage`
+      : `${API_BASE}/api/codex/accounts/usage`);
   try {
     const res = await authFetch(endpoint);
     if (!res.ok) throw new Error('Failed to fetch account usage');
@@ -5151,6 +5511,7 @@ function overviewAccounts(provider) {
     return State.accountsOverview.accounts.map(a => ({ id: a.accountId || a.id, name: a.accountName || a.name }));
   }
   if (provider === 'minimax') return (State.minimaxAccounts || []).map(a => ({ id: a.id, name: a.name }));
+  if (provider === 'alibaba') return (State.alibabaAccounts || []).map(a => ({ id: a.id, name: a.name }));
   return (State.codexProfiles || []).map(p => ({ id: p.id, name: p.name }));
 }
 
@@ -5179,6 +5540,14 @@ function buildOverviewWindows(provider, accounts) {
     if (hasWeekly) windows.push({ key: 'weekly', label: 'Weekly Limit', extract: (d) => maxOver(d, k => k.startsWith('Wkly ')) });
     return windows;
   }
+  if (provider === 'alibaba') {
+    // Fixed windows; history entries are flat rows keyed by quota name.
+    return alibabaQuotaOrder.map((key) => ({
+      key,
+      label: alibabaDisplayNames[key] || key,
+      extract: (d) => (typeof d[key] === 'number' ? d[key] : null),
+    }));
+  }
   // Codex: one window per distinct quota name across accounts. History entries
   // are keyed by the same normalized quota name.
   const seen = new Map();
@@ -5204,7 +5573,9 @@ async function renderMultiAccountChart(provider, range, requestSeq) {
   if (accounts.length === 0) {
     const endpoint = provider === 'minimax'
       ? `${API_BASE}/api/minimax/accounts/usage`
-      : `${API_BASE}/api/codex/accounts/usage`;
+      : (provider === 'alibaba'
+        ? `${API_BASE}/api/alibaba/accounts/usage`
+        : `${API_BASE}/api/codex/accounts/usage`);
     try {
       const res = await authFetch(endpoint);
       if (res.ok) {
@@ -5953,6 +6324,8 @@ function initChart() {
     defaultDatasets = []; // Ollama datasets are dynamic
   } else if (provider === 'commandcode') {
     defaultDatasets = []; // Command Code datasets are dynamic (five_hour/weekly/monthly)
+  } else if (provider === 'alibaba') {
+    defaultDatasets = []; // Alibaba datasets are dynamic (five_hour/weekly/monthly)
   } else if (isBalanceProvider(provider)) {
     defaultDatasets = []; // Balance datasets are built when history data arrives
   } else if (provider === 'zai') {
@@ -6154,6 +6527,7 @@ function warnHistoryFailure(provider, range, reason, status) {
 function chartAccountKey(provider) {
   if (provider === 'codex') return State.codexAccount == null ? null : State.codexAccount;
   if (provider === 'minimax') return State.minimaxAccount == null ? null : State.minimaxAccount;
+  if (provider === 'alibaba') return State.alibabaAccount == null ? null : State.alibabaAccount;
   return null;
 }
 
@@ -6162,7 +6536,7 @@ function chartAccountLabel(provider) {
   if (id == null || id === 'all') return id === 'all' ? 'All accounts' : '';
   const list = provider === 'codex'
     ? (State.codexProfiles || [])
-    : (provider === 'minimax' ? (State.minimaxAccounts || []) : []);
+    : (provider === 'minimax' ? (State.minimaxAccounts || []) : (provider === 'alibaba' ? (State.alibabaAccounts || []) : []));
   const match = list.find(item => String(item.id) === String(id));
   if (match) return match.name || match.accountName || `Account ${id}`;
   return `Account ${id}`;
@@ -6174,7 +6548,7 @@ function chartAccountLabelFor(provider, account) {
   if (account == null || account === 'all') return account === 'all' ? 'All accounts' : '';
   const list = provider === 'codex'
     ? (State.codexProfiles || [])
-    : (provider === 'minimax' ? (State.minimaxAccounts || []) : []);
+    : (provider === 'minimax' ? (State.minimaxAccounts || []) : (provider === 'alibaba' ? (State.alibabaAccounts || []) : []));
   const match = list.find(item => String(item.id) === String(account));
   if (match) return match.name || match.accountName || `Account ${account}`;
   return `Account ${account}`;
@@ -6294,7 +6668,7 @@ function mergeAllProvidersHistory(previous, data) {
     if (parts[1]) {
       const arrayKey = provider === 'codex'
         ? 'codexAccounts'
-        : (provider === 'minimax' ? 'minimaxAccounts' : null);
+        : (provider === 'minimax' ? 'minimaxAccounts' : (provider === 'alibaba' ? 'alibabaAccounts' : null));
       const id = parts[1];
       if (arrayKey !== null) {
         const current = Array.isArray(merged[arrayKey]) ? merged[arrayKey].slice() : [];
@@ -6319,6 +6693,9 @@ function mergeAllProvidersHistory(previous, data) {
     }
     if (provider === 'minimax' && merged.minimaxAccounts == null && prior.minimaxAccounts != null) {
       merged.minimaxAccounts = prior.minimaxAccounts;
+    }
+    if (provider === 'alibaba' && merged.alibabaAccounts == null && prior.alibabaAccounts != null) {
+      merged.alibabaAccounts = prior.alibabaAccounts;
     }
   });
 
@@ -6819,6 +7196,42 @@ async function fetchHistory(range) {
       return;
     }
 
+    if (provider === 'alibaba') {
+      // Alibaba history: array of { capturedAt, quotas: [{ name, utilization }] }.
+      // Plot the three windows the cards show - five_hour, weekly and monthly -
+      // as utilization percentages.
+      const flattenedRows = historyRows.map(row => {
+        const flat = { capturedAt: row.capturedAt };
+        if (Array.isArray(row.quotas)) {
+          row.quotas.forEach(q => { flat[q.name] = q.utilization || 0; });
+        }
+        return flat;
+      });
+      const datasets = [];
+      const configs = alibabaQuotaOrder.map((key) => {
+        const color = alibabaChartColorMap[key] || alibabaChartColorFallback[0];
+        return {
+          label: alibabaDisplayNames[key] || key,
+          key: key,
+          hiddenKey: key,
+          color: color.border,
+          bg: color.bg,
+        };
+      });
+      configs.forEach(cfg => {
+        const rawData = flattenedRows.map(d => ({ x: new Date(d.capturedAt), y: d[cfg.key] }));
+        const { data, gapSegments, pointRadii } = processDataWithGaps(rawData, range);
+        datasets.push({ label: cfg.label, data: data, borderColor: cfg.color, backgroundColor: cfg.bg, fill: true, tension: 0.4, borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: 4, hidden: State.hiddenQuotas.has(cfg.hiddenKey), spanGaps: true, segment: getSegmentStyle(gapSegments, cfg.color) });
+      });
+      State.chart.data.datasets = datasets;
+      updateTimeScale(State.chart, range);
+      State.chartYMax = computeYMax(State.chart.data.datasets, State.chart);
+      State.chart.options.scales.y.max = State.chartYMax;
+      State.chart.update();
+      recordChartRendered(provider, range);
+      return;
+    }
+
     if (provider === 'ollama') {
       const flattenedRows = historyRows.map(row => {
         const flat = { capturedAt: row.capturedAt };
@@ -6953,6 +7366,7 @@ const bothProviderNames = {
   ollama: 'Ollama',
   muse: 'Muse',
   commandcode: 'Command Code',
+  alibaba: 'Alibaba Token Plan',
   'api-integrations': 'API Integrations',
 };
 
@@ -7004,7 +7418,7 @@ function isProviderTelemetryEnabled(provider, accountID) {
     ? State.providerVisibility
     : {};
 
-  if ((provider === 'codex' || provider === 'minimax') && accountID != null) {
+  if ((provider === 'codex' || provider === 'minimax' || provider === 'alibaba') && accountID != null) {
     const accountKey = `${provider}:${accountID}`;
     const accountVis = visibility[accountKey];
     if (accountVis && typeof accountVis === 'object' && accountVis.polling === false) {
@@ -7110,6 +7524,10 @@ function buildAllProviderEntries() {
     }
     if (key === 'minimax' || key === 'minimaxAccounts') {
       providerSet.add('minimax');
+      return;
+    }
+    if (key === 'alibaba' || key === 'alibabaAccounts') {
+      providerSet.add('alibaba');
       return;
     }
     if (bothProviderNames[key]) {
@@ -7273,6 +7691,72 @@ function buildAllProviderEntries() {
             ? historyPayload.history
             : (Array.isArray(history.minimax) ? history.minimax : []),
           historyErrorKey: `minimax:${accountID}`,
+        });
+      });
+      return;
+    }
+
+    if (provider === 'alibaba') {
+      const currentAccounts = Array.isArray(current.alibabaAccounts)
+        ? current.alibabaAccounts
+        : (current.alibaba ? [current.alibaba] : []);
+      if (currentAccounts.length === 0) return;
+
+      const insightAccounts = Array.isArray(insights.alibabaAccounts) ? insights.alibabaAccounts : [];
+      const historyAccounts = Array.isArray(history.alibabaAccounts) ? history.alibabaAccounts : [];
+
+      // Single account - render as a normal provider entry
+      if (currentAccounts.length === 1 && !currentAccounts[0].accountId) {
+        const payload = currentAccounts[0];
+        if (!isProviderTelemetryEnabled('alibaba')) return;
+        entries.push({
+          provider: 'alibaba',
+          cardKey: sanitizeProviderCardKey('alibaba'),
+          title: bothProviderNames.alibaba || 'Alibaba Token Plan',
+          badge: '',
+          quotas: normalizeBothQuotas('alibaba', payload),
+          insights: insights.alibaba || { stats: [], insights: [] },
+          historyRows: Array.isArray(history.alibaba) ? history.alibaba : [],
+          historyErrorKey: 'alibaba',
+        });
+        return;
+      }
+
+      // Multiple accounts: group into one compact card.
+      if (currentAccounts.length > 1) {
+        const groupAccounts = currentAccounts.filter((acc, idx) =>
+          isProviderTelemetryEnabled('alibaba', acc.accountId || acc.id || idx + 1));
+        if (groupAccounts.length === 0) return;
+        entries.push({
+          provider: 'alibaba',
+          cardKey: sanitizeProviderCardKey('alibaba'),
+          title: bothProviderNames.alibaba || 'Alibaba Token Plan',
+          badge: `${groupAccounts.length} accounts`,
+          accountsGroup: groupAccounts,
+        });
+        return;
+      }
+
+      currentAccounts.forEach((account, idx) => {
+        const accountID = account.accountId || account.id || idx + 1;
+        if (!isProviderTelemetryEnabled('alibaba', accountID)) return;
+        const accountName = account.accountName || account.name || `Account ${idx + 1}`;
+        const cardKey = sanitizeProviderCardKey(`alibaba-${accountID}`);
+        const insightPayload = insightAccounts.find(acc => String(acc.accountId || '') === String(accountID))
+          || insights.alibaba
+          || { stats: [], insights: [] };
+        const historyPayload = historyAccounts.find(acc => String(acc.accountId || '') === String(accountID));
+        entries.push({
+          provider: 'alibaba',
+          cardKey,
+          title: `Alibaba - ${accountName}`,
+          badge: '',
+          quotas: normalizeBothQuotas('alibaba', account),
+          insights: insightPayload,
+          historyRows: Array.isArray(historyPayload?.history)
+            ? historyPayload.history
+            : (Array.isArray(history.alibaba) ? history.alibaba : []),
+          historyErrorKey: `alibaba:${accountID}`,
         });
       });
       return;
@@ -7830,7 +8314,7 @@ function buildProviderCardDatasets(provider, rows, range) {
   if (provider === 'gemini') {
     return buildDynamicDatasetsForRows(rows, range, geminiDisplayNames, geminiChartColorMap, geminiChartColorFallback, 'gemini');
   }
-  if (provider === 'mistral' || provider === 'cursor' || provider === 'opencode' || provider === 'ollama' || provider === 'muse' || provider === 'commandcode') {
+  if (provider === 'mistral' || provider === 'cursor' || provider === 'opencode' || provider === 'ollama' || provider === 'muse' || provider === 'commandcode' || provider === 'alibaba') {
     const normalizedRows = rows.map((row) => {
       if (!Array.isArray(row.quotas)) return row;
       const entry = { capturedAt: row.capturedAt };
@@ -7851,6 +8335,9 @@ function buildProviderCardDatasets(provider, rows, range) {
     }
     if (provider === 'commandcode') {
       return buildDynamicDatasetsForRows(normalizedRows, range, commandCodeDisplayNames, commandCodeChartColorMap, commandCodeChartColorFallback, 'commandcode');
+    }
+    if (provider === 'alibaba') {
+      return buildDynamicDatasetsForRows(normalizedRows, range, alibabaDisplayNames, alibabaChartColorMap, alibabaChartColorFallback, 'alibaba');
     }
     return buildDynamicDatasetsForRows(normalizedRows, range, opencodeDisplayNames, opencodeChartColorMap, opencodeChartColorFallback, 'opencode');
   }
@@ -7998,6 +8485,7 @@ function renderAllProvidersView() {
     const accountId = parseInt(card.dataset.accountId, 10);
     const go = () => {
       if (provider === 'minimax') saveMiniMaxAccount(accountId);
+      else if (provider === 'alibaba') saveAlibabaAccount(accountId);
       else saveCodexAccount(accountId);
       saveDefaultProvider(provider);
       window.location.href = `${BASE_PATH}/?provider=${provider}`;
@@ -8407,7 +8895,7 @@ async function fetchCycles() {
   const requestSeq = (State.cyclesRequestSeq || 0) + 1;
   State.cyclesRequestSeq = requestSeq;
   const provider = requestProvider;
-  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi', 'mistral', 'opencode', 'ollama', 'muse', 'commandcode', 'moonshot', 'deepseek']);
+  const loggingHistoryProviders = new Set(['synthetic', 'zai', 'anthropic', 'copilot', 'codex', 'antigravity', 'minimax', 'gemini', 'cursor', 'grok', 'kimi', 'mistral', 'opencode', 'ollama', 'muse', 'commandcode', 'alibaba', 'moonshot', 'deepseek']);
 
   // All-accounts overview: fetch each account's logging history and merge,
   // tagging every row with its account name for the combined table.
@@ -8458,7 +8946,7 @@ async function fetchCycles() {
     // Calculate limit based on range: 1 minute polling = rangeDays * 24 * 60 records
     // Cap at 50000 for performance (enough for ~35 days of 1-minute data)
     const dynamicLimit = Math.min(50000, rangeDays * 24 * 60);
-    const accountParam = provider === 'codex' ? codexAccountParam() : provider === 'minimax' ? minimaxAccountParam() : '';
+    const accountParam = provider === 'codex' ? codexAccountParam() : provider === 'minimax' ? minimaxAccountParam() : provider === 'alibaba' ? alibabaAccountParam() : '';
     const url = `/api/logging-history?provider=${provider}&limit=${dynamicLimit}&range=${rangeDays}${accountParam}`;
     try {
       const res = await authFetch(url);
@@ -8613,9 +9101,9 @@ function renderCyclesTable() {
   if (!thead || !tbody) return;
 
   const provider = getCurrentProvider();
-  const windowProvider = provider === 'opencode' || provider === 'commandcode';
+  const windowProvider = provider === 'opencode' || provider === 'commandcode' || provider === 'alibaba';
   const quotaNames = State.cyclesQuotaNames;
-  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'grok' || provider === 'kimi' || provider === 'mistral' || provider === 'opencode' || provider === 'ollama';
+  const usePercent = provider === 'anthropic' || provider === 'copilot' || provider === 'codex' || provider === 'antigravity' || provider === 'minimax' || provider === 'gemini' || provider === 'openrouter' || provider === 'cursor' || provider === 'grok' || provider === 'kimi' || provider === 'mistral' || provider === 'opencode' || provider === 'ollama' || provider === 'alibaba';
   const deltaUsesPercent = usePercent && provider !== 'minimax';
   const isLoggingHistory = State.isLoggingHistory === true;
   const showAccount = isAccountsOverviewMode(provider);
@@ -8859,7 +9347,7 @@ async function fetchSessions() {
   const requestProvider = getCurrentProvider();
   // Hide sessions section for providers without session tracking.
   const sessionsEl = document.getElementById('sessions-section');
-  if (requestProvider === 'minimax') {
+  if (requestProvider === 'minimax' || requestProvider === 'alibaba') {
     if (sessionsEl) sessionsEl.hidden = true;
     return;
   }
@@ -9642,7 +10130,7 @@ async function loadModalCycles(quotaType, effectiveProvider) {
     apiType = quotaType === 'toolCalls' ? 'toolcall' : quotaType;
   }
   try {
-    const accountParam = provider === 'codex' ? codexAccountParam() : provider === 'minimax' ? minimaxAccountParam() : '';
+    const accountParam = provider === 'codex' ? codexAccountParam() : provider === 'minimax' ? minimaxAccountParam() : provider === 'alibaba' ? alibabaAccountParam() : '';
     const res = await authFetch(`${API_BASE}/api/cycles?type=${apiType}&provider=${provider}${accountParam}`);
     if (!res.ok) return;
     const cycles = await res.json();
@@ -9953,7 +10441,7 @@ async function fetchCycleOverview() {
         break;
       }
     }
-    const accountParam = effectiveProvider === 'codex' ? codexAccountParam() : effectiveProvider === 'minimax' ? minimaxAccountParam() : '';
+    const accountParam = effectiveProvider === 'codex' ? codexAccountParam() : effectiveProvider === 'minimax' ? minimaxAccountParam() : effectiveProvider === 'alibaba' ? alibabaAccountParam() : '';
     url = `/api/cycle-overview?provider=${effectiveProvider}&groupBy=${requestGroupBy}&limit=50${accountParam}`;
   } else {
     url = `/api/cycle-overview?${providerParam()}&groupBy=${requestGroupBy}&limit=50`;
@@ -9986,9 +10474,9 @@ function renderOverviewTable() {
 
   const quotaNames = State.overviewQuotaNames;
   const overviewProv = getOverviewProvider();
-  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok' || overviewProv === 'kimi' || overviewProv === 'mistral' || overviewProv === 'opencode' || overviewProv === 'ollama' || overviewProv === 'muse' || overviewProv === 'commandcode';
+  const usePercent = overviewProv === 'anthropic' || overviewProv === 'codex' || overviewProv === 'antigravity' || overviewProv === 'minimax' || overviewProv === 'gemini' || overviewProv === 'openrouter' || overviewProv === 'cursor' || overviewProv === 'grok' || overviewProv === 'kimi' || overviewProv === 'mistral' || overviewProv === 'opencode' || overviewProv === 'ollama' || overviewProv === 'muse' || overviewProv === 'commandcode' || overviewProv === 'alibaba';
   const deltaUsesPercent = usePercent && overviewProv !== 'minimax';
-  const windowProvider = overviewProv === 'opencode' || overviewProv === 'commandcode';
+  const windowProvider = overviewProv === 'opencode' || overviewProv === 'commandcode' || overviewProv === 'alibaba';
   const showDurationDelta = overviewProv !== 'minimax' && !windowProvider;
   const showAccount = isAccountsOverviewMode(getCurrentProvider());
   const accountTh = showAccount ? '<th data-sort-key="account" role="button" tabindex="0">Account <span class="sort-arrow"></span></th>' : '';
@@ -10894,6 +11382,74 @@ function createMiniMaxProviderSection(accounts, minimaxStatus, baseVisibility) {
   return wrapper;
 }
 
+// createAlibabaProviderSection creates a consolidated Alibaba card with sub-accounts.
+// Mirrors createMiniMaxProviderSection.
+function createAlibabaProviderSection(accounts, alibabaStatus, baseVisibility) {
+  if (accounts.length <= 1) {
+    const vis = baseVisibility.alibaba || {
+      polling: alibabaStatus ? alibabaStatus.pollingEnabled !== false : true,
+      dashboard: alibabaStatus ? alibabaStatus.dashboardVisible !== false : true
+    };
+    return createProviderToggleRow({
+      key: 'alibaba',
+      name: 'Alibaba Token Plan',
+      desc: alibabaStatus?.description || 'Alibaba Token Plan usage tracking',
+      vis,
+      configured: alibabaStatus ? alibabaStatus.configured !== false : true,
+      autoDetectable: false,
+      isPolling: alibabaStatus ? !!alibabaStatus.isPolling : accounts.length === 1,
+    });
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'alibaba-provider-section';
+
+  const headerVis = baseVisibility.alibaba || {
+    polling: alibabaStatus ? alibabaStatus.pollingEnabled !== false : true,
+    dashboard: alibabaStatus ? alibabaStatus.dashboardVisible !== false : true
+  };
+
+  const headerRow = createProviderToggleRow({
+    key: 'alibaba',
+    name: 'Alibaba Token Plan',
+    desc: `${accounts.length} accounts configured`,
+    vis: headerVis,
+    configured: alibabaStatus ? alibabaStatus.configured !== false : true,
+    autoDetectable: false,
+    isPolling: accounts.some(a => !a.deletedAt),
+  });
+  wrapper.appendChild(headerRow);
+
+  const subProfilesDiv = document.createElement('div');
+  subProfilesDiv.className = 'alibaba-subprofiles';
+
+  accounts.forEach(account => {
+    const isDeleted = !!account.deletedAt;
+    const key = `alibaba:${account.id}`;
+    const vis = isDeleted
+      ? { polling: false, dashboard: false }
+      : (baseVisibility[key] || baseVisibility.alibaba || headerVis);
+
+    const subRow = createProviderToggleRow({
+      key,
+      name: escapeHtml(account.name),
+      desc: isDeleted
+        ? 'Account deleted'
+        : `Alibaba account: ${escapeHtml(account.name)}${account.region ? ' (' + account.region + ')' : ''}`,
+      vis,
+      configured: !isDeleted && account.hasCookies,
+      autoDetectable: false,
+      isPolling: false,
+      isDeleted,
+    });
+    subRow.classList.add('alibaba-subprofile-row');
+    subProfilesDiv.appendChild(subRow);
+  });
+
+  wrapper.appendChild(subProfilesDiv);
+  return wrapper;
+}
+
 async function populateProviderToggles(visibility) {
   const container = document.getElementById('provider-toggles');
   if (!container) return;
@@ -10943,6 +11499,7 @@ async function populateProviderToggles(visibility) {
   const providerByKey = new Map(providers.map(p => [p.key, p]));
   const codexStatus = providerByKey.get('codex') || null;
   const minimaxStatus = providerByKey.get('minimax') || null;
+  const alibabaStatus = providerByKey.get('alibaba') || null;
 
   // Providers that are not set up yet are not actionable here, and there are
   // usually more of them than configured ones, so they collapse into a
@@ -10952,7 +11509,7 @@ async function populateProviderToggles(visibility) {
   let unconfiguredCount = 0;
 
   providers
-    .filter(p => p.key !== 'codex' && p.key !== 'minimax')
+    .filter(p => p.key !== 'codex' && p.key !== 'minimax' && p.key !== 'alibaba')
     .forEach((p) => {
       const vis = baseVisibility[p.key] || {
         polling: p.pollingEnabled !== false,
@@ -11061,6 +11618,47 @@ async function populateProviderToggles(visibility) {
     }));
   }
 
+  // Alibaba (multi-account, like MiniMax) - ONE card with sub-accounts listed inside
+  let alibabaSection = null;
+  try {
+    const res = await authFetch(`${API_BASE}/api/alibaba/accounts`);
+    if (res.ok) {
+      const data = await res.json();
+      const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+      alibabaSection = createAlibabaProviderSection(accounts, alibabaStatus, baseVisibility);
+    }
+  } catch (e) {
+    // fall back to single row below
+  }
+
+  if (alibabaSection) {
+    container.appendChild(alibabaSection);
+  } else {
+    const fallbackAlibaba = alibabaStatus || {
+      key: 'alibaba',
+      name: 'Alibaba Token Plan',
+      description: 'Alibaba Token Plan usage tracking',
+      configured: false,
+      autoDetectable: false,
+      pollingEnabled: true,
+      dashboardVisible: true,
+      isPolling: false
+    };
+    const vis = baseVisibility.alibaba || {
+      polling: fallbackAlibaba.pollingEnabled !== false,
+      dashboard: fallbackAlibaba.dashboardVisible !== false
+    };
+    container.appendChild(createProviderToggleRow({
+      key: 'alibaba',
+      name: fallbackAlibaba.name || 'Alibaba Token Plan',
+      desc: fallbackAlibaba.description || 'Alibaba Token Plan usage tracking',
+      vis,
+      configured: fallbackAlibaba.configured !== false,
+      autoDetectable: false,
+      isPolling: !!fallbackAlibaba.isPolling
+    }));
+  }
+
   container.appendChild(createAPIIntegrationsToggleRow(State.apiIntegrationsVisibility || { dashboard: true }, apiIntegrationsHealth));
 
   if (unconfiguredCount > 0) {
@@ -11158,6 +11756,7 @@ const DEFAULT_PROVIDER_TAB_LABELS = {
   ollama: 'Ollama',
   muse: 'Muse',
   commandcode: 'Command Code',
+  alibaba: 'Alibaba',
   'api-integrations': 'API Integrations',
   both: 'All',
 };
@@ -11838,6 +12437,12 @@ const providerSettingsConfig = {
     fields: [],
     hasAccountManagement: true,
   },
+  alibaba: {
+    title: 'Alibaba Token Plan',
+    desc: 'Manage Alibaba Token Plan accounts. Paste the browser session cookies (Cookie header or Netscape cookies.txt) from the Alibaba Cloud Model Studio console. Cookies expire, so re-paste them when polling reports an expired session.',
+    fields: [],
+    hasAccountManagement: true,
+  },
   openrouter: {
     title: 'OpenRouter',
     desc: 'Configure OpenRouter usage tracking. Changes take effect after daemon restart.',
@@ -12214,6 +12819,160 @@ async function openProviderSettingsModal(providerKey) {
                       body: JSON.stringify(body),
                     });
                     if (res.ok) { await openProviderSettingsModal('minimax'); }
+                    else { const err = await res.json().catch(() => ({})); alert('Update failed: ' + (err.error || res.statusText)); saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+                  } catch (e) { alert('Update failed: ' + e.message); saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+                });
+              }
+            });
+          });
+        }
+      } else {
+        accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load accounts</p>';
+      }
+    } catch (e) {
+      accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">Failed to load accounts</p>';
+    }
+  } else if (providerKey === 'alibaba') {
+    // Alibaba: account management UI (cookies-based, fully UI-driven)
+    let accountsHTML = '<div class="alibaba-modal-accounts">';
+    accountsHTML += '<p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px">' + config.desc + '</p>';
+    accountsHTML += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+    accountsHTML += '<h4 style="margin:0;font-size:13px;color:var(--text-secondary)">Accounts</h4>';
+    accountsHTML += '<button id="alibaba-add-account-btn" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">+ Add Account</button>';
+    accountsHTML += '</div>';
+    accountsHTML += '<div id="alibaba-accounts-list">Loading...</div>';
+    accountsHTML += '<div id="alibaba-add-form" hidden style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-inset)">';
+    accountsHTML += '<div class="settings-fields">';
+    accountsHTML += '<div class="settings-field"><label for="alibaba-new-name">Account Name</label><input type="text" id="alibaba-new-name" class="settings-input" placeholder="e.g. work, personal" /></div>';
+    accountsHTML += '<div class="settings-field"><label for="alibaba-new-key">Session Cookies</label><textarea id="alibaba-new-key" class="settings-input" rows="4" placeholder="Paste the Cookie header value or a Netscape cookies.txt export" autocomplete="off" spellcheck="false"></textarea></div>';
+    accountsHTML += '<div class="settings-field"><label for="alibaba-new-region">Region</label><input type="text" id="alibaba-new-region" class="settings-input" value="ap-southeast-1" placeholder="ap-southeast-1" autocomplete="off" /></div>';
+    accountsHTML += '</div>';
+    accountsHTML += '<div style="display:flex;gap:8px;margin-top:8px">';
+    accountsHTML += '<button id="alibaba-save-new-btn" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">Save</button>';
+    accountsHTML += '<button id="alibaba-cancel-new-btn" style="padding:4px 12px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Cancel</button>';
+    accountsHTML += '</div></div>';
+    accountsHTML += '</div>';
+
+    bodyEl.innerHTML = accountsHTML;
+
+    // Wire add button
+    const addBtn = document.getElementById('alibaba-add-account-btn');
+    const addForm = document.getElementById('alibaba-add-form');
+    if (addBtn && addForm) {
+      addBtn.addEventListener('click', () => { addForm.hidden = false; addBtn.hidden = true; });
+      document.getElementById('alibaba-cancel-new-btn')?.addEventListener('click', () => { addForm.hidden = true; addBtn.hidden = false; });
+      document.getElementById('alibaba-save-new-btn')?.addEventListener('click', async () => {
+        const name = document.getElementById('alibaba-new-name')?.value?.trim();
+        const apiKey = document.getElementById('alibaba-new-key')?.value?.trim();
+        const region = document.getElementById('alibaba-new-region')?.value?.trim() || 'ap-southeast-1';
+        if (!name) { alert('Account name is required'); return; }
+        try {
+          const res = await authFetch(`${API_BASE}/api/alibaba/accounts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, cookies: apiKey, region }),
+          });
+          if (res.ok) {
+            await openProviderSettingsModal('alibaba');
+          } else {
+            const err = await res.json().catch(() => ({}));
+            alert('Failed to create account: ' + (err.error || res.statusText));
+          }
+        } catch (e) { alert('Failed to create account: ' + e.message); }
+      });
+    }
+
+    // Fetch and render accounts
+    const accountsList = document.getElementById('alibaba-accounts-list');
+    try {
+      const res = await authFetch(`${API_BASE}/api/alibaba/accounts`);
+      if (res.ok) {
+        const data = await res.json();
+        const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+        if (accounts.length === 0) {
+          accountsList.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin:0">No accounts configured. Add your first Alibaba account above.</p>';
+        } else {
+          let html = '';
+          accounts.forEach(account => {
+            const isDeleted = !!account.deletedAt;
+            const regionLabel = account.region || 'ap-southeast-1';
+            html += `<div class="alibaba-account-item" style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-light)">`;
+            html += `<div style="flex:1">`;
+            html += `<div style="font-weight:500">${escapeHtml(account.name)}</div>`;
+            html += `<div style="font-size:12px;color:var(--text-secondary)">${isDeleted ? 'Deleted' : regionLabel + ' - ' + (account.hasCookies ? 'Cookies configured' : 'No cookies set')}</div>`;
+            html += `</div>`;
+            html += `<div style="display:flex;gap:8px;align-items:center">`;
+            if (!isDeleted) {
+              html += `<button class="alibaba-acct-btn" data-action="edit" data-id="${account.id}" data-name="${escapeHtml(account.name)}" data-region="${escapeHtml(account.region || 'ap-southeast-1')}" data-has-key="${account.hasCookies}" title="Edit account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Edit</button>`;
+              html += `<button class="alibaba-acct-btn" data-action="delete" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="Delete account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--md-error,#b3261e)">Delete</button>`;
+            } else {
+              html += `<button class="alibaba-acct-btn" data-action="restore" data-id="${account.id}" data-name="${escapeHtml(account.name)}" title="Restore account" style="padding:4px 8px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--accent-teal,#0d9488)">Restore</button>`;
+            }
+            html += `</div></div>`;
+          });
+          accountsList.innerHTML = html;
+
+          // Wire action buttons
+          accountsList.querySelectorAll('.alibaba-acct-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const action = btn.dataset.action;
+              const id = btn.dataset.id;
+              if (action === 'delete') {
+                if (!confirm(`Delete account "${btn.dataset.name}"? Historical data will be preserved.`)) return;
+                btn.disabled = true; btn.textContent = '...';
+                try {
+                  const res = await authFetch(`${API_BASE}/api/alibaba/accounts?id=${id}`, { method: 'DELETE' });
+                  if (res.ok) { await openProviderSettingsModal('alibaba'); }
+                  else { const e = await res.json().catch(() => ({})); alert('Delete failed: ' + (e.error || res.statusText)); btn.disabled = false; btn.textContent = 'Delete'; }
+                } catch (e) { alert('Delete failed: ' + e.message); btn.disabled = false; btn.textContent = 'Delete'; }
+              } else if (action === 'restore') {
+                btn.disabled = true; btn.textContent = '...';
+                try {
+                  const res = await authFetch(`${API_BASE}/api/alibaba/accounts?id=${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ restore: true }),
+                  });
+                  if (res.ok) { await openProviderSettingsModal('alibaba'); }
+                  else { const e = await res.json().catch(() => ({})); alert('Restore failed: ' + (e.error || res.statusText)); btn.disabled = false; btn.textContent = 'Restore'; }
+                } catch (e) { alert('Restore failed: ' + e.message); btn.disabled = false; btn.textContent = 'Restore'; }
+              } else if (action === 'edit') {
+                // Show inline edit form
+                const item = btn.closest('.alibaba-account-item');
+                if (!item) return;
+                const currentName = btn.dataset.name;
+                const currentRegion = btn.dataset.region;
+                const hasKey = btn.dataset.hasKey === 'true';
+                item.innerHTML = `<div style="width:100%">
+                  <div class="settings-fields" style="gap:8px">
+                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">Name</label><input type="text" class="settings-input alibaba-edit-name" value="${escapeHtml(currentName)}" /></div>
+                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">Session Cookies</label><textarea class="settings-input alibaba-edit-key" rows="4" placeholder="${hasKey ? 'Cookies configured - leave blank to keep' : 'Paste cookies'}" autocomplete="off" spellcheck="false"></textarea></div>
+                    <div class="settings-field" style="margin-bottom:4px"><label style="font-size:12px">Region</label><input type="text" class="settings-input alibaba-edit-region" value="${escapeHtml(currentRegion)}" autocomplete="off" /></div>
+                  </div>
+                  <div style="display:flex;gap:8px;margin-top:8px">
+                    <button class="alibaba-edit-save" data-id="${id}" style="padding:4px 12px;font-size:12px;background:var(--md-primary,#6750a4);color:#fff;border:none;border-radius:4px;cursor:pointer">Save</button>
+                    <button class="alibaba-edit-cancel" style="padding:4px 12px;font-size:12px;background:var(--surface-inset);border:1px solid var(--border);border-radius:4px;cursor:pointer">Cancel</button>
+                  </div>
+                </div>`;
+                item.querySelector('.alibaba-edit-cancel')?.addEventListener('click', () => openProviderSettingsModal('alibaba'));
+                item.querySelector('.alibaba-edit-save')?.addEventListener('click', async (e) => {
+                  const saveBtn = e.target;
+                  const newName = item.querySelector('.alibaba-edit-name')?.value?.trim();
+                  const newKey = item.querySelector('.alibaba-edit-key')?.value?.trim();
+                  const newRegion = item.querySelector('.alibaba-edit-region')?.value?.trim();
+                  const body = {};
+                  if (newName && newName !== currentName) body.name = newName;
+                  if (newKey) body.cookies = newKey;
+                  if (newRegion && newRegion !== currentRegion) body.region = newRegion;
+                  if (Object.keys(body).length === 0) { await openProviderSettingsModal('alibaba'); return; }
+                  saveBtn.disabled = true; saveBtn.textContent = '...';
+                  try {
+                    const res = await authFetch(`${API_BASE}/api/alibaba/accounts?id=${id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(body),
+                    });
+                    if (res.ok) { await openProviderSettingsModal('alibaba'); }
                     else { const err = await res.json().catch(() => ({})); alert('Update failed: ' + (err.error || res.statusText)); saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
                   } catch (e) { alert('Update failed: ' + e.message); saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
                 });
@@ -13486,6 +14245,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateMiniMaxAccountTabsVisibility();
   }
   initMiniMaxAccountTabs();
+
+  loadAlibabaAccount();
+  if (getCurrentProvider() === 'alibaba') {
+    await loadAlibabaAccounts();
+  } else {
+    updateAlibabaAccountTabsVisibility();
+  }
+  initAlibabaAccountTabs();
   loadAPIIntegrationsPreferences();
 
   initTheme();

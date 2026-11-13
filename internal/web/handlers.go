@@ -121,10 +121,12 @@ type Handler struct {
 	ollamaTracker      *tracker.OllamaTracker
 	museTracker        *tracker.MuseTracker
 	commandCodeTracker *tracker.CommandCodeTracker
+	alibabaTracker     *tracker.AlibabaTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
 	minimaxAgentMgr    MiniMaxAccountReloader
+	alibabaAgentMgr    AlibabaAccountReloader
 	logger             *slog.Logger
 	dashboardTmpl      *template.Template
 	loginTmpl          *template.Template
@@ -1304,6 +1306,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "ollama", Name: "Ollama Cloud", Description: "Ollama Cloud included usage tracking", AutoDetectable: false},
 		{Key: "muse", Name: "Muse", Description: "Meta Muse coding-plan quota tracking", AutoDetectable: true},
 		{Key: "commandcode", Name: "Command Code", Description: "Command Code credit and rate-limit tracking", AutoDetectable: true},
+		{Key: "alibaba", Name: "Alibaba Token Plan", Description: "Alibaba Cloud Model Studio Token Plan usage tracking (browser cookies)"},
 	}
 }
 
@@ -1392,6 +1395,14 @@ func (h *Handler) providerConfiguredFromConfig(provider string) (configured, nee
 			return false, false
 		}
 		return h.config.CommandCodeEnabled || strings.TrimSpace(h.config.CommandCodeAPIKey) != "", true
+	case "alibaba":
+		// ALIBABA_ENABLED=false is an explicit opt-out. Otherwise cookies from
+		// the environment, a cookies file or a UI account (checked by
+		// detection, outside the lock) configure the provider.
+		if h.config.AlibabaDisabled {
+			return false, false
+		}
+		return h.config.AlibabaEnabled || strings.TrimSpace(h.config.AlibabaCookies) != "" || strings.TrimSpace(h.config.AlibabaCookiesFile) != "", true
 	default:
 		return false, false
 	}
@@ -1440,6 +1451,18 @@ func (h *Handler) providerConfiguredByDetection(provider string) bool {
 	case "commandcode":
 		// Reading a few small JSON files, so no cache is needed.
 		return api.DetectCommandCodeCredentials(h.logger) != nil
+	case "alibaba":
+		// Configured if any active Alibaba account has cookies.
+		if h.store != nil {
+			if accounts, err := h.store.QueryActiveProviderAccounts("alibaba"); err == nil {
+				for _, acc := range accounts {
+					if alibabaAccountHasCookies(acc.Metadata) {
+						return true
+					}
+				}
+			}
+		}
+		return false
 	default:
 		return false
 	}
@@ -1646,6 +1669,9 @@ func providerKeyBase(provider string) string {
 	if strings.HasPrefix(provider, "minimax:") {
 		return "minimax"
 	}
+	if strings.HasPrefix(provider, "alibaba:") {
+		return "alibaba"
+	}
 	return provider
 }
 
@@ -1686,6 +1712,11 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.CommandCodeEnabled = src.CommandCodeEnabled
 	dst.CommandCodeDisabled = src.CommandCodeDisabled
 	dst.CommandCodeBaseURL = src.CommandCodeBaseURL
+	dst.AlibabaCookies = src.AlibabaCookies
+	dst.AlibabaCookiesFile = src.AlibabaCookiesFile
+	dst.AlibabaRegion = src.AlibabaRegion
+	dst.AlibabaEnabled = src.AlibabaEnabled
+	dst.AlibabaDisabled = src.AlibabaDisabled
 	dst.AntigravityBaseURL = src.AntigravityBaseURL
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
@@ -1787,6 +1818,9 @@ var providerEnumFields = map[string]map[string][]string{
 		"display_mode": {"usage", "available"},
 	},
 	"commandcode": {
+		"display_mode": {"usage", "available"},
+	},
+	"alibaba": {
 		"display_mode": {"usage", "available"},
 	},
 }
@@ -2581,6 +2615,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	hasCodex := hasVisibleProvider("codex")
 	hasAntigravity := hasVisibleProvider("antigravity")
 	hasMiniMax := hasVisibleProvider("minimax")
+	hasAlibaba := hasVisibleProvider("alibaba")
 	hasOpenRouter := hasVisibleProvider("openrouter")
 	hasMoonshot := hasVisibleProvider("moonshot")
 	hasDeepSeek := hasVisibleProvider("deepseek")
@@ -2601,6 +2636,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		"HasCodex":        hasCodex,
 		"HasAntigravity":  hasAntigravity,
 		"HasMiniMax":      hasMiniMax,
+		"HasAlibaba":      hasAlibaba,
 		"HasTools":        hasToolsVisible,
 		"ToolsVisible":    toolsVisible,
 		"PollIntervalSec": h.getPollIntervalSec(),
@@ -2665,6 +2701,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentMuse(w, r)
 	case "commandcode":
 		h.currentCommandCode(w, r)
+	case "alibaba":
+		h.currentAlibaba(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3174,6 +3212,24 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("commandcode") && providerTelemetryEnabled(visibility, "commandcode") {
 		response["commandcode"] = h.buildCommandCodeCurrent()
 	}
+	if h.config.HasProvider("alibaba") && providerTelemetryEnabled(visibility, "alibaba") {
+		alibabaAccounts := h.alibabaUsageAccounts()
+		originalCount := len(alibabaAccounts)
+		filtered := make([]map[string]interface{}, 0, len(alibabaAccounts))
+		for _, acc := range alibabaAccounts {
+			if alibabaAccountTelemetryEnabled(visibility, alibabaUsageAccountID(acc)) {
+				filtered = append(filtered, acc)
+			}
+		}
+		alibabaAccounts = filtered
+		if len(alibabaAccounts) > 1 {
+			response["alibabaAccounts"] = alibabaAccounts
+		} else if len(alibabaAccounts) == 1 {
+			response["alibaba"] = alibabaAccounts[0]
+		} else if originalCount == 0 {
+			response["alibaba"] = h.buildAlibabaCurrent(h.defaultAlibabaAccountID())
+		}
+	}
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -3589,6 +3645,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyMuse(w, r)
 	case "commandcode":
 		h.historyCommandCode(w, r)
+	case "alibaba":
+		h.historyAlibaba(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4146,6 +4204,36 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				ccData = append(ccData, entry)
 			}
 			response["commandcode"] = ccData
+		}
+	}
+
+	if h.config.HasProvider("alibaba") && providerTelemetryEnabled(visibility, "alibaba") && h.store != nil {
+		alibabaAccountUsages, enumerated := h.alibabaUsageAccountsOK()
+		if !enumerated {
+			historyErrors["alibaba"] = "failed to list accounts"
+		}
+		alibabaHistories := make([]map[string]interface{}, 0, len(alibabaAccountUsages))
+		for _, usage := range alibabaAccountUsages {
+			accountID := alibabaUsageAccountID(usage.Usage)
+			if !alibabaAccountTelemetryEnabled(visibility, accountID) {
+				continue
+			}
+			snapshots, err := h.store.QueryAlibabaChartRange(start, now, accountID)
+			if err != nil {
+				historyErrors[fmt.Sprintf("alibaba:%d", accountID)] = "history read failed"
+				continue
+			}
+			alibabaHistories = append(alibabaHistories, map[string]interface{}{
+				"accountId":   accountID,
+				"accountName": alibabaUsageAccountName(usage.Usage),
+				"history":     alibabaFlatHistory(snapshots),
+			})
+		}
+		if len(alibabaHistories) == 1 {
+			response["alibaba"] = alibabaHistories[0]["history"]
+		}
+		if len(alibabaHistories) > 0 {
+			response["alibabaAccounts"] = alibabaHistories
 		}
 	}
 
@@ -4782,6 +4870,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesMuse(w, r)
 	case "commandcode":
 		h.cyclesCommandCode(w, r)
+	case "alibaba":
+		h.cyclesAlibaba(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -5129,6 +5219,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryMuse(w, r)
 	case "commandcode":
 		h.summaryCommandCode(w, r)
+	case "alibaba":
+		h.summaryAlibaba(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -5967,6 +6059,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsMuse(w, r, rangeDur)
 	case "commandcode":
 		h.insightsCommandCode(w, r, rangeDur)
+	case "alibaba":
+		h.insightsAlibaba(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -6077,6 +6171,30 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("commandcode") && providerTelemetryEnabled(visibility, "commandcode") {
 		response["commandcode"] = h.buildCommandCodeInsights(hidden, rangeDur)
+	}
+	if h.config.HasProvider("alibaba") && providerTelemetryEnabled(visibility, "alibaba") {
+		alibabaAccounts := h.alibabaUsageAccounts()
+		alibabaInsights := make([]map[string]interface{}, 0, len(alibabaAccounts))
+		for _, acc := range alibabaAccounts {
+			accountID := alibabaUsageAccountID(acc)
+			if !alibabaAccountTelemetryEnabled(visibility, accountID) {
+				continue
+			}
+			ins := h.buildAlibabaInsights(accountID, hidden, rangeDur)
+			partial = partial || ins.partial
+			alibabaInsights = append(alibabaInsights, map[string]interface{}{
+				"accountId":   accountID,
+				"accountName": alibabaUsageAccountName(acc),
+				"stats":       ins.Stats,
+				"insights":    ins.Insights,
+			})
+		}
+		if len(alibabaInsights) == 1 {
+			response["alibaba"] = alibabaInsights[0]
+		}
+		if len(alibabaInsights) > 0 {
+			response["alibabaAccounts"] = alibabaInsights
+		}
 	}
 
 	for _, v := range response {
@@ -8748,6 +8866,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewMuse(w, r)
 	case "commandcode":
 		h.cycleOverviewCommandCode(w, r)
+	case "alibaba":
+		h.cycleOverviewAlibaba(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -12607,6 +12727,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryMuse(w, r)
 	case "commandcode":
 		h.loggingHistoryCommandCode(w, r)
+	case "alibaba":
+		h.loggingHistoryAlibaba(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
