@@ -456,12 +456,31 @@ func (m *CursorModelUsage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Cursor credential sources. A refreshed token is written back only to the
+// store it was read from, so a Keychain-sourced credential never replaces the
+// encrypted tokens Cursor Desktop keeps in its SQLite database.
+const (
+	CursorSourceSQLite   = "sqlite"
+	CursorSourceKeychain = "keychain"
+)
+
+// cursorOpaqueTokenPrefix marks the encrypted values newer Cursor Desktop
+// versions store in state.vscdb instead of a plain JWT.
+const cursorOpaqueTokenPrefix = "cursor-safe-storage:"
+
 type CursorCredentials struct {
 	AccessToken  string
 	RefreshToken string
 	ExpiresAt    time.Time
 	ExpiresIn    time.Duration
-	Source       string // "sqlite" or "keychain"
+	Source       string // CursorSourceSQLite or CursorSourceKeychain
+
+	// ReadOnly marks a Keychain credential that was selected only because
+	// Cursor Desktop's SQLite value is opaque. That Keychain item may be an
+	// old copy onWatch itself wrote, sharing the refresh token Desktop holds
+	// encrypted, so refreshing it would consume Desktop's one-time token and
+	// log Cursor Desktop out. Such a credential must never be refreshed.
+	ReadOnly bool
 }
 
 func (c *CursorCredentials) IsExpiringSoon(threshold time.Duration) bool {
@@ -567,7 +586,7 @@ func CursorAccessTokenUsableForAPI(accessToken string) bool {
 	if accessToken == "" {
 		return false
 	}
-	if strings.HasPrefix(accessToken, "cursor-safe-storage:") {
+	if strings.HasPrefix(accessToken, cursorOpaqueTokenPrefix) {
 		return false
 	}
 	return ExtractJWTSubject(accessToken) != ""
@@ -889,6 +908,8 @@ type CursorUsageSummaryResponse struct {
 	LimitType         string
 	IndividualUsage   CursorUsageSummaryPool `json:"individualUsage"`
 	TeamUsage         CursorUsageSummaryTeam `json:"teamUsage"`
+
+	badNumericFields int
 }
 
 type CursorUsageSummaryPool struct {
@@ -943,6 +964,11 @@ func ParseCursorUsageSummaryResponse(data []byte) (*CursorUsageSummaryResponse, 
 			}
 		}
 	}
+	resp.badNumericFields = bad.count
+	if resp.badNumericFields > 0 {
+		slog.Warn("cursor: usage summary had unparseable numeric fields, dropping the affected quotas",
+			"field_count", resp.badNumericFields)
+	}
 	return resp, nil
 }
 
@@ -992,13 +1018,12 @@ func buildUsageSummaryQuotas(summary *CursorUsageSummaryResponse) []CursorQuota 
 
 	var quotas []CursorQuota
 	appendPool := func(name string, pool CursorUsageSummaryOverall) {
-		if !pool.Enabled || pool.badLimit || pool.Limit <= 0 {
+		// A defining field that failed to parse drops the quota rather than
+		// storing a fabricated value; the last good card stays.
+		if !pool.Enabled || pool.badLimit || pool.badUsed || pool.Limit <= 0 {
 			return
 		}
 		used := float64(pool.Used)
-		if pool.badUsed {
-			used = 0
-		}
 		limit := float64(pool.Limit)
 		util := 0.0
 		if limit > 0 {

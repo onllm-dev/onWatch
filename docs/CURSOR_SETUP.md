@@ -37,7 +37,11 @@ Cursor access tokens are short-lived JWTs. onWatch automatically refreshes them:
 
 1. Before each poll, onWatch checks if the token expires within 5 minutes
 2. If expiring, it calls the Cursor OAuth refresh endpoint (`https://api2.cursor.sh/oauth/token`)
-3. The refreshed access token is written back to Cursor's SQLite database
+3. The refreshed tokens are written back to the store they were read from (Cursor's SQLite database or the macOS Keychain). If the other store still holds the exact refresh token that was just consumed, the same session is duplicated there (older onWatch versions wrote every refresh to both stores), so it is updated too. A store holding a different token is left alone, and a missing store is never created. If Cursor's database holds an encrypted `cursor-safe-storage:` value, onWatch never overwrites it.
+
+If the SQLite database holds an encrypted `cursor-safe-storage:` value and onWatch falls back to the Keychain token, that token is treated as read-only and never refreshed. It may be an old copy of Cursor Desktop's session, so refreshing it would consume the refresh token Desktop holds and log Desktop out. If it has expired, onWatch reports the normal auth-failure state; re-authenticate in Cursor Desktop to recover.
+
+If a refresh succeeds but the new tokens cannot be saved, onWatch keeps the new access token in memory for this process and stops further automatic refreshes, so it never rotates a token it cannot persist.
 
 If the refresh token is invalid (e.g., revoked), onWatch pauses polling and logs an error. You'll need to re-authenticate via the Cursor app.
 

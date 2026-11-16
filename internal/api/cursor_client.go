@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ var (
 	ErrCursorNetworkError    = errors.New("cursor: network error")
 	ErrCursorInvalidResponse = errors.New("cursor: invalid response")
 	ErrCursorSessionExpired  = errors.New("cursor: session expired - re-authentication required")
+	ErrCursorRateLimited     = errors.New("cursor: rate limited")
 )
 
 const (
@@ -169,8 +171,27 @@ func (c *CursorClient) FetchQuotas(ctx context.Context) (*CursorSnapshot, error)
 	if shouldTryCursorUsageSummaryFallback(snapshot) {
 		summary, err := c.fetchUsageSummary(ctx, token)
 		if err != nil {
-			c.logger.Warn("cursor: failed to fetch usage summary fallback", "error", err)
-		} else if summary != nil {
+			if ctx.Err() != nil {
+				// A cancelled or timed-out poll is not a valid result, even when
+				// the fallback error itself is not classified as transient. The
+				// primary snapshot has no quotas, so returning it would store an
+				// empty poll on shutdown.
+				return nil, fmt.Errorf("cursor: fetch usage summary fallback: %w", ctx.Err())
+			}
+			if isCursorUsageSummaryTransient(err) {
+				// The primary response had no usable quotas, so this fallback is
+				// the only source of data for this poll. For a transient failure
+				// (network, timeout, 429, 5xx) failing the poll keeps the
+				// last-known values instead of blanking the dashboard.
+				return nil, fmt.Errorf("cursor: fetch usage summary fallback: %w", err)
+			}
+			// Any other outcome is not an auth failure of the session: the
+			// primary endpoint accepted the token. Log once without secrets and
+			// fall through with the primary snapshot, exactly as before the
+			// fallback existed.
+			c.logger.Warn("cursor: usage summary fallback unavailable, keeping primary snapshot", "error", err)
+		}
+		if summary != nil {
 			summaryQuotas := buildUsageSummaryQuotas(summary)
 			if len(summaryQuotas) > 0 {
 				snapshot.Quotas = summaryQuotas
@@ -344,11 +365,28 @@ func (c *CursorClient) fetchUsageSummary(ctx context.Context, token string) (*Cu
 		return nil, ErrCursorUnauthorized
 	case http.StatusForbidden:
 		return nil, ErrCursorForbidden
-	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable:
-		return nil, ErrCursorServerError
+	case http.StatusTooManyRequests:
+		return nil, fmt.Errorf("%w: usage summary HTTP 429", ErrCursorRateLimited)
 	default:
+		if resp.StatusCode >= 500 {
+			// 5xx includes 504 and Cloudflare's non-standard 52x statuses. All
+			// of them are server-side and transient, so the poll should fail
+			// rather than store an empty fallback result.
+			return nil, ErrCursorServerError
+		}
 		return nil, fmt.Errorf("cursor: unexpected status %d for usage summary", resp.StatusCode)
 	}
+}
+
+// isCursorUsageSummaryTransient reports whether a usage-summary fallback failure
+// should fail the poll. Only transport-level and server-side problems qualify.
+// Everything else - a 401/403/404, another 4xx, or an unparseable body - is
+// reported without failing the poll, because the primary endpoint accepted the
+// token and the primary snapshot is still valid.
+func isCursorUsageSummaryTransient(err error) bool {
+	return errors.Is(err, ErrCursorNetworkError) ||
+		errors.Is(err, ErrCursorServerError) ||
+		errors.Is(err, ErrCursorRateLimited)
 }
 
 func (c *CursorClient) fetchRequestBasedUsage(ctx context.Context, token string) (*CursorRequestUsageResponse, error) {
@@ -490,7 +528,12 @@ func RefreshCursorToken(ctx context.Context, refreshToken string) (*CursorOAuthR
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("cursor: refresh failed with HTTP %d: %s", resp.StatusCode, string(body))
+		// The body can echo token material, and refresh errors are logged.
+		// Report the status and, at most, a short parsed error code.
+		if code := cursorOAuthErrorCode(body); code != "" {
+			return nil, fmt.Errorf("cursor: refresh failed with HTTP %d (%s)", resp.StatusCode, code)
+		}
+		return nil, fmt.Errorf("cursor: refresh failed with HTTP %d", resp.StatusCode)
 	}
 
 	oauthResp, err := ParseCursorOAuthResponse(body)
@@ -507,6 +550,39 @@ func RefreshCursorToken(ctx context.Context, refreshToken string) (*CursorOAuthR
 	}
 
 	return oauthResp, nil
+}
+
+// cursorOAuthErrorCode extracts a short, non-secret error code from a failed
+// refresh response. Only recognized OAuth error codes are returned, and the
+// value is clamped to a small length, so token material echoed in the body can
+// never reach a log line.
+func cursorOAuthErrorCode(body []byte) string {
+	var payload struct {
+		Error       string `json:"error"`
+		ErrorCode   string `json:"error_code"`
+		Description string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	code := strings.TrimSpace(payload.Error)
+	if code == "" {
+		code = strings.TrimSpace(payload.ErrorCode)
+	}
+	if code == "" {
+		return ""
+	}
+	valid := true
+	for _, r := range code {
+		if !(r == '_' || r == '-' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			valid = false
+			break
+		}
+	}
+	if !valid || len(code) > 40 {
+		return ""
+	}
+	return code
 }
 
 func redactCursorToken(token string) string {
@@ -539,27 +615,30 @@ func IsCursorSessionExpired(err error) bool {
 	return errors.Is(err, ErrCursorSessionExpired)
 }
 
-// WriteCursorTokenToSQLite writes a token back to Cursor's state.vscdb.
-func WriteCursorTokenToSQLite(dbPath, key, value string) error {
-	// This needs to use database/sql with the modernc.org/sqlite driver
-	// to write back to Cursor's state.vscdb. We open it as a separate connection.
-	// We use parameterized queries for safety.
-	db, err := openCursorStateDB(dbPath)
-	if err != nil {
-		return err
+// cursorStateDBURI builds a SQLite file: URI for Cursor's state DB. A bare
+// "path?mode=rw" DSN is not a URI, so the driver ignores the mode and opens
+// read-write-create with no busy timeout. The file: prefix makes mode=rw and
+// the busy_timeout pragma take effect. Windows drive paths need a leading
+// slash, or the drive letter is read as the URI authority.
+func cursorStateDBURI(dbPath, query string) string {
+	p := filepath.ToSlash(dbPath)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
 	}
-	defer db.Close()
-
-	_, err = db.Exec(
-		"INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)",
-		key, value,
-	)
-	return err
+	return (&url.URL{Scheme: "file", Path: p, RawQuery: query}).String()
 }
 
+// openCursorStateDB opens the state DB read-write without creating it, and
+// waits up to 3s for another connection (Cursor Desktop) to release its lock.
+//
+// _txlock=immediate takes the write lock when the transaction begins, so the
+// guard reads and the token writes happen under one lock. A deferred
+// transaction would read first and then fail the read-to-write upgrade with an
+// immediate SQLITE_BUSY (SQLite does not invoke the busy handler for that
+// upgrade), which can abandon a save whose refresh token is already consumed.
 func openCursorStateDB(dbPath string) (*sql.DB, error) {
 	//nolint:rowserrcheck
-	db, err := sql.Open("sqlite", dbPath+"?mode=rw")
+	db, err := sql.Open("sqlite", cursorStateDBURI(dbPath, "mode=rw&_txlock=immediate&_pragma=busy_timeout(3000)"))
 	if err != nil {
 		return nil, fmt.Errorf("cursor: open state db: %w", err)
 	}

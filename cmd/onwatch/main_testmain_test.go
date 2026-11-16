@@ -28,6 +28,10 @@ func TestMain(m *testing.M) {
 	// its first enable records the real home, which the credential-file guard
 	// then refuses, and it keeps every keychain/keyring operation off.
 	api.SetTestMode(true)
+	// Cursor detection has its own guard: it stops `security find-generic-password`
+	// and state.vscdb reads, so no main-package test touches real Cursor
+	// credentials.
+	api.SetCursorTestMode(true)
 
 	// GitHub Actions runs jobs under systemd, so INVOCATION_ID is set on the
 	// runner and update.IsSystemd() reports true there but not on a developer

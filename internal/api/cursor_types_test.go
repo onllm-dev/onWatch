@@ -1358,6 +1358,144 @@ func TestBuildUsageSummaryQuotas(t *testing.T) {
 	}
 }
 
+// An unparseable "used" must drop the quota rather than fabricate a 0% card,
+// matching how the existing parsers treat unparseable defining fields.
+func TestBuildUsageSummaryQuotas_DropsQuotaWithGarbageUsed(t *testing.T) {
+	raw := `{
+		"membershipType": "enterprise",
+		"individualUsage": {
+			"overall": {"enabled": true, "used": "N/A", "limit": 50000}
+		}
+	}`
+	summary, err := ParseCursorUsageSummaryResponse([]byte(raw))
+	if err != nil {
+		t.Fatalf("ParseCursorUsageSummaryResponse: %v", err)
+	}
+	quotas := buildUsageSummaryQuotas(summary)
+	for _, q := range quotas {
+		if q.Name == "total_usage" {
+			t.Fatalf("total_usage kept with a garbage used value: %#v", q)
+		}
+	}
+}
+
+// The same rule applies to the team on-demand pool.
+func TestBuildUsageSummaryQuotas_DropsOnDemandWithGarbageUsed(t *testing.T) {
+	raw := `{
+		"membershipType": "team",
+		"teamUsage": {
+			"onDemand": {"enabled": true, "used": "N/A", "limit": 10000}
+		}
+	}`
+	summary, err := ParseCursorUsageSummaryResponse([]byte(raw))
+	if err != nil {
+		t.Fatalf("ParseCursorUsageSummaryResponse: %v", err)
+	}
+	quotas := buildUsageSummaryQuotas(summary)
+	for _, q := range quotas {
+		if q.Name == "on_demand" {
+			t.Fatalf("on_demand kept with a garbage used value: %#v", q)
+		}
+	}
+}
+
+// A dropped garbage field still warns once, like the other cursor parsers, and
+// the log must not contain the raw value.
+func TestParseCursorUsageSummaryResponse_GarbageFieldLogsOnce(t *testing.T) {
+	var buf strings.Builder
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(old)
+
+	raw := `{
+		"individualUsage": {"overall": {"enabled": true, "used": "secret-used-value", "limit": 50000}}
+	}`
+	if _, err := ParseCursorUsageSummaryResponse([]byte(raw)); err != nil {
+		t.Fatalf("ParseCursorUsageSummaryResponse: %v", err)
+	}
+
+	logs := buf.String()
+	if !strings.Contains(logs, "usage summary") {
+		t.Fatalf("expected a usage summary warning, got: %q", logs)
+	}
+	if !strings.Contains(logs, "level=WARN") {
+		t.Errorf("expected a WARN log, got: %q", logs)
+	}
+	if strings.Contains(logs, "secret-used-value") {
+		t.Errorf("log leaked the raw field value: %q", logs)
+	}
+}
+
+// The fallback parser reuses the string-number helpers, so a limit encoded as
+// a quoted number and a null/absent limit must both behave like the main
+// parser: quoted number parses, null means "no limit" (no quota).
+func TestBuildUsageSummaryQuotas_StringNumbersAndNullLimit(t *testing.T) {
+	raw := `{
+		"individualUsage": {
+			"overall": {"enabled": true, "used": "37500", "limit": "50000"}
+		},
+		"teamUsage": {
+			"onDemand": {"enabled": true, "used": "100", "limit": null}
+		}
+	}`
+	summary, err := ParseCursorUsageSummaryResponse([]byte(raw))
+	if err != nil {
+		t.Fatalf("ParseCursorUsageSummaryResponse: %v", err)
+	}
+	quotas := buildUsageSummaryQuotas(summary)
+	if len(quotas) != 1 {
+		t.Fatalf("quota count = %d, want only the string-number total_usage", len(quotas))
+	}
+	q := quotas[0]
+	if q.Name != "total_usage" || q.Used != 375 || q.Limit != 500 {
+		t.Fatalf("quota = %+v, want total_usage 375/500", q)
+	}
+}
+
+// The fallback must not fire for ordinary individual and Team accounts whose
+// primary response already has usable quotas. This pins the non-regression
+// contract: no usage-summary request, and the snapshot equals what
+// ToCursorSnapshot produced before the fallback existed.
+func TestShouldTryCursorUsageSummaryFallback_IndividualAndTeam(t *testing.T) {
+	individualUsage := &CursorUsageResponse{
+		BillingCycleEnd: "1771077734000",
+		PlanUsage: &CursorPlanUsage{
+			TotalSpend:       5000,
+			Remaining:        35000,
+			Limit:            40000,
+			TotalPercentUsed: 12.5,
+			AutoPercentUsed:  3.0,
+			ApiPercentUsed:   9.5,
+		},
+		Enabled: true,
+	}
+	individual := ToCursorSnapshot(individualUsage,
+		&CursorPlanInfoResponse{PlanInfo: CursorPlanInfo{PlanName: "Pro"}}, nil, nil, nil, false)
+	if shouldTryCursorUsageSummaryFallback(individual) {
+		t.Error("individual Pro snapshot triggered the usage-summary fallback")
+	}
+
+	teamUsage := &CursorUsageResponse{
+		BillingCycleEnd: "1771077734000",
+		PlanUsage: &CursorPlanUsage{
+			TotalSpend: 5000,
+			Remaining:  35000,
+			Limit:      40000,
+		},
+		SpendLimitUsage: &CursorSpendLimitUsage{
+			PooledLimit:     50000,
+			PooledRemaining: 50000,
+			LimitType:       "team",
+		},
+		Enabled: true,
+	}
+	team := ToCursorSnapshot(teamUsage,
+		&CursorPlanInfoResponse{PlanInfo: CursorPlanInfo{PlanName: "Team"}}, nil, nil, nil, false)
+	if shouldTryCursorUsageSummaryFallback(team) {
+		t.Error("Team snapshot with a finite limit triggered the usage-summary fallback")
+	}
+}
+
 func createTestJWT(sub string, exp int64) string {
 	header := `{"alg":"RS256","typ":"JWT"}`
 	payload := `{"sub":"` + sub + `","exp":` + fmt.Sprintf("%d", exp) + `}`

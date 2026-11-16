@@ -29,6 +29,11 @@ func runTests(m *testing.M) int {
 	// SetTestMode must run before the home is redirected: its first enable
 	// records the real home that the credential-file guard refuses.
 	api.SetTestMode(true)
+	// The Cursor guard is separate from SetTestMode: it stops Cursor token
+	// detection from shelling out to `security`/secret-tool or opening the real
+	// state.vscdb, so an agent test that forgets to isolate itself still
+	// cannot touch real Cursor credentials.
+	api.SetCursorTestMode(true)
 
 	_, cleanup, err := testhome.SandboxHome()
 	if err != nil {

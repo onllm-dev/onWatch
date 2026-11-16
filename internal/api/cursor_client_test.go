@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -481,5 +482,185 @@ func TestCursorClient_FetchQuotas_EnterpriseUsageSummaryFallback(t *testing.T) {
 	}
 	if snapshot.Quotas[0].Used != 375 || snapshot.Quotas[0].Limit != 500 {
 		t.Fatalf("used/limit = %v/%v", snapshot.Quotas[0].Used, snapshot.Quotas[0].Limit)
+	}
+}
+
+// When the fallback was needed (the primary response had no usable quotas) and
+// the fallback fails transiently (5xx here), the fetch must return an error so
+// the agent records a failed poll instead of storing an empty snapshot that
+// blanks the dashboard. The project rule is: keep the last-known values, never
+// blank. A non-transient fallback outcome (401/403/404/...) is handled
+// separately: it keeps the primary snapshot.
+func TestCursorClient_FetchQuotas_UsageSummaryFallbackFailureReturnsError(t *testing.T) {
+	token := createTestJWT("auth0|user_test", 1735689600)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/aiserver.v1.DashboardService/GetCurrentPeriodUsage":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"enabled": true, "billingCycleStart": "1", "billingCycleEnd": "2", "displayThreshold": 100}`))
+		case "/aiserver.v1.DashboardService/GetPlanInfo":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"planInfo": {"planName": "Enterprise"}}`))
+		case "/api/usage":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"gpt-4": {"numRequests": 0, "maxRequestUsage": null}}`))
+		case "/api/usage-summary":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewCursorClient(token, discardLoggerClient(),
+		WithCursorBaseURL(server.URL),
+		WithCursorWebBaseURL(server.URL),
+	)
+	snapshot, err := client.FetchQuotas(context.Background())
+	if err == nil {
+		t.Fatalf("FetchQuotas returned no error for a failed fallback; snapshot = %+v", snapshot)
+	}
+	if snapshot != nil {
+		t.Fatalf("FetchQuotas returned a snapshot alongside the error: %+v", snapshot)
+	}
+}
+
+// When the primary response already has usable quotas the fallback must not be
+// attempted at all, so a broken usage-summary endpoint cannot affect those
+// accounts.
+func TestCursorClient_FetchQuotas_NoFallbackWhenPrimaryUsable(t *testing.T) {
+	token := createTestJWT("auth0|user_test", 1735689600)
+	summaryCalled := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/aiserver.v1.DashboardService/GetCurrentPeriodUsage":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{
+				"billingCycleStart": "1768399334000",
+				"billingCycleEnd": "1771077734000",
+				"planUsage": {
+					"totalSpend": 5000,
+					"remaining": 35000,
+					"limit": 40000,
+					"totalPercentUsed": 12.5,
+					"autoPercentUsed": 3.0,
+					"apiPercentUsed": 9.5
+				},
+				"enabled": true
+			}`))
+		case "/aiserver.v1.DashboardService/GetPlanInfo":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"planInfo": {"planName": "Pro"}}`))
+		case "/api/usage-summary":
+			summaryCalled = true
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewCursorClient(token, discardLoggerClient(),
+		WithCursorBaseURL(server.URL),
+		WithCursorWebBaseURL(server.URL),
+	)
+	snapshot, err := client.FetchQuotas(context.Background())
+	if err != nil {
+		t.Fatalf("FetchQuotas: %v", err)
+	}
+	if summaryCalled {
+		t.Error("usage-summary fallback was called for an account whose primary response is usable")
+	}
+	if len(snapshot.Quotas) == 0 {
+		t.Fatal("expected quotas from the primary response")
+	}
+
+	// The snapshot must be exactly what ToCursorSnapshot produces from the
+	// primary response alone: the fallback code path must not have touched it.
+	usage, err := ParseCursorUsageResponse([]byte(`{
+		"billingCycleStart": "1768399334000",
+		"billingCycleEnd": "1771077734000",
+		"planUsage": {
+			"totalSpend": 5000,
+			"remaining": 35000,
+			"limit": 40000,
+			"totalPercentUsed": 12.5,
+			"autoPercentUsed": 3.0,
+			"apiPercentUsed": 9.5
+		},
+		"enabled": true
+	}`))
+	if err != nil {
+		t.Fatalf("ParseCursorUsageResponse: %v", err)
+	}
+	want := ToCursorSnapshot(usage,
+		&CursorPlanInfoResponse{PlanInfo: CursorPlanInfo{PlanName: "Pro"}}, nil, nil, nil, false)
+	if snapshot.AccountType != want.AccountType || snapshot.PlanName != want.PlanName {
+		t.Fatalf("snapshot type/plan = %q/%q, want %q/%q",
+			snapshot.AccountType, snapshot.PlanName, want.AccountType, want.PlanName)
+	}
+	if !reflect.DeepEqual(snapshot.Quotas, want.Quotas) {
+		t.Fatalf("quotas = %+v, want pre-fallback %+v", snapshot.Quotas, want.Quotas)
+	}
+	if snapshot.RawJSON != want.RawJSON {
+		t.Fatalf("RawJSON changed by the fallback path: %q != %q", snapshot.RawJSON, want.RawJSON)
+	}
+}
+
+// The Team fixture from TestToCursorSnapshot_Team must not trigger the
+// fallback either: its primary response carries a finite total_usage limit.
+func TestCursorClient_FetchQuotas_TeamDoesNotCallFallback(t *testing.T) {
+	token := createTestJWT("auth0|user_test", 1735689600)
+	summaryCalled := false
+	primaryUsage := `{
+		"billingCycleStart": "1768399334000",
+		"billingCycleEnd": "1771077734000",
+		"planUsage": {"totalSpend": 5000, "remaining": 35000, "limit": 40000},
+		"spendLimitUsage": {"pooledLimit": 50000, "pooledUsed": 0, "pooledRemaining": 50000, "limitType": "team"},
+		"enabled": true
+	}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/aiserver.v1.DashboardService/GetCurrentPeriodUsage":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, primaryUsage)
+		case "/aiserver.v1.DashboardService/GetPlanInfo":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"planInfo": {"planName": "Team"}}`)
+		case "/api/usage-summary":
+			summaryCalled = true
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewCursorClient(token, discardLoggerClient(),
+		WithCursorBaseURL(server.URL),
+		WithCursorWebBaseURL(server.URL),
+	)
+	snapshot, err := client.FetchQuotas(context.Background())
+	if err != nil {
+		t.Fatalf("FetchQuotas: %v", err)
+	}
+	if summaryCalled {
+		t.Error("usage-summary fallback was called for a Team account with a finite limit")
+	}
+	if snapshot.AccountType != CursorAccountTeam {
+		t.Fatalf("AccountType = %q, want Team", snapshot.AccountType)
+	}
+
+	usage, err := ParseCursorUsageResponse([]byte(primaryUsage))
+	if err != nil {
+		t.Fatalf("ParseCursorUsageResponse: %v", err)
+	}
+	want := ToCursorSnapshot(usage,
+		&CursorPlanInfoResponse{PlanInfo: CursorPlanInfo{PlanName: "Team"}}, nil, nil, nil, false)
+	if !reflect.DeepEqual(snapshot.Quotas, want.Quotas) {
+		t.Fatalf("quotas = %+v, want pre-fallback %+v", snapshot.Quotas, want.Quotas)
 	}
 }

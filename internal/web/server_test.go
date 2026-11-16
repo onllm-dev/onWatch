@@ -289,6 +289,9 @@ func TestMain(m *testing.M) {
 
 func runTests(m *testing.M) int {
 	api.SetTestMode(true)
+	// Cursor detection has its own guard: it stops `security find-generic-password`
+	// and state.vscdb reads, so no web test touches real Cursor credentials.
+	api.SetCursorTestMode(true)
 
 	_, cleanup, err := testhome.SandboxHome()
 	if err != nil {

@@ -1549,8 +1549,8 @@ func run() error {
 		cursorAg.SetCredentialsRefresh(func() *api.CursorCredentials {
 			return api.DetectCursorCredentials(logger)
 		})
-		cursorAg.SetTokenSave(func(accessToken, refreshToken string) error {
-			return api.WriteCursorCredentials(accessToken, refreshToken)
+		cursorAg.SetTokenSave(func(accessToken, refreshToken, source, previousRefreshToken string) error {
+			return api.WriteCursorCredentials(accessToken, refreshToken, source, previousRefreshToken)
 		})
 	}
 
