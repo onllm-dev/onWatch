@@ -164,7 +164,7 @@
                 <label>Billing <select class="page-size-select" id="zenmux-usage-billing"><option value="subscription">Subscription</option><option value="">All billing types</option><option value="metered">PAYG</option><option value="fallbackMetered">Subscription fallback to PAYG</option></select></label>
                 <button type="submit" class="page-size-select">Show usage</button>
             </form>
-            <p class="insight-text" id="zenmux-usage-status" role="status" aria-live="polite">Loading account usage...</p>
+            <p class="insight-text zenmux-usage-status-line"><span id="zenmux-usage-stale-dot" class="chart-stale-dot" role="img"></span><span id="zenmux-usage-status" role="status" aria-live="polite">Loading account usage...</span></p>
             <div id="zenmux-usage-results"></div>
             <div id="zenmux-endpoint-results"></div>
         </section>

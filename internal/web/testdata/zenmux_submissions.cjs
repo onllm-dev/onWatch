@@ -68,9 +68,12 @@ const deferred = () => { let resolve; const promise = new Promise(r => { resolve
       });
       const panel = await open(page); await modelReady(panel);
       await panel.getByRole('button', {name: 'Show usage'}).click(); await started.promise;
-      assert.equal(await panel.getByRole('button', {name: 'Show endpoints'}).count(), 0, 'an endpoint action remained available');
+      // Previous results now stay on screen while the query runs, so the
+      // endpoint action is still visible. It must ignore the click rather than
+      // fire a second request under the old active query.
+      await panel.getByRole('button', {name: 'Show endpoints'}).click();
+      assert.equal(calls.length, 2, 'endpoint action fired during a pending usage request');
       release.resolve(); await modelReady(panel);
-      await panel.getByRole('button', {name: 'Show endpoints'}).waitFor();
       assert.equal(calls.length, 2, 'pending usage triggered another query');
     });
 

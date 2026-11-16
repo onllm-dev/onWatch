@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -249,14 +250,153 @@ func TestMenubarSummaryIncludesZenmuxWhenConfigured(t *testing.T) {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
 	for _, p := range snapshot.Providers {
-		if p.ID == "zenmux" {
-			if len(p.Quotas) == 0 {
-				t.Fatal("zenmux card has no quotas")
-			}
-			return
+		if p.ID != "zenmux" {
+			continue
 		}
+		if len(p.Quotas) != 2 {
+			t.Fatalf("zenmux quotas = %+v, want the two rolling windows only", p.Quotas)
+		}
+		if p.Quotas[0].Label != "5-Hour Flows" || p.Quotas[1].Label != "7-Day Flows" {
+			t.Fatalf("zenmux quota labels = %q/%q, want 5-Hour Flows/7-Day Flows", p.Quotas[0].Label, p.Quotas[1].Label)
+		}
+		for _, q := range p.Quotas {
+			// 106.5 of 213 flows at 50% utilization.
+			if q.Used != 106.5 || q.Limit != 213 {
+				t.Fatalf("%s used/limit = %v/%v, want 106.5/213", q.Label, q.Used, q.Limit)
+			}
+			if q.Percent != 50 || q.DisplayValue != "50%" {
+				t.Fatalf("%s percent/display = %v/%q, want 50/50%%", q.Label, q.Percent, q.DisplayValue)
+			}
+		}
+		return
 	}
 	t.Fatalf("expected zenmux provider card, got: %#v", snapshot.Providers)
+}
+
+// TestMenubarZenmuxUnknownUtilizationIsSkipped proves an unknown utilization
+// never renders as a fabricated 0% meter, while a genuine reported zero still
+// does. Zenmux publishes limits without usage for the monthly quota.
+func TestMenubarZenmuxUnknownUtilizationIsSkipped(t *testing.T) {
+	t.Setenv("ONWATCH_TEST_MODE", "1")
+
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Now().UTC()
+	reset := now.Add(2 * time.Hour)
+	zero, limit, used := 0.0, 100.0, 0.0
+	if _, err := s.InsertZenmuxSnapshot(&api.ZenmuxSnapshot{
+		CapturedAt:   now,
+		Quota5Hour:   &api.ZenmuxWindow{UsagePercentage: &zero, MaxFlows: &limit, UsedFlows: &used, ResetsAt: &reset},
+		Quota7Day:    &api.ZenmuxWindow{MaxFlows: &limit, UsedFlows: &used, ResetsAt: &reset},
+		QuotaMonthly: &api.ZenmuxMonthly{MaxFlows: &limit},
+	}); err != nil {
+		t.Fatalf("InsertZenmuxSnapshot: %v", err)
+	}
+
+	h := NewHandler(s, nil, nil, nil, &config.Config{
+		ZenmuxManagementAPIKey: "test",
+		PollInterval:           60 * time.Second,
+		Port:                   9211,
+		AdminUser:              "admin",
+		AdminPass:              "test",
+		DBPath:                 "./test.db",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	h.MenubarSummary(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var snapshot menubar.Snapshot
+	if err := json.Unmarshal(rr.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	for _, p := range snapshot.Providers {
+		if p.ID != "zenmux" {
+			continue
+		}
+		if len(p.Quotas) != 1 {
+			t.Fatalf("zenmux quotas = %+v, want only the reported 5-hour window", p.Quotas)
+		}
+		if p.Quotas[0].Label != "5-Hour Flows" || p.Quotas[0].Percent != 0 {
+			t.Fatalf("5-hour quota = %+v, want a genuine 0%% reading", p.Quotas[0])
+		}
+		return
+	}
+	t.Fatalf("expected zenmux provider card, got: %#v", snapshot.Providers)
+}
+
+// TestMenubarZenmuxUnknownOnlyHasNoMeter guards the stronger case: a snapshot
+// whose every window lacks utilization must not fabricate a healthy 0% card.
+func TestMenubarZenmuxUnknownOnlyHasNoMeter(t *testing.T) {
+	t.Setenv("ONWATCH_TEST_MODE", "1")
+
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+	now := time.Now().UTC()
+	limit := 100.0
+	if _, err := s.InsertZenmuxSnapshot(&api.ZenmuxSnapshot{
+		CapturedAt:   now,
+		Quota5Hour:   &api.ZenmuxWindow{MaxFlows: &limit},
+		QuotaMonthly: &api.ZenmuxMonthly{MaxFlows: &limit},
+	}); err != nil {
+		t.Fatalf("InsertZenmuxSnapshot: %v", err)
+	}
+
+	h := NewHandler(s, nil, nil, nil, &config.Config{
+		ZenmuxManagementAPIKey: "test",
+		PollInterval:           60 * time.Second,
+		Port:                   9211,
+		AdminUser:              "admin",
+		AdminPass:              "test",
+		DBPath:                 "./test.db",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/menubar/summary", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	h.MenubarSummary(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var snapshot menubar.Snapshot
+	if err := json.Unmarshal(rr.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	// normalizeProviderCard returns nil when no quota is renderable, so the
+	// zenmux card must be absent rather than present with a fabricated meter.
+	for _, p := range snapshot.Providers {
+		if p.ID == "zenmux" {
+			t.Fatalf("zenmux card fabricated from an all-unknown snapshot: %+v", p)
+		}
+		for _, q := range p.Quotas {
+			if math.IsNaN(q.Percent) || math.IsInf(q.Percent, 0) {
+				t.Fatalf("provider %s quota %s has a non-finite meter: %v", p.ID, q.Key, q.Percent)
+			}
+		}
+	}
+}
+
+func TestFirstFloatReadsPointersAndTreatsNilAsAbsent(t *testing.T) {
+	t.Parallel()
+	value := 2.5
+	var nilFloat *float64
+	if got := firstFloat(map[string]interface{}{"used": &value}, "used"); got != 2.5 {
+		t.Fatalf("firstFloat(*float64) = %v, want 2.5", got)
+	}
+	if got := firstFloat(map[string]interface{}{"used": nilFloat, "limit": 4.0}, "used", "limit"); got != 4 {
+		t.Fatalf("firstFloat(nil pointer) = %v, want the next key's 4", got)
+	}
+	if got := firstFloat(map[string]interface{}{"used": nilFloat}, "used"); got != 0 {
+		t.Fatalf("firstFloat(nil pointer only) = %v, want 0", got)
+	}
 }
 
 func TestStringValueHandlesTimePointers(t *testing.T) {

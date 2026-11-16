@@ -434,6 +434,26 @@ func TestZenmuxProviderIconEmbedded(t *testing.T) {
 	}
 }
 
+// The popover icon map falls through to the OpenAI icon for unknown providers,
+// so Zenmux needs both a mask class and a dispatch case.
+func TestZenmuxMenubarIconWired(t *testing.T) {
+	page, err := staticFS.ReadFile("static/menubar.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, needle := range []string{
+		`.provider-icon-zenmux {`,
+		`/static/icons/zenmux.svg`,
+		`case "zenmux":`,
+		`return "provider-icon-zenmux";`,
+	} {
+		if !strings.Contains(html, needle) {
+			t.Errorf("menubar.html is missing %q", needle)
+		}
+	}
+}
+
 func TestZenmuxSettingsSecretAndLifecycle(t *testing.T) {
 	cfg := &config.Config{}
 	h, _, controller := newReconcileHandler(t, cfg, map[string]bool{})

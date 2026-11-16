@@ -73,6 +73,10 @@ func (a *ZenmuxAgent) poll(ctx context.Context) {
 	}
 	if _, err := a.store.InsertZenmuxSnapshot(snap); err != nil {
 		a.logger.Error("Zenmux snapshot storage failed", "error", err)
+		// Report the failed insert as a failed poll: nothing was stored, so the
+		// dashboard must not treat this poll as fresh. This is a local storage
+		// error, not an upstream one.
+		pollFailed("zenmux", "", err)
 		return
 	}
 	pollSucceeded("zenmux", "")

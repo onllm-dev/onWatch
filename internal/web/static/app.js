@@ -4686,8 +4686,23 @@ function setupZenmuxUsage() {
   const hour = document.getElementById('zenmux-usage-hour');
   const billing = document.getElementById('zenmux-usage-billing');
   const status = document.getElementById('zenmux-usage-status');
+  const staleDot = document.getElementById('zenmux-usage-stale-dot');
   const results = document.getElementById('zenmux-usage-results');
   const endpoints = document.getElementById('zenmux-endpoint-results');
+  // markStale keeps the rendered rows honest after a failed refresh: the dot
+  // and its tooltip say the numbers are old without adding another text line.
+  const markStale = reason => {
+    if (!staleDot) return;
+    staleDot.classList.add('stale');
+    staleDot.setAttribute('title', reason);
+    staleDot.setAttribute('aria-label', reason);
+  };
+  const clearStale = () => {
+    if (!staleDot) return;
+    staleDot.classList.remove('stale');
+    staleDot.removeAttribute('title');
+    staleDot.removeAttribute('aria-label');
+  };
   const now = new Date();
   const localDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   month.value = localDay.slice(0,7); day.value = localDay; hour.value = now.toISOString().slice(0,13) + ':00';
@@ -4712,6 +4727,7 @@ function setupZenmuxUsage() {
     activeQuery = null;
     results.innerHTML = '';
     endpoints.innerHTML = '';
+    clearStale();
     status.textContent = 'Filters changed. Select Show usage.';
   }));
   function renderPage() {
@@ -4736,13 +4752,19 @@ function setupZenmuxUsage() {
       const payload = await response.json();
       if (sequence !== requestSeq) return null;
       if (!response.ok) {
-        status.textContent = payload.error || 'Account usage is unavailable.';
+        const reason = payload.error || 'Account usage is unavailable.';
+        status.textContent = reason;
+        if (results.innerHTML) markStale(reason);
         return null;
       }
       status.textContent = '';
+      clearStale();
       return payload;
     } catch (_) {
-      if (sequence === requestSeq) status.textContent = 'Account usage is unavailable. Try again later.';
+      if (sequence === requestSeq) {
+        status.textContent = 'Account usage is unavailable. Try again later.';
+        if (results.innerHTML) markStale('Last refresh failed. Showing the previous results.');
+      }
       return null;
     } finally {
       inFlight = false;
@@ -4757,10 +4779,12 @@ function setupZenmuxUsage() {
     const time = value.replace(/[-:T]/g, '').slice(0, dimension.value === 'BIZ_MTH' ? 6 : dimension.value === 'BIZ_DT' ? 8 : 10);
     const params = new URLSearchParams({dimension: dimension.value, time});
     if (billing.value) params.set('bill_type', billing.value);
-    activeQuery = null; results.innerHTML = ''; endpoints.innerHTML = '';
+    // Keep the previous results on screen while this request runs: a failed
+    // refresh must leave the last-known rows visible rather than blanking the
+    // panel to an error line.
     const payload = await query(params);
     if (!payload) return;
-    activeQuery = params; rows = payload.data.tokensByModel || []; page = 0; selectedModel = '';
+    activeQuery = params; endpoints.innerHTML = ''; rows = payload.data.tokensByModel || []; page = 0; selectedModel = '';
     modelRows = zenmuxGroupUsage(rows);
     intervalRows = [...rows].sort((a,b) => b.bizTime.localeCompare(a.bizTime) || a.modelSlug.localeCompare(b.modelSlug));
     renderPage();

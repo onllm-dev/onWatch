@@ -1800,6 +1800,9 @@ button, input, select { font-family: inherit; }
 .zenmux-usage-filters input { max-width: 100%; }
 .zenmux-usage-filters button { cursor: pointer; }
 .zenmux-usage-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+/* Status line: the stale dot sits inline with the message, dot-only. */
+.zenmux-usage-status-line { display: flex; align-items: center; gap: 8px; }
+.zenmux-usage-status-line .chart-stale-dot { margin: 0; }
 
 .table-wrapper { overflow-x: auto; }
 .table-wrapper::-webkit-scrollbar { height: 5px; }

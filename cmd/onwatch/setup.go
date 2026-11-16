@@ -46,6 +46,7 @@ type setupConfig struct {
 	museKey               string
 	commandCodeEnabled    bool
 	commandCodeKey        string
+	zenmuxKey             string
 	openCodeGoConfigured  bool
 	openCodeGoKey         string
 	openCodeGoWorkspaceID string
@@ -132,6 +133,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		"Ollama Cloud only",
 		"Muse (Meta) only",
 		"Command Code only",
+		"Zenmux only",
 		"OpenCode Go only",
 		"Multiple (choose one at a time)",
 		"All available",
@@ -167,12 +169,14 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		cfg.museEnabled, cfg.museKey = collectMuse(reader, logger)
 	case 11: // Command Code only
 		cfg.commandCodeEnabled, cfg.commandCodeKey = collectCommandCode(reader, logger)
-	case 12: // OpenCode Go only
+	case 12: // Zenmux only
+		cfg.zenmuxKey = collectZenmuxKey(reader)
+	case 13: // OpenCode Go only
 		applyOpenCodeGoConfig(cfg, collectOpenCodeGo(reader, logger))
-	case 13: // Multiple
-		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled, cfg.ollamaKey, cfg.museEnabled, cfg.museKey, cfg.commandCodeEnabled, cfg.commandCodeKey = collectMultipleProviders(reader, logger)
+	case 14: // Multiple
+		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled, cfg.ollamaKey, cfg.museEnabled, cfg.museKey, cfg.commandCodeEnabled, cfg.commandCodeKey, cfg.zenmuxKey = collectMultipleProviders(reader, logger)
 		applyOpenCodeGoConfig(cfg, collectMultipleOpenCodeGo(reader, logger))
-	case 14: // All
+	case 15: // All
 		cfg.syntheticKey = collectSyntheticKey(reader)
 		cfg.zaiKey, cfg.zaiBaseURL = collectZaiConfig(reader)
 		cfg.anthropicToken = collectAnthropicToken(reader, logger)
@@ -186,11 +190,12 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		cfg.ollamaKey = collectOllamaKey(reader)
 		cfg.museEnabled, cfg.museKey = collectMuse(reader, logger)
 		cfg.commandCodeEnabled, cfg.commandCodeKey = collectCommandCode(reader, logger)
+		cfg.zenmuxKey = collectZenmuxKey(reader)
 		applyOpenCodeGoConfig(cfg, collectOpenCodeGo(reader, logger))
 	}
 
 	// Validate at least one provider
-	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled && cfg.ollamaKey == "" && !cfg.museEnabled && cfg.museKey == "" && !cfg.commandCodeEnabled && cfg.commandCodeKey == "" && !cfg.openCodeGoConfigured {
+	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled && cfg.ollamaKey == "" && !cfg.museEnabled && cfg.museKey == "" && !cfg.commandCodeEnabled && cfg.commandCodeKey == "" && cfg.zenmuxKey == "" && !cfg.openCodeGoConfigured {
 		return nil, fmt.Errorf("at least one provider is required")
 	}
 
@@ -241,7 +246,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	return cfg, nil
 }
 
-func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled, grokEnabled bool, ollamaKey string, museEnabled bool, museKey string, commandCodeEnabled bool, commandCodeKey string) {
+func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled, grokEnabled bool, ollamaKey string, museEnabled bool, museKey string, commandCodeEnabled bool, commandCodeKey string, zenmuxKey string) {
 	if promptYesNo(reader, "Add Synthetic provider?", false) {
 		synKey = collectSyntheticKey(reader)
 	}
@@ -276,6 +281,9 @@ func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey
 	}
 	if promptYesNo(reader, "Add Command Code provider?", false) {
 		commandCodeEnabled, commandCodeKey = collectCommandCode(reader, logger)
+	}
+	if promptYesNo(reader, "Add Zenmux provider?", false) {
+		zenmuxKey = collectZenmuxKey(reader)
 	}
 	return
 }
@@ -526,6 +534,26 @@ func collectCommandCode(reader *bufio.Reader, logger *slog.Logger) (bool, string
 	}
 }
 
+// collectZenmuxKey prompts for a Zenmux Management API Key. Zenmux has no
+// local CLI login to auto-detect, so the key is always entered by hand and
+// stored as ZENMUX_MANAGEMENT_API_KEY. Setup never contacts zenmux.ai: the
+// first poll verifies the key.
+func collectZenmuxKey(reader *bufio.Reader) string {
+	fmt.Printf("\n  %sZenmux Setup%s\n", colorBold, colorReset)
+	fmt.Printf("  %sCreate a Management API Key in the Zenmux Console.%s\n", colorDim, colorReset)
+	fmt.Printf("  %sAccount usage needs a personal account management key, not an inference key.%s\n", colorDim, colorReset)
+	for {
+		fmt.Print("  Zenmux Management API Key: ")
+		key := readLine(reader)
+		if key == "" {
+			fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
+			continue
+		}
+		fmt.Printf("  %s ok %s  %s%s%s\n", colorGreen, colorReset, colorDim, maskValue(key), colorReset)
+		return key
+	}
+}
+
 // openCodeGoConfig is the result of the OpenCode Go prompt: either a Usage API
 // key, or a workspace ID plus session cookie.
 type openCodeGoConfig struct {
@@ -770,6 +798,13 @@ func writeEnvFile(path string, cfg *setupConfig) error {
 		b.WriteString("# COMMANDCODE_BASE_URL=\n\n")
 	}
 
+	if cfg.zenmuxKey != "" {
+		b.WriteString("# Zenmux Management API Key (https://zenmux.ai) - see docs/ZENMUX_SETUP.md\n")
+		b.WriteString(fmt.Sprintf("ZENMUX_MANAGEMENT_API_KEY=%s\n", cfg.zenmuxKey))
+		b.WriteString("# Optional: set false to disable Zenmux polling even with a key present\n")
+		b.WriteString("# ZENMUX_ENABLED=\n\n")
+	}
+
 	if cfg.openCodeGoConfigured || cfg.openCodeGoKey != "" || cfg.openCodeGoWorkspaceID != "" {
 		b.WriteString("# OpenCode Go - reads your Go plan's 5-hour/weekly/monthly meters\n")
 		if cfg.openCodeGoKey != "" {
@@ -833,6 +868,9 @@ func printSummary(cfg *setupConfig) {
 	if cfg.commandCodeEnabled || cfg.commandCodeKey != "" {
 		providers = append(providers, "Command Code")
 	}
+	if cfg.zenmuxKey != "" {
+		providers = append(providers, "Zenmux")
+	}
 	if cfg.openCodeGoConfigured || cfg.openCodeGoKey != "" || cfg.openCodeGoWorkspaceID != "" {
 		providers = append(providers, "OpenCode Go")
 	}
@@ -877,6 +915,7 @@ type existingEnv struct {
 	ollamaKey             string
 	commandCodeKey        string
 	commandCodeEnabled    bool
+	zenmuxKey             string
 	openCodeGoConfigured  bool
 	openCodeGoWorkspaceID string
 	openCodeGoAuthCookie  string
@@ -929,6 +968,8 @@ func loadExistingEnv(path string) *existingEnv {
 			if val == "true" {
 				env.commandCodeEnabled = true
 			}
+		case "ZENMUX_MANAGEMENT_API_KEY":
+			env.zenmuxKey = val
 		case "OPENCODE_GO_API_KEY":
 			if val != "" {
 				env.openCodeGoConfigured = true
@@ -967,7 +1008,7 @@ func allProvidersConfigured(env *existingEnv) bool {
 }
 
 func anyProviderConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.openCodeEnabled || env.antigravityEnabled || env.geminiEnabled || env.grokEnabled || env.ollamaKey != "" || env.commandCodeKey != "" || env.commandCodeEnabled || env.openCodeGoConfigured
+	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.openCodeEnabled || env.antigravityEnabled || env.geminiEnabled || env.grokEnabled || env.ollamaKey != "" || env.commandCodeKey != "" || env.commandCodeEnabled || env.zenmuxKey != "" || env.openCodeGoConfigured
 }
 
 func addMissingProviders(reader *bufio.Reader, envFile string, existing *existingEnv) error {
@@ -1003,6 +1044,9 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 	}
 	if existing.commandCodeEnabled || existing.commandCodeKey != "" {
 		configured = append(configured, "Command Code")
+	}
+	if existing.zenmuxKey != "" {
+		configured = append(configured, "Zenmux")
 	}
 	if existing.openCodeGoConfigured {
 		configured = append(configured, "OpenCode Go")
@@ -1141,6 +1185,14 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 				fmt.Fprintf(f, "\n# Command Code - auto-detected from the `cmd` CLI login\nCOMMANDCODE_ENABLED=true\n")
 			}
 			fmt.Printf("  %s ok %s  Added Command Code provider to .env\n", colorGreen, colorReset)
+		}
+	}
+
+	if existing.zenmuxKey == "" {
+		if promptYesNo(reader, "Add Zenmux provider?", false) {
+			key := collectZenmuxKey(reader)
+			fmt.Fprintf(f, "\n# Zenmux Management API Key (https://zenmux.ai) - see docs/ZENMUX_SETUP.md\nZENMUX_MANAGEMENT_API_KEY=%s\n", key)
+			fmt.Printf("  %s ok %s  Added Zenmux provider to .env\n", colorGreen, colorReset)
 		}
 	}
 

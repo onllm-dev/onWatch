@@ -22,6 +22,10 @@ func zenmuxQuotas(s *api.ZenmuxSnapshot) []map[string]interface{} {
 		q := map[string]interface{}{"name": item.name, "displayName": item.label, "used": w.UsedFlows, "limit": w.MaxFlows, "remaining": w.RemainingFlows, "resetsAt": w.ResetsAt, "usedValueUsd": w.UsedValueUSD, "maxValueUsd": w.MaxValueUSD}
 		if w.UsagePercentage != nil {
 			q["utilization"] = *w.UsagePercentage * 100
+		} else {
+			// No reported utilization: the dashboard says "Usage unavailable",
+			// and the menubar must omit the meter rather than draw a 0% bar.
+			q["utilizationUnknown"] = true
 		}
 		if item.name == "five_hour" {
 			q["remainingResets"] = w.RemainingResets
@@ -29,7 +33,8 @@ func zenmuxQuotas(s *api.ZenmuxSnapshot) []map[string]interface{} {
 		result = append(result, q)
 	}
 	if s.QuotaMonthly != nil {
-		result = append(result, map[string]interface{}{"name": "monthly", "displayName": "Monthly Flow Limit", "limit": s.QuotaMonthly.MaxFlows, "maxValueUsd": s.QuotaMonthly.MaxValueUSD})
+		// Zenmux publishes the monthly limit only, so it has no utilization.
+		result = append(result, map[string]interface{}{"name": "monthly", "displayName": "Monthly Flow Limit", "limit": s.QuotaMonthly.MaxFlows, "maxValueUsd": s.QuotaMonthly.MaxValueUSD, "utilizationUnknown": true})
 	}
 	return result
 }

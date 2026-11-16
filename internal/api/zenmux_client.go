@@ -29,11 +29,31 @@ type ZenmuxClient struct {
 	usageHTTP *http.Client
 }
 
+// Production whole-request budgets. They bound connect, headers and body
+// together, so a slow header and a slow body cannot each take a full timeout.
+const (
+	zenmuxQuotaBudget = 20 * time.Second
+	zenmuxUsageBudget = 60 * time.Second
+)
+
 type ZenmuxClientOption func(*ZenmuxClient)
 
 // withZenmuxBaseURL replaces the host for local tests.
 func withZenmuxBaseURL(base string) ZenmuxClientOption {
 	return func(c *ZenmuxClient) { c.url = strings.TrimRight(base, "/") + "/api/v1/management/subscription/detail" }
+}
+
+// withZenmuxBudgets shrinks the whole-request budgets. Tests use it to exercise
+// the budget logic in milliseconds; production must keep the defaults.
+func withZenmuxBudgets(quotaBudget, usageBudget time.Duration) ZenmuxClientOption {
+	return func(c *ZenmuxClient) {
+		if quotaBudget > 0 {
+			c.http.Timeout = quotaBudget
+		}
+		if usageBudget > 0 {
+			c.usageHTTP.Timeout = usageBudget
+		}
+	}
 }
 
 func NewZenmuxClient(key string, opts ...ZenmuxClientOption) *ZenmuxClient {
@@ -44,8 +64,8 @@ func NewZenmuxClient(key string, opts ...ZenmuxClientOption) *ZenmuxClient {
 	checkRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	c := &ZenmuxClient{
 		key: strings.TrimSpace(key), url: zenmuxDetailURL,
-		http:      &http.Client{Timeout: 20 * time.Second, CheckRedirect: checkRedirect, Transport: transport},
-		usageHTTP: &http.Client{Timeout: 60 * time.Second, CheckRedirect: checkRedirect, Transport: usageTransport},
+		http:      &http.Client{Timeout: zenmuxQuotaBudget, CheckRedirect: checkRedirect, Transport: transport},
+		usageHTTP: &http.Client{Timeout: zenmuxUsageBudget, CheckRedirect: checkRedirect, Transport: usageTransport},
 	}
 	for _, opt := range opts {
 		opt(c)

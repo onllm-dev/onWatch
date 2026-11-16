@@ -182,13 +182,13 @@ test_anthropic_auto_rejected_manual() {
     assert_eq "ANTHROPIC_TOKEN" "manual-token"
 }
 
-# Multiple = choice 12. Provider prompt order:
+# Multiple = choice 13. Provider prompt order:
 # synthetic, zai, anthropic, codex, opencode, antigravity, gemini, grok, ollama,
-# muse, commandcode.
+# muse, commandcode, zenmux.
 test_multiple_syn_and_anth() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "12\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "13\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_multi_123" && \
     assert_unset "ZAI_API_KEY" && \
     assert_eq "ANTHROPIC_TOKEN" "anth-multi" && \
@@ -197,7 +197,7 @@ test_multiple_syn_and_anth() {
 
 test_multiple_zai_only() {
     setup && source_functions
-    run_setup "12\nN\ny\nzai_multi_456\nY\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "13\nN\ny\nzai_multi_456\nY\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_unset "SYNTHETIC_API_KEY" && \
     assert_eq "ZAI_API_KEY" "zai_multi_456" && \
     assert_unset "ANTHROPIC_TOKEN"
@@ -206,11 +206,19 @@ test_multiple_zai_only() {
 test_multiple_all_three() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "12\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "13\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_789" && \
     assert_eq "ZAI_API_KEY" "zai_all_789" && \
     assert_eq "ANTHROPIC_TOKEN" "anth_all_789" && \
     assert_unset "CODEX_TOKEN"
+}
+
+# Zenmux = choice 12; plain Management API Key, no auto-detect.
+test_zenmux_only() {
+    setup && source_functions
+    run_setup "12\nzenmux_test_key_123\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ZENMUX_MANAGEMENT_API_KEY" "zenmux_test_key_123" && \
+    assert_unset "SYNTHETIC_API_KEY"
 }
 
 # Grok = choice 8; enabled regardless of auth.json detection (it only changes
@@ -232,14 +240,15 @@ test_ollama_only() {
     assert_unset "ZAI_API_KEY"
 }
 
-# All available = choice 13. OpenCode/Antigravity/Gemini/Grok auto-enable and
+# All available = choice 14. OpenCode/Antigravity/Gemini/Grok auto-enable and
 # consume no input; Synthetic/Z.ai/Anthropic/Codex/Ollama prompt for keys;
-# Muse and Command Code both take an optional key (empty = auto-detect).
+# Muse and Command Code both take an optional key (empty = auto-detect), and
+# Zenmux prompts for its Management API Key.
 test_all_available_choice13() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
     detect_codex_token() { return 1; }
-    run_setup "13\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\n1\ncodex_all_avail\nollama_all_avail\n\n\nadmin\ntestpass\n9211\n60\n"
+    run_setup "14\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\n1\ncodex_all_avail\nollama_all_avail\n\n\nzenmux_all_avail\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_avail" && \
     assert_eq "ZAI_API_KEY" "zai_all_avail" && \
     assert_eq "ANTHROPIC_TOKEN" "anth_all_avail" && \
@@ -247,7 +256,8 @@ test_all_available_choice13() {
     assert_eq "GROK_ENABLED" "true" && \
     assert_eq "OLLAMA_API_KEY" "ollama_all_avail" && \
     assert_eq "MUSE_ENABLED" "true" && \
-    assert_eq "COMMANDCODE_ENABLED" "true"
+    assert_eq "COMMANDCODE_ENABLED" "true" && \
+    assert_eq "ZENMUX_MANAGEMENT_API_KEY" "zenmux_all_avail"
 }
 
 # Muse (Meta) = choice 10. Explicit key is stored as META_API_KEY.
@@ -383,8 +393,8 @@ EOF
 
 test_multiple_none_triggers_retry() {
     setup && source_functions
-    # choice=12 (Multiple), all 11 providers N (triggers retry), then add Synthetic
-    run_setup "12\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
+    # choice=13 (Multiple), all 12 providers N (triggers retry), then add Synthetic
+    run_setup "13\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_retry_123"
 }
 
@@ -469,6 +479,7 @@ run_test test_env_get_reads_values
 run_test test_multiple_none_triggers_retry
 run_test test_commandcode_only
 run_test test_commandcode_only_autodetect
+run_test test_zenmux_only
 run_test test_detect_anthropic_file_fallback
 
 printf "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"

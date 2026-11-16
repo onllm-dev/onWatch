@@ -150,6 +150,12 @@ function Test-OllamaKey {
     return $false
 }
 
+# Zenmux Management API Keys are opaque single-line values.
+function Test-ZenmuxKey {
+    param([string]$val)
+    return Test-OllamaKey $val
+}
+
 function Test-HttpsUrl {
     param([string]$val)
     if ($val.StartsWith("https://")) { return $true }
@@ -436,8 +442,9 @@ function Start-InteractiveSetup {
         $hasOllama = $envContent -match "OLLAMA_API_KEY=\S+"
         $hasMuse = ($envContent -match "MUSE_ENABLED=true") -or ($envContent -match "META_API_KEY=\S+")
         $hasCommandCode = ($envContent -match "COMMANDCODE_ENABLED=true") -or ($envContent -match "COMMAND_CODE_API_KEY=\S+")
+        $hasZenmux = $envContent -match "ZENMUX_MANAGEMENT_API_KEY=\S+"
 
-        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok -or $hasOllama -or $hasMuse -or $hasCommandCode) {
+        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok -or $hasOllama -or $hasMuse -or $hasCommandCode -or $hasZenmux) {
             $configured = @()
             if ($hasSyn) { $configured += "Synthetic" }
             if ($hasZai) { $configured += "Z.ai" }
@@ -449,6 +456,7 @@ function Start-InteractiveSetup {
             if ($hasOllama) { $configured += "Ollama" }
             if ($hasMuse) { $configured += "Muse" }
             if ($hasCommandCode) { $configured += "Command Code" }
+            if ($hasZenmux) { $configured += "Zenmux" }
 
             Write-Info "Existing .env found - configured: $($configured -join ', ')"
 
@@ -485,6 +493,7 @@ function Start-InteractiveSetup {
         "Ollama Cloud only",
         "Muse (Meta) only",
         "Command Code only",
+        "Zenmux only",
         "Multiple (choose one at a time)",
         "All available"
     )
@@ -502,8 +511,9 @@ function Start-InteractiveSetup {
     $museKey = ""
     $commandCodeEnabled = ""
     $commandCodeKey = ""
+    $zenmuxKey = ""
 
-    if ($providerChoice -eq 11) {
+    if ($providerChoice -eq 12) {
         # Multiple - ask for each provider individually
         $addIt = Read-PromptWithDefault -Prompt "Add Synthetic provider? (y/N)" -Default "N"
         if ($addIt -match "^[Yy]") {
@@ -574,45 +584,51 @@ function Start-InteractiveSetup {
             }
         }
 
+        $addIt = Read-PromptWithDefault -Prompt "Add Zenmux provider? (y/N)" -Default "N"
+        if ($addIt -match "^[Yy]") {
+            Write-Host "  ${DIM}Create a Management API Key in the Zenmux Console${NC}"
+            $zenmuxKey = Read-SecretPrompt -Prompt "Zenmux Management API Key" -Validation { param($val) Test-ZenmuxKey $val }
+        }
+
         # Validate at least one provider selected
-        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled -and -not $ollamaKey -and -not $museEnabled -and -not $museKey -and -not $commandCodeEnabled -and -not $commandCodeKey) {
+        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled -and -not $ollamaKey -and -not $museEnabled -and -not $museKey -and -not $commandCodeEnabled -and -not $commandCodeKey -and -not $zenmuxKey) {
             Write-Fail "At least one provider is required"
         }
     } else {
         # Single provider or All
-        if ($providerChoice -eq 1 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 1 -or $providerChoice -eq 13) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://synthetic.new/settings/api${NC}"
             $syntheticKey = Read-SecretPrompt -Prompt "Synthetic API key (syn_...)" -Validation { param($val) Test-SyntheticKey $val }
         }
 
-        if ($providerChoice -eq 2 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 2 -or $providerChoice -eq 13) {
             $zaiConfig = Get-ZaiConfig
             $zaiKey = $zaiConfig.Key
             $zaiBaseUrl = $zaiConfig.BaseUrl
         }
 
-        if ($providerChoice -eq 3 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 3 -or $providerChoice -eq 13) {
             $anthropicToken = Get-AnthropicConfig
         }
 
-        if ($providerChoice -eq 4 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 4 -or $providerChoice -eq 13) {
             $codexToken = Get-CodexConfig
         }
 
-        if ($providerChoice -eq 5 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 5 -or $providerChoice -eq 13) {
             $antigravityEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Antigravity enabled (auto-detects running Windsurf process)"
         }
 
-        if ($providerChoice -eq 6 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 6 -or $providerChoice -eq 13) {
             $geminiEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)"
         }
 
-        if ($providerChoice -eq 7 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 7 -or $providerChoice -eq 13) {
             $grokEnabled = "true"
             Write-Host ""
             if (Test-GrokCredentials) {
@@ -622,13 +638,13 @@ function Start-InteractiveSetup {
             }
         }
 
-        if ($providerChoice -eq 8 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 8 -or $providerChoice -eq 13) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://ollama.com/settings/keys${NC}"
             $ollamaKey = Read-SecretPrompt -Prompt "Ollama Cloud API key" -Validation { param($val) Test-OllamaKey $val }
         }
 
-        if ($providerChoice -eq 9 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 9 -or $providerChoice -eq 13) {
             Write-Host ""
             Write-Host "  ${DIM}Leave empty to auto-detect from 'muse login'${NC}"
             $museKey = Read-PromptWithDefault -Prompt "Meta API key [Enter = auto-detect]" -Default ""
@@ -639,7 +655,7 @@ function Start-InteractiveSetup {
             }
         }
 
-        if ($providerChoice -eq 10 -or $providerChoice -eq 12) {
+        if ($providerChoice -eq 10 -or $providerChoice -eq 13) {
             Write-Host ""
             Write-Host "  ${DIM}Leave empty to auto-detect from the 'cmd' CLI login${NC}"
             $commandCodeKey = Read-PromptWithDefault -Prompt "Command Code API key [Enter = auto-detect]" -Default ""
@@ -648,6 +664,12 @@ function Start-InteractiveSetup {
                 $commandCodeEnabled = "true"
                 Write-Host "  ${GREEN}OK${NC} Command Code enabled (auto-detects 'cmd login' credentials)"
             }
+        }
+
+        if ($providerChoice -eq 11 -or $providerChoice -eq 13) {
+            Write-Host ""
+            Write-Host "  ${DIM}Create a Management API Key in the Zenmux Console${NC}"
+            $zenmuxKey = Read-SecretPrompt -Prompt "Zenmux Management API Key" -Validation { param($val) Test-ZenmuxKey $val }
         }
     }
 
@@ -795,6 +817,14 @@ COMMANDCODE_ENABLED=true
 "@
     }
 
+    if ($zenmuxKey) {
+        $envContent += @"
+# Zenmux Management API Key (https://zenmux.ai) - see docs/ZENMUX_SETUP.md
+ZENMUX_MANAGEMENT_API_KEY=$zenmuxKey
+
+"@
+    }
+
     $envContent += @"
 # Dashboard credentials
 ONWATCH_ADMIN_USER=$($script:SetupUsername)
@@ -824,7 +854,8 @@ ONWATCH_PORT=$($script:SetupPort)
         8 { "Ollama Cloud" }
         9 { "Muse" }
         10 { "Command Code" }
-        11 {
+        11 { "Zenmux" }
+        12 {
             $parts = @()
             if ($syntheticKey) { $parts += "Synthetic" }
             if ($zaiKey) { $parts += "Z.ai" }
@@ -836,9 +867,10 @@ ONWATCH_PORT=$($script:SetupPort)
             if ($ollamaKey) { $parts += "Ollama Cloud" }
             if ($museEnabled -or $museKey) { $parts += "Muse" }
             if ($commandCodeEnabled -or $commandCodeKey) { $parts += "Command Code" }
+            if ($zenmuxKey) { $parts += "Zenmux" }
             $parts -join ", "
         }
-        12 { "All providers" }
+        13 { "All providers" }
     }
 
     $maskedPass = "*" * $script:SetupPassword.Length

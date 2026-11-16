@@ -41,12 +41,41 @@ func TestZenmuxAgentPollStoresSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	registry := NewPollStatusRegistry()
+	SetPollStatusRegistry(registry)
+	t.Cleanup(func() { SetPollStatusRegistry(nil) })
 	zero := 0.0
 	client := &zenmuxStub{snapshot: &api.ZenmuxSnapshot{CapturedAt: time.Now().UTC(), Quota5Hour: &api.ZenmuxWindow{UsagePercentage: &zero}}}
 	NewZenmuxAgent(client, db, time.Minute, nil, nil).poll(context.Background())
 	got, err := db.QueryLatestZenmux()
 	if err != nil || got == nil || got.Quota5Hour.UsagePercentage == nil || *got.Quota5Hour.UsagePercentage != 0 {
 		t.Fatalf("poll not stored: %v", err)
+	}
+	if outcome, ok := registry.Get("zenmux", ""); ok {
+		t.Fatalf("successful poll left a failure status: %q", outcome)
+	}
+}
+
+// A snapshot that cannot be stored is reported as a failed poll so the
+// dashboard does not treat it as fresh. It is a local storage error, not an
+// upstream one.
+func TestZenmuxAgentRecordsStoreFailure(t *testing.T) {
+	db, err := store.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Closing the store makes the insert fail without touching any credential.
+	db.Close()
+	registry := NewPollStatusRegistry()
+	SetPollStatusRegistry(registry)
+	t.Cleanup(func() { SetPollStatusRegistry(nil) })
+
+	zero := 0.0
+	client := &zenmuxStub{snapshot: &api.ZenmuxSnapshot{CapturedAt: time.Now().UTC(), Quota5Hour: &api.ZenmuxWindow{UsagePercentage: &zero}}}
+	NewZenmuxAgent(client, db, time.Minute, nil, nil).poll(context.Background())
+	outcome, ok := registry.Get("zenmux", "")
+	if !ok || outcome != PollOutcomeUpstream {
+		t.Fatalf("store failure status = %q/%v, want %q", outcome, ok, PollOutcomeUpstream)
 	}
 }
 

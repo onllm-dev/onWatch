@@ -148,6 +148,7 @@ func TestAddMissingProviders_OpenCodeGoAndCommandCode(t *testing.T) {
 		"n", // ollama
 		"y", // add Command Code
 		"user_added_cmd",
+		"n", // skip Zenmux
 		"y", // add OpenCode Go
 		"oc_sk_added_from_env",
 	}
