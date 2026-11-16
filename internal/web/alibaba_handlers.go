@@ -299,20 +299,25 @@ func (h *Handler) alibabaAccountsList(w http.ResponseWriter, _ *http.Request) {
 }
 
 // normalizeAlibabaCookiesInput validates pasted cookies and returns the value
-// to store. Netscape exports are kept as-is (domain columns matter for the
-// Zelda gateway). Cookie-header pastes are normalised through
+// to store. Netscape exports are filtered to the Alibaba domains first, so a
+// full browser export never lands in the plaintext metadata with cookies for
+// unrelated sites. Cookie-header pastes are normalised through
 // ParseAlibabaCookies so a leading "Cookie:" prefix is stripped.
 func normalizeAlibabaCookiesInput(raw string) (string, string) {
 	if len(raw) > alibabaMaxCookieBytes {
 		return "", "cookies are too large"
 	}
 	raw = strings.TrimSpace(raw)
-	parsed := api.ParseAlibabaCookies(raw)
-	if parsed == "" {
-		return "", "no cookies found: paste a Cookie header or a Netscape cookies.txt export"
+	filtered, err := api.FilterAlibabaCookies(raw)
+	if err != nil {
+		return "", "no cookies found: paste a Cookie header or a Netscape cookies.txt export with Alibaba console cookies"
 	}
-	if api.AlibabaCookiesAreNetscape(raw) {
-		return raw, ""
+	parsed := api.ParseAlibabaCookies(filtered)
+	if parsed == "" {
+		return "", "no cookies found: paste a Cookie header or a Netscape cookies.txt export with Alibaba console cookies"
+	}
+	if api.AlibabaCookiesAreNetscape(filtered) {
+		return filtered, ""
 	}
 	return parsed, ""
 }
@@ -553,6 +558,9 @@ func (h *Handler) buildAlibabaCurrentOK(accountID int64) (response map[string]in
 	latest, err := h.store.QueryLatestAlibaba(accountID)
 	if err != nil {
 		h.logger.Error("failed to query latest Alibaba snapshot", "error", err)
+		// The dashboard tells this apart from "no data yet" by the readOK flag
+		// and keeps its last-known cards instead of blanking the grid.
+		response["readOK"] = false
 		return response, false, false
 	}
 	if latest == nil {
@@ -925,6 +933,16 @@ func (h *Handler) insightsAlibaba(w http.ResponseWriter, r *http.Request, rangeD
 	respondInsights(w, h.buildAlibabaInsights(h.parseAlibabaAccountID(r), hidden, rangeDur))
 }
 
+// alibabaPeriodSublabel describes the time left on the plan period. A past end
+// time is an expired plan, not a quota window about to reset, so it must not
+// reuse formatDuration's "Resetting..." label.
+func alibabaPeriodSublabel(remaining time.Duration) string {
+	if remaining < 0 {
+		return "Expired"
+	}
+	return formatDuration(remaining)
+}
+
 func (h *Handler) buildAlibabaInsights(accountID int64, hidden map[string]bool, _ time.Duration) alibabaInsightsResponse {
 	resp := alibabaInsightsResponse{Stats: []alibabaInsightStat{}, Insights: []insightItem{}}
 	if h.store == nil {
@@ -952,7 +970,7 @@ func (h *Handler) buildAlibabaInsights(accountID int64, hidden map[string]bool, 
 		resp.Stats = append(resp.Stats, alibabaInsightStat{
 			Label:    label,
 			Value:    latest.EndTime.UTC().Format("Jan 2"),
-			Sublabel: fmt.Sprintf("%d days left", latest.RemainingDays),
+			Sublabel: alibabaPeriodSublabel(time.Until(*latest.EndTime)),
 		})
 	}
 

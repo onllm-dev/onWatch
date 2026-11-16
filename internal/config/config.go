@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,11 @@ const (
 	maxLogFileBytes = 50 * 1024 * 1024
 	maxLogBackups   = 3
 )
+
+// alibabaRegionPattern bounds the Alibaba console region to a lowercase slug.
+// It must stay in step with the dashboard validator (alibabaRegionPattern in
+// internal/web): the region is embedded in the console page URL.
+var alibabaRegionPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,31}$`)
 
 // Config holds all application configuration.
 //
@@ -617,6 +623,13 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	cfg.AlibabaCookiesFile = strings.TrimSpace(os.Getenv("ALIBABA_COOKIES_FILE"))
 	cfg.AlibabaRegion = strings.TrimSpace(os.Getenv("ALIBABA_REGION"))
 	if cfg.AlibabaRegion == "" {
+		cfg.AlibabaRegion = "ap-southeast-1"
+	} else if !alibabaRegionPattern.MatchString(cfg.AlibabaRegion) {
+		// The region is embedded in the console page URL. The dashboard
+		// validates it against the same pattern; an env value that does not
+		// match falls back to the default rather than being carried into the
+		// request path. The value is never echoed (it is untrusted input).
+		fmt.Fprintf(os.Stderr, "  config: ignoring invalid ALIBABA_REGION, using ap-southeast-1\n")
 		cfg.AlibabaRegion = "ap-southeast-1"
 	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("ALIBABA_ENABLED")), "false") {

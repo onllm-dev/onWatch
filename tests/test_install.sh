@@ -68,6 +68,37 @@ env_val() {
     grep -E "^${key}=" "${TEST_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]'
 }
 
+# Read a quoted path value back the way godotenv would, without stripping
+# spaces or the quote markers that keep it literal.
+env_path_val() {
+    local key="$1" raw
+    raw=$(grep -E "^${key}=" "${TEST_DIR}/.env" 2>/dev/null | tail -n1 | cut -d= -f2-)
+    if [[ ${#raw} -ge 2 && "$raw" == \'*\' ]]; then
+        raw="${raw:1:${#raw}-2}"
+    fi
+    printf '%s' "$raw"
+}
+
+# The .env must stay loadable: every line is a comment, blank, or key=value
+# whose value is unquoted or a balanced quoted string.
+assert_env_loadable() {
+    local line value
+    while IFS= read -r line; do
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        if [[ "$line" != *=* ]]; then
+            echo "unparseable env line: $line" >&2
+            return 1
+        fi
+        value="${line#*=}"
+        if [[ "$value" == \'* || "$value" == \"* ]]; then
+            if [[ ${#value} -lt 2 || "${value: -1}" != "${value:0:1}" ]]; then
+                echo "unbalanced quote in env line: $line" >&2
+                return 1
+            fi
+        fi
+    done < "${TEST_DIR}/.env"
+}
+
 assert_eq() {
     local key="$1" expected="$2"
     local actual
@@ -182,13 +213,13 @@ test_anthropic_auto_rejected_manual() {
     assert_eq "ANTHROPIC_TOKEN" "manual-token"
 }
 
-# Multiple = choice 13. Provider prompt order:
+# Multiple = choice 14. Provider prompt order:
 # synthetic, zai, anthropic, codex, opencode, antigravity, gemini, grok, ollama,
-# muse, commandcode, zenmux.
+# muse, commandcode, zenmux, alibaba.
 test_multiple_syn_and_anth() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "13\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "14\ny\nsyn_multi_123\nN\ny\n1\nanth-multi\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_multi_123" && \
     assert_unset "ZAI_API_KEY" && \
     assert_eq "ANTHROPIC_TOKEN" "anth-multi" && \
@@ -197,7 +228,7 @@ test_multiple_syn_and_anth() {
 
 test_multiple_zai_only() {
     setup && source_functions
-    run_setup "13\nN\ny\nzai_multi_456\nY\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "14\nN\ny\nzai_multi_456\nY\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_unset "SYNTHETIC_API_KEY" && \
     assert_eq "ZAI_API_KEY" "zai_multi_456" && \
     assert_unset "ANTHROPIC_TOKEN"
@@ -206,7 +237,7 @@ test_multiple_zai_only() {
 test_multiple_all_three() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
-    run_setup "13\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
+    run_setup "14\ny\nsyn_all_789\ny\nzai_all_789\nY\ny\n1\nanth_all_789\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_789" && \
     assert_eq "ZAI_API_KEY" "zai_all_789" && \
     assert_eq "ANTHROPIC_TOKEN" "anth_all_789" && \
@@ -240,15 +271,18 @@ test_ollama_only() {
     assert_unset "ZAI_API_KEY"
 }
 
-# All available = choice 14. OpenCode/Antigravity/Gemini/Grok auto-enable and
+# All available = choice 15. OpenCode/Antigravity/Gemini/Grok auto-enable and
 # consume no input; Synthetic/Z.ai/Anthropic/Codex/Ollama prompt for keys;
-# Muse and Command Code both take an optional key (empty = auto-detect), and
-# Zenmux prompts for its Management API Key.
+# Muse and Command Code both take an optional key (empty = auto-detect), Zenmux
+# prompts for its Management API Key, and Alibaba takes optional input
+# (empty = dashboard).
 test_all_available_choice13() {
     setup && source_functions
     detect_anthropic_token() { return 1; }
     detect_codex_token() { return 1; }
-    run_setup "14\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\n1\ncodex_all_avail\nollama_all_avail\n\n\nzenmux_all_avail\nadmin\ntestpass\n9211\n60\n"
+    # The Alibaba cookies file path is read from the shared fd, so a closed
+    # stdin would loop forever; supply an empty line for it.
+    run_setup "15\nsyn_all_avail\nzai_all_avail\nY\n1\nanth_all_avail\n1\ncodex_all_avail\nollama_all_avail\n\n\nzenmux_all_avail\n\n\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_all_avail" && \
     assert_eq "ZAI_API_KEY" "zai_all_avail" && \
     assert_eq "ANTHROPIC_TOKEN" "anth_all_avail" && \
@@ -292,6 +326,146 @@ test_commandcode_only_autodetect() {
     run_setup "11\n\nadmin\ntestpass\n9211\n60\n"
     assert_eq "COMMANDCODE_ENABLED" "true" && \
     assert_unset "COMMAND_CODE_API_KEY"
+}
+
+# Alibaba Token Plan = choice 13. Empty path stores ALIBABA_ENABLED=true so an
+# account can be added from the dashboard; the region defaults.
+test_alibaba_only_dashboard() {
+    setup && source_functions
+    run_setup "13\n\n\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ALIBABA_ENABLED" "true" && \
+    assert_eq "ALIBABA_REGION" "ap-southeast-1" && \
+    assert_unset "ALIBABA_COOKIES_FILE"
+}
+
+# Alibaba Token Plan = choice 13. A cookies.txt path is stored as
+# ALIBABA_COOKIES_FILE and the cookie contents never reach .env. The value is
+# single-quoted so godotenv reads it back literally.
+test_alibaba_only_cookies_file() {
+    setup && source_functions
+    local cookies="${TEST_DIR}/alibaba-cookies.txt"
+    printf '.alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n' > "$cookies"
+    run_setup "13\n${cookies}\ncn-hangzhou\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ALIBABA_COOKIES_FILE" "'${cookies}'" && \
+    assert_eq "ALIBABA_REGION" "cn-hangzhou" && \
+    assert_unset "ALIBABA_ENABLED" && \
+    assert_env_loadable
+    if grep -q "cna=abc" "${TEST_DIR}/.env"; then
+        echo "cookie contents must never be written to .env" >&2
+        return 1
+    fi
+}
+
+# A path containing spaces, "#" and "$" survives because it is single-quoted.
+test_alibaba_cookies_file_special_chars() {
+    setup && source_functions
+    local dir="${TEST_DIR}/My Cookies #1"
+    mkdir -p "$dir"
+    local cookies="${dir}/alibaba\$home.txt"
+    printf '.alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n' > "$cookies"
+    run_setup "13\n${cookies}\n\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ALIBABA_COOKIES_FILE" "'${cookies}'" && \
+    assert_env_loadable
+    local read_back
+    read_back=$(env_path_val ALIBABA_COOKIES_FILE)
+    if [[ "$read_back" != "$cookies" ]]; then
+        echo "path read back as '$read_back', want '$cookies'" >&2
+        return 1
+    fi
+}
+
+# A path with a single quote cannot be represented in a single-quoted godotenv
+# value; the installer rejects it and re-prompts for a usable path.
+test_alibaba_cookies_file_quote_rejected() {
+    setup && source_functions
+    local bad_dir="${TEST_DIR}/it's here"
+    mkdir -p "$bad_dir"
+    local bad="${bad_dir}/cookies.txt"
+    printf '.alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n' > "$bad"
+    local good="${TEST_DIR}/alibaba-cookies.txt"
+    printf '.alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n' > "$good"
+    run_setup "13\n${bad}\n${good}\n\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ALIBABA_COOKIES_FILE" "'${good}'" && \
+    assert_env_loadable
+}
+
+# A path whose final character is a backslash would be written as
+# ALIBABA_COOKIES_FILE='/home/u/cookies\' and godotenv fails the whole .env as
+# unterminated, unsetting every provider. The installer rejects it and
+# re-prompts.
+test_alibaba_cookies_file_trailing_backslash_rejected() {
+    setup && source_functions
+    local bad="${TEST_DIR}/cookies\\"
+    printf '.alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n' > "$bad"
+    local good="${TEST_DIR}/alibaba-cookies.txt"
+    printf '.alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n' > "$good"
+    # run_setup reads the input through printf %b, so a literal backslash must
+    # be doubled or it would become the newline that ends the path line.
+    local bad_escaped="${bad//\\/\\\\}"
+    run_setup "13\n${bad_escaped}\n${good}\n\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ALIBABA_COOKIES_FILE" "'${good}'" && \
+    assert_env_loadable
+}
+
+# A raw DevTools Cookie: header has no domain text; the installer must accept it
+# (the Go wizard does) instead of re-prompting forever.
+test_alibaba_raw_cookie_header_accepted() {
+    setup && source_functions
+    local cookies="${TEST_DIR}/alibaba-header.txt"
+    printf 'login_aliyunid_ticket=abc; cna=def\n' > "$cookies"
+    run_setup "13\n${cookies}\n\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ALIBABA_COOKIES_FILE" "'${cookies}'" && \
+    assert_eq "ALIBABA_REGION" "ap-southeast-1" && \
+    assert_env_loadable && \
+    ! grep -q "login_aliyunid_ticket" "${TEST_DIR}/.env"
+}
+
+test_alibaba_raw_cookie_header_with_prefix_accepted() {
+    setup && source_functions
+    local cookies="${TEST_DIR}/alibaba-header-prefix.txt"
+    printf 'Cookie: login_aliyunid_ticket=abc; cna=def\n' > "$cookies"
+    run_setup "13\n${cookies}\n\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ALIBABA_COOKIES_FILE" "'${cookies}'" && \
+    assert_env_loadable
+}
+
+# A Netscape export that parses as an export but holds no Alibaba domains is
+# still rejected; the installer re-prompts for a usable path.
+test_alibaba_netscape_without_alibaba_rejected() {
+    setup && source_functions
+    local bad="${TEST_DIR}/unrelated.txt"
+    printf '.mmstat.com\tTRUE\t/\tTRUE\t0\ttrack\t1\n' > "$bad"
+    local good="${TEST_DIR}/alibaba-cookies.txt"
+    printf '.alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n' > "$good"
+    run_setup "13\n${bad}\n${good}\n\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ALIBABA_COOKIES_FILE" "'${good}'" && \
+    assert_env_loadable
+}
+
+# An empty file is rejected even though it is not a Netscape export.
+test_alibaba_empty_file_rejected() {
+    setup && source_functions
+    local bad="${TEST_DIR}/empty.txt"
+    : > "$bad"
+    local good="${TEST_DIR}/alibaba-cookies.txt"
+    printf '.alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n' > "$good"
+    run_setup "13\n${bad}\n${good}\n\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ALIBABA_COOKIES_FILE" "'${good}'" && \
+    assert_env_loadable
+}
+
+# A file whose name starts with "-" must not be parsed as a grep option; the
+# path check has to accept it. The path is given relative to the directory the
+# installer runs in, so it really does start with "-".
+test_alibaba_dash_prefixed_path_accepted() {
+    setup && source_functions
+    printf '.alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n' > "${TEST_DIR}/-rf"
+    local orig_dir="$PWD"
+    cd "$TEST_DIR" || return 1
+    run_setup "13\n-rf\n\nadmin\ntestpass\n9211\n60\n"
+    cd "$orig_dir" || return 1
+    assert_eq "ALIBABA_COOKIES_FILE" "'-rf'" && \
+    assert_env_loadable
 }
 
 test_custom_port_and_interval() {
@@ -393,8 +567,8 @@ EOF
 
 test_multiple_none_triggers_retry() {
     setup && source_functions
-    # choice=13 (Multiple), all 12 providers N (triggers retry), then add Synthetic
-    run_setup "13\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
+    # choice=14 (Multiple), all 13 providers N (triggers retry), then add Synthetic
+    run_setup "14\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\nN\ny\nsyn_retry_123\nadmin\ntestpass\n9211\n60\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_retry_123"
 }
 
@@ -412,8 +586,9 @@ ONWATCH_ADMIN_PASS=existingpass
 ONWATCH_PORT=9211
 EOF
     # Missing-provider order: zai, anthropic, codex, opencode, antigravity,
-    # gemini, grok, ollama, muse, commandcode. Answer N to all except Ollama.
-    run_setup "N\nN\nN\nN\nN\nN\nN\ny\nollama_upgrade_key\nN\nN\n"
+    # gemini, grok, ollama, muse, commandcode, zenmux, alibaba. Answer N to all
+    # except Ollama.
+    run_setup "N\nN\nN\nN\nN\nN\nN\ny\nollama_upgrade_key\nN\nN\nN\nN\n"
     assert_eq "SYNTHETIC_API_KEY" "syn_existing_key" && \
     assert_eq "OLLAMA_API_KEY" "ollama_upgrade_key" && \
     assert_unset "ZAI_API_KEY"
@@ -480,6 +655,16 @@ run_test test_multiple_none_triggers_retry
 run_test test_commandcode_only
 run_test test_commandcode_only_autodetect
 run_test test_zenmux_only
+run_test test_alibaba_only_dashboard
+run_test test_alibaba_only_cookies_file
+run_test test_alibaba_cookies_file_special_chars
+run_test test_alibaba_cookies_file_quote_rejected
+run_test test_alibaba_cookies_file_trailing_backslash_rejected
+run_test test_alibaba_raw_cookie_header_accepted
+run_test test_alibaba_raw_cookie_header_with_prefix_accepted
+run_test test_alibaba_netscape_without_alibaba_rejected
+run_test test_alibaba_empty_file_rejected
+run_test test_alibaba_dash_prefixed_path_accepted
 run_test test_detect_anthropic_file_fallback
 
 printf "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"

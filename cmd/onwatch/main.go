@@ -2966,6 +2966,13 @@ func seedAlibabaDefaultAccount(db *store.Store, cfg *config.Config, logger *slog
 		}
 		cookies = loaded
 	}
+	// Drop cookies for unrelated sites before they are stored in plaintext.
+	filtered, err := api.FilterAlibabaCookies(cookies)
+	if err != nil {
+		logger.Warn("Ignoring Alibaba cookies: no alibabacloud.com cookies found")
+		return
+	}
+	cookies = filtered
 	if api.ParseAlibabaCookies(cookies) == "" {
 		return
 	}

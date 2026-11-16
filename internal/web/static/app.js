@@ -5207,11 +5207,43 @@ function alibabaCardLabel(quota) {
   return used.toFixed(1) + '% of window used';
 }
 
-// alibabaEffectiveQuotas resolves what gets rendered, including the
-// placeholder shown before the first successful poll. The match check below
-// compares against this same list so the placeholder is not rebuilt each poll.
+// alibabaEffectiveQuotas resolves what gets rendered. Before the first
+// successful poll the payload has no quotas and nothing is rendered: a
+// placeholder 0% would show a made-up "healthy" state. The match check below
+// compares against this same list so cards are rebuilt exactly once.
 function alibabaEffectiveQuotas(quotas) {
-  return (quotas && quotas.length) ? quotas : [{ name: 'five_hour', utilization: 0, status: 'healthy' }];
+  return Array.isArray(quotas) ? quotas : [];
+}
+
+// alibabaCanRenderPayload reports whether a /api/current payload should touch
+// the grid. A failed storage read (readOK false) carries no rows and must leave
+// the last-known cards in place; a successful read with no rows shows the empty
+// state once.
+function alibabaCanRenderPayload(data) {
+  return Boolean(data) && data.quotas != null && data.readOK !== false;
+}
+
+// alibabaGridHasContent reports whether the grid already shows anything (quota
+// cards, account overview cards or an empty state). A failed read must never
+// replace existing content, but on the very first load there is none.
+function alibabaGridHasContent(container) {
+  if (!container) return false;
+  if (container.querySelector('.alibaba-card')
+    || container.querySelector('.account-overview-card')
+    || container.querySelector('.empty-state')) return true;
+  if (container.children && container.children.length > 0) return true;
+  return String(container.innerHTML || '').trim() !== '';
+}
+
+// alibabaShowReadError explains a blank Alibaba panel when the first load's
+// storage read failed. It is skipped when cards are already rendered, so a
+// refresh error keeps the last-known values. The data-read-error marker keeps
+// the message distinct from the real empty state, so a later successful load
+// redraws the grid instead of leaving "retrying" on screen.
+function alibabaShowReadError(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container || alibabaGridHasContent(container)) return;
+  container.innerHTML = '<p class="empty-state" data-read-error="1">' + escapeHTML('Could not load Alibaba data - retrying') + '</p>';
 }
 
 function renderAlibabaQuotaCards(quotas, containerId) {
@@ -5219,6 +5251,10 @@ function renderAlibabaQuotaCards(quotas, containerId) {
   if (!container) return;
   container.innerHTML = '';
   const list = alibabaEffectiveQuotas(quotas);
+  if (list.length === 0) {
+    container.innerHTML = '<p class="empty-state">No Alibaba data yet. Tracking begins after the first successful poll.</p>';
+    return;
+  }
   list.forEach((q, idx) => {
     const pct = alibabaPercent(q);
     const pctStr = pct.toFixed(1);
@@ -5272,6 +5308,13 @@ function alibabaQuotaSetsMatch(container, quotas) {
   if (container.querySelector('.account-overview-card')) return false;
   const expected = alibabaEffectiveQuotas(quotas);
   const renderedCards = Array.from(container.querySelectorAll('.alibaba-card[data-quota]'));
+  // An empty payload needs the empty state rendered once; a bare grid does not
+  // yet match it. The first-load read-error message is not the empty state, so
+  // a later successful load replaces it.
+  if (expected.length === 0) {
+    return container.querySelector('.empty-state') !== null
+      && container.querySelector('.empty-state[data-read-error]') === null;
+  }
   if (renderedCards.length !== expected.length) return false;
   const rendered = new Set(renderedCards.map(c => c.dataset.quota));
   return expected.every(q => rendered.has(q.name));
@@ -5536,7 +5579,12 @@ async function fetchCurrent() {
           }
         }
       } else if (provider === 'alibaba') {
-        if (data.quotas) {
+        // A failed storage read (readOK false) leaves whatever was rendered in
+        // place: never blank the grid on a refresh error. On the very first
+        // load there is nothing to keep, so say the read failed instead of
+        // leaving a silent empty panel. The empty state is only for a
+        // successful read with no data.
+        if (alibabaCanRenderPayload(data)) {
           const container = document.getElementById('quota-grid-alibaba');
           if (container && !alibabaQuotaSetsMatch(container, data.quotas)) {
             renderAlibabaQuotaCards(data.quotas, 'quota-grid-alibaba');
@@ -5544,6 +5592,8 @@ async function fetchCurrent() {
           if (Array.isArray(data.quotas) && data.quotas.length > 0) {
             data.quotas.forEach(q => updateAlibabaCard(q));
           }
+        } else if (data && data.readOK === false) {
+          alibabaShowReadError('quota-grid-alibaba');
         }
 
       } else if (isBalanceProvider(provider)) {
@@ -11733,7 +11783,7 @@ function createAlibabaProviderSection(accounts, alibabaStatus, baseVisibility) {
       name: escapeHtml(account.name),
       desc: isDeleted
         ? 'Account deleted'
-        : `Alibaba account: ${escapeHtml(account.name)}${account.region ? ' (' + account.region + ')' : ''}`,
+        : `Alibaba account: ${escapeHtml(account.name)}${account.region ? ' (' + escapeHTML(account.region) + ')' : ''}`,
       vis,
       configured: !isDeleted && account.hasCookies,
       autoDetectable: false,
@@ -13205,7 +13255,7 @@ async function openProviderSettingsModal(providerKey) {
             html += `<div class="alibaba-account-item" style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-light)">`;
             html += `<div style="flex:1">`;
             html += `<div style="font-weight:500">${escapeHtml(account.name)}</div>`;
-            html += `<div style="font-size:12px;color:var(--text-secondary)">${isDeleted ? 'Deleted' : regionLabel + ' - ' + (account.hasCookies ? 'Cookies configured' : 'No cookies set')}</div>`;
+            html += `<div style="font-size:12px;color:var(--text-secondary)">${isDeleted ? 'Deleted' : escapeHTML(regionLabel) + ' - ' + (account.hasCookies ? 'Cookies configured' : 'No cookies set')}</div>`;
             html += `</div>`;
             html += `<div style="display:flex;gap:8px;align-items:center">`;
             if (!isDeleted) {

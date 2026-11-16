@@ -1700,3 +1700,36 @@ func TestConfig_NestedLockedVariantsNoDeadlock(t *testing.T) {
 		t.Fatal("locked variants deadlocked with a waiting writer")
 	}
 }
+
+// ALIBABA_REGION is user input that ends up in the console page URL. The
+// dashboard validates it against a pattern; the env value must be validated
+// the same way, falling back to the default rather than carrying arbitrary
+// text into the request path.
+func TestConfig_AlibabaRegion_ValidatesEnv(t *testing.T) {
+	cases := []struct{ name, env, want string }{
+		{"default when unset", "", "ap-southeast-1"},
+		{"accepts a region slug", "us-east-1", "us-east-1"},
+		{"trims whitespace", "  cn-hangzhou  ", "cn-hangzhou"},
+		{"rejects path traversal", "../../etc", "ap-southeast-1"},
+		{"rejects url", "https://evil.example", "ap-southeast-1"},
+		{"rejects spaces", "ap southeast 1", "ap-southeast-1"},
+		{"rejects leading hyphen", "-bad", "ap-southeast-1"},
+		{"rejects uppercase", "US-EAST-1", "ap-southeast-1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			clearTestEnv()
+			if tc.env != "" {
+				os.Setenv("ALIBABA_REGION", tc.env)
+			}
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+			if cfg.AlibabaRegion != tc.want {
+				t.Errorf("AlibabaRegion = %q, want %q", cfg.AlibabaRegion, tc.want)
+			}
+		})
+	}
+	clearTestEnv()
+}

@@ -333,6 +333,98 @@ function Get-CodexConfig {
     return Read-SecretPrompt -Prompt "Codex token" -Validation { param($val) return $true }
 }
 
+# ConvertTo-EnvSingleQuoted wraps a value in single quotes, which godotenv reads
+# literally, so a path with spaces, "#" or "$" survives. Returns $null when the
+# path cannot be represented (it contains a single quote or a line break, or ends
+# in a backslash, which godotenv reads as escaping the closing quote and then
+# fails the whole .env as unterminated).
+function ConvertTo-EnvSingleQuoted {
+    param([string]$Value)
+    if ($Value -match "[`r`n']" -or $Value.EndsWith('\')) { return $null }
+    return "'" + $Value + "'"
+}
+
+# Test-AlibabaCookieFile reports whether the file holds usable cookies: a
+# Netscape export with Alibaba-domain cookies, or a non-empty Cookie header (at
+# least one name=value pair, optionally prefixed with "Cookie:"). Empty files
+# and exports without Alibaba cookies are rejected. Mirrors alibaba_cookies_file_accepted
+# in install.sh and the Go wizard.
+function Test-AlibabaCookieFile {
+    param([string]$Path)
+    $text = Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue
+    if ($null -eq $text -or $text.Trim() -eq "") { return $false }
+
+    # Netscape export: any non-comment line with seven tab-separated fields.
+    $isNetscape = $false
+    foreach ($line in ($text -split "`r?`n")) {
+        $row = $line
+        if ($row.StartsWith("#HttpOnly_")) { $row = $row.Substring(11) }
+        elseif ($row.StartsWith("#")) { continue }
+        if ($row.Trim() -eq "") { continue }
+        if (($row -split "`t").Count -ge 7) { $isNetscape = $true; break }
+    }
+    if ($isNetscape) {
+        return [bool](Select-String -LiteralPath $Path -Pattern 'alibabacloud\.com' -Quiet)
+    }
+
+    # Cookie header input: drop a leading "Cookie:" and check for a pair.
+    $header = $text.TrimStart()
+    if ($header -match '(?i)^cookie:') { $header = $header.Substring(7) }
+    return [bool]($header -match '[^\s=]+=[^\s=]*')
+}
+
+# Get-AlibabaConfig asks for the Alibaba Token Plan setup: an optional
+# cookies.txt path (empty means add the account from the dashboard after
+# install) and a console region. Only the path is stored; cookie contents are
+# never read into .env or echoed. Returns an object with CookiesFile and Region.
+function Get-AlibabaConfig {
+    Write-Host ""
+    Write-Host "  ${BOLD}Alibaba Token Plan Setup${NC}"
+    Write-Host "  ${DIM}onWatch reads the Alibaba console with your browser session cookies.${NC}"
+    Write-Host "  ${DIM}Add a Cookie: header, or export cookies per docs/ALIBABA_SETUP.md, then give the file path.${NC}"
+    Write-Host "  ${DIM}Press Enter to skip the file and add an account from the dashboard after install.${NC}"
+
+    $cookiesFile = ""
+    while ($true) {
+        $input = Read-PromptWithDefault -Prompt "Alibaba cookie file path [Enter = configure from dashboard]" -Default ""
+        if ([string]::IsNullOrWhiteSpace($input)) {
+            Write-Host "  ${DIM}Add the Alibaba account in Settings -> Providers after install; see docs/ALIBABA_SETUP.md${NC}"
+            break
+        }
+        if (-not (Test-Path -LiteralPath $input -PathType Leaf)) {
+            Write-Host "  ${YELLOW}!${NC} Cannot read $input"
+            continue
+        }
+        # Only keep the path. Reject a file that holds no usable cookies: an
+        # empty file, a Netscape export with no Alibaba domains, or text that is
+        # not a Cookie header either. A raw DevTools Cookie: header has no
+        # domain text and is accepted, matching the Go wizard.
+        if (-not (Test-AlibabaCookieFile $input)) {
+            Write-Host "  ${YELLOW}!${NC} That file has no Alibaba cookies - paste the Cookie header or export cookies for the Alibaba console site only"
+            continue
+        }
+        # The .env value is single-quoted so godotenv reads the path literally.
+        # A path with a quote, line break, or trailing backslash cannot be
+        # represented; reject it.
+        if ($null -eq (ConvertTo-EnvSingleQuoted $input)) {
+            Write-Host "  ${YELLOW}!${NC} That path contains a quote or line break, or ends in a backslash, and cannot be stored in .env - move the export somewhere else"
+            continue
+        }
+        $cookiesFile = $input
+        Write-Host "  ${GREEN}OK${NC} Using cookie export $input"
+        break
+    }
+
+    $region = ""
+    while ($true) {
+        $region = Read-PromptWithDefault -Prompt "Alibaba console region" -Default "ap-southeast-1"
+        if ($region -match "^[a-z0-9][a-z0-9-]{1,31}$") { break }
+        Write-Host "  ${RED}Region must be a lowercase slug such as ap-southeast-1${NC}"
+    }
+
+    return [pscustomobject]@{ CookiesFile = $cookiesFile; Region = $region }
+}
+
 # ─── Stop Existing Instance ────────────────────────────────────────────
 
 function Stop-ExistingInstance {
@@ -443,8 +535,11 @@ function Start-InteractiveSetup {
         $hasMuse = ($envContent -match "MUSE_ENABLED=true") -or ($envContent -match "META_API_KEY=\S+")
         $hasCommandCode = ($envContent -match "COMMANDCODE_ENABLED=true") -or ($envContent -match "COMMAND_CODE_API_KEY=\S+")
         $hasZenmux = $envContent -match "ZENMUX_MANAGEMENT_API_KEY=\S+"
+        $hasAlibaba = ($envContent -match "ALIBABA_COOKIES_FILE=(?:'[^'\r\n]*'|""[^""\r\n]*""|\S+)") -or
+                      ($envContent -match "(?m)^ALIBABA_COOKIES=\S+") -or
+                      ($envContent -match "ALIBABA_ENABLED=true")
 
-        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok -or $hasOllama -or $hasMuse -or $hasCommandCode -or $hasZenmux) {
+        if ($hasSyn -or $hasZai -or $hasAnth -or $hasCodex -or $hasAnti -or $hasGemini -or $hasGrok -or $hasOllama -or $hasMuse -or $hasCommandCode -or $hasZenmux -or $hasAlibaba) {
             $configured = @()
             if ($hasSyn) { $configured += "Synthetic" }
             if ($hasZai) { $configured += "Z.ai" }
@@ -457,6 +552,7 @@ function Start-InteractiveSetup {
             if ($hasMuse) { $configured += "Muse" }
             if ($hasCommandCode) { $configured += "Command Code" }
             if ($hasZenmux) { $configured += "Zenmux" }
+            if ($hasAlibaba) { $configured += "Alibaba Token Plan" }
 
             Write-Info "Existing .env found - configured: $($configured -join ', ')"
 
@@ -494,6 +590,7 @@ function Start-InteractiveSetup {
         "Muse (Meta) only",
         "Command Code only",
         "Zenmux only",
+        "Alibaba Token Plan only",
         "Multiple (choose one at a time)",
         "All available"
     )
@@ -512,8 +609,11 @@ function Start-InteractiveSetup {
     $commandCodeEnabled = ""
     $commandCodeKey = ""
     $zenmuxKey = ""
+    $alibabaEnabled = ""
+    $alibabaCookiesFile = ""
+    $alibabaRegion = ""
 
-    if ($providerChoice -eq 12) {
+    if ($providerChoice -eq 13) {
         # Multiple - ask for each provider individually
         $addIt = Read-PromptWithDefault -Prompt "Add Synthetic provider? (y/N)" -Default "N"
         if ($addIt -match "^[Yy]") {
@@ -590,45 +690,53 @@ function Start-InteractiveSetup {
             $zenmuxKey = Read-SecretPrompt -Prompt "Zenmux Management API Key" -Validation { param($val) Test-ZenmuxKey $val }
         }
 
+        $addIt = Read-PromptWithDefault -Prompt "Add Alibaba Token Plan provider? (y/N)" -Default "N"
+        if ($addIt -match "^[Yy]") {
+            $alibabaConfig = Get-AlibabaConfig
+            $alibabaEnabled = "true"
+            $alibabaCookiesFile = $alibabaConfig.CookiesFile
+            $alibabaRegion = $alibabaConfig.Region
+        }
+
         # Validate at least one provider selected
-        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled -and -not $ollamaKey -and -not $museEnabled -and -not $museKey -and -not $commandCodeEnabled -and -not $commandCodeKey -and -not $zenmuxKey) {
+        if (-not $syntheticKey -and -not $zaiKey -and -not $anthropicToken -and -not $codexToken -and -not $antigravityEnabled -and -not $geminiEnabled -and -not $grokEnabled -and -not $ollamaKey -and -not $museEnabled -and -not $museKey -and -not $commandCodeEnabled -and -not $commandCodeKey -and -not $zenmuxKey -and -not $alibabaEnabled) {
             Write-Fail "At least one provider is required"
         }
     } else {
         # Single provider or All
-        if ($providerChoice -eq 1 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 1 -or $providerChoice -eq 14) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://synthetic.new/settings/api${NC}"
             $syntheticKey = Read-SecretPrompt -Prompt "Synthetic API key (syn_...)" -Validation { param($val) Test-SyntheticKey $val }
         }
 
-        if ($providerChoice -eq 2 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 2 -or $providerChoice -eq 14) {
             $zaiConfig = Get-ZaiConfig
             $zaiKey = $zaiConfig.Key
             $zaiBaseUrl = $zaiConfig.BaseUrl
         }
 
-        if ($providerChoice -eq 3 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 3 -or $providerChoice -eq 14) {
             $anthropicToken = Get-AnthropicConfig
         }
 
-        if ($providerChoice -eq 4 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 4 -or $providerChoice -eq 14) {
             $codexToken = Get-CodexConfig
         }
 
-        if ($providerChoice -eq 5 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 5 -or $providerChoice -eq 14) {
             $antigravityEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Antigravity enabled (auto-detects running Windsurf process)"
         }
 
-        if ($providerChoice -eq 6 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 6 -or $providerChoice -eq 14) {
             $geminiEnabled = "true"
             Write-Host ""
             Write-Host "  ${GREEN}OK${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)"
         }
 
-        if ($providerChoice -eq 7 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 7 -or $providerChoice -eq 14) {
             $grokEnabled = "true"
             Write-Host ""
             if (Test-GrokCredentials) {
@@ -638,13 +746,13 @@ function Start-InteractiveSetup {
             }
         }
 
-        if ($providerChoice -eq 8 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 8 -or $providerChoice -eq 14) {
             Write-Host ""
             Write-Host "  ${DIM}Get your key: https://ollama.com/settings/keys${NC}"
             $ollamaKey = Read-SecretPrompt -Prompt "Ollama Cloud API key" -Validation { param($val) Test-OllamaKey $val }
         }
 
-        if ($providerChoice -eq 9 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 9 -or $providerChoice -eq 14) {
             Write-Host ""
             Write-Host "  ${DIM}Leave empty to auto-detect from 'muse login'${NC}"
             $museKey = Read-PromptWithDefault -Prompt "Meta API key [Enter = auto-detect]" -Default ""
@@ -655,7 +763,7 @@ function Start-InteractiveSetup {
             }
         }
 
-        if ($providerChoice -eq 10 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 10 -or $providerChoice -eq 14) {
             Write-Host ""
             Write-Host "  ${DIM}Leave empty to auto-detect from the 'cmd' CLI login${NC}"
             $commandCodeKey = Read-PromptWithDefault -Prompt "Command Code API key [Enter = auto-detect]" -Default ""
@@ -666,10 +774,17 @@ function Start-InteractiveSetup {
             }
         }
 
-        if ($providerChoice -eq 11 -or $providerChoice -eq 13) {
+        if ($providerChoice -eq 11 -or $providerChoice -eq 14) {
             Write-Host ""
             Write-Host "  ${DIM}Create a Management API Key in the Zenmux Console${NC}"
             $zenmuxKey = Read-SecretPrompt -Prompt "Zenmux Management API Key" -Validation { param($val) Test-ZenmuxKey $val }
+        }
+
+        if ($providerChoice -eq 12 -or $providerChoice -eq 14) {
+            $alibabaConfig = Get-AlibabaConfig
+            $alibabaEnabled = "true"
+            $alibabaCookiesFile = $alibabaConfig.CookiesFile
+            $alibabaRegion = $alibabaConfig.Region
         }
     }
 
@@ -825,6 +940,20 @@ ZENMUX_MANAGEMENT_API_KEY=$zenmuxKey
 "@
     }
 
+    if ($alibabaEnabled) {
+        $alibabaEnv = "# Alibaba Token Plan - see docs/ALIBABA_SETUP.md`r`n"
+        if ($alibabaCookiesFile) {
+            $alibabaEnv += "# Path to a cookies.txt export (cookies stay in the file, never in .env)`r`n"
+            $alibabaEnv += "ALIBABA_COOKIES_FILE=$(ConvertTo-EnvSingleQuoted $alibabaCookiesFile)`r`n"
+        } else {
+            $alibabaEnv += "# No cookies file yet: add an account in Settings -> Providers after install`r`n"
+            $alibabaEnv += "ALIBABA_ENABLED=true`r`n"
+        }
+        $alibabaRegionValue = if ($alibabaRegion) { $alibabaRegion } else { "ap-southeast-1" }
+        $alibabaEnv += "ALIBABA_REGION=$alibabaRegionValue`r`n`r`n"
+        $envContent += $alibabaEnv
+    }
+
     $envContent += @"
 # Dashboard credentials
 ONWATCH_ADMIN_USER=$($script:SetupUsername)
@@ -855,7 +984,8 @@ ONWATCH_PORT=$($script:SetupPort)
         9 { "Muse" }
         10 { "Command Code" }
         11 { "Zenmux" }
-        12 {
+        12 { "Alibaba Token Plan" }
+        13 {
             $parts = @()
             if ($syntheticKey) { $parts += "Synthetic" }
             if ($zaiKey) { $parts += "Z.ai" }
@@ -868,9 +998,10 @@ ONWATCH_PORT=$($script:SetupPort)
             if ($museEnabled -or $museKey) { $parts += "Muse" }
             if ($commandCodeEnabled -or $commandCodeKey) { $parts += "Command Code" }
             if ($zenmuxKey) { $parts += "Zenmux" }
+            if ($alibabaEnabled) { $parts += "Alibaba Token Plan" }
             $parts -join ", "
         }
-        13 { "All providers" }
+        14 { "All providers" }
     }
 
     $maskedPass = "*" * $script:SetupPassword.Length

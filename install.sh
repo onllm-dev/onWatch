@@ -436,6 +436,71 @@ env_get() {
     grep -E "^${key}=" "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]'
 }
 
+# env_get_path reads a value written for godotenv, which may be single- or
+# double-quoted, and returns it unquoted with spaces intact.
+env_get_path() {
+    local key="$1" env_file="${INSTALL_DIR}/.env" raw
+    raw=$(grep -E "^${key}=" "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2-)
+    raw="${raw%$'\r'}"
+    if [[ ${#raw} -ge 2 && "$raw" == \'*\' ]]; then
+        raw="${raw:1:${#raw}-2}"
+    elif [[ ${#raw} -ge 2 && "$raw" == \"*\" ]]; then
+        raw="${raw:1:${#raw}-2}"
+    fi
+    printf '%s' "$raw"
+}
+
+# env_single_quote prints value wrapped in single quotes, which godotenv reads
+# literally, or returns 1 when the value cannot be represented (it contains the
+# quote character or a line break, or ends in a backslash, which godotenv reads
+# as escaping the closing quote and then fails the whole .env).
+env_single_quote() {
+    local value="$1"
+    if [[ "$value" == *"'"* || "$value" == *$'\n'* || "$value" == *$'\r'* || "$value" == *"\\" ]]; then
+        return 1
+    fi
+    printf "'%s'" "$value"
+}
+
+# is_netscape_export reports whether the file looks like a Netscape cookies.txt
+# export: at least one non-comment line with seven tab-separated fields. This
+# mirrors api.AlibabaCookiesAreNetscape, so a raw Cookie header (no tabs) is
+# never mistaken for an export. The path is read by redirection so a name that
+# starts with "-" is not taken as an option.
+is_netscape_export() {
+    awk -F'\t' '
+        { line = $0; sub(/\r$/, "", line) }
+        line ~ /^#HttpOnly_/ { line = substr(line, 11) }
+        line ~ /^#/ { next }
+        line ~ /^[[:space:]]*$/ { next }
+        NF >= 7 { found = 1; exit }
+        END { exit(found ? 0 : 1) }
+    ' < "$1"
+}
+
+# alibaba_cookies_file_accepted reports whether the file holds usable cookies:
+# a Netscape export with Alibaba-domain cookies, or a non-empty Cookie header
+# (at least one name=value pair, optionally prefixed with "Cookie:"). Empty
+# files and exports without Alibaba cookies are rejected. Paths are passed via
+# redirection or after "--" so a name starting with "-" is never an option.
+alibaba_cookies_file_accepted() {
+    local path="$1" text
+    text=$(cat < "$path" 2>/dev/null) || return 1
+    if [[ -z "${text//[[:space:]]/}" ]]; then
+        return 1
+    fi
+    if is_netscape_export "$path"; then
+        grep -q -- 'alibabacloud\.com' "$path"
+        return
+    fi
+    # Cookie header input: drop a leading "Cookie:" and check for a pair.
+    text="${text#"${text%%[![:space:]]*}"}"
+    case "${text:0:7}" in
+        [Cc][Oo][Oo][Kk][Ii][Ee]:) text="${text:7}" ;;
+    esac
+    [[ "$text" =~ [^[:space:]=]+=[^[:space:]=]* ]]
+}
+
 # Check if a provider key is configured (non-empty, not a placeholder)
 has_synthetic_key() {
     local val
@@ -502,6 +567,86 @@ has_muse_configured() {
     [[ -n "$key" && "$key" != "your_meta_api_key_here" ]] && return 0
     muse_on="$(env_get MUSE_ENABLED)"
     [[ "$muse_on" == "true" ]]
+}
+
+has_alibaba_configured() {
+    local cookies_file cookies on
+    cookies_file="$(env_get_path ALIBABA_COOKIES_FILE)"
+    [[ -n "$cookies_file" ]] && return 0
+    cookies="$(env_get ALIBABA_COOKIES)"
+    [[ -n "$cookies" ]] && return 0
+    on="$(env_get ALIBABA_ENABLED)"
+    [[ "$on" == "true" ]]
+}
+
+# collect_alibaba_config asks for the Alibaba Token Plan setup: an optional
+# cookies.txt path (empty means add the account from the dashboard after
+# install) and a console region. Sets ALIBABA_SETUP_ENABLED,
+# ALIBABA_SETUP_COOKIES_FILE and ALIBABA_SETUP_REGION. The cookie contents are
+# never read into .env or echoed; only the path is stored.
+collect_alibaba_config() {
+    printf "\n  ${DIM}onWatch reads the Alibaba console with your browser session cookies.${NC}\n"
+    printf "  ${DIM}Add a Cookie: header, or export cookies per docs/ALIBABA_SETUP.md, then give the file path.${NC}\n"
+    printf "  ${DIM}Press Enter to skip the file and add an account from the dashboard after install.${NC}\n"
+
+    ALIBABA_SETUP_ENABLED="true"
+    ALIBABA_SETUP_COOKIES_FILE=""
+    local input
+    while true; do
+        input=$(prompt_with_default "Alibaba cookie file path [Enter = configure from dashboard]" "")
+        if [[ -z "$input" ]]; then
+            printf "  ${DIM}Add the Alibaba account in Settings -> Providers after install; see docs/ALIBABA_SETUP.md${NC}\n"
+            break
+        fi
+        if [[ ! -f "$input" ]]; then
+            printf "  ${YELLOW}!${NC} Cannot read %s\n" "$input"
+            continue
+        fi
+        # Only keep the path. Reject a file that holds no usable cookies: an
+        # empty file, a Netscape export with no Alibaba domains, or text that is
+        # not a Cookie header either. A raw DevTools Cookie: header has no
+        # domain text and is accepted, matching the Go wizard.
+        if ! alibaba_cookies_file_accepted "$input"; then
+            printf "  ${YELLOW}!${NC} That file has no Alibaba cookies - paste the Cookie header or export cookies for the Alibaba console site only\n"
+            continue
+        fi
+        # The .env value is single-quoted so godotenv reads the path literally.
+        # A path with a quote, line break, or trailing backslash cannot be
+        # represented; reject it.
+        if ! env_single_quote "$input" >/dev/null; then
+            printf "  ${YELLOW}!${NC} That path contains a quote or line break, or ends in a backslash, and cannot be stored in .env - move the export somewhere else\n"
+            continue
+        fi
+        ALIBABA_SETUP_COOKIES_FILE="$input"
+        printf "  ${GREEN}✓${NC} Using cookie export %s\n" "$input"
+        break
+    done
+
+    local region
+    while true; do
+        region=$(prompt_with_default "Alibaba console region" "ap-southeast-1")
+        if [[ "$region" =~ ^[a-z0-9][a-z0-9-]{1,31}$ ]]; then
+            break
+        fi
+        printf "  ${RED}Region must be a lowercase slug such as ap-southeast-1${NC}\n"
+    done
+    ALIBABA_SETUP_REGION="$region"
+}
+
+append_alibaba_to_env() {
+    local cookies_file="$1" region="$2" env_file="${INSTALL_DIR}/.env"
+    {
+        echo ""
+        echo "# Alibaba Token Plan - see docs/ALIBABA_SETUP.md"
+        if [[ -n "$cookies_file" ]]; then
+            echo "# Path to a cookies.txt export (cookies stay in the file, never in .env)"
+            echo "ALIBABA_COOKIES_FILE=$(env_single_quote "$cookies_file")"
+        else
+            echo "# No cookies file yet: add an account in Settings -> Providers after install"
+            echo "ALIBABA_ENABLED=true"
+        fi
+        echo "ALIBABA_REGION=${region}"
+    } >> "$env_file"
 }
 
 append_muse_to_env() {
@@ -840,7 +985,7 @@ interactive_setup() {
         SETUP_USERNAME="${SETUP_USERNAME:-admin}"
         SETUP_PASSWORD=""  # Don't show existing password
 
-        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false has_grok=false has_ollama=false has_muse=false has_commandcode=false has_zenmux=false
+        local has_syn=false has_zai=false has_anth=false has_codex=false has_opencode=false has_anti=false has_gemini=false has_grok=false has_ollama=false has_muse=false has_commandcode=false has_zenmux=false has_alibaba=false
         has_synthetic_key && has_syn=true
         has_zai_key && has_zai=true
         has_anthropic_key && has_anth=true
@@ -853,14 +998,15 @@ interactive_setup() {
         has_muse_configured && has_muse=true
         has_commandcode_configured && has_commandcode=true
         has_zenmux_configured && has_zenmux=true
+        has_alibaba_configured && has_alibaba=true
 
-        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini && $has_grok && $has_ollama && $has_muse && $has_commandcode && $has_zenmux; then
+        if $has_syn && $has_zai && $has_anth && $has_codex && $has_opencode && $has_anti && $has_gemini && $has_grok && $has_ollama && $has_muse && $has_commandcode && $has_zenmux && $has_alibaba; then
             # All providers configured — nothing to do
             info "Existing .env found — all providers configured"
             return
         fi
 
-        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini && ! $has_grok && ! $has_ollama && ! $has_muse && ! $has_commandcode && ! $has_zenmux; then
+        if ! $has_syn && ! $has_zai && ! $has_anth && ! $has_codex && ! $has_opencode && ! $has_anti && ! $has_gemini && ! $has_grok && ! $has_ollama && ! $has_muse && ! $has_commandcode && ! $has_zenmux && ! $has_alibaba; then
             # .env exists but no keys at all — run full setup
             warn "Existing .env found but no API keys configured"
             info "Running interactive setup..."
@@ -887,6 +1033,7 @@ interactive_setup() {
             $has_muse && configured="${configured}Muse "
             $has_commandcode && configured="${configured}Command Code "
             $has_zenmux && configured="${configured}Zenmux "
+            $has_alibaba && configured="${configured}Alibaba Token Plan "
             info "Existing .env found — configured: ${configured}"
             printf "\n"
 
@@ -1093,6 +1240,16 @@ interactive_setup() {
                 fi
             fi
 
+            if ! $has_alibaba; then
+                local add_alibaba
+                add_alibaba=$(prompt_with_default "Add Alibaba Token Plan provider? (y/N)" "N")
+                if [[ "$add_alibaba" =~ ^[Yy] ]]; then
+                    collect_alibaba_config
+                    append_alibaba_to_env "$ALIBABA_SETUP_COOKIES_FILE" "$ALIBABA_SETUP_REGION"
+                    ok "Added Alibaba Token Plan provider to .env"
+                fi
+            fi
+
             $_opened_fd3 && exec 3<&- || true
             return
         fi
@@ -1125,12 +1282,13 @@ interactive_setup() {
         "Muse (Meta) only" \
         "Command Code only" \
         "Zenmux only" \
+        "Alibaba Token Plan only" \
         "Multiple (choose one at a time)" \
         "All available")
 
-    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled="" ollama_key="" muse_enabled="" muse_key="" commandcode_enabled="" commandcode_key="" zenmux_key=""
+    local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled="" ollama_key="" muse_enabled="" muse_key="" commandcode_enabled="" commandcode_key="" zenmux_key="" alibaba_enabled="" alibaba_cookies_file="" alibaba_region=""
 
-    if [[ "$provider_choice" == "13" ]]; then
+    if [[ "$provider_choice" == "14" ]]; then
         # ── Multiple: ask for each provider individually ──
         local add_it
         add_it=$(prompt_with_default "Add Synthetic provider? (y/N)" "N")
@@ -1211,8 +1369,16 @@ interactive_setup() {
             zenmux_key=$(prompt_secret "Zenmux Management API Key" validate_zenmux_key)
         fi
 
+        add_it=$(prompt_with_default "Add Alibaba Token Plan provider? (y/N)" "N")
+        if [[ "$add_it" =~ ^[Yy] ]]; then
+            collect_alibaba_config
+            alibaba_enabled="$ALIBABA_SETUP_ENABLED"
+            alibaba_cookies_file="$ALIBABA_SETUP_COOKIES_FILE"
+            alibaba_region="$ALIBABA_SETUP_REGION"
+        fi
+
         # Validate at least one provider selected
-        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" && -z "$ollama_key" && -z "$muse_enabled" && -z "$muse_key" && -z "$commandcode_enabled" && -z "$commandcode_key" && -z "$zenmux_key" ]]; then
+        if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$opencode_enabled" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" && -z "$ollama_key" && -z "$muse_enabled" && -z "$muse_key" && -z "$commandcode_enabled" && -z "$commandcode_key" && -z "$zenmux_key" && -z "$alibaba_enabled" ]]; then
             printf "  ${RED}No providers selected. Please select at least one.${NC}\n"
             # Re-run provider selection by recursion-safe retry
             printf "\n"
@@ -1275,13 +1441,13 @@ interactive_setup() {
         # ── Single provider or All ──
 
         # ── Synthetic API Key ──
-        if [[ "$provider_choice" == "1" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "1" || "$provider_choice" == "15" ]]; then
             printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
             synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
         fi
 
         # ── Z.ai API Key ──
-        if [[ "$provider_choice" == "2" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "2" || "$provider_choice" == "15" ]]; then
             local zai_result
             zai_result=$(collect_zai_config)
             zai_key=$(echo "$zai_result" | head -1)
@@ -1289,17 +1455,17 @@ interactive_setup() {
         fi
 
         # ── Anthropic Token ──
-        if [[ "$provider_choice" == "3" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "3" || "$provider_choice" == "15" ]]; then
             anthropic_token=$(collect_anthropic_config)
         fi
 
         # ── Codex Token ──
-        if [[ "$provider_choice" == "4" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "4" || "$provider_choice" == "15" ]]; then
             codex_token=$(collect_codex_config)
         fi
 
         # ── OpenCode (opencode-codex) ──
-        if [[ "$provider_choice" == "5" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "5" || "$provider_choice" == "15" ]]; then
             opencode_enabled="true"
             if detect_opencode_auth; then
                 printf "\n  ${GREEN}✓${NC} OpenCode (opencode-codex) credentials detected (feeds Codex)\n"
@@ -1309,19 +1475,19 @@ interactive_setup() {
         fi
 
         # ── Antigravity (Windsurf) ──
-        if [[ "$provider_choice" == "6" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "6" || "$provider_choice" == "15" ]]; then
             antigravity_enabled="true"
             printf "\n  ${GREEN}✓${NC} Antigravity enabled (auto-detects running Windsurf process)\n"
         fi
 
         # ── Gemini CLI ──
-        if [[ "$provider_choice" == "7" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "7" || "$provider_choice" == "15" ]]; then
             gemini_enabled="true"
             printf "\n  ${GREEN}✓${NC} Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n"
         fi
 
         # ── Grok (xAI) ──
-        if [[ "$provider_choice" == "8" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "8" || "$provider_choice" == "15" ]]; then
             grok_enabled="true"
             if [[ -f "$(grok_auth_path)" ]]; then
                 printf "\n  ${GREEN}✓${NC} Grok enabled (credentials detected at $(grok_auth_path))\n"
@@ -1331,13 +1497,13 @@ interactive_setup() {
         fi
 
         # ── Ollama Cloud ──
-        if [[ "$provider_choice" == "9" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "9" || "$provider_choice" == "15" ]]; then
             printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
             ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
         fi
 
         # ── Muse (Meta): optional key, auto-detects `muse login` when empty ──
-        if [[ "$provider_choice" == "10" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "10" || "$provider_choice" == "15" ]]; then
             printf "\n  ${DIM}Leave empty to auto-detect from 'muse login'${NC}\n"
             muse_key=$(prompt_with_default "Meta API key [Enter = auto-detect]" "")
             if [[ -z "$muse_key" ]]; then
@@ -1347,7 +1513,7 @@ interactive_setup() {
         fi
 
         # ── Command Code: optional key, auto-detects the `cmd` CLI login ──
-        if [[ "$provider_choice" == "11" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "11" || "$provider_choice" == "15" ]]; then
             printf "\n  ${DIM}Leave empty to auto-detect from the 'cmd' CLI login${NC}\n"
             commandcode_key=$(prompt_with_default "Command Code API key [Enter = auto-detect]" "")
             if [[ -z "$commandcode_key" ]]; then
@@ -1357,9 +1523,17 @@ interactive_setup() {
         fi
 
         # ── Zenmux: Management API Key (no auto-detect) ──
-        if [[ "$provider_choice" == "12" || "$provider_choice" == "14" ]]; then
+        if [[ "$provider_choice" == "12" || "$provider_choice" == "15" ]]; then
             printf "\n  ${DIM}Create a Management API Key in the Zenmux Console${NC}\n"
             zenmux_key=$(prompt_secret "Zenmux Management API Key" validate_zenmux_key)
+        fi
+
+        # ── Alibaba Token Plan: cookies.txt path or dashboard setup ──
+        if [[ "$provider_choice" == "13" || "$provider_choice" == "15" ]]; then
+            collect_alibaba_config
+            alibaba_enabled="$ALIBABA_SETUP_ENABLED"
+            alibaba_cookies_file="$ALIBABA_SETUP_COOKIES_FILE"
+            alibaba_region="$ALIBABA_SETUP_REGION"
         fi
     fi
 
@@ -1498,6 +1672,19 @@ interactive_setup() {
             echo ""
         fi
 
+        if [[ -n "$alibaba_enabled" ]]; then
+            echo "# Alibaba Token Plan - see docs/ALIBABA_SETUP.md"
+            if [[ -n "$alibaba_cookies_file" ]]; then
+                echo "# Path to a cookies.txt export (cookies stay in the file, never in .env)"
+                echo "ALIBABA_COOKIES_FILE=$(env_single_quote "$alibaba_cookies_file")"
+            else
+                echo "# No cookies file yet: add an account in Settings -> Providers after install"
+                echo "ALIBABA_ENABLED=true"
+            fi
+            echo "ALIBABA_REGION=${alibaba_region:-ap-southeast-1}"
+            echo ""
+        fi
+
         echo "# Dashboard credentials"
         echo "ONWATCH_ADMIN_USER=${SETUP_USERNAME}"
         echo "ONWATCH_ADMIN_PASS=${SETUP_PASSWORD}"
@@ -1526,7 +1713,8 @@ interactive_setup() {
         10) provider_label="Muse" ;;
         11) provider_label="Command Code" ;;
         12) provider_label="Zenmux" ;;
-        13)
+        13) provider_label="Alibaba Token Plan" ;;
+        14)
             # Multiple — build label from selected providers
             local parts=()
             [[ -n "$synthetic_key" ]] && parts+=("Synthetic")
@@ -1541,9 +1729,10 @@ interactive_setup() {
             [[ -n "$muse_enabled" || -n "$muse_key" ]] && parts+=("Muse")
             [[ -n "$commandcode_enabled" || -n "$commandcode_key" ]] && parts+=("Command Code")
             [[ -n "$zenmux_key" ]] && parts+=("Zenmux")
+            [[ -n "$alibaba_enabled" ]] && parts+=("Alibaba Token Plan")
             provider_label=$(IFS=", "; echo "${parts[*]}")
             ;;
-        14) provider_label="All providers" ;;
+        15) provider_label="All providers" ;;
     esac
 
     local masked_pass

@@ -396,3 +396,33 @@ func TestAlibabaAgent_RateLimitedErrorIsRecognised(t *testing.T) {
 		t.Error("unrelated error must not be recognised")
 	}
 }
+
+// An off-domain sign-in redirect must reach the agent's classifier as an
+// authentication failure, so the user is told to re-export cookies rather than
+// shown a parse error.
+func TestAlibabaAgentOffDomainRedirectClassifiedAuth(t *testing.T) {
+	t.Parallel()
+	page := `<html><script>window.ALIYUN_CONSOLE_CONFIG = {SEC_TOKEN: "t"};</script></html>`
+	var targetHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHits.Add(1)
+		_, _ = w.Write([]byte(page))
+	}))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/signin?ticket=secret", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	client := api.NewAlibabaClient("cna=abc", nil, api.WithAlibabaPageURL(srv.URL))
+	_, err := client.FetchSnapshot(context.Background())
+	if err == nil {
+		t.Fatal("expected the redirect to be refused")
+	}
+	if got := ClassifyPollError(err); got != PollOutcomeAuth {
+		t.Fatalf("ClassifyPollError(%v) = %q, want %q", err, got, PollOutcomeAuth)
+	}
+	if targetHits.Load() != 0 {
+		t.Fatalf("redirect target contacted %d times, want 0", targetHits.Load())
+	}
+}

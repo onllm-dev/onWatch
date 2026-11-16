@@ -35,7 +35,8 @@ func (j alibabaCookieJar) empty() bool {
 }
 
 // headerFor returns the Cookie header value for host. When the jar came from a
-// plain header string, that string is returned unchanged.
+// plain header string, that string is returned unchanged. Cookies are only
+// sent to hosts their domain matches; there is no host-name special case.
 func (j alibabaCookieJar) headerFor(host string) string {
 	if len(j.scoped) == 0 {
 		return j.header
@@ -47,22 +48,7 @@ func (j alibabaCookieJar) headerFor(host string) string {
 			pairs = append(pairs, c.Name+"="+c.Value)
 		}
 	}
-	// httptest and similar local hosts never match Alibaba domains; send the
-	// whole jar there so unit tests can still assert on Cookie propagation.
-	if len(pairs) == 0 && alibabaLocalTestHost(host) {
-		for _, c := range j.scoped {
-			pairs = append(pairs, c.Name+"="+c.Value)
-		}
-	}
 	return strings.Join(pairs, "; ")
-}
-
-func alibabaLocalTestHost(host string) bool {
-	switch host {
-	case "", "127.0.0.1", "localhost", "::1":
-		return true
-	}
-	return strings.HasSuffix(host, ".localhost")
 }
 
 func alibabaCookieMatchesHost(c alibabaCookie, host string) bool {
@@ -75,6 +61,16 @@ func alibabaCookieMatchesHost(c alibabaCookie, host string) bool {
 	}
 	domain = strings.TrimPrefix(domain, ".")
 	return host == domain || strings.HasSuffix(host, "."+domain)
+}
+
+// alibabaCookieDomainRelevant reports whether a cookie domain could ever be
+// sent to the Alibaba hosts the client talks to. It uses the same suffix
+// matching as the send path (and the redirect policy): a cookie is relevant
+// only when its domain is alibabacloud.com or a subdomain of it.
+func alibabaCookieDomainRelevant(domain string) bool {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	domain = strings.TrimPrefix(domain, ".")
+	return alibabaRedirectHostAllowed(domain)
 }
 
 func alibabaHostFromURL(raw string) string {
@@ -125,6 +121,44 @@ func AlibabaCookiesAreNetscape(input string) bool {
 		}
 	}
 	return false
+}
+
+// FilterAlibabaCookies keeps only the cookies from a Netscape export whose
+// domain could ever be sent to the Alibaba hosts the client talks to. A full
+// browser export carries cookies for unrelated sites, and the caller stores
+// the text in plaintext, so they must be dropped before persistence.
+//
+// Cookie-header input carries no domain information, so it is returned
+// unchanged (after trimming); the redirect policy keeps that header confined
+// to the fixed Alibaba hosts. An export that is left with no Alibaba cookies
+// is an error so callers can reject unusable input.
+func FilterAlibabaCookies(input string) (string, error) {
+	if !AlibabaCookiesAreNetscape(input) {
+		return strings.TrimSpace(input), nil
+	}
+
+	var kept []string
+	for _, line := range strings.Split(input, "\n") {
+		line = strings.TrimRight(line, "\r")
+		body := line
+		if strings.HasPrefix(body, "#HttpOnly_") {
+			body = strings.TrimPrefix(body, "#HttpOnly_")
+		} else if strings.HasPrefix(body, "#") || strings.TrimSpace(body) == "" {
+			continue
+		}
+		fields := strings.Split(body, "\t")
+		if len(fields) < 7 {
+			continue
+		}
+		if !alibabaCookieDomainRelevant(fields[0]) || strings.TrimSpace(fields[5]) == "" {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if len(kept) == 0 {
+		return "", fmt.Errorf("%w: the export holds no alibabacloud.com cookies", ErrAlibabaMissingCookies)
+	}
+	return strings.Join(kept, "\n"), nil
 }
 
 func parseAlibabaCookieJar(input string) alibabaCookieJar {

@@ -374,3 +374,210 @@ func TestAlibabaAccountsUsageHidesEmptyDefault(t *testing.T) {
 		t.Fatalf("accounts = %v, want only the work account", resp.Accounts)
 	}
 }
+
+// TestAlibabaAccountCreateFiltersCookieDomains proves a full cookies.txt
+// export is reduced to Alibaba-domain rows before it is stored in plaintext.
+func TestAlibabaAccountCreateFiltersCookieDomains(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	h := NewHandler(s, nil, nil, nil, &config.Config{})
+	export := strings.Join([]string{
+		"# Netscape HTTP Cookie File",
+		".alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc",
+		"modelstudio.console.alibabacloud.com\tFALSE\t/\tTRUE\t0\thostonly\tx",
+		".mmstat.com\tTRUE\t/\tTRUE\t0\ttrack\t1",
+		"example.com\tFALSE\t/\tTRUE\t0\tother\t2",
+	}, "\n")
+	payload, _ := json.Marshal(map[string]string{"name": "work", "cookies": export})
+	rr := httptest.NewRecorder()
+	h.AlibabaAccounts(rr, httptest.NewRequest("POST", "/api/alibaba/accounts", strings.NewReader(string(payload))))
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var created map[string]interface{}
+	_ = json.Unmarshal(rr.Body.Bytes(), &created)
+	acc, err := s.GetProviderAccountByID(int64(created["id"].(float64)))
+	if err != nil || acc == nil {
+		t.Fatalf("GetProviderAccountByID: %v %v", acc, err)
+	}
+	meta := parseAlibabaAccountMetadata(acc.Metadata)
+	if !strings.Contains(meta.Cookies, "cna") || !strings.Contains(meta.Cookies, "hostonly") {
+		t.Fatalf("stored cookies missing the Alibaba rows: %q", meta.Cookies)
+	}
+	for _, dropped := range []string{"mmstat", "example.com", "track", "other"} {
+		if strings.Contains(meta.Cookies, dropped) {
+			t.Fatalf("stored cookies still carry unrelated domain %q: %q", dropped, meta.Cookies)
+		}
+	}
+
+	// An export with no Alibaba cookies is rejected like other unusable input.
+	bad := ".mmstat.com\tTRUE\t/\tTRUE\t0\ttrack\t1\n"
+	badPayload, _ := json.Marshal(map[string]string{"name": "other", "cookies": bad})
+	rr = httptest.NewRecorder()
+	h.AlibabaAccounts(rr, httptest.NewRequest("POST", "/api/alibaba/accounts", strings.NewReader(string(badPayload))))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("unrelated-only export status = %d, want 400", rr.Code)
+	}
+}
+
+// TestNormalizeAlibabaCookiesInputFilters pins the helper the settings path
+// uses.
+func TestNormalizeAlibabaCookiesInputFilters(t *testing.T) {
+	export := ".alibabacloud.com\tTRUE\t/\tTRUE\t0\tcna\tabc\n.mmstat.com\tTRUE\t/\tTRUE\t0\ttrack\t1\n"
+	got, msg := normalizeAlibabaCookiesInput(export)
+	if msg != "" {
+		t.Fatalf("msg = %q", msg)
+	}
+	if strings.Contains(got, "mmstat") || !strings.Contains(got, "cna") {
+		t.Fatalf("normalized cookies = %q, want only the Alibaba row", got)
+	}
+
+	for _, in := range []string{"a=1; b=2", "Cookie: a=1; b=2"} {
+		got, msg := normalizeAlibabaCookiesInput(in)
+		if msg != "" || got != "a=1; b=2" {
+			t.Errorf("header input %q normalized to %q (msg %q)", in, got, msg)
+		}
+	}
+}
+
+// The plan stat's sublabel must present time remaining with fractional
+// granularity (formatDuration), not an integer day count that jumps in steps.
+func TestAlibabaInsightsExpirySublabelIsFractional(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	accountID := alibabaTestDefaultAccountID(t, s)
+	// 20 days and 7 hours out: an integer day count would report "20 days left"
+	// for the whole final day. The extra 20 minutes keeps the value well inside
+	// the 7h bucket, so the assertion does not depend on how much time passes
+	// (or on clock granularity) between building the response and checking it.
+	endTime := time.Now().UTC().Add(20*24*time.Hour + 7*time.Hour + 20*time.Minute)
+	snap := &api.AlibabaSnapshot{
+		CapturedAt:    time.Now().UTC(),
+		SpecCode:      "lite",
+		Status:        "VALID",
+		RemainingDays: 20,
+		EndTime:       &endTime,
+		Quotas: []api.AlibabaQuota{
+			{Name: api.AlibabaQuotaFiveHour, Utilization: 5},
+		},
+	}
+	if _, err := s.InsertAlibabaSnapshot(snap, accountID); err != nil {
+		t.Fatalf("insert snapshot: %v", err)
+	}
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithAlibaba())
+	resp := h.buildAlibabaInsights(accountID, map[string]bool{}, 24*time.Hour)
+
+	var expiry *alibabaInsightStat
+	for i := range resp.Stats {
+		if resp.Stats[i].Label == "Expires" || resp.Stats[i].Label == "Renews" {
+			expiry = &resp.Stats[i]
+			break
+		}
+	}
+	if expiry == nil {
+		t.Fatalf("stats = %+v, want an Expires stat", resp.Stats)
+	}
+	if strings.Contains(expiry.Sublabel, "days left") {
+		t.Fatalf("sublabel = %q, want fractional duration, not an integer day count", expiry.Sublabel)
+	}
+	if expiry.Sublabel != "20d 7h" {
+		// formatDuration renders a multi-day span as days and hours, so the
+		// final day is not one constant step.
+		t.Fatalf("sublabel = %q, want %q", expiry.Sublabel, "20d 7h")
+	}
+}
+
+// An expired plan (end time in the past) must not borrow formatDuration's
+// "Resetting..." label, which describes a quota window rather than a plan.
+func TestAlibabaInsightsExpiredPlanSublabel(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	accountID := alibabaTestDefaultAccountID(t, s)
+	endTime := time.Now().UTC().Add(-48 * time.Hour)
+	snap := &api.AlibabaSnapshot{
+		CapturedAt: time.Now().UTC(),
+		SpecCode:   "lite",
+		Status:     "EXPIRED",
+		EndTime:    &endTime,
+		Quotas: []api.AlibabaQuota{
+			{Name: api.AlibabaQuotaFiveHour, Utilization: 5},
+		},
+	}
+	if _, err := s.InsertAlibabaSnapshot(snap, accountID); err != nil {
+		t.Fatalf("insert snapshot: %v", err)
+	}
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithAlibaba())
+	resp := h.buildAlibabaInsights(accountID, map[string]bool{}, 24*time.Hour)
+
+	var expiry *alibabaInsightStat
+	for i := range resp.Stats {
+		if resp.Stats[i].Label == "Expires" || resp.Stats[i].Label == "Renews" {
+			expiry = &resp.Stats[i]
+			break
+		}
+	}
+	if expiry == nil {
+		t.Fatalf("stats = %+v, want an Expires stat", resp.Stats)
+	}
+	if expiry.Sublabel != "Expired" {
+		t.Fatalf("sublabel = %q, want %q", expiry.Sublabel, "Expired")
+	}
+	if strings.Contains(expiry.Sublabel, "Resetting") {
+		t.Fatalf("sublabel = %q must not read as a quota reset", expiry.Sublabel)
+	}
+}
+
+// A storage read failure must be distinguishable from "no data yet" so the
+// dashboard keeps its last-known cards instead of blanking the grid. The
+// payload carries the read outcome, and the builder still returns no rows.
+func TestBuildAlibabaCurrentStorageFailureSignal(t *testing.T) {
+	s, dsn := newSharedAlibabaHandlerStore(t)
+	accountID := alibabaTestDefaultAccountID(t, s)
+	insertTestAlibabaSnapshot(t, s, accountID, time.Now().UTC())
+
+	h := NewHandler(s, nil, nil, nil, createTestConfigWithAlibaba())
+	response, readOK, hasData := h.buildAlibabaCurrentOK(accountID)
+	if !readOK || !hasData {
+		t.Fatalf("readOK=%v hasData=%v, want true/true before the read fails", readOK, hasData)
+	}
+
+	execSQLOnDSN(t, dsn, "ALTER TABLE alibaba_snapshots RENAME TO alibaba_snapshots_broken")
+
+	response, readOK, hasData = h.buildAlibabaCurrentOK(accountID)
+	if readOK {
+		t.Fatalf("readOK = true after the storage read failed: %v", response)
+	}
+	if hasData {
+		t.Fatalf("hasData = true after the storage read failed: %v", response)
+	}
+	if got, ok := response["readOK"]; !ok || got != false {
+		t.Fatalf("readOK field = %v (present=%v), want false", got, ok)
+	}
+}
+
+// newSharedAlibabaHandlerStore returns a store other connections can reach, so
+// a test can break the Alibaba tables while the handler keeps running.
+func newSharedAlibabaHandlerStore(t *testing.T) (*store.Store, string) {
+	t.Helper()
+	dsn := "file:alibaba-web-" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	s, err := store.New(dsn)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s, dsn
+}

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +48,9 @@ type setupConfig struct {
 	commandCodeEnabled    bool
 	commandCodeKey        string
 	zenmuxKey             string
+	alibabaEnabled        bool
+	alibabaCookiesFile    string
+	alibabaRegion         string
 	openCodeGoConfigured  bool
 	openCodeGoKey         string
 	openCodeGoWorkspaceID string
@@ -134,6 +138,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		"Muse (Meta) only",
 		"Command Code only",
 		"Zenmux only",
+		"Alibaba Token Plan only",
 		"OpenCode Go only",
 		"Multiple (choose one at a time)",
 		"All available",
@@ -171,12 +176,17 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		cfg.commandCodeEnabled, cfg.commandCodeKey = collectCommandCode(reader, logger)
 	case 12: // Zenmux only
 		cfg.zenmuxKey = collectZenmuxKey(reader)
-	case 13: // OpenCode Go only
+	case 13: // Alibaba Token Plan only
+		cfg.alibabaEnabled, cfg.alibabaCookiesFile, cfg.alibabaRegion = collectAlibaba(reader)
+	case 14: // OpenCode Go only
 		applyOpenCodeGoConfig(cfg, collectOpenCodeGo(reader, logger))
-	case 14: // Multiple
+	case 15: // Multiple
 		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled, cfg.ollamaKey, cfg.museEnabled, cfg.museKey, cfg.commandCodeEnabled, cfg.commandCodeKey, cfg.zenmuxKey = collectMultipleProviders(reader, logger)
 		applyOpenCodeGoConfig(cfg, collectMultipleOpenCodeGo(reader, logger))
-	case 15: // All
+		if promptYesNo(reader, "Add Alibaba Token Plan provider?", false) {
+			cfg.alibabaEnabled, cfg.alibabaCookiesFile, cfg.alibabaRegion = collectAlibaba(reader)
+		}
+	case 16: // All
 		cfg.syntheticKey = collectSyntheticKey(reader)
 		cfg.zaiKey, cfg.zaiBaseURL = collectZaiConfig(reader)
 		cfg.anthropicToken = collectAnthropicToken(reader, logger)
@@ -192,10 +202,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		cfg.commandCodeEnabled, cfg.commandCodeKey = collectCommandCode(reader, logger)
 		cfg.zenmuxKey = collectZenmuxKey(reader)
 		applyOpenCodeGoConfig(cfg, collectOpenCodeGo(reader, logger))
+		cfg.alibabaEnabled, cfg.alibabaCookiesFile, cfg.alibabaRegion = collectAlibaba(reader)
 	}
 
 	// Validate at least one provider
-	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled && cfg.ollamaKey == "" && !cfg.museEnabled && cfg.museKey == "" && !cfg.commandCodeEnabled && cfg.commandCodeKey == "" && cfg.zenmuxKey == "" && !cfg.openCodeGoConfigured {
+	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled && cfg.ollamaKey == "" && !cfg.museEnabled && cfg.museKey == "" && !cfg.commandCodeEnabled && cfg.commandCodeKey == "" && cfg.zenmuxKey == "" && !cfg.openCodeGoConfigured && !cfg.alibabaEnabled && cfg.alibabaCookiesFile == "" {
 		return nil, fmt.Errorf("at least one provider is required")
 	}
 
@@ -554,6 +565,121 @@ func collectZenmuxKey(reader *bufio.Reader) string {
 	}
 }
 
+// collectAlibaba enables the Alibaba Token Plan provider. Its credential is a
+// multi-line cookies.txt export, which does not fit a one-line secret prompt,
+// so the wizard asks for a path to a cookie file instead and records it as
+// ALIBABA_COOKIES_FILE. An empty path is allowed: the provider stays enabled so
+// an account can be added from the dashboard after install. The file path is
+// validated but its contents are never read into .env or echoed.
+// Returns (enabled, cookiesFile, region).
+func collectAlibaba(reader *bufio.Reader) (bool, string, string) {
+	fmt.Printf("\n  %sAlibaba Token Plan Setup%s\n", colorBold, colorReset)
+	fmt.Printf("  %sonWatch reads the console with your browser session cookies.%s\n", colorDim, colorReset)
+	fmt.Printf("  %sExport them per docs/ALIBABA_SETUP.md, then give the path to the export.%s\n", colorDim, colorReset)
+	fmt.Printf("  %sPress Enter to skip the file and add an account from the dashboard after install.%s\n", colorDim, colorReset)
+
+	var cookiesFile string
+	for {
+		fmt.Print("  Alibaba cookies.txt path [Enter = configure from dashboard]: ")
+		input := readLine(reader)
+		if input == "" {
+			break
+		}
+		expanded := expandHomePath(input)
+		info, err := os.Stat(expanded)
+		if err != nil || info.IsDir() {
+			fmt.Printf("  %s!%s Cannot read %s\n", colorYellow, colorReset, expanded)
+			continue
+		}
+		// Only the path is stored. Reject an export that clearly holds no
+		// Alibaba cookies now instead of saving a file the daemon will skip.
+		if data, readErr := os.ReadFile(expanded); readErr == nil {
+			if _, filterErr := api.FilterAlibabaCookies(string(data)); filterErr != nil {
+				fmt.Printf("  %s!%s That export has no alibabacloud.com cookies - export cookies for the Alibaba console site only\n", colorYellow, colorReset)
+				continue
+			}
+		}
+		if _, ok := alibabaEnvValue(expanded); !ok {
+			fmt.Printf("  %s!%s That path contains a quote or line break, or ends in a backslash, and cannot be stored in .env - move the export somewhere else\n", colorYellow, colorReset)
+			continue
+		}
+		cookiesFile = expanded
+		fmt.Printf("  %s ok %s  Using cookie export %s\n", colorGreen, colorReset, expanded)
+		break
+	}
+
+	if cookiesFile == "" {
+		fmt.Printf("  %sAdd the Alibaba account in Settings -> Providers after install; see docs/ALIBABA_SETUP.md%s\n", colorDim, colorReset)
+	}
+
+	region := ""
+	for {
+		region = promptWithDefault(reader, "Alibaba console region", "ap-southeast-1")
+		if alibabaSetupRegionPattern.MatchString(region) {
+			break
+		}
+		fmt.Printf("  %sRegion must be a lowercase slug such as ap-southeast-1%s\n", colorRed, colorReset)
+	}
+
+	return true, cookiesFile, region
+}
+
+// alibabaSetupRegionPattern mirrors the validation in internal/config and
+// internal/web so the wizard never writes a region those reject.
+var alibabaSetupRegionPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,31}$`)
+
+// expandHomePath expands a leading ~ to the user's home directory (the shell
+// does this for a terminal, but not for a value typed into the wizard).
+func expandHomePath(path string) string {
+	path = strings.TrimSpace(path)
+	if !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	return filepath.Join(home, path[2:])
+}
+
+// alibabaEnvValue renders a cookie file path as a godotenv value. The file is
+// read line by line through godotenv, where an unquoted value is cut at " #"
+// and has "$" expanded; a stray quote can make the whole file fail to load.
+// Single-quoted values are taken literally by godotenv, so the path is wrapped
+// in single quotes when that round-trips. ok is false for a path that cannot be
+// represented (it contains the quote character or a line break, or ends in a
+// backslash, which godotenv treats as escaping the closing quote and then
+// fails the whole file with "unterminated quoted value"). Backslashes elsewhere
+// are literal inside single quotes, so Windows paths still round-trip.
+func alibabaEnvValue(path string) (value string, ok bool) {
+	if strings.ContainsAny(path, "'\n\r") || strings.HasSuffix(path, `\`) {
+		return "", false
+	}
+	return "'" + path + "'", true
+}
+
+// alibabaEnvValueOrRaw is alibabaEnvValue for values that may predate this
+// quoting, where an unrepresentable path is still better written than dropped.
+// New input is rejected before it reaches here, so this only guards a re-run.
+func alibabaEnvValueOrRaw(path string) string {
+	if value, ok := alibabaEnvValue(path); ok {
+		return value
+	}
+	return path
+}
+
+// decodeEnvValue unquotes a single- or double-quoted .env value so the
+// detection pass compares the path the user typed and the path godotenv reads.
+func decodeEnvValue(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) >= 2 {
+		if (raw[0] == '\'' && raw[len(raw)-1] == '\'') || (raw[0] == '"' && raw[len(raw)-1] == '"') {
+			return raw[1 : len(raw)-1]
+		}
+	}
+	return raw
+}
+
 // openCodeGoConfig is the result of the OpenCode Go prompt: either a Usage API
 // key, or a workspace ID plus session cookie.
 type openCodeGoConfig struct {
@@ -815,6 +941,18 @@ func writeEnvFile(path string, cfg *setupConfig) error {
 		}
 	}
 
+	if cfg.alibabaEnabled || cfg.alibabaCookiesFile != "" {
+		b.WriteString("# Alibaba Token Plan - see docs/ALIBABA_SETUP.md\n")
+		if cfg.alibabaCookiesFile != "" {
+			b.WriteString("# Path to a cookies.txt export (cookies stay in the file, never in .env)\n")
+			b.WriteString(fmt.Sprintf("ALIBABA_COOKIES_FILE=%s\n", alibabaEnvValueOrRaw(cfg.alibabaCookiesFile)))
+		} else {
+			b.WriteString("# No cookies file yet: add an account in Settings -> Providers after install\n")
+			b.WriteString("ALIBABA_ENABLED=true\n")
+		}
+		b.WriteString(fmt.Sprintf("ALIBABA_REGION=%s\n\n", cfg.alibabaRegion))
+	}
+
 	b.WriteString("# Dashboard credentials\n")
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_USER=%s\n", cfg.adminUser))
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_PASS=%s\n\n", cfg.adminPass))
@@ -874,6 +1012,9 @@ func printSummary(cfg *setupConfig) {
 	if cfg.openCodeGoConfigured || cfg.openCodeGoKey != "" || cfg.openCodeGoWorkspaceID != "" {
 		providers = append(providers, "OpenCode Go")
 	}
+	if cfg.alibabaEnabled || cfg.alibabaCookiesFile != "" {
+		providers = append(providers, "Alibaba Token Plan")
+	}
 	providerLabel := strings.Join(providers, ", ")
 
 	maskedPass := strings.Repeat("*", len(cfg.adminPass))
@@ -916,6 +1057,8 @@ type existingEnv struct {
 	commandCodeKey        string
 	commandCodeEnabled    bool
 	zenmuxKey             string
+	alibabaConfigured     bool
+	alibabaCookiesFile    string
 	openCodeGoConfigured  bool
 	openCodeGoWorkspaceID string
 	openCodeGoAuthCookie  string
@@ -982,6 +1125,19 @@ func loadExistingEnv(path string) *existingEnv {
 			if val != "" {
 				env.openCodeGoAuthCookie = val
 			}
+		case "ALIBABA_COOKIES_FILE", "ALIBABA_COOKIES":
+			// The value may be single- or double-quoted so a path with spaces,
+			// "#" or "$" survives godotenv; compare the unquoted text.
+			if value := decodeEnvValue(val); value != "" {
+				env.alibabaConfigured = true
+				if key == "ALIBABA_COOKIES_FILE" {
+					env.alibabaCookiesFile = value
+				}
+			}
+		case "ALIBABA_ENABLED":
+			if val == "true" {
+				env.alibabaConfigured = true
+			}
 		}
 	}
 	// Session mode needs both the workspace ID and the cookie.
@@ -1008,7 +1164,7 @@ func allProvidersConfigured(env *existingEnv) bool {
 }
 
 func anyProviderConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.openCodeEnabled || env.antigravityEnabled || env.geminiEnabled || env.grokEnabled || env.ollamaKey != "" || env.commandCodeKey != "" || env.commandCodeEnabled || env.zenmuxKey != "" || env.openCodeGoConfigured
+	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.openCodeEnabled || env.antigravityEnabled || env.geminiEnabled || env.grokEnabled || env.ollamaKey != "" || env.commandCodeKey != "" || env.commandCodeEnabled || env.zenmuxKey != "" || env.openCodeGoConfigured || env.alibabaConfigured
 }
 
 func addMissingProviders(reader *bufio.Reader, envFile string, existing *existingEnv) error {
@@ -1050,6 +1206,9 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 	}
 	if existing.openCodeGoConfigured {
 		configured = append(configured, "OpenCode Go")
+	}
+	if existing.alibabaConfigured {
+		configured = append(configured, "Alibaba Token Plan")
 	}
 	fmt.Printf("  %sinfo%s  Existing .env found -- configured: %s\n\n", colorBlue, colorReset, strings.Join(configured, ", "))
 
@@ -1193,6 +1352,20 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 			key := collectZenmuxKey(reader)
 			fmt.Fprintf(f, "\n# Zenmux Management API Key (https://zenmux.ai) - see docs/ZENMUX_SETUP.md\nZENMUX_MANAGEMENT_API_KEY=%s\n", key)
 			fmt.Printf("  %s ok %s  Added Zenmux provider to .env\n", colorGreen, colorReset)
+		}
+	}
+
+	if !existing.alibabaConfigured {
+		if promptYesNo(reader, "Add Alibaba Token Plan provider?", false) {
+			_, cookiesFile, region := collectAlibaba(reader)
+			fmt.Fprintf(f, "\n# Alibaba Token Plan - see docs/ALIBABA_SETUP.md\n")
+			if cookiesFile != "" {
+				fmt.Fprintf(f, "ALIBABA_COOKIES_FILE=%s\n", alibabaEnvValueOrRaw(cookiesFile))
+			} else {
+				fmt.Fprintf(f, "ALIBABA_ENABLED=true\n")
+			}
+			fmt.Fprintf(f, "ALIBABA_REGION=%s\n", region)
+			fmt.Printf("  %s ok %s  Added Alibaba Token Plan provider to .env\n", colorGreen, colorReset)
 		}
 	}
 

@@ -213,17 +213,16 @@ func TestAlibabaClientMissingCookies(t *testing.T) {
 }
 
 func TestAlibabaClientNetscapeCookiesAreConverted(t *testing.T) {
-	var got string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Get("Cookie")
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer srv.Close()
-	c := NewAlibabaClient(".a.com\tTRUE\t/\tTRUE\t0\tk1\tv1\n.a.com\tTRUE\t/\tTRUE\t0\tk2\tv2\n", nil,
-		WithAlibabaPageURL(srv.URL))
-	_, _ = c.FetchSnapshot(context.Background())
-	if got != "k1=v1; k2=v2" {
+	// A Netscape export with unrelated domains feeds the jar, and the jar only
+	// yields cookies for matching hosts. The production send path has no
+	// localhost special case, so an httptest host gets nothing; scoping is
+	// asserted on the Alibaba hosts the client actually talks to.
+	jar := parseAlibabaCookieJar(".a.com\tTRUE\t/\tTRUE\t0\tk1\tv1\n.a.com\tTRUE\t/\tTRUE\t0\tk2\tv2\n")
+	if got := jar.headerFor("www.a.com"); got != "k1=v1; k2=v2" {
 		t.Errorf("Cookie header = %q", got)
+	}
+	if got := jar.headerFor("127.0.0.1"); got != "" {
+		t.Errorf("Cookie header for a non-matching host = %q, want empty", got)
 	}
 }
 

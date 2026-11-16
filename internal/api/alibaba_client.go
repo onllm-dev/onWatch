@@ -66,6 +66,10 @@ type AlibabaClient struct {
 	zeldaGateway string
 	popGateway   string
 	now          func() time.Time
+	// redirectAllowed is a test-only seam: production always uses
+	// alibabaRedirectHostAllowed. Tests point the client at an httptest server
+	// and would otherwise have their redirects refused.
+	redirectAllowed func(*http.Request) bool
 }
 
 // AlibabaOption configures an AlibabaClient.
@@ -128,6 +132,59 @@ func withAlibabaNow(now func() time.Time) AlibabaOption {
 	}
 }
 
+// withAlibabaRedirectPolicy overrides the redirect policy. Test-only: tests
+// point the client at an httptest server on 127.0.0.1, whose redirects the
+// production policy correctly refuses.
+func withAlibabaRedirectPolicy(allow func(*http.Request) bool) AlibabaOption {
+	return func(c *AlibabaClient) {
+		c.redirectAllowed = allow
+	}
+}
+
+// alibabaRedirectHostAllowed reports whether a redirect may be followed to
+// host. The client only ever talks to modelstudio.console.alibabacloud.com and
+// bailian-singapore-cs.alibabacloud.com, so the whole alibabacloud.com domain
+// (and its subdomains) is allowed and nothing else. Matching is exact or a
+// dot-prefixed suffix, so "evilalibabacloud.com" does not pass.
+func alibabaRedirectHostAllowed(host string) bool {
+	const domain = "alibabacloud.com"
+	host = strings.ToLower(strings.TrimSpace(host))
+	return host == domain || strings.HasSuffix(host, "."+domain)
+}
+
+// checkRedirect refuses redirects the client must not follow. On a 307/308 Go
+// re-sends the request body, which carries the sec_token, so following a
+// redirect to an unexpected host would hand the token over.
+//
+// The Taobao/Tmall WAF redirect keeps its invalid-response classification. Any
+// other refused target is Alibaba sending an expired session to a sign-in page,
+// so it is reported as unauthorized (re-export the cookies) - the same outcome
+// that redirect used to produce when the HTML login page was parsed. The
+// message names only the host: the redirect URL can carry a token or ticket in
+// its query string.
+func (c *AlibabaClient) checkRedirect(req *http.Request, via []*http.Request) error {
+	host := strings.ToLower(req.URL.Hostname())
+	// The Zelda gateway answers a bad Cookie jar with a 302 to
+	// err.taobao.com. Following that produces an HTML body that looks like an
+	// expired session; refuse the redirect instead.
+	if strings.Contains(host, "taobao.com") || strings.Contains(host, "tmall.com") {
+		return fmt.Errorf("%w: WAF redirect to %s", ErrAlibabaInvalidResponse, host)
+	}
+	if len(via) >= 5 {
+		return fmt.Errorf("%w: too many redirects", ErrAlibabaNetwork)
+	}
+	if c.redirectAllowed != nil {
+		if !c.redirectAllowed(req) {
+			return fmt.Errorf("%w: redirected to a login page on %s - re-export cookies", ErrAlibabaUnauthorized, host)
+		}
+		return nil
+	}
+	if req.URL.Scheme != "https" || !alibabaRedirectHostAllowed(host) {
+		return fmt.Errorf("%w: redirected to a login page on %s - re-export cookies", ErrAlibabaUnauthorized, host)
+	}
+	return nil
+}
+
 // NewAlibabaClient creates a client for one Model Studio session. cookies is
 // a Netscape cookies.txt export or a Cookie header value.
 func NewAlibabaClient(cookies string, logger *slog.Logger, opts ...AlibabaOption) *AlibabaClient {
@@ -146,19 +203,6 @@ func NewAlibabaClient(cookies string, logger *slog.Logger, opts ...AlibabaOption
 				TLSHandshakeTimeout:   10 * time.Second,
 				ForceAttemptHTTP2:     true,
 			},
-			// The Zelda gateway answers a bad Cookie jar with a 302 to
-			// err.taobao.com. Following that produces an HTML body that looks
-			// like an expired session; refuse the redirect instead.
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				host := strings.ToLower(req.URL.Hostname())
-				if strings.Contains(host, "taobao.com") || strings.Contains(host, "tmall.com") {
-					return fmt.Errorf("%w: WAF redirect to %s", ErrAlibabaInvalidResponse, host)
-				}
-				if len(via) >= 5 {
-					return fmt.Errorf("%w: too many redirects", ErrAlibabaNetwork)
-				}
-				return nil
-			},
 		},
 		logger:       logger,
 		jar:          parseAlibabaCookieJar(cookies),
@@ -167,6 +211,9 @@ func NewAlibabaClient(cookies string, logger *slog.Logger, opts ...AlibabaOption
 		popGateway:   alibabaPOPGateway,
 		now:          time.Now,
 	}
+	// Redirects are only followed to HTTPS Alibaba hosts; the request body
+	// carries the sec_token and Go re-sends it on a 307/308.
+	c.httpClient.CheckRedirect = c.checkRedirect
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -393,6 +440,12 @@ func (c *AlibabaClient) do(ctx context.Context, req *http.Request) ([]byte, erro
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		// A refused redirect comes back as *url.Error. The session-expired
+		// refusal must keep its sentinel so the agent classifies it as an
+		// authentication failure, not as a network error.
+		if refusal := alibabaRedirectRefusal(err); refusal != nil {
+			return nil, refusal
+		}
 		return nil, fmt.Errorf("%w: %v", ErrAlibabaNetwork, redactAlibabaURLError(err))
 	}
 	defer resp.Body.Close()
@@ -462,6 +515,22 @@ func alibabaSnippet(body []byte) string {
 func redactAlibabaURLError(err error) error {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
+		return urlErr.Err
+	}
+	return err
+}
+
+// alibabaRedirectRefusal returns the session-expired refusal produced by
+// checkRedirect, unwrapped from the *url.Error http.Client wraps it in, or nil
+// when err is not that refusal. The Taobao/Tmall WAF refusal deliberately keeps
+// its existing path (an invalid response wrapped as a network error), and a
+// genuine transport failure also stays a network error.
+func alibabaRedirectRefusal(err error) error {
+	if !errors.Is(err, ErrAlibabaUnauthorized) {
+		return nil
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
 		return urlErr.Err
 	}
 	return err
