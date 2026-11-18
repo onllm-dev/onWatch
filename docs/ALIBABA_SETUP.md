@@ -27,8 +27,10 @@ Log in at https://modelstudio.console.alibabacloud.com, open the Token Plan page
 One cookie is enough: `login_aliyunid_ticket` (domain `.alibabacloud.com`, often HttpOnly). You do not need a full Cookie header export.
 
 ```env
-ALIBABA_COOKIES=login_aliyunid_ticket=<value_from_browser>
+ALIBABA_COOKIES='login_aliyunid_ticket=<value_from_browser>'
 ```
+
+Use single quotes. Cookie values often contain `$` (sometimes `$$`), and without quotes Docker Compose (and many shells) treat `$` as variable expansion and can corrupt the ticket. Double quotes do not help - only `'...'` keeps `$` literal. Paste the value as copied from the browser; do not strip or rewrite `$` characters yourself.
 
 In DevTools, open **Application** (or **Storage**) -> **Cookies** -> the console host, find `login_aliyunid_ticket`, and copy its value. A full Cookie header or Netscape export still works if you prefer.
 
@@ -56,9 +58,10 @@ Add one of these to your environment file (`~/.onwatch/.env` for local installs)
 
 ```env
 # Option A: inline - one cookie is enough (as of 2026-11-18)
-ALIBABA_COOKIES=login_aliyunid_ticket=<value_from_browser>
+# Prefer single quotes so `$` / `$$` in the ticket stay literal
+ALIBABA_COOKIES='login_aliyunid_ticket=<value_from_browser>'
 # Or a full Cookie header / Netscape text if you prefer
-# ALIBABA_COOKIES=login_aliyunid_ticket=...; ...
+# ALIBABA_COOKIES='login_aliyunid_ticket=...; ...'
 
 # Option B: a file, read at startup
 ALIBABA_COOKIES_FILE=/home/you/.onwatch/alibaba-cookies.txt
