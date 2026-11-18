@@ -22,31 +22,43 @@ Polling spends no quota. Cookies and the `SEC_TOKEN` are never logged, and the d
 
 Log in at https://modelstudio.console.alibabacloud.com, open the Token Plan page, then capture the session cookies using either method.
 
+**Minimum cookie (as of 2026-11-18)**
+
+One cookie is enough: `login_aliyunid_ticket` (domain `.alibabacloud.com`, often HttpOnly). You do not need a full Cookie header export.
+
+```env
+ALIBABA_COOKIES=login_aliyunid_ticket=<value_from_browser>
+```
+
+In DevTools, open **Application** (or **Storage**) -> **Cookies** -> the console host, find `login_aliyunid_ticket`, and copy its value. A full Cookie header or Netscape export still works if you prefer.
+
 **Cookie header from DevTools (preferred, no extension)**
 
 1. Open the browser developer tools and switch to the **Network** tab
 2. Reload the Token Plan page and click the request for the page itself
-3. Copy the `Cookie` request header value (`name=value; name2=value2; ...`)
+3. Copy the `Cookie` request header value (`name=value; name2=value2; ...`), or keep only `login_aliyunid_ticket=...`
 
 This is the quickest option and needs no third-party software. A leading `Cookie:` prefix and line breaks are stripped.
 
 **Netscape `cookies.txt`**
 
-If you prefer a file, use an open-source cookie exporter you trust that runs locally and does not upload your cookies anywhere. Export cookies only for the Alibaba console site, not for all sites. Save the file, for example as `~/.onwatch/alibaba-cookies.txt`, then remove or disable the extension afterwards. `#HttpOnly_` lines are supported, so HttpOnly session cookies are included.
+If you prefer a full file export, I recommend [Get cookies.txt LOCALLY](https://github.com/kairi003/Get-cookies.txt-LOCALLY) - it runs in the browser and does not upload your cookies. Any similar local exporter is fine. Export cookies only for the Alibaba console site, not for all sites. Save the file, for example as `~/.onwatch/alibaba-cookies.txt`, then remove or disable the extension afterwards. `#HttpOnly_` lines are supported, so HttpOnly session cookies are included.
 
 onWatch keeps only the `alibabacloud.com` cookies from a Netscape export, so cookies for other sites are dropped before anything is stored.
 
 Both formats are accepted everywhere onWatch takes cookies, including the setup wizard and the install scripts. When you give a file path, a raw header file is accepted as long as it is non-empty and holds at least one `name=value` pair; a Netscape export is accepted only when it contains `alibabacloud.com` cookies. The path must not end in a backslash, because a trailing backslash breaks the quoted `.env` value.
 
-Start with the DevTools Cookie header: it needs no extension. If Alibaba answers it with a WAF or sign-in redirect, fall back to the Netscape export. An export records the domain of each cookie, so onWatch sends only the cookies that match each request host; a pasted Cookie header is replayed as-is, and the usage gateway lives on another host (`bailian-singapore-cs.alibabacloud.com`).
+Start with `login_aliyunid_ticket` alone (as of 2026-11-18). If that fails, paste a full DevTools Cookie header, then fall back to a Netscape export. An export records the domain of each cookie, so onWatch sends only the cookies that match each request host; a pasted Cookie header is replayed as-is, and the usage gateway lives on another host (`bailian-singapore-cs.alibabacloud.com`).
 
 ## 2. Configure onWatch
 
 Add one of these to your environment file (`~/.onwatch/.env` for local installs):
 
 ```env
-# Option A: inline (Cookie header or Netscape text)
-ALIBABA_COOKIES=login_aliyunid_ticket=...; ...
+# Option A: inline - one cookie is enough (as of 2026-11-18)
+ALIBABA_COOKIES=login_aliyunid_ticket=<value_from_browser>
+# Or a full Cookie header / Netscape text if you prefer
+# ALIBABA_COOKIES=login_aliyunid_ticket=...; ...
 
 # Option B: a file, read at startup
 ALIBABA_COOKIES_FILE=/home/you/.onwatch/alibaba-cookies.txt
@@ -118,6 +130,7 @@ The console session is a normal browser login, so it expires like one (the lifet
 Tips:
 
 - Export cookies right after a fresh login, from the page that loads the Token Plan
+- Re-copy only `login_aliyunid_ticket` when the session expires (as of 2026-11-18 that single cookie is enough)
 - Do not log out of the console in that browser afterwards - logging out ends the session
 
 Note that `ALIBABA_COOKIES` / `ALIBABA_COOKIES_FILE` only fill an account that has no cookies. To replace expired cookies on the `default` account, update them from the dashboard.
