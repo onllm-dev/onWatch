@@ -233,6 +233,26 @@ Invoke-TestCase "gh not installed: no error" {
     Assert-True (-not (Test-Path -LiteralPath $result.Marker)) "marker written without gh"
 }
 
+# ─── Token shape checks (issue #161) ───────────────────────────────────
+
+Invoke-TestCase "Anthropic Console API key is refused" {
+    Assert-True (-not (Test-AnthropicToken "sk-ant-api03-console")) "sk-ant-api key accepted"
+    Assert-True (Test-AnthropicToken "sk-ant-oat01-oauth") "OAuth token refused"
+}
+
+Invoke-TestCase "OpenAI API key is refused for Codex" {
+    Assert-True (-not (Test-CodexToken "sk-proj-openai")) "sk- key accepted"
+    Assert-True (Test-CodexToken "eyJhbGciOi.payload.sig") "OAuth token refused"
+}
+
+Invoke-TestCase "Tokens with a Bearer prefix or spaces are refused" {
+    foreach ($bad in @("Bearer sk-ant-oat01-x", "bearer eyJabc", "sk-ant-oat01 x", "eyJ`tabc")) {
+        Assert-True (-not (Test-AnthropicToken $bad)) "Anthropic accepted '$bad'"
+        Assert-True (-not (Test-CodexToken $bad)) "Codex accepted '$bad'"
+    }
+    Assert-True (Test-TokenWhitespace "sk-ant-oat01-x") "plain token refused"
+}
+
 # ─── Summary ───────────────────────────────────────────────────────────
 
 Write-Host ""

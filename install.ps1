@@ -90,6 +90,8 @@ function Read-SecretPrompt {
         $value = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
             [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureValue)
         )
+        # Pasted secrets often carry a stray space or newline at either end.
+        if ($null -ne $value) { $value = $value.Trim() }
 
         if ([string]::IsNullOrWhiteSpace($value)) {
             Write-Host "  ${RED}Cannot be empty${NC}"
@@ -154,6 +156,45 @@ function Test-OllamaKey {
 function Test-ZenmuxKey {
     param([string]$val)
     return Test-OllamaKey $val
+}
+
+# Test-TokenWhitespace refuses a token pasted with "Bearer " or with spaces
+# inside it, which would never authenticate.
+function Test-TokenWhitespace {
+    param([string]$val)
+    if ($val.ToLowerInvariant().StartsWith("bearer ")) {
+        Write-Host "  ${RED}Paste the token alone, without the `"Bearer `" prefix.${NC}"
+        return $false
+    }
+    if ($val -match '\s') {
+        Write-Host "  ${RED}The token contains spaces. Paste only the token itself.${NC}"
+        return $false
+    }
+    return $true
+}
+
+# The Anthropic usage endpoint onWatch reads only accepts the Claude Code OAuth
+# token. A Console API key (sk-ant-api...) can never work there (issue #161).
+function Test-AnthropicToken {
+    param([string]$val)
+    if (-not (Test-TokenWhitespace $val)) { return $false }
+    if ($val.StartsWith("sk-ant-api")) {
+        Write-Host "  ${RED}This is an Anthropic Console API key (sk-ant-api...). onWatch needs the Claude Code OAuth access token (sk-ant-oat...): log in with 'claude', or choose 'Show help' to find it.${NC}"
+        return $false
+    }
+    return $true
+}
+
+# The ChatGPT usage endpoint only accepts the Codex OAuth access token. An
+# OpenAI platform API key (sk-...) can never work there (issue #161).
+function Test-CodexToken {
+    param([string]$val)
+    if (-not (Test-TokenWhitespace $val)) { return $false }
+    if ($val.StartsWith("sk-")) {
+        Write-Host "  ${RED}This is an OpenAI API key (sk-...). onWatch needs the Codex OAuth access token from auth.json: log in with 'codex', or choose 'Show help' to find it.${NC}"
+        return $false
+    }
+    return $true
 }
 
 function Test-HttpsUrl {
@@ -292,7 +333,7 @@ function Get-AnthropicConfig {
         Write-Host "  ${DIM}Paste the token below after running the command above.${NC}"
     }
 
-    return Read-SecretPrompt -Prompt "Anthropic token" -Validation { param($val) return $true }
+    return Read-SecretPrompt -Prompt "Anthropic token" -Validation { param($val) Test-AnthropicToken $val }
 }
 
 function Get-CodexConfig {
@@ -330,7 +371,7 @@ function Get-CodexConfig {
         Write-Host "  ${DIM}Paste the access token below after running the command above.${NC}"
     }
 
-    return Read-SecretPrompt -Prompt "Codex token" -Validation { param($val) return $true }
+    return Read-SecretPrompt -Prompt "Codex token" -Validation { param($val) Test-CodexToken $val }
 }
 
 # ConvertTo-EnvSingleQuoted wraps a value in single quotes, which godotenv reads

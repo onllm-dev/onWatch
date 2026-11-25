@@ -114,6 +114,14 @@ func (c *ZaiClient) FetchQuotas(ctx context.Context) (*ZaiQuotaResponse, error) 
 		return nil, fmt.Errorf("%w: reading body: %v", ErrZaiInvalidResponse, err)
 	}
 
+	// Z.ai usually reports errors in the body of an HTTP 200, but a gateway
+	// can answer 401 directly, with or without a JSON body. A bare 403 is
+	// not taken as a bad key: a firewall or region block answers 403 too.
+	// A 403 that carries a Z.ai auth code is caught below.
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, ErrZaiUnauthorized
+	}
+
 	if len(body) == 0 {
 		return nil, fmt.Errorf("%w: empty response body", ErrZaiInvalidResponse)
 	}
@@ -125,7 +133,7 @@ func (c *ZaiClient) FetchQuotas(ctx context.Context) (*ZaiQuotaResponse, error) 
 	}
 
 	// Handle Z.ai's unique error format: HTTP 200 with error code in body
-	if wrapper.Code == 401 {
+	if wrapper.Code == 401 || isZaiAuthCode(wrapper.Code) {
 		return nil, ErrZaiUnauthorized
 	}
 
@@ -175,3 +183,8 @@ func redactZaiAPIKey(key string) string {
 	// Show first 4 chars and last 3 chars
 	return key[:4] + "***...***" + key[len(key)-3:]
 }
+
+// isZaiAuthCode reports whether an in-body error code is one of Z.ai's
+// authentication failures (1000-1004: authentication failed, missing,
+// invalid or expired token).
+func isZaiAuthCode(code int) bool { return code >= 1000 && code <= 1004 }
