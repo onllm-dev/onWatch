@@ -112,6 +112,10 @@ type AnthropicAgent struct {
 	// statusline file is stale or missing. Default false preserves API polling
 	// for "auto" and "api" modes.
 	apiPollingDisabled bool
+
+	// starter is the auto quota-starter (Beta, issue #162). Off unless
+	// SetAutoStartCheck wires an enablement callback.
+	starter anthropicStarterState
 }
 
 // SetPollingCheck sets a function that is called before each poll.
@@ -297,6 +301,12 @@ func (a *AnthropicAgent) Run(ctx context.Context) error {
 			}
 			a.poll(ctx)
 		case <-ctx.Done():
+			// The cancelled context kills a starter ping's CLI; wait a
+			// bounded time for that, so stopping onWatch does not leave a
+			// claude turn running.
+			if !a.starter.waitForPings(anthropicStarterShutdownWait) {
+				a.logger.Warn("Anthropic auto quota-starter ping still running at shutdown")
+			}
 			return nil
 		}
 	}
@@ -380,8 +390,14 @@ func (a *AnthropicAgent) autoRefreshAllowed() bool {
 }
 
 // claudeCodeRunning reports whether the Claude Code CLI is executing, using the
-// agent's override when set and the package-level detector otherwise.
+// agent's override when set and the package-level detector otherwise. The
+// auto quota-starter's own `claude -p` turn always counts, even with
+// detection switched off: it can refresh the shared OAuth token itself, so
+// onWatch must not spend the same refresh token meanwhile.
 func (a *AnthropicAgent) claudeCodeRunning() bool {
+	if a.starter.pingInFlight() {
+		return true
+	}
 	if a.isClaudeCodeRunning != nil {
 		return a.isClaudeCodeRunning()
 	}
@@ -684,6 +700,15 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 					a.logger.Error("Anthropic tracker processing failed", "error", err)
 				}
 			}
+			// Hybrid: periodically do a full API poll for supplementary quotas
+			// (seven_day_sonnet, extra_usage, etc.) that statusline doesn't
+			// provide. On such a cycle the API snapshot decides about the
+			// auto-starter: the statusline file only changes on interactive
+			// replies, so it can miss a session started elsewhere.
+			apiDue := a.beginSupplementalAPIPoll()
+			if !apiDue {
+				a.maybeAutoStartSessionFromStatusline(ctx, snapshot)
+			}
 			a.pollCycleCount++
 			a.logger.Info("Anthropic poll complete",
 				"source", "statusline",
@@ -692,9 +717,7 @@ func (a *AnthropicAgent) poll(ctx context.Context) {
 			if a.rateLimitFailCount > 0 {
 				a.rateLimitFailCount--
 			}
-			// Hybrid: periodically do a full API poll for supplementary quotas
-			// (seven_day_sonnet, extra_usage, etc.) that statusline doesn't provide.
-			if a.beginSupplementalAPIPoll() {
+			if apiDue {
 				a.logger.Info("Hybrid API poll triggered",
 					"cycle", a.pollCycleCount,
 					"interval", a.apiPollInterval())
@@ -1032,6 +1055,8 @@ processResponse:
 			a.logger.Error("Anthropic tracker processing failed", "error", err)
 		}
 	}
+
+	a.maybeAutoStartSession(ctx, snapshot)
 
 	// Check notification thresholds
 	if a.notifier != nil {

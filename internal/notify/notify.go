@@ -943,13 +943,21 @@ func (e *NotificationEngine) ConfigureWebhook() error {
 	return nil
 }
 
-// StarterEvent describes a Codex auto quota-starter outcome.
+// StarterEvent describes an auto quota-starter outcome (Codex, Anthropic).
 type StarterEvent struct {
 	Provider  string
 	QuotaKey  string
 	AccountID string
 	Success   bool
-	Detail    string // failure reason, or extra context on success
+	// Paused marks a failure that paused the starter rather than a ping
+	// that failed. It is still sent as starter_failure.
+	Paused bool
+	// Summary replaces the default first sentence of the message, and
+	// Outcome the default end of the title ("window started", "ping
+	// failed", "starter paused").
+	Summary string
+	Outcome string
+	Detail  string // failure reason, or extra context on success
 }
 
 // SendStarterEvent delivers an auto quota-starter outcome to the webhook channel.
@@ -977,6 +985,15 @@ func (e *NotificationEngine) SendStarterEvent(ev StarterEvent) {
 	if ev.Success {
 		title = fmt.Sprintf("[QUOTA STARTER] %s %s window started", titleCase(provider), ev.QuotaKey)
 		message = "The auto quota-starter ping started a new limit window."
+	} else if ev.Paused {
+		title = fmt.Sprintf("[QUOTA STARTER] %s %s starter paused", titleCase(provider), ev.QuotaKey)
+		message = "The auto quota-starter is paused."
+	}
+	if ev.Summary != "" {
+		message = ev.Summary
+	}
+	if ev.Outcome != "" {
+		title = fmt.Sprintf("[QUOTA STARTER] %s %s %s", titleCase(provider), ev.QuotaKey, ev.Outcome)
 	}
 	if ev.Detail != "" {
 		message = message + " " + ev.Detail

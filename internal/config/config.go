@@ -81,16 +81,17 @@ type Config struct {
 	OllamaMonthlyLimit float64 // OLLAMA_MONTHLY_LIMIT: included usage cap in USD (overrides the plan default; 0 = derive from plan)
 	OllamaResetDay     int     // OLLAMA_RESET_DAY: day of month the included usage resets (1-31; 0 = account anniversary)
 	// Muse coding-plan provider configuration (auto-detected from `muse login` or META_API_KEY)
-	MuseAPIKey         string // META_API_KEY or auto-detected Muse login key
-	MuseAutoToken      bool   // true if key was auto-detected from local Muse credentials
-	MuseModel          string // META_MUSE_MODEL or Muse settings model (default muse-spark-1.3)
-	MuseEnabled        bool   // true if MUSE_ENABLED=true or key present (unless explicitly false)
-	MuseBaseURL        string // MUSE_BASE_URL override for proxy setups (default https://api.meta.ai)
-	MuseDisabled       bool   // true if MUSE_ENABLED=false explicitly opted out
-	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
-	CodexAutoStart5h   bool   // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
-	CodexAutoStart7d   bool   // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
-	DisplayMode        string // ONWATCH_DISPLAY_MODE: "usage" | "available", default "usage" (global, applies to all providers)
+	MuseAPIKey           string // META_API_KEY or auto-detected Muse login key
+	MuseAutoToken        bool   // true if key was auto-detected from local Muse credentials
+	MuseModel            string // META_MUSE_MODEL or Muse settings model (default muse-spark-1.3)
+	MuseEnabled          bool   // true if MUSE_ENABLED=true or key present (unless explicitly false)
+	MuseBaseURL          string // MUSE_BASE_URL override for proxy setups (default https://api.meta.ai)
+	MuseDisabled         bool   // true if MUSE_ENABLED=false explicitly opted out
+	CodexShowAvailable   string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
+	CodexAutoStart5h     bool   // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
+	CodexAutoStart7d     bool   // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
+	AnthropicAutoStart5h bool   // ANTHROPIC_AUTO_START_5H: start Claude's five-hour session when none is running (Beta, default off)
+	DisplayMode          string // ONWATCH_DISPLAY_MODE: "usage" | "available", default "usage" (global, applies to all providers)
 
 	// Antigravity provider configuration (auto-detected from local process)
 	AntigravityBaseURL   string // ANTIGRAVITY_BASE_URL (for Docker)
@@ -504,6 +505,9 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// provider_settings overrides these env-provided defaults at runtime.
 	cfg.CodexAutoStart5h = os.Getenv("CODEX_AUTO_START_5H") == "true"
 	cfg.CodexAutoStart7d = os.Getenv("CODEX_AUTO_START_7D") == "true"
+	// Anthropic auto quota-starter (Beta, issue #162): same pattern, five-hour
+	// window only.
+	cfg.AnthropicAutoStart5h = os.Getenv("ANTHROPIC_AUTO_START_5H") == "true"
 
 	// Global display mode (applies to all providers unless per-provider override)
 	cfg.DisplayMode = strings.ToLower(strings.TrimSpace(os.Getenv("ONWATCH_DISPLAY_MODE")))

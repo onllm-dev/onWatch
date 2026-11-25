@@ -1698,6 +1698,17 @@ func run() error {
 	}
 	if anthropicAg != nil {
 		anthropicAg.SetPollingCheck(func() bool { return isPollingEnabled("anthropic") })
+		// Auto quota-starter (Beta, issue #162): read fresh from provider_settings
+		// each poll so the dashboard toggle needs no restart; falls back to
+		// ANTHROPIC_AUTO_START_5H.
+		anthropicAg.SetAutoStartCheck(func() bool {
+			// Read the .env fallback under the config lock: Reload
+			// Providers can replace it while the daemon runs.
+			cfg.ReadLock()
+			fallback := cfg.AnthropicAutoStart5h
+			cfg.ReadUnlock()
+			return providerToggleOn(db, "anthropic", "auto_start_5h", fallback)
+		})
 	}
 	if copilotAg != nil {
 		copilotAg.SetPollingCheck(func() bool { return isPollingEnabled("copilot") })
@@ -1741,26 +1752,18 @@ func run() error {
 		codexMgr.SetAutoStartCheck(func(quotaName string) bool {
 			field := ""
 			fallback := false
+			cfg.ReadLock()
+			auto5h, auto7d := cfg.CodexAutoStart5h, cfg.CodexAutoStart7d
+			cfg.ReadUnlock()
 			switch quotaName {
 			case "five_hour":
-				field, fallback = "auto_start_5h", cfg.CodexAutoStart5h
+				field, fallback = "auto_start_5h", auto5h
 			case "seven_day":
-				field, fallback = "auto_start_7d", cfg.CodexAutoStart7d
+				field, fallback = "auto_start_7d", auto7d
 			default:
 				return false
 			}
-			v, err := db.GetSetting("provider_settings")
-			if err == nil && v != "" {
-				var ps map[string]map[string]interface{}
-				if json.Unmarshal([]byte(v), &ps) == nil {
-					if codex, ok := ps["codex"]; ok {
-						if setting, ok := codex[field].(string); ok && setting != "" {
-							return setting == "on"
-						}
-					}
-				}
-			}
-			return fallback
+			return providerToggleOn(db, "codex", field, fallback)
 		})
 	}
 	if antigravityAg != nil {
