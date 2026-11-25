@@ -72,7 +72,7 @@ func TestCursorCredentialsWritable_SQLiteOpaqueRefused(t *testing.T) {
 	setGuardStateValue(t, dbPath, cursorAccessTokenKey, "cursor-safe-storage:v1:ciphertext-access")
 	setGuardStateValue(t, dbPath, cursorRefreshTokenKey, "cursor-safe-storage:v1:ciphertext-refresh")
 
-	if err := CursorCredentialsWritable(CursorSourceSQLite); err == nil {
+	if err := CursorCredentialsWritable(CursorSourceSQLite, ""); err == nil {
 		t.Fatal("CursorCredentialsWritable accepted an opaque SQLite store")
 	}
 }
@@ -85,7 +85,7 @@ func TestCursorCredentialsWritable_SQLitePlainJWTAccepted(t *testing.T) {
 	setGuardStateValue(t, dbPath, cursorAccessTokenKey, createTestJWT("auth0|desktop_user", 1735689600))
 	setGuardStateValue(t, dbPath, cursorRefreshTokenKey, "plain-refresh")
 
-	if err := CursorCredentialsWritable(CursorSourceSQLite); err != nil {
+	if err := CursorCredentialsWritable(CursorSourceSQLite, ""); err != nil {
 		t.Fatalf("CursorCredentialsWritable refused a plain-JWT store: %v", err)
 	}
 }

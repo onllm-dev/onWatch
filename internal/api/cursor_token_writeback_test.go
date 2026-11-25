@@ -67,11 +67,15 @@ func stubCursorKeychain(t *testing.T, access, refresh string) (writes *[]string)
 	origRead := cursorReadKeychainAuth
 	origWrite := cursorWriteKeychain
 	origKeyring := cursorWriteLinuxKeyring
+	origGOOS := cursorKeychainGOOS
+	// Take the keyring path on every OS, so no test reaches the real macOS
+	// Keychain through the account lookups of the darwin write-back.
+	cursorKeychainGOOS = "linux"
 	writes = &[]string{}
 	cursorReadKeychainAuth = func(logger *slog.Logger) (string, string) {
 		return access, refresh
 	}
-	cursorWriteKeychain = func(service, value string) error {
+	cursorWriteKeychain = func(service, _, value string) error {
 		*writes = append(*writes, service+"="+value)
 		return nil
 	}
@@ -83,6 +87,7 @@ func stubCursorKeychain(t *testing.T, access, refresh string) (writes *[]string)
 		cursorReadKeychainAuth = origRead
 		cursorWriteKeychain = origWrite
 		cursorWriteLinuxKeyring = origKeyring
+		cursorKeychainGOOS = origGOOS
 	})
 	return writes
 }

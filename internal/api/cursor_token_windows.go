@@ -39,7 +39,7 @@ func detectCursorAuthPlatform(logger *slog.Logger) *cursorAuthState {
 // Windows has only Cursor Desktop's SQLite DB, and its encrypted value is
 // always the selected one, so the guard is what prevents a doomed refresh:
 // a refresh consumes a one-time refresh token.
-func cursorCredentialsWritable(source string) error {
+func cursorCredentialsWritable(source, _ string) error {
 	switch source {
 	case CursorSourceSQLite:
 	case CursorSourceKeychain:

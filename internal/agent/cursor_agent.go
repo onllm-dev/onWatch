@@ -360,7 +360,7 @@ func (a *CursorAgent) refreshToken(ctx context.Context, creds *api.CursorCredent
 		a.logger.Debug("Skipping Cursor OAuth refresh - tokens could not be saved earlier")
 		return cursorRefreshOutcome{}
 	}
-	if err := cursorCredentialsWritable(creds.Source); err != nil {
+	if err := cursorCredentialsWritable(creds.Source, creds.RefreshToken); err != nil {
 		// A refresh consumes a one-time refresh token, so never rotate one
 		// whose result could not be persisted.
 		a.logger.Warn("Skipping Cursor OAuth refresh - refreshed tokens could not be saved", "error", err)

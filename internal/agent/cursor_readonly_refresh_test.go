@@ -212,7 +212,7 @@ func TestCursorAgent_SkipsRefreshWhenResultCannotBeSaved(t *testing.T) {
 	})
 
 	prev := cursorCredentialsWritable
-	cursorCredentialsWritable = func(source string) error { return errors.New("store not writable") }
+	cursorCredentialsWritable = func(source, _ string) error { return errors.New("store not writable") }
 	t.Cleanup(func() { cursorCredentialsWritable = prev })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -268,7 +268,7 @@ func TestCursorAgent_UnsaveableRefreshKeepsTokenAndStopsRefreshing(t *testing.T)
 
 	// The pre-check passes; the save is what fails.
 	prevWritable := cursorCredentialsWritable
-	cursorCredentialsWritable = func(source string) error { return nil }
+	cursorCredentialsWritable = func(source, _ string) error { return nil }
 	t.Cleanup(func() { cursorCredentialsWritable = prevWritable })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
