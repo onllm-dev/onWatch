@@ -36,8 +36,8 @@ The test button uses the *saved* configuration, so save before testing.
 | `critical` | A quota crosses the critical threshold |
 | `reset` | A quota cycle resets |
 | `auth_error` | A provider token refresh or authentication fails |
-| `starter_success` | The Codex auto quota-starter successfully started a limit window |
-| `starter_failure` | The Codex auto quota-starter ping failed |
+| `starter_success` | The Codex auto quota-starter started a limit window, or the Anthropic starter sent its Claude Code turn |
+| `starter_failure` | A Codex or Anthropic starter ping failed, or the Anthropic starter paused because its turn did not start the tracked session |
 | `reset_credit_expiry` | A banked Codex reset expires within 24 hours |
 | `test` | You press **Send Test Webhook** |
 

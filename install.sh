@@ -84,13 +84,24 @@ prompt_choice() {
     done
     while true; do
         printf "  ${BOLD}>${NC} " >&2
-        read -u 3 -r choice
+        if ! read -u 3 -r choice && [[ -z "$choice" ]]; then
+            setup_input_ended
+        fi
         if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#options[@]} )); then
             echo "$choice"
             return
         fi
         printf "  ${RED}Please enter 1-%d${NC}\n" "${#options[@]}" >&2
     done
+}
+
+# setup_input_ended stops a prompt that needs an answer when its input has
+# ended (stdin closed or piped), instead of asking again forever. It runs in
+# the prompt's command substitution, so the non-zero exit stops the installer
+# through set -e.
+setup_input_ended() {
+    echo "" >&2
+    fail "Setup input ended before every question was answered. Run the installer in a terminal."
 }
 
 # Read a secret value (no echo), show masked version, validate with callback
@@ -100,14 +111,23 @@ prompt_secret() {
     local value=""
     while true; do
         printf "  %s: " "$prompt" >&2
-        read -u 3 -rs value
+        if ! read -u 3 -rs value && [[ -z "$value" ]]; then
+            setup_input_ended
+        fi
         echo "" >&2
+        # Drop a trailing CR from a Windows paste, then any spaces or tabs
+        # around the value (read keeps spaces that sat before the CR).
+        value="${value%$'\r'}"
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
         if [[ -z "$value" ]]; then
             printf "  ${RED}Cannot be empty${NC}\n" >&2
             continue
         fi
-        # Run validation
-        if eval "$validation \"$value\""; then
+        # Run validation. Call the function directly: building a command
+        # string for eval would run any quotes or $(...) inside the pasted
+        # secret as shell code.
+        if "$validation" "$value"; then
             local masked
             if [[ ${#value} -gt 10 ]]; then
                 masked="${value:0:6}...${value: -4}"
@@ -157,6 +177,49 @@ validate_ollama_key() {
 # Zenmux Management API Keys are opaque single-line values.
 validate_zenmux_key() {
     validate_ollama_key "$1"
+}
+
+# validate_token_whitespace refuses a token pasted with "Bearer " or with
+# spaces inside it, which would never authenticate.
+validate_token_whitespace() {
+    local val="$1"
+    local lower
+    lower=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
+    if [[ "$lower" == "bearer "* ]]; then
+        printf "  ${RED}Paste the token alone, without the \"Bearer \" prefix.${NC}\n" >&2
+        return 1
+    fi
+    if [[ "$val" == *[[:space:]]* ]]; then
+        printf "  ${RED}The token contains spaces. Paste only the token itself.${NC}\n" >&2
+        return 1
+    fi
+    return 0
+}
+
+# The Anthropic usage endpoint onWatch reads only accepts the Claude Code OAuth
+# token. A Console API key (sk-ant-api...) can never work there (issue #161).
+validate_anthropic_token() {
+    local val="$1"
+    validate_nonempty "$val" || return 1
+    validate_token_whitespace "$val" || return 1
+    if [[ "$val" == sk-ant-api* ]]; then
+        printf "  ${RED}This is an Anthropic Console API key (sk-ant-api...). onWatch needs the Claude Code OAuth access token (sk-ant-oat...): log in with 'claude', or choose 'Show help' to find it.${NC}\n" >&2
+        return 1
+    fi
+    return 0
+}
+
+# The ChatGPT usage endpoint only accepts the Codex OAuth access token. An
+# OpenAI platform API key (sk-...) can never work there (issue #161).
+validate_codex_token() {
+    local val="$1"
+    validate_nonempty "$val" || return 1
+    validate_token_whitespace "$val" || return 1
+    if [[ "$val" == sk-* ]]; then
+        printf "  ${RED}This is an OpenAI API key (sk-...). onWatch needs the Codex OAuth access token from ~/.codex/auth.json: log in with 'codex', or choose 'Show help' to find it.${NC}\n" >&2
+        return 1
+    fi
+    return 0
 }
 
 validate_nonempty() {
@@ -674,7 +737,7 @@ collect_zai_config() {
     local _zai_key _zai_base_url
 
     printf "\n  ${DIM}Get your key: https://www.z.ai/api-keys${NC}\n" >&2
-    _zai_key=$(prompt_secret "Z.ai API key" validate_nonempty)
+    _zai_key=$(prompt_secret "Z.ai API key" validate_nonempty) || exit 1
 
     printf "\n" >&2
     local use_default_url
@@ -722,7 +785,7 @@ collect_codex_config() {
     local entry_choice
     entry_choice=$(prompt_choice "How would you like to provide the token?" \
         "Enter token directly" \
-        "Show help for retrieving token")
+        "Show help for retrieving token") || exit 1
 
     if [[ "$entry_choice" == "2" ]]; then
         printf "\n  ${BOLD}How to retrieve your Codex token:${NC}\n\n" >&2
@@ -735,7 +798,7 @@ collect_codex_config() {
         printf "  ${DIM}Paste the access token below after running the appropriate command above.${NC}\n" >&2
     fi
 
-    _codex_token=$(prompt_secret "Codex token" validate_nonempty)
+    _codex_token=$(prompt_secret "Codex token" validate_codex_token) || exit 1
     printf '%s' "$_codex_token"
 }
 
@@ -768,7 +831,7 @@ collect_anthropic_config() {
     local entry_choice
     entry_choice=$(prompt_choice "How would you like to provide the token?" \
         "Enter token directly" \
-        "Show help for retrieving token")
+        "Show help for retrieving token") || exit 1
 
     if [[ "$entry_choice" == "2" ]]; then
         printf "\n  ${BOLD}How to retrieve your Anthropic token:${NC}\n\n" >&2
@@ -785,7 +848,7 @@ collect_anthropic_config() {
         printf "  ${DIM}Paste the token below after running the appropriate command above.${NC}\n" >&2
     fi
 
-    _anthropic_token=$(prompt_secret "Anthropic token" validate_nonempty)
+    _anthropic_token=$(prompt_secret "Anthropic token" validate_anthropic_token) || exit 1
     printf '%s' "$_anthropic_token"
 }
 
@@ -1043,7 +1106,7 @@ interactive_setup() {
                 if [[ "$add_syn" =~ ^[Yy] ]]; then
                     printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
                     local syn_key
-                    syn_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
+                    syn_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key) || exit 1
                     append_synthetic_to_env "$syn_key"
                     ok "Added Synthetic provider to .env"
                 fi
@@ -1054,7 +1117,7 @@ interactive_setup() {
                 add_zai=$(prompt_with_default "Add Z.ai provider? (y/N)" "N")
                 if [[ "$add_zai" =~ ^[Yy] ]]; then
                     local zai_result zai_key zai_base_url
-                    zai_result=$(collect_zai_config)
+                    zai_result=$(collect_zai_config) || exit 1
                     zai_key=$(echo "$zai_result" | head -1)
                     zai_base_url=$(echo "$zai_result" | tail -1)
                     append_zai_to_env "$zai_key" "$zai_base_url"
@@ -1079,7 +1142,7 @@ interactive_setup() {
                     add_anth=$(prompt_with_default "Add Anthropic (Claude Code) provider? (y/N)" "N")
                     if [[ "$add_anth" =~ ^[Yy] ]]; then
                         local anth_token
-                        anth_token=$(collect_anthropic_config)
+                        anth_token=$(collect_anthropic_config) || exit 1
                         append_anthropic_to_env "$anth_token"
                         ok "Added Anthropic provider to .env"
                     fi
@@ -1102,7 +1165,7 @@ interactive_setup() {
                     add_codex=$(prompt_with_default "Add Codex provider? (y/N)" "N")
                     if [[ "$add_codex" =~ ^[Yy] ]]; then
                         local codex_token
-                        codex_token=$(collect_codex_config)
+                        codex_token=$(collect_codex_config) || exit 1
                         append_codex_to_env "$codex_token"
                         ok "Added Codex provider to .env"
                     fi
@@ -1198,7 +1261,7 @@ interactive_setup() {
                 if [[ "$add_ollama" =~ ^[Yy] ]]; then
                     printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
                     local ollama_key
-                    ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
+                    ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key) || exit 1
                     append_ollama_to_env "$ollama_key"
                     ok "Added Ollama Cloud provider to .env"
                 fi
@@ -1234,7 +1297,7 @@ interactive_setup() {
                 if [[ "$add_zenmux" =~ ^[Yy] ]]; then
                     printf "  ${DIM}Create a Management API Key in the Zenmux Console${NC}\n"
                     local zenmux_key
-                    zenmux_key=$(prompt_secret "Zenmux Management API Key" validate_zenmux_key)
+                    zenmux_key=$(prompt_secret "Zenmux Management API Key" validate_zenmux_key) || exit 1
                     append_zenmux_to_env "$zenmux_key"
                     ok "Added Zenmux provider to .env"
                 fi
@@ -1284,7 +1347,7 @@ interactive_setup() {
         "Zenmux only" \
         "Alibaba Token Plan only" \
         "Multiple (choose one at a time)" \
-        "All available")
+        "All available") || exit 1
 
     local synthetic_key="" zai_key="" zai_base_url="" anthropic_token="" codex_token="" opencode_enabled="" antigravity_enabled="" gemini_enabled="" grok_enabled="" ollama_key="" muse_enabled="" muse_key="" commandcode_enabled="" commandcode_key="" zenmux_key="" alibaba_enabled="" alibaba_cookies_file="" alibaba_region=""
 
@@ -1294,25 +1357,25 @@ interactive_setup() {
         add_it=$(prompt_with_default "Add Synthetic provider? (y/N)" "N")
         if [[ "$add_it" =~ ^[Yy] ]]; then
             printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
-            synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
+            synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key) || exit 1
         fi
 
         add_it=$(prompt_with_default "Add Z.ai provider? (y/N)" "N")
         if [[ "$add_it" =~ ^[Yy] ]]; then
             local zai_result
-            zai_result=$(collect_zai_config)
+            zai_result=$(collect_zai_config) || exit 1
             zai_key=$(echo "$zai_result" | head -1)
             zai_base_url=$(echo "$zai_result" | tail -1)
         fi
 
         add_it=$(prompt_with_default "Add Anthropic (Claude Code) provider? (y/N)" "N")
         if [[ "$add_it" =~ ^[Yy] ]]; then
-            anthropic_token=$(collect_anthropic_config)
+            anthropic_token=$(collect_anthropic_config) || exit 1
         fi
 
         add_it=$(prompt_with_default "Add Codex provider? (y/N)" "N")
         if [[ "$add_it" =~ ^[Yy] ]]; then
-            codex_token=$(collect_codex_config)
+            codex_token=$(collect_codex_config) || exit 1
         fi
 
         add_it=$(prompt_with_default "Add OpenCode (opencode-codex) provider? (y/N)" "N")
@@ -1342,7 +1405,7 @@ interactive_setup() {
         add_it=$(prompt_with_default "Add Ollama Cloud provider? (y/N)" "N")
         if [[ "$add_it" =~ ^[Yy] ]]; then
             printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
-            ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
+            ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key) || exit 1
         fi
 
         add_it=$(prompt_with_default "Add Muse (Meta) provider? (y/N)" "N")
@@ -1366,7 +1429,7 @@ interactive_setup() {
         add_it=$(prompt_with_default "Add Zenmux provider? (y/N)" "N")
         if [[ "$add_it" =~ ^[Yy] ]]; then
             printf "  ${DIM}Create a Management API Key in the Zenmux Console${NC}\n"
-            zenmux_key=$(prompt_secret "Zenmux Management API Key" validate_zenmux_key)
+            zenmux_key=$(prompt_secret "Zenmux Management API Key" validate_zenmux_key) || exit 1
         fi
 
         add_it=$(prompt_with_default "Add Alibaba Token Plan provider? (y/N)" "N")
@@ -1385,13 +1448,13 @@ interactive_setup() {
             add_it=$(prompt_with_default "Add Synthetic provider? (y/N)" "N")
             if [[ "$add_it" =~ ^[Yy] ]]; then
                 printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
-                synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
+                synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key) || exit 1
             fi
             if [[ -z "$synthetic_key" ]]; then
                 add_it=$(prompt_with_default "Add Z.ai provider? (y/N)" "N")
                 if [[ "$add_it" =~ ^[Yy] ]]; then
                     local zai_result
-                    zai_result=$(collect_zai_config)
+                    zai_result=$(collect_zai_config) || exit 1
                     zai_key=$(echo "$zai_result" | head -1)
                     zai_base_url=$(echo "$zai_result" | tail -1)
                 fi
@@ -1399,13 +1462,13 @@ interactive_setup() {
             if [[ -z "$synthetic_key" && -z "$zai_key" ]]; then
                 add_it=$(prompt_with_default "Add Anthropic (Claude Code) provider? (y/N)" "N")
                 if [[ "$add_it" =~ ^[Yy] ]]; then
-                    anthropic_token=$(collect_anthropic_config)
+                    anthropic_token=$(collect_anthropic_config) || exit 1
                 fi
             fi
             if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" ]]; then
                 add_it=$(prompt_with_default "Add Codex provider? (y/N)" "N")
                 if [[ "$add_it" =~ ^[Yy] ]]; then
-                    codex_token=$(collect_codex_config)
+                    codex_token=$(collect_codex_config) || exit 1
                 fi
             fi
             if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" ]]; then
@@ -1430,7 +1493,7 @@ interactive_setup() {
                 add_it=$(prompt_with_default "Add Ollama Cloud provider? (y/N)" "N")
                 if [[ "$add_it" =~ ^[Yy] ]]; then
                     printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
-                    ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
+                    ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key) || exit 1
                 fi
             fi
             if [[ -z "$synthetic_key" && -z "$zai_key" && -z "$anthropic_token" && -z "$codex_token" && -z "$antigravity_enabled" && -z "$gemini_enabled" && -z "$grok_enabled" && -z "$ollama_key" ]]; then
@@ -1443,25 +1506,25 @@ interactive_setup() {
         # ── Synthetic API Key ──
         if [[ "$provider_choice" == "1" || "$provider_choice" == "15" ]]; then
             printf "\n  ${DIM}Get your key: https://synthetic.new/settings/api${NC}\n"
-            synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key)
+            synthetic_key=$(prompt_secret "Synthetic API key (syn_...)" validate_synthetic_key) || exit 1
         fi
 
         # ── Z.ai API Key ──
         if [[ "$provider_choice" == "2" || "$provider_choice" == "15" ]]; then
             local zai_result
-            zai_result=$(collect_zai_config)
+            zai_result=$(collect_zai_config) || exit 1
             zai_key=$(echo "$zai_result" | head -1)
             zai_base_url=$(echo "$zai_result" | tail -1)
         fi
 
         # ── Anthropic Token ──
         if [[ "$provider_choice" == "3" || "$provider_choice" == "15" ]]; then
-            anthropic_token=$(collect_anthropic_config)
+            anthropic_token=$(collect_anthropic_config) || exit 1
         fi
 
         # ── Codex Token ──
         if [[ "$provider_choice" == "4" || "$provider_choice" == "15" ]]; then
-            codex_token=$(collect_codex_config)
+            codex_token=$(collect_codex_config) || exit 1
         fi
 
         # ── OpenCode (opencode-codex) ──
@@ -1499,7 +1562,7 @@ interactive_setup() {
         # ── Ollama Cloud ──
         if [[ "$provider_choice" == "9" || "$provider_choice" == "15" ]]; then
             printf "\n  ${DIM}Get your key: https://ollama.com/settings/keys${NC}\n"
-            ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key)
+            ollama_key=$(prompt_secret "Ollama Cloud API key" validate_ollama_key) || exit 1
         fi
 
         # ── Muse (Meta): optional key, auto-detects `muse login` when empty ──
@@ -1525,7 +1588,7 @@ interactive_setup() {
         # ── Zenmux: Management API Key (no auto-detect) ──
         if [[ "$provider_choice" == "12" || "$provider_choice" == "15" ]]; then
             printf "\n  ${DIM}Create a Management API Key in the Zenmux Console${NC}\n"
-            zenmux_key=$(prompt_secret "Zenmux Management API Key" validate_zenmux_key)
+            zenmux_key=$(prompt_secret "Zenmux Management API Key" validate_zenmux_key) || exit 1
         fi
 
         # ── Alibaba Token Plan: cookies.txt path or dashboard setup ──

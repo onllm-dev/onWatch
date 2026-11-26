@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -61,7 +63,16 @@ type setupConfig struct {
 	pollInterval          int
 }
 
-func runSetup() error {
+func runSetup() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r == errSetupInputEnded {
+				err = errSetupInputEnded
+				return
+			}
+			panic(r)
+		}
+	}()
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("cannot determine home directory: %w", err)
@@ -368,9 +379,14 @@ func collectSyntheticKey(reader *bufio.Reader) string {
 	fmt.Printf("\n  %sGet your key: https://synthetic.new/settings/api%s\n", colorDim, colorReset)
 	for {
 		fmt.Print("  Synthetic API key (syn_...): ")
-		key := readLine(reader)
+		key := readRequiredLine(reader)
 		if strings.HasPrefix(key, "syn_") {
-			fmt.Printf("  %s ok %s  %s%s...%s%s\n", colorGreen, colorReset, colorDim, key[:6], key[len(key)-4:], colorReset)
+			outcome := checkSetupCredential(reader, "Synthetic", "api.synthetic.new",
+				"Copy a key from https://synthetic.new/settings/api", key,
+				func() error { return verifySyntheticKey(key) }, isSyntheticRejection)
+			if outcome == credentialRetry {
+				continue
+			}
 			return key
 		}
 		if key == "" {
@@ -401,7 +417,7 @@ func collectOllamaKey(reader *bufio.Reader) string {
 	fmt.Printf("  %sCreate an API key at https://ollama.com/settings/keys%s\n", colorDim, colorReset)
 	for {
 		fmt.Print("  Ollama Cloud API key: ")
-		key := readLine(reader)
+		key := readRequiredLine(reader)
 		if key == "" {
 			fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
 			continue
@@ -555,7 +571,7 @@ func collectZenmuxKey(reader *bufio.Reader) string {
 	fmt.Printf("  %sAccount usage needs a personal account management key, not an inference key.%s\n", colorDim, colorReset)
 	for {
 		fmt.Print("  Zenmux Management API Key: ")
-		key := readLine(reader)
+		key := readRequiredLine(reader)
 		if key == "" {
 			fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
 			continue
@@ -772,30 +788,58 @@ func applyOpenCodeGoConfig(cfg *setupConfig, oc openCodeGoConfig) {
 func collectZaiConfig(reader *bufio.Reader) (string, string) {
 	fmt.Printf("\n  %sGet your key: https://www.z.ai/api-keys%s\n", colorDim, colorReset)
 
-	var key string
-	for {
-		fmt.Print("  Z.ai API key: ")
-		key = readLine(reader)
-		if key != "" {
-			masked := maskValue(key)
-			fmt.Printf("  %s ok %s  %s%s%s\n", colorGreen, colorReset, colorDim, masked, colorReset)
-			break
+	readKey := func() string {
+		for {
+			fmt.Print("  Z.ai API key: ")
+			key := readRequiredLine(reader)
+			if key != "" {
+				return key
+			}
+			fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
 		}
-		fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
+	}
+	// The base URL picks the region, so the key is verified against it. A
+	// rejection can mean the key is for the other region, so after one both
+	// the key and the URL are asked for again, with the URL already chosen as
+	// the default answer.
+	const globalURL, chinaURL = "https://api.z.ai/api", "https://open.bigmodel.cn/api"
+	chooseURL := func(current, label string) string {
+		fmt.Println()
+		if promptYesNo(reader, fmt.Sprintf("Use %s Z.ai base URL (%s)?", label, current), true) {
+			return current
+		}
+		suggestion := chinaURL
+		if current != globalURL {
+			suggestion = globalURL
+		}
+		for {
+			baseURL := promptWithDefault(reader, "Z.ai base URL", suggestion)
+			if u, err := url.Parse(baseURL); err == nil && u.Scheme == "https" && u.Hostname() != "" && u.User == nil &&
+				u.RawQuery == "" && !u.ForceQuery && u.Fragment == "" {
+				// The daemon appends its path to this URL, so save it
+				// rebuilt from its parts and without a trailing slash: the
+				// URL checked here is then the URL it calls.
+				return "https://" + u.Host + strings.TrimRight(u.EscapedPath(), "/")
+			}
+			fmt.Printf("  %sURL must start with 'https://', name a host, and have no '?' or '#' part%s\n", colorRed, colorReset)
+		}
 	}
 
-	fmt.Println()
-	defaultURL := "https://api.z.ai/api"
-	if promptYesNo(reader, fmt.Sprintf("Use default Z.ai base URL (%s)?", defaultURL), true) {
-		return key, defaultURL
-	}
-
+	key := readKey()
+	baseURL := chooseURL(globalURL, "default")
 	for {
-		baseURL := promptWithDefault(reader, "Z.ai base URL", "https://open.bigmodel.cn/api")
-		if strings.HasPrefix(baseURL, "https://") {
+		host := strings.TrimPrefix(baseURL, "https://")
+		if i := strings.Index(host, "/"); i >= 0 {
+			host = host[:i]
+		}
+		outcome := checkSetupCredential(reader, "Z.ai", host,
+			"Check the key at https://www.z.ai/api-keys and that the base URL matches its region.", key,
+			func() error { return verifyZaiKey(key, baseURL) }, isZaiRejection)
+		if outcome == credentialKeep {
 			return key, baseURL
 		}
-		fmt.Printf("  %sURL must start with 'https://'%s\n", colorRed, colorReset)
+		key = readKey()
+		baseURL = chooseURL(baseURL, "the same")
 	}
 }
 
@@ -815,7 +859,22 @@ func collectAnthropicToken(reader *bufio.Reader, logger *slog.Logger) string {
 		fmt.Printf("  %s!%s Could not auto-detect Claude Code credentials\n", colorYellow, colorReset)
 	}
 
-	return promptSecret(reader, "Anthropic token")
+	// An auto-detected token is not checked here: it may be expired but
+	// refreshable, which the daemon handles. A pasted token has no refresh
+	// token behind it, so it is checked now.
+	for {
+		token := promptNonEmpty(reader, "Anthropic token")
+		if problem := anthropicTokenShapeProblem(token); problem != "" {
+			fmt.Printf("  %s%s%s\n", colorRed, problem, colorReset)
+			continue
+		}
+		outcome := checkSetupCredential(reader, "Anthropic", "api.anthropic.com",
+			"Paste the access token from your Claude Code login (sk-ant-oat...). A Console API key, or a claude setup-token token that cannot read usage, does not work here.", token,
+			func() error { return verifyAnthropicToken(token) }, isAnthropicRejection)
+		if outcome == credentialKeep {
+			return token
+		}
+	}
 }
 
 func collectCodexToken(reader *bufio.Reader, logger *slog.Logger) string {
@@ -834,7 +893,20 @@ func collectCodexToken(reader *bufio.Reader, logger *slog.Logger) string {
 		fmt.Printf("  %s!%s Could not auto-detect Codex token from auth.json\n", colorYellow, colorReset)
 	}
 
-	return promptSecret(reader, "Codex token")
+	// As with Anthropic, only a pasted token is checked.
+	for {
+		token := promptNonEmpty(reader, "Codex token")
+		if problem := codexTokenShapeProblem(token); problem != "" {
+			fmt.Printf("  %s%s%s\n", colorRed, problem, colorReset)
+			continue
+		}
+		outcome := checkSetupCredential(reader, "Codex", "chatgpt.com",
+			"Paste tokens.access_token from ~/.codex/auth.json, not an OpenAI API key.", token,
+			func() error { return verifyCodexToken(token) }, isCodexRejection)
+		if outcome == credentialKeep {
+			return token
+		}
+	}
 }
 
 func writeEnvFile(path string, cfg *setupConfig) error {
@@ -1388,6 +1460,24 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 
 // --- Input helpers ---
 
+// errSetupInputEnded stops the wizard when its input ends (a closed or piped
+// stdin) at a prompt that needs an answer. Without it, prompts that insist on
+// a value would print "Cannot be empty" forever.
+var errSetupInputEnded = errors.New("setup input ended before every question was answered; run `onwatch setup` in a terminal, or put the provider keys in ~/.onwatch/.env")
+
+// readRequiredLine reads a line for a prompt that loops until it gets a valid
+// value. At end of input it stops the wizard (runSetup turns that into an
+// error) instead of looping on prompts nobody can answer.
+func readRequiredLine(reader *bufio.Reader) string {
+	line, err := reader.ReadString('\n')
+	value := strings.TrimSpace(line)
+	if value == "" && err != nil {
+		fmt.Println()
+		panic(errSetupInputEnded)
+	}
+	return value
+}
+
 func readLine(reader *bufio.Reader) string {
 	line, _ := reader.ReadString('\n')
 	return strings.TrimSpace(line)
@@ -1415,13 +1505,12 @@ func promptYesNo(reader *bufio.Reader, prompt string, defaultYes bool) bool {
 	return strings.HasPrefix(input, "y")
 }
 
-func promptSecret(reader *bufio.Reader, prompt string) string {
+// promptNonEmpty asks until a value is typed and prints nothing else, for
+// values that are checked before they are confirmed.
+func promptNonEmpty(reader *bufio.Reader, prompt string) string {
 	for {
 		fmt.Printf("  %s: ", prompt)
-		val := readLine(reader)
-		if val != "" {
-			masked := maskValue(val)
-			fmt.Printf("  %s ok %s  %s%s%s\n", colorGreen, colorReset, colorDim, masked, colorReset)
+		if val := readRequiredLine(reader); val != "" {
 			return val
 		}
 		fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
@@ -1435,7 +1524,7 @@ func promptChoice(reader *bufio.Reader, prompt string, options []string) int {
 	}
 	for {
 		fmt.Printf("  %s>%s ", colorBold, colorReset)
-		input := readLine(reader)
+		input := readRequiredLine(reader)
 		n, err := strconv.Atoi(input)
 		if err == nil && n >= 1 && n <= len(options) {
 			return n

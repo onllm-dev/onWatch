@@ -199,6 +199,7 @@ const State = {
   allProvidersHistory: null,
   providerVisibility: {},
   providerSettings: {},
+  providerEnvDefaults: {},
   // Dashboard header tab order + custom display names (Settings → Providers)
   dashboardProvidersOrder: [],
   dashboardProviderLabels: {},
@@ -2916,9 +2917,12 @@ async function loadAntigravityModalCycles(groupKey) {
 // seven_day -> auto_start_7d. Returns '' otherwise.
 function codexAutoStartBadge(quotaName) {
   const ps = (State.providerSettings && State.providerSettings.codex) || {};
+  const env = (State.providerEnvDefaults && State.providerEnvDefaults.codex) || {};
   const key = quotaName === 'five_hour' ? 'auto_start_5h'
     : (quotaName === 'seven_day' ? 'auto_start_7d' : null);
-  if (!key || ps[key] !== 'on') return '';
+  // A window with nothing saved follows .env, as the daemon does.
+  const value = key && ps[key] ? ps[key] : (key ? env[key] : '');
+  if (value !== 'on') return '';
   return `<span class="auto-start-badge" title="Auto-start is on (Beta): when this window resets, onWatch sends a tiny Codex request to start the window automatically.">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
     Auto-start
@@ -11487,6 +11491,7 @@ async function loadSettings() {
 
     // Provider settings - store in State for modal use
     State.providerSettings = data.provider_settings || {};
+    State.providerEnvDefaults = data.provider_env_defaults || {};
     State.apiIntegrationsVisibility = data.api_integrations_visibility || { dashboard: true };
 
     // Global display mode (persisted under provider_settings.global.display_mode)
@@ -12735,6 +12740,10 @@ const providerSettingsConfig = {
         { value: 'on', text: 'On (skip OAuth refresh when CC is running)' },
         { value: 'off', text: 'Off (always attempt OAuth refresh)' },
       ], default: 'on', hint: 'When enabled, onWatch skips OAuth token refresh while Claude Code is running to prevent login disruption.' },
+      { id: 'auto_start_5h', label: 'Auto-start five-hour session (Beta)', type: 'select', options: [
+        { value: 'off', text: 'Off' },
+        { value: 'on', text: 'On' },
+      ], default: 'off', noRestart: true, hint: 'Beta: when no five-hour session is running, onWatch runs your Claude Code CLI once (claude -p, Haiku) with a one-line prompt so the next window starts counting down right away. Uses your Claude subscription, never API billing, and needs the claude CLI installed and logged in on this machine, on the same account. Each turn counts toward weekly limits like any other tiny message. Works with the auto or API data source, not statusline-only. No daemon restart needed.' },
     ],
   },
   codex: {
@@ -12914,6 +12923,12 @@ async function openProviderSettingsModal(providerKey) {
   if (providerKey === 'mistral' && saved.enabled === undefined) {
     effectiveDefaults.enabled = (await isProviderConfigured('mistral')) ? 'true' : 'false';
   }
+  // A toggle that can also be set in .env (ANTHROPIC_AUTO_START_5H) shows the
+  // .env state until the dashboard saves its own value.
+  const envDefaults = (State.providerEnvDefaults && State.providerEnvDefaults[providerKey]) || {};
+  Object.keys(envDefaults).forEach(id => {
+    if (saved[id] === undefined || saved[id] === '') effectiveDefaults[id] = envDefaults[id];
+  });
   modal._effectiveDefaults = effectiveDefaults;
 
   // Build fields HTML (shared for non-Codex providers)
@@ -13396,6 +13411,15 @@ async function saveProviderSettings() {
     }
   });
 
+  // A toggle that follows .env and still shows the .env value is left out,
+  // so it keeps following .env. Saving it would pin today's .env value and
+  // ignore a later .env change.
+  const envDefaults = (State.providerEnvDefaults && State.providerEnvDefaults[providerKey]) || {};
+  Object.keys(envDefaults).forEach(id => {
+    const unsaved = baseline[id] === undefined || baseline[id] === '';
+    if (unsaved && provData[id] === envDefaults[id]) delete provData[id];
+  });
+
   try {
     const payload = { provider_settings: { [providerKey]: provData } };
     invalidateSettingsData();
@@ -13517,6 +13541,13 @@ function setupProviderReload() {
       } else {
         await populateProviderToggles(State.providerVisibility || {});
         await populateDashboardTabOrder();
+        // The reload can change .env toggle defaults (auto-start), which the
+        // provider dialogs compare against when saving; fetch them again.
+        invalidateSettingsData();
+        try {
+          const fresh = await getSettingsData();
+          if (fresh) State.providerEnvDefaults = fresh.provider_env_defaults || {};
+        } catch (_) { /* keep the old defaults */ }
         if (result) {
           result.textContent = 'Provider configuration reloaded.';
           result.className = 'settings-test-result success';
@@ -14566,6 +14597,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const d = await getSettingsData();
     if (d) {
       State.providerSettings = d.provider_settings || {};
+      State.providerEnvDefaults = d.provider_env_defaults || {};
     }
   } catch (_) { /* non-critical: badges simply won't render until settings load */ }
   // Redirect to saved default provider if no explicit provider in URL

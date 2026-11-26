@@ -199,6 +199,114 @@ test_codex_only_manual() {
     assert_eq "CODEX_TOKEN" "codex-test-token-123"
 }
 
+# Issue #161: a Console API key is refused and the prompt asks again.
+test_anthropic_console_api_key_refused() {
+    setup && source_functions
+    detect_anthropic_token() { return 1; }
+    run_setup "3\n1\nsk-ant-api03-console\nsk-ant-oat01-real\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ANTHROPIC_TOKEN" "sk-ant-oat01-real"
+}
+
+# Issue #161: an OpenAI API key is refused and the prompt asks again.
+test_codex_openai_api_key_refused() {
+    setup && source_functions
+    detect_codex_token() { return 1; }
+    run_setup "4\n1\nsk-proj-openai\neyJcodex-oauth\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "CODEX_TOKEN" "eyJcodex-oauth"
+}
+
+test_token_shape_validators() {
+    setup && source_functions
+    validate_anthropic_token "sk-ant-oat01-x" 2>/dev/null && \
+    ! validate_anthropic_token "sk-ant-api03-x" 2>/dev/null && \
+    ! validate_anthropic_token "" 2>/dev/null && \
+    validate_codex_token "eyJhbGciOi" 2>/dev/null && \
+    ! validate_codex_token "sk-abc" 2>/dev/null && \
+    ! validate_codex_token "" 2>/dev/null
+}
+
+# A pasted token with "Bearer " or spaces is refused; a trailing CR from a
+# Windows paste is dropped.
+test_token_whitespace_and_cr() {
+    setup && source_functions
+    ! validate_anthropic_token "Bearer sk-ant-oat01-x" 2>/dev/null && \
+    ! validate_anthropic_token "sk-ant-oat01 x" 2>/dev/null && \
+    ! validate_codex_token "bearer eyJabc" 2>/dev/null && \
+    ! validate_codex_token "eyJ abc" 2>/dev/null || return 1
+    detect_anthropic_token() { return 1; }
+    run_setup "3\n1\nsk-ant-oat01-crlf\r\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ANTHROPIC_TOKEN" "sk-ant-oat01-crlf" || return 1
+    # Spaces before the CR of a Windows paste are trimmed too.
+    setup && source_functions
+    detect_anthropic_token() { return 1; }
+    run_setup "3\n1\n  sk-ant-oat01-spaced \t \r\nadmin\ntestpass\n9211\n60\n"
+    assert_eq "ANTHROPIC_TOKEN" "sk-ant-oat01-spaced"
+}
+
+# run_bounded SECS CMD... runs CMD, killing it after SECS seconds. macOS has
+# no timeout(1), so without timeout or gtimeout a watchdog does the same.
+run_bounded() {
+    local secs=$1; shift
+    if [[ -z "${ONWATCH_TEST_NO_TIMEOUT:-}" ]]; then
+        if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"; return $?; fi
+        if command -v gtimeout >/dev/null 2>&1; then gtimeout "$secs" "$@"; return $?; fi
+    fi
+    "$@" &
+    local pid=$!
+    ( sleep "$secs"; kill -9 "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    local watcher=$!
+    local rc=0
+    wait "$pid" || rc=$?
+    kill "$watcher" 2>/dev/null
+    wait "$watcher" 2>/dev/null
+    return $rc
+}
+
+# A prompt that needs an answer stops at end of input instead of looping.
+test_prompts_stop_at_end_of_input() {
+    setup && source_functions
+    local rc
+    exec 3< <(printf '')
+    rc=0; run_bounded 5 bash -c 'source "$1"; prompt_secret "Key" validate_nonempty' _ "$TEST_DIR/functions.sh" 3<&3 >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 1 ]] || { echo "prompt_secret at EOF exited $rc, want 1"; return 1; }
+    exec 3< <(printf '\n\n')
+    rc=0; run_bounded 5 bash -c 'source "$1"; prompt_secret "Key" validate_nonempty' _ "$TEST_DIR/functions.sh" 3<&3 >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 1 ]] || { echo "prompt_secret after empty lines exited $rc, want 1"; return 1; }
+    exec 3< <(printf '9\n')
+    rc=0; run_bounded 5 bash -c 'source "$1"; prompt_choice "Pick" a b' _ "$TEST_DIR/functions.sh" 3<&3 >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 1 ]] || { echo "prompt_choice at EOF exited $rc, want 1"; return 1; }
+    # A last line without a newline is still an answer.
+    exec 3< <(printf 'abc')
+    local got
+    got=$(run_bounded 5 bash -c 'source "$1"; prompt_secret "Key" validate_nonempty' _ "$TEST_DIR/functions.sh" 3<&3 2>/dev/null)
+    exec 3<&-
+    [[ "$got" == "abc" ]] || { echo "unterminated last line read as '$got'"; return 1; }
+
+    # The whole setup stops too, from prompts nested inside collect_*, and
+    # writes no .env with an empty token. A fresh bash keeps set -e live.
+    local input
+    for input in '3\n' '3\n1\n' '4\n2\n' '2\n'; do
+        rm -f "$TEST_DIR/.env"
+        exec 3< <(printf '%b' "$input")
+        rc=0
+        run_bounded 10 bash -c 'source "$1"; detect_anthropic_token() { return 1; }; detect_codex_token() { return 1; }; interactive_setup' _ "$TEST_DIR/functions.sh" 3<&3 >/dev/null 2>&1 || rc=$?
+        exec 3<&-
+        [[ $rc -eq 1 ]] || { echo "setup with input '$input' exited $rc, want 1"; return 1; }
+        [[ ! -e "$TEST_DIR/.env" ]] || { echo "setup with input '$input' wrote .env"; return 1; }
+    done
+}
+
+# A pasted secret containing quotes or $(...) is data, never shell code.
+test_secret_is_not_evaluated() {
+    setup && source_functions
+    local marker="$TEST_DIR/pwned"
+    detect_anthropic_token() { return 1; }
+    # No spaces in the payload: the token validator refuses spaces.
+    run_setup "3\n1\nsk-ant-oat01-\"\$(id>$marker)\"\nadmin\ntestpass\n9211\n60\n"
+    [[ ! -e "$marker" ]] || { echo "pasted secret was executed"; return 1; }
+    grep -q '^ANTHROPIC_TOKEN=.*sk-ant-oat01-' "$TEST_DIR/.env" || { echo "token not saved"; return 1; }
+}
+
 test_anthropic_auto_detected_accepted() {
     setup && source_functions
     detect_anthropic_token() { printf 'auto-detected-token-12345'; }
@@ -666,6 +774,12 @@ run_test test_alibaba_netscape_without_alibaba_rejected
 run_test test_alibaba_empty_file_rejected
 run_test test_alibaba_dash_prefixed_path_accepted
 run_test test_detect_anthropic_file_fallback
+run_test test_anthropic_console_api_key_refused
+run_test test_codex_openai_api_key_refused
+run_test test_token_shape_validators
+run_test test_prompts_stop_at_end_of_input
+run_test test_token_whitespace_and_cr
+run_test test_secret_is_not_evaluated
 
 printf "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 printf "  ${BOLD}Results:${NC} %d/%d passed" "$PASS" "$TOTAL"

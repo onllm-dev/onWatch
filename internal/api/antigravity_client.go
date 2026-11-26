@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os/exec"
 	"regexp"
@@ -569,33 +570,157 @@ func (c *AntigravityClient) discoverPortsWindows(ctx context.Context, pid int) (
 }
 
 // probeForConnectAPI probes ports to find the Connect RPC endpoint.
+//
+// A port whose first route answered 404 and whose fallback RPCs only timed
+// out is kept as a last resort: an agy 1.5.x language server answers that way
+// while its upstream is slow. It is used only when no port proves itself.
 func (c *AntigravityClient) probeForConnectAPI(ctx context.Context, ports []int, csrfToken string) (*AntigravityConnection, error) {
+	var slow *AntigravityConnection
 	for _, port := range ports {
-		// Try HTTPS first (language server typically uses self-signed certs)
-		if conn := c.probePort(ctx, port, "https", csrfToken); conn != nil {
-			return conn, nil
+		// Try HTTPS first (language server typically uses self-signed certs),
+		// then HTTP.
+		for _, protocol := range []string{"https", "http"} {
+			conn, timedOut := c.probePortResult(ctx, port, protocol, csrfToken)
+			if conn != nil {
+				return conn, nil
+			}
+			if timedOut != nil && slow == nil {
+				slow = timedOut
+			}
 		}
-
-		// Fallback to HTTP
-		if conn := c.probePort(ctx, port, "http", csrfToken); conn != nil {
-			return conn, nil
-		}
+	}
+	if slow != nil && ctx.Err() == nil {
+		return slow, nil
 	}
 
 	return nil, ErrAntigravityConnectionFailed
 }
 
-// probePort tests if a port has the Connect RPC endpoint.
-func (c *AntigravityClient) probePort(ctx context.Context, port int, protocol, csrfToken string) *AntigravityConnection {
-	baseURL := fmt.Sprintf("%s://127.0.0.1:%d", protocol, port)
-	endpoint := baseURL + "/exa.language_server_pb.LanguageServerService/GetUnleashData"
+// antigravityProbeRoute is one Connect RPC that probePort may call to decide
+// whether a port serves the language server's Connect API.
+type antigravityProbeRoute struct {
+	path    string
+	body    string
+	timeout time.Duration
+}
 
-	reqCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+// antigravityProbeRoutes are tried in order. GetUnleashData is what older
+// language servers answer; agy 1.5.x no longer serves it and answers a plain
+// 404, while GetUserStatus and RetrieveUserQuotaSummary, the RPCs onWatch
+// actually reads quota from, still answer (issue #168).
+//
+// The first probe keeps the short timeout, so ports that never answer stay
+// cheap to rule out. The fallback RPCs are only tried after a port has already
+// answered 404, and they are real calls that can take longer than a liveness
+// check, so they get more time.
+var antigravityProbeRoutes = []antigravityProbeRoute{
+	{path: "/exa.language_server_pb.LanguageServerService/GetUnleashData", body: `{"wrapper_data":{}}`, timeout: 500 * time.Millisecond},
+	{path: "/exa.language_server_pb.LanguageServerService/GetUserStatus", body: agyMetadataBody, timeout: 3 * time.Second},
+	{path: "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary", body: agyMetadataBody, timeout: 3 * time.Second},
+}
+
+// probePort tests if a port has the Connect RPC endpoint. A route answering
+// 200 or 401 proves the Connect API is there. A 404, or a Connect
+// "unimplemented" error, only means that route is missing, so the next route
+// is tried. A fallback route that times out is
+// inconclusive, so the next route is tried too. Any other answer, or any other
+// transport error (refused, reset, TLS mismatch, cancelled), means this port
+// and protocol are not the Connect API.
+func (c *AntigravityClient) probePort(ctx context.Context, port int, protocol, csrfToken string) *AntigravityConnection {
+	conn, _ := c.probePortResult(ctx, port, protocol, csrfToken)
+	return conn
+}
+
+// probePortResult is probePort that also returns, as timedOut, the port's
+// connection when every fallback route timed out after a missing-route
+// answer, so the caller can fall back to it if no port proves itself.
+func (c *AntigravityClient) probePortResult(ctx context.Context, port int, protocol, csrfToken string) (conn, timedOut *AntigravityConnection) {
+	baseURL := fmt.Sprintf("%s://127.0.0.1:%d", protocol, port)
+	candidate := &AntigravityConnection{
+		BaseURL:   baseURL,
+		CSRFToken: csrfToken,
+		Port:      port,
+		Protocol:  protocol,
+	}
+	fallbacksAllTimedOut := true
+
+	for i, route := range antigravityProbeRoutes {
+		status, connectCode, err := c.probeRoute(ctx, baseURL+route.path, route.body, csrfToken, route.timeout)
+		if err != nil {
+			if i > 0 && ctx.Err() == nil && isTimeoutError(err) {
+				continue
+			}
+			return nil, nil
+		}
+		if i > 0 {
+			fallbacksAllTimedOut = false
+		}
+		switch status {
+		case http.StatusOK, http.StatusUnauthorized:
+			return candidate, nil
+		case http.StatusNotFound:
+			continue
+		}
+		// A Connect "unimplemented" answer means this RPC is missing on an
+		// otherwise working server, the same as a 404, so try the next route.
+		if connectCode == "unimplemented" {
+			continue
+		}
+		// The fallback routes are real RPCs, so a signed-out or picky
+		// language server can answer them with a Connect error (403
+		// permission_denied, 400 failed_precondition, 503 unavailable). That
+		// answer still proves the Connect API is there. Another server's
+		// error page has no Connect code and rules the port out.
+		if i > 0 && connectProvesLanguageServer(connectCode) {
+			return candidate, nil
+		}
+		// Another Connect error (invalid_argument, internal) shows a Connect
+		// server, but not that it is the language server, so try the next
+		// route rather than take or rule out the port.
+		if i > 0 && connectCode != "" {
+			continue
+		}
+		return nil, nil
+	}
+
+	// Every route was missing or slow. Only a port that reached the fallback
+	// RPCs and saw nothing but timeouts there is worth keeping.
+	if fallbacksAllTimedOut && len(antigravityProbeRoutes) > 1 {
+		return nil, candidate
+	}
+	return nil, nil
+}
+
+// connectProvesLanguageServer reports whether a fallback route's Connect error
+// shows the language server is there but refused this call: the method exists
+// and the caller is signed out, not allowed, or early.
+func connectProvesLanguageServer(code string) bool {
+	switch code {
+	case "unauthenticated", "permission_denied", "failed_precondition", "unavailable", "resource_exhausted":
+		return true
+	}
+	return false
+}
+
+// isTimeoutError reports whether err is a request timeout rather than a
+// refused, reset or otherwise failed connection.
+func isTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// probeRoute posts one Connect RPC probe and returns the HTTP status and, for a non-200
+// JSON answer, the Connect error code in its body ("" when there is none).
+func (c *AntigravityClient) probeRoute(ctx context.Context, endpoint, body, csrfToken string, timeout time.Duration) (int, string, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, strings.NewReader(`{"wrapper_data":{}}`))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, strings.NewReader(body))
 	if err != nil {
-		return nil
+		return 0, "", err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -606,21 +731,35 @@ func (c *AntigravityClient) probePort(ctx context.Context, port int, protocol, c
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil
+		return 0, "", err
 	}
-	defer resp.Body.Close()
-
-	// Valid Connect API returns 200 or 401
-	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized {
-		return &AntigravityConnection{
-			BaseURL:   baseURL,
-			CSRFToken: csrfToken,
-			Port:      port,
-			Protocol:  protocol,
+	// A Connect error body is small; read at most 4KB of any answer, then
+	// close.
+	head, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	resp.Body.Close()
+	code := ""
+	if resp.StatusCode != http.StatusOK && strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "application/json") {
+		var connectErr struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(head, &connectErr) == nil && isConnectErrorCode(connectErr.Code) {
+			code = connectErr.Code
 		}
 	}
+	return resp.StatusCode, code, nil
+}
 
-	return nil
+// isConnectErrorCode reports whether code is one of the Connect protocol's
+// error codes.
+func isConnectErrorCode(code string) bool {
+	switch code {
+	case "canceled", "unknown", "invalid_argument", "deadline_exceeded", "not_found",
+		"already_exists", "permission_denied", "resource_exhausted", "failed_precondition",
+		"aborted", "out_of_range", "unimplemented", "internal", "unavailable",
+		"data_loss", "unauthenticated":
+		return true
+	}
+	return false
 }
 
 // Helper functions

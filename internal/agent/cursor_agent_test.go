@@ -290,7 +290,7 @@ func TestCursorAgent_UnsaveableRefreshUsesTokenInsteadOfPausing(t *testing.T) {
 	ag.SetTokenRefresh(func() string { return "old-access" })
 
 	prevWritable := cursorCredentialsWritable
-	cursorCredentialsWritable = func(source string) error { return nil }
+	cursorCredentialsWritable = func(source, _ string) error { return nil }
 	t.Cleanup(func() { cursorCredentialsWritable = prevWritable })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -359,7 +359,7 @@ func TestCursorAgent_AuthFailurePathRetriesUnsaveableRefreshedToken(t *testing.T
 	ag.SetTokenRefresh(func() string { return "rejected-access" })
 
 	prevWritable := cursorCredentialsWritable
-	cursorCredentialsWritable = func(source string) error { return nil }
+	cursorCredentialsWritable = func(source, _ string) error { return nil }
 	t.Cleanup(func() { cursorCredentialsWritable = prevWritable })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -436,7 +436,7 @@ func TestCursorAgent_RetryTransientFailureDoesNotPausePinnedToken(t *testing.T) 
 	ag.SetTokenRefresh(func() string { return "old-access" })
 
 	prevWritable := cursorCredentialsWritable
-	cursorCredentialsWritable = func(source string) error { return nil }
+	cursorCredentialsWritable = func(source, _ string) error { return nil }
 	t.Cleanup(func() { cursorCredentialsWritable = prevWritable })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

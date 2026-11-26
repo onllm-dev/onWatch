@@ -370,9 +370,10 @@ func isCursorSQLiteBusyCode(code int) bool {
 // CursorCredentialsWritable reports whether a refreshed token pair could be
 // saved for the given source. The agent checks this before calling the refresh
 // endpoint: a refresh consumes a one-time refresh token, so it must never run
-// when its result cannot be persisted.
-func CursorCredentialsWritable(source string) error {
-	return cursorCredentialsWritable(source)
+// when its result cannot be persisted. refreshToken is the token the refresh
+// would consume; the macOS Keychain save needs an account that still holds it.
+func CursorCredentialsWritable(source, refreshToken string) error {
+	return cursorCredentialsWritable(source, refreshToken)
 }
 
 // WriteCursorCredentials persists refreshed Cursor OAuth tokens.

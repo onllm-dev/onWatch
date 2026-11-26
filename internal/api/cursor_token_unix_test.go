@@ -22,14 +22,14 @@ func TestWriteKeychainTokens_WritesRefreshTokenFirst(t *testing.T) {
 		}
 		return nil
 	}
-	cursorWriteKeychain = writer
+	cursorWriteKeychain = func(service, _, value string) error { return writer(service, value) }
 	cursorWriteLinuxKeyring = writer
 	t.Cleanup(func() {
 		cursorWriteKeychain = origKeychain
 		cursorWriteLinuxKeyring = origKeyring
 	})
 
-	if err := writeKeychainTokens("fresh_access", "fresh_refresh"); err != nil {
+	if err := writeKeychainTokens("fresh_access", "fresh_refresh", "alice"); err != nil {
 		t.Fatalf("writeKeychainTokens: %v", err)
 	}
 	if len(order) != 2 || order[0] != "cursor-refresh-token" || order[1] != "cursor-access-token" {
@@ -39,7 +39,7 @@ func TestWriteKeychainTokens_WritesRefreshTokenFirst(t *testing.T) {
 	// A failed access write must still leave the refresh token written.
 	order = nil
 	fail = true
-	if err := writeKeychainTokens("fresh_access", "fresh_refresh"); err == nil {
+	if err := writeKeychainTokens("fresh_access", "fresh_refresh", "alice"); err == nil {
 		t.Fatal("expected the access write failure to be reported")
 	}
 	if len(order) != 2 || order[0] != "cursor-refresh-token" {
@@ -54,7 +54,7 @@ func TestWriteCursorCredentials_FailsWhenRefreshTokenIsNotPersisted(t *testing.T
 
 	origKeychain := cursorWriteKeychain
 	origKeyring := cursorWriteLinuxKeyring
-	cursorWriteKeychain = func(service, value string) error {
+	cursorWriteKeychain = func(service, _, value string) error {
 		if service == "cursor-refresh-token" {
 			return errors.New("refresh write failed")
 		}

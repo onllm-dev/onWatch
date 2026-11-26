@@ -308,10 +308,10 @@ func TestInputHelpers(t *testing.T) {
 		}
 	})
 
-	t.Run("promptSecret retries empty", func(t *testing.T) {
+	t.Run("promptNonEmpty retries empty", func(t *testing.T) {
 		r := bufio.NewReader(strings.NewReader("\nsecret-token\n"))
-		if got := promptSecret(r, "Token"); got != "secret-token" {
-			t.Fatalf("promptSecret got %q", got)
+		if got := promptNonEmpty(r, "Token"); got != "secret-token" {
+			t.Fatalf("promptNonEmpty got %q", got)
 		}
 	})
 

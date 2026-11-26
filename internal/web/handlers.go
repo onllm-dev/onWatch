@@ -1743,6 +1743,13 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.KimiEnabled = src.KimiEnabled
 	dst.ZaiRegion = src.ZaiRegion
 	dst.MiniMaxRegion = src.MiniMaxRegion
+	// Auto-start toggles with nothing saved in the dashboard follow .env.
+	// Like every .env value, a reload picks up one that was not set when the
+	// daemon started; changing one already loaded needs a restart, because
+	// .env never overrides a variable already in the environment.
+	dst.AnthropicAutoStart5h = src.AnthropicAutoStart5h
+	dst.CodexAutoStart5h = src.CodexAutoStart5h
+	dst.CodexAutoStart7d = src.CodexAutoStart7d
 }
 
 // providerSecretKeys lists the provider_settings field names that contain
@@ -1789,9 +1796,10 @@ var providerEnumFields = map[string]map[string][]string{
 		"auto_start_7d": {"off", "on"},
 	},
 	"anthropic": {
-		"display_mode": {"usage", "available"},
-		"source":       {"auto", "statusline", "api"},
-		"cc_detection": {"on", "off"},
+		"display_mode":  {"usage", "available"},
+		"source":        {"auto", "statusline", "api"},
+		"cc_detection":  {"on", "off"},
+		"auto_start_5h": {"off", "on"},
 	},
 	"copilot": {
 		"display_mode": {"usage", "available"},
@@ -7773,6 +7781,23 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// .env values for provider toggles the dashboard can also set. A
+		// toggle with nothing saved follows .env, so the settings dialog must
+		// show the .env state, or saving any other field would switch it off.
+		if h.config != nil {
+			h.config.ReadLock()
+			anthropicAutoStart := h.config.AnthropicAutoStart5h
+			codexAutoStart5h, codexAutoStart7d := h.config.CodexAutoStart5h, h.config.CodexAutoStart7d
+			h.config.ReadUnlock()
+			result["provider_env_defaults"] = map[string]interface{}{
+				"anthropic": map[string]string{"auto_start_5h": onOff(anthropicAutoStart)},
+				"codex": map[string]string{
+					"auto_start_5h": onOff(codexAutoStart5h),
+					"auto_start_7d": onOff(codexAutoStart7d),
+				},
+			}
+		}
+
 		// Provider-specific settings (overrides .env)
 		provJSON, _ := h.store.GetSetting("provider_settings")
 		if provJSON != "" {
@@ -7786,6 +7811,14 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+// onOff renders a boolean as the "on"/"off" values provider toggles use.
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 // emailRegex validates email addresses.

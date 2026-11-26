@@ -276,6 +276,12 @@ Codex 5h and weekly windows only begin counting once you send your first message
 
 It is **Beta and disabled by default.** Enable it per window in **Settings -> Providers -> Codex** (`Auto-start 5h window` / `Auto-start weekly window`); changes apply without a daemon restart. Each ping costs roughly **62 tokens** (~44 in, ~18 out) and is hard-capped to **5 pings per rolling 4 hours per account**, so the token/quota cost is negligible. Full details: [Codex Setup Guide](docs/CODEX_SETUP.md#auto-quota-starter-beta).
 
+### Can onWatch start my Claude five-hour session automatically (Beta)?
+
+Yes. Claude's five-hour session only starts with your first message, so a quiet morning can push your next reset later into the day. When **Auto-start five-hour session** is on, onWatch watches the Anthropic `five_hour` quota and, when no session is running (no reset time, or the reset time has passed), sends one short Claude Code turn through your own `claude` CLI: `claude -p --model haiku` asking for the reply `Session started`. The turn runs on your Claude subscription, not on API billing: onWatch removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and the Bedrock/Vertex/Foundry switches from its environment, runs it in an empty folder with your hooks and MCP servers switched off and every built-in tool denied, and does not ping at all if your Claude Code settings set an `apiKeyHelper` or one of those variables, force a Console login, or `~/.claude.json` holds a Console API key from a `claude` login. A Console key that Claude Code keeps only in the macOS Keychain is not detected, so if your `claude` CLI is logged in with a Console API key, leave auto-start off.
+
+It is **Beta and disabled by default.** Enable it in **Settings -> Providers -> Anthropic** (`Auto-start five-hour session`), or set `ANTHROPIC_AUTO_START_5H=true`; the dashboard setting wins once saved and applies without a restart. It needs the Claude Code CLI installed and logged in on the machine running onWatch (so not inside the Docker image unless you add it). Pings are capped at **4 per rolling 5 hours** with a 15-minute cooldown, and only fire on quota data under 10 minutes old. It does not run with `ANTHROPIC_SOURCE=statusline`, because only the usage API can confirm that a ping started the session; keep the default `auto` (or `api`) source for the starter. In `auto` mode the start normally comes on the next usage API poll, so it can trail the session's end by up to one API poll interval. If a ping succeeds but the tracked session still has not started 15 minutes later (for example, `claude` is logged in to a different account), the starter pauses and alerts once. It resumes when a session is seen running, after five hours, or when you switch the toggle off and back on (leave it off for one poll so onWatch sees the change). No ping is sent while the weekly limit is used up. The weekly limit is never started on its own; it counts the turn like any other Claude Code message (Claude Code still sends its usual system prompt, so a turn is a few thousand input tokens on Haiku, not a few words). Each outcome is sent to webhooks as `starter_success` or `starter_failure`.
+
 ### How do I track my GitHub Copilot usage?
 
 Set `COPILOT_TOKEN` in your `.env` with a GitHub Personal Access Token (classic) that has the `copilot` scope. Generate one at [github.com/settings/tokens](https://github.com/settings/tokens). onWatch polls the GitHub Copilot internal API to track Interactions, Chat, and Completions quotas with monthly reset cycle detection. Works with both free and paid plans. This feature is in beta and uses an undocumented API.
@@ -348,6 +354,9 @@ Additional environment variables:
 | Variable                 | Description                                            |
 | ------------------------ | ------------------------------------------------------ |
 | `ANTHROPIC_TOKEN`        | Anthropic OAuth token (auto-detected from Claude Code) |
+| `ANTHROPIC_AUTO_START_5H` | `true` to auto-start the Claude five-hour session (Beta, default off) |
+| `ANTHROPIC_STARTER_MODEL` | Model for the auto-start turn (default `haiku`)        |
+| `ANTHROPIC_STARTER_CLI_PATH` | Path to the `claude` CLI if it is not on `PATH`     |
 | `CODEX_TOKEN`            | Codex OAuth access token (recommended for Codex-only)  |
 | `COPILOT_TOKEN`          | GitHub Copilot PAT with `copilot` scope (Beta)         |
 | `MINIMAX_API_KEY`        | MiniMax Coding Plan API key                            |

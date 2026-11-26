@@ -260,6 +260,9 @@ type AnthropicQuota struct {
 	Name        string
 	Utilization float64
 	ResetsAt    *time.Time
+	// ResetsAtUnparsed is set when Anthropic sent a reset time that could not
+	// be read, so a nil ResetsAt does not mean the window has not started.
+	ResetsAtUnparsed bool
 }
 
 // AnthropicSnapshot represents a point-in-time capture of all Anthropic quotas.
@@ -351,6 +354,8 @@ func (r AnthropicQuotaResponse) ToSnapshot(capturedAt time.Time) *AnthropicSnaps
 		if entry.ResetsAt != nil && *entry.ResetsAt != "" {
 			if t, err := time.Parse(time.RFC3339, *entry.ResetsAt); err == nil {
 				q.ResetsAt = &t
+			} else {
+				q.ResetsAtUnparsed = true
 			}
 		}
 		snapshot.Quotas = append(snapshot.Quotas, q)

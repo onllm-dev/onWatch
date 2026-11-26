@@ -1047,3 +1047,31 @@ func TestEngineConfigureWebhookClosesPreviousSender(t *testing.T) {
 		t.Error("previous sender was not closed on reconfigure")
 	}
 }
+
+// A paused starter and a custom summary keep the starter events but read as
+// what happened: a pause is not a failed ping, and an Anthropic success only
+// says the turn was sent.
+func TestEngineStarterEventPausedAndSummary(t *testing.T) {
+	engine, _, capture := setupWebhookEngine(t)
+
+	engine.SendStarterEvent(StarterEvent{Provider: "anthropic", QuotaKey: "five_hour", Paused: true, Detail: "Session never started."})
+	engine.SendStarterEvent(StarterEvent{Provider: "anthropic", QuotaKey: "five_hour", Success: true, Summary: "Turn sent.", Outcome: "starter turn sent"})
+
+	payloads := capture.all()
+	if len(payloads) != 2 {
+		t.Fatalf("delivered %d payloads, want 2", len(payloads))
+	}
+	paused := payloads[0]
+	if paused.Event != EventStarterFailure || !strings.Contains(paused.Title, "starter paused") {
+		t.Errorf("paused payload = %q / %q", paused.Event, paused.Title)
+	}
+	if paused.Message != "The auto quota-starter is paused. Session never started." {
+		t.Errorf("paused message = %q", paused.Message)
+	}
+	if payloads[1].Event != EventStarterSuccess || payloads[1].Message != "Turn sent." {
+		t.Errorf("success payload = %q / %q", payloads[1].Event, payloads[1].Message)
+	}
+	if payloads[1].Title != "[QUOTA STARTER] Anthropic five_hour starter turn sent" {
+		t.Errorf("success title = %q", payloads[1].Title)
+	}
+}

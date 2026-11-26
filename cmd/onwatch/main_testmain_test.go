@@ -64,6 +64,12 @@ func TestMain(m *testing.M) {
 	// its auto-detected branch, asks one question instead of two, and the
 	// scripted prompt input in the wizard tests desyncs from there on.
 	detectMuseCredentialsFunc = func(*slog.Logger) *api.MuseCredentials { return nil }
+	// Synthetic, Z.ai, Anthropic and Codex setup checks (issue #161) must
+	// never reach their providers from tests.
+	verifySyntheticKey = func(string) error { return nil }
+	verifyZaiKey = func(string, string) error { return nil }
+	verifyAnthropicToken = func(string) error { return nil }
+	verifyCodexToken = func(string) error { return nil }
 
 	// `onwatch update` tests must never reach GitHub: with a real updater a
 	// test that sets an old version downloads the latest release and replaces

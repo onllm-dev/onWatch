@@ -7,7 +7,7 @@ onWatch can track Cursor AI usage quotas automatically by reading auth tokens fr
 onWatch detects your Cursor authentication from two sources:
 
 1. **Cursor Desktop SQLite** (preferred) - reads `cursorAuth/accessToken` and `cursorAuth/refreshToken` from `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
-2. **macOS Keychain** (fallback) - reads `cursor-access-token` and `cursor-refresh-token` services
+2. **macOS Keychain** (fallback) - reads `cursor-access-token` and `cursor-refresh-token` services, under your macOS username and under the `cursor-user` account that `cursor-agent login` uses. If both accounts hold tokens, onWatch takes the pair with a usable JWT and the later expiry, never mixing tokens from the two accounts, and writes any refresh back to the account that still holds that session (if neither does, because the CLI logged in again, nothing is overwritten).
 
 If both sources exist and the SQLite account is a free-tier plan while the keychain has a different account, onWatch prefers the keychain token (matching openusage behavior).
 
