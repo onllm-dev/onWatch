@@ -40,6 +40,7 @@ Standard Go runtime / process collectors (`go_*`, `process_*`) are also register
 |---|---|---|
 | `onwatch_quota_utilization_percent` | `provider`, `quota_type`, `account_id` | Current quota utilization as a percentage (0-100). |
 | `onwatch_quota_reset_timestamp_seconds` | `provider`, `quota_type`, `account_id` | Unix timestamp (seconds) at which the quota next resets. Compute remaining: `metric - time()`. Series is omitted when no reset is scheduled. |
+| `onwatch_quota_blocked` | `provider`, `quota_type`, `account_id` | `1` if the provider explicitly reports the quota as blocked, `0` if it explicitly reports it as ok. The series is omitted when the provider reports no status (for example OpenCode Go in cookie mode). Currently emitted for `opencode` only. |
 | `onwatch_credits_balance` | `provider`, `account_id`, `unit` | Remaining credit balance. `unit` is `usd` (OpenRouter), `credits` (Codex), or `prompt_credits` (Antigravity). |
 | `onwatch_agent_healthy` | `provider`, `account_id` | `1` if the polling agent has recent successful data (within `2 * pollInterval`), `0` if stale. Reflects **poll freshness**, not real OAuth validity. Series is omitted until the provider has produced at least one snapshot, which prevents startup false-positives. |
 | `onwatch_agent_last_cycle_age_seconds` | `provider`, `account_id` | Seconds since the last successful poll cycle. Companion to `onwatch_agent_healthy`. |
@@ -62,10 +63,11 @@ Counters live outside the per-scrape reset path, so `rate()` / `increase()` quer
 
 ### Label semantics
 
-- `provider` - `anthropic`, `codex`, `copilot`, `zai`, `minimax`, `antigravity`, `gemini`, `openrouter`, `api_integrations`.
+- `provider` - `anthropic`, `codex`, `copilot`, `opencode`, `zai`, `minimax`, `antigravity`, `gemini`, `openrouter`, `api_integrations`.
 - `quota_type` - provider-specific quota identifier. For Gemini, Antigravity, and MiniMax this is the model ID (`gemini-2.5-pro`, etc.) so **cardinality grows as new models appear**; configure Prometheus retention accordingly.
   - MiniMax also emits the weekly window as `weekly_<model>` (for example `weekly_MiniMax-M2`) alongside the rolling five-hour `<model>` series, each with its own reset timestamp. Accounts predating the weekly window emit no weekly series rather than a flat zero. To alert on one window only, match `quota_type=~"weekly_.*"` or exclude it with `quota_type!~"weekly_.*"`.
   - Z.ai emits `tokens` and `time`. A series is present whenever the plan declares that quota at all, not only once it has been consumed; a plan that reports a percentage while leaving the numeric budget at zero still exports (issue #112). A quota the plan does not have emits no series.
+  - OpenCode Go emits `five_hour` (rolling window), `weekly` and `monthly`, with `account_id="default"`. `monthly` is present only when the plan reports it.
 - `account_id` - numeric account ID for multi-account providers (Codex, MiniMax); `"default"` for single-account providers.
 - `account_name` - human-readable account name from `onwatch_account_info` (join-metric).
 - `unit` - on `onwatch_credits_balance` only: `usd` | `credits` | `prompt_credits`.
