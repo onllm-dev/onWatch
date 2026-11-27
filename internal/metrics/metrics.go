@@ -3,10 +3,12 @@ package metrics
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,7 @@ type Metrics struct {
 
 	quotaUtilization    *prometheus.GaugeVec
 	quotaResetTimestamp *prometheus.GaugeVec
+	quotaBlocked        *prometheus.GaugeVec
 	creditsBalance      *prometheus.GaugeVec
 	agentHealthy        *prometheus.GaugeVec
 	agentLastCycleAge   *prometheus.GaugeVec
@@ -79,6 +82,13 @@ func New() *Metrics {
 			prometheus.GaugeOpts{
 				Name: "onwatch_quota_reset_timestamp_seconds",
 				Help: "Unix timestamp (seconds) at which the quota next resets. Compute remaining time with: metric - time()",
+			},
+			[]string{"provider", "quota_type", "account_id"},
+		),
+		quotaBlocked: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "onwatch_quota_blocked",
+				Help: "1 if the provider explicitly reports a blocked quota, 0 if explicitly ok; absent when status is unknown.",
 			},
 			[]string{"provider", "quota_type", "account_id"},
 		),
@@ -157,6 +167,7 @@ func New() *Metrics {
 	reg.MustRegister(
 		m.billingSpend, m.billingUpdated, m.quotaUtilization,
 		m.quotaResetTimestamp,
+		m.quotaBlocked,
 		m.creditsBalance,
 		m.agentHealthy,
 		m.agentLastCycleAge,
@@ -248,6 +259,7 @@ func (m *Metrics) Scrape(s *store.Store, pollInterval time.Duration) {
 	m.billingUpdated.Reset()
 	m.quotaUtilization.Reset()
 	m.quotaResetTimestamp.Reset()
+	m.quotaBlocked.Reset()
 	m.creditsBalance.Reset()
 	m.agentHealthy.Reset()
 	m.agentLastCycleAge.Reset()
@@ -259,6 +271,7 @@ func (m *Metrics) Scrape(s *store.Store, pollInterval time.Duration) {
 	m.scrapeMistral(s, staleThreshold)
 	m.scrapeAnthropic(s, staleThreshold)
 	m.scrapeCodex(s, staleThreshold)
+	m.scrapeOpenCode(s, staleThreshold)
 	m.scrapeCopilot(s, staleThreshold)
 	m.scrapeZai(s, staleThreshold)
 	m.scrapeMiniMax(s, staleThreshold)
@@ -394,6 +407,44 @@ func (m *Metrics) scrapeCodex(s *store.Store, staleThreshold time.Duration) {
 				"account_id": accountID,
 				"unit":       "credits",
 			}).Set(*snap.CreditsBalance)
+		}
+	}
+}
+
+// scrapeOpenCode exports stored subscription data without another provider poll.
+func (m *Metrics) scrapeOpenCode(s *store.Store, staleThreshold time.Duration) {
+	const method = "opencode"
+	snap, err := s.QueryLatestOpenCode()
+	if err != nil {
+		m.scrapeErrorsTotal.WithLabelValues(method, "query_failed").Inc()
+		return
+	}
+	if snap == nil || snap.CapturedAt.IsZero() || len(snap.Quotas) == 0 {
+		return
+	}
+	m.recordLastCycleAge(method, defaultAccountID, snap.CapturedAt, staleThreshold)
+
+	for _, q := range snap.Quotas {
+		if q.Name == "" || math.IsNaN(q.Utilization) || math.IsInf(q.Utilization, 0) ||
+			q.Utilization < 0 {
+			continue
+		}
+		labels := prometheus.Labels{
+			"provider":   method,
+			"quota_type": q.Name,
+			"account_id": defaultAccountID,
+		}
+		m.quotaUtilization.With(labels).Set(q.Utilization)
+		if q.ResetsAt != nil && !q.ResetsAt.IsZero() {
+			m.quotaResetTimestamp.With(labels).Set(float64(q.ResetsAt.Unix()))
+		}
+		// Key mode can report blocked below 100%; cookie mode omits status.
+		if status := strings.TrimSpace(q.Status); status != "" {
+			blocked := 1.0
+			if strings.EqualFold(status, "ok") {
+				blocked = 0
+			}
+			m.quotaBlocked.With(labels).Set(blocked)
 		}
 	}
 }
